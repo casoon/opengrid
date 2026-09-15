@@ -1,0 +1,40 @@
+{
+  "id": "s6-multi-sort-null-group-first",
+  "rule": "S6",
+  "query": {
+    "source": "orders",
+    "select": [
+      "id",
+      "country"
+    ],
+    "sort": [
+      {
+        "field": "country",
+        "direction": "asc",
+        "nulls": "first"
+      },
+      {
+        "field": "id",
+        "direction": "asc"
+      }
+    ],
+    "limit": 2
+  },
+  "expected": {
+    "columns": [
+      "id",
+      "country"
+    ],
+    "rows": [
+      [
+        9,
+        null
+      ],
+      [
+        40,
+        null
+      ]
+    ]
+  },
+  "ordered": true
+}

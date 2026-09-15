@@ -1,0 +1,29 @@
+{
+  "id": "s8-decimal-is-exact",
+  "rule": "S8",
+  "query": {
+    "source": "orders",
+    "select": [
+      "id",
+      "amount"
+    ],
+    "filter": {
+      "field": "amount",
+      "op": "eq",
+      "value": "999999999.99"
+    }
+  },
+  "expected": {
+    "columns": [
+      "id",
+      "amount"
+    ],
+    "rows": [
+      [
+        7,
+        "999999999.99"
+      ]
+    ]
+  },
+  "ordered": false
+}

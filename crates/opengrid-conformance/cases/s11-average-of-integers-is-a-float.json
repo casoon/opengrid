@@ -1,0 +1,34 @@
+{
+  "id": "s11-average-of-integers-is-a-float",
+  "rule": "S11",
+  "query": {
+    "source": "orders",
+    "select": [],
+    "filter": {
+      "field": "id",
+      "op": "in",
+      "value": [
+        1,
+        2
+      ]
+    },
+    "aggregate": [
+      {
+        "fn": "avg",
+        "as": "a",
+        "field": "qty"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "a"
+    ],
+    "rows": [
+      [
+        1.5
+      ]
+    ]
+  },
+  "ordered": false
+}

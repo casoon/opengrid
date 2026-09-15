@@ -1,0 +1,50 @@
+{
+  "id": "s7-nan-is-not-null-in-comparisons",
+  "rule": "S7",
+  "query": {
+    "source": "orders",
+    "select": [
+      "id"
+    ],
+    "filter": {
+      "and": [
+        {
+          "field": "id",
+          "op": "in",
+          "value": [
+            2,
+            3,
+            4
+          ]
+        },
+        {
+          "field": "ratio",
+          "op": "ne",
+          "value": 1.0
+        }
+      ]
+    },
+    "sort": [
+      {
+        "field": "id"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "id"
+    ],
+    "rows": [
+      [
+        2
+      ],
+      [
+        3
+      ],
+      [
+        4
+      ]
+    ]
+  },
+  "ordered": true
+}

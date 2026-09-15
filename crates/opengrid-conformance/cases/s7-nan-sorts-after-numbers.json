@@ -1,0 +1,42 @@
+{
+  "id": "s7-nan-sorts-after-numbers",
+  "rule": "S7",
+  "query": {
+    "source": "orders",
+    "select": [
+      "id",
+      "ratio"
+    ],
+    "filter": {
+      "field": "id",
+      "op": "in",
+      "value": [
+        3,
+        4
+      ]
+    },
+    "sort": [
+      {
+        "field": "ratio",
+        "direction": "asc"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "id",
+      "ratio"
+    ],
+    "rows": [
+      [
+        3,
+        0.0
+      ],
+      [
+        4,
+        "NaN"
+      ]
+    ]
+  },
+  "ordered": true
+}

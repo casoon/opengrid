@@ -1,0 +1,58 @@
+{
+  "id": "s11-aggregate-without-group-yields-one-row",
+  "rule": "S11",
+  "query": {
+    "source": "orders",
+    "select": [],
+    "filter": {
+      "field": "country",
+      "op": "eq",
+      "value": "XX"
+    },
+    "aggregate": [
+      {
+        "fn": "count",
+        "as": "rows"
+      },
+      {
+        "fn": "sum",
+        "as": "s",
+        "field": "amount"
+      },
+      {
+        "fn": "avg",
+        "as": "a",
+        "field": "amount"
+      },
+      {
+        "fn": "min",
+        "as": "lo",
+        "field": "amount"
+      },
+      {
+        "fn": "max",
+        "as": "hi",
+        "field": "amount"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "rows",
+      "s",
+      "a",
+      "lo",
+      "hi"
+    ],
+    "rows": [
+      [
+        0,
+        null,
+        null,
+        null,
+        null
+      ]
+    ]
+  },
+  "ordered": false
+}

@@ -1,0 +1,48 @@
+{
+  "id": "s3-nulls-first-explicit",
+  "rule": "S3",
+  "query": {
+    "source": "orders",
+    "select": [
+      "id",
+      "note"
+    ],
+    "filter": {
+      "field": "id",
+      "op": "in",
+      "value": [
+        1,
+        2,
+        8
+      ]
+    },
+    "sort": [
+      {
+        "field": "note",
+        "direction": "asc",
+        "nulls": "first"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "id",
+      "note"
+    ],
+    "rows": [
+      [
+        1,
+        null
+      ],
+      [
+        2,
+        ""
+      ],
+      [
+        8,
+        "ä"
+      ]
+    ]
+  },
+  "ordered": true
+}

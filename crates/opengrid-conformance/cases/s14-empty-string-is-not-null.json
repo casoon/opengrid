@@ -1,0 +1,37 @@
+{
+  "id": "s14-empty-string-is-not-null",
+  "rule": "S14",
+  "query": {
+    "source": "orders",
+    "select": [
+      "id"
+    ],
+    "filter": {
+      "and": [
+        {
+          "field": "id",
+          "op": "in",
+          "value": [
+            1,
+            2
+          ]
+        },
+        {
+          "field": "note",
+          "op": "is_null"
+        }
+      ]
+    }
+  },
+  "expected": {
+    "columns": [
+      "id"
+    ],
+    "rows": [
+      [
+        1
+      ]
+    ]
+  },
+  "ordered": false
+}

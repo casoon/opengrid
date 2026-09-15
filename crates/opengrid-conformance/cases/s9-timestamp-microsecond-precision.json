@@ -1,0 +1,43 @@
+{
+  "id": "s9-timestamp-microsecond-precision",
+  "rule": "S9",
+  "query": {
+    "source": "orders",
+    "select": [
+      "id"
+    ],
+    "filter": {
+      "and": [
+        {
+          "field": "id",
+          "op": "in",
+          "value": [
+            5,
+            6
+          ]
+        },
+        {
+          "field": "created_at",
+          "op": "gt",
+          "value": "2026-03-01T00:00:00.499999Z"
+        },
+        {
+          "field": "created_at",
+          "op": "lte",
+          "value": "2026-03-01T00:00:00.500000Z"
+        }
+      ]
+    }
+  },
+  "expected": {
+    "columns": [
+      "id"
+    ],
+    "rows": [
+      [
+        6
+      ]
+    ]
+  },
+  "ordered": false
+}

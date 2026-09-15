@@ -1,0 +1,38 @@
+{
+  "id": "s1-is-null-finds-the-null-row",
+  "rule": "S1",
+  "query": {
+    "source": "orders",
+    "select": [
+      "id"
+    ],
+    "filter": {
+      "and": [
+        {
+          "field": "id",
+          "op": "in",
+          "value": [
+            1,
+            2,
+            3
+          ]
+        },
+        {
+          "field": "amount",
+          "op": "is_null"
+        }
+      ]
+    }
+  },
+  "expected": {
+    "columns": [
+      "id"
+    ],
+    "rows": [
+      [
+        3
+      ]
+    ]
+  },
+  "ordered": false
+}

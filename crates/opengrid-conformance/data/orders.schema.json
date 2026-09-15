@@ -1,0 +1,14 @@
+{
+  "fields": [
+    { "name": "id", "type": "int64", "nullable": false },
+    { "name": "customer", "type": "utf8", "nullable": true },
+    { "name": "country", "type": "utf8", "nullable": true },
+    { "name": "amount", "type": { "decimal": { "precision": 12, "scale": 2 } }, "nullable": true },
+    { "name": "qty", "type": "int64", "nullable": true },
+    { "name": "ratio", "type": "float64", "nullable": true },
+    { "name": "flag", "type": "bool", "nullable": true },
+    { "name": "ordered_on", "type": "date", "nullable": true },
+    { "name": "created_at", "type": "timestamp", "nullable": true },
+    { "name": "note", "type": "utf8", "nullable": true }
+  ]
+}

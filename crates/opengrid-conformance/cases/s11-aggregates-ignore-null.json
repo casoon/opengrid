@@ -1,0 +1,49 @@
+{
+  "id": "s11-aggregates-ignore-null",
+  "rule": "S11",
+  "query": {
+    "source": "orders",
+    "select": [],
+    "filter": {
+      "field": "id",
+      "op": "in",
+      "value": [
+        1,
+        2,
+        3
+      ]
+    },
+    "aggregate": [
+      {
+        "fn": "sum",
+        "as": "s",
+        "field": "amount"
+      },
+      {
+        "fn": "min",
+        "as": "lo",
+        "field": "qty"
+      },
+      {
+        "fn": "max",
+        "as": "hi",
+        "field": "qty"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "s",
+      "lo",
+      "hi"
+    ],
+    "rows": [
+      [
+        "30.00",
+        1,
+        2
+      ]
+    ]
+  },
+  "ordered": false
+}

@@ -1,0 +1,41 @@
+{
+  "id": "s6-second-page-last",
+  "rule": "S6",
+  "query": {
+    "source": "orders",
+    "select": [
+      "id"
+    ],
+    "sort": [
+      {
+        "field": "id",
+        "direction": "asc"
+      }
+    ],
+    "offset": 45,
+    "limit": 5
+  },
+  "expected": {
+    "columns": [
+      "id"
+    ],
+    "rows": [
+      [
+        46
+      ],
+      [
+        47
+      ],
+      [
+        48
+      ],
+      [
+        49
+      ],
+      [
+        50
+      ]
+    ]
+  },
+  "ordered": true
+}

@@ -1,0 +1,44 @@
+{
+  "id": "s14-empty-country-selects-three-rows",
+  "rule": "S14",
+  "query": {
+    "source": "orders",
+    "select": [
+      "id",
+      "country"
+    ],
+    "filter": {
+      "field": "country",
+      "op": "in",
+      "value": [
+        ""
+      ]
+    },
+    "sort": [
+      {
+        "field": "id"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "id",
+      "country"
+    ],
+    "rows": [
+      [
+        37,
+        ""
+      ],
+      [
+        38,
+        ""
+      ],
+      [
+        39,
+        ""
+      ]
+    ]
+  },
+  "ordered": true
+}

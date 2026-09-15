@@ -1,0 +1,32 @@
+{
+  "id": "s11-group-over-empty-set-yields-no-row",
+  "rule": "S11",
+  "query": {
+    "source": "orders",
+    "select": [
+      "country"
+    ],
+    "filter": {
+      "field": "country",
+      "op": "eq",
+      "value": "XX"
+    },
+    "group": [
+      "country"
+    ],
+    "aggregate": [
+      {
+        "fn": "count",
+        "as": "rows"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "country",
+      "rows"
+    ],
+    "rows": []
+  },
+  "ordered": false
+}

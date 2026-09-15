@@ -1,0 +1,34 @@
+{
+  "id": "s12-sum-of-float64-stays-float64",
+  "rule": "S12",
+  "query": {
+    "source": "orders",
+    "select": [],
+    "filter": {
+      "field": "id",
+      "op": "in",
+      "value": [
+        1,
+        2
+      ]
+    },
+    "aggregate": [
+      {
+        "fn": "sum",
+        "as": "total",
+        "field": "ratio"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "total"
+    ],
+    "rows": [
+      [
+        1.5
+      ]
+    ]
+  },
+  "ordered": false
+}

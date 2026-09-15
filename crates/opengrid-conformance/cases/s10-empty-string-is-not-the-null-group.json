@@ -1,0 +1,62 @@
+{
+  "id": "s10-empty-string-is-not-the-null-group",
+  "rule": "S10",
+  "query": {
+    "source": "orders",
+    "select": [
+      "customer"
+    ],
+    "group": [
+      "customer"
+    ],
+    "aggregate": [
+      {
+        "fn": "count",
+        "as": "rows"
+      }
+    ],
+    "sort": [
+      {
+        "field": "customer",
+        "direction": "asc"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "customer",
+      "rows"
+    ],
+    "rows": [
+      [
+        "",
+        1
+      ],
+      [
+        "Alpha",
+        12
+      ],
+      [
+        "Beta",
+        12
+      ],
+      [
+        "Delta",
+        8
+      ],
+      [
+        "Epsilon",
+        2
+      ],
+      [
+        "Gamma",
+        11
+      ],
+      [
+        null,
+        4
+      ]
+    ]
+  },
+  "ordered": true
+}

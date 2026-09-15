@@ -1,0 +1,43 @@
+{
+  "id": "s1-or-of-two-ids",
+  "rule": "S1",
+  "query": {
+    "source": "orders",
+    "select": [
+      "id"
+    ],
+    "filter": {
+      "or": [
+        {
+          "field": "id",
+          "op": "eq",
+          "value": 1
+        },
+        {
+          "field": "id",
+          "op": "eq",
+          "value": 50
+        }
+      ]
+    },
+    "sort": [
+      {
+        "field": "id"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "id"
+    ],
+    "rows": [
+      [
+        1
+      ],
+      [
+        50
+      ]
+    ]
+  },
+  "ordered": true
+}

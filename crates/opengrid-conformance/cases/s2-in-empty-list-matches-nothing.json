@@ -1,0 +1,22 @@
+{
+  "id": "s2-in-empty-list-matches-nothing",
+  "rule": "S2",
+  "query": {
+    "source": "orders",
+    "select": [
+      "id"
+    ],
+    "filter": {
+      "field": "country",
+      "op": "in",
+      "value": []
+    }
+  },
+  "expected": {
+    "columns": [
+      "id"
+    ],
+    "rows": []
+  },
+  "ordered": false
+}

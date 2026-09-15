@@ -1,0 +1,75 @@
+{
+  "id": "s11-aggregates-on-all-null-set",
+  "rule": "S11",
+  "query": {
+    "source": "orders",
+    "select": [],
+    "filter": {
+      "field": "id",
+      "op": "in",
+      "value": [
+        3,
+        5
+      ]
+    },
+    "aggregate": [
+      {
+        "fn": "count",
+        "as": "rows"
+      },
+      {
+        "fn": "count",
+        "as": "with_amount",
+        "field": "amount"
+      },
+      {
+        "fn": "count",
+        "as": "with_qty",
+        "field": "qty"
+      },
+      {
+        "fn": "sum",
+        "as": "s",
+        "field": "amount"
+      },
+      {
+        "fn": "avg",
+        "as": "a",
+        "field": "qty"
+      },
+      {
+        "fn": "min",
+        "as": "lo",
+        "field": "amount"
+      },
+      {
+        "fn": "max",
+        "as": "hi",
+        "field": "amount"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "rows",
+      "with_amount",
+      "with_qty",
+      "s",
+      "a",
+      "lo",
+      "hi"
+    ],
+    "rows": [
+      [
+        2,
+        0,
+        1,
+        null,
+        5.0,
+        null,
+        null
+      ]
+    ]
+  },
+  "ordered": false
+}

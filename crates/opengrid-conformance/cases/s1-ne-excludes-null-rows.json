@@ -1,0 +1,45 @@
+{
+  "id": "s1-ne-excludes-null-rows",
+  "rule": "S1",
+  "query": {
+    "source": "orders",
+    "select": [
+      "id"
+    ],
+    "filter": {
+      "and": [
+        {
+          "field": "id",
+          "op": "gte",
+          "value": 1
+        },
+        {
+          "field": "id",
+          "op": "lte",
+          "value": 3
+        },
+        {
+          "field": "amount",
+          "op": "ne",
+          "value": "10.00"
+        }
+      ]
+    },
+    "sort": [
+      {
+        "field": "id"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "id"
+    ],
+    "rows": [
+      [
+        2
+      ]
+    ]
+  },
+  "ordered": true
+}

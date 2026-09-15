@@ -1,0 +1,39 @@
+{
+  "id": "s8-negative-decimals-order-exactly",
+  "rule": "S8",
+  "query": {
+    "source": "orders",
+    "select": [
+      "id",
+      "amount"
+    ],
+    "filter": {
+      "field": "amount",
+      "op": "lt",
+      "value": "0.00"
+    },
+    "sort": [
+      {
+        "field": "amount",
+        "direction": "asc"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "id",
+      "amount"
+    ],
+    "rows": [
+      [
+        9,
+        "-12345.67"
+      ],
+      [
+        8,
+        "-0.01"
+      ]
+    ]
+  },
+  "ordered": true
+}

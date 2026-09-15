@@ -1,0 +1,46 @@
+{
+  "id": "s1-not-of-comparison-stays-unknown",
+  "rule": "S1",
+  "query": {
+    "source": "orders",
+    "select": [
+      "id"
+    ],
+    "filter": {
+      "and": [
+        {
+          "field": "id",
+          "op": "in",
+          "value": [
+            1,
+            2,
+            3
+          ]
+        },
+        {
+          "not": {
+            "field": "amount",
+            "op": "eq",
+            "value": "10.00"
+          }
+        }
+      ]
+    },
+    "sort": [
+      {
+        "field": "id"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "id"
+    ],
+    "rows": [
+      [
+        2
+      ]
+    ]
+  },
+  "ordered": true
+}

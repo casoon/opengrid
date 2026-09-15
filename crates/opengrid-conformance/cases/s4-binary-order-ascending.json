@@ -1,0 +1,66 @@
+{
+  "id": "s4-binary-order-ascending",
+  "rule": "S4",
+  "query": {
+    "source": "orders",
+    "select": [
+      "note"
+    ],
+    "filter": {
+      "field": "note",
+      "op": "in",
+      "value": [
+        "",
+        "Abc",
+        "Z",
+        "abc",
+        "abcde",
+        "é",
+        "z",
+        "ä",
+        "é"
+      ]
+    },
+    "sort": [
+      {
+        "field": "note",
+        "direction": "asc"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "note"
+    ],
+    "rows": [
+      [
+        ""
+      ],
+      [
+        "Abc"
+      ],
+      [
+        "Z"
+      ],
+      [
+        "abc"
+      ],
+      [
+        "abcde"
+      ],
+      [
+        "é"
+      ],
+      [
+        "z"
+      ],
+      [
+        "ä"
+      ],
+      [
+        "é"
+      ]
+    ]
+  },
+  "ordered": true
+}

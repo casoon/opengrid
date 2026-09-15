@@ -1,0 +1,47 @@
+{
+  "id": "s9-timestamp-order",
+  "rule": "S9",
+  "query": {
+    "source": "orders",
+    "select": [
+      "id",
+      "created_at"
+    ],
+    "filter": {
+      "field": "id",
+      "op": "in",
+      "value": [
+        1,
+        2,
+        3
+      ]
+    },
+    "sort": [
+      {
+        "field": "created_at",
+        "direction": "asc"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "id",
+      "created_at"
+    ],
+    "rows": [
+      [
+        1,
+        "2025-12-31T23:59:59Z"
+      ],
+      [
+        2,
+        "2026-01-01T00:00:00Z"
+      ],
+      [
+        3,
+        "2026-01-01T00:00:01Z"
+      ]
+    ]
+  },
+  "ordered": true
+}

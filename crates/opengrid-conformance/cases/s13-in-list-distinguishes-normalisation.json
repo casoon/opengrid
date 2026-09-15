@@ -1,0 +1,41 @@
+{
+  "id": "s13-in-list-distinguishes-normalisation",
+  "rule": "S13",
+  "query": {
+    "source": "orders",
+    "select": [
+      "id",
+      "note"
+    ],
+    "filter": {
+      "field": "note",
+      "op": "in",
+      "value": [
+        "é",
+        "é"
+      ]
+    },
+    "sort": [
+      {
+        "field": "id"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "id",
+      "note"
+    ],
+    "rows": [
+      [
+        45,
+        "é"
+      ],
+      [
+        46,
+        "é"
+      ]
+    ]
+  },
+  "ordered": true
+}

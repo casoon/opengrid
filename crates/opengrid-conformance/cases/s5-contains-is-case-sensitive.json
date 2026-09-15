@@ -1,0 +1,34 @@
+{
+  "id": "s5-contains-is-case-sensitive",
+  "rule": "S5",
+  "query": {
+    "source": "orders",
+    "select": [
+      "id"
+    ],
+    "filter": {
+      "field": "note",
+      "op": "contains",
+      "value": "abc"
+    },
+    "sort": [
+      {
+        "field": "id"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "id"
+    ],
+    "rows": [
+      [
+        4
+      ],
+      [
+        6
+      ]
+    ]
+  },
+  "ordered": true
+}

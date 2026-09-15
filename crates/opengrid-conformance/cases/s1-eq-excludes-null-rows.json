@@ -1,0 +1,31 @@
+{
+  "id": "s1-eq-excludes-null-rows",
+  "rule": "S1",
+  "query": {
+    "source": "orders",
+    "select": [
+      "id"
+    ],
+    "filter": {
+      "field": "amount",
+      "op": "eq",
+      "value": "10.00"
+    },
+    "sort": [
+      {
+        "field": "id"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "id"
+    ],
+    "rows": [
+      [
+        1
+      ]
+    ]
+  },
+  "ordered": true
+}

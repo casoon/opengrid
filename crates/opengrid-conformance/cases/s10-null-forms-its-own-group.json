@@ -1,0 +1,58 @@
+{
+  "id": "s10-null-forms-its-own-group",
+  "rule": "S10",
+  "query": {
+    "source": "orders",
+    "select": [
+      "country"
+    ],
+    "group": [
+      "country"
+    ],
+    "aggregate": [
+      {
+        "fn": "count",
+        "as": "rows"
+      }
+    ],
+    "sort": [
+      {
+        "field": "country",
+        "direction": "asc"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "country",
+      "rows"
+    ],
+    "rows": [
+      [
+        "",
+        3
+      ],
+      [
+        "DE",
+        16
+      ],
+      [
+        "FR",
+        10
+      ],
+      [
+        "GB",
+        6
+      ],
+      [
+        "US",
+        8
+      ],
+      [
+        null,
+        7
+      ]
+    ]
+  },
+  "ordered": true
+}

@@ -1,0 +1,41 @@
+{
+  "id": "s12-min-max-keep-the-input-type",
+  "rule": "S12",
+  "query": {
+    "source": "orders",
+    "select": [],
+    "filter": {
+      "field": "id",
+      "op": "in",
+      "value": [
+        1,
+        2
+      ]
+    },
+    "aggregate": [
+      {
+        "fn": "min",
+        "as": "lo",
+        "field": "amount"
+      },
+      {
+        "fn": "max",
+        "as": "hi",
+        "field": "amount"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "lo",
+      "hi"
+    ],
+    "rows": [
+      [
+        "10.00",
+        "20.00"
+      ]
+    ]
+  },
+  "ordered": false
+}

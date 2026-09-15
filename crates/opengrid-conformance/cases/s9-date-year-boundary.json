@@ -1,0 +1,47 @@
+{
+  "id": "s9-date-year-boundary",
+  "rule": "S9",
+  "query": {
+    "source": "orders",
+    "select": [
+      "id",
+      "ordered_on"
+    ],
+    "filter": {
+      "and": [
+        {
+          "field": "ordered_on",
+          "op": "gte",
+          "value": "2026-01-01"
+        },
+        {
+          "field": "ordered_on",
+          "op": "lte",
+          "value": "2026-01-01"
+        }
+      ]
+    },
+    "sort": [
+      {
+        "field": "id"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "id",
+      "ordered_on"
+    ],
+    "rows": [
+      [
+        2,
+        "2026-01-01"
+      ],
+      [
+        3,
+        "2026-01-01"
+      ]
+    ]
+  },
+  "ordered": true
+}

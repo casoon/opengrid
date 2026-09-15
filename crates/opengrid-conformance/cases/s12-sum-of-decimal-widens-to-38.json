@@ -1,0 +1,34 @@
+{
+  "id": "s12-sum-of-decimal-widens-to-38",
+  "rule": "S12",
+  "query": {
+    "source": "orders",
+    "select": [],
+    "filter": {
+      "field": "id",
+      "op": "in",
+      "value": [
+        1,
+        2
+      ]
+    },
+    "aggregate": [
+      {
+        "fn": "sum",
+        "as": "total",
+        "field": "amount"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "total"
+    ],
+    "rows": [
+      [
+        "30.00"
+      ]
+    ]
+  },
+  "ordered": false
+}

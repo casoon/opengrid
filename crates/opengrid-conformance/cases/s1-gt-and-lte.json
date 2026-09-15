@@ -1,0 +1,47 @@
+{
+  "id": "s1-gt-and-lte",
+  "rule": "S1",
+  "query": {
+    "source": "orders",
+    "select": [
+      "id",
+      "qty"
+    ],
+    "filter": {
+      "and": [
+        {
+          "field": "qty",
+          "op": "gt",
+          "value": 47
+        },
+        {
+          "field": "qty",
+          "op": "lte",
+          "value": 50
+        }
+      ]
+    },
+    "sort": [
+      {
+        "field": "id"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "id",
+      "qty"
+    ],
+    "rows": [
+      [
+        49,
+        49
+      ],
+      [
+        50,
+        50
+      ]
+    ]
+  },
+  "ordered": true
+}

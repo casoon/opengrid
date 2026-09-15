@@ -1,0 +1,48 @@
+{
+  "id": "s6-multi-sort-country-then-amount-desc",
+  "rule": "S6",
+  "query": {
+    "source": "orders",
+    "select": [
+      "id",
+      "country",
+      "amount"
+    ],
+    "sort": [
+      {
+        "field": "country",
+        "direction": "asc"
+      },
+      {
+        "field": "amount",
+        "direction": "desc"
+      }
+    ],
+    "limit": 3
+  },
+  "expected": {
+    "columns": [
+      "id",
+      "country",
+      "amount"
+    ],
+    "rows": [
+      [
+        39,
+        "",
+        "39.00"
+      ],
+      [
+        38,
+        "",
+        "38.00"
+      ],
+      [
+        37,
+        "",
+        "37.00"
+      ]
+    ]
+  },
+  "ordered": true
+}

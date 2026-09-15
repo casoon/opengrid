@@ -1,0 +1,29 @@
+{
+  "id": "s13-nfc-is-not-nfd",
+  "rule": "S13",
+  "query": {
+    "source": "orders",
+    "select": [
+      "id",
+      "note"
+    ],
+    "filter": {
+      "field": "note",
+      "op": "eq",
+      "value": "é"
+    }
+  },
+  "expected": {
+    "columns": [
+      "id",
+      "note"
+    ],
+    "rows": [
+      [
+        45,
+        "é"
+      ]
+    ]
+  },
+  "ordered": false
+}

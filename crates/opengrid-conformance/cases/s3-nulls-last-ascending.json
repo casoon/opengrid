@@ -1,0 +1,47 @@
+{
+  "id": "s3-nulls-last-ascending",
+  "rule": "S3",
+  "query": {
+    "source": "orders",
+    "select": [
+      "id",
+      "note"
+    ],
+    "filter": {
+      "field": "id",
+      "op": "in",
+      "value": [
+        1,
+        2,
+        8
+      ]
+    },
+    "sort": [
+      {
+        "field": "note",
+        "direction": "asc"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "id",
+      "note"
+    ],
+    "rows": [
+      [
+        2,
+        ""
+      ],
+      [
+        8,
+        "ä"
+      ],
+      [
+        1,
+        null
+      ]
+    ]
+  },
+  "ordered": true
+}

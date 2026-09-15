@@ -1,0 +1,29 @@
+{
+  "id": "s14-empty-string-is-a-value",
+  "rule": "S14",
+  "query": {
+    "source": "orders",
+    "select": [
+      "id",
+      "note"
+    ],
+    "filter": {
+      "field": "note",
+      "op": "eq",
+      "value": ""
+    }
+  },
+  "expected": {
+    "columns": [
+      "id",
+      "note"
+    ],
+    "rows": [
+      [
+        2,
+        ""
+      ]
+    ]
+  },
+  "ordered": false
+}

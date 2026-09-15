@@ -1,0 +1,55 @@
+{
+  "id": "s2-in-list",
+  "rule": "S2",
+  "query": {
+    "source": "orders",
+    "select": [
+      "id"
+    ],
+    "filter": {
+      "and": [
+        {
+          "field": "id",
+          "op": "lte",
+          "value": 5
+        },
+        {
+          "field": "country",
+          "op": "in",
+          "value": [
+            "DE",
+            "FR"
+          ]
+        }
+      ]
+    },
+    "sort": [
+      {
+        "field": "id"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "id"
+    ],
+    "rows": [
+      [
+        1
+      ],
+      [
+        2
+      ],
+      [
+        3
+      ],
+      [
+        4
+      ],
+      [
+        5
+      ]
+    ]
+  },
+  "ordered": true
+}

@@ -1,0 +1,41 @@
+{
+  "id": "s6-offset-with-sort",
+  "rule": "S6",
+  "query": {
+    "source": "orders",
+    "select": [
+      "id"
+    ],
+    "sort": [
+      {
+        "field": "id",
+        "direction": "asc"
+      }
+    ],
+    "offset": 10,
+    "limit": 5
+  },
+  "expected": {
+    "columns": [
+      "id"
+    ],
+    "rows": [
+      [
+        11
+      ],
+      [
+        12
+      ],
+      [
+        13
+      ],
+      [
+        14
+      ],
+      [
+        15
+      ]
+    ]
+  },
+  "ordered": true
+}

@@ -1,0 +1,26 @@
+{
+  "id": "s5-starts-with-is-case-sensitive",
+  "rule": "S5",
+  "query": {
+    "source": "orders",
+    "select": [
+      "id"
+    ],
+    "filter": {
+      "field": "note",
+      "op": "starts_with",
+      "value": "Ab"
+    }
+  },
+  "expected": {
+    "columns": [
+      "id"
+    ],
+    "rows": [
+      [
+        5
+      ]
+    ]
+  },
+  "ordered": false
+}

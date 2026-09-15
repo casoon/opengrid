@@ -1,0 +1,41 @@
+{
+  "id": "s11-count-star-versus-count-field",
+  "rule": "S11",
+  "query": {
+    "source": "orders",
+    "select": [],
+    "filter": {
+      "field": "id",
+      "op": "in",
+      "value": [
+        1,
+        2,
+        3
+      ]
+    },
+    "aggregate": [
+      {
+        "fn": "count",
+        "as": "rows"
+      },
+      {
+        "fn": "count",
+        "as": "with_qty",
+        "field": "qty"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "rows",
+      "with_qty"
+    ],
+    "rows": [
+      [
+        3,
+        2
+      ]
+    ]
+  },
+  "ordered": false
+}

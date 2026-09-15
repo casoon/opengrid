@@ -1,0 +1,42 @@
+{
+  "id": "s7-nan-sorts-before-numbers-descending",
+  "rule": "S7",
+  "query": {
+    "source": "orders",
+    "select": [
+      "id",
+      "ratio"
+    ],
+    "filter": {
+      "field": "id",
+      "op": "in",
+      "value": [
+        3,
+        4
+      ]
+    },
+    "sort": [
+      {
+        "field": "ratio",
+        "direction": "desc"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "id",
+      "ratio"
+    ],
+    "rows": [
+      [
+        4,
+        "NaN"
+      ],
+      [
+        3,
+        0.0
+      ]
+    ]
+  },
+  "ordered": true
+}
