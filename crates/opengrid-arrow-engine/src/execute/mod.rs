@@ -1,10 +1,9 @@
-//! The local query executor: filter, sort, paging and projection.
+//! The local query executor: filter, grouping and aggregation, sort, paging and
+//! projection.
 //!
-//! Plan point 07, the pipeline of plan/spezifikation/04-local-engine.md:
-//! filter → sort → offset/limit → projection. Grouping and aggregation are
-//! point 08 — a query that needs them is **refused** ([`ExecuteError::Unsupported`])
-//! instead of being executed half-way, so no caller can mistake a partial
-//! result for a complete one.
+//! Plan points 07 and 08, the pipeline of plan/spezifikation/04-local-engine.md:
+//! filter → group/aggregate → sort → offset/limit → projection. Grouping and
+//! aggregation live in the `aggregate` module.
 //!
 //! Two field namespaces meet here, and the contract is explicit about which is
 //! which: `filter` names *input* columns, `sort` names *output* columns
