@@ -9,3 +9,13 @@ description = "Schemas, values and identifiers for opengrid"
 workspace = true
 
 [dependencies]
+serde = { version = "1", features = ["derive"] }
+arrow-schema = { version = "59", optional = true }
+
+[features]
+# Arrow mapping (plan/03-data-types.md step 6). Off by default: opengrid-types
+# itself must stay free of Arrow (plan/spezifikation/11-crates.md §Portabilität).
+arrow = ["dep:arrow-schema"]
+
+[dev-dependencies]
+serde_json = "1"
