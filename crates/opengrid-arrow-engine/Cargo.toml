@@ -1,0 +1,18 @@
+[package]
+name = "opengrid-arrow-engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Arrow integration for opengrid: ingest and local query execution"
+
+[lints]
+workspace = true
+
+[dependencies]
+opengrid-types = { path = "../opengrid-types", features = ["arrow"] }
+arrow-array = "59"
+arrow-schema = "59"
+serde_json = "1"
+
+[dev-dependencies]
+opengrid-conformance = { path = "../opengrid-conformance" }

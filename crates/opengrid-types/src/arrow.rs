@@ -5,13 +5,15 @@
 
 use std::sync::Arc;
 
-use arrow_schema::{DataType as ArrowDataType, TimeUnit};
+use arrow_schema::{
+    DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema, TimeUnit,
+};
 
-use crate::DataType;
+use crate::{DataType, Schema};
 
 /// The Arrow timestamp timezone used for opengrid timestamps, which are always
 /// UTC (semantics rule S9).
-const UTC: &str = "UTC";
+pub const TIMESTAMP_TIMEZONE: &str = "UTC";
 
 impl From<DataType> for ArrowDataType {
     fn from(data_type: DataType) -> Self {
@@ -25,7 +27,7 @@ impl From<DataType> for ArrowDataType {
             DataType::Utf8 => ArrowDataType::Utf8,
             DataType::Date => ArrowDataType::Date32,
             DataType::Timestamp => {
-                ArrowDataType::Timestamp(TimeUnit::Microsecond, Some(Arc::from(UTC)))
+                ArrowDataType::Timestamp(TimeUnit::Microsecond, Some(Arc::from(TIMESTAMP_TIMEZONE)))
             }
         }
     }
@@ -47,6 +49,20 @@ impl DataType {
             ArrowDataType::Timestamp(TimeUnit::Microsecond, _) => Some(DataType::Timestamp),
             _ => None,
         }
+    }
+}
+
+impl From<&Schema> for ArrowSchema {
+    fn from(schema: &Schema) -> Self {
+        ArrowSchema::new(
+            schema
+                .fields()
+                .iter()
+                .map(|field| {
+                    ArrowField::new(field.name.as_str(), field.data_type.into(), field.nullable)
+                })
+                .collect::<Vec<_>>(),
+        )
     }
 }
 
@@ -91,7 +107,7 @@ mod tests {
         );
         assert_eq!(
             ArrowDataType::from(DataType::Timestamp),
-            ArrowDataType::Timestamp(TimeUnit::Microsecond, Some(Arc::from("UTC")))
+            ArrowDataType::Timestamp(TimeUnit::Microsecond, Some(Arc::from(TIMESTAMP_TIMEZONE)))
         );
     }
 
@@ -103,5 +119,20 @@ mod tests {
             DataType::from_arrow(&ArrowDataType::Decimal128(10, -1)),
             None
         );
+    }
+
+    #[test]
+    fn a_whole_schema_maps_to_arrow() {
+        let schema = crate::Schema::new(vec![
+            crate::Field::required(crate::FieldName::new("id").unwrap(), DataType::Int64),
+            crate::Field::new(crate::FieldName::new("note").unwrap(), DataType::Utf8),
+        ]);
+        let arrow: ArrowSchema = (&schema).into();
+        assert_eq!(arrow.fields().len(), 2);
+        assert_eq!(arrow.field(0).name(), "id");
+        assert_eq!(arrow.field(0).data_type(), &ArrowDataType::Int64);
+        assert!(!arrow.field(0).is_nullable());
+        assert_eq!(arrow.field(1).data_type(), &ArrowDataType::Utf8);
+        assert!(arrow.field(1).is_nullable());
     }
 }

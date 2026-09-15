@@ -25,3 +25,6 @@ pub use error::{InvalidIdentifier, ValueError};
 pub use identifier::{DataSourceId, FieldName, is_valid_identifier};
 pub use schema::{Field, Schema};
 pub use value::{Date, Decimal, Timestamp, Value};
+
+#[cfg(feature = "arrow")]
+pub use arrow::TIMESTAMP_TIMEZONE;
