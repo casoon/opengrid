@@ -1,0 +1,23 @@
+[workspace]
+resolver = "3"
+members = ["crates/opengrid-types"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+# Grundsatzlints (plan/spezifikation/11-crates.md, 14-entscheidungen.md E4).
+# `unsafe_code = "forbid"` gilt workspaceweit; clippy wird in CI/`just check`
+# mit `-D warnings` verschärft.
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = "warn"
+
+# Release-Profil für den WASM-Build (Bundle-Größe, Risiko R3).
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
