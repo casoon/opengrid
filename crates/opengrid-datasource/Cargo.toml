@@ -1,0 +1,17 @@
+[package]
+name = "opengrid-datasource"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "DataSource contract, capabilities and portable query result for opengrid"
+
+[lints]
+workspace = true
+
+[dependencies]
+opengrid-types = { path = "../opengrid-types" }
+opengrid-query = { path = "../opengrid-query" }
+# Generates the `Send` variant of `DataSource` from the one definition
+# (plan/spezifikation/14-entscheidungen.md E5). Build-time only: a proc macro
+# does not reach the wasm bundle.
+trait-variant = "0.1"

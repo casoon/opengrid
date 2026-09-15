@@ -5,6 +5,7 @@ members = [
     "crates/opengrid-query",
     "crates/opengrid-arrow-engine",
     "crates/opengrid-conformance",
+    "crates/opengrid-datasource",
 ]
 
 [workspace.package]

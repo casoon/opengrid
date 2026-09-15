@@ -10,8 +10,9 @@
 use std::path::PathBuf;
 
 use opengrid_conformance::{
-    Engine, EngineError, RowOrder, Table, check_dir, compare, load_schema, rules_covered,
+    RowOrder, Table, block_on, check_dir, compare, load_schema, rules_covered,
 };
+use opengrid_datasource::{DataSource, DataSourceCapabilities, DataSourceError, QueryResult};
 use opengrid_query::ValidatedQuery;
 use opengrid_types::Schema;
 
@@ -151,17 +152,28 @@ fn dataset_matches_the_schema_and_carries_the_special_values() {
 #[test]
 fn the_engine_docking_point_is_usable() {
     /// A stand-in for the engines of points 07, 08 and 26.
+    ///
+    /// It implements the **base** trait, the browser variant without `Send` — the
+    /// server variant is generated from it (E5), and a local engine implements the
+    /// generated one. The stub carries no data of its own, so its answers are empty
+    /// on purpose: what this test pins down is that the docking point can be
+    /// implemented and driven, and that an empty answer never passes a non-empty
+    /// expectation.
     struct Stub;
 
-    impl Engine for Stub {
-        fn run(&self, _schema: &Schema, query: &ValidatedQuery) -> Result<Table, EngineError> {
-            let columns = query
-                .output_schema
-                .fields()
-                .iter()
-                .map(|field| field.name.clone())
-                .collect();
-            Ok(Table::new(columns, Vec::new()))
+    impl DataSource for Stub {
+        async fn schema(&self) -> Result<Schema, DataSourceError> {
+            Ok(Schema::default())
+        }
+
+        async fn execute(&self, query: ValidatedQuery) -> Result<QueryResult, DataSourceError> {
+            let schema = query.output_schema.clone();
+            let columns = schema.fields().iter().map(|_| Vec::new()).collect();
+            Ok(QueryResult::new(schema, columns, 0))
+        }
+
+        fn capabilities(&self) -> DataSourceCapabilities {
+            DataSourceCapabilities::ALL
         }
     }
 
@@ -169,14 +181,21 @@ fn the_engine_docking_point_is_usable() {
     let checked = check_dir(&crate_dir().join("cases"), &schema).expect("cases");
     let engine = Stub;
 
+    assert_eq!(
+        engine.capabilities(),
+        DataSourceCapabilities::ALL,
+        "the stub answers everything, the suite does not consult capabilities yet"
+    );
+
     for case in checked.iter().take(5) {
-        let result = engine.run(&schema, &case.query).expect("stub never fails");
-        assert_eq!(result.columns, case.expected.columns, "{}", case.case.id);
+        let result = block_on(engine.execute(case.query.clone())).expect("stub never fails");
+        let table = Table::from(&result);
+        assert_eq!(table.columns, case.expected.columns, "{}", case.case.id);
         // An empty result does not match a non-empty expectation — the comparison
         // is what catches a wrong engine, and it must say so.
         if !case.expected.rows.is_empty() {
             assert!(
-                compare(&case.expected, &result, RowOrder::Ordered).is_err(),
+                compare(&case.expected, &table, RowOrder::Ordered).is_err(),
                 "{}: an empty result must not pass",
                 case.case.id
             );

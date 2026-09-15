@@ -12,5 +12,7 @@ workspace = true
 [dependencies]
 opengrid-types = { path = "../opengrid-types" }
 opengrid-query = { path = "../opengrid-query" }
+# The docking point of the suite: every engine answers through this trait (point 09).
+opengrid-datasource = { path = "../opengrid-datasource" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

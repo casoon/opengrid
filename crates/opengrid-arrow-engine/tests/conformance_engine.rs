@@ -1,18 +1,17 @@
-//! Point 07/08 closure: the **whole** conformance suite against the local engine.
+//! Point 07/08 closure: the **whole** conformance suite against the local engine,
+//! driven through the `DataSource` trait it implements (point 09).
 //!
-//! The suite's cases run through `opengrid_conformance::Engine`, the docking
-//! point every engine implements (the local one here, PostgreSQL in point 26).
-//! Since point 08 this runner skips nothing: grouping and aggregation are part
-//! of the engine, and the run counts what it answered against what the suite
-//! holds.
+//! Since point 08 this runner skips nothing: grouping and aggregation are part of
+//! the engine, and the run counts what it answered against what the suite holds.
 
 mod common;
 
 use std::path::PathBuf;
 
-use arrow_array::RecordBatch;
+use opengrid_arrow_engine::datasource::LocalDataSource;
 use opengrid_arrow_engine::execute::execute;
-use opengrid_conformance::{Engine, EngineError, RowOrder, Table, check_dir, compare};
+use opengrid_conformance::{RowOrder, Table, block_on, check_dir, compare};
+use opengrid_datasource::DataSource;
 use opengrid_query::{Limits, Query, ValidatedQuery};
 use opengrid_types::{Schema, Value};
 
@@ -21,37 +20,19 @@ fn cases_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../opengrid-conformance/cases")
 }
 
-/// The local engine as an [`Engine`]: the data is the dataset, the query comes
-/// in validated. A thin adapter, because the trait of point 09
-/// (`opengrid-datasource`) is what will bind data and engine properly — until
-/// then the engine crate must not depend on the test suite to satisfy it.
-struct LocalEngine {
-    batches: Vec<RecordBatch>,
-}
-
-impl Engine for LocalEngine {
-    fn run(&self, _schema: &Schema, query: &ValidatedQuery) -> Result<Table, EngineError> {
-        let result = execute(&self.batches, query)
-            .map_err(|error| EngineError(format!("local engine: {error}")))?;
-        Ok(Table::new(
-            result
-                .schema
-                .fields()
-                .iter()
-                .map(|field| field.name.clone())
-                .collect(),
-            common::decode(&result.batches),
-        ))
-    }
+/// The local engine as a [`DataSource`], over the dataset.
+///
+/// Point 09 binds data and engine: the source holds the batches and answers with
+/// the Arrow-free result, so no adapter lives in the test any more.
+fn source() -> LocalDataSource {
+    LocalDataSource::new(common::csv_batches()).expect("the dataset has batches")
 }
 
 /// Every case of the suite, answered by the engine — nothing skipped.
 #[test]
 fn the_local_engine_answers_the_whole_suite() {
     let schema = common::schema();
-    let engine = LocalEngine {
-        batches: common::csv_batches(),
-    };
+    let source = source();
     let checked = check_dir(&cases_dir(), &schema).expect("the cases load");
 
     let mut ran = 0usize;
@@ -62,8 +43,8 @@ fn the_local_engine_answers_the_whole_suite() {
         } else {
             RowOrder::Unordered
         };
-        match engine.run(&schema, &case.query) {
-            Ok(result) => match compare(&case.expected, &result, order) {
+        match block_on(source.execute(case.query.clone())) {
+            Ok(result) => match compare(&case.expected, &Table::from(&result), order) {
                 Ok(()) => ran += 1,
                 Err(mismatch) => failed.push(format!("{}: {mismatch}", case.case.id)),
             },

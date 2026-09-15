@@ -6,14 +6,20 @@
 //! suite exists. It pins the rules down as executable cases: a hand-built
 //! dataset, one query per rule, and the expected table.
 //!
-//! The engines that will run these cases arrive in points 07, 08 and 26. Until
-//! then the suite runs in **validation mode**: it loads every case, validates its
-//! query against the dataset schema and reads the expected values against the
-//! query's output types. [`Engine`] is the docking point, and it is deliberately
-//! a placeholder — the real traits land in `opengrid-datasource` (point 09).
+//! The engines that answer these cases are the
+//! [`DataSource`](opengrid_datasource::DataSource) implementations of point 09:
+//! the local Arrow engine in `opengrid-arrow-engine`, PostgreSQL in point 26,
+//! later MySQL and Mongo. This crate stays engine-neutral — it holds the cases,
+//! the comparison and [`Table`], plus [`block_on`], the bridge between the suite's
+//! synchronous runners and the engines' async trait (decision E5). Before point
+//! 09 it ran in **validation mode** only: every case was loaded and its query
+//! validated, without an engine to compare against.
 
-use opengrid_query::ValidatedQuery;
-use opengrid_types::{FieldName, Schema, Value};
+use std::future::Future;
+use std::task::{Context, Poll, Waker};
+
+use opengrid_datasource::QueryResult;
+use opengrid_types::{FieldName, Value};
 
 mod case;
 
@@ -35,27 +41,46 @@ impl Table {
     }
 }
 
-/// What an [`Engine`] fails with.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct EngineError(pub String);
-
-impl std::fmt::Display for EngineError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
+/// The comparison form of a [`QueryResult`]: rows instead of columns.
+///
+/// The wire format is column-oriented (E14), the suite's expectations are rows in
+/// a table — this is the bridge every runner takes.
+impl From<&QueryResult> for Table {
+    fn from(result: &QueryResult) -> Self {
+        Table::new(
+            result
+                .schema
+                .fields()
+                .iter()
+                .map(|field| field.name.clone())
+                .collect(),
+            (0..result.row_count())
+                .map(|row| {
+                    result
+                        .columns
+                        .iter()
+                        .map(|column| column[row].clone())
+                        .collect()
+                })
+                .collect(),
+        )
     }
 }
 
-impl std::error::Error for EngineError {}
-
-/// A component that executes a validated query.
+/// Runs a future to completion, for a future that never yields.
 ///
-/// Implemented by the local Arrow engine (point 07/08), the PostgreSQL compiler
-/// and execution (point 26) and later MySQL/Mongo. Implemented against
-/// [`ValidatedQuery`], never against the raw [`opengrid_query::Query`], so that
-/// no engine can skip validation.
-pub trait Engine {
-    /// Runs a validated query against a schema.
-    fn run(&self, schema: &Schema, query: &ValidatedQuery) -> Result<Table, EngineError>;
+/// The engines are async (decision E5), the suite's runners are plain `#[test]`
+/// functions. A **local** data source must not await anything: its futures are
+/// ready on the first poll, which is what this relies on — a future that pends
+/// panics with a message instead of hanging. This is not a general-purpose
+/// runtime; the runner of point 26 brings its own.
+pub fn block_on<F: Future>(future: F) -> F::Output {
+    let mut context = Context::from_waker(Waker::noop());
+    let mut future = Box::pin(future);
+    match future.as_mut().poll(&mut context) {
+        Poll::Ready(output) => output,
+        Poll::Pending => panic!("a data source awaited; the suite's runners are synchronous"),
+    }
 }
 
 /// Whether row order is part of an expectation.
