@@ -374,7 +374,10 @@ impl Serialize for Value {
             Value::Null => serializer.serialize_none(),
             Value::Bool(v) => serializer.serialize_bool(*v),
             Value::Int64(v) => serializer.serialize_i64(*v),
-            Value::Float64(v) => serializer.serialize_f64(*v),
+            Value::Float64(v) => match non_finite_name(*v) {
+                Some(name) => serializer.serialize_str(name),
+                None => serializer.serialize_f64(*v),
+            },
             Value::Decimal(v) => serializer.serialize_str(&v.to_string()),
             Value::Utf8(v) => serializer.serialize_str(v),
             Value::Date(v) => serializer.serialize_str(&v.to_string()),
@@ -451,6 +454,35 @@ impl<'de> Visitor<'de> for RawVisitor {
     }
 }
 
+/// The JSON notation for a non-finite `Float64`.
+///
+/// JSON has no `NaN` and no infinities, so a `serialize_f64` would silently emit
+/// `null` and turn a NaN into a NULL — a different value with different semantics
+/// (rule S1 vs S7). Non-finite floats therefore travel as strings, in both
+/// directions (plan/spezifikation/02-query-modell.md §Typsystem).
+fn non_finite_name(value: f64) -> Option<&'static str> {
+    if value.is_nan() {
+        Some("NaN")
+    } else if value == f64::INFINITY {
+        Some("Infinity")
+    } else if value == f64::NEG_INFINITY {
+        Some("-Infinity")
+    } else {
+        None
+    }
+}
+
+/// The inverse of [`non_finite_name`]. `None` for any other string, so a typo in a
+/// query literal stays a type mismatch.
+fn parse_non_finite(name: &str) -> Option<f64> {
+    match name {
+        "NaN" => Some(f64::NAN),
+        "Infinity" => Some(f64::INFINITY),
+        "-Infinity" => Some(f64::NEG_INFINITY),
+        _ => None,
+    }
+}
+
 fn coerce(raw: Raw, data_type: &DataType) -> Result<Value, ValueError> {
     let mismatch = |found: &'static str| ValueError::TypeMismatch {
         expected: *data_type,
@@ -466,6 +498,9 @@ fn coerce(raw: Raw, data_type: &DataType) -> Result<Value, ValueError> {
         (Raw::Float(f), DataType::Float64) => Ok(Value::Float64(f)),
         (Raw::Int(i), DataType::Float64) => Ok(Value::Float64(i as f64)),
         (Raw::UInt(u), DataType::Float64) => Ok(Value::Float64(u as f64)),
+        (Raw::Str(s), DataType::Float64) => parse_non_finite(&s)
+            .map(Value::Float64)
+            .ok_or_else(|| mismatch("string")),
         (Raw::Str(s), DataType::Utf8) => Ok(Value::Utf8(s)),
         (Raw::Str(s), DataType::Decimal { precision, scale }) => {
             let parsed = parse_decimal(&s)?;
@@ -534,5 +569,54 @@ mod tests {
         assert_eq!(ts.micros() % 1_000_000, 500_000);
         assert!(Timestamp::parse("2024-01-15T10:30:00").is_err());
         assert!(Timestamp::parse("2024-01-15 10:30:00Z").is_err());
+    }
+
+    #[test]
+    fn non_finite_floats_survive_the_json_round_trip() {
+        for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 1.5, -0.0] {
+            let json = serde_json::to_string(&Value::Float64(value)).unwrap();
+            let back = Value::deserialize_typed(
+                serde_json::from_str::<serde_json::Value>(&json).unwrap(),
+                &DataType::Float64,
+            )
+            .unwrap();
+            match back {
+                Value::Float64(back) => assert!(
+                    back == value || (back.is_nan() && value.is_nan()),
+                    "{json} came back as {back}"
+                ),
+                other => panic!("{json} came back as {other:?}"),
+            }
+        }
+        // A NaN must not quietly become a NULL: that would change rule S7 into S1.
+        assert_eq!(
+            serde_json::to_string(&Value::Float64(f64::NAN)).unwrap(),
+            "\"NaN\""
+        );
+    }
+
+    #[test]
+    fn only_the_three_non_finite_spellings_are_accepted_for_floats() {
+        for (text, expected) in [("NaN", f64::NAN), ("Infinity", f64::INFINITY)] {
+            let value = Value::deserialize_typed(
+                serde_json::Value::String(text.to_owned()),
+                &DataType::Float64,
+            )
+            .unwrap();
+            match value {
+                Value::Float64(value) => assert!(
+                    value == expected || (value.is_nan() && expected.is_nan()),
+                    "{text}"
+                ),
+                other => panic!("{text} came back as {other:?}"),
+            }
+        }
+        assert!(
+            Value::deserialize_typed(
+                serde_json::Value::String("nan".to_owned()),
+                &DataType::Float64
+            )
+            .is_err()
+        );
     }
 }
