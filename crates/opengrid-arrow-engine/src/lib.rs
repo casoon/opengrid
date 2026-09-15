@@ -7,4 +7,5 @@
 //! pulls in no browser dependency (`web-sys`/`js-sys`), see
 //! plan/spezifikation/11-crates.md §Portabilität.
 
+pub mod execute;
 pub mod ingest;

@@ -10,8 +10,11 @@ workspace = true
 
 [dependencies]
 opengrid-types = { path = "../opengrid-types", features = ["arrow"] }
+opengrid-query = { path = "../opengrid-query" }
 arrow-array = "59"
 arrow-schema = "59"
+arrow-ord = "59"
+arrow-select = "59"
 serde_json = "1"
 
 [dev-dependencies]

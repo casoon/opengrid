@@ -58,7 +58,7 @@ use arrow_array::RecordBatch;
 use arrow_schema::Schema as ArrowSchema;
 use opengrid_types::{DataType, Field, FieldName, Schema, Value};
 
-mod batch;
+pub(crate) mod batch;
 mod cell;
 mod csv;
 mod json;
