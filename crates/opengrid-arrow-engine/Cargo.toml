@@ -19,3 +19,4 @@ serde_json = "1"
 
 [dev-dependencies]
 opengrid-conformance = { path = "../opengrid-conformance" }
+proptest = "1"

@@ -199,9 +199,18 @@ fn without_a_header_the_records_start_at_line_one() {
     );
 }
 
+/// An input without records is an empty *table*, not a missing one: the batch
+/// carries the columns, so a query can still be answered against it (rule S11
+/// needs that — point 08 changed this from "no batch at all").
 #[test]
-fn input_without_records_yields_no_batch() {
-    assert!(csv("").unwrap().is_empty());
-    assert!(csv("id,note\n").unwrap().is_empty());
-    assert!(json("[]").unwrap().is_empty());
+fn input_without_records_yields_one_empty_batch() {
+    for batches in [
+        csv("").unwrap(),
+        csv("id,note\n").unwrap(),
+        json("[]").unwrap(),
+    ] {
+        assert_eq!(batches.len(), 1);
+        assert_eq!(batches[0].num_rows(), 0);
+        assert_eq!(batches[0].num_columns(), 2, "the columns survive");
+    }
 }

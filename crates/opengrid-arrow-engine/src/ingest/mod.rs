@@ -191,7 +191,10 @@ impl std::error::Error for IngestError {}
 
 /// Reads CSV bytes into batches of the given schema.
 ///
-/// Returns no batch at all for an input without records.
+/// An input without records still yields **one empty batch**: a declared schema
+/// with no rows is an *empty table*, not a missing one. The executor needs the
+/// columns to answer a query at all, and rule S11 asks an aggregate without
+/// `group` for exactly one row even over an empty input (plan point 08).
 pub fn load_csv(
     bytes: &[u8],
     schema: &Schema,
@@ -206,7 +209,7 @@ pub fn load_csv(
     if options.has_header {
         match records.next() {
             Some(header) => check_header(schema, &header.fields, header.line)?,
-            None => return Ok(Vec::new()),
+            None => return batches(schema, &[], options.batch_size),
         }
     }
     let mut rows = Vec::new();
@@ -219,7 +222,7 @@ pub fn load_csv(
 /// Reads JSON bytes — an array of objects in the column-oriented wire format
 /// (E6/E13) — into batches of the given schema.
 ///
-/// Returns no batch at all for an empty array.
+/// An empty array yields one empty batch, like an empty CSV file.
 pub fn load_json(
     bytes: &[u8],
     schema: &Schema,
@@ -425,6 +428,12 @@ fn batches(
     batch_size: usize,
 ) -> Result<Vec<RecordBatch>, IngestError> {
     let arrow: ArrowSchema = schema.into();
+    if rows.is_empty() {
+        // The empty table keeps its columns — see `load_csv`.
+        let batch =
+            batch::build(schema, &arrow, &[]).map_err(|message| IngestError::Schema { message })?;
+        return Ok(vec![batch]);
+    }
     rows.chunks(batch_size.max(1))
         .map(|chunk| {
             batch::build(schema, &arrow, chunk).map_err(|message| IngestError::Schema { message })

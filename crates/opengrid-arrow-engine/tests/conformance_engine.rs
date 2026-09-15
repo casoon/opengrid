@@ -1,17 +1,17 @@
-//! Point 07 closure: the conformance suite against the **local engine**.
+//! Point 07/08 closure: the **whole** conformance suite against the local engine.
 //!
 //! The suite's cases run through `opengrid_conformance::Engine`, the docking
 //! point every engine implements (the local one here, PostgreSQL in point 26).
-//! The runner reports what it ran and what it skipped: point 08 owns grouping
-//! and aggregation, so those cases are counted and named, never silently
-//! dropped.
+//! Since point 08 this runner skips nothing: grouping and aggregation are part
+//! of the engine, and the run counts what it answered against what the suite
+//! holds.
 
 mod common;
 
 use std::path::PathBuf;
 
 use arrow_array::RecordBatch;
-use opengrid_arrow_engine::execute::{ExecuteError, execute};
+use opengrid_arrow_engine::execute::execute;
 use opengrid_conformance::{Engine, EngineError, RowOrder, Table, check_dir, compare};
 use opengrid_query::{Limits, Query, ValidatedQuery};
 use opengrid_types::{Schema, Value};
@@ -22,9 +22,9 @@ fn cases_dir() -> PathBuf {
 }
 
 /// The local engine as an [`Engine`]: the data is the dataset, the query comes
-/// in validated. A thin adapter, because the trait of point 09 (`opengrid-datasource`)
-/// is what will bind data and engine properly — until then the engine crate must
-/// not depend on the test suite to satisfy it.
+/// in validated. A thin adapter, because the trait of point 09
+/// (`opengrid-datasource`) is what will bind data and engine properly — until
+/// then the engine crate must not depend on the test suite to satisfy it.
 struct LocalEngine {
     batches: Vec<RecordBatch>,
 }
@@ -45,9 +45,9 @@ impl Engine for LocalEngine {
     }
 }
 
-/// Every case that needs no grouping, answered by the engine.
+/// Every case of the suite, answered by the engine — nothing skipped.
 #[test]
-fn the_local_engine_answers_every_case_without_grouping() {
+fn the_local_engine_answers_the_whole_suite() {
     let schema = common::schema();
     let engine = LocalEngine {
         batches: common::csv_batches(),
@@ -55,70 +55,47 @@ fn the_local_engine_answers_every_case_without_grouping() {
     let checked = check_dir(&cases_dir(), &schema).expect("the cases load");
 
     let mut ran = 0usize;
-    let mut skipped: Vec<String> = Vec::new();
+    let mut failed: Vec<String> = Vec::new();
     for case in &checked {
-        if !case.query.group.is_empty() || !case.query.aggregate.is_empty() {
-            skipped.push(case.case.id.clone());
-            continue;
-        }
-        let result = engine
-            .run(&schema, &case.query)
-            .unwrap_or_else(|error| panic!("{}: {error}", case.case.id));
         let order = if case.case.ordered {
             RowOrder::Ordered
         } else {
             RowOrder::Unordered
         };
-        compare(&case.expected, &result, order)
-            .unwrap_or_else(|mismatch| panic!("{}: {mismatch}", case.case.id));
-        ran += 1;
+        match engine.run(&schema, &case.query) {
+            Ok(result) => match compare(&case.expected, &result, order) {
+                Ok(()) => ran += 1,
+                Err(mismatch) => failed.push(format!("{}: {mismatch}", case.case.id)),
+            },
+            Err(error) => failed.push(format!("{}: {error}", case.case.id)),
+        }
     }
 
     println!(
-        "conformance (local engine): {ran} of {} cases ran, {} skipped — group/aggregate, point 08: {skipped:?}",
+        "conformance (local engine): {ran} of {} cases answered, {} failed",
         checked.len(),
-        skipped.len()
+        failed.len()
     );
 
-    assert_eq!(
-        ran + skipped.len(),
-        checked.len(),
-        "every case has to be either run or reported as skipped"
-    );
     assert!(
-        ran >= 30,
-        "the executor has to carry the suite; only {ran} cases ran"
+        failed.is_empty(),
+        "{} of {} cases failed:\n{}",
+        failed.len(),
+        checked.len(),
+        failed.join("\n")
     );
     assert_eq!(
-        skipped.len(),
-        12,
-        "the grouping cases moved (S10 grouping, S11 aggregates, S12 result types) — \
-         adjust this count deliberately: {skipped:?}"
+        ran,
+        checked.len(),
+        "the whole suite runs against the local engine — no case may be skipped"
     );
+    assert!(ran >= 40, "the suite is smaller than expected: {ran}");
 }
 
-/// The engine refuses a grouping query instead of answering half of it.
+/// `total_count` is the result size, not the page — that is what the grid shows
+/// next to the page number.
 #[test]
-fn a_grouping_query_is_refused_not_half_answered() {
-    let schema = common::schema();
-    let batches = common::csv_batches();
-    let query = validate(
-        r#"{"source":"orders","select":["country"],"group":["country"]}"#,
-        &schema,
-    );
-
-    match execute(&batches, &query) {
-        Err(ExecuteError::Unsupported { feature }) => {
-            assert!(feature.contains("point 08"), "{feature}");
-        }
-        other => panic!("expected a refusal, got {other:?}"),
-    }
-}
-
-/// `total_count` is the filter result, not the page — that is what the grid
-/// shows next to the page number.
-#[test]
-fn total_count_counts_the_filter_result_not_the_page() {
+fn total_count_counts_the_result_not_the_page() {
     let schema = common::schema();
     let batches = common::csv_batches();
     let query = validate(
@@ -143,6 +120,40 @@ fn total_count_counts_the_filter_result_not_the_page() {
         .count() as u64;
     assert!(de > 3, "the fixture has more than one page of DE rows");
     assert_eq!(result.total_count, de);
+}
+
+/// Paging and sorting act on the aggregate result, and `total_count` counts the
+/// groups — not the input rows.
+#[test]
+fn paging_and_sorting_act_on_the_aggregate() {
+    let schema = common::schema();
+    let batches = common::csv_batches();
+    let query = validate(
+        r#"{"source":"orders","select":["country","revenue"],
+            "group":["country"],
+            "aggregate":[{"field":"amount","fn":"sum","as":"revenue"}],
+            "sort":[{"field":"revenue","direction":"desc"}],"limit":2}"#,
+        &schema,
+    );
+
+    let result = execute(&batches, &query).expect("the engine runs the query");
+    assert_eq!(result.batches[0].num_rows(), 2, "the page is two groups");
+    assert!(
+        result.total_count > 2,
+        "there are more groups than one page"
+    );
+
+    // Sorted by revenue, descending: the first page carries the two largest.
+    let rows = common::decode(&result.batches);
+    let first = match rows[0][1] {
+        Value::Decimal(value) => value.value(),
+        ref other => panic!("{other:?}"),
+    };
+    let second = match rows[1][1] {
+        Value::Decimal(value) => value.value(),
+        ref other => panic!("{other:?}"),
+    };
+    assert!(first >= second, "{first} should not come after {second}");
 }
 
 fn validate(json: &str, schema: &Schema) -> ValidatedQuery {

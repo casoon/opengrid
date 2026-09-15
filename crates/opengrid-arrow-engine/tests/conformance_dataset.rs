@@ -9,7 +9,7 @@ mod common;
 
 use arrow_array::RecordBatch;
 use arrow_schema::{DataType as ArrowDataType, TimeUnit};
-use opengrid_arrow_engine::ingest::{CsvOptions, load_csv};
+use opengrid_arrow_engine::ingest::{CsvOptions, JsonOptions, load_csv, load_json};
 use opengrid_conformance::values_equal;
 use opengrid_types::{DataType, Decimal, Timestamp, Value};
 
@@ -156,6 +156,23 @@ fn batches_are_cut_at_the_requested_size() {
     for (index, row) in rows.iter().enumerate() {
         assert_eq!(row[0], Value::Int64(index as i64 + 1), "row {index}");
     }
+}
+
+/// An input without records is an empty *table*, not a missing one: the schema
+/// survives, so a query can still be answered against it (rule S11 needs that).
+#[test]
+fn an_input_without_records_is_an_empty_table() {
+    let header = b"id,customer,country,amount,qty,ratio,flag,ordered_on,created_at,note\n";
+    let from_csv = load_csv(header.as_slice(), &common::schema(), CsvOptions::default())
+        .expect("the empty CSV loads");
+    let from_json = load_json(b"[]".as_slice(), &common::schema(), JsonOptions::default())
+        .expect("the empty array loads");
+
+    assert_eq!(from_csv.len(), 1);
+    assert_eq!(from_json.len(), 1);
+    assert_eq!(from_csv[0].num_rows(), 0);
+    assert_eq!(from_json[0].num_rows(), 0);
+    assert_eq!(from_csv[0].schema(), from_json[0].schema());
 }
 
 /// The schema has to fit the file, otherwise ingest silently shifts columns.

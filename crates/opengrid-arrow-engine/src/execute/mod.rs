@@ -17,6 +17,7 @@
 //! paging), S13/S14 (string comparison, empty string) are implemented in
 //! [`filter`] and [`order`], each with the rule in its doc comment.
 
+mod aggregate;
 mod filter;
 mod order;
 
@@ -47,13 +48,12 @@ pub struct QueryResult {
 /// What the executor refuses to do.
 #[derive(Debug)]
 pub enum ExecuteError {
-    /// The query needs something this executor does not have yet. Point 08 adds
-    /// `group`/`aggregate`, later points add the rest.
-    Unsupported { feature: String },
     /// There is no data to run the query against.
     NoBatches,
     /// The query names a column the data does not carry.
     MissingField { field: String },
+    /// The data carries a column type the query model does not know.
+    UnknownType { field: String, found: ArrowDataType },
     /// A column carries a type the query was not validated against.
     TypeMismatch {
         field: String,
@@ -69,12 +69,12 @@ pub enum ExecuteError {
 impl std::fmt::Display for ExecuteError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ExecuteError::Unsupported { feature } => {
-                write!(f, "not supported yet: {feature}")
-            }
             ExecuteError::NoBatches => f.write_str("no batch to execute against"),
             ExecuteError::MissingField { field } => {
                 write!(f, "no column named {field:?}")
+            }
+            ExecuteError::UnknownType { field, found } => {
+                write!(f, "column {field:?} has the unknown type {found}")
             }
             ExecuteError::TypeMismatch {
                 field,
@@ -118,11 +118,6 @@ pub fn execute(
     batches: &[RecordBatch],
     query: &ValidatedQuery,
 ) -> Result<QueryResult, ExecuteError> {
-    if !query.group.is_empty() || !query.aggregate.is_empty() {
-        return Err(ExecuteError::Unsupported {
-            feature: "group and aggregate (plan point 08)".to_owned(),
-        });
-    }
     let Some(first) = batches.first() else {
         return Err(ExecuteError::NoBatches);
     };
@@ -132,6 +127,12 @@ pub fn execute(
     if let Some(filter) = &query.filter {
         let mask = filter::evaluate(filter, &batch)?;
         batch = filter_record_batch(&batch, &mask)?;
+    }
+
+    // Rules S10–S12: grouping and aggregation, when the query asks for them.
+    // They run *before* the sort, so `sort` can name an aggregate alias.
+    if !query.group.is_empty() || !query.aggregate.is_empty() {
+        batch = aggregate::run(&batch, query)?;
     }
 
     // Before paging: this is the number the grid shows next to the page.
@@ -168,6 +169,18 @@ fn page(batch: &RecordBatch, offset: Option<u64>, limit: Option<u64>) -> RecordB
         None => len - offset,
     };
     batch.slice(offset, length)
+}
+
+/// The query-model type of one input column.
+///
+/// A column whose Arrow type has no counterpart in the query model cannot be
+/// filtered, grouped or aggregated — that is an error, not a guess.
+pub(crate) fn data_type_of(batch: &RecordBatch, index: usize) -> Result<DataType, ExecuteError> {
+    let field = batch.schema().field(index).clone();
+    DataType::from_arrow(field.data_type()).ok_or_else(|| ExecuteError::UnknownType {
+        field: field.name().clone(),
+        found: field.data_type().clone(),
+    })
 }
 
 /// Keeps the output columns, in the order the query declares them.
