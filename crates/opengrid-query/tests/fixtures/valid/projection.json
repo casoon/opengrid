@@ -1,0 +1,7 @@
+{
+  "source": "orders",
+  "select": [
+    "customer",
+    "amount"
+  ]
+}

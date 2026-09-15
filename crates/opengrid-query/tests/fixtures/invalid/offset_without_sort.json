@@ -1,0 +1,10 @@
+{
+  "expect": "OffsetWithoutSort",
+  "query": {
+    "source": "orders",
+    "select": [
+      "customer"
+    ],
+    "offset": 5
+  }
+}

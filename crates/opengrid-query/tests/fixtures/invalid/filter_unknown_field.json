@@ -1,0 +1,14 @@
+{
+  "expect": "UnknownField",
+  "query": {
+    "source": "orders",
+    "select": [
+      "customer"
+    ],
+    "filter": {
+      "field": "nope",
+      "op": "eq",
+      "value": 1
+    }
+  }
+}

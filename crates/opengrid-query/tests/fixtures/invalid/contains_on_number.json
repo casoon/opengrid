@@ -1,0 +1,14 @@
+{
+  "expect": "OperatorNotSupported",
+  "query": {
+    "source": "orders",
+    "select": [
+      "customer"
+    ],
+    "filter": {
+      "field": "amount",
+      "op": "contains",
+      "value": "1"
+    }
+  }
+}

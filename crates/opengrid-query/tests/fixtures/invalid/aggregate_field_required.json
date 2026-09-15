@@ -1,0 +1,18 @@
+{
+  "expect": "AggregateFieldRequired",
+  "query": {
+    "source": "orders",
+    "select": [
+      "customer"
+    ],
+    "group": [
+      "customer"
+    ],
+    "aggregate": [
+      {
+        "fn": "sum",
+        "as": "total"
+      }
+    ]
+  }
+}

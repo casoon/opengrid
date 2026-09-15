@@ -1,0 +1,24 @@
+{
+  "expect": "DuplicateAlias",
+  "query": {
+    "source": "orders",
+    "select": [
+      "customer"
+    ],
+    "group": [
+      "customer"
+    ],
+    "aggregate": [
+      {
+        "field": "amount",
+        "fn": "sum",
+        "as": "revenue"
+      },
+      {
+        "field": "amount",
+        "fn": "max",
+        "as": "revenue"
+      }
+    ]
+  }
+}

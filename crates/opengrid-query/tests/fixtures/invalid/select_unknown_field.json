@@ -1,0 +1,9 @@
+{
+  "expect": "UnknownField",
+  "query": {
+    "source": "orders",
+    "select": [
+      "nope"
+    ]
+  }
+}

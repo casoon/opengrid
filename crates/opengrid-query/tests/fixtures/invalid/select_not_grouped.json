@@ -1,0 +1,19 @@
+{
+  "expect": "SelectNotGrouped",
+  "query": {
+    "source": "orders",
+    "select": [
+      "amount"
+    ],
+    "group": [
+      "customer"
+    ],
+    "aggregate": [
+      {
+        "field": "amount",
+        "fn": "sum",
+        "as": "revenue"
+      }
+    ]
+  }
+}

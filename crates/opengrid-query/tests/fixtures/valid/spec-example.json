@@ -1,0 +1,37 @@
+{
+  "source": "orders",
+  "select": [
+    "customer"
+  ],
+  "filter": {
+    "and": [
+      {
+        "field": "country",
+        "op": "eq",
+        "value": "DE"
+      },
+      {
+        "field": "amount",
+        "op": "gt",
+        "value": 100
+      }
+    ]
+  },
+  "group": [
+    "customer"
+  ],
+  "aggregate": [
+    {
+      "field": "amount",
+      "fn": "sum",
+      "as": "revenue"
+    }
+  ],
+  "sort": [
+    {
+      "field": "revenue",
+      "direction": "desc"
+    }
+  ],
+  "limit": 100
+}

@@ -1,0 +1,37 @@
+{
+  "source": "orders",
+  "select": [
+    "customer"
+  ],
+  "group": [
+    "customer"
+  ],
+  "aggregate": [
+    {
+      "field": "amount",
+      "fn": "sum",
+      "as": "revenue"
+    },
+    {
+      "fn": "count",
+      "as": "orders"
+    },
+    {
+      "field": "amount",
+      "fn": "avg",
+      "as": "mean"
+    },
+    {
+      "field": "amount",
+      "fn": "max",
+      "as": "largest"
+    }
+  ],
+  "sort": [
+    {
+      "field": "orders",
+      "direction": "desc",
+      "nulls": "first"
+    }
+  ]
+}

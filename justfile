@@ -10,7 +10,7 @@ check:
 
 # Build aller wasm-fähigen Crates für wasm32-unknown-unknown.
 wasm-check:
-    cargo build --target wasm32-unknown-unknown -p opengrid-types
+    cargo build --target wasm32-unknown-unknown -p opengrid-types -p opengrid-query
 
 # Quellcode formatieren.
 fmt:

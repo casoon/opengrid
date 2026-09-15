@@ -1,0 +1,30 @@
+{
+  "expect": "FilterTooDeep",
+  "query": {
+    "source": "orders",
+    "select": [
+      "customer"
+    ],
+    "filter": {
+      "not": {
+        "not": {
+          "not": {
+            "not": {
+              "not": {
+                "not": {
+                  "not": {
+                    "not": {
+                      "field": "amount",
+                      "op": "gt",
+                      "value": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

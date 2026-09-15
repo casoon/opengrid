@@ -1,0 +1,10 @@
+{
+  "expect": "DuplicateOutputColumn",
+  "query": {
+    "source": "orders",
+    "select": [
+      "customer",
+      "customer"
+    ]
+  }
+}

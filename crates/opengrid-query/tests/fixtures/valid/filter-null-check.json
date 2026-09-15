@@ -1,0 +1,12 @@
+{
+  "source": "orders",
+  "select": [
+    "customer"
+  ],
+  "filter": {
+    "not": {
+      "field": "note",
+      "op": "is_null"
+    }
+  }
+}

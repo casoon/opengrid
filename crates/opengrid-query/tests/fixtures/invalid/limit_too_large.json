@@ -1,0 +1,10 @@
+{
+  "expect": "LimitTooLarge",
+  "query": {
+    "source": "orders",
+    "select": [
+      "customer"
+    ],
+    "limit": 100001
+  }
+}

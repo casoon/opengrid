@@ -1,0 +1,14 @@
+{
+  "expect": "SortUnknownColumn",
+  "query": {
+    "source": "orders",
+    "select": [
+      "customer"
+    ],
+    "sort": [
+      {
+        "field": "revenue"
+      }
+    ]
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "source": "orders",
+  "select": [
+    "revenue",
+    "customer"
+  ],
+  "group": [
+    "customer"
+  ],
+  "aggregate": [
+    {
+      "field": "amount",
+      "fn": "sum",
+      "as": "revenue"
+    }
+  ]
+}

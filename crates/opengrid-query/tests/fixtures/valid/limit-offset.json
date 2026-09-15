@@ -1,0 +1,13 @@
+{
+  "source": "orders",
+  "select": [
+    "customer"
+  ],
+  "sort": [
+    {
+      "field": "customer"
+    }
+  ],
+  "offset": 20,
+  "limit": 10
+}

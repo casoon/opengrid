@@ -1,0 +1,20 @@
+{
+  "source": "orders",
+  "select": [
+    "customer"
+  ],
+  "filter": {
+    "and": [
+      {
+        "field": "customer",
+        "op": "starts_with",
+        "value": "A"
+      },
+      {
+        "field": "customer",
+        "op": "contains",
+        "value": "g"
+      }
+    ]
+  }
+}

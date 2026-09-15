@@ -1,0 +1,18 @@
+{
+  "source": "orders",
+  "select": [
+    "customer",
+    "note"
+  ],
+  "sort": [
+    {
+      "field": "note",
+      "nulls": "first",
+      "collation": "binary"
+    },
+    {
+      "field": "customer",
+      "direction": "desc"
+    }
+  ]
+}

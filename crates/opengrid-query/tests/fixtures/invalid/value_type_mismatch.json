@@ -1,0 +1,14 @@
+{
+  "expect": "ValueTypeMismatch",
+  "query": {
+    "source": "orders",
+    "select": [
+      "customer"
+    ],
+    "filter": {
+      "field": "amount",
+      "op": "eq",
+      "value": "abc"
+    }
+  }
+}

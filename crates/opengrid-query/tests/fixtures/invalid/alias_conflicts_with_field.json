@@ -1,0 +1,19 @@
+{
+  "expect": "AliasConflictsWithField",
+  "query": {
+    "source": "orders",
+    "select": [
+      "customer"
+    ],
+    "group": [
+      "customer"
+    ],
+    "aggregate": [
+      {
+        "field": "amount",
+        "fn": "sum",
+        "as": "country"
+      }
+    ]
+  }
+}

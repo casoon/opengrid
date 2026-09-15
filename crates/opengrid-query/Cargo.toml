@@ -1,0 +1,17 @@
+[package]
+name = "opengrid-query"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Query AST, JSON contract and validation for opengrid"
+
+[lints]
+workspace = true
+
+[dependencies]
+opengrid-types = { path = "../opengrid-types" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+serde = { version = "1", features = ["derive"] }

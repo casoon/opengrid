@@ -1,0 +1,19 @@
+{
+  "expect": "AggregateTypeMismatch",
+  "query": {
+    "source": "orders",
+    "select": [
+      "customer"
+    ],
+    "group": [
+      "customer"
+    ],
+    "aggregate": [
+      {
+        "field": "customer",
+        "fn": "sum",
+        "as": "total"
+      }
+    ]
+  }
+}

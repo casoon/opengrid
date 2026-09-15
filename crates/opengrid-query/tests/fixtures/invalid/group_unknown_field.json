@@ -1,0 +1,12 @@
+{
+  "expect": "UnknownField",
+  "query": {
+    "source": "orders",
+    "select": [
+      "customer"
+    ],
+    "group": [
+      "nope"
+    ]
+  }
+}

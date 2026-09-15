@@ -1,0 +1,14 @@
+{
+  "source": "orders",
+  "select": [
+    "customer"
+  ],
+  "filter": {
+    "field": "country",
+    "op": "in",
+    "value": [
+      "DE",
+      "FR"
+    ]
+  }
+}
