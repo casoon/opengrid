@@ -28,9 +28,14 @@ wasm-bindgen = "=0.2.126"
 # The browser test drives the same conformance cases and the same comparison as
 # the native runner (plan/spezifikation/12-qualitaet.md §Conformance-Suite).
 opengrid-conformance = { path = "../opengrid-conformance" }
+# The browser benches measure the same deterministic rows as the native ones.
+xtask = { path = "../xtask" }
 
 # `wasm-bindgen-test` is only needed when the tests are compiled for the browser.
 # The runner is part of the pinned `wasm-bindgen-cli` (E4); a mismatching
 # `wasm-bindgen` version is what the `=0.2.126` pin above prevents (risk R7).
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 wasm-bindgen-test = "0.3"
+
+[[bench]]
+name = "engine"

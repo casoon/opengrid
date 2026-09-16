@@ -191,7 +191,11 @@
         result: document.getElementById("result"),
       };
 
+      const initStarted = performance.now();
       await init();
+      // Module download/compile/instantiate — the startup cost before the first
+      // query. Exposed so the benchmark pass (point 11) can read it.
+      window.__opengridInitMs = performance.now() - initStarted;
       const engine = new Engine();
 
       function setStatus(message, isError = false) {
@@ -302,7 +306,7 @@
       });
 
       refreshSources();
-      setStatus("Module ready.");
+      setStatus(`Module ready (WASM ${window.__opengridInitMs.toFixed(0)} ms).`);
     </script>
   </body>
 </html>

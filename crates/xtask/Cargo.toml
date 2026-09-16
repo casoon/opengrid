@@ -1,0 +1,13 @@
+[package]
+name = "xtask"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Repo tooling: deterministic benchmark data generation"
+
+[lints]
+workspace = true
+
+[dependencies]
+opengrid-types = { path = "../opengrid-types" }

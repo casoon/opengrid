@@ -37,3 +37,14 @@ wasm-build:
 # Conformance-Datensatz lädt (crates/opengrid-conformance/data/).
 serve-demo:
     python3 -m http.server 8080
+
+# Native criterion-Benchmarks der Engine (plan/spezifikation/12-qualitaet.md §Benchmarks).
+bench-native:
+    cargo bench -p opengrid-arrow-engine
+
+# Dieselben Operationen im WASM-Build, headless Chrome wie `wasm-test` (E4).
+bench-wasm:
+    CHROMEDRIVER=chromedriver cargo bench --target wasm32-unknown-unknown -p opengrid-wasm --bench engine
+
+# Beide Benchmark-Suiten nacheinander.
+bench: bench-native bench-wasm
