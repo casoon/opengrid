@@ -1,0 +1,36 @@
+[package]
+name = "opengrid-wasm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "wasm-bindgen bindings for opengrid: the engine in the browser"
+
+[lints]
+workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+opengrid-types = { path = "../opengrid-types" }
+opengrid-query = { path = "../opengrid-query" }
+opengrid-datasource = { path = "../opengrid-datasource" }
+opengrid-arrow-engine = { path = "../opengrid-arrow-engine" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Pinned to the CLI that builds the module (`just wasm-build`): the glue the
+# crate generates and the CLI that post-processes the .wasm have to be the same
+# release (plan/spezifikation/14-entscheidungen.md E4, risk R7).
+# 0.2.126 is the `wasm-bindgen` installed on this machine.
+wasm-bindgen = "=0.2.126"
+
+[dev-dependencies]
+# The browser test drives the same conformance cases and the same comparison as
+# the native runner (plan/spezifikation/12-qualitaet.md §Conformance-Suite).
+opengrid-conformance = { path = "../opengrid-conformance" }
+
+# `wasm-bindgen-test` is only needed when the tests are compiled for the browser.
+# The runner is part of the pinned `wasm-bindgen-cli` (E4); a mismatching
+# `wasm-bindgen` version is what the `=0.2.126` pin above prevents (risk R7).
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = "0.3"

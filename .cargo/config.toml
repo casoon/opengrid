@@ -1,0 +1,6 @@
+# The browser tests run through `wasm-bindgen-test-runner` (decision E4), not
+# `wasm-pack`. The runner drives a real, headless browser; Chrome is required for
+# `just wasm-test`, via a `chromedriver` on `PATH` (risk R7). On the host target
+# the runner is irrelevant and the browser-only tests compile to nothing.
+[target.wasm32-unknown-unknown]
+runner = "wasm-bindgen-test-runner"

@@ -10,8 +10,30 @@ check:
 
 # Build aller wasm-fähigen Crates für wasm32-unknown-unknown.
 wasm-check:
-    cargo build --target wasm32-unknown-unknown -p opengrid-types -p opengrid-query -p opengrid-arrow-engine -p opengrid-datasource
+    cargo build --target wasm32-unknown-unknown -p opengrid-types -p opengrid-query -p opengrid-arrow-engine -p opengrid-datasource -p opengrid-wasm
 
 # Quellcode formatieren.
 fmt:
     cargo fmt --all
+
+# Conformance-Suite und Demo-Query im echten Browser (E4): `wasm-bindgen-test-runner`
+# treibt headless Chrome über `chromedriver`. Chrome ist Pflicht, also wird der
+# Treiber explizit gewählt — sonst nimmt der Runner den vorinstallierten Safari
+# (Risiko R7).
+wasm-test:
+    CHROMEDRIVER=chromedriver cargo test --target wasm32-unknown-unknown -p opengrid-wasm --test conformance_in_browser
+
+# WASM-Modul für die Demo bauen (plan/spezifikation/14-entscheidungen.md E4):
+# cargo release -> wasm-bindgen --target web -> wasm-opt -Oz.
+# Die Crate pinnt `wasm-bindgen` auf dieselbe Version wie diese CLI; eine
+# abweichende CLI bricht mit einem Versionsfehler ab (Risiko R7).
+# `${CARGO_TARGET_DIR:-target}` respektiert ein gesetztes Zielverzeichnis.
+wasm-build:
+    cargo build --release --target wasm32-unknown-unknown -p opengrid-wasm
+    wasm-bindgen --target web --out-dir examples/engine-demo/pkg --out-name opengrid_wasm "${CARGO_TARGET_DIR:-target}/wasm32-unknown-unknown/release/opengrid_wasm.wasm"
+    wasm-opt -Oz -o examples/engine-demo/pkg/opengrid_wasm_bg.wasm examples/engine-demo/pkg/opengrid_wasm_bg.wasm
+
+# Demo lokal ausliefern. Server-Wurzel ist das Repo, weil die Demo den
+# Conformance-Datensatz lädt (crates/opengrid-conformance/data/).
+serve-demo:
+    python3 -m http.server 8080

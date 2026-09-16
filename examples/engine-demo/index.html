@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>opengrid — engine demo</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+        --line: color-mix(in srgb, currentColor 20%, transparent);
+        --muted: color-mix(in srgb, currentColor 60%, transparent);
+      }
+      body {
+        max-width: 60rem;
+        margin: 0 auto;
+        padding: 1.5rem 1rem 4rem;
+        line-height: 1.5;
+      }
+      h1 {
+        font-size: 1.4rem;
+        margin-bottom: 0.25rem;
+      }
+      p.lead {
+        color: var(--muted);
+        margin-top: 0;
+      }
+      section {
+        border: 1px solid var(--line);
+        border-radius: 0.5rem;
+        padding: 1rem;
+        margin-bottom: 1rem;
+      }
+      h2 {
+        font-size: 1rem;
+        margin: 0 0 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--muted);
+      }
+      label {
+        display: block;
+        font-size: 0.85rem;
+        color: var(--muted);
+        margin-bottom: 0.25rem;
+      }
+      textarea {
+        width: 100%;
+        box-sizing: border-box;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.8rem;
+        min-height: 11rem;
+      }
+      button {
+        font: inherit;
+        padding: 0.4rem 0.9rem;
+        border: 1px solid var(--line);
+        border-radius: 0.35rem;
+        background: color-mix(in srgb, currentColor 8%, transparent);
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: progress;
+      }
+      .row {
+        display: flex;
+        gap: 0.75rem;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-bottom: 0.75rem;
+      }
+      #status {
+        font-size: 0.9rem;
+      }
+      #status.error {
+        color: #c0392b;
+      }
+      #timing {
+        font-variant-numeric: tabular-nums;
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+      .note {
+        font-size: 0.8rem;
+        color: var(--muted);
+        margin: 0.6rem 0 0;
+      }
+      table {
+        border-collapse: collapse;
+        font-size: 0.85rem;
+        width: 100%;
+      }
+      caption {
+        text-align: left;
+        font-size: 0.85rem;
+        color: var(--muted);
+        padding-bottom: 0.4rem;
+      }
+      th,
+      td {
+        border: 1px solid var(--line);
+        padding: 0.25rem 0.5rem;
+        text-align: left;
+        font-variant-numeric: tabular-nums;
+      }
+      td.null {
+        color: var(--muted);
+        font-style: italic;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>opengrid — engine demo</h1>
+    <p class="lead">
+      The query engine of <code>opengrid</code>, compiled to WebAssembly and run
+      in this tab. Ingestion, validation, filter, sort, group, aggregate and
+      paging all happen in Rust (plan/spezifikation/08-rendering.md
+      §JavaScript-Minimum); this page only feeds bytes and JSON in and renders
+      what comes back.
+    </p>
+
+    <section>
+      <h2>1 · Data</h2>
+      <div class="row">
+        <button id="load-dataset">Load the conformance dataset</button>
+        <label for="csv" style="margin: 0">or a CSV file of your own:</label>
+        <input type="file" id="csv" accept=".csv,text/csv" />
+        <span id="sources"></span>
+      </div>
+      <label for="schema">Schema (JSON, required — ingest never guesses types)</label>
+      <textarea id="schema" spellcheck="false"></textarea>
+    </section>
+
+    <section>
+      <h2>2 · Query</h2>
+      <label for="query"
+        >Query JSON — the example from
+        <code>plan/spezifikation/02-query-modell.md</code>, adapted to the
+        dataset</label
+      >
+      <textarea id="query" spellcheck="false">{
+  "source": "orders",
+  "select": ["customer"],
+  "filter": { "and": [
+    { "field": "country", "op": "eq", "value": "DE" },
+    { "field": "amount",  "op": "gt", "value": "40" }
+  ]},
+  "group": ["customer"],
+  "aggregate": [{ "field": "amount", "fn": "sum", "as": "revenue" }],
+  "sort": [{ "field": "revenue", "direction": "desc" }],
+  "limit": 100
+}</textarea
+      >
+      <p class="note">
+        Two deviations from the specification's example, both forced by the
+        dataset: <code>amount</code> is a <code>Decimal(12,2)</code> and travels
+        as a JSON <em>string</em>, so the literal is <code>"40"</code> and not
+        <code>40</code>; and no <code>DE</code> row exceeds 100 (the largest is
+        50.00), so the threshold is lowered for the demo to show rows. The
+        original example is valid but answers zero rows — it is pinned in
+        <code>crates/opengrid-wasm/tests/queries/spec_example.json</code>.
+      </p>
+      <div class="row" style="margin-top: 0.75rem">
+        <button id="run" disabled>Run query</button>
+        <span id="status">Loading the module…</span>
+      </div>
+      <p id="timing" role="status" aria-live="polite"></p>
+    </section>
+
+    <section>
+      <h2>3 · Result</h2>
+      <div id="result"><p style="color: var(--muted)">No query run yet.</p></div>
+    </section>
+
+    <script type="module">
+      // The only JavaScript in the project's critical path: load the module,
+      // hand bytes and JSON across, render the answer (95 % Rust, 5 % JS).
+      import init, { Engine } from "./pkg/opengrid_wasm.js";
+
+      const DATASET = "../../crates/opengrid-conformance/data/";
+      const els = {
+        loadDataset: document.getElementById("load-dataset"),
+        csv: document.getElementById("csv"),
+        schema: document.getElementById("schema"),
+        sources: document.getElementById("sources"),
+        query: document.getElementById("query"),
+        run: document.getElementById("run"),
+        status: document.getElementById("status"),
+        timing: document.getElementById("timing"),
+        result: document.getElementById("result"),
+      };
+
+      await init();
+      const engine = new Engine();
+
+      function setStatus(message, isError = false) {
+        els.status.textContent = message;
+        els.status.classList.toggle("error", isError);
+      }
+
+      function refreshSources() {
+        const names = engine.source_names();
+        els.sources.textContent = names.length
+          ? `sources: ${names.join(", ")}`
+          : "no source loaded";
+        els.run.disabled = names.length === 0;
+      }
+
+      /// Reads a CSV into the engine. The schema has to be valid — a broken one
+      /// is reported as it comes back from Rust.
+      function load(name, bytes) {
+        try {
+          engine.load_csv(name, bytes, els.schema.value);
+          refreshSources();
+          setStatus(`Loaded ${name} (${bytes.length} bytes).`);
+        } catch (error) {
+          setStatus(`load_csv failed: ${error.message ?? error}`, true);
+        }
+      }
+
+      async function loadDataset() {
+        setStatus("Loading the dataset…");
+        try {
+          const [csv, schema] = await Promise.all([
+            fetch(`${DATASET}orders.csv`),
+            fetch(`${DATASET}orders.schema.json`),
+          ]);
+          if (!csv.ok || !schema.ok) {
+            throw new Error(`fetch failed (${csv.status}/${schema.status})`);
+          }
+          els.schema.value = JSON.stringify(await schema.json(), null, 2);
+          load("orders", new Uint8Array(await csv.arrayBuffer()));
+        } catch (error) {
+          setStatus(`Loading the dataset failed: ${error.message}`, true);
+        }
+      }
+
+      /// Renders the column-oriented wire shape (E6/E14) as a table.
+      function render(result) {
+        const header = result.columns
+          .map((column) => `<th scope="col">${escapeHtml(column.name)}</th>`)
+          .join("");
+        const rows = Array.from({ length: result.row_count }, (_, row) =>
+          result.columns
+            .map((column) => {
+              const value = column.values[row];
+              return value === null
+                ? '<td class="null">NULL</td>'
+                : `<td>${escapeHtml(String(value))}</td>`;
+            })
+            .join(""),
+        );
+        els.result.innerHTML = `
+          <table>
+            <caption>
+              ${result.row_count} row(s) on this page, ${result.total_count}
+              matched before paging
+            </caption>
+            <thead><tr>${header}</tr></thead>
+            <tbody>${rows.map((row) => `<tr>${row}</tr>`).join("")}</tbody>
+          </table>`;
+      }
+
+      function escapeHtml(text) {
+        return text.replace(
+          /[&<>"']/g,
+          (char) =>
+            ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;",
+              "'": "&#39;",
+            })[char],
+        );
+      }
+
+      function run() {
+        els.timing.textContent = "";
+        const started = performance.now();
+        try {
+          const json = engine.execute(els.query.value);
+          const elapsed = performance.now() - started;
+          const result = JSON.parse(json);
+          render(result);
+          setStatus("Query answered.");
+          els.timing.textContent = `execute() ${elapsed.toFixed(1)} ms · ${result.row_count} row(s), total_count ${result.total_count}`;
+        } catch (error) {
+          els.result.innerHTML =
+            '<p style="color: var(--muted)">No result.</p>';
+          setStatus(`execute failed: ${error.message ?? error}`, true);
+        }
+      }
+
+      els.loadDataset.addEventListener("click", loadDataset);
+      els.run.addEventListener("click", run);
+      els.csv.addEventListener("change", async () => {
+        const file = els.csv.files[0];
+        if (!file) return;
+        load(file.name.replace(/\.csv$/, ""), new Uint8Array(await file.arrayBuffer()));
+      });
+
+      refreshSources();
+      setStatus("Module ready.");
+    </script>
+  </body>
+</html>
