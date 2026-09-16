@@ -10,7 +10,7 @@ check:
 
 # Build aller wasm-fähigen Crates für wasm32-unknown-unknown.
 wasm-check:
-    cargo build --target wasm32-unknown-unknown -p opengrid-types -p opengrid-query -p opengrid-arrow-engine -p opengrid-datasource -p opengrid-wasm
+    cargo build --target wasm32-unknown-unknown -p opengrid-types -p opengrid-query -p opengrid-arrow-engine -p opengrid-datasource -p opengrid-wasm -p opengrid-web-core -p opengrid-web-components -p opengrid-grid
 
 # Quellcode formatieren.
 fmt:
@@ -22,6 +22,7 @@ fmt:
 # (Risiko R7).
 wasm-test:
     CHROMEDRIVER=chromedriver cargo test --target wasm32-unknown-unknown -p opengrid-wasm --test conformance_in_browser
+    CHROMEDRIVER=chromedriver cargo test --target wasm32-unknown-unknown -p opengrid-web-components --test element
 
 # WASM-Modul für die Demo bauen (plan/spezifikation/14-entscheidungen.md E4):
 # cargo release -> wasm-bindgen --target web -> wasm-opt -Oz.

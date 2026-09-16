@@ -7,6 +7,9 @@ members = [
     "crates/opengrid-conformance",
     "crates/opengrid-datasource",
     "crates/opengrid-wasm",
+    "crates/opengrid-web-core",
+    "crates/opengrid-web-components",
+    "crates/opengrid-grid",
     "crates/xtask",
 ]
 

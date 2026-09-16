@@ -1,0 +1,14 @@
+[package]
+name = "opengrid-grid"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Portable grid state, view-model and change detection for opengrid"
+
+[lints]
+workspace = true
+
+[dependencies]
+opengrid-types = { path = "../opengrid-types" }
+opengrid-query = { path = "../opengrid-query" }
+opengrid-datasource = { path = "../opengrid-datasource" }

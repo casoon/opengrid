@@ -654,6 +654,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "opengrid-grid"
+version = "0.0.0"
+dependencies = [
+ "opengrid-datasource",
+ "opengrid-query",
+ "opengrid-types",
+]
+
+[[package]]
 name = "opengrid-query"
 version = "0.0.0"
 dependencies = [
@@ -685,6 +694,29 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-test",
  "xtask",
+]
+
+[[package]]
+name = "opengrid-web-components"
+version = "0.0.0"
+dependencies = [
+ "js-sys",
+ "opengrid-datasource",
+ "opengrid-types",
+ "opengrid-web-core",
+ "wasm-bindgen",
+ "wasm-bindgen-test",
+ "web-sys",
+]
+
+[[package]]
+name = "opengrid-web-core"
+version = "0.0.0"
+dependencies = [
+ "js-sys",
+ "opengrid-types",
+ "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]

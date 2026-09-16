@@ -1,0 +1,41 @@
+[package]
+name = "opengrid-web-components"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Custom elements (<opengrid-table>, <opengrid-grid>) for opengrid"
+
+[lints]
+workspace = true
+
+[lib]
+# `cdylib` for the wasm-bindgen module `loader.js` loads, `rlib` for the browser
+# test harness and for reuse by later components.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+opengrid-web-core = { path = "../opengrid-web-core" }
+opengrid-datasource = { path = "../opengrid-datasource" }
+opengrid-types = { path = "../opengrid-types" }
+
+# Pinned to the CLI that builds the modules (E4/R7).
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "=0.2.126"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = [
+    "CustomElementRegistry",
+    "Document",
+    "DocumentFragment",
+    "Element",
+    "Event",
+    "EventTarget",
+    "HtmlElement",
+    "Node",
+    "ShadowRoot",
+    "ShadowRootInit",
+    "ShadowRootMode",
+    "Window",
+] }
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = "0.3"
