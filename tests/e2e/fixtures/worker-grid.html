@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>opengrid worker grid fixture</title>
+    <style>
+      opengrid-grid {
+        display: block;
+        height: 200px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid worker grid fixture</h1>
+      <opengrid-grid
+        label="Bestellungen"
+        datasource="orders"
+        columns="id,customer,amount,qty"
+        window-size="10"
+      ></opengrid-grid>
+    </main>
+    <script type="module">
+      // Point 19: the engine runs in a module worker, reached only through the
+      // provider seam. The page never imports the engine module and never
+      // creates an `Engine` on the main thread.
+      import { loadOpengrid, createWorkerProvider } from "/packages/opengrid/loader.js";
+
+      // Count Worker constructions so the spec can prove the engine is
+      // off-thread; the provider creates exactly one.
+      const NativeWorker = window.Worker;
+      window.__workers = [];
+      window.Worker = class extends NativeWorker {
+        constructor(...args) {
+          super(...args);
+          window.__workers.push(args[0]);
+        }
+      };
+
+      window.__mainThreadEngine = false;
+
+      async function start() {
+        const loader = await loadOpengrid();
+        const host = document.querySelector("opengrid-grid");
+        const provider = createWorkerProvider({
+          moduleUrl: "/examples/engine-demo/pkg/opengrid_wasm.js",
+          wasmUrl: "/examples/engine-demo/pkg/opengrid_wasm_bg.wasm",
+        });
+
+        const schema = await (
+          await fetch("/tests/e2e/fixtures/grid-orders.schema.json")
+        ).text();
+        const csv = await (
+          await fetch("/tests/e2e/fixtures/grid-orders.csv")
+        ).arrayBuffer();
+        await provider.load("orders", csv, schema);
+        loader.module.set_provider(host, provider);
+
+        window.__provider = provider;
+        window.__schema = schema;
+
+        // Builds a larger dataset in the page and loads it through the same
+        // worker, for the responsiveness measurement. `amount` is formatted
+        // with two decimals to match the `decimal(10, 2)` schema.
+        window.__loadLarge = async (rows) => {
+          const lines = ["id,customer,amount,qty\n"];
+          for (let i = 1; i <= rows; i += 1) {
+            lines.push(
+              `${i},C${i % 100},${((i % 1000) / 100).toFixed(2)},${i % 10}\n`,
+            );
+          }
+          const bytes = new TextEncoder().encode(lines.join(""));
+          await provider.load("large", bytes, schema);
+          return rows;
+        };
+
+        return { fallback: loader.fallback };
+      }
+
+      window.__opengridReady = start();
+    </script>
+  </body>
+</html>

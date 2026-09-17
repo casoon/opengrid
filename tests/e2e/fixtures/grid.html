@@ -32,8 +32,9 @@
     <script type="module">
       // Point 16: same provider seam as the table. loader.js loads/registers the
       // components WASM module; the engine module is the one built by
-      // `just wasm-build`.
-      import { loadOpengrid } from "/packages/opengrid/loader.js";
+      // `just wasm-build`. Point 19: the main-thread fallback path, packaged by
+      // `createLocalProvider` so it looks identical to the Worker provider.
+      import { loadOpengrid, createLocalProvider } from "/packages/opengrid/loader.js";
       import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
 
       async function start() {
@@ -41,18 +42,22 @@
 
         await init();
         const engine = new Engine();
+        const provider = createLocalProvider(engine);
         const schema = await (
           await fetch("/tests/e2e/fixtures/grid-orders.schema.json")
         ).text();
         const csv = await (
           await fetch("/tests/e2e/fixtures/grid-orders.csv")
         ).arrayBuffer();
-        engine.load_csv("orders", new Uint8Array(csv), schema);
+        await provider.load("orders", csv, schema);
+
+        // Flags for the explicit fallback assertion: the engine runs on the
+        // main thread and no Worker is created.
+        window.__mainThreadEngine = true;
+        window.__localProvider = provider;
 
         const host = document.querySelector("opengrid-grid");
-        loader.module.set_provider(host, {
-          execute: (queryJson) => engine.execute(queryJson),
-        });
+        loader.module.set_provider(host, provider);
         return { fallback: loader.fallback };
       }
 
