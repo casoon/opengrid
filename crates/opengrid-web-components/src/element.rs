@@ -36,7 +36,8 @@ use crate::table::{
     self, COLUMNS_ATTRIBUTE, DATASOURCE_ATTRIBUTE, SortDirection, TABLE_TAG, TableModel,
 };
 
-/// Registers `<opengrid-table>`; safe to call more than once.
+/// Registers `<opengrid-table>` and `<opengrid-grid>`; safe to call more than
+/// once.
 ///
 /// `loader.js` calls this after the WASM module is initialised; the browser test
 /// calls it directly.
@@ -48,20 +49,26 @@ pub fn register() -> Result<(), JsValue> {
         on_connected,
         on_disconnected,
         on_attribute_changed,
-    )
+    )?;
+    crate::grid_element::define_grid()
 }
 
-/// Attaches a data provider to a host element (point 14).
+/// Attaches a data provider to a host element (points 14/16).
 ///
 /// `provider` is a JS object with an `execute(queryJson)` method that answers a
 /// Promise (or a value). Exported as `set_provider` from the components module,
 /// so the page wires its engine before or after connect; a connected host whose
-/// `datasource`/`columns` are present re-runs its query immediately.
+/// `datasource`/`columns` are present re-runs its query immediately. The tag
+/// name decides whether the table or the grid path runs.
 #[wasm_bindgen(js_name = set_provider)]
 pub fn set_provider(host: &HtmlElement, provider: JsValue) {
     let provider: Rc<dyn DataProvider> = Rc::new(JsProvider::new(provider));
     attach_provider(host, provider);
-    run_query(host, None, None);
+    if host.tag_name().eq_ignore_ascii_case("opengrid-grid") {
+        crate::grid_element::start(host);
+    } else {
+        run_query(host, None, None);
+    }
 }
 
 /// Renders the skeleton into a fresh open shadow root and installs the sort
@@ -215,7 +222,7 @@ fn render_error(host: &HtmlElement, message: &str) {
 }
 
 /// Applies a whole patch list to the shadow root in one pass (risk R1).
-fn apply(root: &ShadowRoot, document: Document, buffer: &PatchBuffer) {
+pub(crate) fn apply(root: &ShadowRoot, document: Document, buffer: &PatchBuffer) {
     let root_node: Node = root.clone().unchecked_into();
     let mut dom = Dom::new(WebRenderer::from_document(document), root_node);
     dom.apply_buffer(buffer);
@@ -226,7 +233,7 @@ fn apply(root: &ShadowRoot, document: Document, buffer: &PatchBuffer) {
 /// One direct call, not one per cell: the patch language has no "clear"
 /// operation, and rebuilding the whole table is the smallest correct response to
 /// a sort. The data render itself is still exactly one patch list.
-fn clear_root(root: &ShadowRoot) {
+pub(crate) fn clear_root(root: &ShadowRoot) {
     while let Some(child) = root.first_child() {
         let _ = root.remove_child(&child);
     }
@@ -307,7 +314,7 @@ fn focus_header(root: &ShadowRoot, column: &str) {
 }
 
 /// The message of a rejected provider promise.
-fn describe(value: &JsValue) -> String {
+pub(crate) fn describe(value: &JsValue) -> String {
     value
         .as_string()
         .unwrap_or_else(|| "the provider rejected the query".to_owned())

@@ -23,8 +23,8 @@
 //!   decision E14; the grid never sees Arrow.
 
 use opengrid_datasource::QueryResult;
-use opengrid_query::{FilterExpr, Sort};
-use opengrid_types::{Field, Schema, Value};
+use opengrid_query::{FilterExpr, Sort, SortDirection};
+use opengrid_types::{Field, FieldName, Schema, Value};
 
 use crate::{CellRef, Patch, Window};
 
@@ -157,6 +157,77 @@ impl GridState {
         }
         self.sort = sort;
         patches
+    }
+
+    /// The single active sort key as `(field, direction)`, the direction being
+    /// the query wire token `"asc"`/`"desc"`.
+    ///
+    /// The grid mode of point 16 sorts by at most one column; a multi-column sort
+    /// is still representable through [`set_sort`](Self::set_sort), but this
+    /// accessor answers only the first key (the query and `aria-sort` need just
+    /// one).
+    pub fn single_sort(&self) -> Option<(&str, &'static str)> {
+        self.sort.first().map(|key| {
+            let direction = match key.direction {
+                SortDirection::Asc => "asc",
+                SortDirection::Desc => "desc",
+            };
+            (key.field.as_str(), direction)
+        })
+    }
+
+    /// Toggles the single-column sort of `column`: none → ascending → descending
+    /// → none, replacing any other key. An unknown column name is a no-op.
+    ///
+    /// This is the state half of the header-cell activation of point 16; the
+    /// caller re-runs its query with the new [`single_sort`](Self::single_sort).
+    pub fn toggle_sort(&mut self, column: &str) -> Vec<Patch> {
+        if self.schema.index_of(column).is_none() {
+            return Vec::new();
+        }
+        let Ok(field) = FieldName::new(column) else {
+            return Vec::new();
+        };
+        let next = match self.sort.first() {
+            Some(key) if key.field == field && key.direction == SortDirection::Asc => {
+                Some(SortDirection::Desc)
+            }
+            Some(key) if key.field == field && key.direction == SortDirection::Desc => None,
+            _ => Some(SortDirection::Asc),
+        };
+        let sort = next
+            .map(|direction| {
+                vec![Sort {
+                    field,
+                    direction,
+                    nulls: Default::default(),
+                    collation: Default::default(),
+                }]
+            })
+            .unwrap_or_default();
+        self.set_sort(sort)
+    }
+
+    /// Ensures at least one sort key, defaulting to the first schema field
+    /// ascending. Emits the sort patch when it had to set one.
+    ///
+    /// Grid mode pages with `offset`/`limit`, and rule S6 makes `offset` without
+    /// a `sort` a validation error, so the grid keeps a sort at all times: when
+    /// the user clears the sort, the grid falls back to this default instead of
+    /// querying with an empty `sort`.
+    pub fn ensure_sorted(&mut self) -> Vec<Patch> {
+        if !self.sort.is_empty() {
+            return Vec::new();
+        }
+        let Some(field) = self.schema.fields().first().map(|field| field.name.clone()) else {
+            return Vec::new();
+        };
+        self.set_sort(vec![Sort {
+            field,
+            direction: SortDirection::Asc,
+            nulls: Default::default(),
+            collation: Default::default(),
+        }])
     }
 
     /// Replaces the filter. Emits the new filter, or `None` to clear it.
@@ -379,6 +450,57 @@ mod tests {
                 sort: None,
             }]
         );
+    }
+
+    #[test]
+    fn single_sort_reads_the_first_key_as_a_wire_token() {
+        let mut state = GridState::new(schema());
+        assert_eq!(state.single_sort(), None);
+
+        state.set_sort(vec![sort("country", SortDirection::Desc)]);
+        assert_eq!(state.single_sort(), Some(("country", "desc")));
+
+        state.set_sort(vec![sort("id", SortDirection::Asc)]);
+        assert_eq!(state.single_sort(), Some(("id", "asc")));
+    }
+
+    #[test]
+    fn toggle_sort_cycles_none_asc_desc_none() {
+        let mut state = GridState::new(schema());
+
+        state.toggle_sort("country");
+        assert_eq!(state.single_sort(), Some(("country", "asc")));
+        state.toggle_sort("country");
+        assert_eq!(state.single_sort(), Some(("country", "desc")));
+        state.toggle_sort("country");
+        assert_eq!(state.single_sort(), None);
+
+        // A different column starts a fresh ascending sort.
+        state.toggle_sort("country");
+        state.toggle_sort("amount");
+        assert_eq!(state.single_sort(), Some(("amount", "asc")));
+
+        // An unknown column is a no-op.
+        assert_eq!(state.toggle_sort("missing"), Vec::new());
+        assert_eq!(state.single_sort(), Some(("amount", "asc")));
+    }
+
+    /// The grid keeps a sort at all times (S6): clearing falls back to the first
+    /// schema field ascending.
+    #[test]
+    fn ensure_sorted_defaults_to_the_first_field() {
+        let mut state = GridState::new(schema());
+        assert_eq!(state.single_sort(), None);
+
+        assert_eq!(
+            state.ensure_sorted(),
+            vec![Patch::Sort {
+                column: 0,
+                sort: Some(sort("id", SortDirection::Asc)),
+            }]
+        );
+        assert_eq!(state.single_sort(), Some(("id", "asc")));
+        assert_eq!(state.ensure_sorted(), Vec::new());
     }
 
     #[test]

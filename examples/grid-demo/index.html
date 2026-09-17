@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>opengrid — Grid-Demo (100k)</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+        --line: color-mix(in srgb, currentColor 20%, transparent);
+        --muted: color-mix(in srgb, currentColor 60%, transparent);
+        --accent: #2563eb;
+      }
+      body {
+        max-width: 64rem;
+        margin: 0 auto;
+        padding: 1.5rem 1rem 4rem;
+        line-height: 1.5;
+      }
+      h1 {
+        font-size: 1.4rem;
+        margin-bottom: 0.25rem;
+      }
+      p.lead {
+        color: var(--muted);
+        margin-top: 0;
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.85em;
+      }
+      pre {
+        background: color-mix(in srgb, currentColor 6%, transparent);
+        border: 1px solid var(--line);
+        border-radius: 0.4rem;
+        padding: 0.6rem 0.8rem;
+        overflow-x: auto;
+        font-size: 0.8rem;
+      }
+      #status {
+        font-size: 0.9rem;
+        color: var(--muted);
+        margin: 0.75rem 0;
+      }
+      #status.error {
+        color: #c0392b;
+      }
+      /* The component owns its shadow DOM; these custom properties theme it. */
+      opengrid-grid {
+        --grid-row-height: 32px;
+        display: block;
+        border: 1px solid var(--line);
+        border-radius: 0.4rem;
+        overflow: auto;
+        max-height: 60vh;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>opengrid — Grid-Demo mit 100 000 Zeilen</h1>
+    <p class="lead">
+      Ein <code>&lt;opengrid-grid&gt;</code> über der lokalen WASM-Engine. Die
+      Seite lädt einen Datensatz, steckt die Engine als Provider hinein und
+      rendert seitenweise. Bedienung vollständig per Tastatur nach dem WAI-ARIA
+      Grid Pattern (plan/spezifikation/09-accessibility.md).
+    </p>
+
+    <p id="status" role="status" aria-live="polite">Lädt …</p>
+
+    <opengrid-grid
+      label="Bestellungen"
+      datasource="orders"
+      columns="id,customer,country,amount,qty"
+      page-size="100"
+    ></opengrid-grid>
+
+    <details style="margin-top: 1rem">
+      <summary>100k-Datensatz erzeugen (optional)</summary>
+      <p>
+        Der 100k-Datensatz wird nicht eingecheckt. Ohne ihn lädt die Demo den
+        kleinen Conformance-Datensatz. Zum Erzeugen aus dem Repo-Wurzelverzeichnis:
+      </p>
+      <pre><code>mkdir -p target/grid-demo
+cargo run -p xtask -- gen-orders --rows 100000 --seed 1 --out target/grid-demo/orders-100k.csv
+just serve-demo   # dann http://127.0.0.1:8080/examples/grid-demo/ öffnen</code></pre>
+      <p>
+        Die Spalten der Query (<code>id,customer,country,amount,qty</code>) sind
+        eine Teilmenge des 10-spaltigen Schemas aus <code>xtask</code>. Der
+        Standard-Sortierschlüssel ist die erste Spalte (<code>id</code>,
+        aufsteigend): Seiten brauchen eine totale Ordnung (Regel S6).
+      </p>
+    </details>
+
+    <script type="module">
+      import { loadOpengrid } from "/packages/opengrid/loader.js";
+      import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+
+      const status = document.getElementById("status");
+
+      const SCHEMA_URL = "/crates/opengrid-conformance/data/orders.schema.json";
+      const FULL_DATASET = "/target/grid-demo/orders-100k.csv";
+      const SMALL_DATASET = "/crates/opengrid-conformance/data/orders.csv";
+
+      function setStatus(message, isError = false) {
+        status.textContent = message;
+        status.classList.toggle("error", isError);
+      }
+
+      async function fetchOk(url) {
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(`${url}: HTTP ${response.status}`);
+        }
+        return response;
+      }
+
+      async function start() {
+        const loader = await loadOpengrid();
+        await init();
+        const engine = new Engine();
+
+        const schema = await (await fetchOk(SCHEMA_URL)).text();
+        const full = await fetch(FULL_DATASET);
+        const url = full.ok ? FULL_DATASET : SMALL_DATASET;
+        const csv = await (await fetchOk(url)).arrayBuffer();
+        engine.load_csv("orders", new Uint8Array(csv), schema);
+
+        const host = document.querySelector("opengrid-grid");
+        loader.module.set_provider(host, {
+          execute: (queryJson) => engine.execute(queryJson),
+        });
+
+        const rows = url === FULL_DATASET ? "100 000" : "kleiner Conformance-";
+        setStatus(
+          `Datensatz geladen (${rows} Zeilen) aus ${url}. ` +
+            `Tastatur: Pfeile, Home/End, Ctrl+Home/Ctrl+End, PageUp/PageDown, ` +
+            `Enter/Leertaste auf der Kopfzeile sortiert, Escape springt zur ersten Zelle.`,
+        );
+        return { fallback: loader.fallback, url };
+      }
+
+      window.__opengridReady = start().catch((error) => {
+        setStatus(`Fehler: ${error.message ?? error}`, true);
+        throw error;
+      });
+    </script>
+  </body>
+</html>
