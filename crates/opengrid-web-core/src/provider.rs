@@ -10,7 +10,8 @@
 //! * [`QueryExecutor`] is the portable, synchronous seam an engine implements —
 //!   the local WASM engine today, a native test now.
 //! * [`DataProvider`] is the Promise-based contract the components use. The
-//!   local [`LocalProvider`] resolves on the spot; the Worker-backed provider of
+//!   local [`LocalProvider`] resolves on the spot; the page-owned engine is
+//!   wrapped by [`JsProvider`] (point 14), and the Worker-backed provider of
 //!   point 19 returns a promise that settles later, with the same signature.
 //!
 //! A provider can be attached to a host element with [`set_provider`] and read
@@ -95,6 +96,58 @@ impl<E: QueryExecutor> DataProvider for LocalProvider<E> {
         match self.executor.execute(query_json) {
             Ok(result) => js_sys::Promise::resolve(&JsValue::from_str(&result)),
             Err(error) => js_sys::Promise::reject(&JsValue::from_str(&error.to_string())),
+        }
+    }
+}
+
+/// A [`DataProvider`] over a JavaScript object with an `execute(queryJson)`
+/// method.
+///
+/// The page owns the engine: it hands the component a plain JS object whose
+/// `execute` answers a Promise (or a value, which is wrapped in a resolved
+/// Promise). This keeps `opengrid-web-components` engine-agnostic — the fixture
+/// wraps the local engine, point 19 wraps the Worker, and both look identical
+/// from here.
+#[cfg(target_arch = "wasm32")]
+pub struct JsProvider {
+    object: JsValue,
+}
+
+#[cfg(target_arch = "wasm32")]
+impl JsProvider {
+    /// Wraps a JS object exposing `execute(queryJson)`.
+    pub fn new(object: JsValue) -> Self {
+        Self { object }
+    }
+
+    /// The wrapped object.
+    pub fn object(&self) -> &JsValue {
+        &self.object
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl DataProvider for JsProvider {
+    fn execute(&self, query_json: &str) -> js_sys::Promise {
+        use wasm_bindgen::JsCast;
+
+        let called =
+            js_sys::Reflect::get(&self.object, &JsValue::from_str("execute")).and_then(|method| {
+                match method.dyn_into::<js_sys::Function>() {
+                    Ok(function) => function.call1(&self.object, &JsValue::from_str(query_json)),
+                    Err(_) => Err(JsValue::from_str(
+                        "provider has no execute(queryJson) method",
+                    )),
+                }
+            });
+
+        match called {
+            // A synchronous value is a resolved promise with that value.
+            Ok(value) => match value.dyn_ref::<js_sys::Promise>() {
+                Some(promise) => promise.clone(),
+                None => js_sys::Promise::resolve(&value),
+            },
+            Err(error) => js_sys::Promise::reject(&error),
         }
     }
 }

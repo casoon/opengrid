@@ -1,0 +1,11 @@
+{
+  "fields": [
+    { "name": "customer", "type": "utf8", "nullable": true },
+    {
+      "name": "amount",
+      "type": { "decimal": { "precision": 10, "scale": 2 } },
+      "nullable": true
+    },
+    { "name": "qty", "type": "int64", "nullable": true }
+  ]
+}

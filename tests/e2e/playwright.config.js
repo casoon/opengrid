@@ -17,6 +17,10 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 export default defineConfig({
   testDir: ".",
+  // One worker: the fixture server is `python3 -m http.server`, which answers
+  // one connection at a time; parallel workers fetching the WASM modules at once
+  // intermittently get `ERR_CONNECTION_RESET`.
+  workers: 1,
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,

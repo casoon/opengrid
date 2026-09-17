@@ -1,0 +1,111 @@
+import { test, expect } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
+
+// `<opengrid-table>` with data (plan point 14).
+//
+// The fixture loads the real engine, attaches it as the provider and lets the
+// element run the query. This spec proves the table mode contract: a native
+// `<table>`, `aria-sort` transitions driven by the keyboard, reordered rows and
+// no axe violations.
+
+async function shadowFacts(page) {
+  return page.evaluate(() => {
+    const root = document.querySelector("opengrid-table").shadowRoot;
+    return [...root.querySelectorAll("thead th")].map((th) => ({
+      column: th.getAttribute("data-column"),
+      scope: th.getAttribute("scope"),
+      ariaSort: th.getAttribute("aria-sort"),
+      buttonText: th.querySelector("button")?.textContent ?? null,
+    }));
+  });
+}
+
+async function ariaSortFor(page, column) {
+  return page.evaluate((column) => {
+    const root = document.querySelector("opengrid-table").shadowRoot;
+    return (
+      root
+        .querySelector(`th[data-column="${column}"]`)
+        ?.getAttribute("aria-sort") ?? null
+    );
+  }, column);
+}
+
+async function firstColumn(page) {
+  return page.evaluate(() => {
+    const root = document.querySelector("opengrid-table").shadowRoot;
+    return [...root.querySelectorAll("tbody tr td:first-child")].map(
+      (td) => td.textContent,
+    );
+  });
+}
+
+test.beforeEach(async ({ page }) => {
+  await page.goto("/tests/e2e/fixtures/table-data.html");
+  await page.waitForFunction(() => window.__opengridReady);
+  await page.waitForFunction(() => {
+    const root = document.querySelector("opengrid-table")?.shadowRoot;
+    return !!root?.querySelector("tbody tr");
+  });
+});
+
+test("renders a native table with scoped sort buttons", async ({ page }) => {
+  const facts = await page.evaluate(() => {
+    const root = document.querySelector("opengrid-table").shadowRoot;
+    return {
+      mode: root.mode,
+      table: !!root.querySelector("table"),
+      caption: root.querySelector("caption")?.textContent ?? null,
+      rows: root.querySelectorAll("tbody tr").length,
+    };
+  });
+  expect(facts).toEqual({
+    mode: "open",
+    table: true,
+    caption: "Bestellungen",
+    rows: 5,
+  });
+
+  expect(await shadowFacts(page)).toEqual([
+    { column: "customer", scope: "col", ariaSort: "none", buttonText: "customer" },
+    { column: "amount", scope: "col", ariaSort: "none", buttonText: "amount" },
+    { column: "qty", scope: "col", ariaSort: "none", buttonText: "qty" },
+  ]);
+});
+
+test("keyboard toggles aria-sort and reorders the rows", async ({ page }) => {
+  const button = page
+    .locator("opengrid-table")
+    .locator('button[data-column="customer"]');
+  await button.focus();
+
+  await page.keyboard.press("Enter");
+  await expect.poll(() => ariaSortFor(page, "customer")).toBe("ascending");
+  await expect
+    .poll(() => firstColumn(page))
+    .toEqual(["Alpha", "Alpha", "Beta", "Beta", "Gamma"]);
+
+  await page.keyboard.press("Enter");
+  await expect.poll(() => ariaSortFor(page, "customer")).toBe("descending");
+  await expect
+    .poll(() => firstColumn(page))
+    .toEqual(["Gamma", "Beta", "Beta", "Alpha", "Alpha"]);
+
+  await page.keyboard.press("Enter");
+  await expect.poll(() => ariaSortFor(page, "customer")).toBe("none");
+});
+
+test("sorting a second column clears the first one", async ({ page }) => {
+  const table = page.locator("opengrid-table");
+  await table.locator('button[data-column="customer"]').click();
+  await expect.poll(() => ariaSortFor(page, "customer")).toBe("ascending");
+
+  await table.locator('button[data-column="qty"]').click();
+  await expect.poll(() => ariaSortFor(page, "qty")).toBe("ascending");
+  await expect.poll(() => ariaSortFor(page, "customer")).toBe("none");
+});
+
+test("has no axe violations", async ({ page }) => {
+  const { violations } = await new AxeBuilder({ page }).analyze();
+  expect(violations).toEqual([]);
+});

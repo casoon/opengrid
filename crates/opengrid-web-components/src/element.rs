@@ -1,26 +1,40 @@
-//! `<opengrid-table>` — the registered element (point 13, browser only).
+//! `<opengrid-table>` — the registered element (points 13/14, browser only).
 //!
 //! The lifecycle is the one from [`opengrid_web_core::element`]: on connect it
 //! attaches an **open** shadow root, renders the empty table skeleton as one
 //! patch list and mirrors the host `label` to the table's `aria-label` (E8/R6).
 //! `attributeChangedCallback` keeps the caption and the ARIA label in sync when
-//! the host label changes. Point 14 adds columns, data and `aria-sort` here.
+//! the host label changes.
 //!
-//! Nothing in this module decides anything about the data: it renders a shell.
-//! The data interface is [`opengrid_web_core::provider`], attached per host and
-//! driven by point 14.
+//! Point 14 adds the data path. The host attributes `datasource` and `columns`
+//! build the query (plan/spezifikation/02-query-modell.md §JSON-Vertrag), a
+//! provider attached with the exported [`set_provider`] executes it, and the
+//! result is rendered as one patch list. Header `<button>`s sort the single
+//! column asc → desc → none and re-run the query; `aria-sort` lives on the
+//! `<th>` (plan/spezifikation/09-accessibility.md §Zwei Rendering-Modi).
+//!
+//! The engine itself is never named here: only
+//! [`opengrid_web_core::provider`]'s JSON-in/JSON-out Promise is.
 
-use wasm_bindgen::JsCast;
+use std::rc::Rc;
+
+use wasm_bindgen::closure::Closure;
 use wasm_bindgen::prelude::*;
-use web_sys::{HtmlElement, Node, ShadowRoot};
+use wasm_bindgen::{JsCast, JsValue};
+use wasm_bindgen_futures::{JsFuture, spawn_local};
+use web_sys::{Document, Element, Event, HtmlElement, Node, ShadowRoot};
 
 use opengrid_web_core::element::{
     ARIA_LABEL_ATTRIBUTE, LABEL_ATTRIBUTE, attach_open_shadow_root, define, mirror_label,
 };
 use opengrid_web_core::patch::{NodeAllocator, PatchBuffer};
+use opengrid_web_core::provider::set_provider as attach_provider;
+use opengrid_web_core::provider::{DataProvider, JsProvider, provider};
 use opengrid_web_core::renderer::{Dom, WebRenderer};
 
-use crate::table::{self, TABLE_TAG};
+use crate::table::{
+    self, COLUMNS_ATTRIBUTE, DATASOURCE_ATTRIBUTE, SortDirection, TABLE_TAG, TableModel,
+};
 
 /// Registers `<opengrid-table>`; safe to call more than once.
 ///
@@ -37,33 +51,52 @@ pub fn register() -> Result<(), JsValue> {
     )
 }
 
-/// Renders the skeleton into a fresh open shadow root.
+/// Attaches a data provider to a host element (point 14).
+///
+/// `provider` is a JS object with an `execute(queryJson)` method that answers a
+/// Promise (or a value). Exported as `set_provider` from the components module,
+/// so the page wires its engine before or after connect; a connected host whose
+/// `datasource`/`columns` are present re-runs its query immediately.
+#[wasm_bindgen(js_name = set_provider)]
+pub fn set_provider(host: &HtmlElement, provider: JsValue) {
+    let provider: Rc<dyn DataProvider> = Rc::new(JsProvider::new(provider));
+    attach_provider(host, provider);
+    run_query(host, None, None);
+}
+
+/// Renders the skeleton into a fresh open shadow root and installs the sort
+/// listener once.
 ///
 /// Reconnecting a host fires `connectedCallback` again; the guard keeps the
-/// already-rendered root instead of appending a second table.
+/// already-rendered root instead of appending a second table or listener.
 fn on_connected(host: HtmlElement) {
     if let Ok(root) = attach_open_shadow_root(&host)
         && root.child_element_count() == 0
     {
         render_skeleton(&host, &root);
+        add_sort_listener(&root);
     }
+    run_query(&host, None, None);
 }
 
-/// Nothing to tear down yet: the render tree is stateless in point 13.
+/// Nothing to tear down: the root and its listener die with the host.
 fn on_disconnected(_host: HtmlElement) {}
 
-/// Re-mirrors `label` when the host attribute changes.
+/// Re-mirrors `label`, re-runs the query when the data attributes change.
 fn on_attribute_changed(
     host: HtmlElement,
     name: String,
     _old_value: Option<String>,
     new_value: Option<String>,
 ) {
-    if name != LABEL_ATTRIBUTE {
-        return;
-    }
-    if let Some(root) = host.shadow_root() {
-        update_label(&root, new_value.as_deref());
+    match name.as_str() {
+        LABEL_ATTRIBUTE => {
+            if let Some(root) = host.shadow_root() {
+                update_label(&root, new_value.as_deref());
+            }
+        }
+        DATASOURCE_ATTRIBUTE | COLUMNS_ATTRIBUTE => run_query(&host, None, None),
+        _ => {}
     }
 }
 
@@ -74,15 +107,210 @@ fn render_skeleton(host: &HtmlElement, root: &ShadowRoot) {
     };
     let mut nodes = NodeAllocator::new();
     let mut buffer = PatchBuffer::new();
-    table::build_empty_table(
+    table::build_table(
         &mut buffer,
         &mut nodes,
         host.get_attribute(LABEL_ATTRIBUTE).as_deref(),
+        None,
+        None,
     );
+    apply(root, document, &buffer);
+}
 
+/// Builds the query from the host attributes and runs it through the provider.
+///
+/// Returns without doing anything if there is no provider, no shadow root, or no
+/// columns — those are the "not ready yet" states, not errors. `sort` is the
+/// explicit single-column sort; `focus_column` names the header button to focus
+/// once the re-render landed, so keyboard sorting does not lose focus.
+fn run_query(
+    host: &HtmlElement,
+    sort: Option<(String, SortDirection)>,
+    focus_column: Option<String>,
+) {
+    let Some(provider) = provider(host) else {
+        return;
+    };
+    if host.shadow_root().is_none() {
+        return;
+    }
+    let Some(source) = host.get_attribute(DATASOURCE_ATTRIBUTE) else {
+        return;
+    };
+    let columns = table::parse_columns(host.get_attribute(COLUMNS_ATTRIBUTE).as_deref());
+    if columns.is_empty() {
+        return;
+    }
+    let query = table::query_json(
+        &source,
+        &columns,
+        sort.as_ref()
+            .map(|(field, direction)| (field.as_str(), *direction)),
+    );
+    let promise = provider.execute(&query);
+
+    let host = host.clone();
+    spawn_local(async move {
+        match JsFuture::from(promise).await {
+            Ok(value) => match value.as_string() {
+                Some(json) => match table::parse_result(&json) {
+                    Ok(model) => {
+                        render_data(&host, &model, sort.as_ref(), focus_column.as_deref());
+                    }
+                    Err(message) => render_error(&host, &message),
+                },
+                None => render_error(&host, "provider returned a non-string result"),
+            },
+            Err(value) => render_error(&host, &describe(&value)),
+        }
+    });
+}
+
+/// Clears the root and renders `model` as one patch list.
+fn render_data(
+    host: &HtmlElement,
+    model: &TableModel,
+    sort: Option<&(String, SortDirection)>,
+    focus_column: Option<&str>,
+) {
+    let Some(root) = host.shadow_root() else {
+        return;
+    };
+    let Some(document) = host.owner_document() else {
+        return;
+    };
+
+    clear_root(&root);
+    let label = host.get_attribute(LABEL_ATTRIBUTE);
+    let mut nodes = NodeAllocator::new();
+    let mut buffer = PatchBuffer::new();
+    table::build_table(
+        &mut buffer,
+        &mut nodes,
+        label.as_deref(),
+        Some(model),
+        sort.map(|(field, direction)| (field.as_str(), *direction)),
+    );
+    apply(&root, document, &buffer);
+
+    if let Some(column) = focus_column {
+        focus_header(&root, column);
+    }
+}
+
+/// Clears the root and renders a short visible error (point 41 formalises this).
+fn render_error(host: &HtmlElement, message: &str) {
+    let Some(root) = host.shadow_root() else {
+        return;
+    };
+    let Some(document) = host.owner_document() else {
+        return;
+    };
+
+    clear_root(&root);
+    let mut nodes = NodeAllocator::new();
+    let mut buffer = PatchBuffer::new();
+    table::build_error(&mut buffer, &mut nodes, message);
+    apply(&root, document, &buffer);
+}
+
+/// Applies a whole patch list to the shadow root in one pass (risk R1).
+fn apply(root: &ShadowRoot, document: Document, buffer: &PatchBuffer) {
     let root_node: Node = root.clone().unchecked_into();
     let mut dom = Dom::new(WebRenderer::from_document(document), root_node);
-    dom.apply_buffer(&buffer);
+    dom.apply_buffer(buffer);
+}
+
+/// Removes every child of the root before a full re-render.
+///
+/// One direct call, not one per cell: the patch language has no "clear"
+/// operation, and rebuilding the whole table is the smallest correct response to
+/// a sort. The data render itself is still exactly one patch list.
+fn clear_root(root: &ShadowRoot) {
+    while let Some(child) = root.first_child() {
+        let _ = root.remove_child(&child);
+    }
+}
+
+/// Delegated `click` listener: a header button toggles its single column.
+///
+/// Keyboard activation (Enter/Space) fires a `click` too, so one listener covers
+/// both. The closure is owned by the root via the registered callback.
+fn add_sort_listener(root: &ShadowRoot) {
+    let callback = Closure::<dyn FnMut(Event)>::new(on_header_click).into_js_value();
+    let _ = root.add_event_listener_with_callback("click", callback.unchecked_ref());
+}
+
+/// Handles a click on a header button.
+fn on_header_click(event: Event) {
+    let Some(target) = event.target() else {
+        return;
+    };
+    let Ok(target) = target.dyn_into::<Element>() else {
+        return;
+    };
+    let Ok(Some(button)) = target.closest("button[data-column]") else {
+        return;
+    };
+    let Some(column) = button.get_attribute("data-column") else {
+        return;
+    };
+    let Some(root) = event
+        .current_target()
+        .and_then(|target| target.dyn_into::<ShadowRoot>().ok())
+    else {
+        return;
+    };
+    let Ok(host) = root.host().dyn_into::<HtmlElement>() else {
+        return;
+    };
+
+    let next = next_sort(&root, &column);
+    run_query(&host, next, Some(column));
+}
+
+/// The sort state after activating `column`: asc → desc → none, single-column.
+fn next_sort(root: &ShadowRoot, column: &str) -> Option<(String, SortDirection)> {
+    match current_sort(root) {
+        Some((current, SortDirection::Asc)) if current == column => {
+            Some((column.to_owned(), SortDirection::Desc))
+        }
+        Some((current, SortDirection::Desc)) if current == column => None,
+        _ => Some((column.to_owned(), SortDirection::Asc)),
+    }
+}
+
+/// The column currently sorted, read back from the rendered `aria-sort`.
+fn current_sort(root: &ShadowRoot) -> Option<(String, SortDirection)> {
+    let (selector, direction) = if root
+        .query_selector("th[aria-sort=\"ascending\"]")
+        .ok()
+        .flatten()
+        .is_some()
+    {
+        ("th[aria-sort=\"ascending\"]", SortDirection::Asc)
+    } else {
+        ("th[aria-sort=\"descending\"]", SortDirection::Desc)
+    };
+    let th = root.query_selector(selector).ok().flatten()?;
+    Some((th.get_attribute("data-column")?, direction))
+}
+
+/// Focuses the header button of `column`, if it is still rendered.
+fn focus_header(root: &ShadowRoot, column: &str) {
+    let selector = format!("th[data-column=\"{column}\"] button");
+    if let Ok(Some(button)) = root.query_selector(&selector)
+        && let Ok(button) = button.dyn_into::<HtmlElement>()
+    {
+        let _ = button.focus();
+    }
+}
+
+/// The message of a rejected provider promise.
+fn describe(value: &JsValue) -> String {
+    value
+        .as_string()
+        .unwrap_or_else(|| "the provider rejected the query".to_owned())
 }
 
 /// Updates the existing caption and `aria-label` after a label change.
