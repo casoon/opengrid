@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>opengrid table fixture</title>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid table fixture</h1>
+      <opengrid-table label="Bestellungen"></opengrid-table>
+    </main>
+    <script type="module">
+      // The real delivery path: loader.js loads the WASM module and registers the
+      // elements. The test waits for the shadow root, so a loader failure fails.
+      import { loadOpengrid } from "/packages/opengrid/loader.js";
+      window.__opengridReady = loadOpengrid();
+    </script>
+  </body>
+</html>

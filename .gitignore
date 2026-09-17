@@ -4,3 +4,9 @@ node_modules/
 dist/
 pkg/
 .DS_Store
+
+# Playwright-Artefakte (Baselines unter tests/e2e/__screenshots__ gehören ins Repo).
+test-results/
+playwright-report/
+blob-report/
+

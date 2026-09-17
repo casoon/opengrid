@@ -21,3 +21,30 @@ jobs:
       - uses: extractions/setup-just@v2
       - run: just check
       - run: just wasm-check
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: extractions/setup-just@v2
+      # wasm-bindgen CLI and wasm-opt are what `just wasm-build-components` needs
+      # (plan/spezifikation/14-entscheidungen.md E4); both are pinned to the
+      # versions the local toolchain uses so the module matches.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@0.2.126
+      - run: sudo apt-get update && sudo apt-get install -y binaryen
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.26.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: just e2e

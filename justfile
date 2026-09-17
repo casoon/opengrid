@@ -39,6 +39,19 @@ wasm-build:
 serve-demo:
     python3 -m http.server 8080
 
+# Browser-Modul der Custom Elements; loader.js erwartet es unter packages/opengrid/pkg/.
+# Getrennt vom Engine-Demo-Modul (die Modultrennung `grid.wasm` macht Punkt 40).
+wasm-build-components:
+    cargo build --release --target wasm32-unknown-unknown -p opengrid-web-components
+    wasm-bindgen --target web --out-dir packages/opengrid/pkg --out-name opengrid_web_components "${CARGO_TARGET_DIR:-target}/wasm32-unknown-unknown/release/opengrid_web_components.wasm"
+    wasm-opt -Oz -o packages/opengrid/pkg/opengrid_web_components_bg.wasm packages/opengrid/pkg/opengrid_web_components_bg.wasm
+
+# End-to-End- und A11y-Tests (Playwright + axe-core, plan/spezifikation/12-qualitaet.md §CI).
+# Baut das Browser-Modul, installiert die gepinnte JS-Toolchain und fährt tests/e2e/.
+e2e: wasm-build-components
+    pnpm install --frozen-lockfile
+    pnpm exec playwright test --config tests/e2e/playwright.config.js
+
 # Native criterion-Benchmarks der Engine (plan/spezifikation/12-qualitaet.md §Benchmarks).
 bench-native:
     cargo bench -p opengrid-arrow-engine
