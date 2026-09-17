@@ -8,8 +8,8 @@ import AxeBuilder from "@axe-core/playwright";
 // `<table role="grid">` with correct counts and 1-based `aria-rowindex`, exactly
 // one roving `tabindex="0"`, and every key of the WAI-ARIA grid matrix
 // (plan/spezifikation/09-accessibility.md §Tastatur im Grid Mode). The fixture
-// dataset has five rows and the element a `page-size="10"` pool, so all rows fit
-// the window; the virtualizing behaviour of point 17 is covered by
+// dataset has five rows and the element a `window-size="10"` pool, so all rows
+// fit the window; the virtualizing behaviour of point 17 is covered by
 // `grid-virtual.spec.js`.
 //
 // Paging needs a total order (rule S6), so the grid starts sorted by its first

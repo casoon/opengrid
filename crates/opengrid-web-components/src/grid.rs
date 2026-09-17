@@ -29,16 +29,18 @@
 //! (plan/spezifikation/08-rendering.md §Change Detection, 13-risiken.md R2).
 //!
 //! * The **row pool** is [`DEFAULT_POOL_SIZE`] rows by default (the host
-//!   `page-size` overrides it), each row a `<tr>` with one `<td>` per column.
+//!   `window-size` overrides it), each row a `<tr>` with one `<td>` per column.
 //!   The pool is built once; scrolling only patches text, `data-row`,
 //!   `aria-rowindex` and the row's `translateY`.
-//! * **Row height** is the fixed pixel constant [`ROW_HEIGHT`]; the window math
-//!   is only stable if a logical row always occupies exactly that many pixels.
-//! * **Window math.** A logical row `r` sits at `r * ROW_HEIGHT` inside the
-//!   `<tbody>`, which acts as the sizer (`height = total_count * ROW_HEIGHT`)
+//! * **Row height** is the CSS custom property `--grid-row-height` (default
+//!   [`DEFAULT_ROW_HEIGHT`]px). The element resolves it once per host and passes
+//!   the pixel value into the portable window math, so a logical row always
+//!   occupies exactly that many pixels and the math stays stable.
+//! * **Window math.** A logical row `r` sits at `r * row_height` inside the
+//!   `<tbody>`, which acts as the sizer (`height = total_count * row_height`)
 //!   and is `position: relative`; the rows are `position: absolute` and moved by
 //!   `transform: translateY(...)`. The first visible row is therefore
-//!   `scrollTop / ROW_HEIGHT` ([`visible_start`]) and the fetched window starts
+//!   `scrollTop / row_height` ([`visible_start`]) and the fetched window starts
 //!   [`OVERSCAN`] rows above it ([`window_offset`]), clamped so the last window
 //!   ends at the last row. The `<thead>` is `position: sticky`.
 //! * **Range fetching.** The provider is asked for exactly the window
@@ -83,16 +85,28 @@ pub const COLUMNS_ATTRIBUTE: &str = "columns";
 
 /// The host attribute for the recycled row pool (the query's `limit`).
 ///
-/// Point 16 called this the page size and paged with it; point 17 reinterprets
-/// it as the **window/pool size** — how many rows are rendered and fetched at
-/// once while scrolling. The attribute name is kept for API continuity.
-pub const PAGE_SIZE_ATTRIBUTE: &str = "page-size";
+/// Point 16 paged with this attribute; point 17 reinterprets it as the
+/// **window/pool size** — how many rows are rendered and fetched at once while
+/// scrolling. Review renamed the attribute from its old paging name to
+/// `window-size` to match that meaning.
+pub const WINDOW_SIZE_ATTRIBUTE: &str = "window-size";
 
-/// The pool size used when the `page-size` attribute is absent or invalid.
+/// The pool size used when the `window-size` attribute is absent or invalid.
 pub const DEFAULT_POOL_SIZE: u64 = 40;
 
-/// The fixed pixel height of one logical row (the virtualization contract).
-pub const ROW_HEIGHT: u64 = 32;
+/// The default pixel height of one logical row (the virtualization contract).
+///
+/// The host can override it with the CSS custom property
+/// [`ROW_HEIGHT_PROPERTY`]; the element resolves the computed value once per
+/// host and feeds it into the portable window math.
+pub const DEFAULT_ROW_HEIGHT: u64 = 32;
+
+/// The CSS custom property a host can set to override the row height.
+///
+/// A shadow-root stylesheet seeds it with [`DEFAULT_ROW_HEIGHT`]; a document
+/// rule on the host (or an inline style) overrides it and the value inherits
+/// into the shadow tree.
+pub const ROW_HEIGHT_PROPERTY: &str = "--grid-row-height";
 
 /// Rows kept above the first visible row so scrolling stays smooth.
 pub const OVERSCAN: u64 = 6;
@@ -106,7 +120,7 @@ pub const OBSERVED: &[&str] = &[
     LABEL_ATTRIBUTE,
     DATASOURCE_ATTRIBUTE,
     COLUMNS_ATTRIBUTE,
-    PAGE_SIZE_ATTRIBUTE,
+    WINDOW_SIZE_ATTRIBUTE,
 ];
 
 /// Which cell owns the roving tabindex.
@@ -181,7 +195,7 @@ pub enum GridKey {
 pub struct GridNodes {
     /// The scrollable viewport (`overflow-y: auto`) inside the shadow root.
     pub viewport: NodeId,
-    /// The table's `<tbody>`, used as the sizer (`height = total * ROW_HEIGHT`).
+    /// The table's `<tbody>`, used as the sizer (`height = total * row_height`).
     pub tbody: NodeId,
     /// The `<table role="grid">`.
     pub table: NodeId,
@@ -212,14 +226,27 @@ pub fn parse_columns(raw: Option<&str>) -> Vec<String> {
     crate::table::parse_columns(raw)
 }
 
-/// The pool size from the `page-size` attribute, or [`DEFAULT_POOL_SIZE`].
+/// The pool size from the `window-size` attribute, or [`DEFAULT_POOL_SIZE`].
 ///
 /// A missing, non-numeric or zero value falls back to the default, so a typo
 /// never turns into a zero-row pool.
-pub fn parse_pool_size(raw: Option<&str>) -> u64 {
+pub fn parse_window_size(raw: Option<&str>) -> u64 {
     raw.and_then(|value| value.trim().parse::<u64>().ok())
         .filter(|size| *size > 0)
         .unwrap_or(DEFAULT_POOL_SIZE)
+}
+
+/// The row height from a computed CSS value, or [`DEFAULT_ROW_HEIGHT`].
+///
+/// Accepts a `<number>px` value (e.g. `48px`); anything else — absent, a
+/// different unit, or zero — falls back to the default, so the window math
+/// always has a positive, well-defined height.
+pub fn parse_row_height(raw: &str) -> u64 {
+    raw.trim()
+        .strip_suffix("px")
+        .and_then(|number| number.trim().parse::<u64>().ok())
+        .filter(|height| *height > 0)
+        .unwrap_or(DEFAULT_ROW_HEIGHT)
 }
 
 /// The display schema for the initial render, before the first result arrives.
@@ -339,10 +366,10 @@ fn cell_text(value: &Value) -> String {
 
 /// The first logical row visible at `scroll_top`.
 ///
-/// With rows at `r * ROW_HEIGHT` and a sticky header, the row whose top is at or
-/// below the scroll offset is `scroll_top / ROW_HEIGHT`.
-pub const fn visible_start(scroll_top: u64) -> u64 {
-    scroll_top / ROW_HEIGHT
+/// With rows at `r * row_height` and a sticky header, the row whose top is at or
+/// below the scroll offset is `scroll_top / row_height`.
+pub const fn visible_start(scroll_top: u64, row_height: u64) -> u64 {
+    scroll_top / row_height
 }
 
 /// The window start for a visible row, keeping [`OVERSCAN`] rows above it.
@@ -558,13 +585,32 @@ pub fn build_grid(
     let fields = schema.fields();
     let ncols = fields.len();
 
+    // One shadow-root stylesheet: the `--grid-row-height` default plus the
+    // positioning rules the virtualized rows need. The property is declared on
+    // `:host` with the default and can be overridden from the document (or an
+    // inline style) on the host; the inner elements inherit the resolved value.
+    let styles = format!(
+        ":host {{ {ROW_HEIGHT_PROPERTY}: {DEFAULT_ROW_HEIGHT}px; }}
+         [part=\"viewport\"] {{ overflow-y: auto; position: relative; display: block; height: 100%; }}
+         table {{ width: 100%; table-layout: fixed; border-collapse: collapse; }}
+         thead {{ position: sticky; top: 0; z-index: 2; background: Canvas; color: CanvasText; }}
+         tbody tr {{ position: absolute; left: 0; width: 100%; display: table; table-layout: fixed; }}
+         th, td {{ height: var({ROW_HEIGHT_PROPERTY}); box-sizing: border-box; padding: 0 8px;
+                   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+         th {{ background: Canvas; text-align: left; }}"
+    );
+    let style = element(buffer, nodes, Some(NodeId::ROOT), "style");
+    buffer.push(Patch::SetText {
+        node: style,
+        text: styles,
+    });
+
     let viewport = element(buffer, nodes, Some(NodeId::ROOT), "div");
     buffer.push(Patch::SetAttribute {
         node: viewport,
         name: "part".to_owned(),
         value: "viewport".to_owned(),
     });
-    set_style(buffer, viewport, VIEWPORT_STYLE);
 
     let table = element(buffer, nodes, Some(viewport), "table");
     buffer.push(Patch::SetAttribute {
@@ -589,10 +635,8 @@ pub fn build_grid(
         name: "aria-colcount".to_owned(),
         value: ncols.to_string(),
     });
-    set_style(buffer, table, TABLE_STYLE);
 
     let thead = element(buffer, nodes, Some(table), "thead");
-    set_style(buffer, thead, THEAD_STYLE);
     let header_row = element(buffer, nodes, Some(thead), "tr");
     buffer.push(Patch::SetAttribute {
         node: header_row,
@@ -622,7 +666,6 @@ pub fn build_grid(
             name: "tabindex".to_owned(),
             value: "-1".to_owned(),
         });
-        set_style(buffer, th, &header_cell_style());
         buffer.push(Patch::SetText {
             node: th,
             text: field.name.as_str().to_owned(),
@@ -650,7 +693,6 @@ pub fn build_grid(
                 name: "tabindex".to_owned(),
                 value: "-1".to_owned(),
             });
-            set_style(buffer, td, &cell_style());
             cells.push(td);
         }
         rows.push(GridRowNodes { row: tr, cells });
@@ -682,6 +724,7 @@ pub fn patch_grid(
     active: ActiveCell,
     sort: Option<(&str, &str)>,
     pinned_slot: Option<usize>,
+    row_height: u64,
 ) {
     let fields = state.schema().fields();
     let total_count = state.total_count();
@@ -691,7 +734,7 @@ pub fn patch_grid(
         name: "style".to_owned(),
         value: format!(
             "position: relative; height: {}px;",
-            total_count * ROW_HEIGHT
+            total_count * row_height
         ),
     });
     buffer.push(Patch::SetAttribute {
@@ -723,7 +766,7 @@ pub fn patch_grid(
         }
         match slots.get(slot).copied().flatten() {
             Some(row) => {
-                set_style(buffer, row_nodes.row, &row_style(row));
+                set_style(buffer, row_nodes.row, &row_style(row, row_height));
                 buffer.push(Patch::SetAttribute {
                     node: row_nodes.row,
                     name: "aria-rowindex".to_owned(),
@@ -760,36 +803,15 @@ pub fn patch_grid(
 }
 
 /// The inline style placing a visible pool row at its logical position.
-fn row_style(row: u64) -> String {
-    format!(
-        "position: absolute; left: 0; width: 100%; display: table; \
-         table-layout: fixed; transform: translateY({}px);",
-        row * ROW_HEIGHT
-    )
+///
+/// The static `position: absolute` box comes from the shadow stylesheet; only
+/// the logical offset is per-row.
+fn row_style(row: u64, row_height: u64) -> String {
+    format!("transform: translateY({}px);", row * row_height)
 }
 
-const VIEWPORT_STYLE: &str = "overflow-y: auto; position: relative; display: block; height: 100%;";
-const TABLE_STYLE: &str = "width: 100%; table-layout: fixed; border-collapse: collapse;";
-const THEAD_STYLE: &str =
-    "position: sticky; top: 0; z-index: 2; background: Canvas; color: CanvasText;";
+/// Hides a pool slot that holds no logical row in the current window.
 const ROW_HIDDEN_STYLE: &str = "display: none;";
-
-/// The header cell style, sized to [`ROW_HEIGHT`] like a data row.
-fn header_cell_style() -> String {
-    format!(
-        "height: {ROW_HEIGHT}px; box-sizing: border-box; padding: 0 8px; \
-         white-space: nowrap; overflow: hidden; text-overflow: ellipsis; \
-         background: Canvas; text-align: left;"
-    )
-}
-
-/// The data cell style, sized to [`ROW_HEIGHT`] so the math stays exact.
-fn cell_style() -> String {
-    format!(
-        "height: {ROW_HEIGHT}px; box-sizing: border-box; padding: 0 8px; \
-         white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
-    )
-}
 
 /// Sets an element's `style` attribute.
 fn set_style(buffer: &mut PatchBuffer, node: NodeId, style: &str) {
@@ -891,10 +913,21 @@ mod tests {
     /// The pool size falls back to the default on a missing, broken or zero value.
     #[test]
     fn pool_size_falls_back_to_the_default() {
-        assert_eq!(parse_pool_size(None), 40);
-        assert_eq!(parse_pool_size(Some(" 25 ")), 25);
-        assert_eq!(parse_pool_size(Some("0")), 40);
-        assert_eq!(parse_pool_size(Some("nope")), 40);
+        assert_eq!(parse_window_size(None), 40);
+        assert_eq!(parse_window_size(Some(" 25 ")), 25);
+        assert_eq!(parse_window_size(Some("0")), 40);
+        assert_eq!(parse_window_size(Some("nope")), 40);
+    }
+
+    /// The row height accepts `<number>px` and falls back on anything else.
+    #[test]
+    fn row_height_parses_pixels_and_falls_back() {
+        assert_eq!(parse_row_height("48px"), 48);
+        assert_eq!(parse_row_height(" 20px "), 20);
+        assert_eq!(parse_row_height("48"), 32);
+        assert_eq!(parse_row_height("48em"), 32);
+        assert_eq!(parse_row_height("0px"), 32);
+        assert_eq!(parse_row_height(""), 32);
     }
 
     /// The query carries select, limit and offset, and omits sort when unsorted.
@@ -1016,6 +1049,7 @@ mod tests {
             ActiveCell::Header { col: 0 },
             None,
             None,
+            DEFAULT_ROW_HEIGHT,
         );
 
         let attributes = |name: &str| -> Vec<String> {
@@ -1065,6 +1099,7 @@ mod tests {
             ActiveCell::Data(CellRef::new(0, 1)),
             Some(("qty", "asc")),
             None,
+            DEFAULT_ROW_HEIGHT,
         );
         let sorts: Vec<&str> = buffer
             .patches()
@@ -1079,7 +1114,7 @@ mod tests {
         assert_eq!(sorts, ["none", "ascending"]);
     }
 
-    /// The sizer height is `total_count * ROW_HEIGHT`.
+    /// The sizer height is `total_count * row_height`.
     #[test]
     fn the_sizer_reflects_the_total_count() {
         let schema = initial_schema(&["customer".to_owned()]);
@@ -1098,11 +1133,48 @@ mod tests {
             ActiveCell::Header { col: 0 },
             None,
             None,
+            DEFAULT_ROW_HEIGHT,
         );
         assert!(buffer.patches().iter().any(|patch| matches!(
             patch,
             Patch::SetAttribute { node, name, value }
                 if *node == view.tbody && name == "style" && value == "position: relative; height: 160px;"
+        )));
+    }
+
+    /// A non-default row height drives both the sizer and the row offsets.
+    #[test]
+    fn a_custom_row_height_rescales_the_sizer_and_the_rows() {
+        let schema = initial_schema(&["customer".to_owned()]);
+        let mut nodes = NodeAllocator::new();
+        let mut buffer = PatchBuffer::new();
+        let view = build_grid(&mut buffer, &mut nodes, None, &schema, 3);
+        let state = state_with(&["Gamma", "Alpha"], 5, 0, 3);
+        let slots = assign_pool(&[None, None, None], None, &window_rows(0, 5, 3), 3);
+
+        let mut buffer = PatchBuffer::new();
+        patch_grid(
+            &mut buffer,
+            &view,
+            &state,
+            &slots,
+            ActiveCell::Header { col: 0 },
+            None,
+            None,
+            48,
+        );
+
+        // The sizer is `total * 48`, not `total * 32`.
+        assert!(buffer.patches().iter().any(|patch| matches!(
+            patch,
+            Patch::SetAttribute { node, name, value }
+                if *node == view.tbody && name == "style" && value == "position: relative; height: 240px;"
+        )));
+        // Row 2 sits at `2 * 48`.
+        assert!(buffer.patches().iter().any(|patch| matches!(
+            patch,
+            Patch::SetAttribute { node, name, value }
+                if *node == view.rows[2].row && name == "style" && value == "transform: translateY(96px);"
         )));
     }
 
@@ -1129,6 +1201,7 @@ mod tests {
             ActiveCell::Data(CellRef::new(6, 0)),
             None,
             pinned,
+            DEFAULT_ROW_HEIGHT,
         );
 
         let pinned_row = view.rows[3].row;
@@ -1285,13 +1358,17 @@ mod tests {
         );
     }
 
-    /// The visible row is derived from the scroll offset and the fixed row height.
+    /// The visible row is derived from the scroll offset and the row height.
     #[test]
     fn scroll_offset_maps_to_the_visible_row() {
-        assert_eq!(visible_start(0), 0);
-        assert_eq!(visible_start(31), 0);
-        assert_eq!(visible_start(32), 1);
-        assert_eq!(visible_start(1_000_000), 31_250);
+        assert_eq!(visible_start(0, DEFAULT_ROW_HEIGHT), 0);
+        assert_eq!(visible_start(31, DEFAULT_ROW_HEIGHT), 0);
+        assert_eq!(visible_start(32, DEFAULT_ROW_HEIGHT), 1);
+        assert_eq!(visible_start(1_000_000, DEFAULT_ROW_HEIGHT), 31_250);
+        // A configured row height scales the same math.
+        assert_eq!(visible_start(95, 48), 1);
+        assert_eq!(visible_start(96, 48), 2);
+        assert_eq!(visible_start(480, 48), 10);
     }
 
     /// The window keeps the overscan above the visible row and clamps at the end.

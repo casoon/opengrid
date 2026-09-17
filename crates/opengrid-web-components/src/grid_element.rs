@@ -62,7 +62,7 @@ use opengrid_web_core::renderer::{Dom, WebRenderer};
 use crate::element::{apply, clear_root, describe};
 use crate::grid::{
     self, ActiveCell, COLUMNS_ATTRIBUTE, DATASOURCE_ATTRIBUTE, GRID_TAG, GridKey, GridNodes,
-    PAGE_SIZE_ATTRIBUTE,
+    ROW_HEIGHT_PROPERTY, WINDOW_SIZE_ATTRIBUTE,
 };
 
 /// Registers `<opengrid-grid>`; safe to call more than once.
@@ -100,6 +100,11 @@ struct GridRuntime {
     dom: Option<Dom<WebRenderer>>,
     /// The scrollable viewport element (cached for scroll math).
     viewport: Option<Element>,
+    /// The resolved pixel height of one logical row (`--grid-row-height`).
+    ///
+    /// Resolved per host from the computed style, so multiple grids can differ;
+    /// the portable window math is parameterised by it.
+    row_height: u64,
     /// Current slot → logical row assignment of the pool.
     slots: Vec<Option<u64>>,
     /// Window offset a coalesced scroll asked for, if any.
@@ -167,7 +172,8 @@ fn runtime_or_init(host: &HtmlElement) -> Rc<RefCell<GridRuntime>> {
 /// top-left header cell active.
 fn fresh_runtime(host: &HtmlElement) -> GridRuntime {
     let columns = grid::parse_columns(host.get_attribute(COLUMNS_ATTRIBUTE).as_deref());
-    let pool = grid::parse_pool_size(host.get_attribute(PAGE_SIZE_ATTRIBUTE).as_deref());
+    let pool = grid::parse_window_size(host.get_attribute(WINDOW_SIZE_ATTRIBUTE).as_deref());
+    let row_height = resolve_row_height(host);
     let mut state = GridState::new(grid::initial_schema(&columns));
     state.set_window(Window::new(0, pool));
     // Paging needs a total order (rule S6), so the grid starts sorted by its
@@ -179,11 +185,26 @@ fn fresh_runtime(host: &HtmlElement) -> GridRuntime {
         view: None,
         dom: None,
         viewport: None,
+        row_height,
         slots: vec![None; pool as usize],
         pending_offset: None,
         raf_pending: false,
         generation: 0,
     }
+}
+
+/// Resolves the `--grid-row-height` custom property on the host.
+///
+/// Reads the host's computed style (the shadow stylesheet seeds the property
+/// with the default, a document/inline rule on the host overrides it and the
+/// value inherits into the shadow tree) and parses a `<number>px` value. An
+/// absent or invalid value falls back to [`grid::DEFAULT_ROW_HEIGHT`].
+fn resolve_row_height(host: &HtmlElement) -> u64 {
+    let raw = web_sys::window()
+        .and_then(|window| window.get_computed_style(host).ok().flatten())
+        .and_then(|style| style.get_property_value(ROW_HEIGHT_PROPERTY).ok())
+        .unwrap_or_default();
+    grid::parse_row_height(&raw)
 }
 
 /// Resets the runtime after a data attribute changed and drops the skeleton.
@@ -211,7 +232,10 @@ fn on_connected(host: HtmlElement) {
     if root.child_element_count() == 0 {
         add_listeners(&root);
     }
-    let _ = runtime_or_init(&host);
+    let runtime = runtime_or_init(&host);
+    // Re-resolve the row height on every (re)connect: the shadow stylesheet (and
+    // any host override) is in place by now.
+    runtime.borrow_mut().row_height = resolve_row_height(&host);
     ensure_skeleton(&host);
     render(&host, false);
     run_query(&host, false);
@@ -234,7 +258,7 @@ fn on_attribute_changed(
                 update_label(&root, new_value.as_deref());
             }
         }
-        DATASOURCE_ATTRIBUTE | COLUMNS_ATTRIBUTE | PAGE_SIZE_ATTRIBUTE => {
+        DATASOURCE_ATTRIBUTE | COLUMNS_ATTRIBUTE | WINDOW_SIZE_ATTRIBUTE => {
             let Some(root) = host.shadow_root() else {
                 return;
             };
@@ -262,7 +286,8 @@ fn ensure_skeleton(host: &HtmlElement) {
     let Some(document) = host.owner_document() else {
         return;
     };
-    let pool = grid::parse_pool_size(host.get_attribute(PAGE_SIZE_ATTRIBUTE).as_deref()) as usize;
+    let pool =
+        grid::parse_window_size(host.get_attribute(WINDOW_SIZE_ATTRIBUTE).as_deref()) as usize;
     let label = host.get_attribute(LABEL_ATTRIBUTE);
     let schema = runtime.borrow().state.schema().clone();
 
@@ -332,6 +357,7 @@ fn render(host: &HtmlElement, focus_after: bool) {
             sort.as_ref()
                 .map(|(field, direction)| (field.as_str(), *direction)),
             pinned_slot,
+            borrowed.row_height,
         );
         if let Some(dom) = borrowed.dom.as_mut() {
             dom.apply_buffer(&buffer);
@@ -366,7 +392,7 @@ pub(crate) fn run_query(host: &HtmlElement, focus: bool) {
     let Some(grid_runtime) = runtime(host) else {
         return;
     };
-    let pool = grid::parse_pool_size(host.get_attribute(PAGE_SIZE_ATTRIBUTE).as_deref());
+    let pool = grid::parse_window_size(host.get_attribute(WINDOW_SIZE_ATTRIBUTE).as_deref());
 
     let (sort, offset, generation) = {
         let mut runtime = grid_runtime.borrow_mut();
@@ -585,7 +611,7 @@ fn move_with_key(
             .as_ref()
             .map(|view| view.pool() as u64)
             .unwrap_or_else(|| {
-                grid::parse_pool_size(host.get_attribute(PAGE_SIZE_ATTRIBUTE).as_deref())
+                grid::parse_window_size(host.get_attribute(WINDOW_SIZE_ATTRIBUTE).as_deref())
             });
         (
             runtime.active,
@@ -635,7 +661,7 @@ fn activate_header(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>) {
     let Some(field) = field else {
         return;
     };
-    let pool = grid::parse_pool_size(host.get_attribute(PAGE_SIZE_ATTRIBUTE).as_deref());
+    let pool = grid::parse_window_size(host.get_attribute(WINDOW_SIZE_ATTRIBUTE).as_deref());
     {
         let mut runtime = runtime.borrow_mut();
         runtime.state.toggle_sort(&field);
@@ -661,7 +687,7 @@ fn escape_to_first(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>) {
     if ncols == 0 {
         return;
     }
-    let pool = grid::parse_pool_size(host.get_attribute(PAGE_SIZE_ATTRIBUTE).as_deref());
+    let pool = grid::parse_window_size(host.get_attribute(WINDOW_SIZE_ATTRIBUTE).as_deref());
     let first = ActiveCell::Header { col: 0 };
     runtime.borrow_mut().set_active(first);
     if offset != 0 {
@@ -694,7 +720,7 @@ fn on_scroll(event: Event) {
         .map(|viewport| viewport.scroll_top().max(0) as u64)
         .unwrap_or(0);
 
-    let (total_count, pool, offset) = {
+    let (total_count, pool, offset, row_height) = {
         let runtime = runtime.borrow();
         let pool = runtime
             .view
@@ -705,12 +731,17 @@ fn on_scroll(event: Event) {
             runtime.state.total_count(),
             pool,
             runtime.state.window().offset,
+            runtime.row_height,
         )
     };
     if total_count == 0 || pool == 0 {
         return;
     }
-    let wanted = grid::window_offset(grid::visible_start(scroll_top), total_count, pool);
+    let wanted = grid::window_offset(
+        grid::visible_start(scroll_top, row_height),
+        total_count,
+        pool,
+    );
     if wanted == offset {
         return;
     }
@@ -765,14 +796,14 @@ fn schedule_scroll_query(host: &HtmlElement, grid_runtime: &Rc<RefCell<GridRunti
 /// The viewport height in rows, for the `PageUp`/`PageDown` step; falls back to
 /// a constant when the browser has not laid the grid out yet.
 fn viewport_rows(runtime: &Rc<RefCell<GridRuntime>>) -> u64 {
-    let height = runtime
-        .borrow()
+    let borrowed = runtime.borrow();
+    let height = borrowed
         .viewport
         .as_ref()
         .map(|viewport| viewport.client_height())
         .unwrap_or(0);
     if height > 0 {
-        (height as u64 / grid::ROW_HEIGHT).max(1)
+        (height as u64 / borrowed.row_height).max(1)
     } else {
         grid::DEFAULT_VIEWPORT_ROWS
     }

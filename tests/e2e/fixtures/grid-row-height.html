@@ -3,19 +3,21 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>opengrid virtual grid fixture</title>
+    <title>opengrid grid row-height fixture</title>
     <style>
-      /* A small window (window-size) over 200 rows: the DOM row count must stay
-         at the pool size while scrolling. The viewport shows five 32px rows. */
+      /* The row height is configurable through --grid-row-height. A document
+         rule on the host overrides the shadow default (32px) and inherits into
+         the shadow tree; the window math follows the configured height. */
       opengrid-grid {
         display: block;
         height: 160px;
+        --grid-row-height: 48px;
       }
     </style>
   </head>
   <body>
     <main>
-      <h1>opengrid virtual grid fixture</h1>
+      <h1>opengrid grid row-height fixture</h1>
       <opengrid-grid
         label="Bestellungen"
         datasource="orders"
@@ -24,8 +26,8 @@
       ></opengrid-grid>
     </main>
     <script type="module">
-      // Point 17: the same provider seam as the other grids, over a larger
-      // dataset so the virtual window really moves.
+      // Point 17 review: the same provider seam as the virtual grid, over 200
+      // rows, with a non-default `--grid-row-height`.
       import { loadOpengrid } from "/packages/opengrid/loader.js";
       import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
 

@@ -3,7 +3,7 @@ import AxeBuilder from "@axe-core/playwright";
 
 // `<opengrid-grid>` virtualization (plan point 17).
 //
-// 200 rows come from the real engine, but only `page-size="8"` DOM rows exist:
+// 200 rows come from the real engine, but only `window-size="8"` DOM rows exist:
 // scrolling moves the window and recycles the rows. This spec proves the DoD:
 // the DOM data-row count stays constant across a long scroll, `aria-rowindex`
 // tracks the logical position, a focused cell survives a scroll that would
