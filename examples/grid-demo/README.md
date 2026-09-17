@@ -28,9 +28,22 @@ cargo run -p xtask -- gen-orders --rows 100000 --seed 1 --out target/grid-demo/o
 ## Tastatur
 
 Pfeiltasten, `Home`/`End`, `Ctrl+Home`/`Ctrl+End`, `PageUp`/`PageDown`,
-`Enter`/`Leertaste` auf einer Kopfzelle sortiert, `Escape` springt zur ersten
-Zelle, `Tab`/`Shift+Tab` verlassen das Grid. `Ctrl+End` lädt die letzte logische
+`Enter`/`Leertaste` auf einer Kopfzelle sortiert, `Shift`+`Enter`/`Leertaste`
+ergänzt bzw. entfernt die Spalte als weiteren Sortierschlüssel (die Kopfzeile
+zeigt die Reihenfolge als Index), `Escape` springt zur ersten Zelle,
+`Tab`/`Shift+Tab` verlassen das Grid. `Ctrl+End` lädt die letzte logische
 Zeile (`aria-rowindex=100001`), rendert sie und fokussiert sie.
+
+## Filter
+
+Über der Tabelle sitzt eine typ-agnostische Filterzeile (`part="filter"`): je
+Spalte ein Operator-`<select>` (`contains`, `starts_with`, `eq`, `ne`, `gt`,
+`gte`, `lt`, `lte`) und ein Wert-`<input>`, beide mit `aria-label`. `Enter` im
+Eingabefeld wendet den `and`-Filter an, „Clear" leert ihn, die Trefferzahl
+steht als `role="status"` daneben. Phase B kennt noch keine Spaltentypen
+(Punkt 23), die Werte gehen deshalb als Strings in die Query — Filter auf
+Textspalten wie `customer`/`country` funktionieren, numerische Filter folgen
+mit Punkt 23.
 
 ## Virtualisierung (Punkt 17)
 

@@ -162,10 +162,9 @@ impl GridState {
     /// The single active sort key as `(field, direction)`, the direction being
     /// the query wire token `"asc"`/`"desc"`.
     ///
-    /// The grid mode of point 16 sorts by at most one column; a multi-column sort
-    /// is still representable through [`set_sort`](Self::set_sort), but this
-    /// accessor answers only the first key (the query and `aria-sort` need just
-    /// one).
+    /// The grid mode of point 16 sorted by at most one column; this accessor
+    /// answers only the first key. Point 18 uses [`sort_keys`](Self::sort_keys)
+    /// for the whole (multi-column) sort of the query.
     pub fn single_sort(&self) -> Option<(&str, &'static str)> {
         self.sort.first().map(|key| {
             let direction = match key.direction {
@@ -174,6 +173,24 @@ impl GridState {
             };
             (key.field.as_str(), direction)
         })
+    }
+
+    /// All sort keys as `(field, direction)` wire tokens, in order.
+    ///
+    /// The query carries the whole list (plan point 18: multi-sort); the order is
+    /// the user's — the first key is the primary sort. Owned because the caller
+    /// builds the query while the state stays borrowed.
+    pub fn sort_keys(&self) -> Vec<(String, &'static str)> {
+        self.sort
+            .iter()
+            .map(|key| {
+                let direction = match key.direction {
+                    SortDirection::Asc => "asc",
+                    SortDirection::Desc => "desc",
+                };
+                (key.field.as_str().to_owned(), direction)
+            })
+            .collect()
     }
 
     /// Toggles the single-column sort of `column`: none → ascending → descending
@@ -205,6 +222,43 @@ impl GridState {
                 }]
             })
             .unwrap_or_default();
+        self.set_sort(sort)
+    }
+
+    /// Toggles `column` as an **additional** sort key, preserving the order of
+    /// the existing keys (plan point 18).
+    ///
+    /// * A column not in the sort is appended ascending (the primary key stays
+    ///   first).
+    /// * An appended ascending key becomes descending.
+    /// * A descending key is removed.
+    ///
+    /// An unknown column name is a no-op. The caller falls back to
+    /// [`ensure_sorted`](Self::ensure_sorted) after a removal so a total order
+    /// remains (rule S6).
+    pub fn toggle_sort_multi(&mut self, column: &str) -> Vec<Patch> {
+        if self.schema.index_of(column).is_none() {
+            return Vec::new();
+        }
+        let Ok(field) = FieldName::new(column) else {
+            return Vec::new();
+        };
+        let mut sort = self.sort.clone();
+        match sort.iter().position(|key| key.field == field) {
+            None => sort.push(Sort {
+                field,
+                direction: SortDirection::Asc,
+                nulls: Default::default(),
+                collation: Default::default(),
+            }),
+            Some(index) => {
+                if sort[index].direction == SortDirection::Asc {
+                    sort[index].direction = SortDirection::Desc;
+                } else {
+                    sort.remove(index);
+                }
+            }
+        }
         self.set_sort(sort)
     }
 
@@ -483,6 +537,36 @@ mod tests {
         // An unknown column is a no-op.
         assert_eq!(state.toggle_sort("missing"), Vec::new());
         assert_eq!(state.single_sort(), Some(("amount", "asc")));
+    }
+
+    /// Multi-sort appends additional keys, keeps their order and toggles a key
+    /// asc → desc → removed.
+    #[test]
+    fn multi_sort_appends_and_preserves_order() {
+        let mut state = GridState::new(schema());
+
+        state.toggle_sort_multi("country");
+        state.toggle_sort_multi("amount");
+        assert_eq!(
+            state.sort_keys(),
+            [("country".to_owned(), "asc"), ("amount".to_owned(), "asc"),]
+        );
+
+        // The first key keeps its position while the second toggles.
+        state.toggle_sort_multi("amount");
+        assert_eq!(
+            state.sort_keys(),
+            [("country".to_owned(), "asc"), ("amount".to_owned(), "desc"),]
+        );
+
+        // The next activation removes it, leaving the primary key.
+        state.toggle_sort_multi("amount");
+        assert_eq!(state.sort_keys(), [("country".to_owned(), "asc")]);
+
+        // An unknown column is a no-op.
+        let before = state.sort_keys();
+        assert_eq!(state.toggle_sort_multi("missing"), Vec::new());
+        assert_eq!(state.sort_keys(), before);
     }
 
     /// The grid keeps a sort at all times (S6): clearing falls back to the first

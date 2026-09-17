@@ -703,6 +703,7 @@ dependencies = [
  "js-sys",
  "opengrid-datasource",
  "opengrid-grid",
+ "opengrid-query",
  "opengrid-types",
  "opengrid-web-core",
  "serde_json",

@@ -19,10 +19,21 @@
 //!   and re-runs the query, so the window always follows the focus.
 //! * **Sorting** — `Enter`/`Space` on a header cell toggles the single-column
 //!   sort through [`GridState::toggle_sort`](opengrid_grid::GridState::toggle_sort)
-//!   and re-runs the query; `aria-sort` is rendered on the `<th>`. Paging needs a
-//!   total order (rule S6), so the grid starts sorted by its first column and
+//!   and re-runs the query; `Shift`+`Enter`/`Space` adds/removes the column as an
+//!   additional key through
+//!   [`GridState::toggle_sort_multi`](opengrid_grid::GridState::toggle_sort_multi),
+//!   preserving the key order (point 18). `aria-sort` is rendered on each `<th>`
+//!   and a visible, `aria-hidden` index shows the multi-sort order. Paging needs
+//!   a total order (rule S6), so the grid starts sorted by its first column and
 //!   falls back to it when the user clears the sort
 //!   ([`GridState::ensure_sorted`](opengrid_grid::GridState::ensure_sorted)).
+//! * **Filtering** — the type-agnostic filter row (`part="filter"`) above the
+//!   table has one operator `select` and one value `input` per column; `Enter` in
+//!   a control applies the `and` of all non-empty entries as the query's
+//!   `filter`, "Clear" empties it. The result count is shown as a
+//!   `role="status"` line. The controls are ordinary focusables outside the
+//!   `role="grid"` table, so the roving tabindex and keyboard matrix are
+//!   untouched.
 //!
 //! # Virtualization (point 17)
 //!
@@ -47,11 +58,12 @@ use wasm_bindgen::closure::Closure;
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::{JsFuture, spawn_local};
 use web_sys::{
-    Element, Event, HtmlElement, KeyboardEvent, Node, ScrollIntoViewOptions, ScrollLogicalPosition,
-    ShadowRoot,
+    Element, Event, HtmlElement, HtmlInputElement, HtmlSelectElement, KeyboardEvent, Node,
+    ScrollIntoViewOptions, ScrollLogicalPosition, ShadowRoot,
 };
 
 use opengrid_grid::{CellRef, GridState, Window};
+use opengrid_query::CmpOp;
 use opengrid_web_core::element::{
     ARIA_LABEL_ATTRIBUTE, LABEL_ATTRIBUTE, attach_open_shadow_root, define, mirror_label,
 };
@@ -61,8 +73,8 @@ use opengrid_web_core::renderer::{Dom, WebRenderer};
 
 use crate::element::{apply, clear_root, describe};
 use crate::grid::{
-    self, ActiveCell, COLUMNS_ATTRIBUTE, DATASOURCE_ATTRIBUTE, GRID_TAG, GridKey, GridNodes,
-    ROW_HEIGHT_PROPERTY, WINDOW_SIZE_ATTRIBUTE,
+    self, ActiveCell, COLUMNS_ATTRIBUTE, DATASOURCE_ATTRIBUTE, FilterEntry, GRID_TAG, GridKey,
+    GridNodes, ROW_HEIGHT_PROPERTY, WINDOW_SIZE_ATTRIBUTE,
 };
 
 /// Registers `<opengrid-grid>`; safe to call more than once.
@@ -317,7 +329,7 @@ fn render(host: &HtmlElement, focus_after: bool) {
         return;
     };
 
-    let (sort, slots, pinned_slot) = {
+    let (sorts, slots, pinned_slot) = {
         let borrowed = runtime.borrow();
         let Some(view) = borrowed.view.as_ref() else {
             return;
@@ -330,11 +342,8 @@ fn render(host: &HtmlElement, focus_after: bool) {
         let pinned_slot =
             focus.and_then(|row| borrowed.slots.iter().position(|slot| *slot == Some(row)));
         let slots = grid::assign_pool(&borrowed.slots, focus, &rows, pool);
-        let sort = borrowed
-            .state
-            .single_sort()
-            .map(|(field, direction)| (field.to_owned(), direction));
-        (sort, slots, pinned_slot)
+        let sorts = borrowed.state.sort_keys();
+        (sorts, slots, pinned_slot)
     };
 
     {
@@ -354,8 +363,7 @@ fn render(host: &HtmlElement, focus_after: bool) {
             &borrowed.state,
             &borrowed.slots,
             borrowed.active,
-            sort.as_ref()
-                .map(|(field, direction)| (field.as_str(), *direction)),
+            &sorts,
             pinned_slot,
             borrowed.row_height,
         );
@@ -394,27 +402,18 @@ pub(crate) fn run_query(host: &HtmlElement, focus: bool) {
     };
     let pool = grid::parse_window_size(host.get_attribute(WINDOW_SIZE_ATTRIBUTE).as_deref());
 
-    let (sort, offset, generation) = {
+    let (sorts, filter, offset, generation) = {
         let mut runtime = grid_runtime.borrow_mut();
         let generation = runtime.generation + 1;
         runtime.generation = generation;
         (
-            runtime
-                .state
-                .single_sort()
-                .map(|(field, direction)| (field.to_owned(), direction)),
+            runtime.state.sort_keys(),
+            runtime.state.filter().cloned(),
             runtime.state.window().offset,
             generation,
         )
     };
-    let query = grid::query_json(
-        &source,
-        &columns,
-        sort.as_ref()
-            .map(|(field, direction)| (field.as_str(), *direction)),
-        offset,
-        pool,
-    );
+    let query = grid::query_json(&source, &columns, &sorts, filter.as_ref(), offset, pool);
     let promise = provider.execute(&query);
 
     let host = host.clone();
@@ -535,13 +534,17 @@ fn active_from_element(element: &Element) -> Option<ActiveCell> {
     }
 }
 
-/// Installs the delegated `keydown`, `focusin` and capture-phase `scroll`
-/// listeners once.
+/// Installs the delegated `keydown`, `focusin`, `click` and capture-phase
+/// `scroll` listeners once.
 fn add_listeners(root: &ShadowRoot) {
     let keydown = Closure::<dyn FnMut(KeyboardEvent)>::new(on_key_down).into_js_value();
     let _ = root.add_event_listener_with_callback("keydown", keydown.unchecked_ref());
     let focusin = Closure::<dyn FnMut(Event)>::new(on_focus_in).into_js_value();
     let _ = root.add_event_listener_with_callback("focusin", focusin.unchecked_ref());
+    // The "Clear" button of the filter row needs a click handler; keyboard
+    // activation fires a click too, so one listener covers both.
+    let click = Closure::<dyn FnMut(Event)>::new(on_filter_clear).into_js_value();
+    let _ = root.add_event_listener_with_callback("click", click.unchecked_ref());
     // Scroll does not bubble, but a capture listener on the shadow root sees the
     // viewport's scroll events.
     let scroll = Closure::<dyn FnMut(Event)>::new(on_scroll).into_js_value();
@@ -551,12 +554,57 @@ fn add_listeners(root: &ShadowRoot) {
 /// Handles the WAI-ARIA grid keyboard matrix
 /// (plan/spezifikation/09-accessibility.md §Tastatur im Grid Mode).
 ///
-/// `Tab`/`Shift+Tab` and any other key are left to the browser: the roving
-/// tabindex makes the browser move focus out of the grid on its own.
+/// Keys typed into a filter control are left to that control; only `Enter` in a
+/// value/operator control applies the filter (the clear button keeps its native
+/// click). `Tab`/`Shift+Tab` and any other key are left to the browser: the
+/// roving tabindex makes the browser move focus out of the grid on its own.
 fn on_key_down(event: KeyboardEvent) {
     let Some(root) = current_shadow_root(&event) else {
         return;
     };
+    if let Some(target) = event
+        .target()
+        .and_then(|node| node.dyn_into::<Element>().ok())
+        && is_filter_control(&target)
+    {
+        // The operator select is driven directly: native `<select>` keyboard
+        // behaviour differs per platform (on macOS the popup needs opening
+        // first), so the component implements the standard arrow/Home/End moves
+        // itself. This keeps the filter row operable the same way everywhere.
+        if target.tag_name().eq_ignore_ascii_case("select")
+            && let Ok(select) = target.clone().dyn_into::<HtmlSelectElement>()
+        {
+            let last = select.length().saturating_sub(1) as i32;
+            let selected = select.selected_index();
+            match event.key().as_str() {
+                "ArrowDown" => {
+                    event.prevent_default();
+                    select.set_selected_index((selected + 1).min(last));
+                }
+                "ArrowUp" => {
+                    event.prevent_default();
+                    select.set_selected_index((selected - 1).max(0));
+                }
+                "Home" => {
+                    event.prevent_default();
+                    select.set_selected_index(0);
+                }
+                "End" => {
+                    event.prevent_default();
+                    select.set_selected_index(last);
+                }
+                _ => {}
+            }
+        }
+        // A button (the clear control) keeps its native Enter/Space activation.
+        if event.key() == "Enter" && !target.tag_name().eq_ignore_ascii_case("button") {
+            event.prevent_default();
+            if let Ok(host) = root.host().dyn_into::<HtmlElement>() {
+                apply_filters(&host);
+            }
+        }
+        return;
+    }
     let Ok(host) = root.host().dyn_into::<HtmlElement>() else {
         return;
     };
@@ -568,7 +616,7 @@ fn on_key_down(event: KeyboardEvent) {
     match (event.key().as_str(), event.ctrl_key()) {
         ("Enter", _) | (" ", _) => {
             event.prevent_default();
-            activate_header(&host, &runtime);
+            activate_header(&host, &runtime, event.shift_key());
         }
         ("Escape", _) => {
             event.prevent_default();
@@ -642,9 +690,14 @@ fn move_with_key(
     }
 }
 
-/// `Enter`/`Space` on a header cell toggles its single-column sort and re-runs
-/// the query; on a data cell it is a no-op.
-fn activate_header(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>) {
+/// `Enter`/`Space` on a header cell sorts by its column and re-runs the query;
+/// on a data cell it is a no-op.
+///
+/// A plain activation toggles the **single** sort (asc → desc → default). With
+/// `Shift` the column is added/removed as an **additional** key, keeping the
+/// existing keys' order (plan point 18 multi-sort). Either way the grid keeps at
+/// least the default sort (rule S6) and returns to the first window.
+fn activate_header(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>, multi: bool) {
     let active = runtime.borrow().active;
     let ActiveCell::Header { col } = active else {
         return;
@@ -664,13 +717,109 @@ fn activate_header(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>) {
     let pool = grid::parse_window_size(host.get_attribute(WINDOW_SIZE_ATTRIBUTE).as_deref());
     {
         let mut runtime = runtime.borrow_mut();
-        runtime.state.toggle_sort(&field);
+        if multi {
+            runtime.state.toggle_sort_multi(&field);
+        } else {
+            runtime.state.toggle_sort(&field);
+        }
         // Clearing the last sort falls back to the default first column so the
         // next page request still has a total order (rule S6).
         runtime.state.ensure_sorted();
         runtime.state.set_window(Window::new(0, pool));
     }
     run_query(host, true);
+}
+
+/// Whether `element` sits inside the filter row (and not in the grid table).
+fn is_filter_control(element: &Element) -> bool {
+    element.closest("[data-filter]").ok().flatten().is_some()
+}
+
+/// Reads the filter row into [`FilterEntry`]s, one per output column.
+///
+/// The operator `select` and value `input` are ordinary form controls; a missing
+/// control (should not happen after the skeleton) falls back to `eq`/empty.
+fn read_filter_entries(root: &ShadowRoot, columns: &[String]) -> Vec<FilterEntry> {
+    columns
+        .iter()
+        .enumerate()
+        .map(|(col, column)| {
+            let op = root
+                .query_selector(&format!("select[data-col=\"{col}\"]"))
+                .ok()
+                .flatten()
+                .and_then(|node| node.dyn_into::<HtmlSelectElement>().ok())
+                .map(|select| select.value())
+                .unwrap_or_default();
+            let value = root
+                .query_selector(&format!("input[data-col=\"{col}\"]"))
+                .ok()
+                .flatten()
+                .and_then(|node| node.dyn_into::<HtmlInputElement>().ok())
+                .map(|input| input.value())
+                .unwrap_or_default();
+            FilterEntry {
+                column: column.clone(),
+                op: CmpOp::parse(&op).unwrap_or(CmpOp::Eq),
+                value,
+            }
+        })
+        .collect()
+}
+
+/// Applies the filter row: builds the `filter` expression, returns to the first
+/// window and re-runs the query without moving focus (it stays in the control
+/// the user typed into).
+fn apply_filters(host: &HtmlElement) {
+    let Some(root) = host.shadow_root() else {
+        return;
+    };
+    let Some(runtime) = runtime(host) else {
+        return;
+    };
+    let columns = grid::parse_columns(host.get_attribute(COLUMNS_ATTRIBUTE).as_deref());
+    let filter = grid::filter_expr(&read_filter_entries(&root, &columns));
+    let pool = grid::parse_window_size(host.get_attribute(WINDOW_SIZE_ATTRIBUTE).as_deref());
+    {
+        let mut runtime = runtime.borrow_mut();
+        runtime.state.set_filter(filter);
+        runtime.state.set_window(Window::new(0, pool));
+    }
+    run_query(host, false);
+}
+
+/// Clears every value input and applies the (now empty) filter.
+fn on_filter_clear(event: Event) {
+    let Some(root) = current_shadow_root(&event) else {
+        return;
+    };
+    let Some(target) = event
+        .target()
+        .and_then(|node| node.dyn_into::<Element>().ok())
+    else {
+        return;
+    };
+    if target
+        .closest("[data-filter-clear]")
+        .ok()
+        .flatten()
+        .is_none()
+    {
+        return;
+    }
+    let Ok(host) = root.host().dyn_into::<HtmlElement>() else {
+        return;
+    };
+    if let Ok(inputs) = root.query_selector_all("input[data-col]") {
+        for index in 0..inputs.length() {
+            if let Some(node) = inputs.item(index)
+                && let Ok(input) = node.dyn_into::<HtmlInputElement>()
+            {
+                input.set_value("");
+            }
+        }
+    }
+    apply_filters(&host);
 }
 
 /// `Escape` returns focus to the first cell of the grid (the top-left header

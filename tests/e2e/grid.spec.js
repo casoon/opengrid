@@ -90,6 +90,19 @@ async function focusCell(page, selector) {
   }, selector);
 }
 
+/** The inner focused element's tag and part, or null. */
+async function innerActive(page) {
+  return page.evaluate(() => {
+    const element =
+      document.querySelector("opengrid-grid").shadowRoot.activeElement;
+    if (!element) return null;
+    return {
+      tag: element.tagName.toLowerCase(),
+      part: element.getAttribute("part"),
+    };
+  });
+}
+
 test.beforeEach(async ({ page }) => {
   await page.goto("/tests/e2e/fixtures/grid.html");
   await page.waitForFunction(() => window.__opengridReady);
@@ -238,7 +251,14 @@ test("Tab leaves the grid forwards and Shift+Tab backwards", async ({ page }) =>
   await page.keyboard.press("Tab");
   expect(await page.evaluate(() => document.activeElement?.id)).toBe("after");
 
+  // The filter row is a focusable sibling before the table (point 18), so
+  // Shift+Tab from the header reaches its last control instead of the light-DOM
+  // neighbour; from the first control the grid releases focus backwards.
   await focusCell(page, 'th[data-col="0"]');
+  await page.keyboard.press("Shift+Tab");
+  expect(await innerActive(page)).toMatchObject({ tag: "button" });
+
+  await focusCell(page, 'select[data-col="0"]');
   await page.keyboard.press("Shift+Tab");
   expect(await page.evaluate(() => document.activeElement?.id)).toBe("before");
 });

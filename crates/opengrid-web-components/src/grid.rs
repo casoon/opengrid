@@ -70,6 +70,7 @@
 
 use opengrid_datasource::QueryResult;
 use opengrid_grid::{CellRef, GridState, Window};
+use opengrid_query::{CmpOp, FilterExpr};
 use opengrid_types::{DataType, Field, FieldName, Schema, Value};
 use opengrid_web_core::element::{LABEL_ATTRIBUTE, mirror_label};
 use opengrid_web_core::patch::{NodeAllocator, NodeId, Patch, PatchBuffer};
@@ -114,6 +115,33 @@ pub const OVERSCAN: u64 = 6;
 /// Fallback viewport height in rows for `PageUp`/`PageDown` when the browser
 /// cannot report a laid-out height.
 pub const DEFAULT_VIEWPORT_ROWS: u64 = 12;
+
+/// The fixed pixel height of the filter row (`part="filter"`).
+///
+/// The row is a single horizontal line of controls, so its height is constant
+/// regardless of the column count; the viewport below it takes the rest of the
+/// host. A host can override it with [`FILTER_HEIGHT_PROPERTY`], but the default
+/// keeps the virtualization math and the fixtures deterministic.
+pub const FILTER_HEIGHT: u64 = 40;
+
+/// The CSS custom property overriding [`FILTER_HEIGHT`].
+pub const FILTER_HEIGHT_PROPERTY: &str = "--grid-filter-height";
+
+/// The operators the type-agnostic filter row offers, in display order.
+///
+/// The wire names are exactly the query's (plan/spezifikation/02-query-modell.md
+/// §Operatoren V1); `is_null`/`is_not_null` are not offered because the
+/// type-agnostic input always has a value to compare.
+pub const FILTER_OPERATORS: &[&str] = &[
+    "contains",
+    "starts_with",
+    "eq",
+    "ne",
+    "gt",
+    "gte",
+    "lt",
+    "lte",
+];
 
 /// The host attributes the element reacts to.
 pub const OBSERVED: &[&str] = &[
@@ -193,6 +221,8 @@ pub enum GridKey {
 /// makes row recycling (and focus survival) possible.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GridNodes {
+    /// The type-agnostic filter row above the table (`part="filter"`).
+    pub filter: FilterNodes,
     /// The scrollable viewport (`overflow-y: auto`) inside the shadow root.
     pub viewport: NodeId,
     /// The table's `<tbody>`, used as the sizer (`height = total * row_height`).
@@ -200,9 +230,43 @@ pub struct GridNodes {
     /// The `<table role="grid">`.
     pub table: NodeId,
     /// The header cells, one per column.
-    pub header_cells: Vec<NodeId>,
+    pub header_cells: Vec<GridHeaderNodes>,
     /// The recycled pool: one entry per slot.
     pub rows: Vec<GridRowNodes>,
+}
+
+/// The nodes of one header cell: the `<th>` and its visible multi-sort index.
+///
+/// The column name lives in a static child `<span>`; the index `<span>` is
+/// `aria-hidden`, so showing it never changes the header's accessible name.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GridHeaderNodes {
+    /// The `<th scope="col">`.
+    pub cell: NodeId,
+    /// The `<span>` carrying the multi-sort order (empty for a single sort).
+    pub index: NodeId,
+}
+
+/// The nodes of the filter row (plan point 18).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FilterNodes {
+    /// The row container (`part="filter"`).
+    pub container: NodeId,
+    /// The `role="status"` result-count line.
+    pub status: NodeId,
+    /// The "Clear" button (`part="filter-clear"`).
+    pub clear: NodeId,
+    /// One operator `select` + value `input` per column.
+    pub columns: Vec<FilterColumnNodes>,
+}
+
+/// The controls of one column's filter group.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FilterColumnNodes {
+    /// The operator `<select>`.
+    pub select: NodeId,
+    /// The value `<input type="text">`.
+    pub input: NodeId,
 }
 
 /// The nodes of one recycled pool row.
@@ -266,16 +330,69 @@ pub fn initial_schema(columns: &[String]) -> Schema {
     Schema::new(fields)
 }
 
+/// One row of the filter UI: a column, an operator and the typed value.
+///
+/// Values are always plain strings — the display schema is all `Utf8` in Phase B
+/// and the result JSON carries no types (point 23). The literal is therefore sent
+/// as a JSON string; comparing it works for text columns and is a documented
+/// limitation for the others until point 23.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FilterEntry {
+    /// The output column the comparison names.
+    pub column: String,
+    /// The comparison operator.
+    pub op: CmpOp,
+    /// The raw value text; an empty (or whitespace-only) value means "no filter".
+    pub value: String,
+}
+
+/// The `filter` expression of the filter row: the `and` of every non-empty entry.
+///
+/// Entries with a blank value are skipped; an all-blank/empty input clears the
+/// filter (`None`). A column that is not a valid field identifier is skipped
+/// rather than turning into a malformed query.
+pub fn filter_expr(entries: &[FilterEntry]) -> Option<FilterExpr> {
+    let comparisons: Vec<FilterExpr> = entries
+        .iter()
+        .filter(|entry| !entry.value.trim().is_empty())
+        .filter_map(|entry| {
+            FieldName::new(entry.column.as_str())
+                .ok()
+                .map(|field| FilterExpr::Cmp {
+                    field,
+                    op: entry.op,
+                    value: serde_json::Value::String(entry.value.clone()),
+                })
+        })
+        .collect();
+    if comparisons.is_empty() {
+        None
+    } else {
+        Some(FilterExpr::And(comparisons))
+    }
+}
+
+/// The visible result-count line (`role="status"`).
+///
+/// German wording, matching the plan point 18 ("N Treffer"); couples to point 41,
+/// which formalises the status area.
+pub fn count_text(total_count: u64) -> String {
+    format!("{total_count} Treffer")
+}
+
 /// Builds the query JSON for a grid render.
 ///
-/// The shape is `{ "source", "select", "sort", "limit", "offset" }`
-/// (plan/spezifikation/02-query-modell.md §JSON-Vertrag); `sort` is omitted when
-/// nothing is sorted and carried as one `{ "field", "direction" }` object
-/// otherwise. `direction` is the wire token `"asc"`/`"desc"`.
+/// The shape is `{ "source", "select", "filter"?, "sort"?, "limit", "offset" }`
+/// (plan/spezifikation/02-query-modell.md §JSON-Vertrag). `sorts` is the whole
+/// sort list in the user's order (point 18 multi-sort); each entry becomes a
+/// `{ "field", "direction" }` object and the key is omitted when nothing is
+/// sorted. `filter` is serialized from the [`FilterExpr`] built by
+/// [`filter_expr`]; `direction` is the wire token `"asc"`/`"desc"`.
 pub fn query_json(
     source: &str,
     columns: &[String],
-    sort: Option<(&str, &str)>,
+    sorts: &[(String, &str)],
+    filter: Option<&FilterExpr>,
     offset: u64,
     limit: u64,
 ) -> String {
@@ -286,11 +403,16 @@ pub fn query_json(
         "select".to_owned(),
         Json::Array(columns.iter().cloned().map(Json::String).collect()),
     );
-    if let Some((field, direction)) = sort {
-        query.insert(
-            "sort".to_owned(),
-            json!([{ "field": field, "direction": direction }]),
-        );
+    if let Some(filter) = filter {
+        let filter = serde_json::to_value(filter).expect("a filter expression serializes");
+        query.insert("filter".to_owned(), filter);
+    }
+    if !sorts.is_empty() {
+        let sorts: Vec<Json> = sorts
+            .iter()
+            .map(|(field, direction)| json!({ "field": field, "direction": direction }))
+            .collect();
+        query.insert("sort".to_owned(), Json::Array(sorts));
     }
     query.insert("limit".to_owned(), json!(limit));
     query.insert("offset".to_owned(), json!(offset));
@@ -590,8 +712,16 @@ pub fn build_grid(
     // `:host` with the default and can be overridden from the document (or an
     // inline style) on the host; the inner elements inherit the resolved value.
     let styles = format!(
-        ":host {{ {ROW_HEIGHT_PROPERTY}: {DEFAULT_ROW_HEIGHT}px; }}
-         [part=\"viewport\"] {{ overflow-y: auto; position: relative; display: block; height: 100%; }}
+        ":host {{ {ROW_HEIGHT_PROPERTY}: {DEFAULT_ROW_HEIGHT}px; {FILTER_HEIGHT_PROPERTY}: {FILTER_HEIGHT}px; }}
+         [part=\"layout\"] {{ display: flex; flex-direction: column; height: 100%; min-height: 0; }}
+         [part=\"filter\"] {{ display: flex; align-items: center; gap: 0.5rem; box-sizing: border-box;
+                             flex: 0 0 auto;
+                             height: var({FILTER_HEIGHT_PROPERTY}); padding: 0 0.5rem;
+                             overflow-x: auto; overflow-y: hidden; white-space: nowrap; }}
+         [part=\"filter\"] select, [part=\"filter\"] input, [part=\"filter\"] button {{ font: inherit; }}
+         [part=\"filter-status\"] {{ margin-left: auto; }}
+         [part=\"viewport\"] {{ flex: 1 1 0; min-height: 0; overflow-y: auto; position: relative; display: block; }}
+         [part=\"sort-index\"] {{ margin-left: 0.25rem; font-size: 0.75em; }}
          table {{ width: 100%; table-layout: fixed; border-collapse: collapse; }}
          thead {{ position: sticky; top: 0; z-index: 2; background: Canvas; color: CanvasText; }}
          tbody tr {{ position: absolute; left: 0; width: 100%; display: table; table-layout: fixed; }}
@@ -605,7 +735,16 @@ pub fn build_grid(
         text: styles,
     });
 
-    let viewport = element(buffer, nodes, Some(NodeId::ROOT), "div");
+    let layout = element(buffer, nodes, Some(NodeId::ROOT), "div");
+    buffer.push(Patch::SetAttribute {
+        node: layout,
+        name: "part".to_owned(),
+        value: "layout".to_owned(),
+    });
+
+    let filter = build_filter(buffer, nodes, layout, fields);
+
+    let viewport = element(buffer, nodes, Some(layout), "div");
     buffer.push(Patch::SetAttribute {
         node: viewport,
         name: "part".to_owned(),
@@ -666,11 +805,25 @@ pub fn build_grid(
             name: "tabindex".to_owned(),
             value: "-1".to_owned(),
         });
+        // The column name lives in its own span so the multi-sort index can be
+        // added as a second, `aria-hidden` span without touching the name.
+        let name = element(buffer, nodes, Some(th), "span");
         buffer.push(Patch::SetText {
-            node: th,
+            node: name,
             text: field.name.as_str().to_owned(),
         });
-        header_cells.push(th);
+        let index = element(buffer, nodes, Some(th), "span");
+        buffer.push(Patch::SetAttribute {
+            node: index,
+            name: "part".to_owned(),
+            value: "sort-index".to_owned(),
+        });
+        buffer.push(Patch::SetAttribute {
+            node: index,
+            name: "aria-hidden".to_owned(),
+            value: "true".to_owned(),
+        });
+        header_cells.push(GridHeaderNodes { cell: th, index });
     }
 
     let tbody = element(buffer, nodes, Some(table), "tbody");
@@ -699,6 +852,7 @@ pub fn build_grid(
     }
 
     GridNodes {
+        filter,
         viewport,
         tbody,
         table,
@@ -707,14 +861,164 @@ pub fn build_grid(
     }
 }
 
+/// Builds the type-agnostic filter row: one operator `select` and one value
+/// `input` per column, plus a clear button and the result count (point 18).
+///
+/// It sits **outside** the `role="grid"` table (`part="filter"`), so the grid's
+/// roving tabindex and keyboard matrix are untouched; the controls are ordinary
+/// focusable form elements. Each control is labelled with its column name via
+/// `aria-label` (all references stay inside the shadow root, E8/R6).
+fn build_filter(
+    buffer: &mut PatchBuffer,
+    nodes: &mut NodeAllocator,
+    parent: NodeId,
+    fields: &[Field],
+) -> FilterNodes {
+    let container = element(buffer, nodes, Some(parent), "div");
+    buffer.push(Patch::SetAttribute {
+        node: container,
+        name: "part".to_owned(),
+        value: "filter".to_owned(),
+    });
+    buffer.push(Patch::SetAttribute {
+        node: container,
+        name: "data-filter".to_owned(),
+        value: String::new(),
+    });
+    buffer.push(Patch::SetAttribute {
+        node: container,
+        name: "role".to_owned(),
+        value: "group".to_owned(),
+    });
+    buffer.push(Patch::SetAttribute {
+        node: container,
+        name: "aria-label".to_owned(),
+        value: "Filter".to_owned(),
+    });
+
+    let mut columns = Vec::with_capacity(fields.len());
+    for (col, field) in fields.iter().enumerate() {
+        let group = element(buffer, nodes, Some(container), "span");
+        set_style(
+            buffer,
+            group,
+            "display: inline-flex; align-items: center; gap: 0.25rem;",
+        );
+
+        let select = element(buffer, nodes, Some(group), "select");
+        buffer.push(Patch::SetAttribute {
+            node: select,
+            name: "part".to_owned(),
+            value: "filter-operator".to_owned(),
+        });
+        buffer.push(Patch::SetAttribute {
+            node: select,
+            name: "data-col".to_owned(),
+            value: col.to_string(),
+        });
+        buffer.push(Patch::SetAttribute {
+            node: select,
+            name: "aria-label".to_owned(),
+            value: format!("{} operator", field.name),
+        });
+        for (option_index, op) in FILTER_OPERATORS.iter().enumerate() {
+            let option = element(buffer, nodes, Some(select), "option");
+            buffer.push(Patch::SetAttribute {
+                node: option,
+                name: "value".to_owned(),
+                value: (*op).to_owned(),
+            });
+            if option_index == 0 {
+                buffer.push(Patch::SetAttribute {
+                    node: option,
+                    name: "selected".to_owned(),
+                    value: String::new(),
+                });
+            }
+            buffer.push(Patch::SetText {
+                node: option,
+                text: (*op).to_owned(),
+            });
+        }
+
+        let input = element(buffer, nodes, Some(group), "input");
+        buffer.push(Patch::SetAttribute {
+            node: input,
+            name: "type".to_owned(),
+            value: "text".to_owned(),
+        });
+        buffer.push(Patch::SetAttribute {
+            node: input,
+            name: "part".to_owned(),
+            value: "filter-value".to_owned(),
+        });
+        buffer.push(Patch::SetAttribute {
+            node: input,
+            name: "data-col".to_owned(),
+            value: col.to_string(),
+        });
+        buffer.push(Patch::SetAttribute {
+            node: input,
+            name: "aria-label".to_owned(),
+            value: format!("{} value", field.name),
+        });
+        set_style(buffer, input, "width: 6rem;");
+        columns.push(FilterColumnNodes { select, input });
+    }
+
+    let clear = element(buffer, nodes, Some(container), "button");
+    buffer.push(Patch::SetAttribute {
+        node: clear,
+        name: "type".to_owned(),
+        value: "button".to_owned(),
+    });
+    buffer.push(Patch::SetAttribute {
+        node: clear,
+        name: "part".to_owned(),
+        value: "filter-clear".to_owned(),
+    });
+    buffer.push(Patch::SetAttribute {
+        node: clear,
+        name: "data-filter-clear".to_owned(),
+        value: String::new(),
+    });
+    buffer.push(Patch::SetText {
+        node: clear,
+        text: "Clear".to_owned(),
+    });
+
+    let status = element(buffer, nodes, Some(container), "span");
+    buffer.push(Patch::SetAttribute {
+        node: status,
+        name: "part".to_owned(),
+        value: "filter-status".to_owned(),
+    });
+    buffer.push(Patch::SetAttribute {
+        node: status,
+        name: "role".to_owned(),
+        value: "status".to_owned(),
+    });
+
+    FilterNodes {
+        container,
+        status,
+        clear,
+        columns,
+    }
+}
+
 /// Updates the skeleton in one frame: sizes the sizer, refreshes the header and
-/// recycles the pool rows for the current window.
+/// the result count and recycles the pool rows for the current window.
 ///
 /// `slots` is the slot → logical row assignment (computed by [`assign_pool`]).
 /// `pinned_slot` is the slot holding the focused cell: it is left completely
 /// untouched, so the focused DOM node keeps its `data-row` and the browser keeps
 /// the focus. Every other slot gets its new `aria-rowindex`, `data-row`, text
 /// and `translateY` — no node is created or removed.
+///
+/// `sorts` is the whole sort list in order (point 18): a column's `aria-sort`
+/// reflects its key and, when more than one key is active, its 1-based position
+/// is shown in the header's `aria-hidden` index span.
 #[allow(clippy::too_many_arguments)]
 pub fn patch_grid(
     buffer: &mut PatchBuffer,
@@ -722,7 +1026,7 @@ pub fn patch_grid(
     state: &GridState,
     slots: &[Option<u64>],
     active: ActiveCell,
-    sort: Option<(&str, &str)>,
+    sorts: &[(String, &str)],
     pinned_slot: Option<usize>,
     row_height: u64,
 ) {
@@ -742,21 +1046,36 @@ pub fn patch_grid(
         name: "aria-rowcount".to_owned(),
         value: (total_count + 1).to_string(),
     });
+    buffer.push(Patch::SetText {
+        node: nodes.filter.status,
+        text: count_text(total_count),
+    });
 
-    for (col, th) in nodes.header_cells.iter().enumerate() {
+    for (col, header) in nodes.header_cells.iter().enumerate() {
+        let key = fields
+            .get(col)
+            .and_then(|field| sort_position(sorts, field.name.as_str()));
         buffer.push(Patch::SetAttribute {
-            node: *th,
+            node: header.cell,
             name: "aria-sort".to_owned(),
-            value: fields
-                .get(col)
-                .map(|field| aria_sort_for(sort, field.name.as_str()))
-                .unwrap_or("none")
+            value: key
+                .map_or("none", |position| aria_sort(sorts[position].1))
                 .to_owned(),
         });
         buffer.push(Patch::SetAttribute {
-            node: *th,
+            node: header.cell,
             name: "tabindex".to_owned(),
             value: tabindex_for(active == ActiveCell::Header { col }).to_owned(),
+        });
+        let index = if sorts.len() > 1 {
+            key.map(|position| (position + 1).to_string())
+                .unwrap_or_default()
+        } else {
+            String::new()
+        };
+        buffer.push(Patch::SetText {
+            node: header.index,
+            text: index,
         });
     }
 
@@ -822,11 +1141,16 @@ fn set_style(buffer: &mut PatchBuffer, node: NodeId, style: &str) {
     });
 }
 
-/// The `aria-sort` token of a column for the active single sort.
-fn aria_sort_for(sort: Option<(&str, &str)>, name: &str) -> &'static str {
-    match sort {
-        Some((field, "asc")) if field == name => "ascending",
-        Some((field, "desc")) if field == name => "descending",
+/// The position of a column in the sort list, if it is a key.
+fn sort_position(sorts: &[(String, &str)], name: &str) -> Option<usize> {
+    sorts.iter().position(|(field, _)| field == name)
+}
+
+/// The `aria-sort` token for a wire direction.
+fn aria_sort(direction: &str) -> &'static str {
+    match direction {
+        "asc" => "ascending",
+        "desc" => "descending",
         _ => "none",
     }
 }
@@ -934,23 +1258,25 @@ mod tests {
     #[test]
     fn an_unsorted_query_has_limit_and_offset() {
         use serde_json::{Value as Json, json};
-        let query = query_json("orders", &["a".to_owned()], None, 100, 40);
+        let query = query_json("orders", &["a".to_owned()], &[], None, 100, 40);
         let value: Json = serde_json::from_str(&query).expect("valid JSON");
         assert_eq!(value["source"], "orders");
         assert_eq!(value["select"], json!(["a"]));
         assert_eq!(value["limit"], json!(40));
         assert_eq!(value["offset"], json!(100));
         assert!(value.get("sort").is_none());
+        assert!(value.get("filter").is_none());
     }
 
-    /// A sorted query carries exactly one sort object.
+    /// A sorted query carries one sort object per key, in order.
     #[test]
     fn a_sorted_query_names_one_direction() {
         use serde_json::{Value as Json, json};
         let query = query_json(
             "orders",
             &["customer".to_owned()],
-            Some(("customer", "desc")),
+            &[("customer".to_owned(), "desc")],
+            None,
             0,
             40,
         );
@@ -959,6 +1285,91 @@ mod tests {
             value["sort"],
             json!([{ "field": "customer", "direction": "desc" }])
         );
+    }
+
+    /// A multi-sort query keeps the keys in the user's order.
+    #[test]
+    fn a_multi_sort_query_keeps_the_key_order() {
+        use serde_json::{Value as Json, json};
+        let query = query_json(
+            "orders",
+            &["customer".to_owned()],
+            &[
+                ("customer".to_owned(), "asc"),
+                ("amount".to_owned(), "desc"),
+            ],
+            None,
+            0,
+            40,
+        );
+        let value: Json = serde_json::from_str(&query).expect("valid JSON");
+        assert_eq!(
+            value["sort"],
+            json!([
+                { "field": "customer", "direction": "asc" },
+                { "field": "amount", "direction": "desc" }
+            ])
+        );
+    }
+
+    /// The filter expression is the `and` of the non-empty entries.
+    #[test]
+    fn the_filter_query_is_the_and_of_the_entries() {
+        use serde_json::{Value as Json, json};
+        let entries = [
+            FilterEntry {
+                column: "customer".to_owned(),
+                op: CmpOp::Contains,
+                value: "Al".to_owned(),
+            },
+            FilterEntry {
+                column: "qty".to_owned(),
+                op: CmpOp::Gt,
+                value: "2".to_owned(),
+            },
+        ];
+        let filter = filter_expr(&entries).expect("a filter");
+        let query = query_json(
+            "orders",
+            &["customer".to_owned()],
+            &[("customer".to_owned(), "asc")],
+            Some(&filter),
+            0,
+            40,
+        );
+        let value: Json = serde_json::from_str(&query).expect("valid JSON");
+        assert_eq!(
+            value["filter"],
+            json!({ "and": [
+                { "field": "customer", "op": "contains", "value": "Al" },
+                { "field": "qty", "op": "gt", "value": "2" }
+            ]})
+        );
+    }
+
+    /// Blank entries are skipped; an all-blank input clears the filter.
+    #[test]
+    fn blank_filter_entries_do_not_build_a_filter() {
+        assert_eq!(filter_expr(&[]), None);
+        let blank = [FilterEntry {
+            column: "customer".to_owned(),
+            op: CmpOp::Eq,
+            value: "  ".to_owned(),
+        }];
+        assert_eq!(filter_expr(&blank), None);
+        let one = [FilterEntry {
+            column: "customer".to_owned(),
+            op: CmpOp::Eq,
+            value: "DE".to_owned(),
+        }];
+        assert!(filter_expr(&one).is_some());
+    }
+
+    /// The count line uses the German wording of the point.
+    #[test]
+    fn count_text_formats_the_result_line() {
+        assert_eq!(count_text(0), "0 Treffer");
+        assert_eq!(count_text(1_234), "1234 Treffer");
     }
 
     /// The result becomes an all-`Utf8` display schema and text values.
@@ -1007,6 +1418,7 @@ mod tests {
         assert_eq!(view.pool(), 3);
         assert_eq!(view.header_cells.len(), 2);
         assert_eq!(view.rows[0].cells.len(), 2);
+        assert_eq!(view.filter.columns.len(), 2);
 
         let attributes = |name: &str| -> Vec<String> {
             buffer
@@ -1021,12 +1433,33 @@ mod tests {
                 .collect()
         };
 
-        assert_eq!(attributes("role"), ["grid"]);
-        assert_eq!(attributes("aria-label"), ["Bestellungen"]);
+        // The filter group, the status line and the grid itself carry roles.
+        assert_eq!(attributes("role"), ["group", "status", "grid"]);
+        // The filter row is labelled separately; the grid label comes last.
+        let labels = attributes("aria-label");
+        assert_eq!(labels.first().map(String::as_str), Some("Filter"));
+        assert_eq!(labels.last().map(String::as_str), Some("Bestellungen"));
         assert_eq!(attributes("aria-colcount"), ["2"]);
         // Only the header row carries an index in the skeleton; the pool rows
         // get theirs from `patch_grid`.
         assert_eq!(attributes("aria-rowindex"), ["1"]);
+        let parts = attributes("part");
+        assert_eq!(&parts[..2], ["layout", "filter"]);
+        assert!(parts.iter().any(|part| part == "viewport"));
+        assert_eq!(
+            parts
+                .iter()
+                .filter(|part| part.as_str() == "filter-operator")
+                .count(),
+            2
+        );
+        assert_eq!(
+            parts
+                .iter()
+                .filter(|part| part.as_str() == "sort-index")
+                .count(),
+            2
+        );
     }
 
     /// Patching the pool recycles the existing rows: counts, rowindexes and
@@ -1047,7 +1480,7 @@ mod tests {
             &state,
             &slots,
             ActiveCell::Header { col: 0 },
-            None,
+            &[],
             None,
             DEFAULT_ROW_HEIGHT,
         );
@@ -1097,7 +1530,7 @@ mod tests {
             &state,
             &slots,
             ActiveCell::Data(CellRef::new(0, 1)),
-            Some(("qty", "asc")),
+            &[("qty".to_owned(), "asc")],
             None,
             DEFAULT_ROW_HEIGHT,
         );
@@ -1112,6 +1545,92 @@ mod tests {
             })
             .collect();
         assert_eq!(sorts, ["none", "ascending"]);
+    }
+
+    /// Multi-sort marks each key with its direction and shows its order index.
+    #[test]
+    fn a_multi_sort_shows_each_key_with_its_order() {
+        let schema = initial_schema(&["customer".to_owned(), "qty".to_owned()]);
+        let mut nodes = NodeAllocator::new();
+        let mut buffer = PatchBuffer::new();
+        let view = build_grid(&mut buffer, &mut nodes, None, &schema, 1);
+        let state = state_with(&["Gamma"], 1, 0, 1);
+        let slots = assign_pool(&[None], None, &window_rows(0, 1, 1), 1);
+
+        let mut buffer = PatchBuffer::new();
+        patch_grid(
+            &mut buffer,
+            &view,
+            &state,
+            &slots,
+            ActiveCell::Header { col: 0 },
+            &[("customer".to_owned(), "asc"), ("qty".to_owned(), "desc")],
+            None,
+            DEFAULT_ROW_HEIGHT,
+        );
+
+        let aria: Vec<&str> = buffer
+            .patches()
+            .iter()
+            .filter_map(|patch| match patch {
+                Patch::SetAttribute { name, value, .. } if name == "aria-sort" => {
+                    Some(value.as_str())
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(aria, ["ascending", "descending"]);
+
+        let text_of = |node: NodeId| -> String {
+            buffer
+                .patches()
+                .iter()
+                .find_map(|patch| match patch {
+                    Patch::SetText {
+                        node: current,
+                        text,
+                    } if *current == node => Some(text.clone()),
+                    _ => None,
+                })
+                .unwrap_or_default()
+        };
+        assert_eq!(text_of(view.header_cells[0].index), "1");
+        assert_eq!(text_of(view.header_cells[1].index), "2");
+        assert_eq!(text_of(view.filter.status), "1 Treffer");
+    }
+
+    /// A single sort leaves the header's order index empty.
+    #[test]
+    fn a_single_sort_hides_the_order_index() {
+        let schema = initial_schema(&["customer".to_owned(), "qty".to_owned()]);
+        let mut nodes = NodeAllocator::new();
+        let mut buffer = PatchBuffer::new();
+        let view = build_grid(&mut buffer, &mut nodes, None, &schema, 1);
+        let state = state_with(&["Gamma"], 1, 0, 1);
+        let slots = assign_pool(&[None], None, &window_rows(0, 1, 1), 1);
+
+        let mut buffer = PatchBuffer::new();
+        patch_grid(
+            &mut buffer,
+            &view,
+            &state,
+            &slots,
+            ActiveCell::Header { col: 0 },
+            &[("customer".to_owned(), "asc")],
+            None,
+            DEFAULT_ROW_HEIGHT,
+        );
+        let indexes: Vec<&str> = buffer
+            .patches()
+            .iter()
+            .filter_map(|patch| match patch {
+                Patch::SetText { node, text } if *node == view.header_cells[0].index => {
+                    Some(text.as_str())
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(indexes, [""]);
     }
 
     /// The sizer height is `total_count * row_height`.
@@ -1131,7 +1650,7 @@ mod tests {
             &state,
             &slots,
             ActiveCell::Header { col: 0 },
-            None,
+            &[],
             None,
             DEFAULT_ROW_HEIGHT,
         );
@@ -1159,7 +1678,7 @@ mod tests {
             &state,
             &slots,
             ActiveCell::Header { col: 0 },
-            None,
+            &[],
             None,
             48,
         );
@@ -1199,7 +1718,7 @@ mod tests {
             &state_with(&[], 100, 20, 4),
             &slots,
             ActiveCell::Data(CellRef::new(6, 0)),
-            None,
+            &[],
             pinned,
             DEFAULT_ROW_HEIGHT,
         );

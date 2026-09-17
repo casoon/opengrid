@@ -61,13 +61,15 @@
   </head>
   <body>
     <h1>opengrid — Grid-Demo mit 100 000 Zeilen</h1>
-    <p class="lead">
-      Ein <code>&lt;opengrid-grid&gt;</code> über der lokalen WASM-Engine. Die
-      Seite lädt einen Datensatz, steckt die Engine als Provider hinein und
-      rendert ein virtuelles Fenster: rund 40 DOM-Zeilen für 100 000 logische
-      Zeilen, per Row-Recycling beim Scrollen. Bedienung vollständig per Tastatur
-      nach dem WAI-ARIA Grid Pattern (plan/spezifikation/09-accessibility.md).
-    </p>
+<p class="lead">
+        Ein <code>&lt;opengrid-grid&gt;</code> über der lokalen WASM-Engine. Die
+        Seite lädt einen Datensatz, steckt die Engine als Provider hinein und
+        rendert ein virtuelles Fenster: rund 40 DOM-Zeilen für 100 000 logische
+        Zeilen, per Row-Recycling beim Scrollen. Bedienung vollständig per
+        Tastatur nach dem WAI-ARIA Grid Pattern
+        (plan/spezifikation/09-accessibility.md). Über der Tabelle sitzt eine
+        Filterzeile (Operator + Wert je Spalte, <code>Enter</code> wendet an).
+      </p>
 
     <p id="status" role="status" aria-live="polite">Lädt …</p>
 
@@ -138,7 +140,9 @@ just serve-demo   # dann http://127.0.0.1:8080/examples/grid-demo/ öffnen</code
         setStatus(
           `Datensatz geladen (${rows} Zeilen) aus ${url}. ` +
             `Tastatur: Pfeile, Home/End, Ctrl+Home/Ctrl+End, PageUp/PageDown, ` +
-            `Enter/Leertaste auf der Kopfzeile sortiert, Escape springt zur ersten Zelle.`,
+            `Enter/Leertaste auf der Kopfzeile sortiert (Shift+Enter ergänzt ` +
+            `weitere Sortierschlüssel), Escape springt zur ersten Zelle. ` +
+            `Filterzeile: Operator wählen, Wert eintippen, Enter anwenden.`,
         );
         return { fallback: loader.fallback, url };
       }
