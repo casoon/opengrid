@@ -46,14 +46,16 @@
       #status.error {
         color: #c0392b;
       }
-      /* The component owns its shadow DOM; these custom properties theme it. */
+      /* The component owns its shadow DOM. Its row height is the fixed 32px
+         virtualization constant, not a CSS variable (the window math needs it). */
       opengrid-grid {
-        --grid-row-height: 32px;
         display: block;
         border: 1px solid var(--line);
         border-radius: 0.4rem;
-        overflow: auto;
-        max-height: 60vh;
+        /* A definite height makes the shadow viewport the scroll container, so
+           the row pool virtualizes and the scrollbar spans all 100 000 rows. */
+        height: 60vh;
+        overflow: hidden;
       }
     </style>
   </head>
@@ -62,8 +64,9 @@
     <p class="lead">
       Ein <code>&lt;opengrid-grid&gt;</code> über der lokalen WASM-Engine. Die
       Seite lädt einen Datensatz, steckt die Engine als Provider hinein und
-      rendert seitenweise. Bedienung vollständig per Tastatur nach dem WAI-ARIA
-      Grid Pattern (plan/spezifikation/09-accessibility.md).
+      rendert ein virtuelles Fenster: rund 40 DOM-Zeilen für 100 000 logische
+      Zeilen, per Row-Recycling beim Scrollen. Bedienung vollständig per Tastatur
+      nach dem WAI-ARIA Grid Pattern (plan/spezifikation/09-accessibility.md).
     </p>
 
     <p id="status" role="status" aria-live="polite">Lädt …</p>
@@ -72,7 +75,7 @@
       label="Bestellungen"
       datasource="orders"
       columns="id,customer,country,amount,qty"
-      page-size="100"
+      page-size="40"
     ></opengrid-grid>
 
     <details style="margin-top: 1rem">

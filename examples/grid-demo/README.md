@@ -1,8 +1,9 @@
 # Grid-Demo (100k)
 
-Manuelle Demo für `<opengrid-grid>` (Plan-Punkt 16): eine Seite, die einen
-Datensatz über die lokale WASM-Engine lädt und vollständig per Tastatur bedienbar
-ist. Die E2E-Suite bleibt klein; **diese Demo ist der Maßstabs-Check.**
+Manuelle Demo für `<opengrid-grid>` (Plan-Punkte 16/17): eine Seite, die einen
+Datensatz über die lokale WASM-Engine lädt, vollständig per Tastatur bedienbar ist
+und bei 100 000 logischen Zeilen nur ein rund 40 Zeilen großes DOM-Fenster hält
+(Row-Recycling). Die E2E-Suite bleibt klein; **diese Demo ist der Maßstabs-Check.**
 
 ## Starten
 
@@ -28,7 +29,32 @@ cargo run -p xtask -- gen-orders --rows 100000 --seed 1 --out target/grid-demo/o
 
 Pfeiltasten, `Home`/`End`, `Ctrl+Home`/`Ctrl+End`, `PageUp`/`PageDown`,
 `Enter`/`Leertaste` auf einer Kopfzelle sortiert, `Escape` springt zur ersten
-Zelle, `Tab`/`Shift+Tab` verlassen das Grid.
+Zelle, `Tab`/`Shift+Tab` verlassen das Grid. `Ctrl+End` lädt die letzte logische
+Zeile (`aria-rowindex=100001`), rendert sie und fokussiert sie.
+
+## Virtualisierung (Punkt 17)
+
+Das `<tbody>` ist der Sizer (`height = total_count * 32px`), die Pool-Zeilen sind
+`position: absolute` und werden per `translateY(zelle * 32px)` platziert; `<thead>`
+ist `position: sticky`. Beim Scrollen wird nur das Fenster (`limit=40`,
+`offset=Fensterstart`) nachgeladen und die vorhandenen Zeilen werden recycelt —
+es entstehen keine neuen Knoten. Die Zeile mit dem fokussierten Feld wird nie
+recycelt, damit der Fokus das Scrollen überlebt.
+
+### Messwert (Chrome headless, 100 000 Zeilen, 5 Spalten)
+
+Ein Scroll über die gesamte Höhe in 300 Schritten (`requestAnimationFrame`,
+jeder Schritt setzt `scrollTop`):
+
+| Kennzahl | Wert |
+|---|---|
+| DOM-Zeilen vorher / nachher | 40 / 40 (= Pool, konstant) |
+| DOM-Zellen vorher / nachher | 200 / 200 |
+| `aria-rowcount` | 100001 |
+| Schrittzahl | 300 |
+| Dauer | 5000 ms (≈ 16,7 ms/Schritt) |
+| FPS | 60 |
+| `Ctrl+End` | fokussiert `data-row=99999`, `aria-rowindex=100001` |
 
 ## Standard-Sortierung
 

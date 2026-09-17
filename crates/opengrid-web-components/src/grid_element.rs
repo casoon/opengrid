@@ -1,4 +1,4 @@
-//! `<opengrid-grid>` — the registered element (point 16, browser only).
+//! `<opengrid-grid>` — the registered element (points 16/17, browser only).
 //!
 //! The lifecycle mirrors [`crate::element`] (the table): on connect the host gets
 //! an **open** shadow root, the empty `<table role="grid">` skeleton is rendered
@@ -15,8 +15,8 @@
 //! * **Keyboard matrix** — `keydown` on the shadow root decodes a
 //!   [`GridKey`](crate::grid::GridKey) and asks the portable
 //!   [`move_active`](crate::grid::move_active) for the next cell. A move inside
-//!   the loaded page only moves the DOM focus; a move that leaves the page (page
-//!   keys, `Ctrl+Home`/`Ctrl+End`) sets the window and re-runs the query.
+//!   the window only moves the DOM focus; a move that leaves it sets the window
+//!   and re-runs the query, so the window always follows the focus.
 //! * **Sorting** — `Enter`/`Space` on a header cell toggles the single-column
 //!   sort through [`GridState::toggle_sort`](opengrid_grid::GridState::toggle_sort)
 //!   and re-runs the query; `aria-sort` is rendered on the `<th>`. Paging needs a
@@ -24,9 +24,20 @@
 //!   falls back to it when the user clears the sort
 //!   ([`GridState::ensure_sorted`](opengrid_grid::GridState::ensure_sorted)).
 //!
-//! Rendering stays one patch list per transition: point 16 re-renders the loaded
-//! page in full because there is no virtualization yet; point 17 replaces that
-//! with recycled rows.
+//! # Virtualization (point 17)
+//!
+//! The skeleton ([`grid::build_grid`]) is built **once** and the element keeps
+//! the [`Dom`] that created its nodes, so every later frame patches the same
+//! nodes ([`grid::patch_grid`]) instead of rebuilding the table. A scroll on the
+//! viewport maps to a new logical window (the portable arithmetic lives in
+//! [`crate::grid`]); the provider is asked for exactly that window (`limit` =
+//! pool, `offset` = window start) and the pool rows are recycled — no new nodes
+//! appear per scroll step.
+//!
+//! Focus survives scrolling because [`grid::assign_pool`] pins the slot holding
+//! the focused cell: [`grid::patch_grid`] leaves that slot completely untouched.
+//! Scroll-driven queries are coalesced to one per animation frame and a
+//! generation counter drops results whose window has already been superseded.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -36,7 +47,7 @@ use wasm_bindgen::closure::Closure;
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::{JsFuture, spawn_local};
 use web_sys::{
-    Element, Event, HtmlElement, KeyboardEvent, ScrollIntoViewOptions, ScrollLogicalPosition,
+    Element, Event, HtmlElement, KeyboardEvent, Node, ScrollIntoViewOptions, ScrollLogicalPosition,
     ShadowRoot,
 };
 
@@ -46,10 +57,11 @@ use opengrid_web_core::element::{
 };
 use opengrid_web_core::patch::{NodeAllocator, PatchBuffer};
 use opengrid_web_core::provider::provider;
+use opengrid_web_core::renderer::{Dom, WebRenderer};
 
 use crate::element::{apply, clear_root, describe};
 use crate::grid::{
-    self, ActiveCell, COLUMNS_ATTRIBUTE, DATASOURCE_ATTRIBUTE, GRID_TAG, GridKey,
+    self, ActiveCell, COLUMNS_ATTRIBUTE, DATASOURCE_ATTRIBUTE, GRID_TAG, GridKey, GridNodes,
     PAGE_SIZE_ATTRIBUTE,
 };
 
@@ -69,6 +81,8 @@ pub(crate) fn define_grid() -> Result<(), JsValue> {
 /// Shared with the table: [`crate::element::set_provider`] dispatches on the tag
 /// name and calls this once the provider is stored.
 pub(crate) fn start(host: &HtmlElement) {
+    ensure_skeleton(host);
+    render(host, false);
     run_query(host, false);
 }
 
@@ -80,6 +94,20 @@ pub(crate) fn start(host: &HtmlElement) {
 struct GridRuntime {
     state: GridState,
     active: ActiveCell,
+    /// The stable node ids of the one-time skeleton, if it was built.
+    view: Option<GridNodes>,
+    /// The DOM that created `view`'s nodes; kept so later frames patch them.
+    dom: Option<Dom<WebRenderer>>,
+    /// The scrollable viewport element (cached for scroll math).
+    viewport: Option<Element>,
+    /// Current slot → logical row assignment of the pool.
+    slots: Vec<Option<u64>>,
+    /// Window offset a coalesced scroll asked for, if any.
+    pending_offset: Option<u64>,
+    /// Whether a scroll query is scheduled for the next animation frame.
+    raf_pending: bool,
+    /// Bumped per query; a result from an older generation is discarded.
+    generation: u64,
 }
 
 impl GridRuntime {
@@ -139,25 +167,39 @@ fn runtime_or_init(host: &HtmlElement) -> Rc<RefCell<GridRuntime>> {
 /// top-left header cell active.
 fn fresh_runtime(host: &HtmlElement) -> GridRuntime {
     let columns = grid::parse_columns(host.get_attribute(COLUMNS_ATTRIBUTE).as_deref());
-    let page_size = grid::parse_page_size(host.get_attribute(PAGE_SIZE_ATTRIBUTE).as_deref());
+    let pool = grid::parse_pool_size(host.get_attribute(PAGE_SIZE_ATTRIBUTE).as_deref());
     let mut state = GridState::new(grid::initial_schema(&columns));
-    state.set_window(Window::new(0, page_size));
+    state.set_window(Window::new(0, pool));
     // Paging needs a total order (rule S6), so the grid starts sorted by its
     // first column; the header shows it as `aria-sort="ascending"`.
     state.ensure_sorted();
     GridRuntime {
         state,
         active: ActiveCell::Header { col: 0 },
+        view: None,
+        dom: None,
+        viewport: None,
+        slots: vec![None; pool as usize],
+        pending_offset: None,
+        raf_pending: false,
+        generation: 0,
     }
 }
 
-/// Resets the runtime after a data attribute changed.
+/// Resets the runtime after a data attribute changed and drops the skeleton.
 fn reset_runtime(host: &HtmlElement) {
     if let Some(runtime) = runtime(host) {
         let fresh = fresh_runtime(host);
         let mut runtime = runtime.borrow_mut();
         runtime.state = fresh.state;
         runtime.active = fresh.active;
+        runtime.view = None;
+        runtime.dom = None;
+        runtime.viewport = None;
+        runtime.slots = fresh.slots;
+        runtime.pending_offset = None;
+        runtime.raf_pending = false;
+        runtime.generation = 0;
     }
 }
 
@@ -170,7 +212,8 @@ fn on_connected(host: HtmlElement) {
         add_listeners(&root);
     }
     let _ = runtime_or_init(&host);
-    render(&host);
+    ensure_skeleton(&host);
+    render(&host, false);
     run_query(&host, false);
 }
 
@@ -192,46 +235,112 @@ fn on_attribute_changed(
             }
         }
         DATASOURCE_ATTRIBUTE | COLUMNS_ATTRIBUTE | PAGE_SIZE_ATTRIBUTE => {
-            if host.shadow_root().is_none() {
+            let Some(root) = host.shadow_root() else {
                 return;
-            }
+            };
+            clear_root(&root);
             reset_runtime(&host);
-            render(&host);
+            ensure_skeleton(&host);
+            render(&host, false);
             run_query(&host, false);
         }
         _ => {}
     }
 }
 
-/// Builds the whole loaded page as one patch list and applies it in one pass.
-///
-/// The active cell decides which cell carries `tabindex="0"`; the function does
-/// not focus it (a background reload must not steal the page's focus). Callers
-/// that act on a key focus afterwards with [`focus_active`].
-fn render(host: &HtmlElement) {
+/// Builds the one-time skeleton and stores its nodes and the DOM.
+fn ensure_skeleton(host: &HtmlElement) {
     let Some(root) = host.shadow_root() else {
-        return;
-    };
-    let Some(document) = host.owner_document() else {
         return;
     };
     let Some(runtime) = runtime(host) else {
         return;
     };
-    let runtime = runtime.borrow();
+    if runtime.borrow().view.is_some() {
+        return;
+    }
+    let Some(document) = host.owner_document() else {
+        return;
+    };
+    let pool = grid::parse_pool_size(host.get_attribute(PAGE_SIZE_ATTRIBUTE).as_deref()) as usize;
+    let label = host.get_attribute(LABEL_ATTRIBUTE);
+    let schema = runtime.borrow().state.schema().clone();
 
-    clear_root(&root);
     let mut nodes = NodeAllocator::new();
     let mut buffer = PatchBuffer::new();
-    grid::build_grid(
-        &mut buffer,
-        &mut nodes,
-        host.get_attribute(LABEL_ATTRIBUTE).as_deref(),
-        &runtime.state,
-        runtime.active,
-        runtime.state.single_sort(),
-    );
-    apply(&root, document, &buffer);
+    let view = grid::build_grid(&mut buffer, &mut nodes, label.as_deref(), &schema, pool);
+    let root_node: Node = root.clone().unchecked_into();
+    let mut dom = Dom::new(WebRenderer::from_document(document), root_node);
+    dom.apply_buffer(&buffer);
+    let viewport = dom.node(view.viewport).clone().dyn_into::<Element>().ok();
+
+    let mut runtime = runtime.borrow_mut();
+    runtime.slots = vec![None; pool];
+    runtime.viewport = viewport;
+    runtime.dom = Some(dom);
+    runtime.view = Some(view);
+}
+
+/// Computes the current window assignment and applies it as one patch list.
+///
+/// The focused slot is pinned (see [`grid::assign_pool`]); the function never
+/// rebuilds the table. `focus_after` re-focuses the active cell once the frame
+/// landed, so a keyboard-driven reload does not drop the focus.
+fn render(host: &HtmlElement, focus_after: bool) {
+    ensure_skeleton(host);
+    let Some(runtime) = runtime(host) else {
+        return;
+    };
+
+    let (sort, slots, pinned_slot) = {
+        let borrowed = runtime.borrow();
+        let Some(view) = borrowed.view.as_ref() else {
+            return;
+        };
+        let pool = view.pool();
+        let total = borrowed.state.total_count();
+        let window = borrowed.state.window();
+        let rows = grid::window_rows(window.offset, total, pool as u64);
+        let focus = borrowed.active.data().map(|cell| cell.row);
+        let pinned_slot =
+            focus.and_then(|row| borrowed.slots.iter().position(|slot| *slot == Some(row)));
+        let slots = grid::assign_pool(&borrowed.slots, focus, &rows, pool);
+        let sort = borrowed
+            .state
+            .single_sort()
+            .map(|(field, direction)| (field.to_owned(), direction));
+        (sort, slots, pinned_slot)
+    };
+
+    {
+        let mut borrowed = runtime.borrow_mut();
+        borrowed.slots = slots;
+    }
+    {
+        let mut borrowed = runtime.borrow_mut();
+        let borrowed = &mut *borrowed;
+        let Some(view) = borrowed.view.as_ref() else {
+            return;
+        };
+        let mut buffer = PatchBuffer::new();
+        grid::patch_grid(
+            &mut buffer,
+            view,
+            &borrowed.state,
+            &borrowed.slots,
+            borrowed.active,
+            sort.as_ref()
+                .map(|(field, direction)| (field.as_str(), *direction)),
+            pinned_slot,
+        );
+        if let Some(dom) = borrowed.dom.as_mut() {
+            dom.apply_buffer(&buffer);
+        }
+    }
+
+    if focus_after {
+        focus_active(host);
+    }
 }
 
 /// Builds the query from the runtime and the host attributes and runs it.
@@ -257,16 +366,19 @@ pub(crate) fn run_query(host: &HtmlElement, focus: bool) {
     let Some(grid_runtime) = runtime(host) else {
         return;
     };
+    let pool = grid::parse_pool_size(host.get_attribute(PAGE_SIZE_ATTRIBUTE).as_deref());
 
-    let (sort, offset, page_size) = {
-        let runtime = grid_runtime.borrow();
+    let (sort, offset, generation) = {
+        let mut runtime = grid_runtime.borrow_mut();
+        let generation = runtime.generation + 1;
+        runtime.generation = generation;
         (
             runtime
                 .state
                 .single_sort()
                 .map(|(field, direction)| (field.to_owned(), direction)),
             runtime.state.window().offset,
-            runtime.state.window().count,
+            generation,
         )
     };
     let query = grid::query_json(
@@ -275,7 +387,7 @@ pub(crate) fn run_query(host: &HtmlElement, focus: bool) {
         sort.as_ref()
             .map(|(field, direction)| (field.as_str(), *direction)),
         offset,
-        page_size,
+        pool,
     );
     let promise = provider.execute(&query);
 
@@ -285,13 +397,18 @@ pub(crate) fn run_query(host: &HtmlElement, focus: bool) {
             Ok(value) => match value.as_string() {
                 Some(json) => match grid::parse_result(&json) {
                     Ok(result) => {
-                        if let Some(runtime) = runtime(&host) {
-                            runtime.borrow_mut().state.apply_result(result);
+                        let Some(runtime) = runtime(&host) else {
+                            return;
+                        };
+                        {
+                            let mut runtime = runtime.borrow_mut();
+                            // A newer scroll or key superseded this query.
+                            if runtime.generation != generation {
+                                return;
+                            }
+                            runtime.state.apply_result(result);
                         }
-                        render(&host);
-                        if focus {
-                            focus_active(&host);
-                        }
+                        render(&host, focus);
                     }
                     Err(message) => render_error(&host, &message),
                 },
@@ -325,21 +442,30 @@ fn focus_active(host: &HtmlElement) {
     let Some(runtime) = runtime(host) else {
         return;
     };
-    let active = runtime.borrow().active;
-    focus_cell(&root, active);
+    let (active, viewport) = {
+        let runtime = runtime.borrow();
+        (runtime.active, runtime.viewport.clone())
+    };
+    focus_cell(&root, viewport.as_ref(), active);
 }
 
 /// Moves the DOM focus from `from` to `to` without re-rendering.
-fn focus_from(root: &ShadowRoot, from: ActiveCell, to: ActiveCell) {
+fn focus_from(root: &ShadowRoot, viewport: Option<&Element>, from: ActiveCell, to: ActiveCell) {
     if from != to {
         set_tabindex(root, from, "-1");
     }
-    focus_cell(root, to);
+    focus_cell(root, viewport, to);
 }
 
 /// Sets `tabindex="0"` on `to`, focuses it and scrolls it into view.
-fn focus_cell(root: &ShadowRoot, to: ActiveCell) {
+///
+/// A header cell is always at the top of the viewport (the `<thead>` is sticky),
+/// so moving to it scrolls the viewport back to the first row.
+fn focus_cell(root: &ShadowRoot, viewport: Option<&Element>, to: ActiveCell) {
     set_tabindex(root, to, "0");
+    if let (ActiveCell::Header { .. }, Some(viewport)) = (to, viewport) {
+        viewport.set_scroll_top(0);
+    }
     let Ok(Some(target)) = root.query_selector(&selector(to)) else {
         return;
     };
@@ -360,7 +486,7 @@ fn set_tabindex(root: &ShadowRoot, active: ActiveCell, value: &str) {
 }
 
 /// The selector of the DOM node of `active` (its data attributes are rendered by
-/// [`grid::build_grid`]).
+/// [`grid::patch_grid`]).
 fn selector(active: ActiveCell) -> String {
     match active {
         ActiveCell::Header { col } => format!("th[data-col=\"{col}\"]"),
@@ -383,12 +509,17 @@ fn active_from_element(element: &Element) -> Option<ActiveCell> {
     }
 }
 
-/// Installs the delegated `keydown` and `focusin` listeners once.
+/// Installs the delegated `keydown`, `focusin` and capture-phase `scroll`
+/// listeners once.
 fn add_listeners(root: &ShadowRoot) {
     let keydown = Closure::<dyn FnMut(KeyboardEvent)>::new(on_key_down).into_js_value();
     let _ = root.add_event_listener_with_callback("keydown", keydown.unchecked_ref());
     let focusin = Closure::<dyn FnMut(Event)>::new(on_focus_in).into_js_value();
     let _ = root.add_event_listener_with_callback("focusin", focusin.unchecked_ref());
+    // Scroll does not bubble, but a capture listener on the shadow root sees the
+    // viewport's scroll events.
+    let scroll = Closure::<dyn FnMut(Event)>::new(on_scroll).into_js_value();
+    let _ = root.add_event_listener_with_callback_and_bool("scroll", scroll.unchecked_ref(), true);
 }
 
 /// Handles the WAI-ARIA grid keyboard matrix
@@ -406,61 +537,66 @@ fn on_key_down(event: KeyboardEvent) {
     let Some(runtime) = runtime(&host) else {
         return;
     };
-    let page_size = grid::parse_page_size(host.get_attribute(PAGE_SIZE_ATTRIBUTE).as_deref());
+    let viewport_rows = viewport_rows(&runtime);
 
     match (event.key().as_str(), event.ctrl_key()) {
         ("Enter", _) | (" ", _) => {
             event.prevent_default();
-            activate_header(&host, &runtime, page_size);
+            activate_header(&host, &runtime);
         }
         ("Escape", _) => {
             event.prevent_default();
-            escape_to_first(&host, &runtime, page_size);
+            escape_to_first(&host, &runtime);
         }
-        ("ArrowUp", _) => move_with_key(&event, &host, &runtime, page_size, GridKey::ArrowUp),
-        ("ArrowDown", _) => move_with_key(&event, &host, &runtime, page_size, GridKey::ArrowDown),
-        ("ArrowLeft", _) => move_with_key(&event, &host, &runtime, page_size, GridKey::ArrowLeft),
-        ("ArrowRight", _) => move_with_key(&event, &host, &runtime, page_size, GridKey::ArrowRight),
-        ("Home", true) => move_with_key(&event, &host, &runtime, page_size, GridKey::CtrlHome),
-        ("End", true) => move_with_key(&event, &host, &runtime, page_size, GridKey::CtrlEnd),
-        ("Home", false) => move_with_key(&event, &host, &runtime, page_size, GridKey::Home),
-        ("End", false) => move_with_key(&event, &host, &runtime, page_size, GridKey::End),
-        ("PageUp", _) => move_with_key(&event, &host, &runtime, page_size, GridKey::PageUp),
-        ("PageDown", _) => move_with_key(&event, &host, &runtime, page_size, GridKey::PageDown),
+        ("ArrowUp", _) => move_with_key(&event, &host, &runtime, viewport_rows, GridKey::ArrowUp),
+        ("ArrowDown", _) => {
+            move_with_key(&event, &host, &runtime, viewport_rows, GridKey::ArrowDown)
+        }
+        ("ArrowLeft", _) => {
+            move_with_key(&event, &host, &runtime, viewport_rows, GridKey::ArrowLeft)
+        }
+        ("ArrowRight", _) => {
+            move_with_key(&event, &host, &runtime, viewport_rows, GridKey::ArrowRight)
+        }
+        ("Home", true) => move_with_key(&event, &host, &runtime, viewport_rows, GridKey::CtrlHome),
+        ("End", true) => move_with_key(&event, &host, &runtime, viewport_rows, GridKey::CtrlEnd),
+        ("Home", false) => move_with_key(&event, &host, &runtime, viewport_rows, GridKey::Home),
+        ("End", false) => move_with_key(&event, &host, &runtime, viewport_rows, GridKey::End),
+        ("PageUp", _) => move_with_key(&event, &host, &runtime, viewport_rows, GridKey::PageUp),
+        ("PageDown", _) => move_with_key(&event, &host, &runtime, viewport_rows, GridKey::PageDown),
         _ => {}
     }
 }
 
-/// Moves focus for one navigation key, reloading the page only when the target
-/// leaves the loaded window.
+/// Moves focus for one navigation key, reloading the window only when the target
+/// leaves it (the window follows the focus).
 fn move_with_key(
     event: &KeyboardEvent,
     host: &HtmlElement,
     runtime: &Rc<RefCell<GridRuntime>>,
-    page_size: u64,
+    viewport_rows: u64,
     key: GridKey,
 ) {
     event.prevent_default();
-    let (active, ncols, total_count, offset, loaded_rows) = {
+    let (active, ncols, total_count, window, pool) = {
         let runtime = runtime.borrow();
+        let pool = runtime
+            .view
+            .as_ref()
+            .map(|view| view.pool() as u64)
+            .unwrap_or_else(|| {
+                grid::parse_pool_size(host.get_attribute(PAGE_SIZE_ATTRIBUTE).as_deref())
+            });
         (
             runtime.active,
             runtime.state.schema().len(),
             runtime.state.total_count(),
-            runtime.state.window().offset,
-            runtime.state.loaded_rows(),
+            runtime.state.window(),
+            pool,
         )
     };
-    let next = grid::move_active(
-        active,
-        key,
-        ncols,
-        total_count,
-        offset,
-        loaded_rows,
-        page_size,
-    );
-    let reload = grid::requested_offset(key, next, offset, total_count, page_size);
+    let next = grid::move_active(active, key, ncols, total_count, viewport_rows);
+    let reload = grid::requested_window(key, next, window, total_count, pool);
 
     runtime.borrow_mut().set_active(next);
     match reload {
@@ -468,12 +604,13 @@ fn move_with_key(
             runtime
                 .borrow_mut()
                 .state
-                .set_window(Window::new(new_offset, page_size));
+                .set_window(Window::new(new_offset, pool));
             run_query(host, true);
         }
         None => {
             if let Some(root) = host.shadow_root() {
-                focus_from(&root, active, next);
+                let viewport = runtime.borrow().viewport.clone();
+                focus_from(&root, viewport.as_ref(), active, next);
             }
         }
     }
@@ -481,7 +618,7 @@ fn move_with_key(
 
 /// `Enter`/`Space` on a header cell toggles its single-column sort and re-runs
 /// the query; on a data cell it is a no-op.
-fn activate_header(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>, page_size: u64) {
+fn activate_header(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>) {
     let active = runtime.borrow().active;
     let ActiveCell::Header { col } = active else {
         return;
@@ -498,20 +635,21 @@ fn activate_header(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>, page_
     let Some(field) = field else {
         return;
     };
+    let pool = grid::parse_pool_size(host.get_attribute(PAGE_SIZE_ATTRIBUTE).as_deref());
     {
         let mut runtime = runtime.borrow_mut();
         runtime.state.toggle_sort(&field);
         // Clearing the last sort falls back to the default first column so the
         // next page request still has a total order (rule S6).
         runtime.state.ensure_sorted();
-        runtime.state.set_window(Window::new(0, page_size));
+        runtime.state.set_window(Window::new(0, pool));
     }
     run_query(host, true);
 }
 
 /// `Escape` returns focus to the first cell of the grid (the top-left header
-/// cell), loading the first page if the grid had scrolled on.
-fn escape_to_first(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>, page_size: u64) {
+/// cell), loading the first window if the grid had scrolled on.
+fn escape_to_first(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>) {
     let (from, offset, ncols) = {
         let runtime = runtime.borrow();
         (
@@ -523,16 +661,120 @@ fn escape_to_first(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>, page_
     if ncols == 0 {
         return;
     }
+    let pool = grid::parse_pool_size(host.get_attribute(PAGE_SIZE_ATTRIBUTE).as_deref());
     let first = ActiveCell::Header { col: 0 };
     runtime.borrow_mut().set_active(first);
     if offset != 0 {
-        runtime
-            .borrow_mut()
-            .state
-            .set_window(Window::new(0, page_size));
+        runtime.borrow_mut().state.set_window(Window::new(0, pool));
         run_query(host, true);
     } else if let Some(root) = host.shadow_root() {
-        focus_from(&root, from, first);
+        let viewport = runtime.borrow().viewport.clone();
+        focus_from(&root, viewport.as_ref(), from, first);
+    }
+}
+
+/// Handles a scroll of the viewport: derives the new window from `scrollTop` and
+/// schedules a coalesced query for the next animation frame.
+///
+/// A fast scroll can fire many events before a frame renders; the schedule flag
+/// makes them collapse into a single query.
+fn on_scroll(event: Event) {
+    let Some(root) = current_shadow_root(&event) else {
+        return;
+    };
+    let Ok(host) = root.host().dyn_into::<HtmlElement>() else {
+        return;
+    };
+    let Some(runtime) = runtime(&host) else {
+        return;
+    };
+    let scroll_top = event
+        .target()
+        .and_then(|target| target.dyn_into::<Element>().ok())
+        .map(|viewport| viewport.scroll_top().max(0) as u64)
+        .unwrap_or(0);
+
+    let (total_count, pool, offset) = {
+        let runtime = runtime.borrow();
+        let pool = runtime
+            .view
+            .as_ref()
+            .map(|view| view.pool() as u64)
+            .unwrap_or(0);
+        (
+            runtime.state.total_count(),
+            pool,
+            runtime.state.window().offset,
+        )
+    };
+    if total_count == 0 || pool == 0 {
+        return;
+    }
+    let wanted = grid::window_offset(grid::visible_start(scroll_top), total_count, pool);
+    if wanted == offset {
+        return;
+    }
+    runtime.borrow_mut().pending_offset = Some(wanted);
+    schedule_scroll_query(&host, &runtime);
+}
+
+/// Schedules the pending scroll window as one query on the next animation frame.
+fn schedule_scroll_query(host: &HtmlElement, grid_runtime: &Rc<RefCell<GridRuntime>>) {
+    if grid_runtime.borrow().raf_pending {
+        return;
+    }
+    grid_runtime.borrow_mut().raf_pending = true;
+    let host = host.clone();
+    let callback = Closure::once_into_js(move || {
+        let Some(runtime) = runtime(&host) else {
+            return;
+        };
+        let offset = {
+            let mut runtime = runtime.borrow_mut();
+            runtime.raf_pending = false;
+            runtime.pending_offset.take()
+        };
+        let Some(offset) = offset else {
+            return;
+        };
+        let pool = {
+            let runtime = runtime.borrow();
+            runtime
+                .view
+                .as_ref()
+                .map(|view| view.pool() as u64)
+                .unwrap_or(0)
+        };
+        if pool == 0 {
+            return;
+        }
+        {
+            let mut runtime = runtime.borrow_mut();
+            if runtime.state.window().offset == offset {
+                return;
+            }
+            runtime.state.set_window(Window::new(offset, pool));
+        }
+        run_query(&host, false);
+    });
+    if let Some(window) = web_sys::window() {
+        let _ = window.request_animation_frame(callback.unchecked_ref::<js_sys::Function>());
+    }
+}
+
+/// The viewport height in rows, for the `PageUp`/`PageDown` step; falls back to
+/// a constant when the browser has not laid the grid out yet.
+fn viewport_rows(runtime: &Rc<RefCell<GridRuntime>>) -> u64 {
+    let height = runtime
+        .borrow()
+        .viewport
+        .as_ref()
+        .map(|viewport| viewport.client_height())
+        .unwrap_or(0);
+    if height > 0 {
+        (height as u64 / grid::ROW_HEIGHT).max(1)
+    } else {
+        grid::DEFAULT_VIEWPORT_ROWS
     }
 }
 
@@ -557,12 +799,15 @@ fn on_focus_in(event: Event) {
     let Some(active) = active_from_element(&target) else {
         return;
     };
-    let from = runtime.borrow().active;
+    let (from, viewport) = {
+        let runtime = runtime.borrow();
+        (runtime.active, runtime.viewport.clone())
+    };
     if from == active {
         return;
     }
     runtime.borrow_mut().set_active(active);
-    focus_from(&root, from, active);
+    focus_from(&root, viewport.as_ref(), from, active);
 }
 
 /// The shadow root a delegated listener was installed on.

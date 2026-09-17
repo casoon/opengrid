@@ -1,15 +1,16 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 
-// `<opengrid-grid>` (plan point 16).
+// `<opengrid-grid>` (plan points 16/17).
 //
 // The fixture loads the real engine, attaches it as the provider and lets the
 // element run the query. This spec proves the grid-mode contract: a native
 // `<table role="grid">` with correct counts and 1-based `aria-rowindex`, exactly
 // one roving `tabindex="0"`, and every key of the WAI-ARIA grid matrix
 // (plan/spezifikation/09-accessibility.md §Tastatur im Grid Mode). The fixture
-// dataset has five rows and the element a `page-size="2"`, so paging is
-// observable: page 0 has rows 2–3, page 1 rows 4–5, page 2 row 6.
+// dataset has five rows and the element a `page-size="10"` pool, so all rows fit
+// the window; the virtualizing behaviour of point 17 is covered by
+// `grid-virtual.spec.js`.
 //
 // Paging needs a total order (rule S6), so the grid starts sorted by its first
 // column (`id`, ascending); the data is therefore in insertion order.
@@ -28,6 +29,18 @@ async function activeCell(page) {
   });
 }
 
+/** The header row plus the assigned (visible) data rows' `aria-rowindex`. */
+async function rowindexes(page) {
+  return page.evaluate(() => {
+    const root = document.querySelector("opengrid-grid").shadowRoot;
+    const header = root.querySelector("thead tr")?.getAttribute("aria-rowindex");
+    const data = [...root.querySelectorAll("tbody tr")]
+      .map((tr) => tr.getAttribute("aria-rowindex"))
+      .filter((value) => value);
+    return [header, ...data];
+  });
+}
+
 /** The rendered grid facts. */
 async function facts(page) {
   return page.evaluate(() => {
@@ -39,10 +52,6 @@ async function facts(page) {
       ariaLabel: table.getAttribute("aria-label"),
       rowcount: table.getAttribute("aria-rowcount"),
       colcount: table.getAttribute("aria-colcount"),
-      rowindexes: [...root.querySelectorAll("tr")].map((tr) =>
-        tr.getAttribute("aria-rowindex"),
-      ),
-      tabindexes: cells.map((cell) => cell.getAttribute("tabindex")),
       zeroTabindex: cells.filter((cell) => cell.getAttribute("tabindex") === "0")
         .length,
       ariaSorts: [...root.querySelectorAll("thead th")].map((th) =>
@@ -64,13 +73,13 @@ async function ariaSortFor(page, column) {
   }, column);
 }
 
-/** The rendered text of one column, top to bottom. */
+/** The rendered text of one column, top to bottom (assigned rows only). */
 async function columnText(page, column) {
   return page.evaluate((column) => {
     const root = document.querySelector("opengrid-grid").shadowRoot;
-    return [...root.querySelectorAll(`tbody td:nth-child(${column + 1})`)].map(
-      (cell) => cell.textContent,
-    );
+    return [...root.querySelectorAll("tbody tr")]
+      .filter((tr) => tr.getAttribute("aria-rowindex"))
+      .map((tr) => tr.querySelectorAll("td")[column].textContent);
   }, column);
 }
 
@@ -86,7 +95,7 @@ test.beforeEach(async ({ page }) => {
   await page.waitForFunction(() => window.__opengridReady);
   await page.waitForFunction(() => {
     const root = document.querySelector("opengrid-grid")?.shadowRoot;
-    return !!root?.querySelector("tbody tr");
+    return !!root?.querySelector("td[data-row]");
   });
 });
 
@@ -99,13 +108,11 @@ test("renders role=grid with correct counts, rowindexes and one tabindex=0", asy
     ariaLabel: "Bestellungen",
     rowcount: "6",
     colcount: "4",
-    rowindexes: ["1", "2", "3"],
     zeroTabindex: 1,
   });
+  expect(await rowindexes(page)).toEqual(["1", "2", "3", "4", "5", "6"]);
   // The default sort (rule S6) is visible on the first column.
   expect(rendered.ariaSorts).toEqual(["ascending", "none", "none", "none"]);
-  // Every cell is part of the roving tabindex: exactly one 0, the rest -1.
-  expect(new Set(rendered.tabindexes)).toEqual(new Set(["0", "-1"]));
 });
 
 test("ArrowDown moves into the first data row and ArrowUp back into the header", async ({
@@ -163,58 +170,52 @@ test("Ctrl+End jumps to the last cell and Ctrl+Home back to the first", async ({
     row: "4",
     col: "3",
   });
-  // The last page was loaded: one row, row index 6.
-  expect((await facts(page)).rowindexes).toEqual(["1", "6"]);
+  expect(await rowindexes(page)).toEqual(["1", "2", "3", "4", "5", "6"]);
 
   await page.keyboard.press("Control+Home");
   await expect.poll(() => activeCell(page)).toMatchObject({ tag: "th", col: "0" });
-  expect((await facts(page)).rowindexes).toEqual(["1", "2", "3"]);
+  expect(await rowindexes(page)).toEqual(["1", "2", "3", "4", "5", "6"]);
 });
 
-test("PageDown and PageUp move by a page and load it", async ({ page }) => {
+test("PageDown and PageUp move by a viewport and clamp to the result", async ({
+  page,
+}) => {
+  // The 160px viewport shows five 32px rows, so PageDown from the header lands
+  // on the last row and PageUp returns to the first.
   await focusCell(page, 'th[data-col="0"]');
 
   await page.keyboard.press("PageDown");
-  await expect.poll(() => facts(page).then((f) => f.rowindexes)).toEqual([
-    "1",
-    "4",
-    "5",
-  ]);
-  expect(await activeCell(page)).toMatchObject({ tag: "td", row: "2" });
-
-  await page.keyboard.press("PageDown");
-  await expect.poll(() => facts(page).then((f) => f.rowindexes)).toEqual([
-    "1",
-    "6",
-  ]);
+  await expect.poll(() => activeCell(page)).toMatchObject({ tag: "td", row: "4" });
 
   await page.keyboard.press("PageUp");
-  await expect.poll(() => facts(page).then((f) => f.rowindexes)).toEqual([
-    "1",
-    "4",
-    "5",
-  ]);
+  await expect.poll(() => activeCell(page)).toMatchObject({ tag: "td", row: "0" });
 });
 
 test("Enter on a header toggles aria-sort and reorders the rows", async ({
   page,
 }) => {
-  // `customer` starts unsorted; the default `id` order is Gamma, Alpha.
+  // `customer` starts unsorted; the default `id` order is Gamma…Beta.
   await focusCell(page, 'th[data-col="1"]');
 
   await page.keyboard.press("Enter");
   await expect.poll(() => ariaSortFor(page, 1)).toBe("ascending");
-  await expect.poll(() => columnText(page, 1)).toEqual(["Alpha", "Alpha"]);
+  await expect
+    .poll(() => columnText(page, 1))
+    .toEqual(["Alpha", "Alpha", "Beta", "Beta", "Gamma"]);
 
   await page.keyboard.press("Enter");
   await expect.poll(() => ariaSortFor(page, 1)).toBe("descending");
-  await expect.poll(() => columnText(page, 1)).toEqual(["Gamma", "Beta"]);
+  await expect
+    .poll(() => columnText(page, 1))
+    .toEqual(["Gamma", "Beta", "Beta", "Alpha", "Alpha"]);
 
   // Clearing the sort falls back to the default `id` ascending order.
   await page.keyboard.press("Enter");
   await expect.poll(() => ariaSortFor(page, 1)).toBe("none");
   await expect.poll(() => ariaSortFor(page, 0)).toBe("ascending");
-  await expect.poll(() => columnText(page, 1)).toEqual(["Gamma", "Alpha"]);
+  await expect
+    .poll(() => columnText(page, 1))
+    .toEqual(["Gamma", "Alpha", "Beta", "Alpha", "Beta"]);
 });
 
 test("Space on a header toggles aria-sort", async ({ page }) => {
