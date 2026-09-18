@@ -15,7 +15,9 @@ async function shadowFacts(page) {
       column: th.getAttribute("data-column"),
       scope: th.getAttribute("scope"),
       ariaSort: th.getAttribute("aria-sort"),
-      buttonText: th.querySelector("button")?.textContent ?? null,
+      // The first span is the column name; the second is the sort mark, which
+      // would otherwise be concatenated into this by `textContent`.
+      buttonText: th.querySelector("button > span")?.textContent ?? null,
     }));
   });
 }
@@ -29,6 +31,20 @@ async function ariaSortFor(page, column) {
         ?.getAttribute("aria-sort") ?? null
     );
   }, column);
+}
+
+/** The visible sort mark of a column's header (empty when unsorted). */
+async function sortMark(page, column) {
+  return page.evaluate(
+    (column) =>
+      document
+        .querySelector("opengrid-table")
+        .shadowRoot.querySelector(
+          `th[data-column="${column}"] [part="sort-direction"]`,
+        )
+        ?.textContent ?? null,
+    column,
+  );
 }
 
 async function firstColumn(page) {
@@ -103,6 +119,54 @@ test("sorting a second column clears the first one", async ({ page }) => {
   await table.locator('button[data-column="qty"]').click();
   await expect.poll(() => ariaSortFor(page, "qty")).toBe("ascending");
   await expect.poll(() => ariaSortFor(page, "customer")).toBe("none");
+});
+
+test("the header shows its sort direction, not only aria-sort", async ({
+  page,
+}) => {
+  // Point 50: table mode had the same gap the grid had before point 49 — the
+  // direction lived in `aria-sort` alone, so a sighted user could not see it
+  // (WCAG 1.3.3). The glyphs are the grid's.
+  const table = page.locator("opengrid-table");
+  expect(await sortMark(page, "customer")).toBe("");
+
+  await table.locator('button[data-column="customer"]').click();
+  await expect.poll(() => ariaSortFor(page, "customer")).toBe("ascending");
+  expect(await sortMark(page, "customer")).toBe("\u00a0▲");
+  expect(await sortMark(page, "qty")).toBe("");
+
+  await table.locator('button[data-column="customer"]').click();
+  await expect.poll(() => ariaSortFor(page, "customer")).toBe("descending");
+  expect(await sortMark(page, "customer")).toBe("\u00a0▼");
+
+  // A third activation clears the sort, and with it the mark.
+  await table.locator('button[data-column="customer"]').click();
+  await expect.poll(() => ariaSortFor(page, "customer")).toBe("none");
+  expect(await sortMark(page, "customer")).toBe("");
+});
+
+test("the sort mark stays out of the button's accessible name", async ({
+  page,
+}) => {
+  // The glyph is decoration; the direction is announced once, through
+  // `aria-sort` on the `<th>`.
+  const button = page
+    .locator("opengrid-table")
+    .locator('button[data-column="customer"]');
+  await button.click();
+  await expect.poll(() => ariaSortFor(page, "customer")).toBe("ascending");
+
+  await expect(button).toHaveAccessibleName("customer");
+  expect(
+    await page.evaluate(() =>
+      document
+        .querySelector("opengrid-table")
+        .shadowRoot.querySelector(
+          'th[data-column="customer"] [part="sort-direction"]',
+        )
+        .getAttribute("aria-hidden"),
+    ),
+  ).toBe("true");
 });
 
 test("has no axe violations", async ({ page }) => {

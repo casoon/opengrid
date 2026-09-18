@@ -1411,8 +1411,9 @@ fn tabindex_for(is_active: bool) -> &'static str {
 ///
 /// The sort marks are decoration for the eye: the same information reaches
 /// assistive technology through `aria-sort`, so they must not reach it a second
-/// time through the header's accessible name.
-fn marker(
+/// time through the header's accessible name. Shared with table mode (point 50),
+/// so both elements mark a sorted column the same way.
+pub(crate) fn marker(
     buffer: &mut PatchBuffer,
     nodes: &mut NodeAllocator,
     parent: NodeId,

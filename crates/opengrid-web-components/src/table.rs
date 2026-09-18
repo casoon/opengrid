@@ -161,6 +161,23 @@ fn value_text(value: &Value) -> String {
     }
 }
 
+/// The visible sort mark for an `aria-sort` token, empty when unsorted.
+///
+/// The same glyphs as the grid (point 49), from the same place, so the two
+/// elements cannot drift apart. The leading no-break space is the separator:
+/// table mode ships **no** stylesheet — the page styles a native table — so
+/// there is nowhere to put a margin without making the table's first shadow
+/// rule a default every page would have to override. The space sits inside the
+/// `aria-hidden` span, so nothing reads it.
+fn direction_mark(aria_sort: &str) -> String {
+    let glyph = match aria_sort {
+        "ascending" => crate::grid::ASCENDING_GLYPH,
+        "descending" => crate::grid::DESCENDING_GLYPH,
+        _ => return String::new(),
+    };
+    format!("\u{a0}{glyph}")
+}
+
 /// Appends a text-only `<p role="alert">` error to `buffer`.
 ///
 /// Table mode has no status area — it renders a result, not an interactive grid
@@ -252,9 +269,20 @@ pub fn build_table(
                 name: "data-column".to_owned(),
                 value: column.name.clone(),
             });
+            // The name lives in its own span so the direction mark can sit
+            // beside it without joining the button's accessible name — the
+            // direction reaches assistive technology through `aria-sort` on the
+            // `<th>`, and must not be announced a second time (point 50, the
+            // pattern of point 49).
+            let name = element(buffer, nodes, Some(button), "span");
             buffer.push(Patch::SetText {
-                node: button,
+                node: name,
                 text: column.name.clone(),
+            });
+            let mark = crate::grid::marker(buffer, nodes, button, "sort-direction");
+            buffer.push(Patch::SetText {
+                node: mark,
+                text: direction_mark(aria_sort),
             });
         }
 
@@ -299,6 +327,121 @@ fn element(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The sorted column shows its direction; the others show nothing, and the
+    /// name stays in its own span so the button's accessible name is the column
+    /// (point 50).
+    #[test]
+    fn the_sorted_header_shows_its_direction() {
+        let model = TableModel {
+            columns: vec![
+                ColumnModel {
+                    name: "customer".to_owned(),
+                    values: vec!["Alpha".to_owned()],
+                },
+                ColumnModel {
+                    name: "qty".to_owned(),
+                    values: vec!["1".to_owned()],
+                },
+            ],
+        };
+
+        let marks = |sort: Option<(&str, SortDirection)>| -> Vec<String> {
+            let mut nodes = NodeAllocator::new();
+            let mut buffer = PatchBuffer::new();
+            build_table(&mut buffer, &mut nodes, None, Some(&model), sort);
+            // Every span that is a sort mark, in document order.
+            let marked: Vec<NodeId> = buffer
+                .patches()
+                .iter()
+                .filter_map(|patch| match patch {
+                    Patch::SetAttribute { node, name, value }
+                        if name == "part" && value == "sort-direction" =>
+                    {
+                        Some(*node)
+                    }
+                    _ => None,
+                })
+                .collect();
+            marked
+                .iter()
+                .map(|mark| {
+                    buffer
+                        .patches()
+                        .iter()
+                        .find_map(|patch| match patch {
+                            Patch::SetText { node, text } if node == mark => Some(text.clone()),
+                            _ => None,
+                        })
+                        .expect("every mark is written")
+                })
+                .collect()
+        };
+
+        // The name is in its own span, not on the button: that is what keeps the
+        // mark out of the button's accessible name.
+        let mut nodes = NodeAllocator::new();
+        let mut buffer = PatchBuffer::new();
+        build_table(&mut buffer, &mut nodes, None, Some(&model), None);
+        let buttons: Vec<NodeId> = buffer
+            .patches()
+            .iter()
+            .filter_map(|patch| match patch {
+                Patch::CreateElement { node, tag } if tag == "button" => Some(*node),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(buttons.len(), 2);
+        assert!(
+            !buffer.patches().iter().any(|patch| matches!(
+                patch,
+                Patch::SetText { node, .. } if buttons.contains(node)
+            )),
+            "the column name must live in a span, not directly on the button"
+        );
+
+        assert_eq!(marks(None), ["", ""]);
+        assert_eq!(
+            marks(Some(("customer", SortDirection::Asc))),
+            ["\u{a0}▲", ""]
+        );
+        assert_eq!(marks(Some(("qty", SortDirection::Desc))), ["", "\u{a0}▼"]);
+
+        // The marks themselves are hidden from assistive technology: the
+        // direction is already on the `<th>` as `aria-sort`.
+        let mut nodes = NodeAllocator::new();
+        let mut buffer = PatchBuffer::new();
+        build_table(
+            &mut buffer,
+            &mut nodes,
+            None,
+            Some(&model),
+            Some(("customer", SortDirection::Asc)),
+        );
+        let marked: Vec<NodeId> = buffer
+            .patches()
+            .iter()
+            .filter_map(|patch| match patch {
+                Patch::SetAttribute { node, name, value }
+                    if name == "part" && value == "sort-direction" =>
+                {
+                    Some(*node)
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(marked.len(), 2);
+        for mark in &marked {
+            assert!(
+                buffer.patches().iter().any(|patch| matches!(
+                    patch,
+                    Patch::SetAttribute { node, name, value }
+                        if node == mark && name == "aria-hidden" && value == "true"
+                )),
+                "a sort mark must be hidden from assistive technology"
+            );
+        }
+    }
 
     /// The alert carries the language of the sentence, and only when there is
     /// one to carry (point 48).
