@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>opengrid — Remote-Demo (Server)</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+        --line: color-mix(in srgb, currentColor 20%, transparent);
+        --muted: color-mix(in srgb, currentColor 60%, transparent);
+      }
+      body {
+        max-width: 64rem;
+        margin: 0 auto;
+        padding: 1.5rem 1rem 4rem;
+        line-height: 1.5;
+      }
+      h1 {
+        font-size: 1.4rem;
+        margin-bottom: 0.25rem;
+      }
+      p.lead {
+        color: var(--muted);
+        margin-top: 0;
+      }
+      #status {
+        font-size: 0.9rem;
+        color: var(--muted);
+      }
+      #status.error {
+        color: #c0392b;
+      }
+      fieldset {
+        border: 1px solid var(--line);
+        border-radius: 0.4rem;
+        margin: 1rem 0;
+      }
+      opengrid-grid {
+        display: block;
+        border: 1px solid var(--line);
+        border-radius: 0.4rem;
+        height: 50vh;
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.85em;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>opengrid — Remote-Demo</h1>
+    <p class="lead">
+      Dasselbe <code>&lt;opengrid-grid&gt;</code>, aber die Daten kommen nicht
+      aus der Engine im Tab, sondern über <code>POST /query/orders</code> von
+      einem laufenden <code>opengrid-server</code> (Plan-Punkte 23, 24, 27). Der
+      Browser schickt den Query-AST, nie SQL.
+    </p>
+
+    <fieldset>
+      <legend>Token</legend>
+      <p style="margin: 0 0 0.5rem">
+        Jedes Token steht laut Serverkonfiguration für ein Land. Der Server hängt
+        daraus einen <strong>Pflichtfilter</strong> an jede Abfrage (E16) — die
+        beiden Tokens sehen deshalb verschiedene Zeilen, ohne dass die Seite
+        etwas anderes schickt.
+      </p>
+      <label><input type="radio" name="token" value="demo-token-de" checked /> demo-token-de (DE)</label>
+      <label style="margin-left: 1rem"
+        ><input type="radio" name="token" value="demo-token-fr" /> demo-token-fr (FR)</label
+      >
+      <label style="margin-left: 1rem"
+        ><input type="radio" name="token" value="" /> kein Token</label
+      >
+    </fieldset>
+
+    <p id="status" role="status" aria-live="polite">Lädt …</p>
+
+    <opengrid-grid
+      label="Bestellungen"
+      datasource="orders"
+      columns="id,customer,country,amount,qty"
+      window-size="40"
+    ></opengrid-grid>
+
+    <script type="module">
+      import { loadOpengrid, createRestProvider } from "/packages/opengrid/loader.js";
+
+      const SERVER = "http://127.0.0.1:8081";
+      const status = document.getElementById("status");
+      const host = document.querySelector("opengrid-grid");
+
+      function setStatus(message, isError = false) {
+        status.textContent = message;
+        status.classList.toggle("error", isError);
+      }
+
+      async function start() {
+        const loader = await loadOpengrid();
+
+        const use = (token) => {
+          loader.module.set_provider(
+            host,
+            createRestProvider({ url: SERVER, source: "orders", token }),
+          );
+          setStatus(
+            token
+              ? `Provider: ${SERVER} mit Token ${token}. Der Server hängt den Pflichtfilter dieses Tokens an jede Abfrage.`
+              : `Provider: ${SERVER} ohne Token — der Server muss jede Abfrage ablehnen.`,
+          );
+        };
+
+        for (const radio of document.querySelectorAll('input[name="token"]')) {
+          radio.addEventListener("change", (event) => use(event.target.value));
+        }
+        use("demo-token-de");
+
+        window.opengrid = { module: loader.module, host, use };
+        return { fallback: loader.fallback };
+      }
+
+      window.__opengridReady = start().catch((error) => {
+        setStatus(`Fehler: ${error.message ?? error}`, true);
+        throw error;
+      });
+    </script>
+  </body>
+</html>

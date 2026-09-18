@@ -19,6 +19,7 @@
  *
  *   createWorkerProvider({ moduleUrl, wasmUrl })  engine in a module worker
  *   createLocalProvider(engine)                   engine on the main thread
+ *   createRestProvider({ url, source, token })    opengrid-server over HTTP (point 27)
  *
  * The Worker provider starts lazily on the first `load`/`execute` and stays the
  * single worker of V1 (no pool, no SharedArrayBuffer).
@@ -218,6 +219,57 @@ export function createLocalProvider(engine) {
       return engine.execute(queryJson);
     },
     terminate() {},
+  };
+}
+
+/**
+ * A provider that talks to an `opengrid-server` over HTTP (plan point 27).
+ *
+ * The same shape as `createLocalProvider` and `createWorkerProvider`, so a page
+ * swaps local for remote without touching the grid: `set_provider` sees one
+ * `execute(queryJson)` either way. The difference is only where the work
+ * happens — and that the answer can fail for reasons a local engine never has.
+ *
+ * The server's error form (point 23) is unwrapped here: a failed request
+ * rejects with the server's own sentence, so the grid's status line shows
+ * "unknown source …" rather than "HTTP 404".
+ *
+ * @param {object} options
+ * @param {string} options.url base URL of the server, e.g. `http://127.0.0.1:8081`.
+ * @param {string} options.source the configured data source name.
+ * @param {string} [options.token] bearer token; the server refuses without one.
+ * @returns {{execute: Function}}
+ */
+export function createRestProvider({ url, source, token } = {}) {
+  const endpoint = `${String(url).replace(/\/$/, "")}/query/${encodeURIComponent(source)}`;
+  const headers = { "Content-Type": "application/json" };
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  return {
+    async execute(queryJson) {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers,
+        body: queryJson,
+      });
+      const text = await response.text();
+      if (response.ok) {
+        return text;
+      }
+      // The body carries the reason; the status alone would not.
+      let message = `HTTP ${response.status}`;
+      try {
+        const error = JSON.parse(text)?.error;
+        if (error?.message) {
+          message = error.path ? `${error.message} (${error.path})` : error.message;
+        }
+      } catch {
+        // A body that is not the error form: keep the status.
+      }
+      throw new Error(message);
+    },
   };
 }
 

@@ -1,0 +1,33 @@
+# Beispielkonfiguration für die Remote-Demo (Plan-Punkt 24).
+#
+# Die Quelle ist hier der Conformance-Datensatz über die lokale Engine — der
+# Server ist damit vollständig vorführbar, bevor PostgreSQL dazukommt (Punkt 26).
+# Für die 100k-Demo `path` auf target/grid-demo/orders-100k.csv zeigen lassen.
+
+[server]
+address = "127.0.0.1:8081"
+# Die Demo-Seite wird von `just serve-demo` auf :8080 ausgeliefert und ist damit
+# ein anderer Origin. Ohne diese Liste sendet der Server keine CORS-Header und
+# der Browser darf die Antwort nicht lesen. Kein `*`: mit Bearer-Token wäre das
+# ein Token für jede Seite, die der Nutzer offen hat.
+allowed_origins = ["http://127.0.0.1:8080", "http://localhost:8080"]
+
+# E15: Bearer-Token aus der Konfiguration. In einem echten Deployment steht hier
+# `value = "${ORDERS_API_TOKEN}"` und das Geheimnis kommt aus der Umgebung.
+[[tokens]]
+value = "demo-token-de"
+context = { country = "DE" }
+
+[[tokens]]
+value = "demo-token-fr"
+context = { country = "FR" }
+
+[[datasources]]
+name = "orders"
+type = "local-csv"
+path = "../../crates/opengrid-conformance/data/orders.csv"
+schema = "../../crates/opengrid-conformance/data/orders.schema.json"
+# Nur diese Spalten darf ein Client überhaupt nennen.
+allowed_fields = ["id", "customer", "country", "amount", "qty", "ordered_on"]
+# E16: hängt an jeder Query, kommt aus dem Token-Kontext, nicht abschaltbar.
+row_filter = { field = "country", op = "eq", value = ":country" }

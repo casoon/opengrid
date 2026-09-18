@@ -10,6 +10,7 @@ members = [
     "crates/opengrid-web-core",
     "crates/opengrid-web-components",
     "crates/opengrid-grid",
+    "crates/opengrid-server",
     "crates/xtask",
 ]
 
