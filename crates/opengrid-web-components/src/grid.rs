@@ -267,7 +267,79 @@ pub const FILTER_OPERATORS: &[&str] = &[
     "gte",
     "lt",
     "lte",
+    "is_null",
+    "is_not_null",
 ];
+
+/// The operators that make sense for a column (plan point 51).
+///
+/// Until point 23 the grid had no types and offered all eight comparisons for
+/// every column — against a number or a date that is a type error, which is why
+/// filtering only ever worked on text. Now the column decides:
+///
+/// * `contains`/`starts_with` are substring tests and belong to `Utf8` alone.
+/// * the ordered comparisons apply to every type but `Bool`, which has two
+///   values and no order worth offering.
+/// * `eq`/`ne` apply everywhere.
+/// * `is_null`/`is_not_null` only where the column may actually be null — on a
+///   required column they would be a question with a constant answer.
+pub fn operators_for(data_type: DataType, nullable: bool) -> Vec<&'static str> {
+    let mut operators = Vec::with_capacity(FILTER_OPERATORS.len());
+    if data_type == DataType::Utf8 {
+        operators.push("contains");
+        operators.push("starts_with");
+    }
+    operators.push("eq");
+    operators.push("ne");
+    if data_type != DataType::Bool {
+        operators.extend(["gt", "gte", "lt", "lte"]);
+    }
+    if nullable {
+        operators.extend(["is_null", "is_not_null"]);
+    }
+    operators
+}
+
+/// Whether an operator needs a value at all.
+///
+/// `is_null`/`is_not_null` are the two that do not; their value input is
+/// disabled rather than ignored, so the control says what it does.
+pub fn takes_value(op: &str) -> bool {
+    !matches!(op, "is_null" | "is_not_null")
+}
+
+/// The `type` of the value input for a column (plan point 51).
+///
+/// A date picker for a date, a number spinner for a number, a checkbox for a
+/// boolean — the browser then does the parsing, the keyboard support and the
+/// locale-correct presentation for free, and an impossible value is harder to
+/// type in the first place.
+pub fn input_type(data_type: DataType) -> &'static str {
+    match data_type {
+        DataType::Bool => "checkbox",
+        DataType::Int64 | DataType::Float64 | DataType::Decimal { .. } => "number",
+        DataType::Date => "date",
+        // A timestamp needs a time zone-free local field; the wire form is UTC
+        // ISO-8601, which `datetime-local` does not produce — text for now.
+        DataType::Timestamp | DataType::Utf8 => "text",
+    }
+}
+
+/// The step attribute that lets a number input accept the column's precision.
+///
+/// Without it a browser rounds a decimal input to whole numbers, and the value
+/// the user typed is not the value that gets filtered.
+pub fn input_step(data_type: DataType) -> Option<String> {
+    match data_type {
+        DataType::Int64 => Some("1".to_owned()),
+        DataType::Float64 => Some("any".to_owned()),
+        DataType::Decimal { scale, .. } if scale > 0 => {
+            Some(format!("0.{}1", "0".repeat(scale as usize - 1)))
+        }
+        DataType::Decimal { .. } => Some("1".to_owned()),
+        _ => None,
+    }
+}
 
 /// The host attributes the element reacts to.
 pub const OBSERVED: &[&str] = &[
@@ -393,7 +465,14 @@ pub struct FilterNodes {
 pub struct FilterColumnNodes {
     /// The operator `<select>`.
     pub select: NodeId,
-    /// The value `<input type="text">`.
+    /// One `<option>` per entry of [`FILTER_OPERATORS`], in that order.
+    ///
+    /// All of them are built once — the patch language can set attributes but
+    /// not remove children, and the column's **type** only arrives with the
+    /// first result (point 23). Which of them apply is therefore an attribute on
+    /// each option, updated per frame, not a different set of nodes.
+    pub options: Vec<NodeId>,
+    /// The value `<input>`.
     pub input: NodeId,
 }
 
@@ -468,35 +547,162 @@ pub fn initial_schema(columns: &[String]) -> Schema {
 pub struct FilterEntry {
     /// The output column the comparison names.
     pub column: String,
-    /// The comparison operator.
-    pub op: CmpOp,
-    /// The raw value text; an empty (or whitespace-only) value means "no filter".
+    /// The chosen operator.
+    pub op: FilterOp,
+    /// The raw value text; an empty (or whitespace-only) value means "no filter",
+    /// except for the operators that take none.
     pub value: String,
 }
 
-/// The `filter` expression of the filter row: the `and` of every non-empty entry.
+/// What the operator control can be set to (plan point 51).
 ///
-/// Entries with a blank value are skipped; an all-blank/empty input clears the
-/// filter (`None`). A column that is not a valid field identifier is skipped
-/// rather than turning into a malformed query.
-pub fn filter_expr(entries: &[FilterEntry]) -> Option<FilterExpr> {
-    let comparisons: Vec<FilterExpr> = entries
-        .iter()
-        .filter(|entry| !entry.value.trim().is_empty())
-        .filter_map(|entry| {
-            FieldName::new(entry.column.as_str())
-                .ok()
-                .map(|field| FilterExpr::Cmp {
-                    field,
-                    op: entry.op,
-                    value: serde_json::Value::String(entry.value.clone()),
-                })
-        })
-        .collect();
-    if comparisons.is_empty() {
+/// `CmpOp` covers the comparisons; the two null tests are not comparisons in the
+/// AST — they are their own filter nodes — so the control's choice needs a type
+/// that can hold either.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FilterOp {
+    Cmp(CmpOp),
+    IsNull,
+    IsNotNull,
+}
+
+impl FilterOp {
+    /// Reads a wire token, including the two null tests.
+    pub fn parse(token: &str) -> Option<Self> {
+        match token {
+            "is_null" => Some(FilterOp::IsNull),
+            "is_not_null" => Some(FilterOp::IsNotNull),
+            other => CmpOp::parse(other).map(FilterOp::Cmp),
+        }
+    }
+
+    /// The wire token.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            FilterOp::Cmp(op) => op.as_str(),
+            FilterOp::IsNull => "is_null",
+            FilterOp::IsNotNull => "is_not_null",
+        }
+    }
+}
+
+/// What a filter row entry can be wrong about (plan point 51).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FilterProblem {
+    /// The column whose input does not fit.
+    pub column: String,
+    /// What the user typed.
+    pub value: String,
+}
+
+/// The `filter` expression of the filter row, with literals typed per column.
+///
+/// Until point 51 every value went out as a JSON string. Against a `Decimal`,
+/// `Int64`, `Date` or `Bool` column that is a **type error** by the rules of
+/// §Literaltypen — which is why filtering only ever worked on text. Now each
+/// literal is written in the notation its column expects (§Typsystem: decimal as
+/// a string, date `YYYY-MM-DD`, timestamp ISO-8601 `Z`, numbers as JSON numbers,
+/// booleans as JSON booleans).
+///
+/// An entry the column cannot accept is **not** sent: it comes back as a
+/// [`FilterProblem`], so the grid can say so instead of letting the engine or the
+/// server answer with a validation error the user did not cause.
+///
+/// Entries with a blank value are skipped — except for the two operators that
+/// take no value at all. A schema without the column is skipped rather than
+/// turned into a malformed query.
+pub fn filter_expr(
+    entries: &[FilterEntry],
+    schema: &Schema,
+) -> Result<Option<FilterExpr>, Vec<FilterProblem>> {
+    let mut comparisons = Vec::new();
+    let mut problems = Vec::new();
+
+    for entry in entries {
+        let Ok(field) = FieldName::new(entry.column.as_str()) else {
+            continue;
+        };
+        let Some(column) = schema.field(entry.column.as_str()) else {
+            continue;
+        };
+
+        match entry.op {
+            FilterOp::IsNull => comparisons.push(FilterExpr::IsNull { field }),
+            FilterOp::IsNotNull => comparisons.push(FilterExpr::IsNotNull { field }),
+            FilterOp::Cmp(op) => {
+                if entry.value.trim().is_empty() {
+                    continue;
+                }
+                match literal(&entry.value, column.data_type) {
+                    Some(value) => comparisons.push(FilterExpr::Cmp { field, op, value }),
+                    None => problems.push(FilterProblem {
+                        column: entry.column.clone(),
+                        value: entry.value.clone(),
+                    }),
+                }
+            }
+        }
+    }
+
+    if !problems.is_empty() {
+        return Err(problems);
+    }
+    Ok(if comparisons.is_empty() {
         None
     } else {
         Some(FilterExpr::And(comparisons))
+    })
+}
+
+/// One typed literal in the notation its column expects, or `None` when the text
+/// is not a value of that type.
+///
+/// The checking is deliberately shallow — it decides whether the JSON is of the
+/// right *kind*, and validation against the schema does the rest. What it must
+/// not do is pass something through that will fail later: the user typed it, so
+/// the user should hear about it here.
+fn literal(text: &str, data_type: DataType) -> Option<serde_json::Value> {
+    let text = text.trim();
+    match data_type {
+        DataType::Utf8 => Some(serde_json::Value::String(text.to_owned())),
+        DataType::Bool => match text {
+            "true" | "on" | "1" => Some(serde_json::Value::Bool(true)),
+            "false" | "off" | "0" | "" => Some(serde_json::Value::Bool(false)),
+            _ => None,
+        },
+        DataType::Int64 => text.parse::<i64>().ok().map(Into::into),
+        DataType::Float64 => {
+            // E13: the three non-finite values travel as those exact words.
+            if matches!(text, "NaN" | "Infinity" | "-Infinity") {
+                return Some(serde_json::Value::String(text.to_owned()));
+            }
+            let number = text.parse::<f64>().ok()?;
+            serde_json::Number::from_f64(number).map(serde_json::Value::Number)
+        }
+        // A decimal travels as a string so no precision is lost on the way
+        // (§Typsystem). Checked here for shape only.
+        DataType::Decimal { .. } => {
+            let digits = text.strip_prefix(['-', '+']).unwrap_or(text);
+            let (whole, fraction) = digits.split_once('.').unwrap_or((digits, ""));
+            let ok = !whole.is_empty()
+                && whole.bytes().all(|b| b.is_ascii_digit())
+                && fraction.bytes().all(|b| b.is_ascii_digit());
+            ok.then(|| serde_json::Value::String(text.to_owned()))
+        }
+        DataType::Date => {
+            // `YYYY-MM-DD`, which is what `<input type="date">` produces.
+            let parts: Vec<&str> = text.split('-').collect();
+            let ok = parts.len() == 3
+                && parts[0].len() == 4
+                && parts[1].len() == 2
+                && parts[2].len() == 2
+                && parts.iter().all(|p| p.bytes().all(|b| b.is_ascii_digit()));
+            ok.then(|| serde_json::Value::String(text.to_owned()))
+        }
+        DataType::Timestamp => {
+            let ok = text.len() >= 20 && text.ends_with('Z') && text.contains('T');
+            ok.then(|| serde_json::Value::String(text.to_owned()))
+        }
     }
 }
 
@@ -1116,6 +1322,7 @@ fn build_filter(
             name: "aria-label".to_owned(),
             value: texts.operator_label(field.name.as_str()),
         });
+        let mut options = Vec::with_capacity(FILTER_OPERATORS.len());
         for (option_index, op) in FILTER_OPERATORS.iter().enumerate() {
             let option = element(buffer, nodes, Some(select), "option");
             buffer.push(Patch::SetAttribute {
@@ -1136,6 +1343,7 @@ fn build_filter(
                 node: option,
                 text: texts.operator(option_index, op),
             });
+            options.push(option);
         }
 
         let input = element(buffer, nodes, Some(group), "input");
@@ -1160,7 +1368,11 @@ fn build_filter(
             value: texts.value_label(field.name.as_str()),
         });
         set_style(buffer, input, "width: 6rem;");
-        columns.push(FilterColumnNodes { select, input });
+        columns.push(FilterColumnNodes {
+            select,
+            options,
+            input,
+        });
     }
 
     let clear = element(buffer, nodes, Some(container), "button");
@@ -1240,6 +1452,53 @@ pub fn patch_grid(
         node: nodes.status,
         text: status_text(texts, state.status(), total_count),
     });
+
+    // The filter row follows the schema: which operators a column offers and what
+    // kind of input it takes are decided by its type, which only exists once a
+    // result has arrived (point 51).
+    for (col, column) in nodes.filter.columns.iter().enumerate() {
+        let Some(field) = fields.get(col) else {
+            continue;
+        };
+        let allowed = operators_for(field.data_type, field.nullable);
+        for (index, option) in column.options.iter().enumerate() {
+            let fits = FILTER_OPERATORS
+                .get(index)
+                .is_some_and(|op| allowed.contains(op));
+            // Hidden *and* disabled: hidden keeps it out of the list, disabled
+            // keeps it out of reach for anything that ignores `hidden`.
+            for name in ["hidden", "disabled"] {
+                if fits {
+                    buffer.push(Patch::RemoveAttribute {
+                        node: *option,
+                        name: name.to_owned(),
+                    });
+                } else {
+                    buffer.push(Patch::SetAttribute {
+                        node: *option,
+                        name: name.to_owned(),
+                        value: String::new(),
+                    });
+                }
+            }
+        }
+        buffer.push(Patch::SetAttribute {
+            node: column.input,
+            name: "type".to_owned(),
+            value: input_type(field.data_type).to_owned(),
+        });
+        match input_step(field.data_type) {
+            Some(step) => buffer.push(Patch::SetAttribute {
+                node: column.input,
+                name: "step".to_owned(),
+                value: step,
+            }),
+            None => buffer.push(Patch::RemoveAttribute {
+                node: column.input,
+                name: "step".to_owned(),
+            }),
+        }
+    }
 
     for (col, header) in nodes.header_cells.iter().enumerate() {
         let key = fields
@@ -1550,27 +1809,84 @@ mod tests {
         );
     }
 
-    /// The filter expression is the `and` of the non-empty entries.
+    /// A schema with one column of each interesting type.
+    fn typed_schema() -> Schema {
+        Schema::new(vec![
+            Field::new(FieldName::new("customer").unwrap(), DataType::Utf8),
+            Field::new(FieldName::new("qty").unwrap(), DataType::Int64),
+            Field::new(
+                FieldName::new("amount").unwrap(),
+                DataType::decimal(12, 2).unwrap(),
+            ),
+            Field::new(FieldName::new("ordered_on").unwrap(), DataType::Date),
+            Field::new(FieldName::new("flag").unwrap(), DataType::Bool),
+            Field::required(FieldName::new("id").unwrap(), DataType::Int64),
+        ])
+    }
+
+    fn entry(column: &str, op: &str, value: &str) -> FilterEntry {
+        FilterEntry {
+            column: column.to_owned(),
+            op: FilterOp::parse(op).expect("a known operator"),
+            value: value.to_owned(),
+        }
+    }
+
+    /// The filter expression is the `and` of the non-empty entries, each literal
+    /// written the way its column expects (point 51).
     #[test]
-    fn the_filter_query_is_the_and_of_the_entries() {
+    fn the_filter_query_types_every_literal() {
         use serde_json::{Value as Json, json};
         let entries = [
-            FilterEntry {
-                column: "customer".to_owned(),
-                op: CmpOp::Contains,
-                value: "Al".to_owned(),
-            },
-            FilterEntry {
-                column: "qty".to_owned(),
-                op: CmpOp::Gt,
-                value: "2".to_owned(),
-            },
+            entry("customer", "contains", "Al"),
+            entry("qty", "gt", "2"),
+            entry("amount", "lte", "10.50"),
+            entry("ordered_on", "eq", "2026-01-01"),
+            entry("flag", "eq", "true"),
         ];
-        let filter = filter_expr(&entries).expect("a filter");
+        let filter = filter_expr(&entries, &typed_schema())
+            .expect("no problems")
+            .expect("a filter");
         let query = query_json(
             "orders",
             &["customer".to_owned()],
-            &[("customer".to_owned(), "asc")],
+            &[],
+            Some(&filter),
+            0,
+            40,
+        );
+        let value: Json = serde_json::from_str(&query).expect("valid JSON");
+
+        assert_eq!(
+            value["filter"],
+            json!({ "and": [
+                { "field": "customer", "op": "contains", "value": "Al" },
+                // A number, not the string "2" — which is what made numeric
+                // filters a type error before this point.
+                { "field": "qty", "op": "gt", "value": 2 },
+                // A decimal stays a string so no precision is lost.
+                { "field": "amount", "op": "lte", "value": "10.50" },
+                { "field": "ordered_on", "op": "eq", "value": "2026-01-01" },
+                { "field": "flag", "op": "eq", "value": true }
+            ]})
+        );
+    }
+
+    /// The two operators that take no value become their own filter nodes.
+    #[test]
+    fn the_null_operators_need_no_value() {
+        use serde_json::{Value as Json, json};
+        let entries = [
+            entry("customer", "is_null", ""),
+            entry("qty", "is_not_null", ""),
+        ];
+        let filter = filter_expr(&entries, &typed_schema())
+            .expect("no problems")
+            .expect("a filter");
+        let query = query_json(
+            "orders",
+            &["customer".to_owned()],
+            &[],
             Some(&filter),
             0,
             40,
@@ -1579,28 +1895,88 @@ mod tests {
         assert_eq!(
             value["filter"],
             json!({ "and": [
-                { "field": "customer", "op": "contains", "value": "Al" },
-                { "field": "qty", "op": "gt", "value": "2" }
+                { "field": "customer", "op": "is_null" },
+                { "field": "qty", "op": "is_not_null" }
             ]})
         );
+    }
+
+    /// An input the column cannot hold never becomes a query — the user hears
+    /// about it instead of the engine.
+    #[test]
+    fn an_impossible_value_is_a_problem_not_a_query() {
+        let schema = typed_schema();
+        for (column, text) in [
+            ("qty", "zwei"),
+            ("qty", "2.5"),
+            ("amount", "10,50"),
+            ("ordered_on", "01.01.2026"),
+            ("flag", "vielleicht"),
+        ] {
+            let problems = filter_expr(&[entry(column, "eq", text)], &schema)
+                .expect_err(&format!("{column} = {text:?} must be refused"));
+            assert_eq!(problems.len(), 1);
+            assert_eq!(problems[0].column, column);
+            assert_eq!(problems[0].value, text);
+        }
     }
 
     /// Blank entries are skipped; an all-blank input clears the filter.
     #[test]
     fn blank_filter_entries_do_not_build_a_filter() {
-        assert_eq!(filter_expr(&[]), None);
-        let blank = [FilterEntry {
-            column: "customer".to_owned(),
-            op: CmpOp::Eq,
-            value: "  ".to_owned(),
-        }];
-        assert_eq!(filter_expr(&blank), None);
-        let one = [FilterEntry {
-            column: "customer".to_owned(),
-            op: CmpOp::Eq,
-            value: "DE".to_owned(),
-        }];
-        assert!(filter_expr(&one).is_some());
+        let schema = typed_schema();
+        assert_eq!(filter_expr(&[], &schema), Ok(None));
+        assert_eq!(
+            filter_expr(&[entry("customer", "eq", "  ")], &schema),
+            Ok(None)
+        );
+        assert!(
+            filter_expr(&[entry("customer", "eq", "DE")], &schema)
+                .unwrap()
+                .is_some()
+        );
+    }
+
+    /// Which operators a column offers, and which value input it gets.
+    #[test]
+    fn a_column_offers_the_operators_that_fit_it() {
+        // Substring tests belong to text alone.
+        assert!(operators_for(DataType::Utf8, true).contains(&"contains"));
+        assert!(!operators_for(DataType::Int64, true).contains(&"contains"));
+
+        // A boolean has two values and no useful order.
+        let flags = operators_for(DataType::Bool, true);
+        assert!(flags.contains(&"eq") && !flags.contains(&"gt"));
+
+        // The null tests need a column that can be null.
+        assert!(operators_for(DataType::Int64, true).contains(&"is_null"));
+        assert!(!operators_for(DataType::Int64, false).contains(&"is_null"));
+
+        // Every operator offered is one the filter row knows.
+        for data_type in [
+            DataType::Utf8,
+            DataType::Int64,
+            DataType::Bool,
+            DataType::Date,
+        ] {
+            for op in operators_for(data_type, true) {
+                assert!(FILTER_OPERATORS.contains(&op), "{op}");
+                assert!(FilterOp::parse(op).is_some(), "{op}");
+            }
+        }
+
+        assert_eq!(input_type(DataType::Date), "date");
+        assert_eq!(input_type(DataType::Bool), "checkbox");
+        assert_eq!(input_type(DataType::Int64), "number");
+        assert_eq!(input_type(DataType::Utf8), "text");
+        // A decimal input must accept its own scale, or the browser rounds it
+        // away before anyone sees it.
+        assert_eq!(
+            input_step(DataType::decimal(12, 2).unwrap()).as_deref(),
+            Some("0.01")
+        );
+        assert_eq!(input_step(DataType::Int64).as_deref(), Some("1"));
+        assert_eq!(input_step(DataType::Utf8), None);
     }
 
     /// Every status has its own sentence; only `Ready` shows the count. The

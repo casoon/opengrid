@@ -57,6 +57,9 @@ pub struct GridTexts {
     pub value_label: String,
     /// The button that empties the filter row.
     pub clear: String,
+    /// A filter input the column cannot hold (point 51). May use `{column}` and
+    /// `{value}`.
+    pub filter_invalid: String,
     /// The readable names of the filter operators, in the order of
     /// [`FILTER_OPERATORS`](crate::grid::FILTER_OPERATORS). The `value` of each
     /// option stays the wire token, so the query is unaffected.
@@ -77,6 +80,10 @@ pub const DEFAULT_OPERATORS: &[&str] = &[
     "greater or equal",
     "less than",
     "less or equal",
+    // Deliberately not "is empty": an empty string **is** a value (rule S14),
+    // and calling the absence of a value "empty" would merge the two.
+    "has no value",
+    "has a value",
 ];
 
 /// The labels are indexed by the wire tokens' position, so the two lists must
@@ -98,6 +105,7 @@ impl Default for GridTexts {
             operator_label: "{column} operator".to_owned(),
             value_label: "{column} value".to_owned(),
             clear: "Clear".to_owned(),
+            filter_invalid: "{column}: {value} is not a value for this column".to_owned(),
             operators: DEFAULT_OPERATORS
                 .iter()
                 .map(|name| (*name).to_owned())
@@ -137,6 +145,15 @@ impl GridTexts {
     /// The accessible name of `column`'s value input.
     pub fn value_label(&self, column: &str) -> String {
         fill(&self.value_label, "column", column)
+    }
+
+    /// The sentence for a filter input the column cannot hold.
+    pub fn filter_invalid(&self, column: &str, value: &str) -> String {
+        fill(
+            &fill(&self.filter_invalid, "column", column),
+            "value",
+            value,
+        )
     }
 
     /// The readable name of the operator at `index`, falling back to the wire
@@ -257,6 +274,7 @@ mod host {
         overwrite(&mut texts.operator_label, string("operatorLabel"));
         overwrite(&mut texts.value_label, string("valueLabel"));
         overwrite(&mut texts.clear, string("clear"));
+        overwrite(&mut texts.filter_invalid, string("filterInvalid"));
 
         // `operators` is keyed by the wire token — `{ gte: "greater or equal" }`.
         // A positional array would silently shift every label when one entry is
@@ -311,6 +329,17 @@ mod tests {
             "The data could not be loaded: unknown source \"orders\""
         );
         assert_eq!(texts.error("   "), "The data could not be loaded.");
+    }
+
+    /// The refusal names both the column and what was typed — otherwise the
+    /// announcement leaves the user guessing which field it means.
+    #[test]
+    fn an_invalid_filter_names_the_column_and_the_value() {
+        let texts = GridTexts::default();
+        assert_eq!(
+            texts.filter_invalid("qty", "zwei"),
+            "qty: zwei is not a value for this column"
+        );
     }
 
     #[test]

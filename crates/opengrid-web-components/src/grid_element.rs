@@ -451,6 +451,11 @@ fn render(host: &HtmlElement, focus_after: bool) {
         }
     }
 
+    if let Some(root) = host.shadow_root() {
+        let schema = runtime.borrow().state.schema().clone();
+        fix_operator_choices(&root, &schema);
+    }
+
     if focus_after {
         focus_active(host);
     }
@@ -661,6 +666,11 @@ fn add_listeners(root: &ShadowRoot) {
     // activation fires a click too, so one listener covers both.
     let click = Closure::<dyn FnMut(Event)>::new(on_filter_clear).into_js_value();
     let _ = root.add_event_listener_with_callback("click", click.unchecked_ref());
+    // Choosing an operator changes what the value field means — "has no value"
+    // takes none — so the controls follow the choice at once instead of at the
+    // next frame (point 51).
+    let change = Closure::<dyn FnMut(Event)>::new(on_filter_change).into_js_value();
+    let _ = root.add_event_listener_with_callback("change", change.unchecked_ref());
     // Scroll does not bubble, but a capture listener on the shadow root sees the
     // viewport's scroll events.
     let scroll = Closure::<dyn FnMut(Event)>::new(on_scroll).into_js_value();
@@ -876,7 +886,7 @@ fn read_filter_entries(root: &ShadowRoot, columns: &[String]) -> Vec<FilterEntry
                 .unwrap_or_default();
             FilterEntry {
                 column: column.clone(),
-                op: CmpOp::parse(&op).unwrap_or(CmpOp::Eq),
+                op: grid::FilterOp::parse(&op).unwrap_or(grid::FilterOp::Cmp(CmpOp::Eq)),
                 value,
             }
         })
@@ -886,6 +896,11 @@ fn read_filter_entries(root: &ShadowRoot, columns: &[String]) -> Vec<FilterEntry
 /// Applies the filter row: builds the `filter` expression, returns to the first
 /// window and re-runs the query without moving focus (it stays in the control
 /// the user typed into).
+///
+/// An input the column cannot hold does **not** become a query (point 51). It
+/// lands in the status line instead, which is announced — the user typed it, so
+/// the user hears about it, rather than the engine answering with a validation
+/// error about a value nobody can see.
 fn apply_filters(host: &HtmlElement) {
     let Some(root) = host.shadow_root() else {
         return;
@@ -894,7 +909,27 @@ fn apply_filters(host: &HtmlElement) {
         return;
     };
     let columns = grid::parse_columns(host.get_attribute(COLUMNS_ATTRIBUTE).as_deref());
-    let filter = grid::filter_expr(&read_filter_entries(&root, &columns));
+    let entries = read_filter_entries(&root, &columns);
+    let schema = runtime.borrow().state.schema().clone();
+
+    let filter = match grid::filter_expr(&entries, &schema) {
+        Ok(filter) => filter,
+        Err(problems) => {
+            let texts = texts(host);
+            let message = problems
+                .iter()
+                .map(|problem| texts.filter_invalid(&problem.column, &problem.value))
+                .collect::<Vec<_>>()
+                .join(" ");
+            runtime
+                .borrow_mut()
+                .state
+                .set_status(GridStatus::Error(message));
+            render(host, false);
+            return;
+        }
+    };
+
     let pool = grid::parse_window_size(host.get_attribute(WINDOW_SIZE_ATTRIBUTE).as_deref());
     {
         let mut runtime = runtime.borrow_mut();
@@ -902,6 +937,53 @@ fn apply_filters(host: &HtmlElement) {
         runtime.state.set_window(Window::new(0, pool));
     }
     run_query(host, QueryKind::Data, false);
+}
+
+/// An operator control changed: bring its value field in line.
+fn on_filter_change(event: Event) {
+    let Some(root) = current_shadow_root(&event) else {
+        return;
+    };
+    let Ok(host) = root.host().dyn_into::<HtmlElement>() else {
+        return;
+    };
+    let Some(runtime) = runtime(&host) else {
+        return;
+    };
+    let schema = runtime.borrow().state.schema().clone();
+    fix_operator_choices(&root, &schema);
+}
+
+/// Moves a column's operator control onto an operator its type allows.
+///
+/// The options are built before the types are known (point 51), so the default
+/// selection can be one the column does not offer — `contains` on a number.
+/// Patches can disable that option, but the *selection* is a DOM property, so it
+/// is corrected here, after the frame landed.
+fn fix_operator_choices(root: &ShadowRoot, schema: &opengrid_types::Schema) {
+    for (col, field) in schema.fields().iter().enumerate() {
+        let Ok(Some(node)) = root.query_selector(&format!("select[data-col=\"{col}\"]")) else {
+            continue;
+        };
+        let Ok(select) = node.dyn_into::<HtmlSelectElement>() else {
+            continue;
+        };
+        let allowed = grid::operators_for(field.data_type, field.nullable);
+        let current = select.value();
+        if !allowed.contains(&current.as_str())
+            && let Some(first) = allowed.first()
+        {
+            select.set_value(first);
+        }
+
+        // The two operators that take no value say so: their input is disabled
+        // rather than silently ignored.
+        if let Ok(Some(node)) = root.query_selector(&format!("input[data-col=\"{col}\"]"))
+            && let Ok(input) = node.dyn_into::<HtmlInputElement>()
+        {
+            input.set_disabled(!grid::takes_value(&select.value()));
+        }
+    }
 }
 
 /// Clears every value input and applies the (now empty) filter.

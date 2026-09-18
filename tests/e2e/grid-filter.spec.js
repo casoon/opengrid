@@ -26,7 +26,7 @@ async function filterFacts(page) {
       present: !!filter,
       outsideGrid: !filter?.closest('table[role="grid"]'),
       operators: [...root.querySelectorAll("select[data-col]")].length,
-      values: [...root.querySelectorAll('input[data-col][type="text"]')].length,
+      values: [...root.querySelectorAll("input[data-col]")].length,
       labels,
       clear: root.querySelector('[part="filter-clear"]')?.textContent ?? null,
       status: root.querySelector('[part="status"]')?.textContent ?? null,

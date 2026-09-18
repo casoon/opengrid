@@ -75,6 +75,9 @@ test("the operator names are words, the query keeps the wire tokens", async ({
     "greater or equal",
     "less than",
     "less or equal",
+    // Not "is empty": an empty string *is* a value (rule S14).
+    "has no value",
+    "has a value",
   ]);
   expect(operatorValues).toEqual([
     "contains",
@@ -85,6 +88,8 @@ test("the operator names are words, the query keeps the wire tokens", async ({
     "gte",
     "lt",
     "lte",
+    "is_null",
+    "is_not_null",
   ]);
 });
 
