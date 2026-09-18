@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>opengrid grid theming fixture</title>
+    <style>
+      /* Point 20: a page themes the grid from outside — custom properties on the
+         host, `::part` for everything else. Nothing here reaches into the shadow
+         DOM structure.
+
+         The row height stays at the 32px default on purpose: this fixture is
+         about theming, not about the virtualization math. */
+      opengrid-grid {
+        display: block;
+        height: 240px;
+        --grid-header-height: 48px;
+        --grid-border-color: rgb(0, 0, 255);
+        --grid-focus-width: 4px;
+      }
+
+      opengrid-grid::part(header) {
+        font-variant: small-caps;
+      }
+
+      opengrid-grid::part(cell) {
+        font-style: italic;
+      }
+
+      /* A theme that animates. `prefers-reduced-motion` must win over this from
+         inside the shadow tree — that is the assertion in grid-theming.spec.js. */
+      opengrid-grid::part(row) {
+        transition: transform 2s linear;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid grid theming fixture</h1>
+      <opengrid-grid
+        label="Bestellungen"
+        datasource="orders"
+        columns="id,customer,amount,qty"
+        window-size="10"
+      ></opengrid-grid>
+    </main>
+    <script type="module">
+      import { loadOpengrid, createLocalProvider } from "/packages/opengrid/loader.js";
+      import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+
+      async function start() {
+        const loader = await loadOpengrid();
+
+        await init();
+        const engine = new Engine();
+        const provider = createLocalProvider(engine);
+        const schema = await (
+          await fetch("/tests/e2e/fixtures/grid-orders.schema.json")
+        ).text();
+        const csv = await (
+          await fetch("/tests/e2e/fixtures/grid-orders.csv")
+        ).arrayBuffer();
+        await provider.load("orders", csv, schema);
+
+        const host = document.querySelector("opengrid-grid");
+        loader.module.set_provider(host, provider);
+        return { fallback: loader.fallback };
+      }
+
+      window.__opengridReady = start();
+    </script>
+  </body>
+</html>

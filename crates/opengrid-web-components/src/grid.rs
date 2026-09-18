@@ -77,6 +77,33 @@
 //! (plan/spezifikation/09-accessibility.md §Statusmeldungen). The text comes
 //! from the portable [`status_text`]; the [`GridStatus`] behind it is state, not
 //! a renderer flag.
+//!
+//! # Theming (point 20)
+//!
+//! The shadow stylesheet is the grid's whole appearance, and a page reshapes it
+//! from outside in two ways (plan/spezifikation/08-rendering.md §CSS-Architektur,
+//! E8): the custom properties declared on `:host` — [`ROW_HEIGHT_PROPERTY`],
+//! [`HEADER_HEIGHT_PROPERTY`], [`FILTER_HEIGHT_PROPERTY`],
+//! [`STATUS_HEIGHT_PROPERTY`], [`BORDER_COLOR_PROPERTY`],
+//! [`FOCUS_WIDTH_PROPERTY`] — and the exported parts `layout`, `filter`,
+//! `filter-operator`, `filter-value`, `filter-clear`, `status`, `viewport`,
+//! `header`, `sort-index`, `row` and `cell`. Neither requires rebuilding the DOM
+//! structure.
+//!
+//! Three rules the theme cannot turn off, because they are accessibility, not
+//! decoration:
+//!
+//! * **The focus ring** is an `outline` drawn *inside* the cell
+//!   (`outline-offset: -width`). Drawn outside, the scroll container clips it
+//!   exactly where a focused cell usually is — at the edge of the viewport.
+//! * **`forced-colors`** needs no special case for text and background (they are
+//!   `Canvas`/`CanvasText` and `Highlight`); only the rule colour is switched to
+//!   a system colour, because a fixed grey would be forced to the same value as
+//!   the background.
+//! * **`prefers-reduced-motion`** neutralises animation and transition in the
+//!   whole shadow tree with `!important`. That is deliberate: between shadow
+//!   trees an important declaration from the **inner** tree beats the outer
+//!   page, so the guarantee survives a theme that animates `::part(row)`.
 
 use opengrid_datasource::QueryResult;
 use opengrid_grid::{CellRef, GridState, GridStatus, Window};
@@ -148,6 +175,35 @@ pub const STATUS_HEIGHT: u64 = 24;
 
 /// The CSS custom property overriding [`STATUS_HEIGHT`].
 pub const STATUS_HEIGHT_PROPERTY: &str = "--grid-status-height";
+
+/// The CSS custom property for the header row's height (point 20).
+///
+/// Defaults to [`ROW_HEIGHT_PROPERTY`] so a grid looks even out of the box. The
+/// header is sticky inside the viewport and sits outside the `<tbody>` sizer, so
+/// its height is independent of the virtualization math — unlike the row height,
+/// which the element has to resolve in Rust.
+pub const HEADER_HEIGHT_PROPERTY: &str = "--grid-header-height";
+
+/// The CSS custom property for the grid's rules (point 20).
+pub const BORDER_COLOR_PROPERTY: &str = "--grid-border-color";
+
+/// The default rule colour: a light grey, replaced by a system colour under
+/// `forced-colors`.
+pub const DEFAULT_BORDER_COLOR: &str = "#d4d4d4";
+
+/// The CSS custom property for the width of the focus ring (point 20).
+pub const FOCUS_WIDTH_PROPERTY: &str = "--grid-focus-width";
+
+/// The default focus ring width. Drawn **inside** the cell
+/// (`outline-offset: -width`), so the scroll container cannot clip it at the
+/// edges of the viewport — which is where a focused cell usually is.
+pub const DEFAULT_FOCUS_WIDTH: &str = "2px";
+
+/// The minimum size of a pointer target in the filter row (WCAG 2.2 §2.5.8).
+///
+/// The browser's default `<input>`/`<select>` is a little under this at the
+/// inherited font size, so the grid raises it; the 40px filter row has the room.
+pub const MIN_TARGET_SIZE: u64 = 24;
 
 /// The operators the type-agnostic filter row offers, in display order.
 ///
@@ -772,15 +828,21 @@ pub fn build_grid(
     // `:host` with the default and can be overridden from the document (or an
     // inline style) on the host; the inner elements inherit the resolved value.
     let styles = format!(
-        ":host {{ {ROW_HEIGHT_PROPERTY}: {DEFAULT_ROW_HEIGHT}px; {FILTER_HEIGHT_PROPERTY}: {FILTER_HEIGHT}px;
-                   {STATUS_HEIGHT_PROPERTY}: {STATUS_HEIGHT}px; }}
+        ":host {{ {ROW_HEIGHT_PROPERTY}: {DEFAULT_ROW_HEIGHT}px;
+                   {HEADER_HEIGHT_PROPERTY}: var({ROW_HEIGHT_PROPERTY});
+                   {FILTER_HEIGHT_PROPERTY}: {FILTER_HEIGHT}px;
+                   {STATUS_HEIGHT_PROPERTY}: {STATUS_HEIGHT}px;
+                   {BORDER_COLOR_PROPERTY}: {DEFAULT_BORDER_COLOR};
+                   {FOCUS_WIDTH_PROPERTY}: {DEFAULT_FOCUS_WIDTH}; }}
          [part=\"layout\"] {{ display: flex; flex-direction: column; height: 100%; min-height: 0; }}
          [part=\"filter\"] {{ display: flex; align-items: center; gap: 0.5rem; box-sizing: border-box;
                              flex: 0 0 auto;
                              height: var({FILTER_HEIGHT_PROPERTY}); padding: 0 0.5rem;
+                             border-bottom: 1px solid var({BORDER_COLOR_PROPERTY});
                              overflow-x: auto; overflow-y: hidden; white-space: nowrap; }}
-         [part=\"filter\"] select, [part=\"filter\"] input, [part=\"filter\"] button {{ font: inherit; }}
-         [part=\"status\"] {{ flex: 0 0 auto; margin: 0; padding: 0 0.5rem;
+         [part=\"filter\"] select, [part=\"filter\"] input, [part=\"filter\"] button {{
+                             font: inherit; min-height: {MIN_TARGET_SIZE}px; }}
+         [part=\"status\"] {{ flex: 0 0 auto; margin: 0; padding: 0 0.5rem; box-sizing: border-box;
                              min-height: var({STATUS_HEIGHT_PROPERTY}); }}
          [part=\"status\"][data-state=\"error\"] {{ font-weight: bold; }}
          [part=\"viewport\"] {{ flex: 1 1 0; min-height: 0; overflow-y: auto; position: relative; display: block; }}
@@ -788,9 +850,20 @@ pub fn build_grid(
          table {{ width: 100%; table-layout: fixed; border-collapse: collapse; }}
          thead {{ position: sticky; top: 0; z-index: 2; background: Canvas; color: CanvasText; }}
          tbody tr {{ position: absolute; left: 0; width: 100%; display: table; table-layout: fixed; }}
-         th, td {{ height: var({ROW_HEIGHT_PROPERTY}); box-sizing: border-box; padding: 0 8px;
+         th, td {{ box-sizing: border-box; padding: 0 8px;
+                   border-bottom: 1px solid var({BORDER_COLOR_PROPERTY});
                    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
-         th {{ background: Canvas; text-align: left; }}"
+         td {{ height: var({ROW_HEIGHT_PROPERTY}); }}
+         th {{ height: var({HEADER_HEIGHT_PROPERTY}); background: Canvas; text-align: left; }}
+         th:focus, td:focus {{ outline: var({FOCUS_WIDTH_PROPERTY}) solid Highlight;
+                               outline-offset: calc(-1 * var({FOCUS_WIDTH_PROPERTY})); }}
+         @media (forced-colors: active) {{
+           :host {{ {BORDER_COLOR_PROPERTY}: CanvasText; }}
+         }}
+         @media (prefers-reduced-motion: reduce) {{
+           * {{ animation-duration: 0.01ms !important; animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important; scroll-behavior: auto !important; }}
+         }}"
     );
     let style = element(buffer, nodes, Some(NodeId::ROOT), "style");
     buffer.push(Patch::SetText {
@@ -851,6 +924,11 @@ pub fn build_grid(
         let th = element(buffer, nodes, Some(header_row), "th");
         buffer.push(Patch::SetAttribute {
             node: th,
+            name: "part".to_owned(),
+            value: "header".to_owned(),
+        });
+        buffer.push(Patch::SetAttribute {
+            node: th,
             name: "scope".to_owned(),
             value: "col".to_owned(),
         });
@@ -896,10 +974,20 @@ pub fn build_grid(
     let mut rows = Vec::with_capacity(pool);
     for _ in 0..pool {
         let tr = element(buffer, nodes, Some(tbody), "tr");
+        buffer.push(Patch::SetAttribute {
+            node: tr,
+            name: "part".to_owned(),
+            value: "row".to_owned(),
+        });
         set_style(buffer, tr, ROW_HIDDEN_STYLE);
         let mut cells = Vec::with_capacity(ncols);
         for col in 0..ncols {
             let td = element(buffer, nodes, Some(tr), "td");
+            buffer.push(Patch::SetAttribute {
+                node: td,
+                name: "part".to_owned(),
+                value: "cell".to_owned(),
+            });
             buffer.push(Patch::SetAttribute {
                 node: td,
                 name: "data-col".to_owned(),
@@ -1686,6 +1774,83 @@ mod tests {
         assert_eq!(text_of(view.header_cells[0].index), "1");
         assert_eq!(text_of(view.header_cells[1].index), "2");
         assert_eq!(text_of(view.status), "1 Treffer");
+    }
+
+    /// The exported parts are the theming contract (point 20): a page styles the
+    /// grid through them, so the skeleton must name every one of them.
+    #[test]
+    fn the_skeleton_exports_the_documented_parts() {
+        let schema = initial_schema(&["customer".to_owned(), "qty".to_owned()]);
+        let mut nodes = NodeAllocator::new();
+        let mut buffer = PatchBuffer::new();
+        build_grid(&mut buffer, &mut nodes, None, &schema, 1);
+
+        let mut parts: Vec<&str> = buffer
+            .patches()
+            .iter()
+            .filter_map(|patch| match patch {
+                Patch::SetAttribute { name, value, .. } if name == "part" => Some(value.as_str()),
+                _ => None,
+            })
+            .collect();
+        parts.sort_unstable();
+        parts.dedup();
+        assert_eq!(
+            parts,
+            [
+                "cell",
+                "filter",
+                "filter-clear",
+                "filter-operator",
+                "filter-value",
+                "header",
+                "layout",
+                "row",
+                "sort-index",
+                "status",
+                "viewport",
+            ]
+        );
+    }
+
+    /// Every themeable property is declared on `:host` with a default, so a page
+    /// can override one without knowing the others.
+    #[test]
+    fn the_stylesheet_declares_every_custom_property() {
+        let schema = initial_schema(&["customer".to_owned()]);
+        let mut nodes = NodeAllocator::new();
+        let mut buffer = PatchBuffer::new();
+        build_grid(&mut buffer, &mut nodes, None, &schema, 1);
+
+        let styles = buffer
+            .patches()
+            .iter()
+            .find_map(|patch| match patch {
+                Patch::SetText { text, .. } if text.contains(":host") => Some(text.clone()),
+                _ => None,
+            })
+            .expect("the skeleton carries a stylesheet");
+
+        for property in [
+            ROW_HEIGHT_PROPERTY,
+            HEADER_HEIGHT_PROPERTY,
+            FILTER_HEIGHT_PROPERTY,
+            STATUS_HEIGHT_PROPERTY,
+            BORDER_COLOR_PROPERTY,
+            FOCUS_WIDTH_PROPERTY,
+        ] {
+            assert!(
+                styles.contains(&format!("{property}:")),
+                "{property} has no default"
+            );
+            assert!(
+                styles.contains(&format!("var({property})")),
+                "{property} is declared but never used"
+            );
+        }
+        // The two guarantees a theme must not be able to switch off.
+        assert!(styles.contains("forced-colors: active"));
+        assert!(styles.contains("prefers-reduced-motion: reduce"));
     }
 
     /// A single sort leaves the header's order index empty.
