@@ -8,7 +8,8 @@
 //! Patches are grouped by the three concerns the rendering specification names
 //! (plan/spezifikation/08-rendering.md §Change Detection): **cells** ([`Patch::Cell`]),
 //! **attributes** ([`Patch::Columns`], [`Patch::Window`], [`Patch::Sort`],
-//! [`Patch::Focus`], [`Patch::Filter`]) and **rows** ([`Patch::RowCount`]).
+//! [`Patch::Focus`], [`Patch::Filter`]) and **rows** ([`Patch::RowCount`],
+//! [`Patch::Status`]).
 //!
 //! The list is minimal in the sense the state machine promises: a transition that
 //! does not change the state yields no patch, and a transition that changes one
@@ -17,7 +18,7 @@
 use opengrid_query::{FilterExpr, Sort};
 use opengrid_types::{Schema, Value};
 
-use crate::{CellRef, Window};
+use crate::{CellRef, GridStatus, Window};
 
 /// One atomic change produced by a [`GridState`](crate::GridState) transition.
 #[derive(Clone, Debug, PartialEq)]
@@ -54,4 +55,7 @@ pub enum Patch {
     },
     /// The active filter changed; `None` means no filter.
     Filter(Option<FilterExpr>),
+    /// The grid's status changed (plan point 41). The renderer writes it into
+    /// the visible, `aria-live` status line.
+    Status(GridStatus),
 }

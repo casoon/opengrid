@@ -21,12 +21,39 @@
 //!   the new values arrive with the next result.
 //! * **Arrow-free input.** The result is the column-oriented [`QueryResult`] of
 //!   decision E14; the grid never sees Arrow.
+//! * **The status is state.** Loading, empty and error are not renderer
+//!   accidents but a [`GridStatus`] the state machine owns, so the visible
+//!   status line and its announcement have a single source (plan point 41).
 
 use opengrid_datasource::QueryResult;
 use opengrid_query::{FilterExpr, Sort, SortDirection};
 use opengrid_types::{Field, FieldName, Schema, Value};
 
 use crate::{CellRef, Patch, Window};
+
+/// What the grid is currently showing (plan point 41).
+///
+/// The four states are mutually exclusive and cover every moment of a query's
+/// life: one is running ([`Loading`](Self::Loading)), it answered with rows
+/// ([`Ready`](Self::Ready)), it answered with none ([`Empty`](Self::Empty)) or
+/// it failed ([`Error`](Self::Error)). The renderer turns the status into the
+/// visible status line and its `aria-live` announcement
+/// (plan/spezifikation/09-accessibility.md §Statusmeldungen); the state machine
+/// only owns which one holds.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum GridStatus {
+    /// Rows are loaded and shown.
+    Ready,
+    /// A query is running. Whatever is rendered may be stale — the default,
+    /// because a fresh grid has not been answered yet.
+    #[default]
+    Loading,
+    /// The query succeeded and matched no row.
+    Empty,
+    /// The last query failed. The message is the one shown to the user, so the
+    /// caller phrases it before it gets here — never a raw debug string.
+    Error(String),
+}
 
 /// The grid state and its change detection.
 #[derive(Clone, Debug, PartialEq)]
@@ -41,6 +68,8 @@ pub struct GridState {
     page_offset: u64,
     /// Column-oriented values of the loaded page, in schema order.
     page: Vec<Vec<Value>>,
+    /// What the grid announces: loading, ready, empty or an error.
+    status: GridStatus,
 }
 
 impl GridState {
@@ -58,6 +87,7 @@ impl GridState {
             window: Window::default(),
             page_offset: 0,
             page: Vec::new(),
+            status: GridStatus::Loading,
         }
     }
 
@@ -69,6 +99,21 @@ impl GridState {
     /// Rows that matched the filter, before paging (`aria-rowcount` source).
     pub fn total_count(&self) -> u64 {
         self.total_count
+    }
+
+    /// What the grid is currently showing (plan point 41).
+    pub fn status(&self) -> &GridStatus {
+        &self.status
+    }
+
+    /// Replaces the status. Emits a [`Patch::Status`] when it changed, so a
+    /// repeated `Loading` (one scroll query after another) announces once.
+    pub fn set_status(&mut self, status: GridStatus) -> Vec<Patch> {
+        if self.status == status {
+            return Vec::new();
+        }
+        self.status = status.clone();
+        vec![Patch::Status(status)]
     }
 
     /// The current sort keys, in order.
@@ -105,9 +150,12 @@ impl GridState {
     ///
     /// The result must belong to the current [`Window`]: its rows are placed at
     /// `window.offset`. Emits a [`Patch::Columns`] when the schema changed, a
-    /// [`Patch::RowCount`] when `total_count` changed and a [`Patch::Cell`] for
-    /// every cell that differs from the previously loaded value — so re-applying
-    /// the same result produces nothing.
+    /// [`Patch::RowCount`] when `total_count` changed, a [`Patch::Status`] when
+    /// the status changed and a [`Patch::Cell`] for every cell that differs from
+    /// the previously loaded value — so re-applying the same result produces
+    /// nothing. A result is by definition a success, so it always leaves the
+    /// status at [`GridStatus::Ready`] or, with no matching row,
+    /// [`GridStatus::Empty`].
     pub fn apply_result(&mut self, result: QueryResult) -> Vec<Patch> {
         let mut patches = Vec::new();
 
@@ -116,6 +164,14 @@ impl GridState {
         }
         if result.total_count != self.total_count {
             patches.push(Patch::RowCount(result.total_count));
+        }
+        let status = if result.total_count == 0 {
+            GridStatus::Empty
+        } else {
+            GridStatus::Ready
+        };
+        if self.status != status {
+            patches.push(Patch::Status(status.clone()));
         }
 
         let first = self.window.offset;
@@ -135,6 +191,7 @@ impl GridState {
         self.total_count = result.total_count;
         self.page_offset = first;
         self.page = result.columns;
+        self.status = status;
         patches
     }
 
@@ -634,6 +691,55 @@ mod tests {
 
         assert_eq!(state.set_window(window), vec![Patch::Window(window)]);
         assert_eq!(state.set_window(window), Vec::new());
+    }
+
+    /// A fresh grid has not been answered yet, and the first result flips the
+    /// status to `Ready` — once, not on every later result.
+    #[test]
+    fn the_first_result_reports_ready_once() {
+        let mut state = GridState::new(schema());
+        assert_eq!(state.status(), &GridStatus::Loading);
+
+        let patches = state.apply_result(result(&[(1, "DE", 10)], 1));
+        assert!(patches.contains(&Patch::Status(GridStatus::Ready)));
+        assert_eq!(state.status(), &GridStatus::Ready);
+
+        // A second, different result is still `Ready`: no status patch.
+        let patches = state.apply_result(result(&[(1, "DE", 10)], 7));
+        assert_eq!(patches, vec![Patch::RowCount(7)]);
+    }
+
+    /// A result with no matching row is `Empty`, not a silent zero-row `Ready`.
+    #[test]
+    fn a_result_without_rows_reports_empty() {
+        let mut state = GridState::new(schema());
+        state.apply_result(result(&[(1, "DE", 10)], 1));
+
+        let patches = state.apply_result(result(&[], 0));
+        assert!(patches.contains(&Patch::Status(GridStatus::Empty)));
+        assert_eq!(state.status(), &GridStatus::Empty);
+
+        // And back to `Ready` with the next non-empty result.
+        let patches = state.apply_result(result(&[(1, "DE", 10)], 1));
+        assert!(patches.contains(&Patch::Status(GridStatus::Ready)));
+    }
+
+    /// The error status is a transition like any other: minimal, and cleared by
+    /// the next successful result.
+    #[test]
+    fn the_error_status_is_a_minimal_transition() {
+        let mut state = GridState::new(schema());
+        state.apply_result(result(&[(1, "DE", 10)], 1));
+
+        let failed = GridStatus::Error("Die Daten konnten nicht geladen werden".to_owned());
+        assert_eq!(
+            state.set_status(failed.clone()),
+            vec![Patch::Status(failed.clone())]
+        );
+        assert_eq!(state.set_status(failed), Vec::new());
+
+        let patches = state.apply_result(result(&[(1, "DE", 10)], 1));
+        assert_eq!(patches, vec![Patch::Status(GridStatus::Ready)]);
     }
 
     #[test]

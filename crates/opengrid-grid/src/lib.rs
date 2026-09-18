@@ -36,6 +36,10 @@
 //! * **Minimal patches**: a no-op transition yields an empty list, a single cell
 //!   change yields a single [`Patch::Cell`]. Patch order is deterministic (schema
 //!   order), so snapshots stay stable.
+//! * **Status is state** (point 41): loading, an empty result and a failed query
+//!   are a [`GridStatus`] the state machine owns, not something the renderer
+//!   invents, so the visible status line and its announcement agree by
+//!   construction.
 //! * **Logical coordinates**: [`CellRef`] rows count the whole result, not the
 //!   loaded page, so focus and selection survive scrolling. The 1-based,
 //!   header-counting `aria-rowindex` is derived by the renderer, not here.
@@ -45,5 +49,5 @@ mod state;
 mod view;
 
 pub use patch::Patch;
-pub use state::GridState;
+pub use state::{GridState, GridStatus};
 pub use view::{CellRef, Window};
