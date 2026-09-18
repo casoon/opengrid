@@ -132,9 +132,13 @@ just serve-demo   # dann http://127.0.0.1:8080/examples/grid-demo/ öffnen</code
         engine.load_csv("orders", new Uint8Array(csv), schema);
 
         const host = document.querySelector("opengrid-grid");
-        loader.module.set_provider(host, {
-          execute: (queryJson) => engine.execute(queryJson),
-        });
+        const provider = { execute: (queryJson) => engine.execute(queryJson) };
+        loader.module.set_provider(host, provider);
+
+        // For manual testing (plan point 21): the states that have no UI of
+        // their own — loading, error, another language — are reachable from the
+        // console through this handle. The protocol in plan/ has the snippets.
+        window.opengrid = { module: loader.module, host, provider };
 
         const rows = url === FULL_DATASET ? "100 000" : "kleiner Conformance-";
         setStatus(
