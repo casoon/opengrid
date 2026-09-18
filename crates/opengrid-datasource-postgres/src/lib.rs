@@ -12,5 +12,7 @@
 //! differ from the specification.
 
 mod compiler;
+mod source;
 
-pub use compiler::{CompileError, CompiledQuery, PostgresCompiler, QueryCompiler};
+pub use compiler::{CompileError, CompiledQuery, PostgresCompiler, QueryCompiler, pg_type};
+pub use source::PostgresDataSource;

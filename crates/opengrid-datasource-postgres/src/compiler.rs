@@ -203,11 +203,11 @@ impl QueryCompiler for PostgresCompiler {
         // they are still values: they travel as parameters like everything else.
         if let Some(offset) = query.offset {
             sql.push(" OFFSET ");
-            sql.param(Value::Int64(offset as i64));
+            sql.param(Value::Int64(offset as i64), DataType::Int64);
         }
         if let Some(limit) = query.limit {
             sql.push(" LIMIT ");
-            sql.param(Value::Int64(limit as i64));
+            sql.param(Value::Int64(limit as i64), DataType::Int64);
         }
 
         Ok(sql.finish())
@@ -320,7 +320,7 @@ impl PostgresCompiler {
                     if index > 0 {
                         sql.push(", ");
                     }
-                    sql.param(value.clone());
+                    sql.param(value.clone(), *data_type);
                 }
                 sql.push(")");
             }
@@ -336,18 +336,18 @@ impl PostgresCompiler {
                     // engines (S5, case-sensitive), so no collation is involved.
                     CmpOp::Contains => {
                         sql.push(&format!("strpos({column}, "));
-                        sql.param(value.clone());
+                        sql.param(value.clone(), *data_type);
                         sql.push(") > 0");
                     }
                     CmpOp::StartsWith => {
                         sql.push(&format!("starts_with({column}, "));
-                        sql.param(value.clone());
+                        sql.param(value.clone(), *data_type);
                         sql.push(")");
                     }
                     _ => {
                         sql.push(&collated(&column, *data_type));
                         sql.push(&format!(" {} ", sql_operator(*op)));
-                        sql.param(value.clone());
+                        sql.param(value.clone(), *data_type);
                     }
                 }
             }
@@ -398,6 +398,21 @@ fn collated(column: &str, data_type: DataType) -> String {
     }
 }
 
+/// The PostgreSQL type of an opengrid type — the cast on every parameter, and
+/// the column type the test fixture creates.
+pub fn pg_type(data_type: DataType) -> String {
+    match data_type {
+        DataType::Bool => "boolean".to_owned(),
+        DataType::Int64 => "bigint".to_owned(),
+        DataType::Float64 => "double precision".to_owned(),
+        DataType::Decimal { precision, scale } => format!("numeric({precision},{scale})"),
+        DataType::Utf8 => "text".to_owned(),
+        DataType::Date => "date".to_owned(),
+        // S9: an instant in UTC with microsecond resolution.
+        DataType::Timestamp => "timestamptz".to_owned(),
+    }
+}
+
 fn sql_operator(op: CmpOp) -> &'static str {
     match op {
         CmpOp::Eq => "=",
@@ -442,10 +457,24 @@ impl Sql {
         self.text.push_str(text);
     }
 
-    /// Appends a placeholder and remembers the value for it.
-    fn param(&mut self, value: Value) {
+    /// Appends a placeholder **with its type** and remembers the value for it.
+    ///
+    /// The cast chain is what lets every parameter travel as text.
+    ///
+    /// `$1::numeric` would not do it: the cast makes PostgreSQL *expect* a
+    /// numeric parameter, and a text binding is then refused before the query
+    /// runs. `$1::text::numeric(12,2)` says what is actually true — text goes in,
+    /// a numeric comes out — so one binding path serves every type (point 26),
+    /// no decimal or date crate is needed, and the snapshot shows a reviewer what
+    /// each parameter is meant to become.
+    fn param(&mut self, value: Value, data_type: DataType) {
         self.params.push(value);
-        let _ = write!(self.text, "${}", self.params.len());
+        let target = pg_type(data_type);
+        let _ = if target == "text" {
+            write!(self.text, "${}::text", self.params.len())
+        } else {
+            write!(self.text, "${}::text::{target}", self.params.len())
+        };
     }
 
     fn finish(self) -> CompiledQuery {

@@ -24,6 +24,8 @@ use std::sync::Arc;
 
 use opengrid_arrow_engine::datasource::LocalDataSource;
 use opengrid_arrow_engine::ingest::{CsvOptions, load_csv};
+use opengrid_datasource::SendDataSource;
+use opengrid_datasource_postgres::PostgresDataSource;
 use opengrid_query::{CmpOp, FilterExpr, Limits, Query, ValidatedQuery};
 use opengrid_types::{FieldName, Schema};
 
@@ -37,7 +39,33 @@ pub struct Source {
     /// Every column, including the ones only the row filter may name.
     pub full_schema: Schema,
     pub row_filter: Option<RowFilterConfig>,
-    pub data: LocalDataSource,
+    pub data: Backend,
+}
+
+/// What actually answers a query.
+///
+/// Both are `SendDataSource`; the endpoint does not care which one it has, which
+/// is the point of the trait. A third one (MySQL, Mongo) would be another
+/// variant and nothing else would change.
+pub enum Backend {
+    /// The local engine over a CSV file (point 24) — the gateway is testable
+    /// without a database.
+    LocalCsv(LocalDataSource),
+    /// A PostgreSQL table (point 26).
+    Postgres(PostgresDataSource),
+}
+
+impl Backend {
+    /// Runs a query against whichever backend this is.
+    pub async fn execute(
+        &self,
+        query: ValidatedQuery,
+    ) -> Result<opengrid_datasource::QueryResult, opengrid_datasource::DataSourceError> {
+        match self {
+            Backend::LocalCsv(source) => SendDataSource::execute(source, query).await,
+            Backend::Postgres(source) => SendDataSource::execute(source, query).await,
+        }
+    }
 }
 
 /// The sources, by name.
@@ -99,10 +127,9 @@ impl Registry {
 }
 
 fn load_source(config: &SourceConfig, base: &Path) -> Result<Source, RegistryError> {
-    if config.kind != "local-csv" {
+    if !matches!(config.kind.as_str(), "local-csv" | "postgres") {
         return Err(RegistryError::new(format!(
-            "datasource {:?}: type {:?} is not supported yet (point 24 serves \"local-csv\"; \
-             \"postgres\" arrives with point 26)",
+            "datasource {:?}: type {:?} is not supported (\"local-csv\" or \"postgres\")",
             config.name, config.kind
         )));
     }
@@ -123,18 +150,47 @@ fn load_source(config: &SourceConfig, base: &Path) -> Result<Source, RegistryErr
         ))
     })?;
 
-    let data_path = base.join(&config.path);
-    let bytes = std::fs::read(&data_path).map_err(|error| {
-        RegistryError::new(format!(
-            "datasource {:?}: {}: {error}",
-            config.name,
-            data_path.display()
-        ))
-    })?;
-    let batches = load_csv(&bytes, &full_schema, CsvOptions::default())
-        .map_err(|error| RegistryError::new(format!("datasource {:?}: {error}", config.name)))?;
-    let data = LocalDataSource::new(batches)
-        .map_err(|error| RegistryError::new(format!("datasource {:?}: {error}", config.name)))?;
+    let data = match config.kind.as_str() {
+        "postgres" => {
+            let url = config.connection.as_deref().ok_or_else(|| {
+                RegistryError::new(format!(
+                    "datasource {:?}: a postgres source needs a `connection`",
+                    config.name
+                ))
+            })?;
+            let url = crate::config::interpolate_public(url).map_err(|error| {
+                RegistryError::new(format!("datasource {:?}: {error}", config.name))
+            })?;
+            let table = config.table.as_deref().unwrap_or(&config.name);
+            let source =
+                PostgresDataSource::connect(&url, table, full_schema.clone()).map_err(|error| {
+                    RegistryError::new(format!("datasource {:?}: {error}", config.name))
+                })?;
+            Backend::Postgres(source)
+        }
+        _ => {
+            let data_path = base.join(config.path.as_deref().ok_or_else(|| {
+                RegistryError::new(format!(
+                    "datasource {:?}: a local-csv source needs a `path`",
+                    config.name
+                ))
+            })?);
+            let bytes = std::fs::read(&data_path).map_err(|error| {
+                RegistryError::new(format!(
+                    "datasource {:?}: {}: {error}",
+                    config.name,
+                    data_path.display()
+                ))
+            })?;
+            let batches =
+                load_csv(&bytes, &full_schema, CsvOptions::default()).map_err(|error| {
+                    RegistryError::new(format!("datasource {:?}: {error}", config.name))
+                })?;
+            Backend::LocalCsv(LocalDataSource::new(batches).map_err(|error| {
+                RegistryError::new(format!("datasource {:?}: {error}", config.name))
+            })?)
+        }
+    };
 
     let client_schema = narrow(&full_schema, &config.allowed_fields, &config.name)?;
     if let Some(filter) = &config.row_filter {

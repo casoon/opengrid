@@ -29,8 +29,8 @@ use axum::extract::{Path, State};
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
+use opengrid_datasource::DataSourceError;
 use opengrid_datasource::wire::{ErrorCode, WireError, result_to_json};
-use opengrid_datasource::{DataSourceError, SendDataSource};
 use opengrid_query::Query;
 use tower_http::cors::CorsLayer;
 

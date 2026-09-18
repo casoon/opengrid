@@ -13,7 +13,18 @@ opengrid-types = { path = "../opengrid-types" }
 opengrid-query = { path = "../opengrid-query" }
 opengrid-datasource = { path = "../opengrid-datasource" }
 
+# Execution (decision E12). No decimal or date crate: every value travels as
+# text with the cast the compiler wrote, which is also what keeps an exact
+# decimal exact (point 26).
+tokio-postgres = "0.7"
+deadpool-postgres = "0.14"
+serde_json = "1"
+
 [dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+# The conformance run needs the local engine as the other side of the
+# comparison — that is the whole point of the differential test (R4).
+opengrid-arrow-engine = { path = "../opengrid-arrow-engine" }
 # Snapshot tests of the generated SQL (decision E12).
 insta = "1"
 opengrid-conformance = { path = "../opengrid-conformance" }

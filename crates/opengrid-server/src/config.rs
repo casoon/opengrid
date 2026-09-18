@@ -112,10 +112,19 @@ pub struct TokenConfig {
 #[serde(deny_unknown_fields)]
 pub struct SourceConfig {
     pub name: String,
-    /// `local-csv` in point 24. `postgres` arrives with point 26.
+    /// `local-csv` (a file through the local engine) or `postgres` (a table).
     #[serde(rename = "type")]
     pub kind: String,
-    pub path: PathBuf,
+    /// The CSV file, for `local-csv`.
+    #[serde(default)]
+    pub path: Option<PathBuf>,
+    /// The libpq connection string, for `postgres`. `${VAR}` reads the
+    /// environment — a database password does not belong in a file.
+    #[serde(default)]
+    pub connection: Option<String>,
+    /// The table, for `postgres`; defaults to the source's name.
+    #[serde(default)]
+    pub table: Option<String>,
     pub schema: PathBuf,
     /// The columns a client may name. Empty means every column of the schema.
     #[serde(default)]
@@ -223,6 +232,12 @@ impl Config {
 /// The source is a parameter so this is testable without touching the process
 /// environment — which in edition 2024 is `unsafe`, and the workspace forbids
 /// `unsafe`.
+/// [`interpolate`] for other modules — the connection string takes the same
+/// `${VAR}` treatment as a token.
+pub(crate) fn interpolate_public(value: &str) -> Result<String, ConfigError> {
+    interpolate(value, |name| std::env::var(name).ok())
+}
+
 fn interpolate(
     value: &str,
     lookup: impl Fn(&str) -> Option<String>,

@@ -22,6 +22,32 @@ jobs:
       - run: just check
       - run: just wasm-check
 
+  postgres:
+    runs-on: ubuntu-latest
+    # The conformance suite against a real database (plan point 26, risk R4).
+    # A service container, not `testcontainers`: the runner provides PostgreSQL,
+    # the tests only need a connection string, and the same tests run locally
+    # against whatever server the developer already has.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    env:
+      OPENGRID_TEST_PG: "host=localhost user=postgres password=postgres dbname=postgres"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p opengrid-datasource-postgres
+
   e2e:
     runs-on: ubuntu-latest
     steps:
