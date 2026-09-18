@@ -158,6 +158,14 @@ pub const DATASOURCE_ATTRIBUTE: &str = "datasource";
 /// The host attribute listing the selected fields, comma-separated.
 pub const COLUMNS_ATTRIBUTE: &str = "columns";
 
+/// The host attribute choosing where the query runs (plan point 28).
+///
+/// `local`, `remote`, `hybrid` or `auto`. The element does not interpret it —
+/// it hands it to the provider, which is the only thing that knows whether
+/// there is more than one place to run a query. Absent means the provider's own
+/// default.
+pub const MODE_ATTRIBUTE: &str = "mode";
+
 /// The host attribute for the recycled row pool (the query's `limit`).
 ///
 /// Point 16 paged with this attribute; point 17 reinterprets it as the
@@ -347,6 +355,7 @@ pub const OBSERVED: &[&str] = &[
     DATASOURCE_ATTRIBUTE,
     COLUMNS_ATTRIBUTE,
     WINDOW_SIZE_ATTRIBUTE,
+    MODE_ATTRIBUTE,
 ];
 
 /// Which cell owns the roving tabindex.

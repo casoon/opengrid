@@ -9,4 +9,5 @@
 
 pub mod datasource;
 pub mod execute;
+pub mod hybrid;
 pub mod ingest;

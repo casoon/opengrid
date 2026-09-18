@@ -10,6 +10,9 @@ import { fileURLToPath } from "node:url";
 // is pinned in package.json; `just e2e` builds the module first.
 
 const PORT = 8080;
+// The `opengrid-server` the hybrid fixture queries; the port is also written in
+// tests/e2e/fixtures/opengrid-e2e.toml.
+const SERVER_PORT = 8082;
 const baseURL = `http://127.0.0.1:${PORT}`;
 // Serve the repo from its root: the fixture loads /packages/opengrid/loader.js
 // and the built module under the same tree.
@@ -41,11 +44,23 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"], viewport: { width: 480, height: 900 } },
     },
   ],
-  webServer: {
-    command: `python3 -m http.server ${PORT}`,
-    cwd: repoRoot,
-    url: `${baseURL}/tests/e2e/fixtures/table.html`,
-    reuseExistingServer: !process.env.CI,
-    timeout: 30_000,
-  },
+  webServer: [
+    {
+      command: `python3 -m http.server ${PORT}`,
+      cwd: repoRoot,
+      url: `${baseURL}/tests/e2e/fixtures/table.html`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 30_000,
+    },
+    {
+      // The real gateway for the hybrid tests (point 28). Waiting on the port
+      // rather than a URL: every endpoint needs a bearer token, so a health
+      // check would be a 401 and Playwright would call that a failed start.
+      command: "cargo run -p opengrid-server -- tests/e2e/fixtures/opengrid-e2e.toml",
+      cwd: repoRoot,
+      port: SERVER_PORT,
+      reuseExistingServer: !process.env.CI,
+      timeout: 180_000,
+    },
+  ],
 });

@@ -185,7 +185,9 @@ fn run_query(
         sort.as_ref()
             .map(|(field, direction)| (field.as_str(), *direction)),
     );
-    let promise = provider.execute(&query);
+    // The table has no `mode`: it is the simple element, and point 28's split
+    // belongs to the grid.
+    let promise = provider.execute(&query, "");
 
     let host = host.clone();
     spawn_local(async move {

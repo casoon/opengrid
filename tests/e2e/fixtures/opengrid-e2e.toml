@@ -1,0 +1,22 @@
+# The server the hybrid E2E runs against (plan point 28).
+#
+# No row filter here on purpose: the spec compares the grid's rows against the
+# conformance data set, so what the server returns has to be the whole table.
+# The token and the narrowed `allowed_fields` stay — they are not optional, and
+# the page has to work with them.
+
+[server]
+address = "127.0.0.1:8082"
+# The fixtures are served from :8080, which is a different origin.
+allowed_origins = ["http://127.0.0.1:8080", "http://localhost:8080"]
+
+[[tokens]]
+value = "e2e-token"
+context = {}
+
+[[datasources]]
+name = "orders"
+type = "local-csv"
+path = "../../../crates/opengrid-conformance/data/orders.csv"
+schema = "../../../crates/opengrid-conformance/data/orders.schema.json"
+allowed_fields = ["id", "customer", "country", "amount", "qty", "ordered_on"]

@@ -28,7 +28,8 @@
 //! 05-planner.md gives for its example, applied to every case that exists today.
 
 use opengrid_datasource::DataSourceCapabilities;
-use opengrid_query::ValidatedQuery;
+use opengrid_query::{ValidatedFilter, ValidatedQuery};
+use opengrid_types::{FieldName, Schema};
 
 /// Work the client does after the source answered, in the order it happens.
 ///
@@ -43,6 +44,17 @@ pub enum ClientStep {
 }
 
 impl ClientStep {
+    /// The step's name, as developer tools and the wire form write it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ClientStep::Filter => "filter",
+            ClientStep::Group => "group",
+            ClientStep::Aggregate => "aggregate",
+            ClientStep::Sort => "sort",
+            ClientStep::Page => "page",
+        }
+    }
+
     /// Whether this step changes which rows exist, or in what order.
     ///
     /// The question paging depends on: everything except paging itself does.
@@ -67,11 +79,39 @@ pub enum ExecutionMode {
     Auto,
 }
 
+impl ExecutionMode {
+    /// The mode's name, as the `mode` attribute spells it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ExecutionMode::Local => "local",
+            ExecutionMode::Remote => "remote",
+            ExecutionMode::Hybrid => "hybrid",
+            ExecutionMode::Auto => "auto",
+        }
+    }
+
+    /// Reads the `mode` attribute. An unknown spelling is `None`, so the caller
+    /// decides whether that is an error or a fallback — a typo must never
+    /// quietly become a different mode.
+    pub fn parse(name: &str) -> Option<Self> {
+        Some(match name {
+            "local" => ExecutionMode::Local,
+            "remote" => ExecutionMode::Remote,
+            "hybrid" => ExecutionMode::Hybrid,
+            "auto" => ExecutionMode::Auto,
+            _ => return None,
+        })
+    }
+}
+
 /// Who does what.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ExecutionPlan {
     /// The query handed to the source.
     pub source_query: ValidatedQuery,
+    /// The query the client runs on the source's answer, when there is work
+    /// left. `None` means the source answered everything.
+    pub client_query: Option<ValidatedQuery>,
     /// What the client does with the answer, in order.
     pub client_steps: Vec<ClientStep>,
     /// The mode this plan was made for.
@@ -102,17 +142,7 @@ impl ExecutionPlan {
         if self.source_query.limit.is_some() || self.source_query.offset.is_some() {
             source.push("page");
         }
-        let client: Vec<&str> = self
-            .client_steps
-            .iter()
-            .map(|step| match step {
-                ClientStep::Filter => "filter",
-                ClientStep::Group => "group",
-                ClientStep::Aggregate => "aggregate",
-                ClientStep::Sort => "sort",
-                ClientStep::Page => "page",
-            })
-            .collect();
+        let client: Vec<&str> = self.client_steps.iter().map(|step| step.as_str()).collect();
         format!(
             "source: {} | client: {}",
             if source.is_empty() {
@@ -152,6 +182,7 @@ impl std::error::Error for PlanError {}
 /// Splits `query` between the source and the client.
 pub fn plan(
     query: &ValidatedQuery,
+    schema: &Schema,
     capabilities: DataSourceCapabilities,
     mode: ExecutionMode,
 ) -> Result<ExecutionPlan, PlanError> {
@@ -199,11 +230,21 @@ pub fn plan(
         source_query.aggregate = Vec::new();
         client_steps.push(ClientStep::Aggregate);
     }
-    // Grouping and aggregating belong together: half of them in each place would
-    // mean the source returns groups the client then aggregates again.
-    if client_steps.contains(&ClientStep::Group) && !query.aggregate.is_empty() {
+    // Grouping and aggregating belong together, and both follow their filter.
+    // Splitting them would have the source hand over groups the client then
+    // groups again — or, worse, rows the filter was meant to remove, already
+    // folded into sums that cannot be taken apart again. Whichever of the three
+    // stays here pulls the other two with it.
+    if client_steps.contains(&ClientStep::Filter)
+        || client_steps.contains(&ClientStep::Group)
+        || client_steps.contains(&ClientStep::Aggregate)
+    {
+        source_query.group = Vec::new();
         source_query.aggregate = Vec::new();
-        if !client_steps.contains(&ClientStep::Aggregate) {
+        if !query.group.is_empty() && !client_steps.contains(&ClientStep::Group) {
+            client_steps.push(ClientStep::Group);
+        }
+        if !query.aggregate.is_empty() && !client_steps.contains(&ClientStep::Aggregate) {
             client_steps.push(ClientStep::Aggregate);
         }
     }
@@ -239,11 +280,132 @@ pub fn plan(
         ClientStep::Page => 4,
     });
 
+    if client_steps.is_empty() {
+        return Ok(ExecutionPlan {
+            source_query,
+            client_query: None,
+            client_steps,
+            mode,
+        });
+    }
+
+    // The source has to return the columns the client's work needs — which are
+    // not the columns anybody asked for. A grouping the client does needs the
+    // raw group keys and the fields the aggregates read; a filter the client
+    // applies needs its own fields. Without this the intermediate result would
+    // be missing exactly what the remaining steps are about.
+    let mut needed: Vec<FieldName> = query.select.clone();
+    if client_steps.contains(&ClientStep::Group) || client_steps.contains(&ClientStep::Aggregate) {
+        for field in &query.group {
+            push_unique(&mut needed, field.clone());
+        }
+        for aggregate in &query.aggregate {
+            if let Some(field) = &aggregate.field {
+                push_unique(&mut needed, field.clone());
+            }
+        }
+        // An aggregate alias is not a column of the source.
+        needed.retain(|name| {
+            !query
+                .aggregate
+                .iter()
+                .any(|aggregate| aggregate.alias == *name)
+        });
+    }
+    if client_steps.contains(&ClientStep::Filter)
+        && let Some(filter) = &query.filter
+    {
+        for field in filter_fields(filter) {
+            push_unique(&mut needed, field);
+        }
+    }
+    // The projection is rewritten exactly when the source is no longer the one
+    // aggregating: its output is then plain columns of `schema`. While the
+    // source does keep the grouping, its output schema is the query's own —
+    // aggregate aliases and all — and must be left alone.
+    if source_query.group.is_empty() && source_query.aggregate.is_empty() {
+        source_query.select = needed;
+        source_query.output_schema = project(schema, &source_query.select);
+    }
+
+    // What the client runs, over the source's output. A sort that was pushed is
+    // repeated here when the client pages: sorting an already sorted set costs
+    // nothing and keeps the query valid, because `offset` without `sort` is a
+    // validation error (rule S6).
+    let pages_locally = client_steps.contains(&ClientStep::Page);
+    let sorts_locally = client_steps.contains(&ClientStep::Sort);
+    let client_query = ValidatedQuery {
+        source: query.source.clone(),
+        select: query.select.clone(),
+        filter: client_steps
+            .contains(&ClientStep::Filter)
+            .then(|| query.filter.clone())
+            .flatten(),
+        group: if client_steps.contains(&ClientStep::Group) {
+            query.group.clone()
+        } else {
+            Vec::new()
+        },
+        aggregate: if client_steps.contains(&ClientStep::Aggregate) {
+            query.aggregate.clone()
+        } else {
+            Vec::new()
+        },
+        sort: if sorts_locally || pages_locally {
+            query.sort.clone()
+        } else {
+            Vec::new()
+        },
+        offset: pages_locally.then_some(query.offset).flatten(),
+        limit: pages_locally.then_some(query.limit).flatten(),
+        output_schema: query.output_schema.clone(),
+    };
+
     Ok(ExecutionPlan {
         source_query,
+        client_query: Some(client_query),
         client_steps,
         mode,
     })
+}
+
+/// Appends a name that is not in the list yet, keeping the order.
+fn push_unique(names: &mut Vec<FieldName>, name: FieldName) {
+    if !names.contains(&name) {
+        names.push(name);
+    }
+}
+
+/// The fields a filter reads.
+fn filter_fields(filter: &ValidatedFilter) -> Vec<FieldName> {
+    let mut fields = Vec::new();
+    collect_fields(filter, &mut fields);
+    fields
+}
+
+fn collect_fields(filter: &ValidatedFilter, out: &mut Vec<FieldName>) {
+    match filter {
+        ValidatedFilter::And(parts) | ValidatedFilter::Or(parts) => {
+            for part in parts {
+                collect_fields(part, out);
+            }
+        }
+        ValidatedFilter::Not(inner) => collect_fields(inner, out),
+        ValidatedFilter::Cmp { field, .. }
+        | ValidatedFilter::InList { field, .. }
+        | ValidatedFilter::IsNull { field, .. }
+        | ValidatedFilter::IsNotNull { field, .. } => push_unique(out, field.clone()),
+    }
+}
+
+/// The schema reduced to `names`, in the order of `names`.
+fn project(schema: &Schema, names: &[FieldName]) -> Schema {
+    Schema::new(
+        names
+            .iter()
+            .filter_map(|name| schema.field(name.as_str()).cloned())
+            .collect(),
+    )
 }
 
 #[cfg(test)]
@@ -304,7 +466,13 @@ mod tests {
     /// means when nothing stands in the way.
     #[test]
     fn a_capable_source_answers_the_whole_query() {
-        let plan = plan(&paged(), DataSourceCapabilities::ALL, ExecutionMode::Auto).unwrap();
+        let plan = plan(
+            &paged(),
+            &schema(),
+            DataSourceCapabilities::ALL,
+            ExecutionMode::Auto,
+        )
+        .unwrap();
         assert!(plan.is_fully_pushed());
         assert_eq!(plan.source_query, paged());
         assert_eq!(plan.describe(), "source: filter · sort · page | client: —");
@@ -313,7 +481,13 @@ mod tests {
     /// `local` keeps everything here, whatever the source could do.
     #[test]
     fn local_mode_pushes_nothing() {
-        let plan = plan(&paged(), DataSourceCapabilities::ALL, ExecutionMode::Local).unwrap();
+        let plan = plan(
+            &paged(),
+            &schema(),
+            DataSourceCapabilities::ALL,
+            ExecutionMode::Local,
+        )
+        .unwrap();
         assert_eq!(plan.source_query.filter, None);
         assert!(plan.source_query.sort.is_empty());
         assert_eq!(plan.source_query.limit, None);
@@ -327,18 +501,26 @@ mod tests {
     #[test]
     fn remote_mode_refuses_what_the_source_cannot_do() {
         assert_eq!(
-            plan(&paged(), without("sort"), ExecutionMode::Remote),
+            plan(&paged(), &schema(), without("sort"), ExecutionMode::Remote),
             Err(PlanError::NotPushable { operation: "sort" })
         );
         // The same query is fine when the source can do it all.
-        assert!(plan(&paged(), DataSourceCapabilities::ALL, ExecutionMode::Remote).is_ok());
+        assert!(
+            plan(
+                &paged(),
+                &schema(),
+                DataSourceCapabilities::ALL,
+                ExecutionMode::Remote
+            )
+            .is_ok()
+        );
     }
 
     /// **The rule of 05-planner.md.** A sort left to the client means paging
     /// must stay with it — paging first would page the unsorted rows.
     #[test]
     fn paging_follows_the_last_step_that_reshapes_the_rows() {
-        let plan = plan(&paged(), without("sort"), ExecutionMode::Auto).unwrap();
+        let plan = plan(&paged(), &schema(), without("sort"), ExecutionMode::Auto).unwrap();
 
         assert!(
             plan.source_query.limit.is_none() && plan.source_query.offset.is_none(),
@@ -353,7 +535,7 @@ mod tests {
     /// paging the unfiltered one.
     #[test]
     fn a_client_filter_also_holds_paging_back() {
-        let plan = plan(&paged(), without("filter"), ExecutionMode::Auto).unwrap();
+        let plan = plan(&paged(), &schema(), without("filter"), ExecutionMode::Auto).unwrap();
         assert_eq!(plan.source_query.limit, None);
         // The sort stays with the source: filtering afterwards keeps the order
         // it produced, so only the paging has to wait for the client.
@@ -365,7 +547,13 @@ mod tests {
     /// else was pushed — keeps the paging.
     #[test]
     fn paging_stays_pushed_when_nothing_is_left_to_do() {
-        let plan = plan(&paged(), DataSourceCapabilities::ALL, ExecutionMode::Hybrid).unwrap();
+        let plan = plan(
+            &paged(),
+            &schema(),
+            DataSourceCapabilities::ALL,
+            ExecutionMode::Hybrid,
+        )
+        .unwrap();
         assert_eq!(plan.source_query.limit, Some(20));
         assert_eq!(plan.source_query.offset, Some(10));
         assert!(plan.client_steps.is_empty());
@@ -375,7 +563,7 @@ mod tests {
     /// group must not aggregate either, or the client would aggregate aggregates.
     #[test]
     fn grouping_and_aggregating_stay_together() {
-        let plan = plan(&grouped(), without("group"), ExecutionMode::Auto).unwrap();
+        let plan = plan(&grouped(), &schema(), without("group"), ExecutionMode::Auto).unwrap();
         assert!(plan.source_query.group.is_empty());
         assert!(
             plan.source_query.aggregate.is_empty(),
@@ -396,7 +584,7 @@ mod tests {
     /// pushed — the source has no column of that name to sort by.
     #[test]
     fn a_sort_over_an_aggregate_follows_the_aggregation() {
-        let plan = plan(&grouped(), without("group"), ExecutionMode::Auto).unwrap();
+        let plan = plan(&grouped(), &schema(), without("group"), ExecutionMode::Auto).unwrap();
         assert!(
             plan.source_query.sort.is_empty(),
             "sorting by \"total\" before the totals exist is not the same query"
@@ -404,10 +592,81 @@ mod tests {
         assert!(plan.client_steps.contains(&ClientStep::Sort));
     }
 
+    /// A source that keeps the grouping keeps the output schema that goes with
+    /// it — the aggregate alias is a column of the answer, not of the table.
+    #[test]
+    fn a_pushed_aggregation_keeps_its_output_schema() {
+        let plan = plan(&grouped(), &schema(), without("sort"), ExecutionMode::Auto).unwrap();
+        assert_eq!(plan.source_query.output_schema, grouped().output_schema);
+        assert!(plan.source_query.output_schema.field("total").is_some());
+    }
+
+    /// A grouping the client does needs columns nobody selected: the group keys
+    /// and whatever the aggregates read. Without them the client would group an
+    /// answer that no longer holds the values it is about.
+    #[test]
+    fn a_client_side_grouping_widens_the_source_projection() {
+        let plan = plan(&grouped(), &schema(), without("group"), ExecutionMode::Auto).unwrap();
+        let source = &plan.source_query;
+
+        assert_eq!(
+            source
+                .select
+                .iter()
+                .map(FieldName::to_string)
+                .collect::<Vec<_>>(),
+            ["country", "amount"],
+            "the group key and the summed column"
+        );
+        assert!(
+            source.output_schema.field("total").is_none(),
+            "\"total\" is the client's column, the source has never heard of it"
+        );
+
+        let client = plan.client_query.expect("there is client work left");
+        assert_eq!(client.group, grouped().group);
+        assert_eq!(client.aggregate, grouped().aggregate);
+        assert_eq!(client.output_schema, grouped().output_schema);
+    }
+
+    /// A filter the client applies needs its own column, even when the query
+    /// never selected it.
+    #[test]
+    fn a_client_side_filter_pulls_in_the_column_it_reads() {
+        let plan = plan(&paged(), &schema(), without("filter"), ExecutionMode::Auto).unwrap();
+        assert!(
+            plan.source_query
+                .select
+                .iter()
+                .any(|name| name.as_str() == "country"),
+            "the filter reads \"country\", so the source has to hand it over"
+        );
+        let client = plan.client_query.expect("there is client work left");
+        // The client's answer is still the query's answer: `id` alone.
+        assert_eq!(client.output_schema, paged().output_schema);
+        // S6: paging without an order is not a query — the sort comes along.
+        assert_eq!(client.limit, Some(20));
+        assert_eq!(client.offset, Some(10));
+        assert_eq!(client.sort, paged().sort);
+    }
+
+    /// Nothing left for the client means no client query at all.
+    #[test]
+    fn a_fully_pushed_plan_has_no_client_query() {
+        let plan = plan(
+            &paged(),
+            &schema(),
+            DataSourceCapabilities::ALL,
+            ExecutionMode::Auto,
+        )
+        .unwrap();
+        assert_eq!(plan.client_query, None);
+    }
+
     /// The plan reads as a sentence — this is what a developer tool shows.
     #[test]
     fn a_plan_describes_itself() {
-        let plan = plan(&grouped(), without("sort"), ExecutionMode::Auto).unwrap();
+        let plan = plan(&grouped(), &schema(), without("sort"), ExecutionMode::Auto).unwrap();
         assert_eq!(
             plan.describe(),
             "source: group · aggregate | client: sort · page"

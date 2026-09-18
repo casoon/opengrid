@@ -81,7 +81,7 @@ use opengrid_web_core::renderer::{Dom, WebRenderer};
 use crate::element::{clear_root, describe};
 use crate::grid::{
     self, ActiveCell, COLUMNS_ATTRIBUTE, DATASOURCE_ATTRIBUTE, FilterEntry, GRID_TAG, GridKey,
-    GridNodes, ROW_HEIGHT_PROPERTY, WINDOW_SIZE_ATTRIBUTE,
+    GridNodes, MODE_ATTRIBUTE, ROW_HEIGHT_PROPERTY, WINDOW_SIZE_ATTRIBUTE,
 };
 use crate::texts::texts;
 
@@ -341,7 +341,7 @@ fn on_attribute_changed(
                 update_label(&root, new_value.as_deref());
             }
         }
-        DATASOURCE_ATTRIBUTE | COLUMNS_ATTRIBUTE | WINDOW_SIZE_ATTRIBUTE => {
+        DATASOURCE_ATTRIBUTE | COLUMNS_ATTRIBUTE | WINDOW_SIZE_ATTRIBUTE | MODE_ATTRIBUTE => {
             let Some(root) = host.shadow_root() else {
                 return;
             };
@@ -523,7 +523,8 @@ pub(crate) fn run_query(host: &HtmlElement, kind: QueryKind, focus: bool) {
     }
 
     let query = grid::query_json(&source, &columns, &sorts, filter.as_ref(), offset, pool);
-    let promise = provider.execute(&query);
+    let mode = host.get_attribute(MODE_ATTRIBUTE).unwrap_or_default();
+    let promise = provider.execute(&query, &mode);
 
     let host = host.clone();
     spawn_local(async move {

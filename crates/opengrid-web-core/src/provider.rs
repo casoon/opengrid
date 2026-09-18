@@ -68,7 +68,12 @@ pub trait QueryExecutor {
 pub trait DataProvider {
     /// Runs a query JSON and answers a promise that resolves with the result
     /// JSON, or rejects with an error message.
-    fn execute(&self, query_json: &str) -> js_sys::Promise;
+    ///
+    /// `mode` is the element's `mode` attribute, or `""` when it has none. A
+    /// provider that runs the whole query in one place ignores it; a provider
+    /// that splits the work between a source and the engine (plan point 28)
+    /// reads it, and that is the only reason it travels this far.
+    fn execute(&self, query_json: &str, mode: &str) -> js_sys::Promise;
 }
 
 /// A [`DataProvider`] over a [`QueryExecutor`] that is ready on the spot.
@@ -92,7 +97,8 @@ impl<E> LocalProvider<E> {
 
 #[cfg(target_arch = "wasm32")]
 impl<E: QueryExecutor> DataProvider for LocalProvider<E> {
-    fn execute(&self, query_json: &str) -> js_sys::Promise {
+    /// The mode is ignored: there is only one place for the work to happen.
+    fn execute(&self, query_json: &str, _mode: &str) -> js_sys::Promise {
         match self.executor.execute(query_json) {
             Ok(result) => js_sys::Promise::resolve(&JsValue::from_str(&result)),
             Err(error) => js_sys::Promise::reject(&JsValue::from_str(&error.to_string())),
@@ -128,13 +134,20 @@ impl JsProvider {
 
 #[cfg(target_arch = "wasm32")]
 impl DataProvider for JsProvider {
-    fn execute(&self, query_json: &str) -> js_sys::Promise {
+    /// The mode goes along as a second argument. A provider that does not take
+    /// one simply ignores it — that is how JavaScript calls work, and it is why
+    /// the seam did not have to change shape for point 28.
+    fn execute(&self, query_json: &str, mode: &str) -> js_sys::Promise {
         use wasm_bindgen::JsCast;
 
         let called =
             js_sys::Reflect::get(&self.object, &JsValue::from_str("execute")).and_then(|method| {
                 match method.dyn_into::<js_sys::Function>() {
-                    Ok(function) => function.call1(&self.object, &JsValue::from_str(query_json)),
+                    Ok(function) => function.call2(
+                        &self.object,
+                        &JsValue::from_str(query_json),
+                        &JsValue::from_str(mode),
+                    ),
                     Err(_) => Err(JsValue::from_str(
                         "provider has no execute(queryJson) method",
                     )),

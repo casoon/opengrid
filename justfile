@@ -50,6 +50,10 @@ wasm-build-components:
 # Baut das Element-Modul und das Engine-Modul (die Fixture fährt die echte Engine),
 # installiert die gepinnte JS-Toolchain und fährt tests/e2e/.
 e2e: wasm-build-components wasm-build
+    # Die Hybrid-Specs (Punkt 28) fahren gegen einen echten opengrid-server, den
+    # Playwright startet. Hier gebaut, damit dort nur noch gestartet wird — ein
+    # Kaltbau innerhalb des webServer-Timeouts wäre ein Glücksspiel.
+    cargo build -p opengrid-server
     pnpm install --frozen-lockfile
     pnpm exec playwright test --config tests/e2e/playwright.config.js
 

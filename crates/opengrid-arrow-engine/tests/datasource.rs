@@ -8,7 +8,7 @@ mod common;
 
 use opengrid_arrow_engine::datasource::LocalDataSource;
 use opengrid_arrow_engine::execute::execute;
-use opengrid_conformance::{Table, block_on};
+use opengrid_conformance::{RowOrder, Table, block_on, compare};
 use opengrid_datasource::{DataSource, DataSourceCapabilities, DataSourceError};
 use opengrid_query::{Limits, Query, ValidatedQuery};
 use opengrid_types::{Schema, Value};
@@ -123,4 +123,70 @@ fn a_page_beyond_the_end_keeps_its_columns() {
     assert_eq!(result.columns.len(), 2, "the columns stay");
     assert!(result.columns.iter().all(Vec::is_empty));
     assert!(result.total_count > 0, "the filter still matched rows");
+}
+
+/// The coercion path E14 names: a [`QueryResult`] becomes data again.
+///
+/// This is what makes hybrid execution possible (plan point 28) — the source's
+/// partial answer has to go back into the engine without losing a value on the
+/// way. Every column type of the dataset travels, NULLs and the non-finite
+/// floats of E13 included.
+#[test]
+fn a_result_goes_back_into_the_engine_unchanged() {
+    let schema = common::schema();
+    let source = LocalDataSource::new(common::csv_batches()).expect("the dataset has batches");
+    let every_column: Vec<String> = schema
+        .fields()
+        .iter()
+        .map(|field| format!("\"{}\"", field.name.as_str()))
+        .collect();
+    let read_all = validate(
+        &format!(
+            r#"{{"source":"orders","select":[{}]}}"#,
+            every_column.join(",")
+        ),
+        &schema,
+    );
+
+    let first = block_on(source.execute(read_all.clone())).expect("the source answers");
+    let again = LocalDataSource::from_result(&first).expect("the result is data again");
+    let second = block_on(again.execute(read_all)).expect("the round trip answers");
+
+    assert_eq!(second.schema, first.schema);
+    assert_eq!(second.total_count, first.total_count);
+    // Through the suite's comparison, not `assert_eq!`: NaN is not equal to
+    // itself, and the dataset has one (E13).
+    compare(
+        &Table::from(&first),
+        &Table::from(&second),
+        RowOrder::Ordered,
+    )
+    .expect("every value survived the round trip");
+    assert!(
+        first
+            .columns
+            .iter()
+            .flatten()
+            .any(|value| *value == Value::Null),
+        "the dataset has NULLs — otherwise this proves less than it looks"
+    );
+}
+
+/// An empty answer keeps its columns on the way back, so the steps that follow
+/// still know what they are working on.
+#[test]
+fn an_empty_result_still_carries_its_schema() {
+    let schema = common::schema();
+    let source = LocalDataSource::new(common::csv_batches()).expect("the dataset has batches");
+    let query = validate(
+        r#"{"source":"orders","select":["id","country"],
+            "filter":{"field":"country","op":"eq","value":"ZZ"}}"#,
+        &schema,
+    );
+
+    let empty = block_on(source.execute(query)).expect("the source answers");
+    assert_eq!(empty.row_count(), 0);
+
+    let again = LocalDataSource::from_result(&empty).expect("an empty result is still data");
+    assert_eq!(block_on(DataSource::schema(&again)).unwrap(), empty.schema);
 }

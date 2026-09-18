@@ -12,6 +12,7 @@ workspace = true
 opengrid-types = { path = "../opengrid-types", features = ["arrow"] }
 opengrid-query = { path = "../opengrid-query" }
 opengrid-datasource = { path = "../opengrid-datasource" }
+opengrid-planner = { path = "../opengrid-planner" }
 arrow-array = "59"
 arrow-schema = "59"
 arrow-ord = "59"

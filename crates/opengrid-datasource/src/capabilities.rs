@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 /// What a data source can answer.
 ///
 /// The planner splits a query between client and server from these flags
@@ -8,7 +10,12 @@
 /// The local engine reports [`ALL`](Self::ALL) — everything runs in WASM
 /// (point 09, step 3). PostgreSQL reports everything but `pivot` and
 /// `calculated_fields` (point 24).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+/// The flags travel: a browser that plans against a remote source has to be
+/// told what that source can do (plan point 28). Every field defaults to `false`
+/// on the way in, so a reader that learns a capability later still parses an
+/// older declaration.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub struct DataSourceCapabilities {
     pub filter: bool,
     pub sort: bool,

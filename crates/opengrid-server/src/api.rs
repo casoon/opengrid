@@ -1,4 +1,5 @@
-//! `POST /query/{source}` — the one endpoint (plan/spezifikation/07-server.md).
+//! `POST /query/{source}` — the endpoint that answers queries
+//! (plan/spezifikation/07-server.md), and `GET /source/{source}` next to it.
 //!
 //! The request body is the query AST, never SQL (§Sicherheit). What happens to
 //! it, in order:
@@ -15,6 +16,12 @@
 //! 5. **Execution**, with the configured timeout, and the answer in the wire form
 //!    of point 23.
 //!
+//! `GET /source/{source}` answers what a *planner* needs before it can ask
+//! anything: the client schema and the capabilities of the backend (plan point
+//! 28). It is the same token and the same narrowing — a column outside
+//! `allowed_fields` is not in the answer, because it does not exist for this
+//! caller.
+//!
 //! Every failure leaves through the same door: a [`WireError`] with a code a
 //! client can branch on, a sentence a person can read, and — where the query is
 //! at fault — the JSON path `QueryError` already carries.
@@ -28,7 +35,7 @@ use axum::body::Bytes;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use axum::routing::post;
+use axum::routing::{get, post};
 use opengrid_datasource::DataSourceError;
 use opengrid_datasource::wire::{ErrorCode, WireError, result_to_json};
 use opengrid_query::Query;
@@ -76,6 +83,7 @@ pub fn router(state: Arc<AppState>) -> Router {
     let origins = state.allowed_origins.clone();
     let mut router = Router::new()
         .route("/query/{source}", post(query))
+        .route("/source/{source}", get(describe))
         .with_state(state);
 
     if !origins.is_empty() {
@@ -86,7 +94,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         router = router.layer(
             CorsLayer::new()
                 .allow_origin(parsed)
-                .allow_methods([Method::POST])
+                .allow_methods([Method::GET, Method::POST])
                 .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE]),
         );
     }
@@ -198,6 +206,42 @@ async fn query(
         StatusCode::OK,
         [(header::CONTENT_TYPE, "application/json")],
         result_to_json(&result),
+    )
+        .into_response())
+}
+
+/// `GET /source/{source}` — the schema and capabilities of one source.
+///
+/// This is what a browser-side planner needs to split a query: the schema to
+/// validate against, the capabilities to decide what may be pushed. The schema
+/// is the **client** schema, narrowed by `allowed_fields` — the same view the
+/// query endpoint validates against, so what is describable is what is askable.
+/// The mandatory row filter (E16) is not in the answer; it is the server's
+/// business and may name columns the caller never sees.
+async fn describe(
+    State(state): State<Arc<AppState>>,
+    Path(source_name): Path<String>,
+    headers: HeaderMap,
+) -> Result<Response, Failure> {
+    authorize(&state, &headers)?;
+
+    let source = state.registry.get(&source_name).ok_or_else(|| {
+        WireError::new(
+            ErrorCode::UnknownSource,
+            format!("unknown source {source_name:?}"),
+        )
+    })?;
+
+    let body = serde_json::json!({
+        "name": source.name,
+        "schema": source.client_schema,
+        "capabilities": source.data.capabilities(),
+    });
+
+    Ok((
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "application/json")],
+        body.to_string(),
     )
         .into_response())
 }

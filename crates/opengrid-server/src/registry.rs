@@ -56,6 +56,14 @@ pub enum Backend {
 }
 
 impl Backend {
+    /// What this backend can answer by itself — the planner's input.
+    pub fn capabilities(&self) -> opengrid_datasource::DataSourceCapabilities {
+        match self {
+            Backend::LocalCsv(source) => SendDataSource::capabilities(source),
+            Backend::Postgres(source) => SendDataSource::capabilities(source),
+        }
+    }
+
     /// Runs a query against whichever backend this is.
     pub async fn execute(
         &self,

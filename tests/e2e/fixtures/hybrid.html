@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>opengrid hybrid fixture</title>
+    <style>
+      opengrid-grid {
+        display: block;
+        height: 224px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid hybrid fixture</h1>
+      <opengrid-grid
+        label="Orders"
+        datasource="orders"
+        columns="id,customer,country,amount"
+        window-size="10"
+        mode="auto"
+      ></opengrid-grid>
+    </main>
+    <script type="module">
+      // Point 28: the query is split between a real `opengrid-server` and the
+      // engine in this tab. The page asks the server what it is (`describe`),
+      // builds a planner from that answer, and lets the hybrid provider do the
+      // three steps — plan, send, finish.
+      import {
+        loadOpengrid,
+        createRestProvider,
+        createHybridProvider,
+      } from "/packages/opengrid/loader.js";
+      import initEngine, { Planner } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+
+      const SERVER = "http://127.0.0.1:8082";
+
+
+      // Every plan the provider made, so the spec can read the split without
+      // guessing it from the rows.
+      window.__plans = [];
+
+      const remote = createRestProvider({
+        url: SERVER,
+        source: "orders",
+        token: "e2e-token",
+      });
+
+      const [described] = await Promise.all([
+        remote.describe(),
+        initEngine({ module_or_path: "/examples/engine-demo/pkg/opengrid_wasm_bg.wasm" }),
+      ]);
+      window.__capabilities = described.capabilities;
+
+      const planner = new Planner(
+        JSON.stringify(described.schema),
+        JSON.stringify(described.capabilities),
+        "auto",
+      );
+
+      const provider = createHybridProvider({
+        remote,
+        planner,
+        onPlan: (plan) => window.__plans.push(plan),
+      });
+
+      const loader = await loadOpengrid();
+      const grid = document.querySelector("opengrid-grid");
+      loader.module.set_provider(grid, provider);
+      window.__ready = true;
+    </script>
+  </body>
+</html>

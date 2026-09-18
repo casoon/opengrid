@@ -32,6 +32,20 @@ pub struct LocalDataSource {
 }
 
 impl LocalDataSource {
+    /// Builds a source over the rows of a [`QueryResult`].
+    ///
+    /// This is how a partial answer from a remote source becomes something the
+    /// local engine can finish (plan point 28): the hybrid path of 05-planner.md,
+    /// over the coercion path E14 names. An empty result keeps its columns, so
+    /// the remaining steps still know what they are working on.
+    pub fn from_result(result: &QueryResult) -> Result<Self, DataSourceError> {
+        let batches = crate::ingest::load_result(result, crate::ingest::JsonOptions::default())
+            .map_err(|error| DataSourceError::Backend {
+                message: error.to_string(),
+            })?;
+        Self::new(batches)
+    }
+
     /// Binds batches to the engine.
     ///
     /// The schema comes from the batches — ingest produced them against an

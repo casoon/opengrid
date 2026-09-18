@@ -266,3 +266,60 @@ async fn without_a_row_filter_a_token_sees_every_row() {
     let (_, answer) = post(app(false), "orders", Some(TOKEN), body).await;
     assert_eq!(result_from_json(&answer).unwrap().total_count, 50);
 }
+
+/// Sends a `GET /source/{name}` and answers with the status and the body.
+async fn describe(app: axum::Router, source: &str, token: Option<&str>) -> (StatusCode, String) {
+    let mut request = Request::builder()
+        .method("GET")
+        .uri(format!("/source/{source}"));
+    if let Some(token) = token {
+        request = request.header(header::AUTHORIZATION, format!("Bearer {token}"));
+    }
+    let response = app
+        .oneshot(request.body(Body::empty()).unwrap())
+        .await
+        .expect("the router answers");
+    let status = response.status();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    (status, String::from_utf8(bytes.to_vec()).unwrap())
+}
+
+/// What a browser-side planner needs before it can split anything (point 28).
+#[tokio::test]
+async fn a_source_describes_its_schema_and_capabilities() {
+    let (status, body) = describe(app(true), "orders", Some(TOKEN)).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let described: serde_json::Value = serde_json::from_str(&body).expect("JSON");
+    assert_eq!(described["name"], "orders");
+    assert_eq!(described["capabilities"]["filter"], true);
+    assert_eq!(described["capabilities"]["paging"], true);
+    // Every flag is there, not only the ones that happen to be true: a planner
+    // reads them all, and a missing one would silently mean "cannot".
+    let flags = described["capabilities"].as_object().expect("capabilities");
+    assert_eq!(flags.len(), 8, "the declaration is complete: {flags:?}");
+
+    let fields: Vec<String> = described["schema"]["fields"]
+        .as_array()
+        .expect("fields")
+        .iter()
+        .map(|field| field["name"].as_str().expect("a name").to_owned())
+        .collect();
+    assert!(fields.contains(&"id".to_owned()));
+    assert!(
+        !fields.contains(&"note".to_owned()),
+        "a column outside allowed_fields does not exist for this caller: {fields:?}"
+    );
+}
+
+/// The description is data too: no token, no answer.
+#[tokio::test]
+async fn describing_a_source_needs_a_token() {
+    let (status, body) = describe(app(true), "orders", None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(error_of(&body).code, ErrorCode::Unauthorized);
+
+    let (status, body) = describe(app(true), "nope", Some(TOKEN)).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(error_of(&body).code, ErrorCode::UnknownSource);
+}

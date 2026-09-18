@@ -148,3 +148,27 @@ fn filter_with_two_logical_keys_is_rejected() {
 fn fmt_fixture(path: &Path) -> String {
     fs::read_to_string(path).expect("read fixture")
 }
+
+/// Validation adds knowledge and throws nothing away: every valid fixture comes
+/// back out of a [`ValidatedQuery`](opengrid_query::ValidatedQuery) as the query
+/// that went in.
+///
+/// The planner leans on this — it splits a validated query in two, and the half
+/// meant for a server travels as ordinary query JSON (plan point 28).
+#[test]
+fn a_validated_query_writes_itself_back() {
+    for path in fixtures("valid") {
+        let json = fs::read_to_string(&path).expect("read fixture");
+        let query: Query = serde_json::from_str(&json).expect("the fixture parses");
+        let validated = query
+            .validate(&orders(), &Limits::default())
+            .expect("the fixture validates");
+
+        assert_eq!(
+            Query::from(&validated),
+            query,
+            "{}: the way back changed the query",
+            path.display()
+        );
+    }
+}

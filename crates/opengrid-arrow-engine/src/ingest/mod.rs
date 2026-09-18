@@ -56,6 +56,7 @@ use std::fmt;
 
 use arrow_array::RecordBatch;
 use arrow_schema::Schema as ArrowSchema;
+use opengrid_datasource::QueryResult;
 use opengrid_types::{DataType, Field, FieldName, Schema, Value};
 
 pub(crate) mod batch;
@@ -229,6 +230,48 @@ pub fn load_json(
     options: JsonOptions,
 ) -> Result<Vec<RecordBatch>, IngestError> {
     let rows = json::rows(text(bytes)?, schema)?;
+    batches(schema, &rows, options.batch_size)
+}
+
+/// Reads a [`QueryResult`] back into batches — the way a partial result returns
+/// from a remote source into the local engine (plan point 28, decision E14).
+///
+/// E14 calls this "the coercion path of the ingest", and that is exactly what it
+/// is: the values are already typed, so nothing is parsed; they are transposed
+/// from the column-oriented result into the row-oriented shape the batch builder
+/// takes and handed to the same code every other ingest path ends in. A result
+/// whose columns disagree with its schema is a broken result, and says so.
+pub fn load_result(
+    result: &QueryResult,
+    options: JsonOptions,
+) -> Result<Vec<RecordBatch>, IngestError> {
+    let schema = &result.schema;
+    if result.columns.len() != schema.len() {
+        return Err(IngestError::Schema {
+            message: format!(
+                "result has {} columns for {} fields",
+                result.columns.len(),
+                schema.len()
+            ),
+        });
+    }
+
+    let row_count = result.row_count();
+    let mut rows = Vec::with_capacity(row_count);
+    for row in 0..row_count {
+        let mut cells = Vec::with_capacity(schema.len());
+        for (index, column) in result.columns.iter().enumerate() {
+            let value = column.get(row).ok_or_else(|| IngestError::Schema {
+                message: format!(
+                    "column {} has {} values, the first has {row_count}",
+                    schema.fields()[index].name,
+                    column.len()
+                ),
+            })?;
+            cells.push(value.clone());
+        }
+        rows.push(cells);
+    }
     batches(schema, &rows, options.batch_size)
 }
 

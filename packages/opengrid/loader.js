@@ -19,7 +19,7 @@
  *
  *   createWorkerProvider({ moduleUrl, wasmUrl })  engine in a module worker
  *   createLocalProvider(engine)                   engine on the main thread
- *   createRestProvider({ url, source, token })    opengrid-server over HTTP (point 27)
+ *   createRestProvider({ url, source, token })    opengrid-server über HTTP (point 27)
  *
  * The Worker provider starts lazily on the first `load`/`execute` and stays the
  * single worker of V1 (no pool, no SharedArrayBuffer).
@@ -241,13 +241,32 @@ export function createLocalProvider(engine) {
  * @returns {{execute: Function}}
  */
 export function createRestProvider({ url, source, token } = {}) {
-  const endpoint = `${String(url).replace(/\/$/, "")}/query/${encodeURIComponent(source)}`;
+  const base = String(url).replace(/\/$/, "");
+  const endpoint = `${base}/query/${encodeURIComponent(source)}`;
   const headers = { "Content-Type": "application/json" };
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }
 
   return {
+    /**
+     * What the server says this source is: `{ name, schema, capabilities }`.
+     *
+     * A planner needs both halves before it can split anything (point 28) — the
+     * schema to validate against, the capabilities to know what may be pushed.
+     * The schema is the one this token is allowed to see.
+     */
+    async describe() {
+      const response = await fetch(`${base}/source/${encodeURIComponent(source)}`, {
+        headers: token ? { Authorization: headers.Authorization } : {},
+      });
+      const text = await response.text();
+      if (!response.ok) {
+        throw new Error(messageOf(text, response.status));
+      }
+      return JSON.parse(text);
+    },
+
     async execute(queryJson) {
       const response = await fetch(endpoint, {
         method: "POST",
@@ -258,17 +277,69 @@ export function createRestProvider({ url, source, token } = {}) {
       if (response.ok) {
         return text;
       }
-      // The body carries the reason; the status alone would not.
-      let message = `HTTP ${response.status}`;
-      try {
-        const error = JSON.parse(text)?.error;
-        if (error?.message) {
-          message = error.path ? `${error.message} (${error.path})` : error.message;
-        }
-      } catch {
-        // A body that is not the error form: keep the status.
+      throw new Error(messageOf(text, response.status));
+    },
+  };
+}
+
+/**
+ * The server's own sentence for a failed request, or the status when the body
+ * is not the error form of point 23.
+ */
+function messageOf(body, status) {
+  try {
+    const error = JSON.parse(body)?.error;
+    if (error?.message) {
+      return error.path ? `${error.message} (${error.path})` : error.message;
+    }
+  } catch {
+    // A body that is not the error form: keep the status.
+  }
+  return `HTTP ${status}`;
+}
+
+/**
+ * A provider that splits each query between a remote source and the engine in
+ * this tab (plan point 28, plan/spezifikation/05-planner.md).
+ *
+ * Three steps, all of them JSON:
+ *
+ * 1. the `Planner` splits the query into the half the source can answer and the
+ *    half that is left,
+ * 2. the remote provider answers its half,
+ * 3. the engine finishes the rest over that answer.
+ *
+ * When the source can answer everything, step 3 does not happen and the remote
+ * answer is passed through untouched — so a capable server costs nothing.
+ *
+ * The plan is handed to `onPlan` before anything is sent: that is how it becomes
+ * "offengelegt für Debugging, Performance-Analyse und Developer-Tools", and it
+ * is a plain object (`{ mode, describe, steps, source, client }`).
+ *
+ * @param {object} options
+ * @param {{execute: Function}} options.remote the source-side provider, usually
+ *   `createRestProvider(...)`.
+ * @param {{plan: Function, finish: Function}} options.planner a `Planner` from
+ *   the WASM module, built with the source's schema and capabilities.
+ * @param {string} [options.mode] `local`, `remote`, `hybrid` or `auto`; the
+ *   element's `mode` attribute overrides it per query.
+ * @param {Function} [options.onPlan] called with each plan.
+ * @returns {{execute: Function}}
+ */
+export function createHybridProvider({ remote, planner, mode = "auto", onPlan } = {}) {
+  return {
+    async execute(queryJson, elementMode) {
+      // The element's attribute wins when it has one: the page sets the default,
+      // the markup can override it per grid.
+      const plan = JSON.parse(planner.plan(queryJson, elementMode || mode));
+      if (onPlan) {
+        onPlan(plan);
       }
-      throw new Error(message);
+      const partial = await remote.execute(JSON.stringify(plan.source));
+      if (!plan.client) {
+        return partial;
+      }
+      return planner.finish(JSON.stringify(plan.client), partial);
     },
   };
 }

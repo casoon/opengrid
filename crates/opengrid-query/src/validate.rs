@@ -382,3 +382,58 @@ fn coerce(value: &JsonValue, data_type: DataType, path: &str) -> Result<GridValu
         }
     })
 }
+
+/// A validated query, written back as the JSON contract it came from.
+///
+/// Validation adds knowledge (the type of every literal, the output schema); it
+/// throws nothing away. So the way back is total — which is what makes a plan
+/// transportable: the planner splits a [`ValidatedQuery`] in two, and one half
+/// has to travel to a server as ordinary query JSON (plan point 28).
+impl From<&ValidatedQuery> for Query {
+    fn from(query: &ValidatedQuery) -> Self {
+        Query {
+            source: query.source.clone(),
+            select: query.select.clone(),
+            filter: query.filter.as_ref().map(FilterExpr::from),
+            group: query.group.clone(),
+            aggregate: query.aggregate.clone(),
+            sort: query.sort.clone(),
+            offset: query.offset,
+            limit: query.limit,
+        }
+    }
+}
+
+impl From<&ValidatedFilter> for FilterExpr {
+    fn from(filter: &ValidatedFilter) -> Self {
+        /// The literal as the contract writes it — the same notation the wire
+        /// format uses, since both go through `Value`'s own serialization.
+        fn literal(value: &GridValue) -> JsonValue {
+            serde_json::to_value(value).expect("a value serializes into JSON")
+        }
+
+        match filter {
+            ValidatedFilter::And(parts) => FilterExpr::And(parts.iter().map(Self::from).collect()),
+            ValidatedFilter::Or(parts) => FilterExpr::Or(parts.iter().map(Self::from).collect()),
+            ValidatedFilter::Not(inner) => FilterExpr::Not(Box::new(Self::from(inner.as_ref()))),
+            ValidatedFilter::Cmp {
+                field, op, value, ..
+            } => FilterExpr::Cmp {
+                field: field.clone(),
+                op: *op,
+                value: literal(value),
+            },
+            ValidatedFilter::InList { field, values, .. } => FilterExpr::Cmp {
+                field: field.clone(),
+                op: CmpOp::In,
+                value: JsonValue::Array(values.iter().map(literal).collect()),
+            },
+            ValidatedFilter::IsNull { field } => FilterExpr::IsNull {
+                field: field.clone(),
+            },
+            ValidatedFilter::IsNotNull { field } => FilterExpr::IsNotNull {
+                field: field.clone(),
+            },
+        }
+    }
+}
