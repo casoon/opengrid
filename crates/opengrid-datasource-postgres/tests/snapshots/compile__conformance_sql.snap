@@ -1,0 +1,299 @@
+---
+source: crates/opengrid-datasource-postgres/tests/compile.rs
+expression: out
+---
+# s1-eq-excludes-null-rows [S1]
+SELECT "id" AS "id" FROM "orders" WHERE "amount" = $1 ORDER BY "id" ASC NULLS LAST
+  params:
+    $1 = Decimal(Decimal { value: 1000, scale: 2 })
+
+# s1-gt-and-lte [S1]
+SELECT "id" AS "id", "qty" AS "qty" FROM "orders" WHERE ("qty" > $1 AND "qty" <= $2) ORDER BY "id" ASC NULLS LAST
+  params:
+    $1 = Int64(47)
+    $2 = Int64(50)
+
+# s1-is-not-null [S1]
+SELECT "id" AS "id" FROM "orders" WHERE ("id" IN ($1, $2, $3) AND "amount" IS NOT NULL) ORDER BY "id" ASC NULLS LAST
+  params:
+    $1 = Int64(1)
+    $2 = Int64(2)
+    $3 = Int64(3)
+
+# s1-is-null-finds-the-null-row [S1]
+SELECT "id" AS "id" FROM "orders" WHERE ("id" IN ($1, $2, $3) AND "amount" IS NULL)
+  params:
+    $1 = Int64(1)
+    $2 = Int64(2)
+    $3 = Int64(3)
+
+# s1-ne-excludes-null-rows [S1]
+SELECT "id" AS "id" FROM "orders" WHERE ("id" >= $1 AND "id" <= $2 AND "amount" <> $3) ORDER BY "id" ASC NULLS LAST
+  params:
+    $1 = Int64(1)
+    $2 = Int64(3)
+    $3 = Decimal(Decimal { value: 1000, scale: 2 })
+
+# s1-not-of-comparison-stays-unknown [S1]
+SELECT "id" AS "id" FROM "orders" WHERE ("id" IN ($1, $2, $3) AND (NOT "amount" = $4)) ORDER BY "id" ASC NULLS LAST
+  params:
+    $1 = Int64(1)
+    $2 = Int64(2)
+    $3 = Int64(3)
+    $4 = Decimal(Decimal { value: 1000, scale: 2 })
+
+# s1-or-of-two-ids [S1]
+SELECT "id" AS "id" FROM "orders" WHERE ("id" = $1 OR "id" = $2) ORDER BY "id" ASC NULLS LAST
+  params:
+    $1 = Int64(1)
+    $2 = Int64(50)
+
+# s10-empty-string-is-not-the-null-group [S10]
+SELECT "customer" AS "customer", count(*) AS "rows" FROM "orders" GROUP BY "customer" ORDER BY "customer" COLLATE "C" ASC NULLS LAST
+
+# s10-null-forms-its-own-group [S10]
+SELECT "country" AS "country", count(*) AS "rows" FROM "orders" GROUP BY "country" ORDER BY "country" COLLATE "C" ASC NULLS LAST
+
+# s11-aggregate-without-group-yields-one-row [S11]
+SELECT count(*) AS "rows", sum("amount")::numeric(38,2) AS "s", avg("amount")::double precision AS "a", min("amount") AS "lo", max("amount") AS "hi" FROM "orders" WHERE "country" COLLATE "C" = $1
+  params:
+    $1 = Utf8("XX")
+
+# s11-aggregates-ignore-null [S11]
+SELECT sum("amount")::numeric(38,2) AS "s", min("qty") AS "lo", max("qty") AS "hi" FROM "orders" WHERE "id" IN ($1, $2, $3)
+  params:
+    $1 = Int64(1)
+    $2 = Int64(2)
+    $3 = Int64(3)
+
+# s11-aggregates-on-all-null-set [S11]
+SELECT count(*) AS "rows", count("amount") AS "with_amount", count("qty") AS "with_qty", sum("amount")::numeric(38,2) AS "s", avg("qty")::double precision AS "a", min("amount") AS "lo", max("amount") AS "hi" FROM "orders" WHERE "id" IN ($1, $2)
+  params:
+    $1 = Int64(3)
+    $2 = Int64(5)
+
+# s11-average-of-integers-is-a-float [S11]
+SELECT avg("qty")::double precision AS "a" FROM "orders" WHERE "id" IN ($1, $2)
+  params:
+    $1 = Int64(1)
+    $2 = Int64(2)
+
+# s11-count-star-versus-count-field [S11]
+SELECT count(*) AS "rows", count("qty") AS "with_qty" FROM "orders" WHERE "id" IN ($1, $2, $3)
+  params:
+    $1 = Int64(1)
+    $2 = Int64(2)
+    $3 = Int64(3)
+
+# s11-group-over-empty-set-yields-no-row [S11]
+SELECT "country" AS "country", count(*) AS "rows" FROM "orders" WHERE "country" COLLATE "C" = $1 GROUP BY "country"
+  params:
+    $1 = Utf8("XX")
+
+# s12-min-max-keep-the-input-type [S12]
+SELECT min("amount") AS "lo", max("amount") AS "hi" FROM "orders" WHERE "id" IN ($1, $2)
+  params:
+    $1 = Int64(1)
+    $2 = Int64(2)
+
+# s12-sum-of-decimal-widens-to-38 [S12]
+SELECT sum("amount")::numeric(38,2) AS "total" FROM "orders" WHERE "id" IN ($1, $2)
+  params:
+    $1 = Int64(1)
+    $2 = Int64(2)
+
+# s12-sum-of-float64-stays-float64 [S12]
+SELECT sum("ratio") AS "total" FROM "orders" WHERE "id" IN ($1, $2)
+  params:
+    $1 = Int64(1)
+    $2 = Int64(2)
+
+# s12-sum-of-int64-stays-int64 [S12]
+SELECT sum("qty")::bigint AS "total" FROM "orders" WHERE "id" IN ($1, $2)
+  params:
+    $1 = Int64(1)
+    $2 = Int64(2)
+
+# s13-in-list-distinguishes-normalisation [S13]
+SELECT "id" AS "id", "note" AS "note" FROM "orders" WHERE "note" COLLATE "C" IN ($1, $2) ORDER BY "id" ASC NULLS LAST
+  params:
+    $1 = Utf8("é")
+    $2 = Utf8("e\u{301}")
+
+# s13-nfc-is-not-nfd [S13]
+SELECT "id" AS "id", "note" AS "note" FROM "orders" WHERE "note" COLLATE "C" = $1
+  params:
+    $1 = Utf8("é")
+
+# s13-nfd-is-not-nfc [S13]
+SELECT "id" AS "id", "note" AS "note" FROM "orders" WHERE "note" COLLATE "C" = $1
+  params:
+    $1 = Utf8("e\u{301}")
+
+# s14-empty-country-selects-three-rows [S14]
+SELECT "id" AS "id", "country" AS "country" FROM "orders" WHERE "country" COLLATE "C" IN ($1) ORDER BY "id" ASC NULLS LAST
+  params:
+    $1 = Utf8("")
+
+# s14-empty-string-is-a-value [S14]
+SELECT "id" AS "id", "note" AS "note" FROM "orders" WHERE "note" COLLATE "C" = $1
+  params:
+    $1 = Utf8("")
+
+# s14-empty-string-is-not-null [S14]
+SELECT "id" AS "id" FROM "orders" WHERE ("id" IN ($1, $2) AND "note" IS NULL)
+  params:
+    $1 = Int64(1)
+    $2 = Int64(2)
+
+# s2-in-empty-list-matches-nothing [S2]
+SELECT "id" AS "id" FROM "orders" WHERE FALSE
+
+# s2-in-list [S2]
+SELECT "id" AS "id" FROM "orders" WHERE ("id" <= $1 AND "country" COLLATE "C" IN ($2, $3)) ORDER BY "id" ASC NULLS LAST
+  params:
+    $1 = Int64(5)
+    $2 = Utf8("DE")
+    $3 = Utf8("FR")
+
+# s3-nulls-first-explicit [S3]
+SELECT "id" AS "id", "note" AS "note" FROM "orders" WHERE "id" IN ($1, $2, $3) ORDER BY "note" COLLATE "C" ASC NULLS FIRST
+  params:
+    $1 = Int64(1)
+    $2 = Int64(2)
+    $3 = Int64(8)
+
+# s3-nulls-last-ascending [S3]
+SELECT "id" AS "id", "note" AS "note" FROM "orders" WHERE "id" IN ($1, $2, $3) ORDER BY "note" COLLATE "C" ASC NULLS LAST
+  params:
+    $1 = Int64(1)
+    $2 = Int64(2)
+    $3 = Int64(8)
+
+# s3-nulls-last-descending [S3]
+SELECT "id" AS "id", "note" AS "note" FROM "orders" WHERE "id" IN ($1, $2, $3) ORDER BY "note" COLLATE "C" DESC NULLS LAST
+  params:
+    $1 = Int64(1)
+    $2 = Int64(2)
+    $3 = Int64(8)
+
+# s4-binary-order-ascending [S4]
+SELECT "note" AS "note" FROM "orders" WHERE "note" COLLATE "C" IN ($1, $2, $3, $4, $5, $6, $7, $8, $9) ORDER BY "note" COLLATE "C" ASC NULLS LAST
+  params:
+    $1 = Utf8("")
+    $2 = Utf8("Abc")
+    $3 = Utf8("Z")
+    $4 = Utf8("abc")
+    $5 = Utf8("abcde")
+    $6 = Utf8("e\u{301}")
+    $7 = Utf8("z")
+    $8 = Utf8("ä")
+    $9 = Utf8("é")
+
+# s4-binary-order-descending [S4]
+SELECT "note" AS "note" FROM "orders" WHERE "note" COLLATE "C" IN ($1, $2, $3, $4, $5, $6, $7, $8, $9) ORDER BY "note" COLLATE "C" DESC NULLS LAST
+  params:
+    $1 = Utf8("")
+    $2 = Utf8("Abc")
+    $3 = Utf8("Z")
+    $4 = Utf8("abc")
+    $5 = Utf8("abcde")
+    $6 = Utf8("e\u{301}")
+    $7 = Utf8("z")
+    $8 = Utf8("ä")
+    $9 = Utf8("é")
+
+# s5-contains-is-case-sensitive [S5]
+SELECT "id" AS "id" FROM "orders" WHERE strpos("note", $1) > 0 ORDER BY "id" ASC NULLS LAST
+  params:
+    $1 = Utf8("abc")
+
+# s5-starts-with-is-case-sensitive [S5]
+SELECT "id" AS "id" FROM "orders" WHERE starts_with("note", $1)
+  params:
+    $1 = Utf8("Ab")
+
+# s6-multi-sort-country-then-amount-desc [S6]
+SELECT "id" AS "id", "country" AS "country", "amount" AS "amount" FROM "orders" ORDER BY "country" COLLATE "C" ASC NULLS LAST, "amount" DESC NULLS LAST LIMIT $1
+  params:
+    $1 = Int64(3)
+
+# s6-multi-sort-null-group-first [S6]
+SELECT "id" AS "id", "country" AS "country" FROM "orders" ORDER BY "country" COLLATE "C" ASC NULLS FIRST, "id" ASC NULLS LAST LIMIT $1
+  params:
+    $1 = Int64(2)
+
+# s6-offset-with-sort [S6]
+SELECT "id" AS "id" FROM "orders" ORDER BY "id" ASC NULLS LAST OFFSET $1 LIMIT $2
+  params:
+    $1 = Int64(10)
+    $2 = Int64(5)
+
+# s6-second-page-last [S6]
+SELECT "id" AS "id" FROM "orders" ORDER BY "id" ASC NULLS LAST OFFSET $1 LIMIT $2
+  params:
+    $1 = Int64(45)
+    $2 = Int64(5)
+
+# s7-nan-is-not-null-in-comparisons [S7]
+SELECT "id" AS "id" FROM "orders" WHERE ("id" IN ($1, $2, $3) AND "ratio" <> $4) ORDER BY "id" ASC NULLS LAST
+  params:
+    $1 = Int64(2)
+    $2 = Int64(3)
+    $3 = Int64(4)
+    $4 = Float64(1.0)
+
+# s7-nan-sorts-after-numbers [S7]
+SELECT "id" AS "id", "ratio" AS "ratio" FROM "orders" WHERE "id" IN ($1, $2) ORDER BY "ratio" ASC NULLS LAST
+  params:
+    $1 = Int64(3)
+    $2 = Int64(4)
+
+# s7-nan-sorts-before-numbers-descending [S7]
+SELECT "id" AS "id", "ratio" AS "ratio" FROM "orders" WHERE "id" IN ($1, $2) ORDER BY "ratio" DESC NULLS LAST
+  params:
+    $1 = Int64(3)
+    $2 = Int64(4)
+
+# s7-negative-zero-equals-zero [S7]
+SELECT "id" AS "id" FROM "orders" WHERE ("id" IN ($1, $2) AND "ratio" = $3) ORDER BY "id" ASC NULLS LAST
+  params:
+    $1 = Int64(2)
+    $2 = Int64(3)
+    $3 = Float64(0.0)
+
+# s8-decimal-is-exact [S8]
+SELECT "id" AS "id", "amount" AS "amount" FROM "orders" WHERE "amount" = $1
+  params:
+    $1 = Decimal(Decimal { value: 99999999999, scale: 2 })
+
+# s8-negative-decimals-order-exactly [S8]
+SELECT "id" AS "id", "amount" AS "amount" FROM "orders" WHERE "amount" < $1 ORDER BY "amount" ASC NULLS LAST
+  params:
+    $1 = Decimal(Decimal { value: 0, scale: 2 })
+
+# s9-date-has-no-time-zone [S9]
+SELECT "id" AS "id", "ordered_on" AS "ordered_on" FROM "orders" WHERE "ordered_on" = $1
+  params:
+    $1 = Date(Date { days: 20498 })
+
+# s9-date-year-boundary [S9]
+SELECT "id" AS "id", "ordered_on" AS "ordered_on" FROM "orders" WHERE ("ordered_on" >= $1 AND "ordered_on" <= $2) ORDER BY "id" ASC NULLS LAST
+  params:
+    $1 = Date(Date { days: 20454 })
+    $2 = Date(Date { days: 20454 })
+
+# s9-timestamp-microsecond-precision [S9]
+SELECT "id" AS "id" FROM "orders" WHERE ("id" IN ($1, $2) AND "created_at" > $3 AND "created_at" <= $4)
+  params:
+    $1 = Int64(5)
+    $2 = Int64(6)
+    $3 = Timestamp(Timestamp { micros: 1772323200499999 })
+    $4 = Timestamp(Timestamp { micros: 1772323200500000 })
+
+# s9-timestamp-order [S9]
+SELECT "id" AS "id", "created_at" AS "created_at" FROM "orders" WHERE "id" IN ($1, $2, $3) ORDER BY "created_at" ASC NULLS LAST
+  params:
+    $1 = Int64(1)
+    $2 = Int64(2)
+    $3 = Int64(3)

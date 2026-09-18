@@ -1,0 +1,19 @@
+[package]
+name = "opengrid-datasource-postgres"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "PostgreSQL compiler and data source for opengrid"
+
+[lints]
+workspace = true
+
+[dependencies]
+opengrid-types = { path = "../opengrid-types" }
+opengrid-query = { path = "../opengrid-query" }
+opengrid-datasource = { path = "../opengrid-datasource" }
+
+[dev-dependencies]
+# Snapshot tests of the generated SQL (decision E12).
+insta = "1"
+opengrid-conformance = { path = "../opengrid-conformance" }
