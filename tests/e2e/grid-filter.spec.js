@@ -101,6 +101,18 @@ async function ariaSorts(page) {
   );
 }
 
+/** The visible sort direction glyph of a column (empty when unsorted). */
+async function sortDirection(page, column) {
+  return page.evaluate(
+    (column) =>
+      document
+        .querySelector("opengrid-grid")
+        .shadowRoot.querySelector(`th[data-col="${column}"] [part="sort-direction"]`)
+        .textContent,
+    column,
+  );
+}
+
 /** The visible multi-sort order index of a column (empty when unsorted/single). */
 async function sortIndex(page, column) {
   return page.evaluate(
@@ -285,6 +297,76 @@ test("Shift+Enter from a header adds and removes an additional sort key", async 
     "none",
   ]);
   expect(await columnText(page, 2)).toEqual(["5.00", "10.00", "20.00", "30.00", "40.00"]);
+});
+
+test("the header shows the sort direction, not only aria-sort", async ({ page }) => {
+  // Plan point 49: before it, a sighted user could not tell ascending from
+  // descending — the direction lived in `aria-sort` alone (WCAG 1.3.3).
+  // The grid starts sorted by its first column (rule S6).
+  await expect.poll(() => ariaSorts(page)).toEqual(["ascending", "none", "none", "none"]);
+  expect(await sortDirection(page, 0)).toBe("▲");
+  expect(await sortDirection(page, 1)).toBe("");
+
+  await focusIn(page, 'th[data-col="1"]');
+  await page.keyboard.press("Enter");
+  await expect.poll(() => sortDirection(page, 1)).toBe("▲");
+  expect(await sortDirection(page, 0)).toBe("");
+
+  await page.keyboard.press("Enter");
+  await expect.poll(() => ariaSorts(page).then((sorts) => sorts[1])).toBe("descending");
+  expect(await sortDirection(page, 1)).toBe("▼");
+
+  // Multi-sort: every key shows its own direction next to its order index.
+  await focusIn(page, 'th[data-col="2"]');
+  await page.keyboard.press("Shift+Enter");
+  await expect.poll(() => sortDirection(page, 2)).toBe("▲");
+  expect(await sortDirection(page, 1)).toBe("▼");
+  expect(await sortIndex(page, 1)).toBe("1");
+  expect(await sortIndex(page, 2)).toBe("2");
+
+  // Each activation re-runs the query, so wait for one before sending the next.
+  await page.keyboard.press("Shift+Enter");
+  await expect.poll(() => sortDirection(page, 2)).toBe("▼");
+  await page.keyboard.press("Shift+Enter");
+  // The key is gone: neither direction nor order index is left behind.
+  await expect.poll(() => sortDirection(page, 2)).toBe("");
+  expect(await sortIndex(page, 2)).toBe("");
+  expect(await sortIndex(page, 1)).toBe("");
+});
+
+test("the sort marks stay out of the header's accessible name", async ({ page }) => {
+  // The glyph is decoration for the eye; the direction reaches assistive
+  // technology through `aria-sort`, and must not be announced a second time as
+  // part of the column's name. Driven into the **multi-sort** state, because
+  // that is the only one where the order index is non-empty too.
+  await focusIn(page, 'th[data-col="1"]');
+  await page.keyboard.press("Enter");
+  await expect.poll(() => sortDirection(page, 1)).toBe("▲");
+  await page.keyboard.press("Enter");
+  await expect.poll(() => sortDirection(page, 1)).toBe("▼");
+  await focusIn(page, 'th[data-col="2"]');
+  await page.keyboard.press("Shift+Enter");
+  await expect.poll(() => sortIndex(page, 1)).toBe("1");
+  expect(await sortDirection(page, 2)).toBe("▲");
+
+  for (const [column, name] of [
+    [1, "customer"],
+    [2, "amount"],
+  ]) {
+    const header = page.locator("opengrid-grid").locator(`th[data-col="${column}"]`);
+    await expect(header).toHaveAccessibleName(name);
+  }
+  expect(
+    await page.evaluate(() =>
+      [
+        ...document
+          .querySelector("opengrid-grid")
+          .shadowRoot.querySelectorAll('th[data-col="1"] span'),
+      ]
+        .filter((span) => span.getAttribute("part")?.startsWith("sort-"))
+        .map((span) => `${span.getAttribute("part")}:${span.getAttribute("aria-hidden")}`),
+    ),
+  ).toEqual(["sort-direction:true", "sort-index:true"]);
 });
 
 test("has no axe violations with the filter row rendered", async ({ page }) => {

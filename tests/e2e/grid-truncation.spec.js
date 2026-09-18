@@ -295,6 +295,48 @@ test("matches the unfolded baseline", async ({ page }) => {
   await expect(page.locator("opengrid-grid")).toHaveScreenshot("grid-unfolded.png");
 });
 
+test("a narrow column truncates its name, not its sort direction", async ({ page }) => {
+  // Point 49: the sort marks are the *last* content of the header, so a column
+  // name wider than its column used to push them out of the clipped box — the
+  // direction disappeared exactly where the column is too narrow to read it
+  // anyway. The name gives way instead. At 320px the four columns are 76px
+  // wide and "customer" no longer fits, so this is the real case, not a
+  // constructed one.
+  await page.setViewportSize({ width: 320, height: 600 });
+  await page.evaluate(() =>
+    document
+      .querySelector("opengrid-grid")
+      .shadowRoot.querySelector('th[data-col="1"]')
+      .focus(),
+  );
+  await page.keyboard.press("Enter");
+
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        document
+          .querySelector("opengrid-grid")
+          .shadowRoot.querySelector('th[data-col="1"] [part="sort-direction"]').textContent,
+      ),
+    )
+    .toBe("▲");
+
+  const header = await page.evaluate(() => {
+    const th = document
+      .querySelector("opengrid-grid")
+      .shadowRoot.querySelector('th[data-col="1"]');
+    const name = th.querySelector("span");
+    const glyph = th.querySelector('[part="sort-direction"]');
+    const thBox = th.getBoundingClientRect();
+    const glyphBox = glyph.getBoundingClientRect();
+    return {
+      nameTruncated: name.scrollWidth > name.clientWidth + 1,
+      glyphVisible: glyphBox.width > 0 && glyphBox.right <= thBox.right + 0.5,
+    };
+  });
+  expect(header).toEqual({ nameTruncated: true, glyphVisible: true });
+});
+
 test("has no axe violations with a cell unfolded", async ({ page }) => {
   await focusByKeyboard(page, 0, 1);
   const { violations } = await new AxeBuilder({ page }).analyze();

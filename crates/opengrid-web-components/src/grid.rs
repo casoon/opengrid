@@ -87,8 +87,8 @@
 //! [`STATUS_HEIGHT_PROPERTY`], [`BORDER_COLOR_PROPERTY`],
 //! [`FOCUS_WIDTH_PROPERTY`] — and the exported parts `layout`, `filter`,
 //! `filter-operator`, `filter-value`, `filter-clear`, `status`, `viewport`,
-//! `header`, `sort-index`, `row` and `cell`. Neither requires rebuilding the DOM
-//! structure.
+//! `header`, `sort-direction`, `sort-index`, `row` and `cell`. Neither requires
+//! rebuilding the DOM structure.
 //!
 //! Three rules the theme cannot turn off, because they are accessibility, not
 //! decoration:
@@ -182,6 +182,17 @@ pub const DEFAULT_ROW_HEIGHT: u64 = 32;
 /// rule on the host (or an inline style) overrides it and the value inherits
 /// into the shadow tree.
 pub const ROW_HEIGHT_PROPERTY: &str = "--grid-row-height";
+
+/// The glyph marking an ascending column in the header (point 49).
+///
+/// A filled triangle is the convention in data grids, exists in every font,
+/// scales as text at 400% zoom and survives `forced-colors` because it *is*
+/// text. It is language-independent, so it needs no entry in the text API of
+/// point 48.
+pub const ASCENDING_GLYPH: &str = "▲";
+
+/// The glyph marking a descending column in the header (point 49).
+pub const DESCENDING_GLYPH: &str = "▼";
 
 /// Rows kept above the first visible row so scrolling stays smooth.
 pub const OVERSCAN: u64 = 6;
@@ -360,6 +371,8 @@ pub struct GridNodes {
 pub struct GridHeaderNodes {
     /// The `<th scope="col">`.
     pub cell: NodeId,
+    /// The `<span>` carrying the sort direction glyph (empty when unsorted).
+    pub direction: NodeId,
     /// The `<span>` carrying the multi-sort order (empty for a single sort).
     pub index: NodeId,
 }
@@ -864,7 +877,19 @@ pub fn build_grid(
                              min-height: var({STATUS_HEIGHT_PROPERTY}); }}
          [part=\"status\"][data-state=\"error\"] {{ font-weight: bold; }}
          [part=\"viewport\"] {{ flex: 1 1 0; min-height: 0; overflow-y: auto; position: relative; display: block; }}
-         [part=\"sort-index\"] {{ margin-left: 0.25rem; font-size: 0.75em; }}
+         [part=\"sort-direction\"], [part=\"sort-index\"] {{ margin-left: 0.25rem; font-size: 0.75em; }}
+         /* An empty mark must not reserve space: an unsorted header would
+            otherwise truncate its name earlier than the cells below it. */
+         [part=\"sort-direction\"]:empty, [part=\"sort-index\"]:empty {{ margin-left: 0; }}
+         /* The marks are last in the header, so a name wider than its column
+            would push them out of the clipped box — and the direction would be
+            invisible exactly where it is needed (point 49). Letting the *name*
+            ellipsize instead keeps them: measured, a flex header would drop out
+            of the table layout and break the column alignment. */
+         [part=\"header\"] > span:first-child {{ display: inline-block; max-width: 100%;
+                   overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }}
+         [part=\"header\"][aria-sort=\"ascending\"] > span:first-child,
+         [part=\"header\"][aria-sort=\"descending\"] > span:first-child {{ max-width: calc(100% - 2.75em); }}
          table {{ width: 100%; table-layout: fixed; border-collapse: collapse; }}
          thead {{ position: sticky; top: 0; z-index: 2; background: Canvas; color: CanvasText; }}
          tbody tr {{ position: absolute; left: 0; width: 100%; display: table; table-layout: fixed;
@@ -968,25 +993,23 @@ pub fn build_grid(
             name: "tabindex".to_owned(),
             value: "-1".to_owned(),
         });
-        // The column name lives in its own span so the multi-sort index can be
-        // added as a second, `aria-hidden` span without touching the name.
+        // The column name lives in its own span so the sort marks can be added
+        // as further, `aria-hidden` spans without touching the name: the header's
+        // accessible name stays the column, and the direction is announced once,
+        // through `aria-sort`. Reading order is name, direction, order index —
+        // "customer ▲ 2".
         let name = element(buffer, nodes, Some(th), "span");
         buffer.push(Patch::SetText {
             node: name,
             text: field.name.as_str().to_owned(),
         });
-        let index = element(buffer, nodes, Some(th), "span");
-        buffer.push(Patch::SetAttribute {
-            node: index,
-            name: "part".to_owned(),
-            value: "sort-index".to_owned(),
+        let direction = marker(buffer, nodes, th, "sort-direction");
+        let index = marker(buffer, nodes, th, "sort-index");
+        header_cells.push(GridHeaderNodes {
+            cell: th,
+            direction,
+            index,
         });
-        buffer.push(Patch::SetAttribute {
-            node: index,
-            name: "aria-hidden".to_owned(),
-            value: "true".to_owned(),
-        });
-        header_cells.push(GridHeaderNodes { cell: th, index });
     }
 
     let tbody = element(buffer, nodes, Some(table), "tbody");
@@ -1273,6 +1296,15 @@ pub fn patch_grid(
             name: "tabindex".to_owned(),
             value: tabindex_for(active == ActiveCell::Header { col }).to_owned(),
         });
+        // Both marks come from the same key as `aria-sort`, so what is seen and
+        // what is announced cannot drift apart.
+        buffer.push(Patch::SetText {
+            node: header.direction,
+            text: key
+                .map(|position| direction_glyph(sorts[position].1))
+                .unwrap_or_default()
+                .to_owned(),
+        });
         let index = if sorts.len() > 1 {
             key.map(|position| (position + 1).to_string())
                 .unwrap_or_default()
@@ -1352,6 +1384,15 @@ fn sort_position(sorts: &[(String, &str)], name: &str) -> Option<usize> {
     sorts.iter().position(|(field, _)| field == name)
 }
 
+/// The visible glyph for a sort direction (point 49), empty for an unknown one.
+fn direction_glyph(direction: &str) -> &'static str {
+    match direction {
+        "asc" => ASCENDING_GLYPH,
+        "desc" => DESCENDING_GLYPH,
+        _ => "",
+    }
+}
+
 /// The `aria-sort` token for a wire direction.
 fn aria_sort(direction: &str) -> &'static str {
     match direction {
@@ -1364,6 +1405,31 @@ fn aria_sort(direction: &str) -> &'static str {
 /// The `tabindex` value of a cell: `0` for the active one, `-1` otherwise.
 fn tabindex_for(is_active: bool) -> &'static str {
     if is_active { "0" } else { "-1" }
+}
+
+/// Appends an empty, `aria-hidden` `<span part="{part}">` to a header cell.
+///
+/// The sort marks are decoration for the eye: the same information reaches
+/// assistive technology through `aria-sort`, so they must not reach it a second
+/// time through the header's accessible name.
+fn marker(
+    buffer: &mut PatchBuffer,
+    nodes: &mut NodeAllocator,
+    parent: NodeId,
+    part: &str,
+) -> NodeId {
+    let span = element(buffer, nodes, Some(parent), "span");
+    buffer.push(Patch::SetAttribute {
+        node: span,
+        name: "part".to_owned(),
+        value: part.to_owned(),
+    });
+    buffer.push(Patch::SetAttribute {
+        node: span,
+        name: "aria-hidden".to_owned(),
+        value: "true".to_owned(),
+    });
+    span
 }
 
 /// Marks `node` as being written in the texts' language (point 48).
@@ -1693,13 +1759,14 @@ mod tests {
                 .count(),
             2
         );
-        assert_eq!(
-            parts
-                .iter()
-                .filter(|part| part.as_str() == "sort-index")
-                .count(),
-            2
-        );
+        // Every header carries both sort marks, not just one somewhere.
+        for mark in ["sort-direction", "sort-index"] {
+            assert_eq!(
+                parts.iter().filter(|part| part.as_str() == mark).count(),
+                2,
+                "every column needs its own {mark}"
+            );
+        }
     }
 
     /// Patching the pool recycles the existing rows: counts, rowindexes and
@@ -1905,6 +1972,69 @@ mod tests {
         );
     }
 
+    /// The direction is visible, not only in `aria-sort` (point 49) — and both
+    /// come from the same key, so they cannot disagree.
+    #[test]
+    fn the_header_shows_its_sort_direction() {
+        let schema = initial_schema(&["customer".to_owned(), "qty".to_owned()]);
+        let mut nodes = NodeAllocator::new();
+        let mut buffer = PatchBuffer::new();
+        let view = build_grid(
+            &mut buffer,
+            &mut nodes,
+            None,
+            &schema,
+            1,
+            &GridTexts::default(),
+        );
+        let state = state_with(&["Gamma"], 1, 0, 1);
+
+        let glyphs = |sorts: &[(String, &str)]| -> Vec<String> {
+            let mut buffer = PatchBuffer::new();
+            patch_grid(
+                &mut buffer,
+                &view,
+                &state,
+                &[Some(0)],
+                ActiveCell::Header { col: 0 },
+                sorts,
+                None,
+                DEFAULT_ROW_HEIGHT,
+                &GridTexts::default(),
+            );
+            view.header_cells
+                .iter()
+                .map(|header| {
+                    buffer
+                        .patches()
+                        .iter()
+                        .find_map(|patch| match patch {
+                            Patch::SetText { node, text } if *node == header.direction => {
+                                Some(text.clone())
+                            }
+                            _ => None,
+                        })
+                        .expect("every header's direction is written on every frame")
+                })
+                .collect()
+        };
+
+        assert_eq!(glyphs(&[]), ["", ""]);
+        assert_eq!(
+            glyphs(&[("customer".to_owned(), "asc")]),
+            [ASCENDING_GLYPH, ""]
+        );
+        assert_eq!(
+            glyphs(&[("qty".to_owned(), "desc")]),
+            ["", DESCENDING_GLYPH]
+        );
+        // Multi-sort: every key shows its own direction.
+        assert_eq!(
+            glyphs(&[("customer".to_owned(), "desc"), ("qty".to_owned(), "asc")]),
+            [DESCENDING_GLYPH, ASCENDING_GLYPH]
+        );
+    }
+
     /// The exported parts are the theming contract (point 20): a page styles the
     /// grid through them, so the skeleton must name every one of them.
     #[test]
@@ -1942,6 +2072,7 @@ mod tests {
                 "header",
                 "layout",
                 "row",
+                "sort-direction",
                 "sort-index",
                 "status",
                 "viewport",
