@@ -30,10 +30,16 @@
 //! * **Filtering** — the type-agnostic filter row (`part="filter"`) above the
 //!   table has one operator `select` and one value `input` per column; `Enter` in
 //!   a control applies the `and` of all non-empty entries as the query's
-//!   `filter`, "Clear" empties it. The result count is shown as a
-//!   `role="status"` line. The controls are ordinary focusables outside the
-//!   `role="grid"` table, so the roving tabindex and keyboard matrix are
-//!   untouched.
+//!   `filter`, "Clear" empties it. The result count is shown in the status line.
+//!   The controls are ordinary focusables outside the `role="grid"` table, so
+//!   the roving tabindex and keyboard matrix are untouched.
+//! * **Status** — the one `role="status"` line below the filter row carries
+//!   every state of a query (point 41): "loading" while one runs, the result
+//!   count, "Keine Treffer" for an empty result and a readable sentence when it
+//!   failed. A failure no longer replaces the grid with an error paragraph — the
+//!   table, its focus and the last loaded rows stay and only the status line
+//!   changes, so a screen reader user is not dropped out of the grid they were
+//!   navigating.
 //!
 //! # Virtualization (point 17)
 //!
@@ -62,7 +68,7 @@ use web_sys::{
     ScrollIntoViewOptions, ScrollLogicalPosition, ShadowRoot,
 };
 
-use opengrid_grid::{CellRef, GridState, Window};
+use opengrid_grid::{CellRef, GridState, GridStatus, Window};
 use opengrid_query::CmpOp;
 use opengrid_web_core::element::{
     ARIA_LABEL_ATTRIBUTE, LABEL_ATTRIBUTE, attach_open_shadow_root, define, mirror_label,
@@ -71,7 +77,7 @@ use opengrid_web_core::patch::{NodeAllocator, PatchBuffer};
 use opengrid_web_core::provider::provider;
 use opengrid_web_core::renderer::{Dom, WebRenderer};
 
-use crate::element::{apply, clear_root, describe};
+use crate::element::{clear_root, describe};
 use crate::grid::{
     self, ActiveCell, COLUMNS_ATTRIBUTE, DATASOURCE_ATTRIBUTE, FilterEntry, GRID_TAG, GridKey,
     GridNodes, ROW_HEIGHT_PROPERTY, WINDOW_SIZE_ATTRIBUTE,
@@ -95,7 +101,7 @@ pub(crate) fn define_grid() -> Result<(), JsValue> {
 pub(crate) fn start(host: &HtmlElement) {
     ensure_skeleton(host);
     render(host, false);
-    run_query(host, false);
+    run_query(host, QueryKind::Data, false);
 }
 
 /// The per-host interactive state.
@@ -250,7 +256,7 @@ fn on_connected(host: HtmlElement) {
     runtime.borrow_mut().row_height = resolve_row_height(&host);
     ensure_skeleton(&host);
     render(&host, false);
-    run_query(&host, false);
+    run_query(&host, QueryKind::Data, false);
 }
 
 /// Nothing to tear down: the root, its listeners and the runtime die with the
@@ -278,7 +284,7 @@ fn on_attribute_changed(
             reset_runtime(&host);
             ensure_skeleton(&host);
             render(&host, false);
-            run_query(&host, false);
+            run_query(&host, QueryKind::Data, false);
         }
         _ => {}
     }
@@ -377,13 +383,30 @@ fn render(host: &HtmlElement, focus_after: bool) {
     }
 }
 
+/// Why a query runs — which decides whether it announces "loading" (point 41).
+///
+/// A [`Window`](QueryKind::Window) query re-fetches rows of the *same* result
+/// set: scrolling fires one per animation frame, and announcing each would turn
+/// the polite live region into chatter while the user reads. Only a
+/// [`Data`](QueryKind::Data) query — the first load, a sort, a filter, an
+/// attribute change — changes what the result *is*, and that is worth
+/// announcing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum QueryKind {
+    /// The result set changes: announce that the grid is loading.
+    Data,
+    /// Only the window moves: keep the current status.
+    Window,
+}
+
 /// Builds the query from the runtime and the host attributes and runs it.
 ///
 /// Returns without doing anything if there is no provider, no shadow root or no
-/// columns — the "not ready yet" states, not errors. `focus` re-focuses the
-/// active cell once the result landed, so a keyboard-driven re-render does not
-/// drop the focus.
-pub(crate) fn run_query(host: &HtmlElement, focus: bool) {
+/// columns — the "not ready yet" states, not errors; the status line stays at
+/// "loading", which is what the grid is in fact waiting for. `focus` re-focuses
+/// the active cell once the result landed, so a keyboard-driven re-render does
+/// not drop the focus.
+pub(crate) fn run_query(host: &HtmlElement, kind: QueryKind, focus: bool) {
     let Some(provider) = provider(host) else {
         return;
     };
@@ -413,50 +436,64 @@ pub(crate) fn run_query(host: &HtmlElement, focus: bool) {
             generation,
         )
     };
+    if kind == QueryKind::Data {
+        grid_runtime
+            .borrow_mut()
+            .state
+            .set_status(GridStatus::Loading);
+        render(host, false);
+    }
+
     let query = grid::query_json(&source, &columns, &sorts, filter.as_ref(), offset, pool);
     let promise = provider.execute(&query);
 
     let host = host.clone();
     spawn_local(async move {
-        match JsFuture::from(promise).await {
+        let outcome = match JsFuture::from(promise).await {
             Ok(value) => match value.as_string() {
-                Some(json) => match grid::parse_result(&json) {
-                    Ok(result) => {
-                        let Some(runtime) = runtime(&host) else {
-                            return;
-                        };
-                        {
-                            let mut runtime = runtime.borrow_mut();
-                            // A newer scroll or key superseded this query.
-                            if runtime.generation != generation {
-                                return;
-                            }
-                            runtime.state.apply_result(result);
-                        }
-                        render(&host, focus);
-                    }
-                    Err(message) => render_error(&host, &message),
-                },
-                None => render_error(&host, "provider returned a non-string result"),
+                Some(json) => grid::parse_result(&json),
+                None => Err("provider returned a non-string result".to_owned()),
             },
-            Err(value) => render_error(&host, &describe(&value)),
-        }
+            Err(value) => Err(describe(&value)),
+        };
+        settle(&host, generation, outcome, focus);
     });
 }
 
-/// Clears the root and renders a short visible error (point 41 formalises this).
-fn render_error(host: &HtmlElement, message: &str) {
-    let Some(root) = host.shadow_root() else {
+/// Applies a finished query to the runtime and renders one frame.
+///
+/// Success and failure take the same path on purpose: both are a status the
+/// state machine owns, both are dropped when a newer query has superseded this
+/// one (the generation check), and both end in exactly one [`render`]. An error
+/// therefore leaves the table, the roving tabindex and the last loaded rows in
+/// place — only the status line changes.
+fn settle(
+    host: &HtmlElement,
+    generation: u64,
+    outcome: Result<opengrid_datasource::QueryResult, String>,
+    focus: bool,
+) {
+    let Some(runtime) = runtime(host) else {
         return;
     };
-    let Some(document) = host.owner_document() else {
-        return;
-    };
-    clear_root(&root);
-    let mut nodes = NodeAllocator::new();
-    let mut buffer = PatchBuffer::new();
-    grid::build_error(&mut buffer, &mut nodes, message);
-    apply(&root, document, &buffer);
+    {
+        let mut runtime = runtime.borrow_mut();
+        // A newer scroll, key or filter superseded this query.
+        if runtime.generation != generation {
+            return;
+        }
+        match outcome {
+            Ok(result) => {
+                runtime.state.apply_result(result);
+            }
+            Err(cause) => {
+                runtime
+                    .state
+                    .set_status(GridStatus::Error(grid::error_text(&cause)));
+            }
+        }
+    }
+    render(host, focus);
 }
 
 /// Focuses the active cell (after a re-render) and scrolls it into view.
@@ -679,7 +716,7 @@ fn move_with_key(
                 .borrow_mut()
                 .state
                 .set_window(Window::new(new_offset, pool));
-            run_query(host, true);
+            run_query(host, QueryKind::Window, true);
         }
         None => {
             if let Some(root) = host.shadow_root() {
@@ -727,7 +764,7 @@ fn activate_header(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>, multi
         runtime.state.ensure_sorted();
         runtime.state.set_window(Window::new(0, pool));
     }
-    run_query(host, true);
+    run_query(host, QueryKind::Data, true);
 }
 
 /// Whether `element` sits inside the filter row (and not in the grid table).
@@ -785,7 +822,7 @@ fn apply_filters(host: &HtmlElement) {
         runtime.state.set_filter(filter);
         runtime.state.set_window(Window::new(0, pool));
     }
-    run_query(host, false);
+    run_query(host, QueryKind::Data, false);
 }
 
 /// Clears every value input and applies the (now empty) filter.
@@ -841,7 +878,7 @@ fn escape_to_first(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>) {
     runtime.borrow_mut().set_active(first);
     if offset != 0 {
         runtime.borrow_mut().state.set_window(Window::new(0, pool));
-        run_query(host, true);
+        run_query(host, QueryKind::Window, true);
     } else if let Some(root) = host.shadow_root() {
         let viewport = runtime.borrow().viewport.clone();
         focus_from(&root, viewport.as_ref(), from, first);
@@ -935,7 +972,7 @@ fn schedule_scroll_query(host: &HtmlElement, grid_runtime: &Rc<RefCell<GridRunti
             }
             runtime.state.set_window(Window::new(offset, pool));
         }
-        run_query(&host, false);
+        run_query(&host, QueryKind::Window, false);
     });
     if let Some(window) = web_sys::window() {
         let _ = window.request_animation_frame(callback.unchecked_ref::<js_sys::Function>());

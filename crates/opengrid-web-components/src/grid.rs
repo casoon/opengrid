@@ -67,9 +67,19 @@
 //! data focus; a header cell is element-level because the logical data model has
 //! no header row. The DOM glue focuses the matching node and scrolls it into
 //! view.
+//!
+//! # Status area (point 41)
+//!
+//! One line between the filter row and the viewport shows what the grid is
+//! doing — loading, the result count, "no matches" or the reason a query
+//! failed. It is a single `role="status"`/`aria-live="polite"` region, so every
+//! state is announced without stealing the focus and never announced twice
+//! (plan/spezifikation/09-accessibility.md §Statusmeldungen). The text comes
+//! from the portable [`status_text`]; the [`GridStatus`] behind it is state, not
+//! a renderer flag.
 
 use opengrid_datasource::QueryResult;
-use opengrid_grid::{CellRef, GridState, Window};
+use opengrid_grid::{CellRef, GridState, GridStatus, Window};
 use opengrid_query::{CmpOp, FilterExpr};
 use opengrid_types::{DataType, Field, FieldName, Schema, Value};
 use opengrid_web_core::element::{LABEL_ATTRIBUTE, mirror_label};
@@ -223,6 +233,8 @@ pub enum GridKey {
 pub struct GridNodes {
     /// The type-agnostic filter row above the table (`part="filter"`).
     pub filter: FilterNodes,
+    /// The `role="status"` line below the filter row (`part="status"`).
+    pub status: NodeId,
     /// The scrollable viewport (`overflow-y: auto`) inside the shadow root.
     pub viewport: NodeId,
     /// The table's `<tbody>`, used as the sizer (`height = total * row_height`).
@@ -252,8 +264,6 @@ pub struct GridHeaderNodes {
 pub struct FilterNodes {
     /// The row container (`part="filter"`).
     pub container: NodeId,
-    /// The `role="status"` result-count line.
-    pub status: NodeId,
     /// The "Clear" button (`part="filter-clear"`).
     pub clear: NodeId,
     /// One operator `select` + value `input` per column.
@@ -372,12 +382,50 @@ pub fn filter_expr(entries: &[FilterEntry]) -> Option<FilterExpr> {
     }
 }
 
-/// The visible result-count line (`role="status"`).
+/// The text of the status line for a status (plan point 41).
 ///
-/// German wording, matching the plan point 18 ("N Treffer"); couples to point 41,
-/// which formalises the status area.
-pub fn count_text(total_count: u64) -> String {
-    format!("{total_count} Treffer")
+/// One sentence per state, in the German wording point 18 started with ("N
+/// Treffer"). It is both what the user reads and what the `aria-live` region
+/// announces, so it names a cause instead of a code: the [`GridStatus::Error`]
+/// message is already the user-facing text ([`error_text`] builds it).
+pub fn status_text(status: &GridStatus, total_count: u64) -> String {
+    match status {
+        GridStatus::Loading => "Wird geladen …".to_owned(),
+        GridStatus::Ready => format!("{total_count} Treffer"),
+        GridStatus::Empty => "Keine Treffer".to_owned(),
+        GridStatus::Error(message) => message.clone(),
+    }
+}
+
+/// The `data-state` token of the status line, for styling (`::part(status)`).
+pub fn status_state(status: &GridStatus) -> &'static str {
+    match status {
+        GridStatus::Loading => "loading",
+        GridStatus::Ready => "ready",
+        GridStatus::Empty => "empty",
+        GridStatus::Error(_) => "error",
+    }
+}
+
+/// Turns a raw failure into the sentence the status line shows.
+///
+/// The causes that reach the element are diagnostic strings — a rejected
+/// provider promise (the engine's [`DataSourceError`] message travels this way),
+/// a malformed result, a provider without an `execute`. None of them is a
+/// sentence, so the grid puts them behind one that says what failed; the cause
+/// stays appended because it is the only thing that tells the developer *what*
+/// broke. An empty or whitespace-only cause is dropped rather than rendered as a
+/// dangling colon.
+///
+/// [`DataSourceError`]: opengrid_datasource::DataSourceError
+pub fn error_text(cause: &str) -> String {
+    const PREFIX: &str = "Die Daten konnten nicht geladen werden";
+    let cause = cause.trim();
+    if cause.is_empty() {
+        format!("{PREFIX}.")
+    } else {
+        format!("{PREFIX}: {cause}")
+    }
 }
 
 /// Builds the query JSON for a grid render.
@@ -719,7 +767,8 @@ pub fn build_grid(
                              height: var({FILTER_HEIGHT_PROPERTY}); padding: 0 0.5rem;
                              overflow-x: auto; overflow-y: hidden; white-space: nowrap; }}
          [part=\"filter\"] select, [part=\"filter\"] input, [part=\"filter\"] button {{ font: inherit; }}
-         [part=\"filter-status\"] {{ margin-left: auto; }}
+         [part=\"status\"] {{ flex: 0 0 auto; padding: 0 0.5rem; min-height: 1.5rem; }}
+         [part=\"status\"][data-state=\"error\"] {{ font-weight: bold; }}
          [part=\"viewport\"] {{ flex: 1 1 0; min-height: 0; overflow-y: auto; position: relative; display: block; }}
          [part=\"sort-index\"] {{ margin-left: 0.25rem; font-size: 0.75em; }}
          table {{ width: 100%; table-layout: fixed; border-collapse: collapse; }}
@@ -743,6 +792,7 @@ pub fn build_grid(
     });
 
     let filter = build_filter(buffer, nodes, layout, fields);
+    let status = build_status(buffer, nodes, layout);
 
     let viewport = element(buffer, nodes, Some(layout), "div");
     buffer.push(Patch::SetAttribute {
@@ -853,6 +903,7 @@ pub fn build_grid(
 
     GridNodes {
         filter,
+        status,
         viewport,
         tbody,
         table,
@@ -861,8 +912,37 @@ pub fn build_grid(
     }
 }
 
+/// Builds the status line (point 41): the one live region of the grid.
+///
+/// It is created with the skeleton and never removed, so an announcement is a
+/// text change in a region assistive technology already observes — a region that
+/// only appears when something goes wrong is announced unreliably. `role`
+/// already implies `aria-live="polite"`; the attribute is written out because
+/// the status is the contract of this point, not an implementation detail.
+/// `data-state` carries the state for `::part(status)` styling.
+fn build_status(buffer: &mut PatchBuffer, nodes: &mut NodeAllocator, parent: NodeId) -> NodeId {
+    let status = element(buffer, nodes, Some(parent), "p");
+    for (name, value) in [
+        ("part", "status"),
+        ("role", "status"),
+        ("aria-live", "polite"),
+        ("data-state", status_state(&GridStatus::Loading)),
+    ] {
+        buffer.push(Patch::SetAttribute {
+            node: status,
+            name: name.to_owned(),
+            value: value.to_owned(),
+        });
+    }
+    buffer.push(Patch::SetText {
+        node: status,
+        text: status_text(&GridStatus::Loading, 0),
+    });
+    status
+}
+
 /// Builds the type-agnostic filter row: one operator `select` and one value
-/// `input` per column, plus a clear button and the result count (point 18).
+/// `input` per column, plus a clear button (point 18).
 ///
 /// It sits **outside** the `role="grid"` table (`part="filter"`), so the grid's
 /// roving tabindex and keyboard matrix are untouched; the controls are ordinary
@@ -987,21 +1067,8 @@ fn build_filter(
         text: "Clear".to_owned(),
     });
 
-    let status = element(buffer, nodes, Some(container), "span");
-    buffer.push(Patch::SetAttribute {
-        node: status,
-        name: "part".to_owned(),
-        value: "filter-status".to_owned(),
-    });
-    buffer.push(Patch::SetAttribute {
-        node: status,
-        name: "role".to_owned(),
-        value: "status".to_owned(),
-    });
-
     FilterNodes {
         container,
-        status,
         clear,
         columns,
     }
@@ -1046,9 +1113,14 @@ pub fn patch_grid(
         name: "aria-rowcount".to_owned(),
         value: (total_count + 1).to_string(),
     });
+    buffer.push(Patch::SetAttribute {
+        node: nodes.status,
+        name: "data-state".to_owned(),
+        value: status_state(state.status()).to_owned(),
+    });
     buffer.push(Patch::SetText {
-        node: nodes.filter.status,
-        text: count_text(total_count),
+        node: nodes.status,
+        text: status_text(state.status(), total_count),
     });
 
     for (col, header) in nodes.header_cells.iter().enumerate() {
@@ -1179,20 +1251,6 @@ fn element(
         });
     }
     node
-}
-
-/// Appends a text-only `<p role="alert">` error to `buffer` (as table mode).
-pub fn build_error(buffer: &mut PatchBuffer, nodes: &mut NodeAllocator, message: &str) {
-    let paragraph = element(buffer, nodes, Some(NodeId::ROOT), "p");
-    buffer.push(Patch::SetAttribute {
-        node: paragraph,
-        name: "role".to_owned(),
-        value: "alert".to_owned(),
-    });
-    buffer.push(Patch::SetText {
-        node: paragraph,
-        text: message.to_owned(),
-    });
 }
 
 #[cfg(test)]
@@ -1365,11 +1423,26 @@ mod tests {
         assert!(filter_expr(&one).is_some());
     }
 
-    /// The count line uses the German wording of the point.
+    /// Every status has its own sentence; only `Ready` shows the count.
     #[test]
-    fn count_text_formats_the_result_line() {
-        assert_eq!(count_text(0), "0 Treffer");
-        assert_eq!(count_text(1_234), "1234 Treffer");
+    fn the_status_line_has_one_sentence_per_state() {
+        assert_eq!(status_text(&GridStatus::Ready, 0), "0 Treffer");
+        assert_eq!(status_text(&GridStatus::Ready, 1_234), "1234 Treffer");
+        assert_eq!(status_text(&GridStatus::Loading, 7), "Wird geladen …");
+        assert_eq!(status_text(&GridStatus::Empty, 0), "Keine Treffer");
+
+        let failed = GridStatus::Error(error_text("source \"orders\" is unknown"));
+        assert_eq!(
+            status_text(&failed, 5),
+            "Die Daten konnten nicht geladen werden: source \"orders\" is unknown"
+        );
+        assert_eq!(status_state(&failed), "error");
+    }
+
+    /// A cause that says nothing must not render as a dangling colon.
+    #[test]
+    fn an_empty_cause_still_reads_as_a_sentence() {
+        assert_eq!(error_text("   "), "Die Daten konnten nicht geladen werden.");
     }
 
     /// The result becomes an all-`Utf8` display schema and text values.
@@ -1433,8 +1506,10 @@ mod tests {
                 .collect()
         };
 
-        // The filter group, the status line and the grid itself carry roles.
+        // The filter group, the status line and the grid itself carry roles;
+        // the status line is the single polite live region (point 41).
         assert_eq!(attributes("role"), ["group", "status", "grid"]);
+        assert_eq!(attributes("aria-live"), ["polite"]);
         // The filter row is labelled separately; the grid label comes last.
         let labels = attributes("aria-label");
         assert_eq!(labels.first().map(String::as_str), Some("Filter"));
@@ -1596,7 +1671,7 @@ mod tests {
         };
         assert_eq!(text_of(view.header_cells[0].index), "1");
         assert_eq!(text_of(view.header_cells[1].index), "2");
-        assert_eq!(text_of(view.filter.status), "1 Treffer");
+        assert_eq!(text_of(view.status), "1 Treffer");
     }
 
     /// A single sort leaves the header's order index empty.

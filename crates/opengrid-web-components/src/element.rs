@@ -205,7 +205,12 @@ fn render_data(
     }
 }
 
-/// Clears the root and renders a short visible error (point 41 formalises this).
+/// Clears the root and renders a short visible error.
+///
+/// Table mode has no status area: it renders a result, not an interactive grid,
+/// so a failure replaces it with an alert. The grid takes the other path — its
+/// status line (point 41) reports the failure without destroying the table the
+/// user is navigating.
 fn render_error(host: &HtmlElement, message: &str) {
     let Some(root) = host.shadow_root() else {
         return;
@@ -314,10 +319,23 @@ fn focus_header(root: &ShadowRoot, column: &str) {
 }
 
 /// The message of a rejected provider promise.
+///
+/// Both providers reject with an `Error`, not a string: the Worker rebuilds one
+/// from the worker message and the local engine throws a `JsError`, which is how
+/// the engine's `DataSourceError` text reaches the component at all. Reading
+/// `.message` is therefore the normal path — without it every backend failure
+/// collapsed into the generic fallback, and point 41 needs the cause. A rejected
+/// value that is neither a string nor carries a usable `message` falls back to a
+/// sentence rather than to `[object Object]`.
 pub(crate) fn describe(value: &JsValue) -> String {
-    value
-        .as_string()
-        .unwrap_or_else(|| "the provider rejected the query".to_owned())
+    if let Some(message) = value.as_string() {
+        return message;
+    }
+    let message = js_sys::Reflect::get(value, &JsValue::from_str("message"))
+        .ok()
+        .and_then(|message| message.as_string())
+        .filter(|message| !message.trim().is_empty());
+    message.unwrap_or_else(|| "the provider rejected the query".to_owned())
 }
 
 /// Updates the existing caption and `aria-label` after a label change.
