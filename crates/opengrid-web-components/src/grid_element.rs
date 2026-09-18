@@ -536,6 +536,12 @@ fn focus_cell(root: &ShadowRoot, viewport: Option<&Element>, to: ActiveCell) {
     };
     let _ = target.focus();
     let options = ScrollIntoViewOptions::new();
+    // `nearest` scrolls the minimum. For a cell that unfolded past the height of
+    // the viewport (point 47) that still aligns its **top**, and the cells'
+    // `scroll-margin-top` keeps that top clear of the sticky header — so the
+    // value is read from its first line and the rest is scrolled to. Measured,
+    // not assumed: without the scroll margin the first lines end up above the
+    // header, with it they start right below it.
     options.set_block(ScrollLogicalPosition::Nearest);
     target.scroll_into_view_with_scroll_into_view_options(&options);
 }

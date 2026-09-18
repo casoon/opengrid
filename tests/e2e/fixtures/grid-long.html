@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>opengrid grid long-values fixture</title>
+    <style>
+      /* Point 47: values that are wider than their column. The host is narrow on
+         purpose so `customer` truncates in every project's viewport — that is the
+         situation the focused cell has to resolve. It is fluid, not a fixed
+         420px, so a 320px viewport (400% zoom) really narrows the grid instead
+         of pushing the page into horizontal scrolling. Both Playwright projects
+         are wider than 420px, so their baselines of this fixture are identical —
+         knowingly: the point of the second project here is the axe and geometry
+         run, not a different picture. */
+      opengrid-grid {
+        display: block;
+        width: 100%;
+        max-width: 420px;
+        height: 224px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid grid long-values fixture</h1>
+      <opengrid-grid
+        label="Bestellungen"
+        datasource="orders"
+        columns="id,customer,amount,qty"
+        window-size="10"
+      ></opengrid-grid>
+    </main>
+    <script type="module">
+      import { loadOpengrid, createLocalProvider } from "/packages/opengrid/loader.js";
+      import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+
+      async function start() {
+        const loader = await loadOpengrid();
+
+        await init();
+        const engine = new Engine();
+        const provider = createLocalProvider(engine);
+        const schema = await (
+          await fetch("/tests/e2e/fixtures/grid-long.schema.json")
+        ).text();
+        const csv = await (await fetch("/tests/e2e/fixtures/grid-long.csv")).arrayBuffer();
+        await provider.load("orders", csv, schema);
+
+        const host = document.querySelector("opengrid-grid");
+        loader.module.set_provider(host, provider);
+        return { fallback: loader.fallback };
+      }
+
+      window.__opengridReady = start();
+    </script>
+  </body>
+</html>

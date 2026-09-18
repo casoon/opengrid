@@ -104,6 +104,41 @@
 //!   whole shadow tree with `!important`. That is deliberate: between shadow
 //!   trees an important declaration from the **inner** tree beats the outer
 //!   page, so the guarantee survives a theme that animates `::part(row)`.
+//!
+//! # Truncated values (point 47)
+//!
+//! A cell is one line with an ellipsis, because the virtualization needs a fixed
+//! row height. The full value is nevertheless in the DOM — only CSS shortens it,
+//! so a screen reader reads it whole — but a sighted user would lose it,
+//! especially at 200%/400% zoom (WCAG 1.4.4, 1.4.10).
+//!
+//! The **focused cell therefore unfolds**: it wraps (`white-space: normal`, plus
+//! `overflow-wrap: anywhere` for values without spaces) and, since a table
+//! cell's `height` is a *minimum*, grows until the whole value fits. Its row is
+//! absolutely positioned, so it grows **over** the rows below instead of moving
+//! them: the sizer (`total_count * row_height`) and with it the whole window
+//! arithmetic are untouched. The rows are opaque and the focused one is raised
+//! by `z-index: 1` — above the other pool rows, below the sticky header
+//! (`z-index: 2`), which must stay readable. Every cell is reachable through the
+//! roving tabindex, so every value is.
+//!
+//! Two consequences worth knowing, both measured rather than assumed:
+//!
+//! * **At the end of the data the scroll area grows.** An absolutely positioned
+//!   row still contributes to the scrollable overflow of the viewport, so a cell
+//!   unfolding past the *last* row extends the scroll range by that overshoot
+//!   (elsewhere it grows over rows that are inside the sizer anyway, and nothing
+//!   changes). That is what keeps the end of an over-tall value reachable; it
+//!   goes away when the cell folds back, and the sizer never moves, so the
+//!   window arithmetic never sees it.
+//! * **A cell taller than the viewport is read from the top.** `scrollIntoView`
+//!   with `nearest` aligns its first line, and the cells' `scroll-margin-top`
+//!   (the header height) keeps that line out from under the sticky header —
+//!   which also improves plain vertical navigation, where a focused cell used to
+//!   be able to land behind the header.
+//!
+//! Header cells deliberately do **not** unfold: the header row is in flow, so
+//! growing it would shift the whole grid under it.
 
 use opengrid_datasource::QueryResult;
 use opengrid_grid::{CellRef, GridState, GridStatus, Window};
@@ -849,7 +884,11 @@ pub fn build_grid(
          [part=\"sort-index\"] {{ margin-left: 0.25rem; font-size: 0.75em; }}
          table {{ width: 100%; table-layout: fixed; border-collapse: collapse; }}
          thead {{ position: sticky; top: 0; z-index: 2; background: Canvas; color: CanvasText; }}
-         tbody tr {{ position: absolute; left: 0; width: 100%; display: table; table-layout: fixed; }}
+         tbody tr {{ position: absolute; left: 0; width: 100%; display: table; table-layout: fixed;
+                     background: Canvas; }}
+         tbody tr:has(:focus) {{ z-index: 1; }}
+         tbody td:focus {{ white-space: normal; overflow-wrap: anywhere; }}
+         tbody td {{ scroll-margin-top: var({HEADER_HEIGHT_PROPERTY}); }}
          th, td {{ box-sizing: border-box; padding: 0 8px;
                    border-bottom: 1px solid var({BORDER_COLOR_PROPERTY});
                    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
@@ -1851,6 +1890,37 @@ mod tests {
         // The two guarantees a theme must not be able to switch off.
         assert!(styles.contains("forced-colors: active"));
         assert!(styles.contains("prefers-reduced-motion: reduce"));
+    }
+
+    /// The unfolding of a truncated value (point 47) is three rules that only
+    /// work together: wrapping, breaking a word without spaces, and a raised,
+    /// opaque row to grow over the ones below.
+    #[test]
+    fn the_stylesheet_unfolds_the_focused_cell() {
+        let schema = initial_schema(&["customer".to_owned()]);
+        let mut nodes = NodeAllocator::new();
+        let mut buffer = PatchBuffer::new();
+        build_grid(&mut buffer, &mut nodes, None, &schema, 1);
+
+        let styles = buffer
+            .patches()
+            .iter()
+            .find_map(|patch| match patch {
+                Patch::SetText { text, .. } if text.contains(":host") => Some(text.clone()),
+                _ => None,
+            })
+            .expect("the skeleton carries a stylesheet");
+
+        for rule in [
+            "tbody td:focus",
+            "white-space: normal",
+            "overflow-wrap: anywhere",
+            "tbody tr:has(:focus)",
+            "z-index: 1",
+            "scroll-margin-top",
+        ] {
+            assert!(styles.contains(rule), "the unfold rules lost {rule:?}");
+        }
     }
 
     /// A single sort leaves the header's order index empty.
