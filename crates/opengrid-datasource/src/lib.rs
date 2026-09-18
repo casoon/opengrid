@@ -12,6 +12,10 @@
 //! * **The result is Arrow-free** (decision E14): `schema`, one `Vec<Value>` per
 //!   output column and `total_count` — the column-oriented shape of the wire
 //!   format (E6). Arrow stays inside `opengrid-arrow-engine`.
+//! * **The wire form lives here too** (plan point 23): [`wire`] writes and reads
+//!   the JSON a server answers with and a client consumes — the same
+//!   column-oriented shape, now carrying each column's *type*, plus the error
+//!   envelope both sides branch on.
 //! * **The crate is portable** (plan/spezifikation/11-crates.md §Portabilität):
 //!   neither Arrow nor `web-sys`/`js-sys` are dependencies, so it builds for
 //!   `wasm32-unknown-unknown`, natively and on the server.
@@ -20,6 +24,7 @@ mod capabilities;
 mod error;
 mod result;
 mod source;
+pub mod wire;
 
 pub use capabilities::DataSourceCapabilities;
 pub use error::DataSourceError;

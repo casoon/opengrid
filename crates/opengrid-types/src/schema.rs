@@ -1,10 +1,20 @@
+use serde::{Deserialize, Serialize};
+
 use crate::{DataType, FieldName};
 
 /// One column of a [`Schema`].
-#[derive(Clone, Debug, PartialEq, Eq)]
+///
+/// The JSON form is `{ "name", "type", "nullable" }` (plan point 23) — the shape
+/// `crates/opengrid-conformance/data/orders.schema.json` has used since point 05.
+/// A missing `nullable` reads as `false`: a column is required unless the schema
+/// says otherwise, which is the safer default of the two.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Field {
     pub name: FieldName,
+    #[serde(rename = "type")]
     pub data_type: DataType,
+    #[serde(default)]
     pub nullable: bool,
 }
 
@@ -29,7 +39,10 @@ impl Field {
 }
 
 /// An ordered list of [`Field`]s, looked up by name.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+///
+/// JSON form: `{ "fields": [ … ] }` (plan point 23).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Schema {
     fields: Vec<Field>,
 }

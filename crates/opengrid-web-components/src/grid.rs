@@ -565,57 +565,18 @@ pub fn query_json(
     Json::Object(query).to_string()
 }
 
-/// Parses the engine's result JSON into a [`QueryResult`] with the display
-/// schema.
+/// Parses a result in the wire form of point 23 into a [`QueryResult`].
 ///
-/// The wire shape is `{ "total_count", "row_count", "columns": [ { "name",
-/// "values" } ] }`. Values become their display text as [`Value::Utf8`] — JSON
-/// `null` is the empty string — because the wire form carries no types (point
-/// 23). A malformed result is an error, not a panic.
+/// The reading itself lives in [`opengrid_datasource::wire`], because server and
+/// client must read the same bytes the same way. What this adds is the grid's
+/// error type: a malformed result is a message the status line can show, not a
+/// panic.
+///
+/// Since point 23 the values arrive **typed** — a decimal is a decimal, not its
+/// display text — which is what makes typed filters (point 51) possible.
 pub fn parse_result(result_json: &str) -> Result<QueryResult, String> {
-    use serde_json::Value as Json;
-    let value: Json =
-        serde_json::from_str(result_json).map_err(|error| format!("result JSON: {error}"))?;
-    let total_count = value
-        .get("total_count")
-        .and_then(Json::as_u64)
-        .ok_or_else(|| "result has no total_count".to_owned())?;
-    let columns = value
-        .get("columns")
-        .and_then(Json::as_array)
-        .ok_or_else(|| "result has no columns".to_owned())?;
-
-    let mut fields = Vec::with_capacity(columns.len());
-    let mut data = Vec::with_capacity(columns.len());
-    for column in columns {
-        let name = column
-            .get("name")
-            .and_then(Json::as_str)
-            .ok_or_else(|| "a column has no name".to_owned())?;
-        let field_name =
-            FieldName::new(name).map_err(|_| format!("invalid column name {name:?}"))?;
-        let values = column
-            .get("values")
-            .and_then(Json::as_array)
-            .ok_or_else(|| format!("column {name:?} has no values"))?;
-        fields.push(Field::new(field_name, DataType::Utf8));
-        data.push(
-            values
-                .iter()
-                .map(|value| Value::Utf8(value_text(value)))
-                .collect(),
-        );
-    }
-    Ok(QueryResult::new(Schema::new(fields), data, total_count))
-}
-
-/// The display text of one wire value (JSON `null` is the empty string).
-fn value_text(value: &serde_json::Value) -> String {
-    match value {
-        serde_json::Value::Null => String::new(),
-        serde_json::Value::String(text) => text.clone(),
-        other => other.to_string(),
-    }
+    opengrid_datasource::wire::result_from_json(result_json)
+        .map_err(|error| error.message().to_owned())
 }
 
 /// The display text of a typed cell value.
@@ -1670,32 +1631,44 @@ mod tests {
         assert_eq!(status_text(&german, &GridStatus::Empty, 0), "Keine Treffer");
     }
 
-    /// The result becomes an all-`Utf8` display schema and text values.
+    /// The result arrives **typed** (point 23): a decimal is a decimal, and a
+    /// null is a null — not both of them text.
     #[test]
-    fn result_json_parses_into_a_display_schema() {
+    fn a_result_keeps_the_types_of_its_columns() {
         let result = r#"{
             "total_count": 7,
             "row_count": 2,
             "columns": [
-                { "name": "customer", "values": ["Alpha", null] },
-                { "name": "amount", "values": ["10.00", "20.00"] }
+                { "name": "customer", "type": "utf8", "nullable": true, "values": ["Alpha", null] },
+                { "name": "amount", "type": { "decimal": { "precision": 12, "scale": 2 } },
+                  "nullable": true, "values": ["10.00", "20.00"] }
             ]
         }"#;
         let parsed = parse_result(result).expect("parses");
         assert_eq!(parsed.total_count, 7);
         assert_eq!(parsed.row_count(), 2);
-        assert_eq!(parsed.schema.len(), 2);
-        assert!(
+        assert_eq!(
             parsed
                 .schema
                 .fields()
                 .iter()
-                .all(|field| field.data_type == DataType::Utf8)
+                .map(|field| field.data_type)
+                .collect::<Vec<_>>(),
+            [
+                DataType::Utf8,
+                DataType::Decimal {
+                    precision: 12,
+                    scale: 2
+                }
+            ]
         );
         assert_eq!(
             parsed.columns[0],
-            [Value::Utf8("Alpha".to_owned()), Value::Utf8(String::new())]
+            [Value::Utf8("Alpha".to_owned()), Value::Null]
         );
+        // And the renderer still turns them into the same text as before.
+        assert_eq!(cell_text(&parsed.columns[1][0]), "10.00");
+        assert_eq!(cell_text(&parsed.columns[0][1]), "");
     }
 
     /// A malformed result is an error, not a panic.

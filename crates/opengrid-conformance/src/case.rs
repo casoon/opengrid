@@ -17,7 +17,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use opengrid_query::{Limits, Query, QueryError, ValidatedQuery};
-use opengrid_types::{DataType, Field, FieldName, Schema, Value, ValueError};
+use opengrid_types::{Schema, Value};
 
 use crate::Table;
 
@@ -128,14 +128,12 @@ impl std::error::Error for CaseError {
 
 /// Loads the dataset schema.
 pub fn load_schema(path: &Path) -> Result<Schema, CaseError> {
-    let file: SchemaFile =
-        serde_json::from_str(&read(path)?).map_err(|source| CaseError::Json {
-            path: path.to_path_buf(),
-            source,
-        })?;
-    file.into_schema().map_err(|message| CaseError::Schema {
+    // Since point 23 `Schema` reads itself: this file's shape *is* the canonical
+    // JSON form, and the hand-written reader that used to live here was the only
+    // thing keeping the two in step.
+    serde_json::from_str(&read(path)?).map_err(|source| CaseError::Json {
         path: path.to_path_buf(),
-        message,
+        source,
     })
 }
 
@@ -245,66 +243,4 @@ fn read(path: &Path) -> Result<String, CaseError> {
         path: path.to_path_buf(),
         source,
     })
-}
-
-#[derive(serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct SchemaFile {
-    fields: Vec<FieldRepr>,
-}
-
-#[derive(serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct FieldRepr {
-    name: String,
-    #[serde(rename = "type")]
-    data_type: TypeRepr,
-    #[serde(default)]
-    nullable: bool,
-}
-
-#[derive(serde::Deserialize)]
-#[serde(rename_all = "snake_case", deny_unknown_fields)]
-enum TypeRepr {
-    Bool,
-    Int64,
-    Float64,
-    Decimal { precision: u8, scale: u8 },
-    Utf8,
-    Date,
-    Timestamp,
-}
-
-impl SchemaFile {
-    fn into_schema(self) -> Result<Schema, String> {
-        let mut fields = Vec::with_capacity(self.fields.len());
-        for repr in self.fields {
-            let name = FieldName::new(&repr.name)
-                .map_err(|error| format!("field {:?}: {error}", repr.name))?;
-            let data_type = repr
-                .data_type
-                .to_data_type()
-                .map_err(|error| format!("field {:?}: {error}", repr.name))?;
-            fields.push(if repr.nullable {
-                Field::new(name, data_type)
-            } else {
-                Field::required(name, data_type)
-            });
-        }
-        Ok(Schema::new(fields))
-    }
-}
-
-impl TypeRepr {
-    fn to_data_type(&self) -> Result<DataType, ValueError> {
-        Ok(match self {
-            TypeRepr::Bool => DataType::Bool,
-            TypeRepr::Int64 => DataType::Int64,
-            TypeRepr::Float64 => DataType::Float64,
-            TypeRepr::Decimal { precision, scale } => DataType::decimal(*precision, *scale)?,
-            TypeRepr::Utf8 => DataType::Utf8,
-            TypeRepr::Date => DataType::Date,
-            TypeRepr::Timestamp => DataType::Timestamp,
-        })
-    }
 }

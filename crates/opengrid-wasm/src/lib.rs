@@ -35,7 +35,6 @@ use opengrid_arrow_engine::ingest::{CsvOptions, load_csv as read_csv};
 use opengrid_datasource::{DataSource, QueryResult};
 use opengrid_query::{Limits, Query};
 use opengrid_types::DataSourceId;
-use serde_json::{Value as Json, json};
 use wasm_bindgen::prelude::*;
 
 /// The engine the browser talks to: a set of in-memory sources.
@@ -84,7 +83,7 @@ impl Engine {
         let result = self
             .execute_result(query_json)
             .map_err(|message| JsError::new(&message))?;
-        Ok(result_json(&result).to_string())
+        Ok(result_json(&result))
     }
 
     /// The names of the registered sources, in unspecified order.
@@ -159,22 +158,10 @@ fn block_on<F: Future>(future: F) -> F::Output {
 
 /// The wire shape of a result (E6/E14), column-oriented.
 ///
-/// The schema travels as the column names and their order; the *types* are not
-/// part of this envelope, because the JSON form of a schema is still open
-/// (`plan/noch-zu-klaeren.md` §Serialisierungsform von `Schema`, point 23). Each
-/// value uses the wire notation of E13, so a decimal arrives as a string and
-/// `NaN` as `"NaN"` — the demo shows exactly what a later client would receive.
-fn result_json(result: &QueryResult) -> Json {
-    let columns: Vec<Json> = result
-        .schema
-        .fields()
-        .iter()
-        .zip(&result.columns)
-        .map(|(field, values)| json!({ "name": field.name.as_str(), "values": values }))
-        .collect();
-    json!({
-        "total_count": result.total_count,
-        "row_count": result.row_count(),
-        "columns": columns,
-    })
+/// Since point 23 the form lives in `opengrid_datasource::wire`, so the engine,
+/// the server and the browser write and read the same bytes — and a column now
+/// carries its **type** next to its values. Values keep the notation of E13: a
+/// decimal is a string, `NaN` is `"NaN"`.
+fn result_json(result: &QueryResult) -> String {
+    opengrid_datasource::wire::result_to_json(result)
 }
