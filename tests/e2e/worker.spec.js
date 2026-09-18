@@ -117,7 +117,7 @@ test.describe("worker provider", () => {
   test("filters through the worker", async ({ page }) => {
     await chooseOperator(page, 1, 2);
     await applyFilter(page, 1, "Beta");
-    await expect.poll(() => statusText(page)).toBe("2 Treffer");
+    await expect.poll(() => statusText(page)).toBe("2 matches");
     expect(await columnText(page, 1)).toEqual(["Beta", "Beta"]);
   });
 

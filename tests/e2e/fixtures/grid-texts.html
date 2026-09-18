@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>opengrid grid texts fixture</title>
+    <style>
+      opengrid-grid {
+        display: block;
+        height: 224px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid grid texts fixture</h1>
+      <opengrid-grid
+        label="Bestellungen"
+        datasource="orders"
+        columns="id,customer,amount,qty"
+        window-size="10"
+      ></opengrid-grid>
+    </main>
+    <script type="module">
+      // Point 48: the component's own texts. The page starts with the built-in
+      // English ones and can override any subset at runtime through
+      // `window.__setTexts`, which is what the spec drives.
+      //
+      // The document is `lang="en"` on purpose: a German override has to carry
+      // its own `lang`, or a screen reader would speak German words with an
+      // English voice (WCAG 3.1.2).
+      import { loadOpengrid, createLocalProvider } from "/packages/opengrid/loader.js";
+      import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+
+      async function start() {
+        const loader = await loadOpengrid();
+
+        await init();
+        const engine = new Engine();
+        const provider = createLocalProvider(engine);
+        const schema = await (
+          await fetch("/tests/e2e/fixtures/grid-orders.schema.json")
+        ).text();
+        const csv = await (
+          await fetch("/tests/e2e/fixtures/grid-orders.csv")
+        ).arrayBuffer();
+        await provider.load("orders", csv, schema);
+
+        const host = document.querySelector("opengrid-grid");
+        window.__setTexts = (texts) => loader.module.set_texts(host, texts);
+
+        // The documented order: texts first, then the provider. This one is
+        // built detached, so `set_texts` runs before the element ever connects.
+        window.__createLate = (texts) => {
+          const late = document.createElement("opengrid-grid");
+          late.id = "late";
+          late.setAttribute("label", "Late");
+          late.setAttribute("datasource", "orders");
+          late.setAttribute("columns", "id,customer");
+          late.setAttribute("window-size", "10");
+          loader.module.set_texts(late, texts);
+          document.querySelector("main").append(late);
+          loader.module.set_provider(late, provider);
+          return true;
+        };
+
+        loader.module.set_provider(host, provider);
+        return { fallback: loader.fallback };
+      }
+
+      window.__opengridReady = start();
+    </script>
+  </body>
+</html>

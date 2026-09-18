@@ -135,7 +135,7 @@ test("renders a labelled, keyboard-focusable filter row above the grid", async (
   expect(rendered.labels).toContain("customer operator");
   expect(rendered.clear).toBe("Clear");
   // The count comes from `total_count` (all five rows).
-  expect(rendered.status).toBe("5 Treffer");
+  expect(rendered.status).toBe("5 matches");
 
   // The controls are ordinary focusables reached with Tab, not part of the
   // roving-tabindex grid.
@@ -147,67 +147,67 @@ test("filters by every operator with the keyboard", async ({ page }) => {
   // contains(0)
   await chooseOperator(page, 1, 0);
   await applyFilter(page, 1, "l");
-  await expect.poll(() => statusText(page)).toBe("2 Treffer");
+  await expect.poll(() => statusText(page)).toBe("2 matches");
   expect(await columnText(page, 1)).toEqual(["Alpha", "Alpha"]);
 
   // starts_with(1)
   await chooseOperator(page, 1, 1);
   await applyFilter(page, 1, "A");
-  await expect.poll(() => statusText(page)).toBe("2 Treffer");
+  await expect.poll(() => statusText(page)).toBe("2 matches");
   expect(await columnText(page, 1)).toEqual(["Alpha", "Alpha"]);
 
   // eq(2)
   await chooseOperator(page, 1, 2);
   await applyFilter(page, 1, "Beta");
-  await expect.poll(() => statusText(page)).toBe("2 Treffer");
+  await expect.poll(() => statusText(page)).toBe("2 matches");
   expect(await columnText(page, 1)).toEqual(["Beta", "Beta"]);
 
   // ne(3)
   await chooseOperator(page, 1, 3);
   await applyFilter(page, 1, "Beta");
-  await expect.poll(() => statusText(page)).toBe("3 Treffer");
+  await expect.poll(() => statusText(page)).toBe("3 matches");
   expect(await columnText(page, 1)).toEqual(["Gamma", "Alpha", "Alpha"]);
 
   // gt(4)
   await chooseOperator(page, 1, 4);
   await applyFilter(page, 1, "Beta");
-  await expect.poll(() => statusText(page)).toBe("1 Treffer");
+  await expect.poll(() => statusText(page)).toBe("1 match");
   expect(await columnText(page, 1)).toEqual(["Gamma"]);
 
   // gte(5)
   await chooseOperator(page, 1, 5);
   await applyFilter(page, 1, "Beta");
-  await expect.poll(() => statusText(page)).toBe("3 Treffer");
+  await expect.poll(() => statusText(page)).toBe("3 matches");
   expect(await columnText(page, 1)).toEqual(["Gamma", "Beta", "Beta"]);
 
   // lt(6)
   await chooseOperator(page, 1, 6);
   await applyFilter(page, 1, "Beta");
-  await expect.poll(() => statusText(page)).toBe("2 Treffer");
+  await expect.poll(() => statusText(page)).toBe("2 matches");
   expect(await columnText(page, 1)).toEqual(["Alpha", "Alpha"]);
 
   // lte(7)
   await chooseOperator(page, 1, 7);
   await applyFilter(page, 1, "Beta");
-  await expect.poll(() => statusText(page)).toBe("4 Treffer");
+  await expect.poll(() => statusText(page)).toBe("4 matches");
   expect(await columnText(page, 1)).toEqual(["Alpha", "Beta", "Alpha", "Beta"]);
 });
 
 test("the value input keeps the focus after Enter", async ({ page }) => {
   await chooseOperator(page, 1, 0);
   await applyFilter(page, 1, "Al");
-  await expect.poll(() => statusText(page)).toBe("2 Treffer");
+  await expect.poll(() => statusText(page)).toBe("2 matches");
   expect(await innerActive(page)).toMatchObject({ tag: "input", col: "1" });
 });
 
 test("the Clear button resets the filter and the count", async ({ page }) => {
   await chooseOperator(page, 1, 2);
   await applyFilter(page, 1, "Beta");
-  await expect.poll(() => statusText(page)).toBe("2 Treffer");
+  await expect.poll(() => statusText(page)).toBe("2 matches");
 
   await focusIn(page, '[part="filter-clear"]');
   await page.keyboard.press("Enter");
-  await expect.poll(() => statusText(page)).toBe("5 Treffer");
+  await expect.poll(() => statusText(page)).toBe("5 matches");
   expect(await columnText(page, 1)).toEqual([
     "Gamma",
     "Alpha",
@@ -290,7 +290,7 @@ test("Shift+Enter from a header adds and removes an additional sort key", async 
 test("has no axe violations with the filter row rendered", async ({ page }) => {
   await chooseOperator(page, 1, 0);
   await applyFilter(page, 1, "Al");
-  await expect.poll(() => statusText(page)).toBe("2 Treffer");
+  await expect.poll(() => statusText(page)).toBe("2 matches");
   const { violations } = await new AxeBuilder({ page }).analyze();
   expect(violations).toEqual([]);
 });

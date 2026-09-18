@@ -12,9 +12,14 @@
 //! unit-tested; the DOM glue and the registration are `wasm32`-only, so
 //! `cargo test` stays green without a browser and `just wasm-test` is the gate
 //! that runs it (plan/spezifikation/11-crates.md §Portabilität).
+//!
+//! Point 48 gives both elements one language: everything they write themselves
+//! is English and lives in [`texts`], and a page overrides any of it — with the
+//! language it is in — through the exported `set_texts`.
 
 pub mod grid;
 pub mod table;
+pub mod texts;
 
 #[cfg(target_arch = "wasm32")]
 mod element;

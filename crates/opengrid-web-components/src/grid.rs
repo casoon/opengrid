@@ -147,6 +147,8 @@ use opengrid_types::{DataType, Field, FieldName, Schema, Value};
 use opengrid_web_core::element::{LABEL_ATTRIBUTE, mirror_label};
 use opengrid_web_core::patch::{NodeAllocator, NodeId, Patch, PatchBuffer};
 
+use crate::texts::GridTexts;
+
 /// The custom element name (E1).
 pub const GRID_TAG: &str = "opengrid-grid";
 
@@ -487,15 +489,16 @@ pub fn filter_expr(entries: &[FilterEntry]) -> Option<FilterExpr> {
 
 /// The text of the status line for a status (plan point 41).
 ///
-/// One sentence per state, in the German wording point 18 started with ("N
-/// Treffer"). It is both what the user reads and what the `aria-live` region
-/// announces, so it names a cause instead of a code: the [`GridStatus::Error`]
-/// message is already the user-facing text ([`error_text`] builds it).
-pub fn status_text(status: &GridStatus, total_count: u64) -> String {
+/// One sentence per state, from the component's [`GridTexts`] (point 48), so the
+/// page decides the wording and the language. It is both what the user reads and
+/// what the `aria-live` region announces, so it names a cause instead of a code:
+/// the [`GridStatus::Error`] message is already the user-facing sentence
+/// ([`GridTexts::error`] builds it).
+pub fn status_text(texts: &GridTexts, status: &GridStatus, total_count: u64) -> String {
     match status {
-        GridStatus::Loading => "Wird geladen …".to_owned(),
-        GridStatus::Ready => format!("{total_count} Treffer"),
-        GridStatus::Empty => "Keine Treffer".to_owned(),
+        GridStatus::Loading => texts.loading.clone(),
+        GridStatus::Ready => texts.matches(total_count),
+        GridStatus::Empty => texts.empty.clone(),
         GridStatus::Error(message) => message.clone(),
     }
 }
@@ -507,27 +510,6 @@ pub fn status_state(status: &GridStatus) -> &'static str {
         GridStatus::Ready => "ready",
         GridStatus::Empty => "empty",
         GridStatus::Error(_) => "error",
-    }
-}
-
-/// Turns a raw failure into the sentence the status line shows.
-///
-/// The causes that reach the element are diagnostic strings — a rejected
-/// provider promise (the engine's [`DataSourceError`] message travels this way),
-/// a malformed result, a provider without an `execute`. None of them is a
-/// sentence, so the grid puts them behind one that says what failed; the cause
-/// stays appended because it is the only thing that tells the developer *what*
-/// broke. An empty or whitespace-only cause is dropped rather than rendered as a
-/// dangling colon.
-///
-/// [`DataSourceError`]: opengrid_datasource::DataSourceError
-pub fn error_text(cause: &str) -> String {
-    const PREFIX: &str = "Die Daten konnten nicht geladen werden";
-    let cause = cause.trim();
-    if cause.is_empty() {
-        format!("{PREFIX}.")
-    } else {
-        format!("{PREFIX}: {cause}")
     }
 }
 
@@ -854,6 +836,7 @@ pub fn build_grid(
     label: Option<&str>,
     schema: &Schema,
     pool: usize,
+    texts: &GridTexts,
 ) -> GridNodes {
     let fields = schema.fields();
     let ncols = fields.len();
@@ -916,9 +899,8 @@ pub fn build_grid(
         name: "part".to_owned(),
         value: "layout".to_owned(),
     });
-
-    let filter = build_filter(buffer, nodes, layout, fields);
-    let status = build_status(buffer, nodes, layout);
+    let filter = build_filter(buffer, nodes, layout, fields, texts);
+    let status = build_status(buffer, nodes, layout, texts);
 
     let viewport = element(buffer, nodes, Some(layout), "div");
     buffer.push(Patch::SetAttribute {
@@ -1061,7 +1043,12 @@ pub fn build_grid(
 /// already implies `aria-live="polite"`; the attribute is written out because
 /// the status is the contract of this point, not an implementation detail.
 /// `data-state` carries the state for `::part(status)` styling.
-fn build_status(buffer: &mut PatchBuffer, nodes: &mut NodeAllocator, parent: NodeId) -> NodeId {
+fn build_status(
+    buffer: &mut PatchBuffer,
+    nodes: &mut NodeAllocator,
+    parent: NodeId,
+    texts: &GridTexts,
+) -> NodeId {
     let status = element(buffer, nodes, Some(parent), "p");
     for (name, value) in [
         ("part", "status"),
@@ -1075,9 +1062,10 @@ fn build_status(buffer: &mut PatchBuffer, nodes: &mut NodeAllocator, parent: Nod
             value: value.to_owned(),
         });
     }
+    set_lang(buffer, status, texts);
     buffer.push(Patch::SetText {
         node: status,
-        text: status_text(&GridStatus::Loading, 0),
+        text: status_text(texts, &GridStatus::Loading, 0),
     });
     status
 }
@@ -1094,6 +1082,7 @@ fn build_filter(
     nodes: &mut NodeAllocator,
     parent: NodeId,
     fields: &[Field],
+    texts: &GridTexts,
 ) -> FilterNodes {
     let container = element(buffer, nodes, Some(parent), "div");
     buffer.push(Patch::SetAttribute {
@@ -1114,8 +1103,9 @@ fn build_filter(
     buffer.push(Patch::SetAttribute {
         node: container,
         name: "aria-label".to_owned(),
-        value: "Filter".to_owned(),
+        value: texts.filter_group.clone(),
     });
+    set_lang(buffer, container, texts);
 
     let mut columns = Vec::with_capacity(fields.len());
     for (col, field) in fields.iter().enumerate() {
@@ -1140,7 +1130,7 @@ fn build_filter(
         buffer.push(Patch::SetAttribute {
             node: select,
             name: "aria-label".to_owned(),
-            value: format!("{} operator", field.name),
+            value: texts.operator_label(field.name.as_str()),
         });
         for (option_index, op) in FILTER_OPERATORS.iter().enumerate() {
             let option = element(buffer, nodes, Some(select), "option");
@@ -1156,9 +1146,11 @@ fn build_filter(
                     value: String::new(),
                 });
             }
+            // The `value` above is the wire token the query needs; what the
+            // user reads is a word (point 48).
             buffer.push(Patch::SetText {
                 node: option,
-                text: (*op).to_owned(),
+                text: texts.operator(option_index, op),
             });
         }
 
@@ -1181,7 +1173,7 @@ fn build_filter(
         buffer.push(Patch::SetAttribute {
             node: input,
             name: "aria-label".to_owned(),
-            value: format!("{} value", field.name),
+            value: texts.value_label(field.name.as_str()),
         });
         set_style(buffer, input, "width: 6rem;");
         columns.push(FilterColumnNodes { select, input });
@@ -1205,7 +1197,7 @@ fn build_filter(
     });
     buffer.push(Patch::SetText {
         node: clear,
-        text: "Clear".to_owned(),
+        text: texts.clear.clone(),
     });
 
     FilterNodes {
@@ -1237,6 +1229,7 @@ pub fn patch_grid(
     sorts: &[(String, &str)],
     pinned_slot: Option<usize>,
     row_height: u64,
+    texts: &GridTexts,
 ) {
     let fields = state.schema().fields();
     let total_count = state.total_count();
@@ -1261,7 +1254,7 @@ pub fn patch_grid(
     });
     buffer.push(Patch::SetText {
         node: nodes.status,
-        text: status_text(state.status(), total_count),
+        text: status_text(texts, state.status(), total_count),
     });
 
     for (col, header) in nodes.header_cells.iter().enumerate() {
@@ -1371,6 +1364,24 @@ fn aria_sort(direction: &str) -> &'static str {
 /// The `tabindex` value of a cell: `0` for the active one, `-1` otherwise.
 fn tabindex_for(is_active: bool) -> &'static str {
     if is_active { "0" } else { "-1" }
+}
+
+/// Marks `node` as being written in the texts' language (point 48).
+///
+/// Only the elements that carry the component's **own** texts get it — the
+/// filter row and the status line. The cells and the column headers are the
+/// page's data, in the page's language; declaring them English because the
+/// built-in texts are English would be the very WCAG 3.1.2 failure this is meant
+/// to remove. An empty `lang` leaves the document's language everywhere.
+fn set_lang(buffer: &mut PatchBuffer, node: NodeId, texts: &GridTexts) {
+    if texts.lang.trim().is_empty() {
+        return;
+    }
+    buffer.push(Patch::SetAttribute {
+        node,
+        name: "lang".to_owned(),
+        value: texts.lang.clone(),
+    });
 }
 
 /// Creates an element and appends it to `parent`, in patch order.
@@ -1564,26 +1575,32 @@ mod tests {
         assert!(filter_expr(&one).is_some());
     }
 
-    /// Every status has its own sentence; only `Ready` shows the count.
+    /// Every status has its own sentence; only `Ready` shows the count. The
+    /// wording comes from the texts, so the same state reads differently once a
+    /// page overrides them (point 48).
     #[test]
     fn the_status_line_has_one_sentence_per_state() {
-        assert_eq!(status_text(&GridStatus::Ready, 0), "0 Treffer");
-        assert_eq!(status_text(&GridStatus::Ready, 1_234), "1234 Treffer");
-        assert_eq!(status_text(&GridStatus::Loading, 7), "Wird geladen …");
-        assert_eq!(status_text(&GridStatus::Empty, 0), "Keine Treffer");
-
-        let failed = GridStatus::Error(error_text("source \"orders\" is unknown"));
+        let texts = GridTexts::default();
+        assert_eq!(status_text(&texts, &GridStatus::Ready, 1), "1 match");
         assert_eq!(
-            status_text(&failed, 5),
-            "Die Daten konnten nicht geladen werden: source \"orders\" is unknown"
+            status_text(&texts, &GridStatus::Ready, 1_234),
+            "1234 matches"
+        );
+        assert_eq!(status_text(&texts, &GridStatus::Loading, 7), "Loading …");
+        assert_eq!(status_text(&texts, &GridStatus::Empty, 0), "No matches");
+
+        let failed = GridStatus::Error(texts.error("unknown source \"orders\""));
+        assert_eq!(
+            status_text(&texts, &failed, 5),
+            "The data could not be loaded: unknown source \"orders\""
         );
         assert_eq!(status_state(&failed), "error");
-    }
 
-    /// A cause that says nothing must not render as a dangling colon.
-    #[test]
-    fn an_empty_cause_still_reads_as_a_sentence() {
-        assert_eq!(error_text("   "), "Die Daten konnten nicht geladen werden.");
+        let german = GridTexts {
+            empty: "Keine Treffer".to_owned(),
+            ..GridTexts::default()
+        };
+        assert_eq!(status_text(&german, &GridStatus::Empty, 0), "Keine Treffer");
     }
 
     /// The result becomes an all-`Utf8` display schema and text values.
@@ -1627,7 +1644,14 @@ mod tests {
         let schema = initial_schema(&["customer".to_owned(), "qty".to_owned()]);
         let mut nodes = NodeAllocator::new();
         let mut buffer = PatchBuffer::new();
-        let view = build_grid(&mut buffer, &mut nodes, Some("Bestellungen"), &schema, 3);
+        let view = build_grid(
+            &mut buffer,
+            &mut nodes,
+            Some("Bestellungen"),
+            &schema,
+            3,
+            &GridTexts::default(),
+        );
 
         assert_eq!(view.pool(), 3);
         assert_eq!(view.header_cells.len(), 2);
@@ -1685,7 +1709,14 @@ mod tests {
         let schema = initial_schema(&["customer".to_owned(), "qty".to_owned()]);
         let mut nodes = NodeAllocator::new();
         let mut buffer = PatchBuffer::new();
-        let view = build_grid(&mut buffer, &mut nodes, Some("Bestellungen"), &schema, 4);
+        let view = build_grid(
+            &mut buffer,
+            &mut nodes,
+            Some("Bestellungen"),
+            &schema,
+            4,
+            &GridTexts::default(),
+        );
         let state = state_with(&["Gamma", "Alpha"], 5, 0, 4);
         let slots = assign_pool(&[None; 4], None, &window_rows(0, 5, 4), 4);
 
@@ -1699,6 +1730,7 @@ mod tests {
             &[],
             None,
             DEFAULT_ROW_HEIGHT,
+            &GridTexts::default(),
         );
 
         let attributes = |name: &str| -> Vec<String> {
@@ -1735,7 +1767,14 @@ mod tests {
         let schema = initial_schema(&["customer".to_owned(), "qty".to_owned()]);
         let mut nodes = NodeAllocator::new();
         let mut buffer = PatchBuffer::new();
-        let view = build_grid(&mut buffer, &mut nodes, None, &schema, 1);
+        let view = build_grid(
+            &mut buffer,
+            &mut nodes,
+            None,
+            &schema,
+            1,
+            &GridTexts::default(),
+        );
         let state = state_with(&["Gamma"], 1, 0, 1);
         let slots = assign_pool(&[None], None, &window_rows(0, 1, 1), 1);
 
@@ -1749,6 +1788,7 @@ mod tests {
             &[("qty".to_owned(), "asc")],
             None,
             DEFAULT_ROW_HEIGHT,
+            &GridTexts::default(),
         );
         let sorts: Vec<&str> = buffer
             .patches()
@@ -1769,7 +1809,14 @@ mod tests {
         let schema = initial_schema(&["customer".to_owned(), "qty".to_owned()]);
         let mut nodes = NodeAllocator::new();
         let mut buffer = PatchBuffer::new();
-        let view = build_grid(&mut buffer, &mut nodes, None, &schema, 1);
+        let view = build_grid(
+            &mut buffer,
+            &mut nodes,
+            None,
+            &schema,
+            1,
+            &GridTexts::default(),
+        );
         let state = state_with(&["Gamma"], 1, 0, 1);
         let slots = assign_pool(&[None], None, &window_rows(0, 1, 1), 1);
 
@@ -1783,6 +1830,7 @@ mod tests {
             &[("customer".to_owned(), "asc"), ("qty".to_owned(), "desc")],
             None,
             DEFAULT_ROW_HEIGHT,
+            &GridTexts::default(),
         );
 
         let aria: Vec<&str> = buffer
@@ -1812,7 +1860,49 @@ mod tests {
         };
         assert_eq!(text_of(view.header_cells[0].index), "1");
         assert_eq!(text_of(view.header_cells[1].index), "2");
-        assert_eq!(text_of(view.status), "1 Treffer");
+        assert_eq!(text_of(view.status), "1 match");
+    }
+
+    /// Only the component's own texts claim a language — the data must keep the
+    /// page's (point 48).
+    #[test]
+    fn only_the_texts_carry_a_language() {
+        let schema = initial_schema(&["customer".to_owned()]);
+        let mut nodes = NodeAllocator::new();
+        let mut buffer = PatchBuffer::new();
+        let view = build_grid(
+            &mut buffer,
+            &mut nodes,
+            None,
+            &schema,
+            2,
+            &GridTexts::default(),
+        );
+
+        let tagged: Vec<NodeId> = buffer
+            .patches()
+            .iter()
+            .filter_map(|patch| match patch {
+                Patch::SetAttribute { node, name, .. } if name == "lang" => Some(*node),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(tagged, [view.filter.container, view.status]);
+
+        // No language at all when the texts do not claim one.
+        let mut nodes = NodeAllocator::new();
+        let mut buffer = PatchBuffer::new();
+        let silent = GridTexts {
+            lang: String::new(),
+            ..GridTexts::default()
+        };
+        build_grid(&mut buffer, &mut nodes, None, &schema, 2, &silent);
+        assert!(
+            !buffer
+                .patches()
+                .iter()
+                .any(|patch| matches!(patch, Patch::SetAttribute { name, .. } if name == "lang"))
+        );
     }
 
     /// The exported parts are the theming contract (point 20): a page styles the
@@ -1822,7 +1912,14 @@ mod tests {
         let schema = initial_schema(&["customer".to_owned(), "qty".to_owned()]);
         let mut nodes = NodeAllocator::new();
         let mut buffer = PatchBuffer::new();
-        build_grid(&mut buffer, &mut nodes, None, &schema, 1);
+        build_grid(
+            &mut buffer,
+            &mut nodes,
+            None,
+            &schema,
+            1,
+            &GridTexts::default(),
+        );
 
         let mut parts: Vec<&str> = buffer
             .patches()
@@ -1859,7 +1956,14 @@ mod tests {
         let schema = initial_schema(&["customer".to_owned()]);
         let mut nodes = NodeAllocator::new();
         let mut buffer = PatchBuffer::new();
-        build_grid(&mut buffer, &mut nodes, None, &schema, 1);
+        build_grid(
+            &mut buffer,
+            &mut nodes,
+            None,
+            &schema,
+            1,
+            &GridTexts::default(),
+        );
 
         let styles = buffer
             .patches()
@@ -1900,7 +2004,14 @@ mod tests {
         let schema = initial_schema(&["customer".to_owned()]);
         let mut nodes = NodeAllocator::new();
         let mut buffer = PatchBuffer::new();
-        build_grid(&mut buffer, &mut nodes, None, &schema, 1);
+        build_grid(
+            &mut buffer,
+            &mut nodes,
+            None,
+            &schema,
+            1,
+            &GridTexts::default(),
+        );
 
         let styles = buffer
             .patches()
@@ -1929,7 +2040,14 @@ mod tests {
         let schema = initial_schema(&["customer".to_owned(), "qty".to_owned()]);
         let mut nodes = NodeAllocator::new();
         let mut buffer = PatchBuffer::new();
-        let view = build_grid(&mut buffer, &mut nodes, None, &schema, 1);
+        let view = build_grid(
+            &mut buffer,
+            &mut nodes,
+            None,
+            &schema,
+            1,
+            &GridTexts::default(),
+        );
         let state = state_with(&["Gamma"], 1, 0, 1);
         let slots = assign_pool(&[None], None, &window_rows(0, 1, 1), 1);
 
@@ -1943,6 +2061,7 @@ mod tests {
             &[("customer".to_owned(), "asc")],
             None,
             DEFAULT_ROW_HEIGHT,
+            &GridTexts::default(),
         );
         let indexes: Vec<&str> = buffer
             .patches()
@@ -1963,7 +2082,14 @@ mod tests {
         let schema = initial_schema(&["customer".to_owned()]);
         let mut nodes = NodeAllocator::new();
         let mut buffer = PatchBuffer::new();
-        let view = build_grid(&mut buffer, &mut nodes, None, &schema, 2);
+        let view = build_grid(
+            &mut buffer,
+            &mut nodes,
+            None,
+            &schema,
+            2,
+            &GridTexts::default(),
+        );
         let state = state_with(&["Gamma", "Alpha"], 5, 0, 2);
         let slots = assign_pool(&[None, None], None, &window_rows(0, 5, 2), 2);
 
@@ -1977,6 +2103,7 @@ mod tests {
             &[],
             None,
             DEFAULT_ROW_HEIGHT,
+            &GridTexts::default(),
         );
         assert!(buffer.patches().iter().any(|patch| matches!(
             patch,
@@ -1991,7 +2118,14 @@ mod tests {
         let schema = initial_schema(&["customer".to_owned()]);
         let mut nodes = NodeAllocator::new();
         let mut buffer = PatchBuffer::new();
-        let view = build_grid(&mut buffer, &mut nodes, None, &schema, 3);
+        let view = build_grid(
+            &mut buffer,
+            &mut nodes,
+            None,
+            &schema,
+            3,
+            &GridTexts::default(),
+        );
         let state = state_with(&["Gamma", "Alpha"], 5, 0, 3);
         let slots = assign_pool(&[None, None, None], None, &window_rows(0, 5, 3), 3);
 
@@ -2005,6 +2139,7 @@ mod tests {
             &[],
             None,
             48,
+            &GridTexts::default(),
         );
 
         // The sizer is `total * 48`, not `total * 32`.
@@ -2027,7 +2162,14 @@ mod tests {
         let schema = initial_schema(&["customer".to_owned()]);
         let mut nodes = NodeAllocator::new();
         let mut buffer = PatchBuffer::new();
-        let view = build_grid(&mut buffer, &mut nodes, None, &schema, 4);
+        let view = build_grid(
+            &mut buffer,
+            &mut nodes,
+            None,
+            &schema,
+            4,
+            &GridTexts::default(),
+        );
         // Slot 3 holds the focused row 6; the window scrolled to rows 20..24.
         let old = [Some(20), Some(21), Some(22), Some(6)];
         let focus = Some(6);
@@ -2045,6 +2187,7 @@ mod tests {
             &[],
             pinned,
             DEFAULT_ROW_HEIGHT,
+            &GridTexts::default(),
         );
 
         let pinned_row = view.rows[3].row;

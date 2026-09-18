@@ -7,7 +7,7 @@ import AxeBuilder from "@axe-core/playwright";
 // a slow or a failing mode (`window.__mode`), so all four states of the status
 // line are reachable:
 //
-//   ready   the result count, "5 Treffer"
+//   ready   the result count, "5 matches"
 //   loading while a query runs, released with `window.__release()`
 //   empty   a filter that matches nothing
 //   error   the engine answering for a source that was never loaded
@@ -84,7 +84,7 @@ test("the status line is one visible, polite live region outside the grid", asyn
 }) => {
   const line = await status(page);
   expect(line).toMatchObject({
-    text: "5 Treffer",
+    text: "5 matches",
     role: "status",
     live: "polite",
     state: "ready",
@@ -101,20 +101,20 @@ test("a running query announces that the grid is loading", async ({ page }) => {
   await applyFilter(page, "Alpha");
 
   // The query is held by the fixture, so the loading state is observable.
-  await expect.poll(() => statusText(page)).toBe("Wird geladen …");
+  await expect.poll(() => statusText(page)).toBe("Loading …");
   expect(await status(page)).toMatchObject({ state: "loading", visible: true });
 
   await page.evaluate(() => {
     window.__mode = "ok";
     window.__release();
   });
-  await expect.poll(() => statusText(page)).toBe("2 Treffer");
+  await expect.poll(() => statusText(page)).toBe("2 matches");
 });
 
 test("a result without rows announces that nothing matched", async ({ page }) => {
   await applyFilter(page, "Delta");
 
-  await expect.poll(() => statusText(page)).toBe("Keine Treffer");
+  await expect.poll(() => statusText(page)).toBe("No matches");
   expect(await status(page)).toMatchObject({ state: "empty", visible: true });
   // The grid stays, with no data rows and only the header counted.
   expect(await gridFacts(page)).toMatchObject({ present: true, rows: 0, rowcount: "1" });
@@ -128,7 +128,7 @@ test("a failed query names its cause and leaves the grid standing", async ({ pag
 
   await expect
     .poll(() => statusText(page))
-    .toBe('Die Daten konnten nicht geladen werden: unknown source "missing"');
+    .toBe('The data could not be loaded: unknown source "missing"');
   const line = await status(page);
   expect(line).toMatchObject({ state: "error", role: "status", visible: true, regions: 1 });
 
@@ -143,7 +143,7 @@ test("a failed query names its cause and leaves the grid standing", async ({ pag
     window.__mode = "ok";
   });
   await applyFilter(page, "Alpha");
-  await expect.poll(() => statusText(page)).toBe("2 Treffer");
+  await expect.poll(() => statusText(page)).toBe("2 matches");
 });
 
 test("keyboard navigation still works after a failed query", async ({ page }) => {

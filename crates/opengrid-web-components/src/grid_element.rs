@@ -35,8 +35,9 @@
 //!   the roving tabindex and keyboard matrix are untouched.
 //! * **Status** — the one `role="status"` line below the filter row carries
 //!   every state of a query (point 41): "loading" while one runs, the result
-//!   count, "Keine Treffer" for an empty result and a readable sentence when it
-//!   failed. A failure no longer replaces the grid with an error paragraph — the
+//!   count, "no matches" for an empty result and a readable sentence when it
+//!   failed. The wording and its language come from the component's texts
+//!   (point 48). A failure no longer replaces the grid with an error paragraph — the
 //!   table, its focus and the last loaded rows stay and only the status line
 //!   changes, so a screen reader user is not dropped out of the grid they were
 //!   navigating.
@@ -82,6 +83,7 @@ use crate::grid::{
     self, ActiveCell, COLUMNS_ATTRIBUTE, DATASOURCE_ATTRIBUTE, FilterEntry, GRID_TAG, GridKey,
     GridNodes, ROW_HEIGHT_PROPERTY, WINDOW_SIZE_ATTRIBUTE,
 };
+use crate::texts::texts;
 
 /// Registers `<opengrid-grid>`; safe to call more than once.
 pub(crate) fn define_grid() -> Result<(), JsValue> {
@@ -263,6 +265,69 @@ fn on_connected(host: HtmlElement) {
 /// host (the runtime is a thread-local like the provider, point 13/14).
 fn on_disconnected(_host: HtmlElement) {}
 
+/// Rebuilds the grid after its texts changed (point 48).
+///
+/// The labels of the filter row and the operator names sit in the one-time
+/// skeleton, so new texts mean a new skeleton — and a rebuild that only kept the
+/// *model* would leave the user somewhere else entirely: the new filter row
+/// would be empty while the query still filters, the new viewport would sit at
+/// the top while the window is at row 500, and the focused cell would be gone
+/// from the DOM. So everything the user can see is carried across: the filter
+/// controls are read out of the old row and written into the new one, the scroll
+/// offset is restored, and the active cell takes the focus back.
+pub(crate) fn retext(host: &HtmlElement) {
+    let Some(root) = host.shadow_root() else {
+        return;
+    };
+    let Some(runtime) = runtime(host) else {
+        return;
+    };
+    let columns = grid::parse_columns(host.get_attribute(COLUMNS_ATTRIBUTE).as_deref());
+    let entries = read_filter_entries(&root, &columns);
+    let scroll_top = runtime
+        .borrow()
+        .viewport
+        .as_ref()
+        .map(|viewport| viewport.scroll_top());
+
+    clear_root(&root);
+    {
+        let mut runtime = runtime.borrow_mut();
+        runtime.view = None;
+        runtime.dom = None;
+        runtime.viewport = None;
+    }
+    ensure_skeleton(host);
+    if let Some(root) = host.shadow_root() {
+        write_filter_entries(&root, &entries);
+    }
+    if let (Some(top), Some(viewport)) = (scroll_top, runtime.borrow().viewport.clone()) {
+        viewport.set_scroll_top(top);
+    }
+    render(host, true);
+    run_query(host, QueryKind::Data, true);
+}
+
+/// Writes `entries` back into the filter row after a rebuild.
+///
+/// The counterpart of [`read_filter_entries`]: the state keeps the filter as an
+/// expression, but the controls are what the user reads, and an empty row above
+/// filtered data is a lie.
+fn write_filter_entries(root: &ShadowRoot, entries: &[FilterEntry]) {
+    for (col, entry) in entries.iter().enumerate() {
+        if let Ok(Some(node)) = root.query_selector(&format!("select[data-col=\"{col}\"]"))
+            && let Ok(select) = node.dyn_into::<HtmlSelectElement>()
+        {
+            select.set_value(entry.op.as_str());
+        }
+        if let Ok(Some(node)) = root.query_selector(&format!("input[data-col=\"{col}\"]"))
+            && let Ok(input) = node.dyn_into::<HtmlInputElement>()
+        {
+            input.set_value(&entry.value);
+        }
+    }
+}
+
 /// Re-mirrors `label`, resets and re-queries on a data attribute change.
 fn on_attribute_changed(
     host: HtmlElement,
@@ -311,7 +376,14 @@ fn ensure_skeleton(host: &HtmlElement) {
 
     let mut nodes = NodeAllocator::new();
     let mut buffer = PatchBuffer::new();
-    let view = grid::build_grid(&mut buffer, &mut nodes, label.as_deref(), &schema, pool);
+    let view = grid::build_grid(
+        &mut buffer,
+        &mut nodes,
+        label.as_deref(),
+        &schema,
+        pool,
+        &texts(host),
+    );
     let root_node: Node = root.clone().unchecked_into();
     let mut dom = Dom::new(WebRenderer::from_document(document), root_node);
     dom.apply_buffer(&buffer);
@@ -372,6 +444,7 @@ fn render(host: &HtmlElement, focus_after: bool) {
             &sorts,
             pinned_slot,
             borrowed.row_height,
+            &texts(host),
         );
         if let Some(dom) = borrowed.dom.as_mut() {
             dom.apply_buffer(&buffer);
@@ -489,7 +562,7 @@ fn settle(
             Err(cause) => {
                 runtime
                     .state
-                    .set_status(GridStatus::Error(grid::error_text(&cause)));
+                    .set_status(GridStatus::Error(texts(host).error(&cause)));
             }
         }
     }

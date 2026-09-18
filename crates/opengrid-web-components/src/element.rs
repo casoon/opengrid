@@ -35,6 +35,7 @@ use opengrid_web_core::renderer::{Dom, WebRenderer};
 use crate::table::{
     self, COLUMNS_ATTRIBUTE, DATASOURCE_ATTRIBUTE, SortDirection, TABLE_TAG, TableModel,
 };
+use crate::texts;
 
 /// Registers `<opengrid-table>` and `<opengrid-grid>`; safe to call more than
 /// once.
@@ -66,6 +67,36 @@ pub fn set_provider(host: &HtmlElement, provider: JsValue) {
     attach_provider(host, provider);
     if host.tag_name().eq_ignore_ascii_case("opengrid-grid") {
         crate::grid_element::start(host);
+    } else {
+        run_query(host, None, None);
+    }
+}
+
+/// Overrides the texts a component writes itself (point 48).
+///
+/// `texts` is a plain JS object with any subset of the keys `lang`, `loading`,
+/// `matchesOne`, `matchesOther`, `empty`, `error`, `errorUnknown`,
+/// `filterGroup`, `operatorLabel`, `valueLabel`, `clear` and `operators`; every
+/// key left out keeps its English default. `{count}`, `{column}` and `{cause}`
+/// are the placeholders. A `lang` is written onto the elements that carry these
+/// texts — the grid's filter row and status line, the table's error paragraph —
+/// so they are announced in the language they are written in. Never onto the
+/// data: the cells are the page's, in the page's language.
+///
+/// Exported as `set_texts` beside `set_provider`, and like it, it takes effect
+/// immediately: the grid rebuilds, because its labels are part of the one-time
+/// skeleton (the filter row, the scroll offset and the focus are carried
+/// across). Call it **before** wiring the provider and the component renders the
+/// right words from its first paint.
+#[wasm_bindgen(js_name = set_texts)]
+pub fn set_texts(host: &HtmlElement, values: JsValue) {
+    texts::store(host, Rc::new(texts::from_js(&values)));
+    if host.shadow_root().is_none() {
+        // Not connected yet — `connectedCallback` will read the stored texts.
+        return;
+    }
+    if host.tag_name().eq_ignore_ascii_case("opengrid-grid") {
+        crate::grid_element::retext(host);
     } else {
         run_query(host, None, None);
     }
@@ -210,8 +241,9 @@ fn render_data(
 /// Table mode has no status area: it renders a result, not an interactive grid,
 /// so a failure replaces it with an alert. The grid takes the other path — its
 /// status line (point 41) reports the failure without destroying the table the
-/// user is navigating.
-fn render_error(host: &HtmlElement, message: &str) {
+/// user is navigating. `cause` is the untranslated diagnosis; the sentence
+/// around it comes from the component's texts (point 48).
+fn render_error(host: &HtmlElement, cause: &str) {
     let Some(root) = host.shadow_root() else {
         return;
     };
@@ -220,9 +252,10 @@ fn render_error(host: &HtmlElement, message: &str) {
     };
 
     clear_root(&root);
+    let texts = texts::texts(host);
     let mut nodes = NodeAllocator::new();
     let mut buffer = PatchBuffer::new();
-    table::build_error(&mut buffer, &mut nodes, message);
+    table::build_error(&mut buffer, &mut nodes, &texts.error(cause), &texts.lang);
     apply(&root, document, &buffer);
 }
 

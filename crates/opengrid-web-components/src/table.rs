@@ -163,15 +163,25 @@ fn value_text(value: &Value) -> String {
 
 /// Appends a text-only `<p role="alert">` error to `buffer`.
 ///
-/// Point 41 formalises loading and error states; this is the minimal visible
-/// failure the element shows in the meantime.
-pub fn build_error(buffer: &mut PatchBuffer, nodes: &mut NodeAllocator, message: &str) {
+/// Table mode has no status area — it renders a result, not an interactive grid
+/// — so a failure replaces it with this alert. `message` is the finished
+/// sentence from the component's texts (point 48) and `lang` its language, which
+/// is written onto the paragraph so it is announced in that language; an empty
+/// `lang` leaves the document's.
+pub fn build_error(buffer: &mut PatchBuffer, nodes: &mut NodeAllocator, message: &str, lang: &str) {
     let paragraph = element(buffer, nodes, Some(NodeId::ROOT), "p");
     buffer.push(Patch::SetAttribute {
         node: paragraph,
         name: "role".to_owned(),
         value: "alert".to_owned(),
     });
+    if !lang.trim().is_empty() {
+        buffer.push(Patch::SetAttribute {
+            node: paragraph,
+            name: "lang".to_owned(),
+            value: lang.to_owned(),
+        });
+    }
     buffer.push(Patch::SetText {
         node: paragraph,
         text: message.to_owned(),
@@ -289,6 +299,24 @@ fn element(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The alert carries the language of the sentence, and only when there is
+    /// one to carry (point 48).
+    #[test]
+    fn the_error_declares_the_language_of_its_sentence() {
+        let lang_of = |lang: &str| -> Option<String> {
+            let mut nodes = NodeAllocator::new();
+            let mut buffer = PatchBuffer::new();
+            build_error(&mut buffer, &mut nodes, "Die Daten fehlen.", lang);
+            buffer.patches().iter().find_map(|patch| match patch {
+                Patch::SetAttribute { name, value, .. } if name == "lang" => Some(value.clone()),
+                _ => None,
+            })
+        };
+        assert_eq!(lang_of("de"), Some("de".to_owned()));
+        // An empty language leaves the document's in place.
+        assert_eq!(lang_of(""), None);
+    }
 
     /// Column names are trimmed and empty entries dropped.
     #[test]

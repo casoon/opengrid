@@ -37,8 +37,9 @@ let loading;
  * @param {URL|string} [options.moduleUrl] wasm-bindgen glue module (`--target web`).
  * @param {string} [options.wasmUrl] explicit `.wasm` URL, if it is not next to the glue.
  * @returns {Promise<{fallback: boolean, module?: object}>} whether the DOM fallback was
- *   installed, and the loaded WASM module so a page can call its exports (for
- *   example `set_provider` from point 14).
+ *   installed, and the loaded WASM module so a page can call its exports —
+ *   `set_provider` (point 14) and `set_texts` (point 48, call it first: it
+ *   rebuilds the component).
  */
 export function loadOpengrid(options = {}) {
   if (!loading) {
