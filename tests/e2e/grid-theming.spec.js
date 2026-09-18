@@ -120,6 +120,10 @@ test("the focus ring stays visible and unclipped at 400% zoom", async ({ page })
     insideWindow: true,
     documentFits: true,
   });
+
+  // The baseline holds the rest of the reflow: the filter row scrolls instead of
+  // pushing the grid wider, and the columns squeeze rather than overflow.
+  await expect(page.locator("opengrid-grid")).toHaveScreenshot("grid-zoom-400.png");
 });
 
 test("prefers-reduced-motion beats a theme that animates a part", async ({ page }) => {
