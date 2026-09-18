@@ -6,11 +6,18 @@
   "packageManager": "pnpm@10.26.0",
   "description": "JS tooling for opengrid: end-to-end and accessibility tests (Phase B).",
   "scripts": {
+    "info": "npm-scripts-info",
     "e2e": "playwright test --config tests/e2e/playwright.config.js",
     "e2e:update": "playwright test --config tests/e2e/playwright.config.js --update-snapshots"
   },
+  "scripts-info": {
+    "info": "Zeigt diese Übersicht der verfügbaren Scripts",
+    "e2e": "Führt die Playwright-E2E-/A11y-Tests aus",
+    "e2e:update": "Führt die E2E-Tests aus und aktualisiert die Screenshot-Baselines"
+  },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",
-    "@playwright/test": "1.63.0"
+    "@playwright/test": "1.63.0",
+    "npm-scripts-info": "^0.3.9"
   }
 }
