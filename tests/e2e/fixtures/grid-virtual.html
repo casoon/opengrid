@@ -6,11 +6,12 @@
     <title>opengrid virtual grid fixture</title>
     <style>
       /* A small window (window-size) over 200 rows: the DOM row count must stay
-         at the pool size while scrolling. The filter row is a fixed 40px, so
-         the host is 40px taller than the 160px viewport. */
+         at the pool size while scrolling. The filter row is a fixed 40px and
+         the status line a 24px minimum, so the host is 64px taller than the
+         160px viewport. */
       opengrid-grid {
         display: block;
-        height: 200px;
+        height: 224px;
       }
     </style>
   </head>

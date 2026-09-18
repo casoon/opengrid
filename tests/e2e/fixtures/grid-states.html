@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>opengrid grid states fixture</title>
+    <style>
+      opengrid-grid {
+        display: block;
+        height: 224px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid grid states fixture</h1>
+      <opengrid-grid
+        label="Bestellungen"
+        datasource="orders"
+        columns="id,customer,amount,qty"
+        window-size="10"
+      ></opengrid-grid>
+    </main>
+    <script type="module">
+      // Point 41: loading, empty and error states. The same data as `grid.html`,
+      // but the provider can be switched into a slow or a failing mode, so the
+      // three non-ready states are reachable from a test.
+      //
+      // The failing mode does not fake an error: it rewrites the query's
+      // `source` to one that was never loaded and lets the real engine answer.
+      // That exercises the whole path — `DataSourceError` -> `JsError` ->
+      // rejected promise -> the grid's status line — instead of a message the
+      // fixture invented.
+      import { loadOpengrid, createLocalProvider } from "/packages/opengrid/loader.js";
+      import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+
+      /** "ok" | "slow" | "error", switched from the test. */
+      window.__mode = "ok";
+
+      /** Resolves the query the slow mode is holding. */
+      let release;
+      window.__release = () => {
+        const pending = release;
+        release = undefined;
+        pending?.();
+      };
+
+      async function start() {
+        const loader = await loadOpengrid();
+
+        await init();
+        const engine = new Engine();
+        const real = createLocalProvider(engine);
+        const schema = await (
+          await fetch("/tests/e2e/fixtures/grid-orders.schema.json")
+        ).text();
+        const csv = await (
+          await fetch("/tests/e2e/fixtures/grid-orders.csv")
+        ).arrayBuffer();
+        await real.load("orders", csv, schema);
+
+        const provider = {
+          execute(queryJson) {
+            if (window.__mode === "error") {
+              const query = { ...JSON.parse(queryJson), source: "missing" };
+              // `execute` throws synchronously; `then` turns that into the
+              // rejection the component sees from any provider.
+              return Promise.resolve().then(() => real.execute(JSON.stringify(query)));
+            }
+            if (window.__mode === "slow") {
+              return new Promise((resolve) => {
+                release = () => resolve(real.execute(queryJson));
+              });
+            }
+            return real.execute(queryJson);
+          },
+        };
+
+        const host = document.querySelector("opengrid-grid");
+        loader.module.set_provider(host, provider);
+        return { fallback: loader.fallback };
+      }
+
+      window.__opengridReady = start();
+    </script>
+  </body>
+</html>

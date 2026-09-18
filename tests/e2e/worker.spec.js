@@ -19,7 +19,7 @@ async function facts(page) {
       ariaLabel: table.getAttribute("aria-label"),
       rowcount: table.getAttribute("aria-rowcount"),
       colcount: table.getAttribute("aria-colcount"),
-      status: root.querySelector('[part="filter-status"]')?.textContent ?? null,
+      status: root.querySelector('[part="status"]')?.textContent ?? null,
     };
   });
 }
@@ -38,7 +38,7 @@ async function statusText(page) {
   return page.evaluate(
     () =>
       document.querySelector("opengrid-grid").shadowRoot.querySelector(
-        '[part="filter-status"]',
+        '[part="status"]',
       ).textContent,
   );
 }

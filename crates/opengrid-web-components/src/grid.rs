@@ -137,6 +137,18 @@ pub const FILTER_HEIGHT: u64 = 40;
 /// The CSS custom property overriding [`FILTER_HEIGHT`].
 pub const FILTER_HEIGHT_PROPERTY: &str = "--grid-filter-height";
 
+/// The pixel height of the status line (`part="status"`, point 41).
+///
+/// A **minimum**, not a fixed height: one line of status text is exactly this
+/// tall, which keeps the viewport below it — and with it the `PageUp`/`PageDown`
+/// step — deterministic, while a long error message is allowed to wrap instead
+/// of being cut off. The window math reads the viewport's live height, so a
+/// grown status line simply leaves fewer rows visible.
+pub const STATUS_HEIGHT: u64 = 24;
+
+/// The CSS custom property overriding [`STATUS_HEIGHT`].
+pub const STATUS_HEIGHT_PROPERTY: &str = "--grid-status-height";
+
 /// The operators the type-agnostic filter row offers, in display order.
 ///
 /// The wire names are exactly the query's (plan/spezifikation/02-query-modell.md
@@ -760,14 +772,16 @@ pub fn build_grid(
     // `:host` with the default and can be overridden from the document (or an
     // inline style) on the host; the inner elements inherit the resolved value.
     let styles = format!(
-        ":host {{ {ROW_HEIGHT_PROPERTY}: {DEFAULT_ROW_HEIGHT}px; {FILTER_HEIGHT_PROPERTY}: {FILTER_HEIGHT}px; }}
+        ":host {{ {ROW_HEIGHT_PROPERTY}: {DEFAULT_ROW_HEIGHT}px; {FILTER_HEIGHT_PROPERTY}: {FILTER_HEIGHT}px;
+                   {STATUS_HEIGHT_PROPERTY}: {STATUS_HEIGHT}px; }}
          [part=\"layout\"] {{ display: flex; flex-direction: column; height: 100%; min-height: 0; }}
          [part=\"filter\"] {{ display: flex; align-items: center; gap: 0.5rem; box-sizing: border-box;
                              flex: 0 0 auto;
                              height: var({FILTER_HEIGHT_PROPERTY}); padding: 0 0.5rem;
                              overflow-x: auto; overflow-y: hidden; white-space: nowrap; }}
          [part=\"filter\"] select, [part=\"filter\"] input, [part=\"filter\"] button {{ font: inherit; }}
-         [part=\"status\"] {{ flex: 0 0 auto; padding: 0 0.5rem; min-height: 1.5rem; }}
+         [part=\"status\"] {{ flex: 0 0 auto; margin: 0; padding: 0 0.5rem;
+                             min-height: var({STATUS_HEIGHT_PROPERTY}); }}
          [part=\"status\"][data-state=\"error\"] {{ font-weight: bold; }}
          [part=\"viewport\"] {{ flex: 1 1 0; min-height: 0; overflow-y: auto; position: relative; display: block; }}
          [part=\"sort-index\"] {{ margin-left: 0.25rem; font-size: 0.75em; }}

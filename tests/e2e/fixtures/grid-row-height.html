@@ -7,10 +7,12 @@
     <style>
       /* The row height is configurable through --grid-row-height. A document
          rule on the host overrides the shadow default (32px) and inherits into
-         the shadow tree; the window math follows the configured height. */
+         the shadow tree; the window math follows the configured height. The
+         host is 64px taller than the 160px viewport: the 40px filter row plus
+         the 24px status line. */
       opengrid-grid {
         display: block;
-        height: 200px;
+        height: 224px;
         --grid-row-height: 48px;
       }
     </style>

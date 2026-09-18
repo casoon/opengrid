@@ -29,7 +29,7 @@ async function filterFacts(page) {
       values: [...root.querySelectorAll('input[data-col][type="text"]')].length,
       labels,
       clear: root.querySelector('[part="filter-clear"]')?.textContent ?? null,
-      status: root.querySelector('[part="filter-status"]')?.textContent ?? null,
+      status: root.querySelector('[part="status"]')?.textContent ?? null,
     };
   });
 }
@@ -39,7 +39,7 @@ async function statusText(page) {
   return page.evaluate(
     () =>
       document.querySelector("opengrid-grid").shadowRoot.querySelector(
-        '[part="filter-status"]',
+        '[part="status"]',
       ).textContent,
   );
 }

@@ -7,11 +7,12 @@
     <style>
       /* A definite height makes the scroll viewport and the PageUp/PageDown
          viewport step deterministic (5 rows of the 32px pool window). The
-         filter row is a fixed 40px, so the host is 40px taller than the 160px
-         viewport to keep that step unchanged. */
+         filter row is a fixed 40px and the status line a 24px minimum, so the
+         host is 64px taller than the 160px viewport to keep that step
+         unchanged. */
       opengrid-grid {
         display: block;
-        height: 200px;
+        height: 224px;
       }
     </style>
   </head>
