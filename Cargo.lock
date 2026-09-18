@@ -900,6 +900,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "opengrid-planner"
+version = "0.0.0"
+dependencies = [
+ "opengrid-datasource",
+ "opengrid-query",
+ "opengrid-types",
+ "serde_json",
+]
+
+[[package]]
 name = "opengrid-query"
 version = "0.0.0"
 dependencies = [
