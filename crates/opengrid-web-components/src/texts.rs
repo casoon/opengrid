@@ -107,6 +107,43 @@ pub struct GridTexts {
     pub operators: Vec<String>,
 }
 
+/// Every key `set_texts` accepts (plan point 39).
+///
+/// Written down once so the API freeze can check it: a key added to the struct
+/// without one here is a key nobody outside this repository can discover.
+pub(crate) const KEYS: &[&str] = &[
+    "lang",
+    "loading",
+    "matchesOne",
+    "matchesOther",
+    "empty",
+    "error",
+    "errorUnknown",
+    "filterGroup",
+    "operatorLabel",
+    "valueLabel",
+    "clear",
+    "filterInvalid",
+    "cellRequired",
+    "columnWidth",
+    "columnMoved",
+    "columnAtEdge",
+    "columnHidden",
+    "columnShown",
+    "columnsGroup",
+    "pageFirst",
+    "pagePrevious",
+    "pageNext",
+    "pageLast",
+    "pageOf",
+    "selectionCleared",
+    "noValue",
+    "emptyValue",
+    "total",
+    "subtotal",
+    "operators",
+];
+
 /// The readable operator names, in the order of
 /// [`FILTER_OPERATORS`](crate::grid::FILTER_OPERATORS).
 ///

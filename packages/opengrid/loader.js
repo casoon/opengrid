@@ -67,9 +67,13 @@ async function start({ moduleUrl = DEFAULT_MODULE_URL, wasmUrl } = {}) {
  * Defines the elements in plain DOM, mirroring the Rust skeleton: an open
  * shadow root, a native `<table>` with a `<caption>`, and `label` -> `aria-label`.
  *
+ * Not exported: `loadOpengrid` installs it when the module fails to load, and a
+ * page that reaches for it directly is asking for the broken state on purpose
+ * (plan point 39 — an export is a promise).
+ *
  * @param {string} [name] the element to define.
  */
-export function installFallback(name = "opengrid-table") {
+function installFallback(name = "opengrid-table") {
   if (customElements.get(name)) {
     return;
   }

@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>opengrid — table demo</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        margin: 2rem;
+        max-width: 50rem;
+      }
+      opengrid-table table {
+        border-collapse: collapse;
+        width: 100%;
+      }
+      opengrid-table th,
+      opengrid-table td {
+        border: 1px solid #ccc;
+        padding: 0.25rem 0.5rem;
+        text-align: start;
+      }
+      opengrid-table caption {
+        text-align: start;
+        font-weight: 600;
+        padding-bottom: 0.5rem;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>opengrid — Table Mode</h1>
+    <p>
+      <code>&lt;opengrid-table&gt;</code> ist die Anzeige-Variante: ein ganz normales
+      <code>&lt;table&gt;</code> mit voller Semantik — Kopieren, Browser-Suche und
+      Screenreader funktionieren wie bei jeder Tabelle. Keine Virtualisierung, kein
+      Roving Tabindex. Die Kopfzeilen-Buttons sortieren eine Spalte.
+    </p>
+    <p>
+      Für eine Tabelle, mit der <em>gearbeitet</em> wird — Auswahl, Bearbeiten,
+      hunderttausend Zeilen — ist <code>&lt;opengrid-grid&gt;</code> das richtige Element
+      (siehe <code>examples/grid-demo/</code>).
+    </p>
+    <p>Ausliefern mit <code>just serve-demo</code>, dann diese Seite öffnen.</p>
+
+    <opengrid-table
+      label="Bestellungen"
+      datasource="orders"
+      columns="id,customer,country,amount"
+    ></opengrid-table>
+
+    <script type="module">
+      import { loadOpengrid, createLocalProvider } from "/packages/opengrid/loader.js";
+      import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+
+      await init();
+      const engine = new Engine();
+      const schema = await (
+        await fetch("/crates/opengrid-conformance/data/orders.schema.json")
+      ).text();
+      const csv = await (
+        await fetch("/crates/opengrid-conformance/data/orders.csv")
+      ).arrayBuffer();
+      engine.load_csv("orders", new Uint8Array(csv), schema);
+
+      const loader = await loadOpengrid();
+      const host = document.querySelector("opengrid-table");
+      loader.module.set_texts(host, {
+        lang: "de",
+        loading: "Wird geladen …",
+        error: "Die Daten konnten nicht geladen werden: {cause}",
+      });
+      loader.module.set_provider(host, createLocalProvider(engine));
+    </script>
+  </body>
+</html>

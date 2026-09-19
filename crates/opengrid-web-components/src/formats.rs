@@ -47,8 +47,14 @@ pub trait CellFormat {
 ///
 /// NULL is empty — the column header says which column, and "no value" is not a
 /// word the data chose.
+///
+/// Test-only: in the browser there is always a [`Formatter`], and one without
+/// formats renders exactly this. It exists so the portable patch computation
+/// stays testable without a browser.
+#[cfg(test)]
 pub struct Plain;
 
+#[cfg(test)]
 impl CellFormat for Plain {
     fn text(&self, _column: usize, value: &Value) -> String {
         plain_text(value)
@@ -70,7 +76,7 @@ pub fn plain_text(value: &Value) -> String {
 }
 
 #[cfg(target_arch = "wasm32")]
-pub use host::{formats, set_formats_for, store};
+pub use host::{formats, set_formats_for};
 
 /// Per-host storage of the column formats, mirroring the texts seam.
 #[cfg(target_arch = "wasm32")]
@@ -132,12 +138,6 @@ mod host {
                 }
             }
             Self { by_name }
-        }
-
-        /// Whether any column is formatted — a grid without formats never
-        /// crosses the boundary at all.
-        pub fn is_empty(&self) -> bool {
-            self.by_name.is_empty()
         }
 
         fn function(&self, name: &str) -> Option<&js_sys::Function> {

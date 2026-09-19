@@ -113,6 +113,20 @@ pub fn set_formats(host: &HtmlElement, formats: JsValue) {
     }
 }
 
+/// Sets the choices a column's editor offers (plan point 37).
+///
+/// `choices` is a plain JS object keyed by column name, each value a list of
+/// strings. A column with choices gets a `<select>` instead of a typed input.
+/// V1 has no enum type, so the page is the only honest source of the options.
+#[wasm_bindgen(js_name = set_choices)]
+pub fn set_choices(host: &HtmlElement, choices: JsValue) {
+    let _ = js_sys::Reflect::set(
+        host.as_ref(),
+        &JsValue::from_str(crate::grid_element::CHOICES_KEY),
+        &choices,
+    );
+}
+
 #[wasm_bindgen(js_name = set_texts)]
 pub fn set_texts(host: &HtmlElement, values: JsValue) {
     texts::store(host, Rc::new(texts::from_js(&values)));

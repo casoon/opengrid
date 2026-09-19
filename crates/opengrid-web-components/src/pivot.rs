@@ -211,12 +211,6 @@ fn cell(value: &Option<String>) -> String {
     value.clone().unwrap_or_default()
 }
 
-/// The nodes a built pivot exposes to the element.
-pub struct PivotNodes {
-    pub status: NodeId,
-    pub table: NodeId,
-}
-
 /// Builds the whole pivot as one patch list.
 ///
 /// Two header rows when there is a column dimension — values with `colspan` and
@@ -231,7 +225,7 @@ pub fn build_pivot(
     status: &str,
     state: &str,
     texts: &GridTexts,
-) -> PivotNodes {
+) {
     let layout = element(buffer, nodes, Some(NodeId::ROOT), "div");
     attribute(buffer, layout, "part", "layout");
 
@@ -370,11 +364,6 @@ pub fn build_pivot(
                 });
             }
         }
-    }
-
-    PivotNodes {
-        status: status_node,
-        table,
     }
 }
 

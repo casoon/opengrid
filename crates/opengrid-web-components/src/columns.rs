@@ -17,10 +17,13 @@
 
 use std::collections::{HashMap, HashSet};
 
-/// How wide a column may get, in pixels — and the step one key press moves.
-pub const MIN_COLUMN_WIDTH: u32 = 48;
+/// The narrowest a key press will take a column, in pixels.
+///
+/// A column resized into nothing is a column nobody finds again, and its header
+/// would fall under the 24 px of WCAG 2.5.8.
+const MIN_COLUMN_WIDTH: u32 = 48;
 /// The widest a key press will take a column.
-pub const MAX_COLUMN_WIDTH: u32 = 800;
+const MAX_COLUMN_WIDTH: u32 = 800;
 /// How much one resize key press changes the width.
 pub const WIDTH_STEP: u32 = 24;
 

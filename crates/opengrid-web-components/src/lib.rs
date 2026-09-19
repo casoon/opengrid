@@ -26,12 +26,26 @@
 //! is English and lives in [`texts`], and a page overrides any of it — with the
 //! language it is in — through the exported `set_texts`.
 
-pub mod columns;
-pub mod formats;
-pub mod grid;
-pub mod pivot;
-pub mod table;
-pub mod texts;
+// **On the host this crate is only its tests.** Every entry point — the
+// registered elements, the exported functions, the DOM glue — is `wasm32`-only,
+// so the plain library target that `just check` also builds reaches none of the
+// code below. Point 39 made that visible by closing the module surface; the
+// alternative was to leave the modules `pub` and call unreachable code an API,
+// which is the promise this point exists to stop making.
+#![cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+
+// Nothing here is public API: the surface of this crate is the **DOM** — the
+// elements, their attributes, their events and their parts — plus the four
+// exported functions below. A module left `pub` would be a promise nobody meant
+// to make (plan point 39).
+#[cfg(test)]
+mod api;
+pub(crate) mod columns;
+pub(crate) mod formats;
+pub(crate) mod grid;
+pub(crate) mod pivot;
+pub(crate) mod table;
+pub(crate) mod texts;
 
 #[cfg(target_arch = "wasm32")]
 mod element;
@@ -39,5 +53,16 @@ mod element;
 mod grid_element;
 #[cfg(target_arch = "wasm32")]
 mod pivot_element;
+
+/// The event names, readable on the host so the API freeze can check them.
+///
+/// They are defined once, here, and used by the element — a second spelling in
+/// the browser code is exactly the kind of drift point 39 exists to prevent.
+pub(crate) mod grid_element_events {
+    /// Fired when the selection changed (plan point 35).
+    pub const SELECTION_EVENT: &str = "opengrid-selection-change";
+    /// Fired when a cell was edited (plan point 37).
+    pub const CELL_EVENT: &str = "opengrid-cell-change";
+}
 #[cfg(target_arch = "wasm32")]
 pub use element::register;

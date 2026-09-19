@@ -80,6 +80,7 @@ use opengrid_web_core::provider::provider;
 
 use crate::columns::{self, WIDTH_STEP};
 use crate::formats::{CellFormat, Formatter, formats};
+use crate::grid_element_events::{CELL_EVENT, SELECTION_EVENT};
 use opengrid_web_core::renderer::{Dom, WebRenderer};
 
 use crate::element::{clear_root, describe};
@@ -1205,6 +1206,9 @@ fn settle_selection(
     let _ = runtime;
 }
 
+/// Where `set_choices` stores what the page supplied.
+pub(crate) const CHOICES_KEY: &str = "__opengridChoices";
+
 /// The choices a page supplied for a column, turning its editor into a select.
 ///
 /// V1 has no enum type, so a `<select>` has no source of options in the schema —
@@ -1471,9 +1475,6 @@ fn dispatch_cell_change(
     }
 }
 
-/// The name of the cell-change event (plan point 37).
-pub const CELL_EVENT: &str = "opengrid-cell-change";
-
 /// Fires `opengrid-selection-change` on the host.
 ///
 /// **The event contract (point 35), which every later event follows:**
@@ -1510,9 +1511,6 @@ fn dispatch_selection(host: &HtmlElement, rows: &[u64]) {
         let _ = host.dispatch_event(&event);
     }
 }
-
-/// The name of the selection event (point 35).
-pub const SELECTION_EVENT: &str = "opengrid-selection-change";
 
 /// `Enter`/`Space` on a header cell sorts by its column and re-runs the query;
 /// on a data cell it is a no-op.

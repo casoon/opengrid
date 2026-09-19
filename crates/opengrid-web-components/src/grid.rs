@@ -443,14 +443,6 @@ pub enum ActiveCell {
 }
 
 impl ActiveCell {
-    /// The column of this cell.
-    pub const fn col(self) -> usize {
-        match self {
-            Self::Header { col } => col,
-            Self::Data(cell) => cell.col,
-        }
-    }
-
     /// The logical data cell, or `None` for a header cell.
     pub const fn data(self) -> Option<CellRef> {
         match self {

@@ -42,7 +42,7 @@
       const host = document.querySelector("opengrid-grid");
       // A column whose editor should be a <select>: V1 has no enum type, so the
       // page is the only honest source of the options.
-      host.__opengridChoices = { customer: ["Alpha", "Beta", "Gamma"] };
+      loader.module.set_choices(host, { customer: ["Alpha", "Beta", "Gamma"] });
       loader.module.set_provider(host, createLocalProvider(engine));
       window.__ready = true;
     </script>
