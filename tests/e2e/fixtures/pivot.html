@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>opengrid pivot fixture</title>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid pivot fixture</h1>
+      <opengrid-pivot
+        label="Orders by country and year"
+        datasource="orders"
+        rows="country"
+        columns="ordered_year"
+        values='[{"field":"qty","fn":"sum","as":"total"},{"fn":"count","as":"n"}]'
+      ></opengrid-pivot>
+    </main>
+    <script type="module">
+      // Point 32/53: the pivot is one request to a real `opengrid-server`. The
+      // page never computes anything — the element renders what comes back.
+      import { loadOpengrid, createPivotProvider } from "/packages/opengrid/loader.js";
+
+      const provider = createPivotProvider({
+        url: "http://127.0.0.1:8082",
+        source: "orders",
+        token: "e2e-token",
+      });
+
+      const loader = await loadOpengrid();
+      loader.module.set_provider(document.querySelector("opengrid-pivot"), provider);
+      window.__ready = true;
+    </script>
+  </body>
+</html>

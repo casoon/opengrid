@@ -1,0 +1,95 @@
+{
+  "id": "p1-a-pivot-is-rows-crossed-with-columns",
+  "rule": "P1",
+  "pivot": {
+    "source": "orders",
+    "rows": [
+      "country"
+    ],
+    "columns": [
+      "ordered_year"
+    ],
+    "values": [
+      {
+        "field": "qty",
+        "fn": "sum",
+        "as": "total"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      {
+        "path": [
+          2025
+        ],
+        "measure": "total"
+      },
+      {
+        "path": [
+          2026
+        ],
+        "measure": "total"
+      },
+      {
+        "path": [
+          null
+        ],
+        "measure": "total"
+      }
+    ],
+    "rows": [
+      [
+        "",
+        null,
+        114,
+        null
+      ],
+      [
+        "DE",
+        1,
+        258,
+        null
+      ],
+      [
+        "FR",
+        null,
+        172,
+        5
+      ],
+      [
+        "GB",
+        null,
+        195,
+        null
+      ],
+      [
+        "US",
+        null,
+        210,
+        null
+      ],
+      [
+        null,
+        null,
+        269,
+        null
+      ],
+      [
+        null,
+        1,
+        1218,
+        5
+      ]
+    ],
+    "levels": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      0
+    ]
+  }
+}

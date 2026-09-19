@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>opengrid — pivot demo</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        margin: 2rem;
+        max-width: 60rem;
+      }
+      opengrid-pivot::part(row total-row) {
+        background: #eef1f5;
+        font-weight: 600;
+      }
+      opengrid-pivot table {
+        border-collapse: collapse;
+      }
+      opengrid-pivot th,
+      opengrid-pivot td {
+        border: 1px solid #ccc;
+        padding: 0.25rem 0.5rem;
+        text-align: start;
+      }
+      opengrid-pivot td {
+        text-align: end;
+        font-variant-numeric: tabular-nums;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>opengrid — Pivot (Plan-Punkt 32)</h1>
+    <p>
+      Zeilen: Land · Spalten: Jahr · Kennzahlen: Summe Menge und Anzahl. Die ganze Abfrage
+      ist <strong>ein</strong> Request an <code>POST /pivot/orders</code>; PostgreSQL
+      beantwortet sie als eine einzige <code>GROUPING SETS</code>-Anweisung, die lokale
+      Engine als <code>n+1</code> gewöhnliche Queries — mit demselben Ergebnis.
+    </p>
+    <p>
+      Server starten: <code>cargo run -p opengrid-server -- examples/remote-demo/opengrid.toml</code>,
+      Seite ausliefern mit <code>just serve-demo</code>.
+    </p>
+
+    <opengrid-pivot
+      label="Bestellungen nach Land und Jahr"
+      datasource="orders"
+      rows="country"
+      columns="ordered_year"
+      values='[{"field":"qty","fn":"sum","as":"Menge"},{"fn":"count","as":"Anzahl"}]'
+    ></opengrid-pivot>
+
+    <script type="module">
+      import { loadOpengrid, createPivotProvider } from "/packages/opengrid/loader.js";
+
+      const provider = createPivotProvider({
+        url: "http://127.0.0.1:8081",
+        source: "orders",
+        token: "demo-token-de",
+      });
+
+      const loader = await loadOpengrid();
+      const host = document.querySelector("opengrid-pivot");
+      // Deutsche Texte: die Komponente schreibt englisch, die Seite überschreibt.
+      loader.module.set_texts(host, {
+        lang: "de",
+        loading: "Wird geladen …",
+        matchesOne: "1 Zeile",
+        matchesOther: "{count} Zeilen",
+        empty: "Keine Treffer",
+        error: "Die Daten konnten nicht geladen werden: {cause}",
+        total: "Gesamt",
+        subtotal: "Summe {value}",
+        noValue: "(ohne Wert)",
+        emptyValue: "(leer)",
+      });
+      loader.module.set_provider(host, provider);
+    </script>
+  </body>
+</html>

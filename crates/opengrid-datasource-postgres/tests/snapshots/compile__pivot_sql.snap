@@ -1,0 +1,13 @@
+---
+source: crates/opengrid-datasource-postgres/tests/compile.rs
+expression: report
+---
+# rows and columns
+SELECT "country" AS "country", "customer" AS "customer", EXTRACT(YEAR FROM "ordered_on")::bigint AS "ordered_year", sum("qty")::bigint AS "total", count(*) AS "n", GROUPING("country") AS "__grouping_country", GROUPING("customer") AS "__grouping_customer" FROM "orders" GROUP BY GROUPING SETS (("country", "customer", EXTRACT(YEAR FROM "ordered_on")::bigint), ("country", EXTRACT(YEAR FROM "ordered_on")::bigint), (EXTRACT(YEAR FROM "ordered_on")::bigint)) ORDER BY "country" COLLATE "C" ASC NULLS LAST, GROUPING("country") ASC, "customer" COLLATE "C" ASC NULLS LAST, GROUPING("customer") ASC, EXTRACT(YEAR FROM "ordered_on")::bigint ASC NULLS LAST
+
+# no column dimension
+SELECT "country" AS "country", avg("qty")::double precision AS "mean", GROUPING("country") AS "__grouping_country" FROM "orders" GROUP BY GROUPING SETS (("country"), ()) ORDER BY "country" COLLATE "C" ASC NULLS LAST, GROUPING("country") ASC
+
+# filtered, and a derived dimension
+SELECT EXTRACT(YEAR FROM "ordered_on")::bigint AS "ordered_year", "country" AS "country", count(*) AS "n", GROUPING(EXTRACT(YEAR FROM "ordered_on")::bigint) AS "__grouping_ordered_year" FROM "orders" WHERE "qty" > $1::text::bigint GROUP BY GROUPING SETS ((EXTRACT(YEAR FROM "ordered_on")::bigint, "country"), ("country")) ORDER BY EXTRACT(YEAR FROM "ordered_on")::bigint ASC NULLS LAST, GROUPING(EXTRACT(YEAR FROM "ordered_on")::bigint) ASC, "country" COLLATE "C" ASC NULLS LAST
+  $1 = Int64(3)

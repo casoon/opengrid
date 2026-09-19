@@ -62,6 +62,12 @@ pub struct ServerConfig {
     /// `Limits::max_depth` for every source.
     #[serde(default)]
     pub max_depth: Option<usize>,
+    /// `PivotLimits::max_columns` — how wide a pivot may get (plan point 30).
+    #[serde(default)]
+    pub max_pivot_columns: Option<usize>,
+    /// `PivotLimits::max_rows` — how long a pivot may get.
+    #[serde(default)]
+    pub max_pivot_rows: Option<usize>,
     /// Origins a browser may call this server from. Empty means **none**: no
     /// CORS headers are sent, and a page on another origin cannot read the
     /// answer. Opt in per origin, never `*` — a wildcard plus a bearer token is
@@ -78,6 +84,8 @@ impl Default for ServerConfig {
             timeout_ms: default_timeout_ms(),
             max_limit: None,
             max_depth: None,
+            max_pivot_columns: None,
+            max_pivot_rows: None,
             allowed_origins: Vec::new(),
         }
     }

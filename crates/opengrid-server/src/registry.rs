@@ -26,6 +26,7 @@ use opengrid_arrow_engine::datasource::LocalDataSource;
 use opengrid_arrow_engine::ingest::{CsvOptions, load_csv};
 use opengrid_datasource::SendDataSource;
 use opengrid_datasource_postgres::PostgresDataSource;
+use opengrid_pivot::{PivotError, PivotLimits, PivotQuery, PivotResult, ValidatedPivotQuery};
 use opengrid_query::{CmpOp, FilterExpr, Limits, Query, ValidatedQuery};
 use opengrid_types::{FieldName, Schema};
 
@@ -64,6 +65,28 @@ impl Backend {
         }
     }
 
+    /// Runs a whole pivot, pushed down where the backend can do it.
+    ///
+    /// PostgreSQL answers one `GROUPING SETS` statement (point 31); anything
+    /// else gets the generic path, which is `n+1` ordinary queries against the
+    /// very same trait. Same answer either way — that is what the differential
+    /// test in `opengrid-datasource-postgres` is for.
+    pub async fn execute_pivot(
+        &self,
+        pivot: &ValidatedPivotQuery,
+    ) -> Result<PivotResult, opengrid_datasource::DataSourceError> {
+        match self {
+            Backend::LocalCsv(source) => {
+                opengrid_pivot::execute(source, pivot)
+                    .await
+                    .map_err(|error| opengrid_datasource::DataSourceError::Backend {
+                        message: error.to_string(),
+                    })
+            }
+            Backend::Postgres(source) => source.execute_pivot(pivot).await,
+        }
+    }
+
     /// Runs a query against whichever backend this is.
     pub async fn execute(
         &self,
@@ -80,6 +103,8 @@ impl Backend {
 pub struct Registry {
     sources: BTreeMap<String, Arc<Source>>,
     pub limits: Limits,
+    /// The bounds a pivot must stay inside (plan point 30).
+    pub pivot_limits: PivotLimits,
 }
 
 /// Why a registry could not be built. Always a startup failure.
@@ -120,7 +145,18 @@ impl Registry {
         if let Some(max_depth) = config.server.max_depth {
             limits.max_depth = max_depth;
         }
-        Ok(Self { sources, limits })
+        let mut pivot_limits = PivotLimits::default();
+        if let Some(max_columns) = config.server.max_pivot_columns {
+            pivot_limits.max_columns = max_columns;
+        }
+        if let Some(max_rows) = config.server.max_pivot_rows {
+            pivot_limits.max_rows = max_rows;
+        }
+        Ok(Self {
+            sources,
+            limits,
+            pivot_limits,
+        })
     }
 
     /// The source of that name, if it is configured.
@@ -272,6 +308,8 @@ fn check_row_filter(
 pub enum PrepareError {
     /// The caller asked for something they may not have, or that does not exist.
     Validation(opengrid_query::QueryError),
+    /// The pivot itself does not work — a limit or a shape, not a column.
+    Pivot(PivotError),
     /// The server's own configuration and the caller's context do not fit.
     Context(String),
 }
@@ -310,6 +348,54 @@ impl Source {
         query
             .validate(&self.full_schema, limits)
             .map_err(PrepareError::Validation)
+    }
+}
+
+impl Source {
+    /// The same two validations for a pivot (plan point 53).
+    ///
+    /// The mandatory row filter (E16) is added **before** the grouping sets are
+    /// built, so it lands on every level — the grand total included. A filter
+    /// that only reached the detail rows would leak the rest of the table into
+    /// the totals, which is the exact thing E16 exists to prevent.
+    pub fn prepare_pivot(
+        &self,
+        pivot: PivotQuery,
+        limits: &Limits,
+        pivot_limits: &PivotLimits,
+        context: &BTreeMap<String, String>,
+    ) -> Result<ValidatedPivotQuery, PrepareError> {
+        pivot
+            .validate(&self.client_schema, pivot_limits, limits)
+            .map_err(pivot_validation)?;
+
+        let pivot = match &self.row_filter {
+            None => pivot,
+            Some(filter) => {
+                let clause = build_row_filter(filter, context)?;
+                let combined = match pivot.filter {
+                    None => clause,
+                    Some(existing) => FilterExpr::And(vec![existing, clause]),
+                };
+                PivotQuery {
+                    filter: Some(combined),
+                    ..pivot
+                }
+            }
+        };
+
+        pivot
+            .validate(&self.full_schema, pivot_limits, limits)
+            .map_err(pivot_validation)
+    }
+}
+
+/// A pivot's own failures carry the query validator's diagnosis where they have
+/// one, and their own sentence where the fault is the pivot's shape.
+fn pivot_validation(error: PivotError) -> PrepareError {
+    match error {
+        PivotError::Query(error) => PrepareError::Validation(error),
+        other => PrepareError::Pivot(other),
     }
 }
 

@@ -299,6 +299,43 @@ function messageOf(body, status) {
 }
 
 /**
+ * A provider that asks an `opengrid-server` for a whole **pivot** (point 53).
+ *
+ * The same shape as every other provider — `execute(json)` in, JSON out — so
+ * `set_provider` is unchanged; only the endpoint and the body differ. What comes
+ * back is the pivot wire form: the ordinary result under `result`, plus the
+ * level of each row and what each generated column stands for.
+ *
+ * @param {object} options
+ * @param {string} options.url base URL of the server.
+ * @param {string} options.source the configured data source name.
+ * @param {string} [options.token] bearer token.
+ * @returns {{execute: Function}}
+ */
+export function createPivotProvider({ url, source, token } = {}) {
+  const endpoint = `${String(url).replace(/\/$/, "")}/pivot/${encodeURIComponent(source)}`;
+  const headers = { "Content-Type": "application/json" };
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  return {
+    async execute(pivotJson) {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers,
+        body: pivotJson,
+      });
+      const text = await response.text();
+      if (response.ok) {
+        return text;
+      }
+      throw new Error(messageOf(text, response.status));
+    },
+  };
+}
+
+/**
  * A provider that splits each query between a remote source and the engine in
  * this tab (plan point 28, plan/spezifikation/05-planner.md).
  *

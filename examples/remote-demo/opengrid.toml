@@ -28,6 +28,6 @@ type = "local-csv"
 path = "../../crates/opengrid-conformance/data/orders.csv"
 schema = "../../crates/opengrid-conformance/data/orders.schema.json"
 # Nur diese Spalten darf ein Client überhaupt nennen.
-allowed_fields = ["id", "customer", "country", "amount", "qty", "ordered_on"]
+allowed_fields = ["id", "customer", "country", "amount", "qty", "ordered_on", "ordered_year"]
 # E16: hängt an jeder Query, kommt aus dem Token-Kontext, nicht abschaltbar.
 row_filter = { field = "country", op = "eq", value = ":country" }

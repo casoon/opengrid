@@ -357,3 +357,127 @@ async fn a_derived_column_works_but_does_not_announce_itself() {
         "where the values come from is the server's business: {year}"
     );
 }
+
+/// Sends a pivot and answers with the status and the body.
+async fn post_pivot(
+    app: axum::Router,
+    source: &str,
+    token: Option<&str>,
+    body: &str,
+) -> (StatusCode, String) {
+    let mut request = Request::builder()
+        .method("POST")
+        .uri(format!("/pivot/{source}"))
+        .header(header::CONTENT_TYPE, "application/json");
+    if let Some(token) = token {
+        request = request.header(header::AUTHORIZATION, format!("Bearer {token}"));
+    }
+    let response = app
+        .oneshot(request.body(Body::from(body.to_owned())).unwrap())
+        .await
+        .expect("the router answers");
+    let status = response.status();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    (status, String::from_utf8(bytes.to_vec()).unwrap())
+}
+
+const PIVOT: &str = r#"{"source":"orders","rows":["country"],"columns":["ordered_year"],
+    "values":[{"field":"qty","fn":"sum","as":"total"}]}"#;
+
+/// The pivot wire form: the ordinary result, plus the two things it cannot say.
+#[tokio::test]
+async fn a_pivot_answers_in_the_pivot_wire_form() {
+    let (status, body) = post_pivot(app(false), "orders", Some(TOKEN), PIVOT).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let answer: serde_json::Value = serde_json::from_str(&body).expect("JSON");
+    assert_eq!(answer["row_dimensions"], serde_json::json!(["country"]));
+    // One generated column per column value, each naming what it stands for.
+    let columns = answer["columns"].as_array().expect("columns");
+    assert_eq!(columns[0]["measure"], "total");
+    assert_eq!(columns[0]["path"], serde_json::json!([2025]));
+    // The cells are the result form of E17, untouched.
+    assert!(answer["result"]["columns"].is_array());
+    assert!(answer["result"]["total_count"].is_number());
+    // The last row is the grand total; a level says so, never a NULL.
+    let levels = answer["levels"].as_array().expect("levels");
+    assert_eq!(levels.last().unwrap(), 0);
+    assert!(levels[..levels.len() - 1].iter().all(|level| level == 1));
+}
+
+/// **The point of the mandatory filter in a pivot (E16):** it is on every level.
+///
+/// A row filter that reached only the detail rows would leave the grand total
+/// counting the whole table — the one number nobody checks.
+#[tokio::test]
+async fn the_row_filter_reaches_the_grand_total() {
+    let body = r#"{"source":"orders","rows":["customer"],
+        "values":[{"fn":"count","as":"n"}]}"#;
+
+    let (status, de) = post_pivot(app(true), "orders", Some(TOKEN), body).await;
+    assert_eq!(status, StatusCode::OK, "{de}");
+    let (_, fr) = post_pivot(app(true), "orders", Some(OTHER_TOKEN), body).await;
+
+    let total_of = |answer: &str| -> i64 {
+        let answer: serde_json::Value = serde_json::from_str(answer).expect("JSON");
+        let levels = answer["levels"].as_array().expect("levels");
+        let grand = levels.iter().position(|level| level == 0).expect("a total");
+        // The measure is the column after the one row dimension.
+        answer["result"]["columns"][1]["values"][grand]
+            .as_i64()
+            .expect("a count")
+    };
+
+    let (de, fr) = (total_of(&de), total_of(&fr));
+    assert!(de > 0 && fr > 0);
+    assert_ne!(de, fr, "two tokens must not see the same total");
+
+    // And neither of them sees the whole table.
+    let (_, all) = post_pivot(app(false), "orders", Some(TOKEN), body).await;
+    assert!(
+        total_of(&all) > de + fr,
+        "without the filter the total is larger: {} vs {de} + {fr}",
+        total_of(&all)
+    );
+}
+
+/// A pivot over a column the caller may not see reads like a typo, as
+/// everywhere else (`allowed_fields`).
+#[tokio::test]
+async fn a_forbidden_column_does_not_exist_for_a_pivot_either() {
+    let body = r#"{"source":"orders","rows":["note"],
+        "values":[{"fn":"count","as":"n"}]}"#;
+    let (status, answer) = post_pivot(app(false), "orders", Some(TOKEN), body).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(error_of(&answer).code, ErrorCode::Validation);
+    assert!(error_of(&answer).message.contains("note"));
+}
+
+/// A pivot needs a token like everything else, and the limits are enforced
+/// server-side, with a message the caller can act on.
+#[tokio::test]
+async fn a_pivot_is_guarded_like_every_other_request() {
+    let (status, _) = post_pivot(app(false), "orders", None, PIVOT).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    let (status, answer) = post_pivot(app(false), "nope", Some(TOKEN), PIVOT).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(error_of(&answer).code, ErrorCode::UnknownSource);
+
+    // Two dimensions across the top is more than V1 allows.
+    let wide = r#"{"source":"orders","rows":["country"],"columns":["customer","ordered_year"],
+        "values":[{"fn":"count","as":"n"}]}"#;
+    let (status, answer) = post_pivot(app(false), "orders", Some(TOKEN), wide).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(error_of(&answer).message.contains("column dimensions"));
+}
+
+/// The bounds travel with the description, so a client knows before it asks.
+#[tokio::test]
+async fn a_source_describes_its_pivot_limits() {
+    let (_, body) = describe(app(false), "orders", Some(TOKEN)).await;
+    let described: serde_json::Value = serde_json::from_str(&body).expect("JSON");
+    assert_eq!(described["pivot_limits"]["max_column_dimensions"], 1);
+    assert_eq!(described["pivot_limits"]["max_columns"], 256);
+    assert_eq!(described["pivot_limits"]["max_rows"], 2000);
+}

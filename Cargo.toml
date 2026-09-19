@@ -13,6 +13,7 @@ members = [
     "crates/opengrid-server",
     "crates/opengrid-datasource-postgres",
     "crates/opengrid-planner",
+    "crates/opengrid-pivot",
     "crates/xtask",
 ]
 

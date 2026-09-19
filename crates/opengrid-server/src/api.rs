@@ -38,6 +38,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use opengrid_datasource::DataSourceError;
 use opengrid_datasource::wire::{ErrorCode, WireError, result_to_json};
+use opengrid_pivot::PivotQuery;
 use opengrid_query::Query;
 use tower_http::cors::CorsLayer;
 
@@ -83,6 +84,7 @@ pub fn router(state: Arc<AppState>) -> Router {
     let origins = state.allowed_origins.clone();
     let mut router = Router::new()
         .route("/query/{source}", post(query))
+        .route("/pivot/{source}", post(pivot))
         .route("/source/{source}", get(describe))
         .with_state(state);
 
@@ -173,15 +175,7 @@ async fn query(
 
     let validated = source
         .prepare(query, &state.registry.limits, context)
-        .map_err(|error| match error {
-            PrepareError::Validation(error) => match error.path() {
-                Some(path) => WireError::at(ErrorCode::Validation, error.to_string(), path),
-                None => WireError::new(ErrorCode::Validation, error.to_string()),
-            },
-            // A configuration that does not fit the caller: never fall back to
-            // running without the mandatory filter.
-            PrepareError::Context(message) => WireError::new(ErrorCode::Backend, message),
-        })?;
+        .map_err(prepare_failed)?;
 
     let executed = tokio::time::timeout(state.timeout, source.data.execute(validated))
         .await
@@ -206,6 +200,111 @@ async fn query(
         StatusCode::OK,
         [(header::CONTENT_TYPE, "application/json")],
         result_to_json(&result),
+    )
+        .into_response())
+}
+
+/// A failed `prepare`, as the wire error it becomes.
+fn prepare_failed(error: PrepareError) -> Failure {
+    match error {
+        PrepareError::Validation(error) => match error.path() {
+            Some(path) => WireError::at(ErrorCode::Validation, error.to_string(), path),
+            None => WireError::new(ErrorCode::Validation, error.to_string()),
+        },
+        // A pivot that does not fit — too wide, too long, no measure. The
+        // caller can act on it, so it is a validation error and not a 502.
+        PrepareError::Pivot(error) => WireError::new(ErrorCode::Validation, error.to_string()),
+        // A configuration that does not fit the caller: never fall back to
+        // running without the mandatory filter.
+        PrepareError::Context(message) => WireError::new(ErrorCode::Backend, message),
+    }
+    .into()
+}
+
+/// `POST /pivot/{source}` — a whole pivot in one request (plan point 53).
+///
+/// The same door as `/query`: token, payload limit, the source from the path,
+/// validation against the client schema, then the mandatory row filter (E16) —
+/// which here lands on **every** grouping set, the grand total included.
+///
+/// The answer is the pivot wire form: the ordinary result of E17 under
+/// `result`, plus the level of each row and what each generated column stands
+/// for. Without those two a client could not tell a subtotal from a real NULL
+/// group (S10/P2).
+async fn pivot(
+    State(state): State<Arc<AppState>>,
+    Path(source_name): Path<String>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Response, Failure> {
+    let context = authorize(&state, &headers)?;
+
+    if body.len() > state.max_payload_bytes {
+        return Err(WireError::new(
+            ErrorCode::LimitExceeded,
+            format!(
+                "request body is {} bytes, the limit is {}",
+                body.len(),
+                state.max_payload_bytes
+            ),
+        )
+        .into());
+    }
+
+    let source = state.registry.get(&source_name).ok_or_else(|| {
+        WireError::new(
+            ErrorCode::UnknownSource,
+            format!("unknown source {source_name:?}"),
+        )
+    })?;
+
+    let query: PivotQuery = serde_json::from_slice(&body)
+        .map_err(|error| WireError::new(ErrorCode::Malformed, format!("request body: {error}")))?;
+    if query.source.as_str() != source_name {
+        return Err(WireError::at(
+            ErrorCode::Validation,
+            format!(
+                "the body names source {:?}, the path names {source_name:?}",
+                query.source.as_str()
+            ),
+            "source",
+        )
+        .into());
+    }
+
+    let rows = query.rows.clone();
+    let prepared = source
+        .prepare_pivot(
+            query,
+            &state.registry.limits,
+            &state.registry.pivot_limits,
+            context,
+        )
+        .map_err(prepare_failed)?;
+
+    let executed = tokio::time::timeout(state.timeout, source.data.execute_pivot(&prepared))
+        .await
+        .map_err(|_| {
+            WireError::new(
+                ErrorCode::LimitExceeded,
+                format!(
+                    "the pivot took longer than {} ms",
+                    state.timeout.as_millis()
+                ),
+            )
+        })?;
+
+    let result = executed.map_err(|error| match error {
+        DataSourceError::NoData => {
+            WireError::new(ErrorCode::Backend, "the data source holds no data")
+        }
+        DataSourceError::Backend { message } => WireError::new(ErrorCode::Backend, message),
+    })?;
+
+    Ok((
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "application/json")],
+        opengrid_pivot::pivot_to_json(&result, &rows),
     )
         .into_response())
 }
@@ -236,6 +335,12 @@ async fn describe(
         "name": source.name,
         "schema": source.client_schema,
         "capabilities": source.data.capabilities(),
+        // A planner needs the bounds before it asks, not after it is refused.
+        "pivot_limits": {
+            "max_column_dimensions": state.registry.pivot_limits.max_column_dimensions,
+            "max_columns": state.registry.pivot_limits.max_columns,
+            "max_rows": state.registry.pivot_limits.max_rows,
+        },
     });
 
     Ok((

@@ -11,6 +11,7 @@ workspace = true
 [dependencies]
 opengrid-types = { path = "../opengrid-types" }
 opengrid-query = { path = "../opengrid-query" }
+opengrid-pivot = { path = "../opengrid-pivot" }
 opengrid-datasource = { path = "../opengrid-datasource" }
 # The source of point 24 is the local engine: the server is fully testable
 # before a database exists (PostgreSQL docks in point 26).

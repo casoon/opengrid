@@ -1,0 +1,130 @@
+{
+  "id": "p6-a-subtotal-follows-the-rows-it-sums",
+  "rule": "P6",
+  "pivot": {
+    "source": "orders",
+    "rows": [
+      "country",
+      "customer"
+    ],
+    "values": [
+      {
+        "fn": "count",
+        "as": "n"
+      }
+    ],
+    "filter": {
+      "field": "id",
+      "op": "lte",
+      "value": 12
+    }
+  },
+  "expected": {
+    "columns": [
+      {
+        "path": [],
+        "measure": "n"
+      }
+    ],
+    "rows": [
+      [
+        "DE",
+        "",
+        1
+      ],
+      [
+        "DE",
+        "Alpha",
+        3
+      ],
+      [
+        "DE",
+        "Beta",
+        1
+      ],
+      [
+        "DE",
+        "Epsilon",
+        1
+      ],
+      [
+        "DE",
+        null,
+        6
+      ],
+      [
+        "FR",
+        "Beta",
+        1
+      ],
+      [
+        "FR",
+        "Gamma",
+        1
+      ],
+      [
+        "FR",
+        null,
+        2
+      ],
+      [
+        "GB",
+        null,
+        1
+      ],
+      [
+        "GB",
+        null,
+        1
+      ],
+      [
+        "US",
+        "Delta",
+        1
+      ],
+      [
+        "US",
+        "Gamma",
+        1
+      ],
+      [
+        "US",
+        null,
+        2
+      ],
+      [
+        null,
+        "Epsilon",
+        1
+      ],
+      [
+        null,
+        null,
+        1
+      ],
+      [
+        null,
+        null,
+        12
+      ]
+    ],
+    "levels": [
+      2,
+      2,
+      2,
+      2,
+      1,
+      2,
+      2,
+      1,
+      2,
+      1,
+      2,
+      2,
+      1,
+      2,
+      1,
+      0
+    ]
+  }
+}

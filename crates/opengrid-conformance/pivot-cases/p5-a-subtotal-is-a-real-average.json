@@ -1,0 +1,131 @@
+{
+  "id": "p5-a-subtotal-is-a-real-average",
+  "rule": "P5",
+  "pivot": {
+    "source": "orders",
+    "rows": [
+      "country",
+      "customer"
+    ],
+    "values": [
+      {
+        "field": "qty",
+        "fn": "avg",
+        "as": "mean"
+      }
+    ],
+    "filter": {
+      "field": "id",
+      "op": "lte",
+      "value": 12
+    }
+  },
+  "expected": {
+    "columns": [
+      {
+        "path": [],
+        "measure": "mean"
+      }
+    ],
+    "rows": [
+      [
+        "DE",
+        "",
+        11.0
+      ],
+      [
+        "DE",
+        "Alpha",
+        5.0
+      ],
+      [
+        "DE",
+        "Beta",
+        null
+      ],
+      [
+        "DE",
+        "Epsilon",
+        10.0
+      ],
+      [
+        "DE",
+        null,
+        7.2
+      ],
+      [
+        "FR",
+        "Beta",
+        4.0
+      ],
+      [
+        "FR",
+        "Gamma",
+        5.0
+      ],
+      [
+        "FR",
+        null,
+        4.5
+      ],
+      [
+        "GB",
+        null,
+        8.0
+      ],
+      [
+        "GB",
+        null,
+        8.0
+      ],
+      [
+        "US",
+        "Delta",
+        7.0
+      ],
+      [
+        "US",
+        "Gamma",
+        6.0
+      ],
+      [
+        "US",
+        null,
+        6.5
+      ],
+      [
+        null,
+        "Epsilon",
+        9.0
+      ],
+      [
+        null,
+        null,
+        9.0
+      ],
+      [
+        null,
+        null,
+        6.818181818181818
+      ]
+    ],
+    "levels": [
+      2,
+      2,
+      2,
+      2,
+      1,
+      2,
+      2,
+      1,
+      2,
+      1,
+      2,
+      2,
+      1,
+      2,
+      1,
+      0
+    ]
+  }
+}

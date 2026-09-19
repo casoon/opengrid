@@ -1,0 +1,63 @@
+{
+  "id": "p2-a-null-group-is-not-a-subtotal",
+  "rule": "P2",
+  "pivot": {
+    "source": "orders",
+    "rows": [
+      "country"
+    ],
+    "values": [
+      {
+        "fn": "count",
+        "as": "n"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      {
+        "path": [],
+        "measure": "n"
+      }
+    ],
+    "rows": [
+      [
+        "",
+        3
+      ],
+      [
+        "DE",
+        16
+      ],
+      [
+        "FR",
+        10
+      ],
+      [
+        "GB",
+        6
+      ],
+      [
+        "US",
+        8
+      ],
+      [
+        null,
+        7
+      ],
+      [
+        null,
+        50
+      ]
+    ],
+    "levels": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      0
+    ]
+  }
+}

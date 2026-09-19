@@ -11,6 +11,7 @@ workspace = true
 [dependencies]
 opengrid-types = { path = "../opengrid-types" }
 opengrid-query = { path = "../opengrid-query" }
+opengrid-pivot = { path = "../opengrid-pivot" }
 opengrid-datasource = { path = "../opengrid-datasource" }
 
 # Execution (decision E12). No decimal or date crate: every value travels as
@@ -21,6 +22,8 @@ deadpool-postgres = "0.14"
 serde_json = "1"
 
 [dev-dependencies]
+# The pivot tests compile and run pivots (point 31).
+opengrid-pivot = { path = "../opengrid-pivot" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 # The conformance run needs the local engine as the other side of the
 # comparison — that is the whole point of the differential test (R4).

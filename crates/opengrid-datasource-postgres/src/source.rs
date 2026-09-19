@@ -30,7 +30,9 @@ use opengrid_types::{DataType, Schema, Value};
 use tokio_postgres::NoTls;
 use tokio_postgres::types::ToSql;
 
-use crate::compiler::{CompiledQuery, PostgresCompiler, QueryCompiler};
+use opengrid_pivot::{PivotResult, ValidatedPivotQuery};
+
+use crate::compiler::{CompiledQuery, GROUPING_PREFIX, PostgresCompiler, QueryCompiler};
 
 /// A table in a PostgreSQL database, behind the `DataSource` contract.
 pub struct PostgresDataSource {
@@ -145,9 +147,8 @@ impl SendDataSource for PostgresDataSource {
             group: true,
             aggregate: true,
             paging: true,
-            // A pivot is not a `GROUPING SETS` query yet (point 31), and there
-            // are no calculated fields in the query model at all.
-            pivot: false,
+            // Since point 31 a pivot is one `GROUPING SETS` statement.
+            pivot: true,
             calculated_fields: false,
             streaming: false,
         }
@@ -247,6 +248,112 @@ fn compile(error: crate::compiler::CompileError) -> DataSourceError {
     DataSourceError::Backend {
         message: error.to_string(),
     }
+}
+
+impl PostgresDataSource {
+    /// A whole pivot in **one** statement (plan point 31).
+    ///
+    /// The database computes every level at once; this method splits the long
+    /// answer back into the levels the generic path would have fetched one by
+    /// one, and hands them to the very same assembler
+    /// ([`opengrid_pivot::assemble`]). The pushdown therefore changes how many
+    /// round trips happen and nothing about what comes out — which is exactly
+    /// what the differential test needs to be worth anything.
+    pub async fn execute_pivot(
+        &self,
+        pivot: &ValidatedPivotQuery,
+    ) -> Result<PivotResult, DataSourceError> {
+        let deepest = pivot.sets.first().ok_or_else(|| DataSourceError::Backend {
+            message: "a pivot has at least one level".to_owned(),
+        })?;
+
+        // The statement's columns: the deepest level's output, then one
+        // `GROUPING()` flag per row dimension.
+        let mut output: Vec<(String, DataType)> = deepest
+            .output_schema
+            .fields()
+            .iter()
+            .map(|field| (field.name.as_str().to_owned(), field.data_type))
+            .collect();
+        let flags = output.len();
+        for field in &pivot.rows {
+            output.push((
+                format!("{GROUPING_PREFIX}{}", field.as_str()),
+                DataType::Int64,
+            ));
+        }
+
+        let compiled = self.compiler.compile_pivot(pivot).map_err(compile)?;
+        let rows = self.rows(&compiled, &output).await?;
+
+        let depth = pivot.rows.len();
+        let across = pivot.columns.len();
+        let measures = pivot.values.len();
+
+        // One `QueryResult` per level, in the order `pivot.sets` declares them
+        // (deepest first). A row belongs to the level whose leading dimensions
+        // are the ones it does *not* aggregate away.
+        let mut levels: Vec<Vec<Vec<Value>>> = vec![Vec::new(); pivot.sets.len()];
+        for row in rows {
+            let mut cells = Vec::with_capacity(flags);
+            for (index, (name, data_type)) in output.iter().enumerate().take(flags) {
+                cells.push(value_from_text(row[index].as_deref(), *data_type, name)?);
+            }
+            // The level is the number of leading dimensions still grouped by.
+            let level = (0..depth)
+                .take_while(|index| {
+                    matches!(
+                        value_from_text(row[flags + index].as_deref(), DataType::Int64, "grouping"),
+                        Ok(Value::Int64(0))
+                    )
+                })
+                .count();
+            levels[depth - level].push(cells);
+        }
+
+        let results: Vec<QueryResult> = levels
+            .into_iter()
+            .enumerate()
+            .map(|(index, rows)| {
+                let level = depth - index;
+                let schema = level_schema(deepest, level, across, measures);
+                let count = rows.len() as u64;
+                let mut columns = vec![Vec::with_capacity(rows.len()); schema.len()];
+                for row in rows {
+                    // A level keeps the row dimensions it still groups by, the
+                    // column dimensions and the measures. The dimensions it
+                    // aggregated away are **dropped**, not NULLed: the generic
+                    // path would never have asked for them, and a NULL there
+                    // would be a value (S10).
+                    for (position, value) in row.into_iter().enumerate() {
+                        if position < level {
+                            columns[position].push(value);
+                        } else if (depth..depth + across).contains(&position) {
+                            columns[level + (position - depth)].push(value);
+                        } else if position >= depth + across {
+                            columns[level + across + (position - depth - across)].push(value);
+                        }
+                    }
+                }
+                QueryResult::new(schema, columns, count)
+            })
+            .collect();
+
+        opengrid_pivot::assemble(pivot, &results).map_err(|error| DataSourceError::Backend {
+            message: error.to_string(),
+        })
+    }
+}
+
+/// The output schema one level of a pivot would have had on its own.
+fn level_schema(deepest: &ValidatedQuery, level: usize, across: usize, measures: usize) -> Schema {
+    let fields = deepest.output_schema.fields();
+    let keys = fields[..level]
+        .iter()
+        .chain(&fields[deepest.group.len() - across..deepest.group.len()])
+        .cloned();
+    let values = fields[fields.len() - measures..].iter().cloned();
+    Schema::new(keys.chain(values).collect())
 }
 
 #[cfg(test)]

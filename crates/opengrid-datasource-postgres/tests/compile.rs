@@ -254,3 +254,52 @@ fn an_empty_filter_list_is_not_nothing() {
             .contains("WHERE FALSE")
     );
 }
+
+/// The pivot statement, pinned (plan point 31).
+///
+/// Three things have to stay exactly as they are, and a snapshot is the only
+/// way to notice when one of them quietly changes: the `GROUPING SETS` list,
+/// the `GROUPING()` column per row dimension — without it a subtotal and a real
+/// NULL group are the same row (S10/P2) — and the `ORDER BY` that alternates
+/// value and flag so a subtotal lands after the rows it sums (P6).
+#[test]
+fn a_pivot_compiles_into_one_statement() {
+    use opengrid_pivot::{PivotLimits, PivotQuery};
+    use opengrid_query::Limits;
+
+    let compiler = compiler();
+    let schema = schema();
+    let pivots = [
+        (
+            "rows and columns",
+            r#"{"source":"orders","rows":["country","customer"],"columns":["ordered_year"],
+                "values":[{"field":"qty","fn":"sum","as":"total"},{"fn":"count","as":"n"}]}"#,
+        ),
+        (
+            "no column dimension",
+            r#"{"source":"orders","rows":["country"],
+                "values":[{"field":"qty","fn":"avg","as":"mean"}]}"#,
+        ),
+        (
+            "filtered, and a derived dimension",
+            r#"{"source":"orders","rows":["ordered_year"],"columns":["country"],
+                "values":[{"fn":"count","as":"n"}],
+                "filter":{"field":"qty","op":"gt","value":3}}"#,
+        ),
+    ];
+
+    let mut report = String::new();
+    for (title, json) in pivots {
+        let pivot: PivotQuery = serde_json::from_str(json).expect("a pivot");
+        let validated = pivot
+            .validate(&schema, &PivotLimits::default(), &Limits::default())
+            .expect("valid");
+        let compiled = compiler.compile_pivot(&validated).expect("compiles");
+        report.push_str(&format!("# {title}\n{}\n", compiled.sql));
+        for (index, value) in compiled.params.iter().enumerate() {
+            report.push_str(&format!("  ${} = {value:?}\n", index + 1));
+        }
+        report.push('\n');
+    }
+    insta::assert_snapshot!("pivot_sql", report);
+}

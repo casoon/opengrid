@@ -19,4 +19,4 @@ name = "orders"
 type = "local-csv"
 path = "../../../crates/opengrid-conformance/data/orders.csv"
 schema = "../../../crates/opengrid-conformance/data/orders.schema.json"
-allowed_fields = ["id", "customer", "country", "amount", "qty", "ordered_on"]
+allowed_fields = ["id", "customer", "country", "amount", "qty", "ordered_on", "ordered_year"]

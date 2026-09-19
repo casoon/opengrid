@@ -1,0 +1,148 @@
+{
+  "id": "p4-an-empty-cell-is-null-but-a-count-is-zero",
+  "rule": "P4",
+  "pivot": {
+    "source": "orders",
+    "rows": [
+      "customer"
+    ],
+    "columns": [
+      "ordered_year"
+    ],
+    "values": [
+      {
+        "field": "qty",
+        "fn": "sum",
+        "as": "total"
+      },
+      {
+        "fn": "count",
+        "as": "n"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      {
+        "path": [
+          2025
+        ],
+        "measure": "total"
+      },
+      {
+        "path": [
+          2025
+        ],
+        "measure": "n"
+      },
+      {
+        "path": [
+          2026
+        ],
+        "measure": "total"
+      },
+      {
+        "path": [
+          2026
+        ],
+        "measure": "n"
+      },
+      {
+        "path": [
+          null
+        ],
+        "measure": "total"
+      },
+      {
+        "path": [
+          null
+        ],
+        "measure": "n"
+      }
+    ],
+    "rows": [
+      [
+        "",
+        null,
+        0,
+        11,
+        1,
+        null,
+        0
+      ],
+      [
+        "Alpha",
+        1,
+        1,
+        305,
+        11,
+        null,
+        0
+      ],
+      [
+        "Beta",
+        null,
+        0,
+        319,
+        12,
+        null,
+        0
+      ],
+      [
+        "Delta",
+        null,
+        0,
+        178,
+        8,
+        null,
+        0
+      ],
+      [
+        "Epsilon",
+        null,
+        0,
+        19,
+        2,
+        null,
+        0
+      ],
+      [
+        "Gamma",
+        null,
+        0,
+        282,
+        10,
+        5,
+        1
+      ],
+      [
+        null,
+        null,
+        0,
+        104,
+        4,
+        null,
+        0
+      ],
+      [
+        null,
+        1,
+        1,
+        1218,
+        48,
+        5,
+        1
+      ]
+    ],
+    "levels": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      0
+    ]
+  }
+}

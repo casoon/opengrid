@@ -51,7 +51,8 @@ pub fn register() -> Result<(), JsValue> {
         on_disconnected,
         on_attribute_changed,
     )?;
-    crate::grid_element::define_grid()
+    crate::grid_element::define_grid()?;
+    crate::pivot_element::define_pivot()
 }
 
 /// Attaches a data provider to a host element (points 14/16).
@@ -65,10 +66,10 @@ pub fn register() -> Result<(), JsValue> {
 pub fn set_provider(host: &HtmlElement, provider: JsValue) {
     let provider: Rc<dyn DataProvider> = Rc::new(JsProvider::new(provider));
     attach_provider(host, provider);
-    if host.tag_name().eq_ignore_ascii_case("opengrid-grid") {
-        crate::grid_element::start(host);
-    } else {
-        run_query(host, None, None);
+    match host.tag_name().to_ascii_lowercase().as_str() {
+        "opengrid-grid" => crate::grid_element::start(host),
+        "opengrid-pivot" => crate::pivot_element::run(host),
+        _ => run_query(host, None, None),
     }
 }
 
@@ -95,10 +96,10 @@ pub fn set_texts(host: &HtmlElement, values: JsValue) {
         // Not connected yet — `connectedCallback` will read the stored texts.
         return;
     }
-    if host.tag_name().eq_ignore_ascii_case("opengrid-grid") {
-        crate::grid_element::retext(host);
-    } else {
-        run_query(host, None, None);
+    match host.tag_name().to_ascii_lowercase().as_str() {
+        "opengrid-grid" => crate::grid_element::retext(host),
+        "opengrid-pivot" => crate::pivot_element::run(host),
+        _ => run_query(host, None, None),
     }
 }
 

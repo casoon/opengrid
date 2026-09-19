@@ -33,6 +33,7 @@
 
 use std::fmt::Write as _;
 
+use opengrid_pivot::ValidatedPivotQuery;
 use opengrid_query::{
     Aggregate, AggregateFn, CmpOp, NullsOrder, Sort, SortDirection, ValidatedFilter, ValidatedQuery,
 };
@@ -514,5 +515,108 @@ impl Sql {
             sql: self.text,
             params: self.params,
         }
+    }
+}
+
+/// The prefix of the `GROUPING()` columns a pivot statement carries.
+///
+/// A leading underscore is a legal identifier but not one a schema would use,
+/// and the validator would have rejected a column of this name long before it
+/// got here.
+pub const GROUPING_PREFIX: &str = "__grouping_";
+
+impl PostgresCompiler {
+    /// A whole pivot as **one** statement (plan point 31).
+    ///
+    /// `GROUP BY GROUPING SETS` computes every level in a single pass instead of
+    /// the `n+1` queries the generic path sends. Two things make the answer
+    /// usable afterwards:
+    ///
+    /// * **`GROUPING(d)` per row dimension.** Without it a subtotal row — whose
+    ///   deeper dimensions are NULL — is indistinguishable from a real NULL
+    ///   group (S10). This is the SQL counterpart of `PivotResult::row_levels`,
+    ///   and the reason rule P2 exists.
+    /// * **An `ORDER BY` that produces rule P6.** For each row dimension, the
+    ///   value first and its `GROUPING()` second: a subtotal ties with the NULL
+    ///   group on the value and then loses on the flag, so it lands *after* the
+    ///   rows it sums. The grand total lands last for the same reason.
+    ///
+    /// The statement answers the **long** form — one row per group, all levels
+    /// in one table. Reshaping stays in `opengrid-pivot`, so there is exactly
+    /// one place that builds a matrix and the differential test compares the
+    /// database against the engine rather than two reshapers against each other.
+    pub fn compile_pivot(
+        &self,
+        pivot: &ValidatedPivotQuery,
+    ) -> Result<CompiledQuery, CompileError> {
+        let deepest = pivot.sets.first().ok_or(CompileError::UnknownField {
+            name: "pivot".to_owned(),
+        })?;
+        let mut sql = Sql::default();
+
+        sql.push("SELECT ");
+        self.projection(deepest, &mut sql)?;
+        for field in &pivot.rows {
+            sql.push(", GROUPING(");
+            sql.push(&self.column(field.as_str())?);
+            sql.push(") AS ");
+            sql.push(&quote_ident(&format!(
+                "{GROUPING_PREFIX}{}",
+                field.as_str()
+            ))?);
+        }
+
+        sql.push(" FROM ");
+        sql.push(&quote_ident(&self.table)?);
+
+        if let Some(filter) = &deepest.filter {
+            sql.push(" WHERE ");
+            self.filter(filter, &mut sql)?;
+        }
+
+        sql.push(" GROUP BY GROUPING SETS (");
+        for (index, set) in pivot.sets.iter().enumerate() {
+            if index > 0 {
+                sql.push(", ");
+            }
+            sql.push("(");
+            for (position, field) in set.group.iter().enumerate() {
+                if position > 0 {
+                    sql.push(", ");
+                }
+                sql.push(&self.column(field.as_str())?);
+            }
+            sql.push(")");
+        }
+        sql.push(")");
+
+        sql.push(" ORDER BY ");
+        let mut first = true;
+        for field in &pivot.rows {
+            let column = self.column(field.as_str())?;
+            let data_type = self.data_type(field.as_str())?;
+            if !first {
+                sql.push(", ");
+            }
+            first = false;
+            // S3/S4 as everywhere, then the flag that separates a real NULL
+            // group from the subtotal that shares its NULL.
+            sql.push(&collated(&column, data_type));
+            sql.push(" ASC NULLS LAST, GROUPING(");
+            sql.push(&column);
+            sql.push(") ASC");
+        }
+        for field in &pivot.columns {
+            let column = self.column(field.as_str())?;
+            let data_type = self.data_type(field.as_str())?;
+            if !first {
+                sql.push(", ");
+            }
+            first = false;
+            sql.push(&collated(&column, data_type));
+            sql.push(" ASC NULLS LAST");
+        }
+
+        Ok(sql.finish())
     }
 }

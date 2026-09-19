@@ -1097,6 +1097,7 @@ dependencies = [
  "opengrid-arrow-engine",
  "opengrid-conformance",
  "opengrid-datasource",
+ "opengrid-pivot",
  "opengrid-query",
  "opengrid-types",
  "serde_json",
@@ -1111,6 +1112,19 @@ dependencies = [
  "opengrid-datasource",
  "opengrid-query",
  "opengrid-types",
+]
+
+[[package]]
+name = "opengrid-pivot"
+version = "0.0.0"
+dependencies = [
+ "opengrid-arrow-engine",
+ "opengrid-conformance",
+ "opengrid-datasource",
+ "opengrid-query",
+ "opengrid-types",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1141,6 +1155,7 @@ dependencies = [
  "opengrid-arrow-engine",
  "opengrid-datasource",
  "opengrid-datasource-postgres",
+ "opengrid-pivot",
  "opengrid-query",
  "opengrid-types",
  "serde",

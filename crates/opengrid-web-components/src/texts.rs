@@ -60,6 +60,20 @@ pub struct GridTexts {
     /// A filter input the column cannot hold (point 51). May use `{column}` and
     /// `{value}`.
     pub filter_invalid: String,
+    /// The header of a pivot group whose dimension value is NULL.
+    ///
+    /// A header cell must not be empty: a sighted reader sees a blank and
+    /// understands "no country", a screen reader announces nothing at all.
+    pub no_value: String,
+    /// The header of a pivot group whose dimension value is the **empty
+    /// string** — a different group from NULL (rule S14), and it has to look
+    /// and sound different too.
+    pub empty_value: String,
+    /// The row header of a pivot's grand total (plan point 32).
+    pub total: String,
+    /// The row header of a pivot's subtotal. May use `{value}` — the value of
+    /// the dimension the subtotal closes.
+    pub subtotal: String,
     /// The readable names of the filter operators, in the order of
     /// [`FILTER_OPERATORS`](crate::grid::FILTER_OPERATORS). The `value` of each
     /// option stays the wire token, so the query is unaffected.
@@ -106,6 +120,10 @@ impl Default for GridTexts {
             value_label: "{column} value".to_owned(),
             clear: "Clear".to_owned(),
             filter_invalid: "{column}: {value} is not a value for this column".to_owned(),
+            no_value: "(no value)".to_owned(),
+            empty_value: "(empty)".to_owned(),
+            total: "Total".to_owned(),
+            subtotal: "Total {value}".to_owned(),
             operators: DEFAULT_OPERATORS
                 .iter()
                 .map(|name| (*name).to_owned())
@@ -154,6 +172,27 @@ impl GridTexts {
             "value",
             value,
         )
+    }
+
+    /// A dimension value as a **header** reads it.
+    ///
+    /// NULL and the empty string are two different groups (S10, S14) and two
+    /// different words; neither may render as an empty header cell.
+    pub fn dimension(&self, value: Option<&str>) -> String {
+        match value {
+            None => self.no_value.clone(),
+            Some("") => self.empty_value.clone(),
+            Some(text) => text.to_owned(),
+        }
+    }
+
+    /// The row header of the subtotal that closes `value`.
+    ///
+    /// A subtotal has to be **readable** as one, not only shaded: colour alone
+    /// is not information (WCAG 1.4.1), and a screen reader announces this text
+    /// where a sighted reader sees the shading.
+    pub fn subtotal(&self, value: &str) -> String {
+        fill(&self.subtotal, "value", value)
     }
 
     /// The readable name of the operator at `index`, falling back to the wire
@@ -275,6 +314,10 @@ mod host {
         overwrite(&mut texts.value_label, string("valueLabel"));
         overwrite(&mut texts.clear, string("clear"));
         overwrite(&mut texts.filter_invalid, string("filterInvalid"));
+        overwrite(&mut texts.no_value, string("noValue"));
+        overwrite(&mut texts.empty_value, string("emptyValue"));
+        overwrite(&mut texts.total, string("total"));
+        overwrite(&mut texts.subtotal, string("subtotal"));
 
         // `operators` is keyed by the wire token — `{ gte: "greater or equal" }`.
         // A positional array would silently shift every label when one entry is
