@@ -69,13 +69,15 @@ use web_sys::{
     ScrollIntoViewOptions, ScrollLogicalPosition, ShadowRoot,
 };
 
-use opengrid_grid::{CellRef, GridState, GridStatus, Window};
+use opengrid_grid::{CellRef, GridState, GridStatus, Patch as GridPatch, Window};
 use opengrid_query::CmpOp;
 use opengrid_web_core::element::{
     ARIA_LABEL_ATTRIBUTE, LABEL_ATTRIBUTE, attach_open_shadow_root, define, mirror_label,
 };
 use opengrid_web_core::patch::{NodeAllocator, PatchBuffer};
 use opengrid_web_core::provider::provider;
+
+use crate::formats::{Formatter, formats};
 use opengrid_web_core::renderer::{Dom, WebRenderer};
 
 use crate::element::{clear_root, describe};
@@ -445,6 +447,7 @@ fn render(host: &HtmlElement, focus_after: bool) {
             pinned_slot,
             borrowed.row_height,
             &texts(host),
+            &Formatter::new(&formats(host), borrowed.state.schema()),
         );
         if let Some(dom) = borrowed.dom.as_mut() {
             dom.apply_buffer(&buffer);
@@ -740,10 +743,43 @@ fn on_key_down(event: KeyboardEvent) {
     };
     let viewport_rows = viewport_rows(&runtime);
 
+    // `Ctrl`/`Cmd`+`A` selects every matching row, not only the loaded page.
+    if event.key().eq_ignore_ascii_case("a") && (event.ctrl_key() || event.meta_key()) {
+        event.prevent_default();
+        let patches = runtime.borrow_mut().state.select_all();
+        settle_selection(&host, &runtime, patches);
+        return;
+    }
+
     match (event.key().as_str(), event.ctrl_key()) {
-        ("Enter", _) | (" ", _) => {
+        ("Enter", _) => {
             event.prevent_default();
             activate_header(&host, &runtime, event.shift_key());
+        }
+        (" ", _) => {
+            event.prevent_default();
+            // On a header `Space` sorts, as it always has; on a data cell it
+            // now selects the row (point 35). `Shift` extends from the anchor.
+            // Read the active cell **before** matching: holding the `Ref`
+            // across the arms would make the `borrow_mut` below panic, and a
+            // panic in an event handler is a silent dead key.
+            let active = runtime.borrow().active;
+            match active {
+                ActiveCell::Header { .. } => {
+                    activate_header(&host, &runtime, event.shift_key());
+                }
+                ActiveCell::Data(cell) => {
+                    let patches = {
+                        let mut runtime = runtime.borrow_mut();
+                        if event.shift_key() {
+                            runtime.state.extend_selection(cell.row)
+                        } else {
+                            runtime.state.toggle_selection(cell.row)
+                        }
+                    };
+                    settle_selection(&host, &runtime, patches);
+                }
+            }
         }
         ("Escape", _) => {
             event.prevent_default();
@@ -817,6 +853,84 @@ fn move_with_key(
     }
 }
 
+/// Fires the selection event when the state has just dropped the selection.
+///
+/// Sorting and filtering do it as a side effect, so the page would otherwise
+/// keep acting on rows that are no longer selected.
+fn announce_if_cleared(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>) {
+    if runtime.borrow().state.selection().is_empty() {
+        dispatch_selection(host, &[]);
+    }
+}
+
+/// Draws the grid again without asking the source anything.
+///
+/// What changed is how the values are written, not which ones there are
+/// (point 42).
+pub(crate) fn rerender(host: &HtmlElement) {
+    render(host, false);
+}
+
+/// Renders a changed selection and tells the page about it.
+///
+/// One place, so the event and what is on screen can never disagree: whatever
+/// changed the selection produces patches, and this turns them into both.
+fn settle_selection(
+    host: &HtmlElement,
+    runtime: &Rc<RefCell<GridRuntime>>,
+    patches: Vec<GridPatch>,
+) {
+    let Some(rows) = patches.into_iter().find_map(|patch| match patch {
+        GridPatch::Selection(rows) => Some(rows),
+        _ => None,
+    }) else {
+        return;
+    };
+    render(host, false);
+    dispatch_selection(host, &rows);
+    let _ = runtime;
+}
+
+/// Fires `opengrid-selection-change` on the host.
+///
+/// **The event contract (point 35), which every later event follows:**
+///
+/// * The name is prefixed with `opengrid-`, so it cannot collide with an event
+///   the page already uses.
+/// * `bubbles` **and** `composed`: the event is dispatched on the host, and
+///   `composed` lets it cross a shadow boundary the host may itself sit in —
+///   without it, a page that wraps the grid in its own component hears nothing.
+/// * Not `cancelable`: it reports what has already happened. An event that can
+///   be prevented needs a state machine that can be rolled back, and V1 has
+///   none.
+/// * `detail` is plain JSON-ish data — no Rust types, no live references:
+///   `{ rows: [u64], count: number }`.
+fn dispatch_selection(host: &HtmlElement, rows: &[u64]) {
+    let list = js_sys::Array::new();
+    for row in rows {
+        list.push(&JsValue::from_f64(*row as f64));
+    }
+    let detail = js_sys::Object::new();
+    let _ = js_sys::Reflect::set(&detail, &JsValue::from_str("rows"), &list);
+    let _ = js_sys::Reflect::set(
+        &detail,
+        &JsValue::from_str("count"),
+        &JsValue::from_f64(rows.len() as f64),
+    );
+
+    let init = web_sys::CustomEventInit::new();
+    init.set_bubbles(true);
+    init.set_composed(true);
+    init.set_cancelable(false);
+    init.set_detail(&detail);
+    if let Ok(event) = web_sys::CustomEvent::new_with_event_init_dict(SELECTION_EVENT, &init) {
+        let _ = host.dispatch_event(&event);
+    }
+}
+
+/// The name of the selection event (point 35).
+pub const SELECTION_EVENT: &str = "opengrid-selection-change";
+
 /// `Enter`/`Space` on a header cell sorts by its column and re-runs the query;
 /// on a data cell it is a no-op.
 ///
@@ -854,6 +968,10 @@ fn activate_header(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>, multi
         runtime.state.ensure_sorted();
         runtime.state.set_window(Window::new(0, pool));
     }
+    // Sorting drops the selection (a selection names positions, and the order
+    // just changed): the page hears it the same way it hears every other
+    // selection change.
+    announce_if_cleared(host, runtime);
     run_query(host, QueryKind::Data, true);
 }
 
@@ -937,6 +1055,8 @@ fn apply_filters(host: &HtmlElement) {
         runtime.state.set_filter(filter);
         runtime.state.set_window(Window::new(0, pool));
     }
+    // A filter changes which rows exist, so the selection is gone (point 35).
+    announce_if_cleared(host, &runtime);
     run_query(host, QueryKind::Data, false);
 }
 

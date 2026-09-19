@@ -143,10 +143,11 @@
 use opengrid_datasource::QueryResult;
 use opengrid_grid::{CellRef, GridState, GridStatus, Window};
 use opengrid_query::{CmpOp, FilterExpr};
-use opengrid_types::{DataType, Field, FieldName, Schema, Value};
+use opengrid_types::{DataType, Field, FieldName, Schema};
 use opengrid_web_core::element::{LABEL_ATTRIBUTE, mirror_label};
 use opengrid_web_core::patch::{NodeAllocator, NodeId, Patch, PatchBuffer};
 
+use crate::formats::CellFormat;
 use crate::texts::GridTexts;
 
 /// The custom element name (E1).
@@ -731,6 +732,20 @@ pub fn status_text(texts: &GridTexts, status: &GridStatus, total_count: u64) -> 
     }
 }
 
+/// The status line, including the notice that a selection was dropped.
+///
+/// The notice rides along with the result that replaced the rows instead of
+/// getting a live region of its own — point 41 left the grid exactly **one**,
+/// and two would talk over each other.
+pub fn status_line(texts: &GridTexts, state: &opengrid_grid::GridState) -> String {
+    let text = status_text(texts, state.status(), state.total_count());
+    if state.announce_selection_cleared() {
+        format!("{text} · {}", texts.selection_cleared)
+    } else {
+        text
+    }
+}
+
 /// The `data-state` token of the status line, for styling (`::part(status)`).
 pub fn status_state(status: &GridStatus) -> &'static str {
     match status {
@@ -792,20 +807,6 @@ pub fn query_json(
 pub fn parse_result(result_json: &str) -> Result<QueryResult, String> {
     opengrid_datasource::wire::result_from_json(result_json)
         .map_err(|error| error.message().to_owned())
-}
-
-/// The display text of a typed cell value.
-fn cell_text(value: &Value) -> String {
-    match value {
-        Value::Null => String::new(),
-        Value::Bool(flag) => flag.to_string(),
-        Value::Int64(number) => number.to_string(),
-        Value::Float64(number) => number.to_string(),
-        Value::Decimal(decimal) => decimal.to_string(),
-        Value::Utf8(text) => text.clone(),
-        Value::Date(date) => date.to_string(),
-        Value::Timestamp(timestamp) => timestamp.to_string(),
-    }
 }
 
 /// The first logical row visible at `scroll_top`.
@@ -1435,6 +1436,7 @@ pub fn patch_grid(
     pinned_slot: Option<usize>,
     row_height: u64,
     texts: &GridTexts,
+    format: &dyn CellFormat,
 ) {
     let fields = state.schema().fields();
     let total_count = state.total_count();
@@ -1459,7 +1461,7 @@ pub fn patch_grid(
     });
     buffer.push(Patch::SetText {
         node: nodes.status,
-        text: status_text(texts, state.status(), total_count),
+        text: status_line(texts, state),
     });
 
     // The filter row follows the schema: which operators a column offers and what
@@ -1548,6 +1550,14 @@ pub fn patch_grid(
 
     for (slot, row_nodes) in nodes.rows.iter().enumerate() {
         if Some(slot) == pinned_slot {
+            // The pinned slot keeps its `data-row`, its text and its position —
+            // rewriting them would move the row out from under the focus. Its
+            // **selection** still has to follow, or selecting the row you are
+            // standing on would show nothing: `aria-selected` touches neither
+            // identity nor focus.
+            if let Some(row) = slots.get(slot).copied().flatten() {
+                selection_attributes(buffer, row_nodes.row, state.is_selected(row));
+            }
             continue;
         }
         match slots.get(slot).copied().flatten() {
@@ -1558,6 +1568,11 @@ pub fn patch_grid(
                     name: "aria-rowindex".to_owned(),
                     value: (row + 2).to_string(),
                 });
+                // Selection is per **logical** row, so a recycled slot picks up
+                // the state of whatever row it now shows — that is what makes a
+                // selection survive scrolling (point 35). `data-selected` is the
+                // styling hook; `aria-selected` is the announcement.
+                selection_attributes(buffer, row_nodes.row, state.is_selected(row));
                 for (col, cell) in row_nodes.cells.iter().enumerate() {
                     buffer.push(Patch::SetAttribute {
                         node: *cell,
@@ -1570,9 +1585,11 @@ pub fn patch_grid(
                         name: "tabindex".to_owned(),
                         value: tabindex_for(is_active).to_owned(),
                     });
+                    // Display only (point 42): the value behind it is what the
+                    // filter and the sort keep working on.
                     let text = state
                         .cell(CellRef::new(row, col))
-                        .map(cell_text)
+                        .map(|value| format.text(col, value))
                         .unwrap_or_default();
                     buffer.push(Patch::SetText { node: *cell, text });
                 }
@@ -1583,8 +1600,41 @@ pub fn patch_grid(
                     node: row_nodes.row,
                     name: "aria-rowindex".to_owned(),
                 });
+                buffer.push(Patch::RemoveAttribute {
+                    node: row_nodes.row,
+                    name: "aria-selected".to_owned(),
+                });
+                buffer.push(Patch::RemoveAttribute {
+                    node: row_nodes.row,
+                    name: "data-selected".to_owned(),
+                });
             }
         }
+    }
+}
+
+/// Writes a row's selection: the announcement and the styling hook.
+///
+/// `aria-selected` is what assistive technology reads; `data-selected` is what a
+/// theme can shade. Both, because shading alone is not information
+/// (WCAG 1.4.1) and an ARIA state alone is invisible.
+fn selection_attributes(buffer: &mut PatchBuffer, row: NodeId, selected: bool) {
+    buffer.push(Patch::SetAttribute {
+        node: row,
+        name: "aria-selected".to_owned(),
+        value: selected.to_string(),
+    });
+    if selected {
+        buffer.push(Patch::SetAttribute {
+            node: row,
+            name: "data-selected".to_owned(),
+            value: "true".to_owned(),
+        });
+    } else {
+        buffer.push(Patch::RemoveAttribute {
+            node: row,
+            name: "data-selected".to_owned(),
+        });
     }
 }
 
@@ -1705,6 +1755,7 @@ fn element(
 mod tests {
     use super::*;
     use opengrid_grid::Window;
+    use opengrid_types::Value;
 
     fn state_with(rows: &[&str], total: u64, offset: u64, pool: u64) -> GridState {
         let schema = Schema::new(vec![
@@ -2052,8 +2103,8 @@ mod tests {
             [Value::Utf8("Alpha".to_owned()), Value::Null]
         );
         // And the renderer still turns them into the same text as before.
-        assert_eq!(cell_text(&parsed.columns[1][0]), "10.00");
-        assert_eq!(cell_text(&parsed.columns[0][1]), "");
+        assert_eq!(crate::formats::plain_text(&parsed.columns[1][0]), "10.00");
+        assert_eq!(crate::formats::plain_text(&parsed.columns[0][1]), "");
     }
 
     /// A malformed result is an error, not a panic.
@@ -2157,6 +2208,7 @@ mod tests {
             None,
             DEFAULT_ROW_HEIGHT,
             &GridTexts::default(),
+            &crate::formats::Plain,
         );
 
         let attributes = |name: &str| -> Vec<String> {
@@ -2215,6 +2267,7 @@ mod tests {
             None,
             DEFAULT_ROW_HEIGHT,
             &GridTexts::default(),
+            &crate::formats::Plain,
         );
         let sorts: Vec<&str> = buffer
             .patches()
@@ -2257,6 +2310,7 @@ mod tests {
             None,
             DEFAULT_ROW_HEIGHT,
             &GridTexts::default(),
+            &crate::formats::Plain,
         );
 
         let aria: Vec<&str> = buffer
@@ -2360,6 +2414,7 @@ mod tests {
                 None,
                 DEFAULT_ROW_HEIGHT,
                 &GridTexts::default(),
+                &crate::formats::Plain,
             );
             view.header_cells
                 .iter()
@@ -2552,6 +2607,7 @@ mod tests {
             None,
             DEFAULT_ROW_HEIGHT,
             &GridTexts::default(),
+            &crate::formats::Plain,
         );
         let indexes: Vec<&str> = buffer
             .patches()
@@ -2594,6 +2650,7 @@ mod tests {
             None,
             DEFAULT_ROW_HEIGHT,
             &GridTexts::default(),
+            &crate::formats::Plain,
         );
         assert!(buffer.patches().iter().any(|patch| matches!(
             patch,
@@ -2630,6 +2687,7 @@ mod tests {
             None,
             48,
             &GridTexts::default(),
+            &crate::formats::Plain,
         );
 
         // The sizer is `total * 48`, not `total * 32`.
@@ -2678,15 +2736,36 @@ mod tests {
             pinned,
             DEFAULT_ROW_HEIGHT,
             &GridTexts::default(),
+            &crate::formats::Plain,
         );
 
         let pinned_row = view.rows[3].row;
+        // Its identity and position must not move — that is what keeps the
+        // browser's focus where it is. Since point 35 its **selection** does
+        // follow: `aria-selected` touches neither, and without it, selecting
+        // the row you are standing on would show nothing.
+        let touched: Vec<&str> = buffer
+            .patches()
+            .iter()
+            .filter_map(|patch| match patch {
+                Patch::SetAttribute { node, name, .. } if *node == pinned_row => {
+                    Some(name.as_str())
+                }
+                Patch::RemoveAttribute { node, name } if *node == pinned_row => Some(name.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            touched,
+            ["aria-selected", "data-selected"],
+            "only the selection may be written to the pinned row"
+        );
         assert!(
             !buffer.patches().iter().any(|patch| matches!(
                 patch,
-                Patch::SetAttribute { node, .. } if *node == pinned_row
+                Patch::SetText { node, .. } if *node == pinned_row
             )),
-            "the pinned row node must not be patched"
+            "the pinned row keeps its text"
         );
         assert!(slots.contains(&focus));
     }

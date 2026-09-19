@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>opengrid format fixture</title>
+    <style>
+      opengrid-grid {
+        display: block;
+        height: 224px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid format fixture</h1>
+      <opengrid-grid
+        label="Orders"
+        datasource="orders"
+        columns="id,customer,amount"
+        window-size="10"
+      ></opengrid-grid>
+    </main>
+    <script type="module">
+      // Point 42: the page supplies the formats; the engine never learns about
+      // a language. Every query the provider sees is recorded, so the spec can
+      // prove that no formatting reached it.
+      import { loadOpengrid, createLocalProvider } from "/packages/opengrid/loader.js";
+      import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+
+      window.__queries = [];
+
+      await init();
+      const engine = new Engine();
+      const schema = await (await fetch("/tests/e2e/fixtures/grid-orders.schema.json")).text();
+      const csv = await (await fetch("/tests/e2e/fixtures/grid-orders.csv")).arrayBuffer();
+      engine.load_csv("orders", new Uint8Array(csv), schema);
+
+      const engineProvider = createLocalProvider(engine);
+      const provider = {
+        execute(queryJson, mode) {
+          window.__queries.push(queryJson);
+          return engineProvider.execute(queryJson, mode);
+        },
+      };
+
+      const loader = await loadOpengrid();
+      const host = document.querySelector("opengrid-grid");
+      window.__setFormats = (formats) => loader.module.set_formats(host, formats);
+      window.__setFormats({
+        amount: { kind: "number", locale: "de-DE", style: "currency", currency: "EUR" },
+      });
+      loader.module.set_provider(host, provider);
+      window.__ready = true;
+    </script>
+  </body>
+</html>

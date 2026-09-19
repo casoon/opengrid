@@ -31,6 +31,9 @@ wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
 web-sys = { version = "0.3", features = [
     "CustomElementRegistry",
+    # The event seam of point 35.
+    "CustomEvent",
+    "CustomEventInit",
     "Document",
     "DocumentFragment",
     "Element",

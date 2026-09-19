@@ -89,6 +89,30 @@ pub fn set_provider(host: &HtmlElement, provider: JsValue) {
 /// skeleton (the filter row, the scroll offset and the focus are carried
 /// across). Call it **before** wiring the provider and the component renders the
 /// right words from its first paint.
+/// Sets the per-column display formats (plan point 42).
+///
+/// `formats` is a plain JS object keyed by column name. A value is either a
+/// **function** `(text, value) => string` — `text` is what the component would
+/// have shown, `value` the JSON value — or an **`Intl` options object** with a
+/// `kind` of `"number"` (the default) or `"date"` and an optional `locale`;
+/// everything else in it goes to `Intl` unchanged.
+///
+/// Formatting is display only: the filter, the sort and every comparison keep
+/// working on the value, because a grid that sorted by what it printed would
+/// have stopped honouring rules S4, S8 and S9.
+#[wasm_bindgen(js_name = set_formats)]
+pub fn set_formats(host: &HtmlElement, formats: JsValue) {
+    crate::formats::set_formats_for(host, &formats);
+    if host.shadow_root().is_none() {
+        return;
+    }
+    match host.tag_name().to_ascii_lowercase().as_str() {
+        "opengrid-grid" => crate::grid_element::rerender(host),
+        "opengrid-pivot" => crate::pivot_element::run(host),
+        _ => run_query(host, None, None),
+    }
+}
+
 #[wasm_bindgen(js_name = set_texts)]
 pub fn set_texts(host: &HtmlElement, values: JsValue) {
     texts::store(host, Rc::new(texts::from_js(&values)));

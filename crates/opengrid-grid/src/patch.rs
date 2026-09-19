@@ -58,4 +58,12 @@ pub enum Patch {
     /// The grid's status changed (plan point 41). The renderer writes it into
     /// the visible, `aria-live` status line.
     Status(GridStatus),
+    /// The selection changed (plan point 35). Carries the rows that are
+    /// selected **now**, ascending, as logical row numbers.
+    ///
+    /// The whole selection rather than a delta: it is what the renderer needs
+    /// to set `aria-selected` on the rows it happens to be showing, and what
+    /// the page gets in the event. A delta would make both of them keep their
+    /// own copy of the truth.
+    Selection(Vec<u64>),
 }

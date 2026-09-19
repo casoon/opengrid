@@ -70,6 +70,20 @@ pub struct GridState {
     page: Vec<Vec<Value>>,
     /// What the grid announces: loading, ready, empty or an error.
     status: GridStatus,
+    /// Selected **logical** rows, ascending and without duplicates (point 35).
+    ///
+    /// Logical, not DOM slots: a slot is recycled while scrolling, so a
+    /// selection kept per slot would move to whatever row landed there.
+    selection: Vec<u64>,
+    /// Where a range selection starts. Set by every plain toggle, used by
+    /// `Shift`.
+    anchor: Option<u64>,
+    /// A sort or a filter has dropped a selection and the next result has not
+    /// said so yet.
+    selection_dropped: bool,
+    /// Whether **this** result is the one that announces it. Exactly one does:
+    /// `apply_result` moves the flag here, the next result overwrites it.
+    announce_selection_cleared: bool,
 }
 
 impl GridState {
@@ -88,6 +102,10 @@ impl GridState {
             page_offset: 0,
             page: Vec::new(),
             status: GridStatus::Loading,
+            selection: Vec::new(),
+            anchor: None,
+            selection_dropped: false,
+            announce_selection_cleared: false,
         }
     }
 
@@ -126,6 +144,108 @@ impl GridState {
         self.filter.as_ref()
     }
 
+    /// The selected logical rows, ascending.
+    pub fn selection(&self) -> &[u64] {
+        &self.selection
+    }
+
+    /// Whether a logical row is selected.
+    pub fn is_selected(&self, row: u64) -> bool {
+        self.selection.binary_search(&row).is_ok()
+    }
+
+    /// Toggles one row and makes it the anchor for a later range.
+    pub fn toggle_selection(&mut self, row: u64) -> Vec<Patch> {
+        match self.selection.binary_search(&row) {
+            Ok(index) => {
+                self.selection.remove(index);
+            }
+            Err(index) => self.selection.insert(index, row),
+        }
+        // The anchor follows the last plain toggle even when it deselected:
+        // `Shift` afterwards should extend from where the user just was.
+        self.anchor = Some(row);
+        vec![Patch::Selection(self.selection.clone())]
+    }
+
+    /// Selects the range from the anchor to `row`, keeping what is already
+    /// selected.
+    ///
+    /// Without an anchor this is an ordinary toggle — `Shift` before anything
+    /// else has no range to extend.
+    pub fn extend_selection(&mut self, row: u64) -> Vec<Patch> {
+        let Some(anchor) = self.anchor else {
+            return self.toggle_selection(row);
+        };
+        let (low, high) = if anchor <= row {
+            (anchor, row)
+        } else {
+            (row, anchor)
+        };
+        let before = self.selection.clone();
+        for value in low..=high {
+            if let Err(index) = self.selection.binary_search(&value) {
+                self.selection.insert(index, value);
+            }
+        }
+        if self.selection == before {
+            return Vec::new();
+        }
+        vec![Patch::Selection(self.selection.clone())]
+    }
+
+    /// Selects every matching row, loaded or not.
+    ///
+    /// The selection is logical, so it can name rows the window has never
+    /// shown — which is the only honest meaning of "select all" in a grid that
+    /// holds one page at a time.
+    pub fn select_all(&mut self) -> Vec<Patch> {
+        let all: Vec<u64> = (0..self.total_count).collect();
+        if self.selection == all {
+            return Vec::new();
+        }
+        self.selection = all;
+        vec![Patch::Selection(self.selection.clone())]
+    }
+
+    /// Drops the selection because the rows behind it changed.
+    ///
+    /// **A selection names positions, not records.** The grid identifies a row
+    /// by its number in the result; it has no key column, and the query model
+    /// gives it none. Sorting therefore does not reorder the selection — it
+    /// leaves it pointing at whoever now sits in those positions, which is a
+    /// different set of records and no longer what anybody picked. Filtering is
+    /// the same. So every operation that changes which rows exist, or in what
+    /// order, clears it.
+    ///
+    /// Silently would be a trap, so the caller announces it (point 41's status
+    /// line).
+    fn invalidate_selection(&mut self) -> Vec<Patch> {
+        let patches = self.clear_selection();
+        if !patches.is_empty() {
+            self.selection_dropped = true;
+        }
+        patches
+    }
+
+    /// Whether the status line should say that the selection is gone.
+    ///
+    /// True for exactly one result — the one that followed the sort or the
+    /// filter that dropped it.
+    pub fn announce_selection_cleared(&self) -> bool {
+        self.announce_selection_cleared
+    }
+
+    /// Clears the selection.
+    pub fn clear_selection(&mut self) -> Vec<Patch> {
+        if self.selection.is_empty() {
+            return Vec::new();
+        }
+        self.selection.clear();
+        self.anchor = None;
+        vec![Patch::Selection(Vec::new())]
+    }
+
     /// The focused logical cell, if any.
     pub fn focus(&self) -> Option<CellRef> {
         self.focus
@@ -158,6 +278,9 @@ impl GridState {
     /// [`GridStatus::Empty`].
     pub fn apply_result(&mut self, result: QueryResult) -> Vec<Patch> {
         let mut patches = Vec::new();
+        // Exactly one result carries the "selection cleared" notice: the one
+        // that arrived because of the sort or filter that dropped it.
+        self.announce_selection_cleared = std::mem::take(&mut self.selection_dropped);
 
         if result.schema != self.schema {
             patches.push(Patch::Columns(result.schema.clone()));
@@ -213,6 +336,9 @@ impl GridState {
             }
         }
         self.sort = sort;
+        // A selection names positions; a different order puts different records
+        // in them (see `invalidate_selection`).
+        patches.extend(self.invalidate_selection());
         patches
     }
 
@@ -342,12 +468,16 @@ impl GridState {
     }
 
     /// Replaces the filter. Emits the new filter, or `None` to clear it.
+    ///
+    /// Drops the selection with it — see [`invalidate_selection`](Self::invalidate_selection).
     pub fn set_filter(&mut self, filter: Option<FilterExpr>) -> Vec<Patch> {
         if self.filter == filter {
             return Vec::new();
         }
         self.filter = filter.clone();
-        vec![Patch::Filter(filter)]
+        let mut patches = vec![Patch::Filter(filter)];
+        patches.extend(self.invalidate_selection());
+        patches
     }
 
     /// Moves focus. Emits the old and new cell; either may be `None`.
@@ -388,7 +518,7 @@ mod tests {
     use opengrid_query::{Collation, NullsOrder, SortDirection};
     use opengrid_types::{DataType, FieldName};
 
-    fn schema() -> Schema {
+    pub(super) fn schema() -> Schema {
         Schema::new(vec![
             Field::required(FieldName::new("id").unwrap(), DataType::Int64),
             Field::new(FieldName::new("country").unwrap(), DataType::Utf8),
@@ -397,7 +527,7 @@ mod tests {
     }
 
     /// A three-column result (`id`, `country`, `amount`) in schema order.
-    fn result(rows: &[(i64, &str, i64)], total_count: u64) -> QueryResult {
+    pub(super) fn result(rows: &[(i64, &str, i64)], total_count: u64) -> QueryResult {
         let ids = rows.iter().map(|(id, _, _)| Value::Int64(*id)).collect();
         let countries = rows
             .iter()
@@ -759,5 +889,117 @@ mod tests {
         assert_eq!(state.cell(CellRef::new(9, 1)), None);
         assert_eq!(state.cell(CellRef::new(12, 0)), None);
         assert_eq!(state.cell(CellRef::new(10, 9)), None);
+    }
+}
+
+#[cfg(test)]
+mod selection_tests {
+    use super::tests::{result, schema};
+    use super::*;
+    use opengrid_types::FieldName;
+
+    fn grid() -> GridState {
+        let mut state = GridState::new(schema());
+        state.apply_result(result(&[(1, "DE", 10)], 100));
+        state
+    }
+
+    /// A selection is a set of logical rows, and toggling it is symmetric.
+    #[test]
+    fn a_row_toggles_in_and_out() {
+        let mut state = grid();
+        assert_eq!(state.toggle_selection(3), vec![Patch::Selection(vec![3])]);
+        assert!(state.is_selected(3));
+        assert_eq!(state.toggle_selection(3), vec![Patch::Selection(vec![])]);
+        assert!(!state.is_selected(3));
+    }
+
+    /// The rows come out ascending whatever order they went in — the renderer
+    /// and the page both read this list, and neither should have to sort it.
+    #[test]
+    fn the_selection_is_ordered() {
+        let mut state = grid();
+        state.toggle_selection(7);
+        state.toggle_selection(2);
+        state.toggle_selection(5);
+        assert_eq!(state.selection(), [2, 5, 7]);
+    }
+
+    /// `Shift` extends from the last plain toggle, in either direction, and
+    /// keeps what was already there.
+    #[test]
+    fn a_range_extends_from_the_anchor() {
+        let mut state = grid();
+        state.toggle_selection(4);
+        state.extend_selection(7);
+        assert_eq!(state.selection(), [4, 5, 6, 7]);
+
+        // Backwards from the same anchor, and the earlier rows stay.
+        state.toggle_selection(20);
+        state.extend_selection(18);
+        assert_eq!(state.selection(), [4, 5, 6, 7, 18, 19, 20]);
+    }
+
+    /// `Shift` before anything else has no range to extend, so it is a toggle.
+    #[test]
+    fn a_range_without_an_anchor_is_a_toggle() {
+        let mut state = grid();
+        assert_eq!(state.extend_selection(9), vec![Patch::Selection(vec![9])]);
+    }
+
+    /// "Select all" means every matching row, not every loaded one — the grid
+    /// holds one page, the selection is logical.
+    #[test]
+    fn select_all_reaches_rows_the_window_never_showed() {
+        let mut state = grid();
+        assert_eq!(state.loaded_rows(), 1);
+        state.select_all();
+        assert_eq!(state.selection().len(), 100);
+        assert!(state.is_selected(99), "far outside the loaded page");
+    }
+
+    /// **The constraint that decides the behaviour.** A selection names
+    /// positions, and sorting puts different records in them.
+    #[test]
+    fn sorting_and_filtering_drop_the_selection() {
+        let mut state = grid();
+        state.toggle_selection(3);
+        let patches = state.toggle_sort("id");
+        assert!(
+            patches.contains(&Patch::Selection(Vec::new())),
+            "sorting must say that the selection is gone: {patches:?}"
+        );
+        assert!(state.selection().is_empty());
+
+        state.toggle_selection(3);
+        let patches = state.set_filter(Some(FilterExpr::IsNull {
+            field: FieldName::new("name").unwrap(),
+        }));
+        assert!(patches.contains(&Patch::Selection(Vec::new())));
+        assert!(state.selection().is_empty());
+    }
+
+    /// Scrolling is not a change of the rows, so it leaves the selection alone.
+    #[test]
+    fn scrolling_keeps_the_selection() {
+        let mut state = grid();
+        state.toggle_selection(3);
+        state.set_window(Window::new(40, 20));
+        state.apply_result(result(&[(41, "FR", 20)], 100));
+        assert_eq!(
+            state.selection(),
+            [3],
+            "the row is off-screen, not unselected"
+        );
+    }
+
+    /// Nothing to change means no patch — the same rule the rest of the state
+    /// follows, so a repeated key does not announce twice.
+    #[test]
+    fn an_unchanged_selection_is_silent() {
+        let mut state = grid();
+        assert!(state.clear_selection().is_empty());
+        state.select_all();
+        assert!(state.select_all().is_empty());
     }
 }

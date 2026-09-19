@@ -60,6 +60,12 @@ pub struct GridTexts {
     /// A filter input the column cannot hold (point 51). May use `{column}` and
     /// `{value}`.
     pub filter_invalid: String,
+    /// Appended to the status line when sorting or filtering dropped a
+    /// selection (point 35).
+    ///
+    /// A selection that vanishes without a word is a trap: the next action
+    /// would apply to nothing, or to something else.
+    pub selection_cleared: String,
     /// The header of a pivot group whose dimension value is NULL.
     ///
     /// A header cell must not be empty: a sighted reader sees a blank and
@@ -120,6 +126,7 @@ impl Default for GridTexts {
             value_label: "{column} value".to_owned(),
             clear: "Clear".to_owned(),
             filter_invalid: "{column}: {value} is not a value for this column".to_owned(),
+            selection_cleared: "Selection cleared".to_owned(),
             no_value: "(no value)".to_owned(),
             empty_value: "(empty)".to_owned(),
             total: "Total".to_owned(),
@@ -314,6 +321,7 @@ mod host {
         overwrite(&mut texts.value_label, string("valueLabel"));
         overwrite(&mut texts.clear, string("clear"));
         overwrite(&mut texts.filter_invalid, string("filterInvalid"));
+        overwrite(&mut texts.selection_cleared, string("selectionCleared"));
         overwrite(&mut texts.no_value, string("noValue"));
         overwrite(&mut texts.empty_value, string("emptyValue"));
         overwrite(&mut texts.total, string("total"));
