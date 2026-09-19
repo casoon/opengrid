@@ -167,6 +167,14 @@ pub const COLUMNS_ATTRIBUTE: &str = "columns";
 /// default.
 pub const MODE_ATTRIBUTE: &str = "mode";
 
+/// The host attribute that switches the grid from scrolling to **paging**
+/// (plan point 38).
+///
+/// With it the grid shows exactly one page and offers controls; without it it
+/// virtualizes as before. The two are exclusive: a window inside a window would
+/// mean two truths about `aria-rowcount` and two places that compute `offset`.
+pub const PAGE_SIZE_ATTRIBUTE: &str = "page-size";
+
 /// The host attribute for the recycled row pool (the query's `limit`).
 ///
 /// Point 16 paged with this attribute; point 17 reinterprets it as the
@@ -357,7 +365,67 @@ pub const OBSERVED: &[&str] = &[
     COLUMNS_ATTRIBUTE,
     WINDOW_SIZE_ATTRIBUTE,
     MODE_ATTRIBUTE,
+    PAGE_SIZE_ATTRIBUTE,
 ];
+
+/// Reads `page-size`; absent, empty or unusable means "do not page".
+pub fn parse_page_size(raw: Option<&str>) -> Option<u64> {
+    raw.and_then(|value| value.trim().parse::<u64>().ok())
+        .filter(|size| *size > 0)
+}
+
+/// What the rendered area covers.
+///
+/// While virtualizing it is the whole result (`base = 0`), so the sizer spans
+/// every row and the window slides inside it. While paging it is **one page**:
+/// the sizer is the page, `aria-rowcount` counts the page, and a row's position
+/// is relative to it — a screen reader reads what is there.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Paging {
+    /// The first logical row of the rendered area.
+    pub base: u64,
+    /// How many rows the rendered area holds.
+    pub rows: u64,
+    /// The page size while paging; `None` while virtualizing.
+    pub size: Option<u64>,
+}
+
+impl Paging {
+    /// The whole result, as the virtualizing grid renders it.
+    pub const fn whole(total_count: u64) -> Self {
+        Self {
+            base: 0,
+            rows: total_count,
+            size: None,
+        }
+    }
+
+    /// One page of `size` rows out of `total_count`, `page` counted from 0.
+    pub fn page(page: u64, size: u64, total_count: u64) -> Self {
+        let base = page.saturating_mul(size).min(total_count);
+        Self {
+            base,
+            rows: (total_count - base).min(size),
+            size: Some(size),
+        }
+    }
+
+    /// The 0-based page currently rendered.
+    pub fn index(&self) -> u64 {
+        match self.size {
+            Some(size) if size > 0 => self.base / size,
+            _ => 0,
+        }
+    }
+
+    /// How many pages `total_count` rows make at this size.
+    pub fn count(total_count: u64, size: u64) -> u64 {
+        if size == 0 {
+            return 1;
+        }
+        total_count.div_ceil(size).max(1)
+    }
+}
 
 /// Which cell owns the roving tabindex.
 ///
@@ -443,6 +511,40 @@ pub struct GridNodes {
     pub header_cells: Vec<GridHeaderNodes>,
     /// The recycled pool: one entry per slot.
     pub rows: Vec<GridRowNodes>,
+    /// The paging controls below the table (`part="pager"`), hidden while the
+    /// grid virtualizes (plan point 38).
+    pub pager: PagerNodes,
+    /// One checkbox per declared column (`part="columns"`, plan point 36).
+    pub columns: ColumnsNodes,
+}
+
+/// The column-visibility controls.
+///
+/// Ordinary checkboxes in a labelled group, **outside** `role="grid"`: hiding a
+/// column has to be undoable, and a list of checkboxes is the way back that a
+/// keyboard and a screen reader both already know. A menu would have to invent
+/// one.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ColumnsNodes {
+    /// The disclosure button that opens the list.
+    pub toggle: NodeId,
+    pub container: NodeId,
+    /// `(checkbox, column name)` in the order the `columns` attribute declares.
+    pub boxes: Vec<(NodeId, String)>,
+}
+
+/// The paging controls: four buttons and the label that says where you are.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PagerNodes {
+    /// The `role="group"` holding them, **outside** `role="grid"` — like the
+    /// filter row, so the grid's roving tabindex is untouched.
+    pub container: NodeId,
+    pub first: NodeId,
+    pub previous: NodeId,
+    pub next: NodeId,
+    pub last: NodeId,
+    /// „Page 3 of 12" — where the reader is, in words.
+    pub label: NodeId,
 }
 
 /// The nodes of one header cell: the `<th>` and its visible multi-sort index.
@@ -738,12 +840,16 @@ pub fn status_text(texts: &GridTexts, status: &GridStatus, total_count: u64) -> 
 /// getting a live region of its own — point 41 left the grid exactly **one**,
 /// and two would talk over each other.
 pub fn status_line(texts: &GridTexts, state: &opengrid_grid::GridState) -> String {
-    let text = status_text(texts, state.status(), state.total_count());
+    let mut text = status_text(texts, state.status(), state.total_count());
     if state.announce_selection_cleared() {
-        format!("{text} · {}", texts.selection_cleared)
-    } else {
-        text
+        text = format!("{text} · {}", texts.selection_cleared);
     }
+    // A column operation rides along with the result line, in the one live
+    // region the grid has (points 36 and 41).
+    if let Some(notice) = state.notice() {
+        text = format!("{text} · {notice}");
+    }
+    text
 }
 
 /// The `data-state` token of the status line, for styling (`::part(status)`).
@@ -1027,6 +1133,7 @@ pub fn build_grid(
     schema: &Schema,
     pool: usize,
     texts: &GridTexts,
+    declared: &[(String, bool)],
 ) -> GridNodes {
     let fields = schema.fields();
     let ncols = fields.len();
@@ -1050,6 +1157,20 @@ pub fn build_grid(
                              overflow-x: auto; overflow-y: hidden; white-space: nowrap; }}
          [part=\"filter\"] select, [part=\"filter\"] input, [part=\"filter\"] button {{
                              font: inherit; min-height: {MIN_TARGET_SIZE}px; }}
+         [part=\"columns\"] {{ display: flex; gap: 0.5rem; align-items: center; }}
+         [part=\"columns\"][hidden] {{ display: none; }}
+         [part=\"column-toggle\"] {{ display: inline-flex; gap: 0.25rem; align-items: center;
+                             min-height: {MIN_TARGET_SIZE}px; }}
+         [part=\"column-toggle\"] input {{ min-width: {MIN_TARGET_SIZE}px;
+                             min-height: {MIN_TARGET_SIZE}px; }}
+         [part=\"pager\"] {{ flex: 0 0 auto; display: flex; gap: 0.5rem; align-items: center;
+                             padding: 0.25rem 0.5rem; }}
+         /* `display` beats the user agent's `[hidden] {{ display: none }}`, so
+            the hidden pager has to be told again — otherwise it takes height
+            and shrinks the viewport that PageUp/PageDown step by. */
+         [part=\"pager\"][hidden] {{ display: none; }}
+         [part=\"pager\"] button {{ font: inherit; min-height: {MIN_TARGET_SIZE}px;
+                             min-width: {MIN_TARGET_SIZE}px; }}
          [part=\"status\"] {{ flex: 0 0 auto; margin: 0; padding: 0 0.5rem; box-sizing: border-box;
                              min-height: var({STATUS_HEIGHT_PROPERTY}); }}
          [part=\"status\"][data-state=\"error\"] {{ font-weight: bold; }}
@@ -1103,6 +1224,11 @@ pub fn build_grid(
     });
     let filter = build_filter(buffer, nodes, layout, fields, texts);
     let status = build_status(buffer, nodes, layout, texts);
+
+    // Inside the filter row, not above it: a new row of its own would shrink
+    // the viewport, and the viewport is what `PageUp`/`PageDown` step by.
+    let columns = build_columns(buffer, nodes, filter.container, declared, texts);
+    let pager = build_pager(buffer, nodes, layout, texts);
 
     let viewport = element(buffer, nodes, Some(layout), "div");
     buffer.push(Patch::SetAttribute {
@@ -1232,6 +1358,94 @@ pub fn build_grid(
         table,
         header_cells,
         rows,
+        pager,
+        columns,
+    }
+}
+
+/// Builds the column-visibility group (plan point 36).
+///
+/// One `<input type="checkbox">` with a `<label>` per **declared** column — the
+/// hidden ones included, or there would be no way back. The group is empty
+/// (and hidden) when the grid has no columns yet.
+fn build_columns(
+    buffer: &mut PatchBuffer,
+    nodes: &mut NodeAllocator,
+    parent: NodeId,
+    declared: &[(String, bool)],
+    texts: &GridTexts,
+) -> ColumnsNodes {
+    // A disclosure, not a permanent list: a grid with twenty columns would
+    // otherwise carry twenty checkboxes above its data forever.
+    let toggle = element(buffer, nodes, Some(parent), "button");
+    for (name, value) in [
+        ("type", "button"),
+        ("part", "columns-toggle"),
+        ("aria-expanded", "false"),
+    ] {
+        buffer.push(Patch::SetAttribute {
+            node: toggle,
+            name: name.to_owned(),
+            value: value.to_owned(),
+        });
+    }
+    buffer.push(Patch::SetText {
+        node: toggle,
+        text: texts.columns_group.clone(),
+    });
+
+    let container = element(buffer, nodes, Some(parent), "div");
+    for (name, value) in [("part", "columns"), ("role", "group"), ("hidden", "")] {
+        buffer.push(Patch::SetAttribute {
+            node: container,
+            name: name.to_owned(),
+            value: value.to_owned(),
+        });
+    }
+    buffer.push(Patch::SetAttribute {
+        node: container,
+        name: "aria-label".to_owned(),
+        value: texts.columns_group.clone(),
+    });
+    set_lang(buffer, container, texts);
+
+    let mut boxes = Vec::with_capacity(declared.len());
+    for (name, visible) in declared {
+        let label = element(buffer, nodes, Some(container), "label");
+        buffer.push(Patch::SetAttribute {
+            node: label,
+            name: "part".to_owned(),
+            value: "column-toggle".to_owned(),
+        });
+        let input = element(buffer, nodes, Some(label), "input");
+        for (attribute, value) in [("type", "checkbox"), ("data-column", name.as_str())] {
+            buffer.push(Patch::SetAttribute {
+                node: input,
+                name: attribute.to_owned(),
+                value: value.to_owned(),
+            });
+        }
+        if *visible {
+            buffer.push(Patch::SetAttribute {
+                node: input,
+                name: "checked".to_owned(),
+                value: String::new(),
+            });
+        }
+        // The column name is the label's text, so it is the accessible name —
+        // and it is the page's word, in the page's language, not ours.
+        let text = element(buffer, nodes, Some(label), "span");
+        buffer.push(Patch::SetText {
+            node: text,
+            text: name.clone(),
+        });
+        boxes.push((input, name.clone()));
+    }
+
+    ColumnsNodes {
+        toggle,
+        container,
+        boxes,
     }
 }
 
@@ -1268,6 +1482,66 @@ fn build_status(
         text: status_text(texts, &GridStatus::Loading, 0),
     });
     status
+}
+
+/// Builds the paging controls (plan point 38).
+///
+/// Built once and hidden while the grid virtualizes, so switching `page-size`
+/// on and off does not rebuild the skeleton. Ordinary `<button>`s in a labelled
+/// group **outside** the grid table: the keyboard reaches them with `Tab`, and
+/// the grid's own matrix stays exactly as it was.
+fn build_pager(
+    buffer: &mut PatchBuffer,
+    nodes: &mut NodeAllocator,
+    parent: NodeId,
+    texts: &GridTexts,
+) -> PagerNodes {
+    let container = element(buffer, nodes, Some(parent), "div");
+    for (name, value) in [("part", "pager"), ("role", "group"), ("hidden", "")] {
+        buffer.push(Patch::SetAttribute {
+            node: container,
+            name: name.to_owned(),
+            value: value.to_owned(),
+        });
+    }
+    set_lang(buffer, container, texts);
+
+    let button =
+        |buffer: &mut PatchBuffer, nodes: &mut NodeAllocator, part: &str, label: &str| -> NodeId {
+            let node = element(buffer, nodes, Some(container), "button");
+            for (name, value) in [("type", "button"), ("part", part)] {
+                buffer.push(Patch::SetAttribute {
+                    node,
+                    name: name.to_owned(),
+                    value: value.to_owned(),
+                });
+            }
+            buffer.push(Patch::SetText {
+                node,
+                text: label.to_owned(),
+            });
+            node
+        };
+
+    let first = button(buffer, nodes, "page-first", &texts.page_first);
+    let previous = button(buffer, nodes, "page-previous", &texts.page_previous);
+    let label = element(buffer, nodes, Some(container), "span");
+    buffer.push(Patch::SetAttribute {
+        node: label,
+        name: "part".to_owned(),
+        value: "page-label".to_owned(),
+    });
+    let next = button(buffer, nodes, "page-next", &texts.page_next);
+    let last = button(buffer, nodes, "page-last", &texts.page_last);
+
+    PagerNodes {
+        container,
+        first,
+        previous,
+        next,
+        last,
+        label,
+    }
 }
 
 /// Builds the type-agnostic filter row: one operator `select` and one value
@@ -1437,6 +1711,7 @@ pub fn patch_grid(
     row_height: u64,
     texts: &GridTexts,
     format: &dyn CellFormat,
+    paging: Paging,
 ) {
     let fields = state.schema().fields();
     let total_count = state.total_count();
@@ -1446,14 +1721,16 @@ pub fn patch_grid(
         name: "style".to_owned(),
         value: format!(
             "position: relative; height: {}px;",
-            total_count * row_height
+            paging.rows * row_height
         ),
     });
     buffer.push(Patch::SetAttribute {
         node: nodes.table,
         name: "aria-rowcount".to_owned(),
-        value: (total_count + 1).to_string(),
+        value: (paging.rows + 1).to_string(),
     });
+    patch_pager(buffer, &nodes.pager, paging, total_count, texts);
+
     buffer.push(Patch::SetAttribute {
         node: nodes.status,
         name: "data-state".to_owned(),
@@ -1562,11 +1839,12 @@ pub fn patch_grid(
         }
         match slots.get(slot).copied().flatten() {
             Some(row) => {
-                set_style(buffer, row_nodes.row, &row_style(row, row_height));
+                let local = row.saturating_sub(paging.base);
+                set_style(buffer, row_nodes.row, &row_style(local, row_height));
                 buffer.push(Patch::SetAttribute {
                     node: row_nodes.row,
                     name: "aria-rowindex".to_owned(),
-                    value: (row + 2).to_string(),
+                    value: (local + 2).to_string(),
                 });
                 // Selection is per **logical** row, so a recycled slot picks up
                 // the state of whatever row it now shows — that is what makes a
@@ -1635,6 +1913,64 @@ fn selection_attributes(buffer: &mut PatchBuffer, row: NodeId, selected: bool) {
             node: row,
             name: "data-selected".to_owned(),
         });
+    }
+}
+
+/// Updates the paging controls, or hides them while the grid virtualizes.
+///
+/// A button that cannot do anything is **disabled**, not missing: the row of
+/// controls keeps its shape, and a screen reader is told why the first page has
+/// no "previous" instead of finding one less button than last time.
+fn patch_pager(
+    buffer: &mut PatchBuffer,
+    pager: &PagerNodes,
+    paging: Paging,
+    total_count: u64,
+    texts: &GridTexts,
+) {
+    let Some(size) = paging.size else {
+        buffer.push(Patch::SetAttribute {
+            node: pager.container,
+            name: "hidden".to_owned(),
+            value: String::new(),
+        });
+        return;
+    };
+    buffer.push(Patch::RemoveAttribute {
+        node: pager.container,
+        name: "hidden".to_owned(),
+    });
+
+    let pages = Paging::count(total_count, size);
+    let page = paging.index();
+    buffer.push(Patch::SetAttribute {
+        node: pager.container,
+        name: "aria-label".to_owned(),
+        value: texts.page_of(page + 1, pages),
+    });
+    buffer.push(Patch::SetText {
+        node: pager.label,
+        text: texts.page_of(page + 1, pages),
+    });
+
+    for (node, disabled) in [
+        (pager.first, page == 0),
+        (pager.previous, page == 0),
+        (pager.next, page + 1 >= pages),
+        (pager.last, page + 1 >= pages),
+    ] {
+        if disabled {
+            buffer.push(Patch::SetAttribute {
+                node,
+                name: "disabled".to_owned(),
+                value: String::new(),
+            });
+        } else {
+            buffer.push(Patch::RemoveAttribute {
+                node,
+                name: "disabled".to_owned(),
+            });
+        }
     }
 }
 
@@ -2127,6 +2463,7 @@ mod tests {
             &schema,
             3,
             &GridTexts::default(),
+            &[],
         );
 
         assert_eq!(view.pool(), 3);
@@ -2147,9 +2484,14 @@ mod tests {
                 .collect()
         };
 
-        // The filter group, the status line and the grid itself carry roles;
-        // the status line is the single polite live region (point 41).
-        assert_eq!(attributes("role"), ["group", "status", "grid"]);
+        // The filter group, the status line, the pager and the grid itself
+        // carry roles; the status line stays the single polite live region
+        // (point 41), and the three groups all sit outside `role="grid"` so the
+        // roving tabindex and the keyboard matrix are untouched.
+        assert_eq!(
+            attributes("role"),
+            ["group", "status", "group", "group", "grid"]
+        );
         assert_eq!(attributes("aria-live"), ["polite"]);
         // The filter row is labelled separately; the grid label comes last.
         let labels = attributes("aria-label");
@@ -2193,6 +2535,7 @@ mod tests {
             &schema,
             4,
             &GridTexts::default(),
+            &[],
         );
         let state = state_with(&["Gamma", "Alpha"], 5, 0, 4);
         let slots = assign_pool(&[None; 4], None, &window_rows(0, 5, 4), 4);
@@ -2209,6 +2552,7 @@ mod tests {
             DEFAULT_ROW_HEIGHT,
             &GridTexts::default(),
             &crate::formats::Plain,
+            Paging::whole(state.total_count()),
         );
 
         let attributes = |name: &str| -> Vec<String> {
@@ -2252,6 +2596,7 @@ mod tests {
             &schema,
             1,
             &GridTexts::default(),
+            &[],
         );
         let state = state_with(&["Gamma"], 1, 0, 1);
         let slots = assign_pool(&[None], None, &window_rows(0, 1, 1), 1);
@@ -2268,6 +2613,7 @@ mod tests {
             DEFAULT_ROW_HEIGHT,
             &GridTexts::default(),
             &crate::formats::Plain,
+            Paging::whole(state.total_count()),
         );
         let sorts: Vec<&str> = buffer
             .patches()
@@ -2295,6 +2641,7 @@ mod tests {
             &schema,
             1,
             &GridTexts::default(),
+            &[],
         );
         let state = state_with(&["Gamma"], 1, 0, 1);
         let slots = assign_pool(&[None], None, &window_rows(0, 1, 1), 1);
@@ -2311,6 +2658,7 @@ mod tests {
             DEFAULT_ROW_HEIGHT,
             &GridTexts::default(),
             &crate::formats::Plain,
+            Paging::whole(state.total_count()),
         );
 
         let aria: Vec<&str> = buffer
@@ -2357,6 +2705,7 @@ mod tests {
             &schema,
             2,
             &GridTexts::default(),
+            &[],
         );
 
         let tagged: Vec<NodeId> = buffer
@@ -2367,7 +2716,18 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(tagged, [view.filter.container, view.status]);
+        // The pager writes words too (point 38), so it carries the language of
+        // those words — like the filter row and the status line, and never the
+        // data.
+        assert_eq!(
+            tagged,
+            [
+                view.filter.container,
+                view.status,
+                view.columns.container,
+                view.pager.container
+            ]
+        );
 
         // No language at all when the texts do not claim one.
         let mut nodes = NodeAllocator::new();
@@ -2376,7 +2736,7 @@ mod tests {
             lang: String::new(),
             ..GridTexts::default()
         };
-        build_grid(&mut buffer, &mut nodes, None, &schema, 2, &silent);
+        build_grid(&mut buffer, &mut nodes, None, &schema, 2, &silent, &[]);
         assert!(
             !buffer
                 .patches()
@@ -2399,6 +2759,7 @@ mod tests {
             &schema,
             1,
             &GridTexts::default(),
+            &[],
         );
         let state = state_with(&["Gamma"], 1, 0, 1);
 
@@ -2415,6 +2776,7 @@ mod tests {
                 DEFAULT_ROW_HEIGHT,
                 &GridTexts::default(),
                 &crate::formats::Plain,
+                Paging::whole(state.total_count()),
             );
             view.header_cells
                 .iter()
@@ -2463,6 +2825,7 @@ mod tests {
             &schema,
             1,
             &GridTexts::default(),
+            &[],
         );
 
         let mut parts: Vec<&str> = buffer
@@ -2479,12 +2842,20 @@ mod tests {
             parts,
             [
                 "cell",
+                "columns",
+                "columns-toggle",
                 "filter",
                 "filter-clear",
                 "filter-operator",
                 "filter-value",
                 "header",
                 "layout",
+                "page-first",
+                "page-label",
+                "page-last",
+                "page-next",
+                "page-previous",
+                "pager",
                 "row",
                 "sort-direction",
                 "sort-index",
@@ -2508,6 +2879,7 @@ mod tests {
             &schema,
             1,
             &GridTexts::default(),
+            &[],
         );
 
         let styles = buffer
@@ -2556,6 +2928,7 @@ mod tests {
             &schema,
             1,
             &GridTexts::default(),
+            &[],
         );
 
         let styles = buffer
@@ -2592,6 +2965,7 @@ mod tests {
             &schema,
             1,
             &GridTexts::default(),
+            &[],
         );
         let state = state_with(&["Gamma"], 1, 0, 1);
         let slots = assign_pool(&[None], None, &window_rows(0, 1, 1), 1);
@@ -2608,6 +2982,7 @@ mod tests {
             DEFAULT_ROW_HEIGHT,
             &GridTexts::default(),
             &crate::formats::Plain,
+            Paging::whole(state.total_count()),
         );
         let indexes: Vec<&str> = buffer
             .patches()
@@ -2635,6 +3010,7 @@ mod tests {
             &schema,
             2,
             &GridTexts::default(),
+            &[],
         );
         let state = state_with(&["Gamma", "Alpha"], 5, 0, 2);
         let slots = assign_pool(&[None, None], None, &window_rows(0, 5, 2), 2);
@@ -2651,6 +3027,7 @@ mod tests {
             DEFAULT_ROW_HEIGHT,
             &GridTexts::default(),
             &crate::formats::Plain,
+            Paging::whole(state.total_count()),
         );
         assert!(buffer.patches().iter().any(|patch| matches!(
             patch,
@@ -2672,6 +3049,7 @@ mod tests {
             &schema,
             3,
             &GridTexts::default(),
+            &[],
         );
         let state = state_with(&["Gamma", "Alpha"], 5, 0, 3);
         let slots = assign_pool(&[None, None, None], None, &window_rows(0, 5, 3), 3);
@@ -2688,6 +3066,7 @@ mod tests {
             48,
             &GridTexts::default(),
             &crate::formats::Plain,
+            Paging::whole(state.total_count()),
         );
 
         // The sizer is `total * 48`, not `total * 32`.
@@ -2717,6 +3096,7 @@ mod tests {
             &schema,
             4,
             &GridTexts::default(),
+            &[],
         );
         // Slot 3 holds the focused row 6; the window scrolled to rows 20..24.
         let old = [Some(20), Some(21), Some(22), Some(6)];
@@ -2737,6 +3117,7 @@ mod tests {
             DEFAULT_ROW_HEIGHT,
             &GridTexts::default(),
             &crate::formats::Plain,
+            Paging::whole(100),
         );
 
         let pinned_row = view.rows[3].row;

@@ -26,6 +26,7 @@
 //! is English and lives in [`texts`], and a page overrides any of it — with the
 //! language it is in — through the exported `set_texts`.
 
+pub mod columns;
 pub mod formats;
 pub mod grid;
 pub mod pivot;

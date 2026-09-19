@@ -77,13 +77,14 @@ use opengrid_web_core::element::{
 use opengrid_web_core::patch::{NodeAllocator, PatchBuffer};
 use opengrid_web_core::provider::provider;
 
+use crate::columns::{self, WIDTH_STEP};
 use crate::formats::{Formatter, formats};
 use opengrid_web_core::renderer::{Dom, WebRenderer};
 
 use crate::element::{clear_root, describe};
 use crate::grid::{
     self, ActiveCell, COLUMNS_ATTRIBUTE, DATASOURCE_ATTRIBUTE, FilterEntry, GRID_TAG, GridKey,
-    GridNodes, MODE_ATTRIBUTE, ROW_HEIGHT_PROPERTY, WINDOW_SIZE_ATTRIBUTE,
+    GridNodes, MODE_ATTRIBUTE, PAGE_SIZE_ATTRIBUTE, ROW_HEIGHT_PROPERTY, WINDOW_SIZE_ATTRIBUTE,
 };
 use crate::texts::texts;
 
@@ -133,6 +134,8 @@ struct GridRuntime {
     pending_offset: Option<u64>,
     /// Whether a scroll query is scheduled for the next animation frame.
     raf_pending: bool,
+    /// The 0-based page, while `page-size` is set (plan point 38).
+    page: u64,
     /// Bumped per query; a result from an older generation is discarded.
     generation: u64,
 }
@@ -193,8 +196,8 @@ fn runtime_or_init(host: &HtmlElement) -> Rc<RefCell<GridRuntime>> {
 /// A fresh runtime: display schema from `columns`, window at offset 0 and the
 /// top-left header cell active.
 fn fresh_runtime(host: &HtmlElement) -> GridRuntime {
-    let columns = grid::parse_columns(host.get_attribute(COLUMNS_ATTRIBUTE).as_deref());
-    let pool = grid::parse_window_size(host.get_attribute(WINDOW_SIZE_ATTRIBUTE).as_deref());
+    let columns = columns_of(host);
+    let pool = pool_of(host);
     let row_height = resolve_row_height(host);
     let mut state = GridState::new(grid::initial_schema(&columns));
     state.set_window(Window::new(0, pool));
@@ -211,6 +214,7 @@ fn fresh_runtime(host: &HtmlElement) -> GridRuntime {
         slots: vec![None; pool as usize],
         pending_offset: None,
         raf_pending: false,
+        page: 0,
         generation: 0,
     }
 }
@@ -284,7 +288,7 @@ pub(crate) fn retext(host: &HtmlElement) {
     let Some(runtime) = runtime(host) else {
         return;
     };
-    let columns = grid::parse_columns(host.get_attribute(COLUMNS_ATTRIBUTE).as_deref());
+    let columns = columns_of(host);
     let entries = read_filter_entries(&root, &columns);
     let scroll_top = runtime
         .borrow()
@@ -343,6 +347,14 @@ fn on_attribute_changed(
                 update_label(&root, new_value.as_deref());
             }
         }
+        PAGE_SIZE_ATTRIBUTE => {
+            // Switching between paging and scrolling changes what the window
+            // means, so the grid starts at the first page either way.
+            if let Some(runtime) = runtime(&host) {
+                runtime.borrow_mut().page = 0;
+            }
+            run_query(&host, QueryKind::Data, false);
+        }
         DATASOURCE_ATTRIBUTE | COLUMNS_ATTRIBUTE | WINDOW_SIZE_ATTRIBUTE | MODE_ATTRIBUTE => {
             let Some(root) = host.shadow_root() else {
                 return;
@@ -371,13 +383,25 @@ fn ensure_skeleton(host: &HtmlElement) {
     let Some(document) = host.owner_document() else {
         return;
     };
-    let pool =
-        grid::parse_window_size(host.get_attribute(WINDOW_SIZE_ATTRIBUTE).as_deref()) as usize;
+    let pool = pool_of(host) as usize;
     let label = host.get_attribute(LABEL_ATTRIBUTE);
     let schema = runtime.borrow().state.schema().clone();
 
     let mut nodes = NodeAllocator::new();
     let mut buffer = PatchBuffer::new();
+    // The visibility group lists **every** declared column, the hidden ones
+    // included — that is the way back (point 36).
+    let declared: Vec<(String, bool)> = {
+        let layout = columns::layout(host);
+        let layout = layout.borrow();
+        grid::parse_columns(host.get_attribute(COLUMNS_ATTRIBUTE).as_deref())
+            .into_iter()
+            .map(|name| {
+                let visible = !layout.is_hidden(&name);
+                (name, visible)
+            })
+            .collect()
+    };
     let view = grid::build_grid(
         &mut buffer,
         &mut nodes,
@@ -385,17 +409,23 @@ fn ensure_skeleton(host: &HtmlElement) {
         &schema,
         pool,
         &texts(host),
+        &declared,
     );
     let root_node: Node = root.clone().unchecked_into();
     let mut dom = Dom::new(WebRenderer::from_document(document), root_node);
     dom.apply_buffer(&buffer);
     let viewport = dom.node(view.viewport).clone().dyn_into::<Element>().ok();
 
-    let mut runtime = runtime.borrow_mut();
-    runtime.slots = vec![None; pool];
-    runtime.viewport = viewport;
-    runtime.dom = Some(dom);
-    runtime.view = Some(view);
+    {
+        let mut borrowed = runtime.borrow_mut();
+        borrowed.slots = vec![None; pool];
+        borrowed.viewport = viewport;
+        borrowed.dom = Some(dom);
+        borrowed.view = Some(view);
+    }
+    // The reader's widths live on the header cells and survive the frames that
+    // follow; a fresh skeleton has to get them back (point 36).
+    apply_widths(host);
 }
 
 /// Computes the current window assignment and applies it as one patch list.
@@ -409,6 +439,7 @@ fn render(host: &HtmlElement, focus_after: bool) {
         return;
     };
 
+    let paging = paging_of(host, &runtime);
     let (sorts, slots, pinned_slot) = {
         let borrowed = runtime.borrow();
         let Some(view) = borrowed.view.as_ref() else {
@@ -419,8 +450,15 @@ fn render(host: &HtmlElement, focus_after: bool) {
         let window = borrowed.state.window();
         let rows = grid::window_rows(window.offset, total, pool as u64);
         let focus = borrowed.active.data().map(|cell| cell.row);
-        let pinned_slot =
-            focus.and_then(|row| borrowed.slots.iter().position(|slot| *slot == Some(row)));
+        // The pin keeps the focused row from being recycled out from under the
+        // focus while **scrolling** (point 17). A page change replaces every
+        // row, so there is nothing to protect — and pinning would leave the
+        // focused slot showing the old page's cell (point 38).
+        let pinned_slot = if paging.size.is_some() {
+            None
+        } else {
+            focus.and_then(|row| borrowed.slots.iter().position(|slot| *slot == Some(row)))
+        };
         let slots = grid::assign_pool(&borrowed.slots, focus, &rows, pool);
         let sorts = borrowed.state.sort_keys();
         (sorts, slots, pinned_slot)
@@ -448,6 +486,7 @@ fn render(host: &HtmlElement, focus_after: bool) {
             borrowed.row_height,
             &texts(host),
             &Formatter::new(&formats(host), borrowed.state.schema()),
+            paging,
         );
         if let Some(dom) = borrowed.dom.as_mut() {
             dom.apply_buffer(&buffer);
@@ -487,6 +526,20 @@ pub(crate) enum QueryKind {
 /// "loading", which is what the grid is in fact waiting for. `focus` re-focuses
 /// the active cell once the result landed, so a keyboard-driven re-render does
 /// not drop the focus.
+/// Puts the window on the current page, so the query asks for exactly it.
+///
+/// Paging and virtualizing are exclusive: while `page-size` is set the window
+/// **is** the page, and nothing scrolls it (plan point 38).
+fn sync_page_window(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>) {
+    let Some(size) = grid::parse_page_size(host.get_attribute(PAGE_SIZE_ATTRIBUTE).as_deref())
+    else {
+        return;
+    };
+    let mut borrowed = runtime.borrow_mut();
+    let page = borrowed.page;
+    borrowed.state.set_window(Window::new(page * size, size));
+}
+
 pub(crate) fn run_query(host: &HtmlElement, kind: QueryKind, focus: bool) {
     let Some(provider) = provider(host) else {
         return;
@@ -497,14 +550,17 @@ pub(crate) fn run_query(host: &HtmlElement, kind: QueryKind, focus: bool) {
     let Some(source) = host.get_attribute(DATASOURCE_ATTRIBUTE) else {
         return;
     };
-    let columns = grid::parse_columns(host.get_attribute(COLUMNS_ATTRIBUTE).as_deref());
+    let columns = columns_of(host);
     if columns.is_empty() {
         return;
     }
     let Some(grid_runtime) = runtime(host) else {
         return;
     };
-    let pool = grid::parse_window_size(host.get_attribute(WINDOW_SIZE_ATTRIBUTE).as_deref());
+    let pool = pool_of(host);
+    sync_page_window(host, &grid_runtime);
+    let pool =
+        grid::parse_page_size(host.get_attribute(PAGE_SIZE_ATTRIBUTE).as_deref()).unwrap_or(pool);
 
     let (sorts, filter, offset, generation) = {
         let mut runtime = grid_runtime.borrow_mut();
@@ -735,6 +791,17 @@ fn on_key_down(event: KeyboardEvent) {
         }
         return;
     }
+    // The paging buttons sit outside the grid table and keep their **native**
+    // keyboard activation: the grid's matrix below would call
+    // `prevent_default()` on `Enter` and swallow the click (point 38).
+    if let Some(target) = event
+        .target()
+        .and_then(|node| node.dyn_into::<Element>().ok())
+        && target.closest("[part=\"pager\"]").ok().flatten().is_some()
+    {
+        return;
+    }
+
     let Ok(host) = root.host().dyn_into::<HtmlElement>() else {
         return;
     };
@@ -742,6 +809,27 @@ fn on_key_down(event: KeyboardEvent) {
         return;
     };
     let viewport_rows = viewport_rows(&runtime);
+
+    // Column operations live on the header cell and are **keyboard first**:
+    // WCAG 2.5.7 requires that everything reachable by dragging is reachable
+    // without it, so this is the primary way, not a fallback (point 36).
+    // Read the active cell out first: a `borrow()` held across the body makes
+    // the `borrow_mut` inside panic, and a panic in an event handler is a
+    // silently dead key.
+    let active = runtime.borrow().active;
+    if (event.ctrl_key() || event.meta_key())
+        && matches!(event.key().as_str(), "ArrowLeft" | "ArrowRight")
+        && let ActiveCell::Header { col } = active
+    {
+        event.prevent_default();
+        let by = if event.key() == "ArrowLeft" { -1 } else { 1 };
+        if event.shift_key() {
+            resize_column(&host, col, by * WIDTH_STEP as i32);
+        } else {
+            move_column(&host, col, by);
+        }
+        return;
+    }
 
     // `Ctrl`/`Cmd`+`A` selects every matching row, not only the loaded page.
     if event.key().eq_ignore_ascii_case("a") && (event.ctrl_key() || event.meta_key()) {
@@ -760,10 +848,6 @@ fn on_key_down(event: KeyboardEvent) {
             event.prevent_default();
             // On a header `Space` sorts, as it always has; on a data cell it
             // now selects the row (point 35). `Shift` extends from the anchor.
-            // Read the active cell **before** matching: holding the `Ref`
-            // across the arms would make the `borrow_mut` below panic, and a
-            // panic in an event handler is a silent dead key.
-            let active = runtime.borrow().active;
             match active {
                 ActiveCell::Header { .. } => {
                     activate_header(&host, &runtime, event.shift_key());
@@ -821,9 +905,7 @@ fn move_with_key(
             .view
             .as_ref()
             .map(|view| view.pool() as u64)
-            .unwrap_or_else(|| {
-                grid::parse_window_size(host.get_attribute(WINDOW_SIZE_ATTRIBUTE).as_deref())
-            });
+            .unwrap_or_else(|| pool_of(host));
         (
             runtime.active,
             runtime.state.schema().len(),
@@ -860,6 +942,210 @@ fn move_with_key(
 fn announce_if_cleared(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>) {
     if runtime.borrow().state.selection().is_empty() {
         dispatch_selection(host, &[]);
+    }
+}
+
+/// Makes a column wider or narrower and says so.
+///
+/// The width is written onto the header cell; `table-layout: fixed` carries it
+/// to every row. The value is clamped so a column can never be resized into
+/// something nobody can find again (and below the 24 px of WCAG 2.5.8).
+fn resize_column(host: &HtmlElement, col: usize, step: i32) {
+    let columns = columns_of(host);
+    let Some(name) = columns.get(col).cloned() else {
+        return;
+    };
+    let current = measured_width(host, col).unwrap_or(120);
+    let width = columns::layout(host)
+        .borrow_mut()
+        .resize(&name, step, current);
+    apply_widths(host);
+    announce(host, &texts(host).column_width(&name, width));
+}
+
+/// Moves a column one place and re-runs the query.
+///
+/// The order is part of the query's projection, so a move is a new query — the
+/// same path a sort takes, and for the same reason: the result has a different
+/// shape.
+fn move_column(host: &HtmlElement, col: usize, by: i32) {
+    let declared = grid::parse_columns(host.get_attribute(COLUMNS_ATTRIBUTE).as_deref());
+    let columns = columns_of(host);
+    let Some(name) = columns.get(col).cloned() else {
+        return;
+    };
+    let moved = columns::layout(host)
+        .borrow_mut()
+        .move_column(&declared, &name, by);
+    let Some(order) = moved else {
+        // At the end: nothing happens, and the reader is told why instead of
+        // pressing the key again.
+        announce(host, &texts(host).column_at_edge(&name));
+        return;
+    };
+    let position = order.iter().position(|column| *column == name).unwrap_or(0);
+    // Rebuild **first**: it replaces the runtime, so anything set before — the
+    // active cell, a notice — would be thrown away with the old one.
+    rebuild(host);
+    // The focus follows the column, not the place it left. The query that the
+    // rebuild started focuses the active cell when its result lands.
+    if let Some(runtime) = runtime(host) {
+        runtime.borrow_mut().active = ActiveCell::Header { col: position };
+    }
+    announce(
+        host,
+        &texts(host).column_moved(&name, position as u64 + 1, order.len() as u64),
+    );
+}
+
+/// Shows or hides a column and re-runs the query.
+fn set_column_hidden(host: &HtmlElement, name: &str, hidden: bool) {
+    if !columns::update(host, |layout| layout.set_hidden(name, hidden)) {
+        return;
+    }
+    let visible = columns_of(host).len() as u64;
+    let declared =
+        grid::parse_columns(host.get_attribute(COLUMNS_ATTRIBUTE).as_deref()).len() as u64;
+    // Rebuild **first**: it replaces the runtime, and a notice set before would
+    // be thrown away with the old state.
+    rebuild(host);
+    announce(
+        host,
+        &texts(host).column_visibility(name, hidden, visible, declared),
+    );
+}
+
+/// Rebuilds the skeleton because the set or order of columns changed.
+fn rebuild(host: &HtmlElement) {
+    let Some(root) = host.shadow_root() else {
+        return;
+    };
+    clear_root(&root);
+    reset_runtime(host);
+    ensure_skeleton(host);
+    render(host, false);
+    run_query(host, QueryKind::Data, true);
+}
+
+/// Puts a one-off sentence into the status line.
+///
+/// The one polite live region the grid has (point 41) — a column operation is
+/// a change only the sighted see, so it has to be said.
+fn announce(host: &HtmlElement, message: &str) {
+    let Some(runtime) = runtime(host) else {
+        return;
+    };
+    runtime.borrow_mut().state.set_notice(message.to_owned());
+    render(host, false);
+}
+
+/// The rendered width of a header cell, if it has been laid out.
+fn measured_width(host: &HtmlElement, col: usize) -> Option<u32> {
+    let root = host.shadow_root()?;
+    let cell = root
+        .query_selector(&format!("th[data-col=\"{col}\"]"))
+        .ok()
+        .flatten()?;
+    let width = cell.get_bounding_client_rect().width();
+    (width > 0.0).then_some(width as u32)
+}
+
+/// Writes the reader's widths onto the header cells.
+fn apply_widths(host: &HtmlElement) {
+    let Some(root) = host.shadow_root() else {
+        return;
+    };
+    let layout = columns::layout(host);
+    let layout = layout.borrow();
+    for (col, name) in columns_of(host).iter().enumerate() {
+        let Ok(Some(cell)) = root.query_selector(&format!("th[data-col=\"{col}\"]")) else {
+            continue;
+        };
+        match layout.width(name) {
+            Some(width) => {
+                let _ = cell.set_attribute("style", &format!("width: {width}px;"));
+            }
+            None => {
+                let _ = cell.remove_attribute("style");
+            }
+        }
+    }
+}
+
+/// The columns the grid actually shows, in the order it shows them.
+///
+/// The `columns` attribute says which columns exist; the reader's layout
+/// (point 36) says which of them are visible and in what order. One function,
+/// so the query, the skeleton and the render can never disagree.
+fn columns_of(host: &HtmlElement) -> Vec<String> {
+    let declared = grid::parse_columns(host.get_attribute(COLUMNS_ATTRIBUTE).as_deref());
+    columns::layout(host).borrow().effective(&declared)
+}
+
+/// How many DOM row slots the grid keeps.
+///
+/// While paging that is the **page size**: the pool is the page, because there
+/// is nothing to scroll and every row of the page is on screen. While
+/// virtualizing it is `window-size`, the recycled pool of point 17. One
+/// function, so the skeleton, the window and the query can never disagree about
+/// how many rows there are.
+fn pool_of(host: &HtmlElement) -> u64 {
+    grid::parse_page_size(host.get_attribute(PAGE_SIZE_ATTRIBUTE).as_deref()).unwrap_or_else(|| {
+        grid::parse_window_size(host.get_attribute(WINDOW_SIZE_ATTRIBUTE).as_deref())
+    })
+}
+
+/// A click on one of the paging buttons (plan point 38).
+///
+/// Returns whether it was one, so the shared click listener can stop there.
+fn on_pager_click(host: &HtmlElement, target: &Element) -> bool {
+    let Ok(Some(button)) = target.closest("button[part^=\"page-\"]") else {
+        return false;
+    };
+    let Some(part) = button.get_attribute("part") else {
+        return false;
+    };
+    let Some(size) = grid::parse_page_size(host.get_attribute(PAGE_SIZE_ATTRIBUTE).as_deref())
+    else {
+        return false;
+    };
+    let Some(runtime) = runtime(host) else {
+        return false;
+    };
+
+    let pages = {
+        let borrowed = runtime.borrow();
+        grid::Paging::count(borrowed.state.total_count(), size)
+    };
+    let current = runtime.borrow().page;
+    let next = match part.as_str() {
+        "page-first" => 0,
+        "page-previous" => current.saturating_sub(1),
+        "page-next" => (current + 1).min(pages - 1),
+        "page-last" => pages - 1,
+        _ => return false,
+    };
+    if next == current {
+        return true;
+    }
+    {
+        let mut borrowed = runtime.borrow_mut();
+        borrowed.page = next;
+        // The focus goes to the first cell of the new page: leaving it on a row
+        // that no longer exists drops it to the document.
+        borrowed.active = ActiveCell::Data(CellRef::new(next * size, 0));
+    }
+    // A page change is a different set of rows, so it announces (point 41).
+    run_query(host, QueryKind::Data, true);
+    true
+}
+
+/// What the grid is rendering: one page, or the whole virtualized result.
+fn paging_of(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>) -> grid::Paging {
+    let total = runtime.borrow().state.total_count();
+    match grid::parse_page_size(host.get_attribute(PAGE_SIZE_ATTRIBUTE).as_deref()) {
+        Some(size) => grid::Paging::page(runtime.borrow().page, size, total),
+        None => grid::Paging::whole(total),
     }
 }
 
@@ -955,7 +1241,7 @@ fn activate_header(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>, multi
     let Some(field) = field else {
         return;
     };
-    let pool = grid::parse_window_size(host.get_attribute(WINDOW_SIZE_ATTRIBUTE).as_deref());
+    let pool = pool_of(host);
     {
         let mut runtime = runtime.borrow_mut();
         if multi {
@@ -1027,7 +1313,7 @@ fn apply_filters(host: &HtmlElement) {
     let Some(runtime) = runtime(host) else {
         return;
     };
-    let columns = grid::parse_columns(host.get_attribute(COLUMNS_ATTRIBUTE).as_deref());
+    let columns = columns_of(host);
     let entries = read_filter_entries(&root, &columns);
     let schema = runtime.borrow().state.schema().clone();
 
@@ -1049,7 +1335,7 @@ fn apply_filters(host: &HtmlElement) {
         }
     };
 
-    let pool = grid::parse_window_size(host.get_attribute(WINDOW_SIZE_ATTRIBUTE).as_deref());
+    let pool = pool_of(host);
     {
         let mut runtime = runtime.borrow_mut();
         runtime.state.set_filter(filter);
@@ -1068,6 +1354,18 @@ fn on_filter_change(event: Event) {
     let Ok(host) = root.host().dyn_into::<HtmlElement>() else {
         return;
     };
+    // A column-visibility checkbox (point 36): ordinary form behaviour, so the
+    // keyboard needs nothing special.
+    if let Some(target) = event
+        .target()
+        .and_then(|node| node.dyn_into::<Element>().ok())
+        && let Some(name) = target.get_attribute("data-column")
+        && let Ok(input) = target.dyn_into::<HtmlInputElement>()
+        && input.type_() == "checkbox"
+    {
+        set_column_hidden(&host, &name, !input.checked());
+        return;
+    }
     let Some(runtime) = runtime(&host) else {
         return;
     };
@@ -1118,6 +1416,28 @@ fn on_filter_clear(event: Event) {
     else {
         return;
     };
+    // The column list opens and closes from its own button (point 36).
+    if let Ok(Some(button)) = target.closest("button[part=\"columns-toggle\"]")
+        && let Some(root) = current_shadow_root(&event)
+        && let Ok(Some(list)) = root.query_selector("[part=\"columns\"]")
+    {
+        let open = button.get_attribute("aria-expanded").as_deref() == Some("true");
+        let _ = button.set_attribute("aria-expanded", if open { "false" } else { "true" });
+        if open {
+            let _ = list.set_attribute("hidden", "");
+        } else {
+            let _ = list.remove_attribute("hidden");
+        }
+        return;
+    }
+
+    // The same listener serves the paging buttons (point 38); keyboard
+    // activation fires a click too, so `Enter`/`Space` on them works natively.
+    if let Ok(host) = root.host().dyn_into::<HtmlElement>()
+        && on_pager_click(&host, &target)
+    {
+        return;
+    }
     if target
         .closest("[data-filter-clear]")
         .ok()
@@ -1155,7 +1475,7 @@ fn escape_to_first(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>) {
     if ncols == 0 {
         return;
     }
-    let pool = grid::parse_window_size(host.get_attribute(WINDOW_SIZE_ATTRIBUTE).as_deref());
+    let pool = pool_of(host);
     let first = ActiveCell::Header { col: 0 };
     runtime.borrow_mut().set_active(first);
     if offset != 0 {
@@ -1179,6 +1499,11 @@ fn on_scroll(event: Event) {
     let Ok(host) = root.host().dyn_into::<HtmlElement>() else {
         return;
     };
+    // While paging there is nothing to scroll into: the sizer is the page, and
+    // the window belongs to the pager (point 38).
+    if grid::parse_page_size(host.get_attribute(PAGE_SIZE_ATTRIBUTE).as_deref()).is_some() {
+        return;
+    }
     let Some(runtime) = runtime(&host) else {
         return;
     };

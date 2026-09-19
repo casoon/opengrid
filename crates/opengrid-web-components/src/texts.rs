@@ -60,6 +60,25 @@ pub struct GridTexts {
     /// A filter input the column cannot hold (point 51). May use `{column}` and
     /// `{value}`.
     pub filter_invalid: String,
+    /// A column was resized. May use `{column}` and `{width}` (plan point 36).
+    pub column_width: String,
+    /// A column was moved. May use `{column}`, `{position}` and `{count}`.
+    pub column_moved: String,
+    /// A column is already at the first or last place. May use `{column}`.
+    pub column_at_edge: String,
+    /// A column was hidden. May use `{column}`, `{visible}` and `{count}`.
+    pub column_hidden: String,
+    /// A column was shown again. Same placeholders.
+    pub column_shown: String,
+    /// Accessible name of the column-visibility group.
+    pub columns_group: String,
+    /// The four paging buttons (plan point 38).
+    pub page_first: String,
+    pub page_previous: String,
+    pub page_next: String,
+    pub page_last: String,
+    /// Where the reader is. May use `{page}` and `{pages}`, both 1-based.
+    pub page_of: String,
     /// Appended to the status line when sorting or filtering dropped a
     /// selection (point 35).
     ///
@@ -126,6 +145,17 @@ impl Default for GridTexts {
             value_label: "{column} value".to_owned(),
             clear: "Clear".to_owned(),
             filter_invalid: "{column}: {value} is not a value for this column".to_owned(),
+            column_width: "{column} is {width} pixels wide".to_owned(),
+            column_moved: "{column} moved to position {position} of {count}".to_owned(),
+            column_at_edge: "{column} is already at the end".to_owned(),
+            column_hidden: "{column} hidden, {visible} of {count} columns shown".to_owned(),
+            column_shown: "{column} shown, {visible} of {count} columns shown".to_owned(),
+            columns_group: "Columns".to_owned(),
+            page_first: "First page".to_owned(),
+            page_previous: "Previous page".to_owned(),
+            page_next: "Next page".to_owned(),
+            page_last: "Last page".to_owned(),
+            page_of: "Page {page} of {pages}".to_owned(),
             selection_cleared: "Selection cleared".to_owned(),
             no_value: "(no value)".to_owned(),
             empty_value: "(empty)".to_owned(),
@@ -178,6 +208,69 @@ impl GridTexts {
             &fill(&self.filter_invalid, "column", column),
             "value",
             value,
+        )
+    }
+
+    /// What a column operation did, for the status line (plan point 36).
+    ///
+    /// A width, a move or a hidden column is a change only the sighted see, so
+    /// each one gets a sentence.
+    pub fn column_width(&self, column: &str, width: u32) -> String {
+        fill(
+            &fill(&self.column_width, "column", column),
+            "width",
+            &width.to_string(),
+        )
+    }
+
+    /// A column that reached its new place.
+    pub fn column_moved(&self, column: &str, position: u64, count: u64) -> String {
+        fill(
+            &fill(
+                &fill(&self.column_moved, "column", column),
+                "position",
+                &position.to_string(),
+            ),
+            "count",
+            &count.to_string(),
+        )
+    }
+
+    /// A column that cannot move any further.
+    pub fn column_at_edge(&self, column: &str) -> String {
+        fill(&self.column_at_edge, "column", column)
+    }
+
+    /// A column that was hidden or shown again.
+    pub fn column_visibility(
+        &self,
+        column: &str,
+        hidden: bool,
+        visible: u64,
+        count: u64,
+    ) -> String {
+        let template = if hidden {
+            &self.column_hidden
+        } else {
+            &self.column_shown
+        };
+        fill(
+            &fill(
+                &fill(template, "column", column),
+                "visible",
+                &visible.to_string(),
+            ),
+            "count",
+            &count.to_string(),
+        )
+    }
+
+    /// Where the reader is, both numbers 1-based.
+    pub fn page_of(&self, page: u64, pages: u64) -> String {
+        fill(
+            &fill(&self.page_of, "page", &page.to_string()),
+            "pages",
+            &pages.to_string(),
         )
     }
 
@@ -321,6 +414,17 @@ mod host {
         overwrite(&mut texts.value_label, string("valueLabel"));
         overwrite(&mut texts.clear, string("clear"));
         overwrite(&mut texts.filter_invalid, string("filterInvalid"));
+        overwrite(&mut texts.column_width, string("columnWidth"));
+        overwrite(&mut texts.column_moved, string("columnMoved"));
+        overwrite(&mut texts.column_at_edge, string("columnAtEdge"));
+        overwrite(&mut texts.column_hidden, string("columnHidden"));
+        overwrite(&mut texts.column_shown, string("columnShown"));
+        overwrite(&mut texts.columns_group, string("columnsGroup"));
+        overwrite(&mut texts.page_first, string("pageFirst"));
+        overwrite(&mut texts.page_previous, string("pagePrevious"));
+        overwrite(&mut texts.page_next, string("pageNext"));
+        overwrite(&mut texts.page_last, string("pageLast"));
+        overwrite(&mut texts.page_of, string("pageOf"));
         overwrite(&mut texts.selection_cleared, string("selectionCleared"));
         overwrite(&mut texts.no_value, string("noValue"));
         overwrite(&mut texts.empty_value, string("emptyValue"));

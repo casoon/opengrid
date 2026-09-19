@@ -148,15 +148,23 @@ test("prefers-reduced-motion beats a theme that animates a part", async ({ page 
 });
 
 test("the filter controls meet the minimum target size", async ({ page }) => {
-  // WCAG 2.2 §2.5.8: 24x24 CSS pixels.
+  // WCAG 2.2 §2.5.8: 24x24 CSS pixels. The column list is a disclosure
+  // (point 36), so it is opened first — a control nobody can see is not a
+  // target, but every one that is shown has to be big enough to hit.
+  await page.evaluate(() =>
+    document
+      .querySelector("opengrid-grid")
+      .shadowRoot.querySelector('[part="columns-toggle"]')
+      ?.click(),
+  );
   const sizes = await page.evaluate(() => {
     const root = document.querySelector("opengrid-grid").shadowRoot;
-    return [...root.querySelectorAll('[part="filter"] select, [part="filter"] input, [part="filter"] button')].map(
-      (control) => {
+    return [...root.querySelectorAll('[part="filter"] select, [part="filter"] input, [part="filter"] button')]
+      .filter((control) => control.getBoundingClientRect().width > 0)
+      .map((control) => {
         const box = control.getBoundingClientRect();
         return { width: Math.round(box.width), height: Math.round(box.height) };
-      },
-    );
+      });
   });
   expect(sizes.length).toBeGreaterThan(0);
   for (const size of sizes) {

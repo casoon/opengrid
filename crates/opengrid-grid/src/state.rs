@@ -84,6 +84,14 @@ pub struct GridState {
     /// Whether **this** result is the one that announces it. Exactly one does:
     /// `apply_result` moves the flag here, the next result overwrites it.
     announce_selection_cleared: bool,
+    /// A one-off sentence the renderer appends to the status line.
+    ///
+    /// Column operations (point 36) change something only the sighted see, and
+    /// the query that follows would otherwise overwrite the announcement with
+    /// its own result line before anyone heard it.
+    notice: Option<String>,
+    /// The same sentence, kept for the **one** result that follows.
+    pending_notice: Option<String>,
 }
 
 impl GridState {
@@ -106,6 +114,8 @@ impl GridState {
             anchor: None,
             selection_dropped: false,
             announce_selection_cleared: false,
+            notice: None,
+            pending_notice: None,
         }
     }
 
@@ -228,6 +238,21 @@ impl GridState {
         patches
     }
 
+    /// The one-off sentence the status line should carry, if any.
+    pub fn notice(&self) -> Option<&str> {
+        self.notice.as_deref()
+    }
+
+    /// Says something once — now, and again with the result that follows.
+    ///
+    /// Two moments, because the announcement happens before the query and the
+    /// query's own result line would otherwise wipe it out before it was read.
+    pub fn set_notice(&mut self, text: String) -> Vec<Patch> {
+        self.notice = Some(text.clone());
+        self.pending_notice = Some(text);
+        vec![Patch::Status(self.status.clone())]
+    }
+
     /// Whether the status line should say that the selection is gone.
     ///
     /// True for exactly one result — the one that followed the sort or the
@@ -281,6 +306,7 @@ impl GridState {
         // Exactly one result carries the "selection cleared" notice: the one
         // that arrived because of the sort or filter that dropped it.
         self.announce_selection_cleared = std::mem::take(&mut self.selection_dropped);
+        self.notice = self.pending_notice.take();
 
         if result.schema != self.schema {
             patches.push(Patch::Columns(result.schema.clone()));
