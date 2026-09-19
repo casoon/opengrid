@@ -58,6 +58,8 @@ pub enum Patch {
     /// The grid's status changed (plan point 41). The renderer writes it into
     /// the visible, `aria-live` status line.
     Status(GridStatus),
+    /// The editor opened on a cell or closed (plan point 37). `None` closes it.
+    Editing(Option<CellRef>),
     /// The selection changed (plan point 35). Carries the rows that are
     /// selected **now**, ascending, as logical row numbers.
     ///

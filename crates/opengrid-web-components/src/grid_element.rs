@@ -71,6 +71,7 @@ use web_sys::{
 
 use opengrid_grid::{CellRef, GridState, GridStatus, Patch as GridPatch, Window};
 use opengrid_query::CmpOp;
+use opengrid_types::{DataType, Value};
 use opengrid_web_core::element::{
     ARIA_LABEL_ATTRIBUTE, LABEL_ATTRIBUTE, attach_open_shadow_root, define, mirror_label,
 };
@@ -78,7 +79,7 @@ use opengrid_web_core::patch::{NodeAllocator, PatchBuffer};
 use opengrid_web_core::provider::provider;
 
 use crate::columns::{self, WIDTH_STEP};
-use crate::formats::{Formatter, formats};
+use crate::formats::{CellFormat, Formatter, formats};
 use opengrid_web_core::renderer::{Dom, WebRenderer};
 
 use crate::element::{clear_root, describe};
@@ -810,6 +811,28 @@ fn on_key_down(event: KeyboardEvent) {
     };
     let viewport_rows = viewport_rows(&runtime);
 
+    // Keys inside an open editor belong to the editor (point 37): `Enter`
+    // commits, `Escape` discards, everything else is ordinary typing. The grid
+    // matrix below would eat the arrow keys mid-word.
+    if let Some(target) = event
+        .target()
+        .and_then(|node| node.dyn_into::<Element>().ok())
+        && target.closest("[part=\"editor\"]").ok().flatten().is_some()
+    {
+        match event.key().as_str() {
+            "Enter" => {
+                event.prevent_default();
+                end_edit(&host, true);
+            }
+            "Escape" => {
+                event.prevent_default();
+                end_edit(&host, false);
+            }
+            _ => {}
+        }
+        return;
+    }
+
     // Column operations live on the header cell and are **keyboard first**:
     // WCAG 2.5.7 requires that everything reachable by dragging is reachable
     // without it, so this is the primary way, not a fallback (point 36).
@@ -842,7 +865,12 @@ fn on_key_down(event: KeyboardEvent) {
     match (event.key().as_str(), event.ctrl_key()) {
         ("Enter", _) => {
             event.prevent_default();
-            activate_header(&host, &runtime, event.shift_key());
+            // On a header `Enter` sorts, as it always has; on a data cell it
+            // opens the editor — the meaning point 16 left free for this.
+            match active {
+                ActiveCell::Header { .. } => activate_header(&host, &runtime, event.shift_key()),
+                ActiveCell::Data(cell) => begin_edit(&host, cell),
+            }
         }
         (" ", _) => {
             event.prevent_default();
@@ -1176,6 +1204,275 @@ fn settle_selection(
     dispatch_selection(host, &rows);
     let _ = runtime;
 }
+
+/// The choices a page supplied for a column, turning its editor into a select.
+///
+/// V1 has no enum type, so a `<select>` has no source of options in the schema —
+/// the page is the only honest one (plan point 37).
+fn choices_for(host: &HtmlElement, col: usize) -> Option<Vec<String>> {
+    let name = columns_of(host).get(col)?.clone();
+    let value =
+        js_sys::Reflect::get(host.as_ref(), &JsValue::from_str("__opengridChoices")).ok()?;
+    let list = js_sys::Reflect::get(&value, &JsValue::from_str(&name)).ok()?;
+    let array = list.dyn_into::<js_sys::Array>().ok()?;
+    let options: Vec<String> = array.iter().filter_map(|item| item.as_string()).collect();
+    (!options.is_empty()).then_some(options)
+}
+
+/// Opens the editor on the focused data cell (plan point 37).
+///
+/// The editor is an ordinary form control inside the cell, typed after the
+/// column: `text`, `number` with the column's step, `date`, `checkbox`, or a
+/// `<select>` when the page supplied choices. The same derivation as the filter
+/// row (point 51) — one place decides what a column can hold.
+fn begin_edit(host: &HtmlElement, cell: CellRef) {
+    let Some(runtime) = runtime(host) else {
+        return;
+    };
+    let (data_type, current) = {
+        let borrowed = runtime.borrow();
+        let Some(field) = borrowed.state.schema().fields().get(cell.col) else {
+            return;
+        };
+        let current = borrowed
+            .state
+            .cell(cell)
+            .map(crate::formats::plain_text)
+            .unwrap_or_default();
+        (field.data_type, current)
+    };
+    if runtime.borrow_mut().state.begin_edit(cell).is_empty() {
+        return;
+    }
+    render(host, false);
+
+    let Some(root) = host.shadow_root() else {
+        return;
+    };
+    let Ok(Some(td)) = root.query_selector(&format!(
+        "td[data-row=\"{}\"][data-col=\"{}\"]",
+        cell.row, cell.col
+    )) else {
+        return;
+    };
+    let Some(document) = host.owner_document() else {
+        return;
+    };
+
+    td.set_text_content(None);
+    let choices = choices_for(host, cell.col);
+    let editor: Element = match &choices {
+        Some(options) => {
+            let Ok(select) = document.create_element("select") else {
+                return;
+            };
+            for option in options {
+                if let Ok(node) = document.create_element("option") {
+                    node.set_text_content(Some(option));
+                    let _ = node.set_attribute("value", option);
+                    if *option == current {
+                        let _ = node.set_attribute("selected", "");
+                    }
+                    let _ = select.append_child(&node);
+                }
+            }
+            select
+        }
+        None => {
+            let Ok(input) = document.create_element("input") else {
+                return;
+            };
+            let kind = grid::input_type(data_type);
+            let _ = input.set_attribute("type", kind);
+            if let Some(step) = grid::input_step(data_type) {
+                let _ = input.set_attribute("step", &step);
+            }
+            if kind == "checkbox" {
+                if current == "true" {
+                    let _ = input.set_attribute("checked", "");
+                }
+            } else if let Ok(field) = input.clone().dyn_into::<HtmlInputElement>() {
+                field.set_value(&current);
+            }
+            input
+        }
+    };
+    let _ = editor.set_attribute("part", "editor");
+    // The column name is the accessible name: the cell it sits in has none.
+    if let Some(field) = runtime.borrow().state.schema().fields().get(cell.col) {
+        let _ = editor.set_attribute("aria-label", field.name.as_str());
+    }
+    let _ = td.append_child(&editor);
+    if let Ok(element) = editor.dyn_into::<HtmlElement>() {
+        let _ = element.focus();
+    }
+}
+
+/// Closes the editor, optionally taking what it holds (plan point 37).
+///
+/// An input the column cannot hold is **refused and announced** — never
+/// silently rounded, never silently dropped. Whatever happens, the focus goes
+/// back to the cell: an editor that vanishes and leaves the focus on the
+/// document is a dead end for a keyboard.
+fn end_edit(host: &HtmlElement, commit: bool) {
+    let Some(runtime) = runtime(host) else {
+        return;
+    };
+    let Some(cell) = runtime.borrow().state.editing() else {
+        return;
+    };
+    let Some(root) = host.shadow_root() else {
+        return;
+    };
+
+    let typed = root
+        .query_selector("[part=\"editor\"]")
+        .ok()
+        .flatten()
+        .map(
+            |editor| match editor.clone().dyn_into::<HtmlInputElement>() {
+                Ok(input) if input.type_() == "checkbox" => input.checked().to_string(),
+                Ok(input) => input.value(),
+                Err(_) => editor
+                    .dyn_into::<HtmlSelectElement>()
+                    .map(|select| select.value())
+                    .unwrap_or_default(),
+            },
+        );
+
+    let (data_type, field_name, nullable) = {
+        let borrowed = runtime.borrow();
+        let field = borrowed.state.schema().fields().get(cell.col).cloned();
+        match field {
+            Some(field) => (
+                field.data_type,
+                field.name.as_str().to_owned(),
+                field.nullable,
+            ),
+            None => return,
+        }
+    };
+
+    let mut rejected = None;
+    // **An empty editor means NULL** — on a column that may hold one. It is the
+    // only way to clear a value, and a typed input sanitizes most other
+    // nonsense away before it ever gets here. On a required column it is a
+    // refusal, not an empty string.
+    if commit
+        && typed.as_deref().is_some_and(str::is_empty)
+        && !matches!(data_type, DataType::Utf8 | DataType::Bool)
+    {
+        if nullable {
+            let previous = runtime
+                .borrow()
+                .state
+                .cell(cell)
+                .map(crate::formats::plain_text)
+                .unwrap_or_default();
+            if !runtime
+                .borrow_mut()
+                .state
+                .set_cell(cell, Value::Null)
+                .is_empty()
+            {
+                dispatch_cell_change(host, cell, &field_name, "", &previous);
+            }
+        } else {
+            rejected = Some(String::new());
+        }
+    } else if commit && let Some(text) = typed.as_deref() {
+        // One notation: the same parser the filter row and the wire format use,
+        // so a value typed into a cell means what it would have meant anywhere
+        // else (E13, S8, S9).
+        match grid::literal(text, data_type).and_then(|json| {
+            let text = json.to_string();
+            let mut deserializer = serde_json::Deserializer::from_str(&text);
+            Value::deserialize_typed(&mut deserializer, &data_type).ok()
+        }) {
+            Some(value) => {
+                let previous = runtime
+                    .borrow()
+                    .state
+                    .cell(cell)
+                    .map(crate::formats::plain_text)
+                    .unwrap_or_default();
+                if !runtime.borrow_mut().state.set_cell(cell, value).is_empty() {
+                    dispatch_cell_change(host, cell, &field_name, text, &previous);
+                }
+            }
+            None => rejected = Some(text.to_owned()),
+        }
+    }
+
+    runtime.borrow_mut().state.end_edit();
+    if let Some(value) = &rejected {
+        let texts = texts(host);
+        let message = if value.is_empty() {
+            texts.cell_required(&field_name)
+        } else {
+            texts.filter_invalid(&field_name, value)
+        };
+        runtime.borrow_mut().state.set_notice(message);
+    }
+
+    // **The element owns the editor node, so the element removes it.** The
+    // edited cell sits in the focused row, and the focused slot is the one the
+    // renderer never touches (point 17) — waiting for a patch to clear it would
+    // wait forever.
+    if let Ok(Some(td)) = root.query_selector(&format!(
+        "td[data-row=\"{}\"][data-col=\"{}\"]",
+        cell.row, cell.col
+    )) {
+        let text = {
+            let borrowed = runtime.borrow();
+            borrowed
+                .state
+                .cell(cell)
+                .map(|value| {
+                    Formatter::new(&formats(host), borrowed.state.schema()).text(cell.col, value)
+                })
+                .unwrap_or_default()
+        };
+        td.set_text_content(Some(&text));
+        if runtime.borrow().state.is_changed(cell) {
+            let _ = td.set_attribute("data-changed", "true");
+        }
+    }
+
+    render(host, false);
+    focus_active(host);
+}
+
+/// Fires `opengrid-cell-change` on the host — the contract of point 35.
+fn dispatch_cell_change(
+    host: &HtmlElement,
+    cell: CellRef,
+    column: &str,
+    value: &str,
+    previous: &str,
+) {
+    let detail = js_sys::Object::new();
+    for (key, value) in [
+        ("row", JsValue::from_f64(cell.row as f64)),
+        ("column", JsValue::from_str(column)),
+        ("value", JsValue::from_str(value)),
+        ("previous", JsValue::from_str(previous)),
+    ] {
+        let _ = js_sys::Reflect::set(&detail, &JsValue::from_str(key), &value);
+    }
+
+    let init = web_sys::CustomEventInit::new();
+    init.set_bubbles(true);
+    init.set_composed(true);
+    init.set_cancelable(false);
+    init.set_detail(&detail);
+    if let Ok(event) = web_sys::CustomEvent::new_with_event_init_dict(CELL_EVENT, &init) {
+        let _ = host.dispatch_event(&event);
+    }
+}
+
+/// The name of the cell-change event (plan point 37).
+pub const CELL_EVENT: &str = "opengrid-cell-change";
 
 /// Fires `opengrid-selection-change` on the host.
 ///

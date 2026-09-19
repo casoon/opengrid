@@ -773,7 +773,7 @@ pub fn filter_expr(
 /// right *kind*, and validation against the schema does the rest. What it must
 /// not do is pass something through that will fail later: the user typed it, so
 /// the user should hear about it here.
-fn literal(text: &str, data_type: DataType) -> Option<serde_json::Value> {
+pub fn literal(text: &str, data_type: DataType) -> Option<serde_json::Value> {
     let text = text.trim();
     match data_type {
         DataType::Utf8 => Some(serde_json::Value::String(text.to_owned())),
@@ -1157,6 +1157,10 @@ pub fn build_grid(
                              overflow-x: auto; overflow-y: hidden; white-space: nowrap; }}
          [part=\"filter\"] select, [part=\"filter\"] input, [part=\"filter\"] button {{
                              font: inherit; min-height: {MIN_TARGET_SIZE}px; }}
+         td[data-changed] {{ font-style: italic; }}
+         td[data-changed]::after {{ content: \" *\"; }}
+         [part=\"editor\"] {{ font: inherit; width: 100%; box-sizing: border-box;
+                             min-height: {MIN_TARGET_SIZE}px; }}
          [part=\"columns\"] {{ display: flex; gap: 0.5rem; align-items: center; }}
          [part=\"columns\"][hidden] {{ display: none; }}
          [part=\"column-toggle\"] {{ display: inline-flex; gap: 0.25rem; align-items: center;
@@ -1857,16 +1861,39 @@ pub fn patch_grid(
                         name: "data-row".to_owned(),
                         value: row.to_string(),
                     });
-                    let is_active = active == ActiveCell::Data(CellRef::new(row, col));
+                    let reference = CellRef::new(row, col);
+                    let is_active = active == ActiveCell::Data(reference);
                     buffer.push(Patch::SetAttribute {
                         node: *cell,
                         name: "tabindex".to_owned(),
                         value: tabindex_for(is_active).to_owned(),
                     });
+                    // A cell the reader changed but nobody saved is marked —
+                    // the grid shows what was typed and does not pretend it is
+                    // stored (point 37).
+                    if state.is_changed(reference) {
+                        buffer.push(Patch::SetAttribute {
+                            node: *cell,
+                            name: "data-changed".to_owned(),
+                            value: "true".to_owned(),
+                        });
+                    } else {
+                        buffer.push(Patch::RemoveAttribute {
+                            node: *cell,
+                            name: "data-changed".to_owned(),
+                        });
+                    }
+
+                    // The cell being edited holds an `<input>`, not text: the
+                    // element owns those nodes, and writing text here would
+                    // throw the editor away mid-keystroke.
+                    if state.editing() == Some(reference) {
+                        continue;
+                    }
                     // Display only (point 42): the value behind it is what the
                     // filter and the sort keep working on.
                     let text = state
-                        .cell(CellRef::new(row, col))
+                        .cell(reference)
                         .map(|value| format.text(col, value))
                         .unwrap_or_default();
                     buffer.push(Patch::SetText { node: *cell, text });

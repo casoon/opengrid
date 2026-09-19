@@ -60,6 +60,8 @@ pub struct GridTexts {
     /// A filter input the column cannot hold (point 51). May use `{column}` and
     /// `{value}`.
     pub filter_invalid: String,
+    /// A required cell was cleared (plan point 37). May use `{column}`.
+    pub cell_required: String,
     /// A column was resized. May use `{column}` and `{width}` (plan point 36).
     pub column_width: String,
     /// A column was moved. May use `{column}`, `{position}` and `{count}`.
@@ -145,6 +147,7 @@ impl Default for GridTexts {
             value_label: "{column} value".to_owned(),
             clear: "Clear".to_owned(),
             filter_invalid: "{column}: {value} is not a value for this column".to_owned(),
+            cell_required: "{column} needs a value".to_owned(),
             column_width: "{column} is {width} pixels wide".to_owned(),
             column_moved: "{column} moved to position {position} of {count}".to_owned(),
             column_at_edge: "{column} is already at the end".to_owned(),
@@ -209,6 +212,11 @@ impl GridTexts {
             "value",
             value,
         )
+    }
+
+    /// A cell that may not be empty.
+    pub fn cell_required(&self, column: &str) -> String {
+        fill(&self.cell_required, "column", column)
     }
 
     /// What a column operation did, for the status line (plan point 36).
@@ -414,6 +422,7 @@ mod host {
         overwrite(&mut texts.value_label, string("valueLabel"));
         overwrite(&mut texts.clear, string("clear"));
         overwrite(&mut texts.filter_invalid, string("filterInvalid"));
+        overwrite(&mut texts.cell_required, string("cellRequired"));
         overwrite(&mut texts.column_width, string("columnWidth"));
         overwrite(&mut texts.column_moved, string("columnMoved"));
         overwrite(&mut texts.column_at_edge, string("columnAtEdge"));

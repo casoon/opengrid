@@ -92,6 +92,11 @@ pub struct GridState {
     notice: Option<String>,
     /// The same sentence, kept for the **one** result that follows.
     pending_notice: Option<String>,
+    /// The cell currently being edited (plan point 37).
+    editing: Option<CellRef>,
+    /// Cells the reader changed since the last result, so the renderer can mark
+    /// them. **Optimistic, not saved**: the component edits, the page persists.
+    changed: Vec<CellRef>,
 }
 
 impl GridState {
@@ -116,6 +121,8 @@ impl GridState {
             announce_selection_cleared: false,
             notice: None,
             pending_notice: None,
+            editing: None,
+            changed: Vec::new(),
         }
     }
 
@@ -238,6 +245,60 @@ impl GridState {
         patches
     }
 
+    /// The cell being edited, if any (plan point 37).
+    pub fn editing(&self) -> Option<CellRef> {
+        self.editing
+    }
+
+    /// Whether a cell holds a value the reader changed and nobody saved yet.
+    pub fn is_changed(&self, cell: CellRef) -> bool {
+        self.changed.contains(&cell)
+    }
+
+    /// Opens the editor on a cell, if the cell holds a loaded value.
+    ///
+    /// A cell outside the loaded page has nothing to edit — there is no value
+    /// to start from, and inventing one would be a lie.
+    pub fn begin_edit(&mut self, cell: CellRef) -> Vec<Patch> {
+        if self.editing == Some(cell) || self.cell(cell).is_none() {
+            return Vec::new();
+        }
+        self.editing = Some(cell);
+        vec![Patch::Editing(Some(cell))]
+    }
+
+    /// Closes the editor without changing anything.
+    pub fn end_edit(&mut self) -> Vec<Patch> {
+        if self.editing.take().is_none() {
+            return Vec::new();
+        }
+        vec![Patch::Editing(None)]
+    }
+
+    /// Writes a value into a loaded cell and marks it as changed.
+    ///
+    /// **Optimistic and honest about it:** the grid shows what the reader typed
+    /// and marks it; whether anyone stored it is the page's business (E23).
+    pub fn set_cell(&mut self, cell: CellRef, value: Value) -> Vec<Patch> {
+        let Some(row) = cell.row.checked_sub(self.page_offset) else {
+            return Vec::new();
+        };
+        let Some(column) = self.page.get_mut(cell.col) else {
+            return Vec::new();
+        };
+        let Some(slot) = column.get_mut(row as usize) else {
+            return Vec::new();
+        };
+        if *slot == value {
+            return Vec::new();
+        }
+        *slot = value.clone();
+        if !self.changed.contains(&cell) {
+            self.changed.push(cell);
+        }
+        vec![Patch::Cell { cell, value }]
+    }
+
     /// The one-off sentence the status line should carry, if any.
     pub fn notice(&self) -> Option<&str> {
         self.notice.as_deref()
@@ -307,6 +368,10 @@ impl GridState {
         // that arrived because of the sort or filter that dropped it.
         self.announce_selection_cleared = std::mem::take(&mut self.selection_dropped);
         self.notice = self.pending_notice.take();
+        // A fresh result is the source's word on every value, so the reader's
+        // unsaved marks no longer mean anything (point 37).
+        self.changed.clear();
+        self.editing = None;
 
         if result.schema != self.schema {
             patches.push(Patch::Columns(result.schema.clone()));
@@ -1027,5 +1092,70 @@ mod selection_tests {
         assert!(state.clear_selection().is_empty());
         state.select_all();
         assert!(state.select_all().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod edit_tests {
+    use super::tests::{result, schema};
+    use super::*;
+
+    fn grid() -> GridState {
+        let mut state = GridState::new(schema());
+        state.apply_result(result(&[(1, "DE", 10), (2, "FR", 20)], 2));
+        state
+    }
+
+    /// The editor opens on a loaded cell and closes again.
+    #[test]
+    fn the_editor_opens_and_closes() {
+        let mut state = grid();
+        let cell = CellRef::new(0, 1);
+        assert_eq!(state.begin_edit(cell), vec![Patch::Editing(Some(cell))]);
+        assert_eq!(state.editing(), Some(cell));
+        assert!(state.begin_edit(cell).is_empty(), "already open");
+        assert_eq!(state.end_edit(), vec![Patch::Editing(None)]);
+        assert!(state.end_edit().is_empty());
+    }
+
+    /// A cell outside the loaded page has no value to start from.
+    #[test]
+    fn a_cell_without_a_value_cannot_be_edited() {
+        let mut state = grid();
+        assert!(state.begin_edit(CellRef::new(500, 0)).is_empty());
+        assert_eq!(state.editing(), None);
+    }
+
+    /// A committed value shows at once and is marked as unsaved.
+    #[test]
+    fn a_changed_cell_shows_and_is_marked() {
+        let mut state = grid();
+        let cell = CellRef::new(1, 1);
+        let value = Value::Utf8("NL".to_owned());
+        assert_eq!(
+            state.set_cell(cell, value.clone()),
+            vec![Patch::Cell {
+                cell,
+                value: value.clone()
+            }]
+        );
+        assert_eq!(state.cell(cell), Some(&value));
+        assert!(state.is_changed(cell));
+        assert!(!state.is_changed(CellRef::new(0, 1)));
+        // The same value again is not a change.
+        assert!(state.set_cell(cell, value).is_empty());
+    }
+
+    /// A fresh result is the source's word: the marks and the editor go.
+    #[test]
+    fn a_new_result_clears_the_marks() {
+        let mut state = grid();
+        let cell = CellRef::new(0, 1);
+        state.set_cell(cell, Value::Utf8("NL".to_owned()));
+        state.begin_edit(cell);
+
+        state.apply_result(result(&[(1, "DE", 10), (2, "FR", 20)], 2));
+        assert!(!state.is_changed(cell), "the source has spoken");
+        assert_eq!(state.editing(), None);
     }
 }
