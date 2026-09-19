@@ -79,13 +79,20 @@ fn every_conformance_case_compiles() {
 /// Checked over the whole suite — which contains strings with quotes, NFC/NFD
 /// pairs, empty strings, exact decimals and NaN — by looking for the one thing a
 /// literal would need: a quote character.
+///
+/// **One quoted constant is allowed**, and only because it comes from the
+/// compiler and never from a request: `AT TIME ZONE 'UTC'`, which pins the zone
+/// `EXTRACT` would otherwise take from the session (rule S9, plan point 54). It
+/// is removed before the check rather than excused afterwards, so a *second*
+/// literal anywhere in the statement still fails this test.
 #[test]
 fn no_value_reaches_the_sql_text() {
     let compiler = compiler();
     for checked in cases() {
         let compiled = compiler.compile(&checked.query).expect("compiles");
+        let text = compiled.sql.replace(" AT TIME ZONE 'UTC'", "");
         assert!(
-            !compiled.sql.contains('\''),
+            !text.contains('\''),
             "{}: the SQL carries a string literal:\n{}",
             checked.case.id,
             compiled.sql

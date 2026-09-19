@@ -24,12 +24,20 @@ fn a_source_without_batches_is_an_error() {
 }
 
 /// The schema comes from the data: ingest built it against exactly this schema.
+///
+/// **Materialized**, because a derived column stops being derived once ingest has
+/// computed it (point 54): the batch really holds those values, and the source
+/// reports what it holds. Where they came from is the loader's business.
 #[test]
 fn the_schema_comes_from_the_batches() {
     let source = LocalDataSource::new(common::csv_batches()).expect("the dataset has batches");
-    assert_eq!(
-        block_on(source.schema()).expect("a source with data has a schema"),
-        common::schema()
+    let reported = block_on(source.schema()).expect("a source with data has a schema");
+
+    assert_eq!(reported, common::schema().materialized());
+    assert!(!reported.has_derived());
+    assert!(
+        common::schema().has_derived(),
+        "the declared schema is the one with the derivations"
     );
 }
 

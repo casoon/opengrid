@@ -36,7 +36,7 @@ use std::fmt::Write as _;
 use opengrid_query::{
     Aggregate, AggregateFn, CmpOp, NullsOrder, Sort, SortDirection, ValidatedFilter, ValidatedQuery,
 };
-use opengrid_types::{DataType, Schema, Value};
+use opengrid_types::{DataType, DatePart, Schema, Value};
 
 /// SQL plus the values it expects, in placeholder order.
 #[derive(Clone, Debug, PartialEq)]
@@ -185,7 +185,7 @@ impl QueryCompiler for PostgresCompiler {
                 if index > 0 {
                     sql.push(", ");
                 }
-                sql.push(&quote_ident(field.as_str())?);
+                sql.push(&self.column(field.as_str())?);
             }
         }
 
@@ -215,6 +215,38 @@ impl QueryCompiler for PostgresCompiler {
 }
 
 impl PostgresCompiler {
+    /// How one column of the schema is **read** in SQL.
+    ///
+    /// Usually its quoted name. A derived column (plan point 54) has no column in
+    /// the table, so it expands to the expression that computes it — here, and at
+    /// every other place the name appears, which is what makes it behave like an
+    /// ordinary column for filters, grouping and sorting alike.
+    ///
+    /// `EXTRACT` on a `timestamptz` uses the **session time zone**; rule S9 says
+    /// UTC, so the value is pinned to UTC first. Without that, the same query
+    /// would answer differently depending on the connection.
+    fn column(&self, name: &str) -> Result<String, CompileError> {
+        let quoted = quote_ident(name)?;
+        let Some(field) = self.schema.field(name) else {
+            return Ok(quoted);
+        };
+        let Some(derivation) = &field.from else {
+            return Ok(quoted);
+        };
+        let source = quote_ident(derivation.field.as_str())?;
+        let instant = match self.schema.data_type(derivation.field.as_str()) {
+            Some(DataType::Timestamp) => format!("{source} AT TIME ZONE 'UTC'"),
+            _ => source,
+        };
+        Ok(format!(
+            "EXTRACT({} FROM {instant})::bigint",
+            match derivation.part {
+                DatePart::Year => "YEAR",
+                DatePart::Month => "MONTH",
+            }
+        ))
+    }
+
     /// The output columns, in the order `ValidatedQuery::output_schema` declares.
     fn projection(&self, query: &ValidatedQuery, sql: &mut Sql) -> Result<(), CompileError> {
         for (index, field) in query.output_schema.fields().iter().enumerate() {
@@ -228,7 +260,7 @@ impl PostgresCompiler {
                 .find(|aggregate| aggregate.alias.as_str() == name)
             {
                 Some(aggregate) => self.aggregate(aggregate, sql)?,
-                None => sql.push(&quote_ident(name)?),
+                None => sql.push(&self.column(name)?),
             }
             sql.push(" AS ");
             sql.push(&quote_ident(name)?);
@@ -244,7 +276,7 @@ impl PostgresCompiler {
             sql.push("count(*)");
             return Ok(());
         };
-        let column = quote_ident(field.as_str())?;
+        let column = self.column(field.as_str())?;
         let data_type = self.data_type(field.as_str())?;
 
         match aggregate.function {
@@ -299,10 +331,10 @@ impl PostgresCompiler {
                 sql.push(")");
             }
             ValidatedFilter::IsNull { field, .. } => {
-                sql.push(&format!("{} IS NULL", quote_ident(field.as_str())?));
+                sql.push(&format!("{} IS NULL", self.column(field.as_str())?));
             }
             ValidatedFilter::IsNotNull { field, .. } => {
-                sql.push(&format!("{} IS NOT NULL", quote_ident(field.as_str())?));
+                sql.push(&format!("{} IS NOT NULL", self.column(field.as_str())?));
             }
             ValidatedFilter::InList {
                 field,
@@ -314,7 +346,7 @@ impl PostgresCompiler {
                     sql.push("FALSE");
                     return Ok(());
                 }
-                sql.push(&collated(&quote_ident(field.as_str())?, *data_type));
+                sql.push(&collated(&self.column(field.as_str())?, *data_type));
                 sql.push(" IN (");
                 for (index, value) in values.iter().enumerate() {
                     if index > 0 {
@@ -330,7 +362,7 @@ impl PostgresCompiler {
                 op,
                 value,
             } => {
-                let column = quote_ident(field.as_str())?;
+                let column = self.column(field.as_str())?;
                 match op {
                     // Substring and prefix are exact byte comparisons in both
                     // engines (S5, case-sensitive), so no collation is involved.

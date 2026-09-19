@@ -146,6 +146,29 @@ SELECT "id" AS "id" FROM "orders" WHERE ("id" IN ($1::text::bigint, $2::text::bi
     $1 = Int64(1)
     $2 = Int64(2)
 
+# s15-a-derived-column-filters [S15]
+SELECT "id" AS "id", "ordered_on" AS "ordered_on" FROM "orders" WHERE EXTRACT(YEAR FROM "ordered_on")::bigint = $1::text::bigint ORDER BY "id" ASC NULLS LAST
+  params:
+    $1 = Int64(2025)
+
+# s15-a-derived-column-sorts-with-nulls-last [S15]
+SELECT "id" AS "id", EXTRACT(MONTH FROM "ordered_on")::bigint AS "ordered_month" FROM "orders" WHERE "id" <= $1::text::bigint ORDER BY "ordered_month" DESC NULLS LAST, "id" ASC NULLS LAST
+  params:
+    $1 = Int64(6)
+
+# s15-grouping-by-month-counts-every-month [S15]
+SELECT EXTRACT(MONTH FROM "ordered_on")::bigint AS "ordered_month", count(*) AS "rows", sum("qty")::bigint AS "total" FROM "orders" GROUP BY EXTRACT(MONTH FROM "ordered_on")::bigint ORDER BY "ordered_month" ASC NULLS LAST LIMIT $1::text::bigint
+  params:
+    $1 = Int64(4)
+
+# s15-the-year-turns-at-one-microsecond [S15]
+SELECT "id" AS "id", EXTRACT(YEAR FROM "created_at" AT TIME ZONE 'UTC')::bigint AS "created_year", EXTRACT(YEAR FROM "ordered_on")::bigint AS "ordered_year", EXTRACT(MONTH FROM "ordered_on")::bigint AS "ordered_month" FROM "orders" WHERE "id" <= $1::text::bigint ORDER BY "id" ASC NULLS LAST
+  params:
+    $1 = Int64(5)
+
+# s15-year-is-a-column-like-any-other [S15]
+SELECT EXTRACT(YEAR FROM "ordered_on")::bigint AS "ordered_year", count(*) AS "rows" FROM "orders" GROUP BY EXTRACT(YEAR FROM "ordered_on")::bigint ORDER BY "ordered_year" ASC NULLS LAST
+
 # s2-in-empty-list-matches-nothing [S2]
 SELECT "id" AS "id" FROM "orders" WHERE FALSE
 

@@ -202,6 +202,12 @@ pub fn load_csv(
     options: CsvOptions,
 ) -> Result<Vec<RecordBatch>, IngestError> {
     check_delimiter(options.delimiter)?;
+    // The file holds the stored columns; a derived one is computed, never read
+    // (plan point 54). Both ingest paths do it the same way, which is what keeps
+    // CSV and JSON yielding identical batches.
+    let stored = schema.stored();
+    let layout = Layout::of(schema, &stored);
+
     let scanned = csv::scan(text(bytes)?, options.delimiter).map_err(|error| IngestError::Csv {
         line: error.line,
         message: error.message,
@@ -209,13 +215,13 @@ pub fn load_csv(
     let mut records = scanned.into_iter();
     if options.has_header {
         match records.next() {
-            Some(header) => check_header(schema, &header.fields, header.line)?,
+            Some(header) => check_header(&stored, &header.fields, header.line)?,
             None => return batches(schema, &[], options.batch_size),
         }
     }
     let mut rows = Vec::new();
     for record in records {
-        rows.push(read_row(schema, &record, &options)?);
+        rows.push(layout.complete(read_row(&stored, &record, &options)?));
     }
     batches(schema, &rows, options.batch_size)
 }
@@ -229,7 +235,12 @@ pub fn load_json(
     schema: &Schema,
     options: JsonOptions,
 ) -> Result<Vec<RecordBatch>, IngestError> {
-    let rows = json::rows(text(bytes)?, schema)?;
+    let stored = schema.stored();
+    let layout = Layout::of(schema, &stored);
+    let rows = json::rows(text(bytes)?, &stored)?
+        .into_iter()
+        .map(|row| layout.complete(row))
+        .collect::<Vec<_>>();
     batches(schema, &rows, options.batch_size)
 }
 
@@ -335,6 +346,9 @@ pub fn infer_schema_csv(bytes: &[u8], options: CsvOptions) -> Result<Schema, Ing
             name,
             data_type,
             nullable,
+            // Inference proposes the columns a file *has*; a derived column is
+            // something a person adds on purpose (point 54).
+            from: None,
         });
     }
     Ok(Schema::new(fields))
@@ -465,6 +479,60 @@ pub(crate) fn check_null(field: &Field, value: Value) -> Result<Value, String> {
 }
 
 /// Cuts rows into batches.
+/// Where each column of a row comes from — computed once, used per row.
+///
+/// Without this the derivation would look up a field name per cell; over a
+/// million rows that is a linear scan per cell, and ingest is already the
+/// slowest step of the engine (12-qualitaet.md §Engine-Latenz).
+enum Source {
+    /// Position in the stored row.
+    Stored(usize),
+    /// A part of the value at that position.
+    Part(usize, opengrid_types::DatePart),
+}
+
+struct Layout(Option<Vec<Source>>);
+
+impl Layout {
+    /// `None` when nothing is derived — then a row passes through untouched.
+    fn of(schema: &Schema, stored: &Schema) -> Self {
+        if !schema.has_derived() {
+            return Layout(None);
+        }
+        let columns = schema
+            .fields()
+            .iter()
+            .map(|field| match &field.from {
+                None => Source::Stored(
+                    stored
+                        .index_of(field.name.as_str())
+                        .expect("a field is stored or derived"),
+                ),
+                Some(derivation) => Source::Part(
+                    stored
+                        .index_of(derivation.field.as_str())
+                        .expect("the schema check proved the source exists"),
+                    derivation.part,
+                ),
+            })
+            .collect();
+        Layout(Some(columns))
+    }
+
+    fn complete(&self, row: Vec<Value>) -> Vec<Value> {
+        let Some(columns) = &self.0 else {
+            return row;
+        };
+        columns
+            .iter()
+            .map(|column| match column {
+                Source::Stored(index) => row[*index].clone(),
+                Source::Part(index, part) => part.of(&row[*index]),
+            })
+            .collect()
+    }
+}
+
 fn batches(
     schema: &Schema,
     rows: &[Vec<Value>],

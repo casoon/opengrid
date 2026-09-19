@@ -235,6 +235,9 @@ pub fn result_from_json(json: &str) -> Result<QueryResult, ReadError> {
             name,
             data_type,
             nullable,
+            // A result column holds values; where they came from is the source's
+            // business and does not travel (point 54).
+            from: None,
         });
         columns.push(values);
     }

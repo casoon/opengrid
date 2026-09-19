@@ -71,13 +71,17 @@ fn dataset_matches_the_schema_and_carries_the_special_values() {
     let text = std::fs::read_to_string(crate_dir().join("data/orders.csv")).expect("orders.csv");
     let table = parse_csv(&text);
 
+    // The file holds the **stored** columns; `ordered_year` and its two siblings
+    // are computed while reading it (plan point 54) and must not be in here.
+    let stored = schema.stored();
     let header = &table[0];
-    let expected: Vec<&str> = schema
+    let expected: Vec<&str> = stored
         .fields()
         .iter()
         .map(|field| field.name.as_str())
         .collect();
     assert_eq!(header, &expected, "CSV header and schema disagree");
+    assert!(schema.has_derived() && stored.len() < schema.len());
 
     let rows = &table[1..];
     assert_eq!(rows.len(), 50, "the fixture is 50 hand-built rows");
@@ -93,7 +97,7 @@ fn dataset_matches_the_schema_and_carries_the_special_values() {
     }
 
     // "NULL in jeder Spalte" (point 05, step 2): every nullable column has one.
-    for (column, field) in schema.fields().iter().enumerate() {
+    for (column, field) in stored.fields().iter().enumerate() {
         if !field.nullable {
             continue;
         }

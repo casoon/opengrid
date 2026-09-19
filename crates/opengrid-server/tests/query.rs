@@ -60,7 +60,7 @@ name = "orders"
 type = "local-csv"
 path = "crates/opengrid-conformance/data/orders.csv"
 schema = "crates/opengrid-conformance/data/orders.schema.json"
-allowed_fields = ["id", "customer", "country", "amount", "qty", "ordered_on"]
+allowed_fields = ["id", "customer", "country", "amount", "qty", "ordered_on", "ordered_year"]
 {filter}
 "#
     )
@@ -322,4 +322,38 @@ async fn describing_a_source_needs_a_token() {
     let (status, body) = describe(app(true), "nope", Some(TOKEN)).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(error_of(&body).code, ErrorCode::UnknownSource);
+}
+
+/// A derived column is a column for the client — and only that (point 54).
+///
+/// The gateway computes it; the client sees an `int64` it can filter, group and
+/// sort by, and the schema it is handed says nothing about where the values come
+/// from. That is the same line the mandatory row filter (E16) sits on.
+#[tokio::test]
+async fn a_derived_column_works_but_does_not_announce_itself() {
+    let body = r#"{"source":"orders","select":["ordered_year","rows"],
+        "group":["ordered_year"],
+        "aggregate":[{"fn":"count","as":"rows"}],
+        "sort":[{"field":"ordered_year","direction":"asc"}]}"#;
+    let (status, answer) = post(app(false), "orders", Some(TOKEN), body).await;
+    assert_eq!(status, StatusCode::OK, "{answer}");
+
+    let result: serde_json::Value = serde_json::from_str(&answer).expect("JSON");
+    assert_eq!(result["columns"][0]["name"], "ordered_year");
+    assert_eq!(result["columns"][0]["values"][0], 2025);
+
+    let (status, described) = describe(app(false), "orders", Some(TOKEN)).await;
+    assert_eq!(status, StatusCode::OK);
+    let described: serde_json::Value = serde_json::from_str(&described).expect("JSON");
+    let year = described["schema"]["fields"]
+        .as_array()
+        .expect("fields")
+        .iter()
+        .find(|field| field["name"] == "ordered_year")
+        .expect("the client may see the column");
+    assert_eq!(year["type"], "int64");
+    assert!(
+        year.get("from").is_none(),
+        "where the values come from is the server's business: {year}"
+    );
 }

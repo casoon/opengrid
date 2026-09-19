@@ -1,0 +1,20 @@
+{
+  "id": "s15-grouping-by-month-counts-every-month",
+  "rule": "S15",
+  "query": {
+    "source": "orders",
+    "select": ["ordered_month", "rows", "total"],
+    "group": ["ordered_month"],
+    "aggregate": [
+      { "fn": "count", "as": "rows" },
+      { "field": "qty", "fn": "sum", "as": "total" }
+    ],
+    "sort": [{ "field": "ordered_month", "direction": "asc" }],
+    "limit": 4
+  },
+  "expected": {
+    "columns": ["ordered_month", "rows", "total"],
+    "rows": [[1, 2, 2], [2, 1, 4], [3, 2, 13], [4, 2, 17]]
+  },
+  "ordered": true
+}

@@ -9,6 +9,13 @@
     { "name": "flag", "type": "bool", "nullable": true },
     { "name": "ordered_on", "type": "date", "nullable": true },
     { "name": "created_at", "type": "timestamp", "nullable": true },
-    { "name": "note", "type": "utf8", "nullable": true }
+    { "name": "note", "type": "utf8", "nullable": true },
+
+    { "name": "ordered_year", "type": "int64", "nullable": true,
+      "from": { "part": "year", "field": "ordered_on" } },
+    { "name": "ordered_month", "type": "int64", "nullable": true,
+      "from": { "part": "month", "field": "ordered_on" } },
+    { "name": "created_year", "type": "int64", "nullable": true,
+      "from": { "part": "year", "field": "created_at" } }
   ]
 }

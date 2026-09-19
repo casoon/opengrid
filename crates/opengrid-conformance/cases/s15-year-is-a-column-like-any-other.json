@@ -1,0 +1,16 @@
+{
+  "id": "s15-year-is-a-column-like-any-other",
+  "rule": "S15",
+  "query": {
+    "source": "orders",
+    "select": ["ordered_year", "rows"],
+    "group": ["ordered_year"],
+    "aggregate": [{ "fn": "count", "as": "rows" }],
+    "sort": [{ "field": "ordered_year", "direction": "asc" }]
+  },
+  "expected": {
+    "columns": ["ordered_year", "rows"],
+    "rows": [[2025, 1], [2026, 48], [null, 1]]
+  },
+  "ordered": true
+}

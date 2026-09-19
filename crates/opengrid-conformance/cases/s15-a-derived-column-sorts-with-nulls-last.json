@@ -1,0 +1,25 @@
+{
+  "id": "s15-a-derived-column-sorts-with-nulls-last",
+  "rule": "S15",
+  "query": {
+    "source": "orders",
+    "select": ["id", "ordered_month"],
+    "filter": { "field": "id", "op": "lte", "value": 6 },
+    "sort": [
+      { "field": "ordered_month", "direction": "desc" },
+      { "field": "id", "direction": "asc" }
+    ]
+  },
+  "expected": {
+    "columns": ["id", "ordered_month"],
+    "rows": [
+      [1, 12],
+      [6, 3],
+      [4, 2],
+      [2, 1],
+      [3, 1],
+      [5, null]
+    ]
+  },
+  "ordered": true
+}

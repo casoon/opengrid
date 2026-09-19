@@ -265,6 +265,13 @@ impl Timestamp {
         Some(Self { micros })
     }
 
+    /// The civil date in **UTC** (rule S9 — no time zone is ever applied).
+    ///
+    /// Floor division, so it is the calendar day before the epoch too.
+    pub fn date(&self) -> Date {
+        Date::from_days_since_epoch(self.micros.div_euclid(MICROS_PER_DAY) as i32)
+    }
+
     /// Parses a strict `YYYY-MM-DDTHH:MM:SS[.ffffff]Z` string.
     pub fn parse(s: &str) -> Result<Self, ValueError> {
         let invalid = || ValueError::InvalidTimestamp(s.to_owned());

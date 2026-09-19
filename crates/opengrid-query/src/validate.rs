@@ -210,6 +210,9 @@ impl Query {
                         name: field.clone(),
                         data_type: source.data_type,
                         nullable: source.nullable,
+                        // An output column is never derived: the result carries
+                        // its values, whatever produced them (point 54).
+                        from: None,
                     });
                 } else if let Some((alias, data_type, nullable)) =
                     aliases.iter().find(|(alias, _, _)| alias == field)
@@ -218,6 +221,7 @@ impl Query {
                         name: alias.clone(),
                         data_type: *data_type,
                         nullable: *nullable,
+                        from: None,
                     });
                 } else {
                     return Err(QueryError::SelectNotGrouped {
@@ -233,6 +237,7 @@ impl Query {
                         name: alias.clone(),
                         data_type: *data_type,
                         nullable: *nullable,
+                        from: None,
                     });
                 }
             }
@@ -249,6 +254,7 @@ impl Query {
                     name: field.clone(),
                     data_type: source.data_type,
                     nullable: source.nullable,
+                    from: None,
                 });
             }
         }

@@ -115,7 +115,7 @@ fn partial_sources() -> Vec<(&'static str, DataSourceCapabilities)> {
 fn the_hybrid_path_answers_the_whole_suite() {
     let schema = common::schema();
     let checked = check_dir(&cases_dir(), &schema).expect("the cases load");
-    assert_eq!(checked.len(), 48, "the suite has 48 cases");
+    assert_eq!(checked.len(), 53, "the suite has 53 cases");
 
     let mut failed: Vec<String> = Vec::new();
     let mut split = 0usize;

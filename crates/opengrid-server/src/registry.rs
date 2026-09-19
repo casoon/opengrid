@@ -157,6 +157,12 @@ fn load_source(config: &SourceConfig, base: &Path) -> Result<Source, RegistryErr
             schema_path.display()
         ))
     })?;
+    // A broken derivation is a startup failure like every other configuration
+    // mistake (plan point 54): a gateway that came up with one would serve a
+    // column full of NULL and nobody would notice.
+    full_schema
+        .check()
+        .map_err(|error| RegistryError::new(format!("datasource {:?}: {error}", config.name)))?;
 
     let data = match config.kind.as_str() {
         "postgres" => {
@@ -215,9 +221,16 @@ fn load_source(config: &SourceConfig, base: &Path) -> Result<Source, RegistryErr
 }
 
 /// The schema reduced to `allowed_fields`, in the schema's own order.
+///
+/// **A derivation never leaves the server** (plan point 54), the same way the
+/// mandatory row filter does not (E16): the client schema says `ordered_year` is
+/// an `int64`, which is all a client can do anything with, and where the values
+/// come from stays here. That also keeps the narrowed schema sound on its own —
+/// a derivation whose source column is not in `allowed_fields` would otherwise
+/// dangle.
 fn narrow(schema: &Schema, allowed: &[String], name: &str) -> Result<Schema, RegistryError> {
     if allowed.is_empty() {
-        return Ok(schema.clone());
+        return Ok(schema.materialized());
     }
     for field in allowed {
         if schema.field(field).is_none() {
@@ -232,7 +245,7 @@ fn narrow(schema: &Schema, allowed: &[String], name: &str) -> Result<Schema, Reg
         .filter(|field| allowed.iter().any(|name| name == field.name.as_str()))
         .cloned()
         .collect();
-    Ok(Schema::new(fields))
+    Ok(Schema::new(fields).materialized())
 }
 
 fn check_row_filter(

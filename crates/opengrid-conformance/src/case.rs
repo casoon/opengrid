@@ -131,10 +131,17 @@ pub fn load_schema(path: &Path) -> Result<Schema, CaseError> {
     // Since point 23 `Schema` reads itself: this file's shape *is* the canonical
     // JSON form, and the hand-written reader that used to live here was the only
     // thing keeping the two in step.
-    serde_json::from_str(&read(path)?).map_err(|source| CaseError::Json {
+    let schema: Schema = serde_json::from_str(&read(path)?).map_err(|source| CaseError::Json {
         path: path.to_path_buf(),
         source,
-    })
+    })?;
+    // A derived column that cannot work is a broken schema, not a column full of
+    // NULL discovered later (plan point 54).
+    schema.check().map_err(|error| CaseError::Schema {
+        path: path.to_path_buf(),
+        message: error.to_string(),
+    })?;
+    Ok(schema)
 }
 
 /// Validates one case and reads its expectation against the query's output types.

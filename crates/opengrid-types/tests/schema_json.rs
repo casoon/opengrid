@@ -5,7 +5,7 @@
 //! `opengrid-conformance` was the only thing that could read it. These tests pin
 //! the form against that very file, so the two cannot drift apart.
 
-use opengrid_types::{DataType, Field, FieldName, Schema};
+use opengrid_types::{DataType, DatePart, Field, FieldName, Schema};
 
 /// The schema file of the conformance data set, read through `serde` alone.
 #[test]
@@ -13,7 +13,13 @@ fn the_conformance_schema_file_reads_back() {
     let json = include_str!("../../opengrid-conformance/data/orders.schema.json");
     let schema: Schema = serde_json::from_str(json).expect("the canonical schema file parses");
 
-    assert_eq!(schema.len(), 10);
+    assert_eq!(
+        schema.len(),
+        13,
+        "ten stored columns and three derived ones"
+    );
+    assert_eq!(schema.stored().len(), 10);
+    assert_eq!(schema.check(), Ok(()));
     let id = schema.field("id").expect("id");
     assert_eq!(id.data_type, DataType::Int64);
     assert!(!id.nullable, "id is the one required column");
@@ -25,6 +31,17 @@ fn the_conformance_schema_file_reads_back() {
         }
     );
     assert!(schema.field("note").expect("note").nullable);
+
+    // The derived columns of point 54, read through the same `serde` impl.
+    let year = schema.field("ordered_year").expect("ordered_year");
+    assert_eq!(year.data_type, DataType::Int64);
+    let derivation = year.from.as_ref().expect("a derivation");
+    assert_eq!(derivation.part, DatePart::Year);
+    assert_eq!(derivation.field.as_str(), "ordered_on");
+    assert!(
+        !schema.field("id").expect("id").is_derived(),
+        "an ordinary column carries no origin"
+    );
 }
 
 /// Every type survives a round trip, in schema order.

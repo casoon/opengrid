@@ -136,9 +136,47 @@ fn the_awkward_cells_survive_ingest() {
             "flag",
             "ordered_on",
             "created_at",
-            "note"
+            "note",
+            // Not in the file — computed from `ordered_on` and `created_at`
+            // while reading it (plan point 54).
+            "ordered_year",
+            "ordered_month",
+            "created_year"
         ]
     );
+}
+
+/// A derived column is computed from the file, not read out of it.
+///
+/// The dataset crosses a year boundary on purpose — row 1 is
+/// `2025-12-31T23:59:59Z`, row 2 the microsecond after — so this also pins rule
+/// S9: the part is taken in UTC, never in a local zone.
+#[test]
+fn derived_columns_are_computed_while_reading() {
+    use arrow_array::Array;
+    use arrow_array::cast::as_primitive_array;
+    use arrow_array::types::Int64Type;
+
+    let batches = common::csv_batches();
+    let schema = common::schema();
+    assert_eq!(schema.stored().len(), 10, "the file has ten columns");
+
+    let read = |name: &str, row: usize| -> Option<i64> {
+        let index = batches[0].schema().index_of(name).expect(name);
+        let column = as_primitive_array::<Int64Type>(batches[0].column(index));
+        (!column.is_null(row)).then(|| column.value(row))
+    };
+
+    assert_eq!(read("ordered_year", 0), Some(2025));
+    assert_eq!(read("created_year", 0), Some(2025));
+    assert_eq!(read("ordered_year", 1), Some(2026));
+    assert_eq!(read("created_year", 1), Some(2026), "one microsecond later");
+    assert_eq!(read("ordered_month", 0), Some(12));
+    assert_eq!(read("ordered_month", 1), Some(1));
+
+    // Row 5 (index 4) has no date at all, so it has no year either.
+    assert_eq!(read("ordered_year", 4), None);
+    assert_eq!(read("created_year", 4), None);
 }
 
 /// Rows are cut into batches, and the order survives the cut.

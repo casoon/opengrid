@@ -1,0 +1,15 @@
+{
+  "id": "s15-a-derived-column-filters",
+  "rule": "S15",
+  "query": {
+    "source": "orders",
+    "select": ["id", "ordered_on"],
+    "filter": { "field": "ordered_year", "op": "eq", "value": 2025 },
+    "sort": [{ "field": "id", "direction": "asc" }]
+  },
+  "expected": {
+    "columns": ["id", "ordered_on"],
+    "rows": [[1, "2025-12-31"]]
+  },
+  "ordered": true
+}

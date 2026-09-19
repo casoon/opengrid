@@ -9,98 +9,33 @@
 //!
 //! `type` is a snake_case name — `bool`, `int64`, `float64`, `utf8`, `date`,
 //! `timestamp` — or the object form `{ "decimal": { "precision": 12, "scale": 2 } }`.
-//! `nullable` defaults to `false`, like a JSON Schema `required` field.
+//! `nullable` defaults to `false`, like a JSON Schema `required` field. Since
+//! point 54 a field may also carry `"from"` and be computed rather than stored.
 //!
-//! Only the **reader** lives here. `opengrid_types::Schema` deliberately has no
-//! serde impls, and whether this shape becomes the canonical *wire* form of a
-//! schema is still open (plan/noch-zu-klaeren.md §Serialisierungsform von
-//! `Schema`; it belongs to point 23, the first point that ships a schema over
-//! the wire). Keeping the reader in this crate leaves that decision open and
-//! adds no dependency to `opengrid-types`.
-//!
-//! The conformance suite reads the same shape with its own private structs
-//! (`opengrid-conformance/src/case.rs`, `SchemaFile`) — it is a `publish = false`
-//! dev-only crate, so this is not a shared home. The two readers are the same
-//! shape by construction, and point 23 collapses them into one when the wire
-//! form is decided.
+//! **This is no longer a reader.** Until point 23 the module held its own structs,
+//! because `opengrid_types::Schema` had no serde impls and the wire form was not
+//! decided yet; the doc comment said they would collapse into one once it was.
+//! E17 decided it, so what is left here is the thin part that was never shared:
+//! turning a parse failure into a sentence a person can act on, and checking the
+//! derivations (point 54) — a schema whose derivation is broken must not load at
+//! all, or the browser shows a column full of NULL and nobody notices.
 
-use opengrid_types::{DataType, Field, FieldName, Schema};
-use serde::Deserialize;
+use opengrid_types::Schema;
 
 /// Parses a schema in the `orders.schema.json` shape.
 ///
-/// The error is the diagnosis, ready to be shown to the user: it names the
-/// offending field, because a hand-edited schema is the normal input here.
+/// The error is the diagnosis, ready to be shown to the user: a hand-edited
+/// schema is the normal input here.
 pub fn from_json(json: &str) -> Result<Schema, String> {
-    let file: SchemaFile = serde_json::from_str(json).map_err(|error| error.to_string())?;
-    file.into_schema()
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct SchemaFile {
-    fields: Vec<FieldRepr>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct FieldRepr {
-    name: String,
-    #[serde(rename = "type")]
-    data_type: TypeRepr,
-    #[serde(default)]
-    nullable: bool,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "snake_case", deny_unknown_fields)]
-enum TypeRepr {
-    Bool,
-    Int64,
-    Float64,
-    Decimal { precision: u8, scale: u8 },
-    Utf8,
-    Date,
-    Timestamp,
-}
-
-impl SchemaFile {
-    fn into_schema(self) -> Result<Schema, String> {
-        let mut fields = Vec::with_capacity(self.fields.len());
-        for repr in self.fields {
-            let name = FieldName::new(&repr.name)
-                .map_err(|error| format!("field {:?}: {error}", repr.name))?;
-            let data_type = repr
-                .data_type
-                .to_data_type()
-                .map_err(|error| format!("field {:?}: {error}", repr.name))?;
-            fields.push(if repr.nullable {
-                Field::new(name, data_type)
-            } else {
-                Field::required(name, data_type)
-            });
-        }
-        Ok(Schema::new(fields))
-    }
-}
-
-impl TypeRepr {
-    fn to_data_type(&self) -> Result<DataType, opengrid_types::ValueError> {
-        Ok(match self {
-            TypeRepr::Bool => DataType::Bool,
-            TypeRepr::Int64 => DataType::Int64,
-            TypeRepr::Float64 => DataType::Float64,
-            TypeRepr::Decimal { precision, scale } => DataType::decimal(*precision, *scale)?,
-            TypeRepr::Utf8 => DataType::Utf8,
-            TypeRepr::Date => DataType::Date,
-            TypeRepr::Timestamp => DataType::Timestamp,
-        })
-    }
+    let schema: Schema = serde_json::from_str(json).map_err(|error| error.to_string())?;
+    schema.check().map_err(|error| error.to_string())?;
+    Ok(schema)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use opengrid_types::DataType;
 
     /// The shape the conformance dataset ships — the reader has to accept the
     /// file the demo and the browser tests feed it.
@@ -109,7 +44,7 @@ mod tests {
     #[test]
     fn reads_the_conformance_schema() {
         let schema = from_json(ORDERS).expect("the dataset schema parses");
-        assert_eq!(schema.len(), 10);
+        assert_eq!(schema.len(), 13);
         assert_eq!(schema.index_of("id"), Some(0));
         assert_eq!(
             schema.data_type("amount"),
@@ -119,12 +54,25 @@ mod tests {
         assert!(schema.field("customer").unwrap().nullable);
     }
 
+    /// Ten columns in the file, three computed from them (point 54).
+    #[test]
+    fn reads_the_derived_columns() {
+        let schema = from_json(ORDERS).expect("the dataset schema parses");
+        assert_eq!(schema.stored().len(), 10);
+        let year = schema.field("ordered_year").expect("the derived column");
+        assert_eq!(year.data_type, DataType::Int64);
+        assert_eq!(
+            year.from.as_ref().map(|from| from.field.as_str()),
+            Some("ordered_on")
+        );
+    }
+
     #[test]
     fn rejects_a_misspelled_type() {
         let error = from_json(r#"{"fields":[{"name":"a","type":"integer"}]}"#).unwrap_err();
         assert!(
-            error.contains("a"),
-            "the diagnosis names the field: {error}"
+            error.contains("integer"),
+            "the diagnosis names what it could not read: {error}"
         );
     }
 
@@ -136,5 +84,16 @@ mod tests {
     #[test]
     fn rejects_an_invalid_identifier() {
         assert!(from_json(r#"{"fields":[{"name":"1bad","type":"int64"}]}"#).is_err());
+    }
+
+    /// A derivation that cannot work stops the schema from loading at all.
+    #[test]
+    fn rejects_a_broken_derivation() {
+        let error = from_json(
+            r#"{"fields":[{"name":"y","type":"int64","nullable":true,
+                 "from":{"part":"year","field":"nope"}}]}"#,
+        )
+        .unwrap_err();
+        assert!(error.contains("nope"), "the diagnosis names it: {error}");
     }
 }

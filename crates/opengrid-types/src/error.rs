@@ -23,6 +23,64 @@ impl fmt::Display for InvalidIdentifier {
 
 impl Error for InvalidIdentifier {}
 
+/// A schema declares a derived column that cannot work (plan point 54).
+///
+/// Every one of these is a configuration mistake, caught where the schema is
+/// loaded — a gateway or a page that starts with a broken derivation would
+/// serve a column full of NULL and nobody would notice.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SchemaError {
+    /// The field a derivation reads does not exist.
+    UnknownSource { field: String, source: String },
+    /// The field a derivation reads is itself derived.
+    DerivedSource { field: String, source: String },
+    /// The field a derivation reads is neither a date nor a timestamp.
+    NotTemporal {
+        field: String,
+        source: String,
+        data_type: DataType,
+    },
+    /// A derived field declares a type other than `Int64`.
+    WrongType { field: String, data_type: DataType },
+    /// A required field is derived from one that may be NULL.
+    NotNullable { field: String, source: String },
+}
+
+impl fmt::Display for SchemaError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SchemaError::UnknownSource { field, source } => write!(
+                f,
+                "field {field:?} is derived from {source:?}, which the schema does not have"
+            ),
+            SchemaError::DerivedSource { field, source } => write!(
+                f,
+                "field {field:?} is derived from {source:?}, which is itself derived — \
+                 a derivation reads a stored column"
+            ),
+            SchemaError::NotTemporal {
+                field,
+                source,
+                data_type,
+            } => write!(
+                f,
+                "field {field:?} is derived from {source:?}, which is a {data_type:?} — \
+                 a date or a timestamp is required"
+            ),
+            SchemaError::WrongType { field, data_type } => write!(
+                f,
+                "derived field {field:?} declares {data_type:?}; a date part is an int64"
+            ),
+            SchemaError::NotNullable { field, source } => write!(
+                f,
+                "field {field:?} is required but derived from {source:?}, which may be NULL"
+            ),
+        }
+    }
+}
+
+impl Error for SchemaError {}
+
 /// Everything that can go wrong while interpreting a JSON scalar as a typed
 /// [`Value`](crate::Value) or while building a [`DataType`].
 #[derive(Debug, Clone, PartialEq, Eq)]

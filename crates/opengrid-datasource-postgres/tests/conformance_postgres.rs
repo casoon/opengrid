@@ -53,6 +53,7 @@ fn cases() -> Vec<Checked> {
 /// The data set, read through the local engine — so both sides provably start
 /// from the same 50 rows.
 fn fixture_rows(schema: &Schema) -> QueryResult {
+    let schema = &schema.stored();
     use opengrid_arrow_engine::datasource::LocalDataSource;
     use opengrid_arrow_engine::ingest::{CsvOptions, load_csv};
     use opengrid_query::{Limits, Query};
@@ -62,6 +63,7 @@ fn fixture_rows(schema: &Schema) -> QueryResult {
     let source = LocalDataSource::new(batches).expect("a local source");
 
     let select: Vec<String> = schema
+        .stored()
         .fields()
         .iter()
         .map(|field| format!("\"{}\"", field.name.as_str()))
@@ -87,6 +89,10 @@ fn fixture_rows(schema: &Schema) -> QueryResult {
 /// what `OPENGRID_TEST_PG` is for.
 async fn create_fixture(client: &tokio_postgres::Client, schema: &Schema, table: &str) -> String {
     let table = table.to_owned();
+    // Only the **stored** columns become columns of the table. A derived one
+    // (plan point 54) is computed by PostgreSQL through the expression the
+    // compiler writes — creating it here would prove nothing.
+    let schema = &schema.stored();
     client
         .batch_execute(&format!("DROP TABLE IF EXISTS \"{table}\";"))
         .await
@@ -253,7 +259,7 @@ async fn postgresql_answers_every_conformance_case() {
         version.split(" on ").next().unwrap_or("PostgreSQL"),
         failures.len()
     );
-    assert_eq!(ran, 48, "the suite has 48 cases");
+    assert_eq!(ran, 53, "the suite has 53 cases");
     assert!(
         failures.is_empty(),
         "{} of {ran} cases differ:\n{}",

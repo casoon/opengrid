@@ -1,0 +1,21 @@
+{
+  "id": "s15-the-year-turns-at-one-microsecond",
+  "rule": "S15",
+  "query": {
+    "source": "orders",
+    "select": ["id", "created_year", "ordered_year", "ordered_month"],
+    "filter": { "field": "id", "op": "lte", "value": 5 },
+    "sort": [{ "field": "id", "direction": "asc" }]
+  },
+  "expected": {
+    "columns": ["id", "created_year", "ordered_year", "ordered_month"],
+    "rows": [
+      [1, 2025, 2025, 12],
+      [2, 2026, 2026, 1],
+      [3, 2026, 2026, 1],
+      [4, 2026, 2026, 2],
+      [5, null, null, null]
+    ]
+  },
+  "ordered": true
+}

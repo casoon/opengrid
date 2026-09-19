@@ -21,9 +21,9 @@ mod value;
 mod arrow;
 
 pub use data_type::DataType;
-pub use error::{InvalidIdentifier, ValueError};
+pub use error::{InvalidIdentifier, SchemaError, ValueError};
 pub use identifier::{DataSourceId, FieldName, is_valid_identifier};
-pub use schema::{Field, Schema};
+pub use schema::{DatePart, Derivation, Field, Schema};
 pub use value::{Date, Decimal, Timestamp, Value};
 
 #[cfg(feature = "arrow")]
