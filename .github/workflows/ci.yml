@@ -21,6 +21,11 @@ jobs:
       - uses: extractions/setup-just@v2
       - run: just check
       - run: just wasm-check
+      # E25 keeps `grid` and `pivot` as a way out for a consumer who wants only
+      # one element. A feature nobody builds is a feature that stops building,
+      # so both single-element modules are compiled here.
+      - run: cargo check -p opengrid-web-components --target wasm32-unknown-unknown --no-default-features --features grid
+      - run: cargo check -p opengrid-web-components --target wasm32-unknown-unknown --no-default-features --features pivot
 
   postgres:
     runs-on: ubuntu-latest
@@ -74,3 +79,28 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
       - run: just e2e
+
+  publish-dry-run:
+    runs-on: ubuntu-latest
+    # The release path, walked without releasing (plan point 40, step 6). It
+    # packs `@casoon/opengrid` exactly as `just package` does and asks npm what
+    # it would send. A dry run needs no token, so this runs on every push and
+    # the tarball can never drift from the checklist in docs/releasing.md.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: extractions/setup-just@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@0.2.126
+      - run: sudo apt-get update && sudo apt-get install -y binaryen
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: just package
+      - name: npm publish --dry-run
+        run: npm publish --dry-run
+        working-directory: target/npm-package/package

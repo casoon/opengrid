@@ -102,7 +102,7 @@ pub struct GridTexts {
     /// the dimension the subtotal closes.
     pub subtotal: String,
     /// The readable names of the filter operators, in the order of
-    /// [`FILTER_OPERATORS`](crate::grid::FILTER_OPERATORS). The `value` of each
+    /// [`FILTER_OPERATORS`](crate::shared::FILTER_OPERATORS). The `value` of each
     /// option stays the wire token, so the query is unaffected.
     pub operators: Vec<String>,
 }
@@ -145,7 +145,7 @@ pub(crate) const KEYS: &[&str] = &[
 ];
 
 /// The readable operator names, in the order of
-/// [`FILTER_OPERATORS`](crate::grid::FILTER_OPERATORS).
+/// [`FILTER_OPERATORS`](crate::shared::FILTER_OPERATORS).
 ///
 /// `gte` is not a word. The wire token stays the option's `value`; only what the
 /// user reads changes.
@@ -167,7 +167,7 @@ pub const DEFAULT_OPERATORS: &[&str] = &[
 /// The labels are indexed by the wire tokens' position, so the two lists must
 /// have the same length — otherwise an added operator would silently render its
 /// raw token.
-const _: () = assert!(DEFAULT_OPERATORS.len() == crate::grid::FILTER_OPERATORS.len());
+const _: () = assert!(DEFAULT_OPERATORS.len() == crate::shared::FILTER_OPERATORS.len());
 
 impl Default for GridTexts {
     fn default() -> Self {
@@ -344,7 +344,7 @@ impl GridTexts {
     /// token when there is none.
     ///
     /// The list is indexed like
-    /// [`FILTER_OPERATORS`](crate::grid::FILTER_OPERATORS) — a compile-time
+    /// [`FILTER_OPERATORS`](crate::shared::FILTER_OPERATORS) — a compile-time
     /// assertion keeps the two the same length — and an empty entry means "no
     /// label", so a page can translate one operator without restating the rest.
     pub fn operator(&self, index: usize, token: &str) -> String {
@@ -484,7 +484,7 @@ mod host {
         if let Ok(map) = js_sys::Reflect::get(value, &JsValue::from_str("operators"))
             && map.is_object()
         {
-            for (index, token) in crate::grid::FILTER_OPERATORS.iter().enumerate() {
+            for (index, token) in crate::shared::FILTER_OPERATORS.iter().enumerate() {
                 if let Ok(label) = js_sys::Reflect::get(&map, &JsValue::from_str(token))
                     && let Some(label) = label.as_string()
                     && let Some(slot) = texts.operators.get_mut(index)

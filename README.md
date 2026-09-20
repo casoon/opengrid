@@ -57,10 +57,17 @@ suite against a real PostgreSQL. It **skips itself** when there is none, so
 
 ## Status
 
-Pre-1.0. The API is frozen in the sense that it is written down and a test
-fails when it changes (`crates/opengrid-web-components/src/api.rs`) — not in the
-sense that it will not change before 1.0.
+Pre-1.0, and not published yet. The API is frozen in the sense that it is
+written down and a test fails when it changes
+(`crates/opengrid-web-components/src/api.rs`) — not in the sense that it will
+not change before 1.0. What a `0.x` bump is allowed to break, and the steps a
+release actually takes, are in **[docs/releasing.md](docs/releasing.md)**.
+
+One module ships, with all three elements in it: the pivot costs 3.3 KiB brotli
+next to the grid, while splitting them would duplicate 43.9 KiB. The Cargo
+features `grid` and `pivot` are there for anyone who wants only one.
 
 ## Licence
 
-MIT OR Apache-2.0.
+MIT OR Apache-2.0 — see [LICENSE-MIT](LICENSE-MIT) and
+[LICENSE-APACHE](LICENSE-APACHE).

@@ -19,6 +19,8 @@ use serde_json::{Value, json};
 use opengrid_web_core::element::{LABEL_ATTRIBUTE, mirror_label};
 use opengrid_web_core::patch::{NodeAllocator, NodeId, Patch, PatchBuffer};
 
+use crate::shared::element;
+
 /// The custom element name (E1).
 pub const TABLE_TAG: &str = "opengrid-table";
 
@@ -171,8 +173,8 @@ fn value_text(value: &Value) -> String {
 /// `aria-hidden` span, so nothing reads it.
 fn direction_mark(aria_sort: &str) -> String {
     let glyph = match aria_sort {
-        "ascending" => crate::grid::ASCENDING_GLYPH,
-        "descending" => crate::grid::DESCENDING_GLYPH,
+        "ascending" => crate::shared::ASCENDING_GLYPH,
+        "descending" => crate::shared::DESCENDING_GLYPH,
         _ => return String::new(),
     };
     format!("\u{a0}{glyph}")
@@ -279,7 +281,7 @@ pub fn build_table(
                 node: name,
                 text: column.name.clone(),
             });
-            let mark = crate::grid::marker(buffer, nodes, button, "sort-direction");
+            let mark = crate::shared::marker(buffer, nodes, button, "sort-direction");
             buffer.push(Patch::SetText {
                 node: mark,
                 text: direction_mark(aria_sort),
@@ -301,27 +303,6 @@ pub fn build_table(
     }
 
     TableNodes { table, caption }
-}
-
-/// Creates an element and appends it to `parent`, in patch order.
-fn element(
-    buffer: &mut PatchBuffer,
-    nodes: &mut NodeAllocator,
-    parent: Option<NodeId>,
-    tag: &str,
-) -> NodeId {
-    let node = nodes.alloc();
-    buffer.push(Patch::CreateElement {
-        node,
-        tag: tag.to_owned(),
-    });
-    if let Some(parent) = parent {
-        buffer.push(Patch::AppendChild {
-            parent,
-            child: node,
-        });
-    }
-    node
 }
 
 #[cfg(test)]

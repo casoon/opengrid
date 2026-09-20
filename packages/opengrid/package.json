@@ -1,0 +1,40 @@
+{
+  "name": "@casoon/opengrid",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Accessible data grid, table and pivot as web components, driven by a portable Rust/WASM query engine.",
+  "keywords": [
+    "datagrid",
+    "pivot",
+    "web-components",
+    "accessibility",
+    "wasm"
+  ],
+  "license": "MIT OR Apache-2.0",
+  "exports": {
+    ".": "./loader.js",
+    "./loader.js": "./loader.js",
+    "./worker.js": "./worker.js",
+    "./pkg/*": "./pkg/*",
+    "./package.json": "./package.json"
+  },
+  "main": "./loader.js",
+  "types": "./pkg/opengrid_web_components.d.ts",
+  "sideEffects": [
+    "./worker.js"
+  ],
+  "files": [
+    "loader.js",
+    "worker.js",
+    "pkg/",
+    "LICENSE-MIT",
+    "LICENSE-APACHE",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

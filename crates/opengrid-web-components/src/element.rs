@@ -51,8 +51,11 @@ pub fn register() -> Result<(), JsValue> {
         on_disconnected,
         on_attribute_changed,
     )?;
+    #[cfg(feature = "grid")]
     crate::grid_element::define_grid()?;
-    crate::pivot_element::define_pivot()
+    #[cfg(feature = "pivot")]
+    crate::pivot_element::define_pivot()?;
+    Ok(())
 }
 
 /// Attaches a data provider to a host element (points 14/16).
@@ -67,7 +70,9 @@ pub fn set_provider(host: &HtmlElement, provider: JsValue) {
     let provider: Rc<dyn DataProvider> = Rc::new(JsProvider::new(provider));
     attach_provider(host, provider);
     match host.tag_name().to_ascii_lowercase().as_str() {
+        #[cfg(feature = "grid")]
         "opengrid-grid" => crate::grid_element::start(host),
+        #[cfg(feature = "pivot")]
         "opengrid-pivot" => crate::pivot_element::run(host),
         _ => run_query(host, None, None),
     }
@@ -100,6 +105,7 @@ pub fn set_provider(host: &HtmlElement, provider: JsValue) {
 /// Formatting is display only: the filter, the sort and every comparison keep
 /// working on the value, because a grid that sorted by what it printed would
 /// have stopped honouring rules S4, S8 and S9.
+#[cfg(feature = "grid")]
 #[wasm_bindgen(js_name = set_formats)]
 pub fn set_formats(host: &HtmlElement, formats: JsValue) {
     crate::formats::set_formats_for(host, &formats);
@@ -108,6 +114,7 @@ pub fn set_formats(host: &HtmlElement, formats: JsValue) {
     }
     match host.tag_name().to_ascii_lowercase().as_str() {
         "opengrid-grid" => crate::grid_element::rerender(host),
+        #[cfg(feature = "pivot")]
         "opengrid-pivot" => crate::pivot_element::run(host),
         _ => run_query(host, None, None),
     }
@@ -118,6 +125,7 @@ pub fn set_formats(host: &HtmlElement, formats: JsValue) {
 /// `choices` is a plain JS object keyed by column name, each value a list of
 /// strings. A column with choices gets a `<select>` instead of a typed input.
 /// V1 has no enum type, so the page is the only honest source of the options.
+#[cfg(feature = "grid")]
 #[wasm_bindgen(js_name = set_choices)]
 pub fn set_choices(host: &HtmlElement, choices: JsValue) {
     let _ = js_sys::Reflect::set(
@@ -135,7 +143,9 @@ pub fn set_texts(host: &HtmlElement, values: JsValue) {
         return;
     }
     match host.tag_name().to_ascii_lowercase().as_str() {
+        #[cfg(feature = "grid")]
         "opengrid-grid" => crate::grid_element::retext(host),
+        #[cfg(feature = "pivot")]
         "opengrid-pivot" => crate::pivot_element::run(host),
         _ => run_query(host, None, None),
     }

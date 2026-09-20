@@ -46,10 +46,22 @@ wasm-build-components:
     wasm-bindgen --target web --out-dir packages/opengrid/pkg --out-name opengrid_web_components "${CARGO_TARGET_DIR:-target}/wasm32-unknown-unknown/release/opengrid_web_components.wasm"
     wasm-opt -Oz -o packages/opengrid/pkg/opengrid_web_components_bg.wasm packages/opengrid/pkg/opengrid_web_components_bg.wasm
 
+# Packt `@casoon/opengrid` wie ein Release und entpackt es nach
+# target/npm-package/package (Punkt 40, E25). Baut das Element-Modul mit.
+# tests/e2e/packaged.spec.js lädt genau daraus — nicht aus dem Repository.
+package:
+    bash scripts/pack-npm.sh
+
+# Größen der Elementmodule: beide Elemente, nur Grid, nur Pivot — roh, gzip,
+# brotli (Punkt 40). Die Zahlen stehen in plan/spezifikation/12-qualitaet.md.
+measure-modules:
+    bash scripts/measure-modules.sh
+
 # End-to-End- und A11y-Tests (Playwright + axe-core, plan/spezifikation/12-qualitaet.md §CI).
 # Baut das Element-Modul und das Engine-Modul (die Fixture fährt die echte Engine),
+# packt das npm-Paket (packaged.spec.js prüft das gepackte, nicht das Repository),
 # installiert die gepinnte JS-Toolchain und fährt tests/e2e/.
-e2e: wasm-build-components wasm-build
+e2e: wasm-build-components wasm-build package
     # Die Hybrid-Specs (Punkt 28) fahren gegen einen echten opengrid-server, den
     # Playwright startet. Hier gebaut, damit dort nur noch gestartet wird — ein
     # Kaltbau innerhalb des webServer-Timeouts wäre ein Glücksspiel.

@@ -19,6 +19,8 @@ use serde_json::{Value, json};
 use opengrid_web_core::element::{LABEL_ATTRIBUTE, mirror_label};
 use opengrid_web_core::patch::{NodeAllocator, NodeId, Patch, PatchBuffer};
 
+use crate::shared::element;
+
 use crate::texts::GridTexts;
 
 /// The custom element name (E1).
@@ -365,26 +367,6 @@ pub fn build_pivot(
             }
         }
     }
-}
-
-fn element(
-    buffer: &mut PatchBuffer,
-    nodes: &mut NodeAllocator,
-    parent: Option<NodeId>,
-    tag: &str,
-) -> NodeId {
-    let node = nodes.alloc();
-    buffer.push(Patch::CreateElement {
-        node,
-        tag: tag.to_owned(),
-    });
-    if let Some(parent) = parent {
-        buffer.push(Patch::AppendChild {
-            parent,
-            child: node,
-        });
-    }
-    node
 }
 
 fn attribute(buffer: &mut PatchBuffer, node: NodeId, name: &str, value: &str) {

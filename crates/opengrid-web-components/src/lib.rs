@@ -40,18 +40,23 @@
 // to make (plan point 39).
 #[cfg(test)]
 mod api;
+#[cfg(feature = "grid")]
 pub(crate) mod columns;
+#[cfg(feature = "grid")]
 pub(crate) mod formats;
+#[cfg(feature = "grid")]
 pub(crate) mod grid;
+#[cfg(feature = "pivot")]
 pub(crate) mod pivot;
+pub(crate) mod shared;
 pub(crate) mod table;
 pub(crate) mod texts;
 
 #[cfg(target_arch = "wasm32")]
 mod element;
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", feature = "grid"))]
 mod grid_element;
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", feature = "pivot"))]
 mod pivot_element;
 
 /// The event names, readable on the host so the API freeze can check them.

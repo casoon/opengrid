@@ -148,6 +148,7 @@ use opengrid_web_core::element::{LABEL_ATTRIBUTE, mirror_label};
 use opengrid_web_core::patch::{NodeAllocator, NodeId, Patch, PatchBuffer};
 
 use crate::formats::CellFormat;
+use crate::shared::{ASCENDING_GLYPH, DESCENDING_GLYPH, FILTER_OPERATORS, element, marker};
 use crate::texts::GridTexts;
 
 /// The custom element name (E1).
@@ -199,17 +200,6 @@ pub const DEFAULT_ROW_HEIGHT: u64 = 32;
 /// rule on the host (or an inline style) overrides it and the value inherits
 /// into the shadow tree.
 pub const ROW_HEIGHT_PROPERTY: &str = "--grid-row-height";
-
-/// The glyph marking an ascending column in the header (point 49).
-///
-/// A filled triangle is the convention in data grids, exists in every font,
-/// scales as text at 400% zoom and survives `forced-colors` because it *is*
-/// text. It is language-independent, so it needs no entry in the text API of
-/// point 48.
-pub const ASCENDING_GLYPH: &str = "▲";
-
-/// The glyph marking a descending column in the header (point 49).
-pub const DESCENDING_GLYPH: &str = "▼";
 
 /// Rows kept above the first visible row so scrolling stays smooth.
 pub const OVERSCAN: u64 = 6;
@@ -269,24 +259,6 @@ pub const DEFAULT_FOCUS_WIDTH: &str = "2px";
 /// The browser's default `<input>`/`<select>` is a little under this at the
 /// inherited font size, so the grid raises it; the 40px filter row has the room.
 pub const MIN_TARGET_SIZE: u64 = 24;
-
-/// The operators the type-agnostic filter row offers, in display order.
-///
-/// The wire names are exactly the query's (plan/spezifikation/02-query-modell.md
-/// §Operatoren V1); `is_null`/`is_not_null` are not offered because the
-/// type-agnostic input always has a value to compare.
-pub const FILTER_OPERATORS: &[&str] = &[
-    "contains",
-    "starts_with",
-    "eq",
-    "ne",
-    "gt",
-    "gte",
-    "lt",
-    "lte",
-    "is_null",
-    "is_not_null",
-];
 
 /// The operators that make sense for a column (plan point 51).
 ///
@@ -2048,32 +2020,6 @@ fn tabindex_for(is_active: bool) -> &'static str {
     if is_active { "0" } else { "-1" }
 }
 
-/// Appends an empty, `aria-hidden` `<span part="{part}">` to a header cell.
-///
-/// The sort marks are decoration for the eye: the same information reaches
-/// assistive technology through `aria-sort`, so they must not reach it a second
-/// time through the header's accessible name. Shared with table mode (point 50),
-/// so both elements mark a sorted column the same way.
-pub(crate) fn marker(
-    buffer: &mut PatchBuffer,
-    nodes: &mut NodeAllocator,
-    parent: NodeId,
-    part: &str,
-) -> NodeId {
-    let span = element(buffer, nodes, Some(parent), "span");
-    buffer.push(Patch::SetAttribute {
-        node: span,
-        name: "part".to_owned(),
-        value: part.to_owned(),
-    });
-    buffer.push(Patch::SetAttribute {
-        node: span,
-        name: "aria-hidden".to_owned(),
-        value: "true".to_owned(),
-    });
-    span
-}
-
 /// Marks `node` as being written in the texts' language (point 48).
 ///
 /// Only the elements that carry the component's **own** texts get it — the
@@ -2112,27 +2058,6 @@ fn set_lang(buffer: &mut PatchBuffer, node: NodeId, texts: &GridTexts) {
         name: "lang".to_owned(),
         value: texts.lang.clone(),
     });
-}
-
-/// Creates an element and appends it to `parent`, in patch order.
-fn element(
-    buffer: &mut PatchBuffer,
-    nodes: &mut NodeAllocator,
-    parent: Option<NodeId>,
-    tag: &str,
-) -> NodeId {
-    let node = nodes.alloc();
-    buffer.push(Patch::CreateElement {
-        node,
-        tag: tag.to_owned(),
-    });
-    if let Some(parent) = parent {
-        buffer.push(Patch::AppendChild {
-            parent,
-            child: node,
-        });
-    }
-    node
 }
 
 #[cfg(test)]
