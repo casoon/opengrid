@@ -1389,6 +1389,9 @@ fn build_columns(
         node: toggle,
         text: texts.columns_group.clone(),
     });
+    // The toggle carries the word, so the toggle carries its language — not the
+    // container below, whose children are column names (see `set_lang`).
+    set_lang(buffer, toggle, texts);
 
     let container = element(buffer, nodes, Some(parent), "div");
     for (name, value) in [("part", "columns"), ("role", "group"), ("hidden", "")] {
@@ -1403,7 +1406,6 @@ fn build_columns(
         name: "aria-label".to_owned(),
         value: texts.columns_group.clone(),
     });
-    set_lang(buffer, container, texts);
 
     let mut boxes = Vec::with_capacity(declared.len());
     for (name, visible) in declared {
@@ -1575,7 +1577,6 @@ fn build_filter(
         name: "aria-label".to_owned(),
         value: texts.filter_group.clone(),
     });
-    set_lang(buffer, container, texts);
 
     let mut columns = Vec::with_capacity(fields.len());
     for (col, field) in fields.iter().enumerate() {
@@ -1602,6 +1603,11 @@ fn build_filter(
             name: "aria-label".to_owned(),
             value: texts.operator_label(field.name.as_str()),
         });
+        // The options below are our words, so the language sits here and not on
+        // the filter row, which also holds the column disclosure (see
+        // `set_lang`). The `aria-label` above mixes our word with a column name
+        // and is the one place no `lang` can be right for both.
+        set_lang(buffer, select, texts);
         let mut options = Vec::with_capacity(FILTER_OPERATORS.len());
         for (option_index, op) in FILTER_OPERATORS.iter().enumerate() {
             let option = element(buffer, nodes, Some(select), "option");
@@ -1675,6 +1681,7 @@ fn build_filter(
         node: clear,
         text: texts.clear.clone(),
     });
+    set_lang(buffer, clear, texts);
 
     FilterNodes {
         container,
@@ -2070,10 +2077,32 @@ pub(crate) fn marker(
 /// Marks `node` as being written in the texts' language (point 48).
 ///
 /// Only the elements that carry the component's **own** texts get it — the
-/// filter row and the status line. The cells and the column headers are the
-/// page's data, in the page's language; declaring them English because the
-/// built-in texts are English would be the very WCAG 3.1.2 failure this is meant
-/// to remove. An empty `lang` leaves the document's language everywhere.
+/// filter row, the status line, the pager and the column disclosure's toggle.
+/// The cells and the column headers are the page's data, in the page's
+/// language; declaring them English because the built-in texts are English
+/// would be the very WCAG 3.1.2 failure this is meant to remove. An empty
+/// `lang` leaves the document's language everywhere.
+///
+/// The rule is about the node's **subtree**, not just its own text, because
+/// `lang` is inherited. Two containers used to break it:
+///
+/// * `part="columns"`, the disclosure, holds one checkbox per column and every
+///   label there is a **column name**.
+/// * `part="filter"`, the filter row, *contains* that disclosure (point 37 moved
+///   it there so the list would stop taking height), so its `lang` reached the
+///   column names too.
+///
+/// So neither container is tagged. The language sits on the nodes whose whole
+/// subtree is ours: the disclosure's toggle button, each operator `select` (its
+/// `option`s are our words) and the clear button. Both containers keep their
+/// `aria-label` untagged — two group names in the page's language are a far
+/// smaller claim than every column name in the wrong one.
+///
+/// The one case no `lang` can settle is the `aria-label` of the operator and
+/// value controls: `operatorLabel`/`valueLabel` splice a column name into one of
+/// our words (`"{column} Operator"`), so the attribute is mixed by construction.
+/// Whether that is audible is a question for a real screen reader — it is in the
+/// point 55 protocol (S11), not decided here.
 fn set_lang(buffer: &mut PatchBuffer, node: NodeId, texts: &GridTexts) {
     if texts.lang.trim().is_empty() {
         return;
@@ -2735,18 +2764,35 @@ mod tests {
                 _ => None,
             })
             .collect();
-        // The pager writes words too (point 38), so it carries the language of
-        // those words — like the filter row and the status line, and never the
-        // data.
-        assert_eq!(
-            tagged,
-            [
-                view.filter.container,
-                view.status,
-                view.columns.container,
-                view.pager.container
-            ]
-        );
+        // Tagged: every node whose whole subtree is our own wording — the
+        // status line, the pager (it writes words too, point 38), the
+        // disclosure's toggle, each operator `select` (its options are our
+        // words) and the clear button.
+        let mut expected = vec![view.status, view.columns.toggle, view.pager.container];
+        expected.push(view.filter.clear);
+        for column in &view.filter.columns {
+            expected.push(column.select);
+        }
+        for node in &expected {
+            assert!(tagged.contains(node), "{node:?} should carry the language");
+        }
+
+        // Never tagged: the two containers that hold column names. `lang` is
+        // inherited, so tagging either would declare the page's own words
+        // English — `part="filter"` counts because the disclosure sits inside
+        // it (point 37).
+        for node in [
+            view.filter.container,
+            view.columns.container,
+            view.table,
+            view.tbody,
+        ] {
+            assert!(
+                !tagged.contains(&node),
+                "{node:?} holds the page's data and must not claim a language"
+            );
+        }
+        assert_eq!(tagged.len(), expected.len());
 
         // No language at all when the texts do not claim one.
         let mut nodes = NodeAllocator::new();

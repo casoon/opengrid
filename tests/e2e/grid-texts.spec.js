@@ -23,13 +23,27 @@ async function texts(page) {
       // What the user reads, and what the query actually sends.
       operatorTexts: [...select.options].map((option) => option.textContent),
       operatorValues: [...select.options].map((option) => option.value),
-      // Only the component's own texts claim a language.
+      // Only the component's own texts claim a language, and only on nodes
+      // whose whole subtree is ours — `lang` is inherited, so a container that
+      // also holds column names must not carry it.
       statusLang: root.querySelector('[part="status"]').getAttribute("lang"),
+      operatorLang: select.getAttribute("lang"),
+      clearLang: root.querySelector('[part="filter-clear"]').getAttribute("lang"),
+      columnsToggleLang: root.querySelector('[part="columns-toggle"]').getAttribute("lang"),
+      // The filter row holds the column disclosure (point 37), so it is a
+      // container of data and claims nothing itself.
       filterLang: root.querySelector('[part="filter"]').getAttribute("lang"),
+      columnsLang: root.querySelector('[part="columns"]').getAttribute("lang"),
       // The data must keep the page's language: nothing above the table claims
-      // one, and no cell or header does either.
+      // one, and no cell, header or column checkbox does either.
       layoutLang: root.querySelector('[part="layout"]').getAttribute("lang"),
       tableLang: root.querySelector('table[role="grid"]').closest("[lang]")?.getAttribute("lang"),
+      // The regression guard: a column name is the page's word. Walking up from
+      // its checkbox must not meet a `lang` anywhere inside the shadow root.
+      columnLabelLang: root
+        .querySelector('[part="column-toggle"]')
+        .closest("[lang]")
+        ?.getAttribute("lang"),
     };
   });
 }
@@ -52,13 +66,21 @@ test("the built-in texts are English, in one language", async ({ page }) => {
     operatorLabel: "customer operator",
     valueLabel: "customer value",
     statusLang: "en",
-    filterLang: "en",
+    operatorLang: "en",
+    clearLang: "en",
+    columnsToggleLang: "en",
   });
   // The data is the page's, in the page's language — declaring it English
   // because the built-in texts are would be the WCAG 3.1.2 failure this point
   // removes, moved from the chrome to the content.
   expect(built_in.layoutLang).toBeNull();
   expect(built_in.tableLang).toBeUndefined();
+  // Neither container claims a language: both hold column names. The filter row
+  // does because the column disclosure sits inside it (point 37) — that is the
+  // inheritance that declared every column name English until 2026-09-20.
+  expect(built_in.filterLang).toBeNull();
+  expect(built_in.columnsLang).toBeNull();
+  expect(built_in.columnLabelLang).toBeUndefined();
 });
 
 test("the operator names are words, the query keeps the wire tokens", async ({
@@ -113,9 +135,15 @@ test("set_texts overrides a subset and carries its language", async ({ page }) =
     // The announcement is now spoken German, although the document is English —
     // and the data is still English, because it did not change.
     statusLang: "de",
-    filterLang: "de",
+    operatorLang: "de",
+    clearLang: "de",
+    columnsToggleLang: "de",
   });
   expect(german.tableLang).toBeUndefined();
+  // A translation moves our words into German and leaves the column names where
+  // they were: in the language of the page.
+  expect(german.filterLang).toBeNull();
+  expect(german.columnLabelLang).toBeUndefined();
   expect(german.operatorTexts[5]).toBe("größer gleich");
   expect(german.operatorTexts[0]).toBe("enthält");
   // Keyed by the wire token, so translating two of them leaves the other six
