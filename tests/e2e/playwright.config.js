@@ -28,11 +28,18 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [["github"], ["list"]] : "list",
-  // Baselines are keyed by project only: the pinned Playwright version ships the
-  // same Chromium everywhere, and the template stays platform-neutral so the
-  // committed baselines are meaningful on CI. If a platform still renders
-  // differently, regenerate with `pnpm run e2e:update`.
-  snapshotPathTemplate: "{testDir}/__screenshots__/{arg}-{projectName}{ext}",
+  // Baselines are keyed by project **and platform**. They were keyed by project
+  // alone, on the assumption that a pinned Playwright ships the same Chromium
+  // everywhere and the fixtures render platform-neutrally. The first CI run
+  // this repository ever had disproved the second half: the same Chromium on
+  // Linux draws the same page with different fonts, and all twelve baselines
+  // missed by ~0.03 of their pixels. The functional assertions passed; only the
+  // images differed.
+  //
+  // So each platform owns its own. macOS ones are regenerated locally with
+  // `pnpm run e2e:update`; Linux ones come from the `baselines` job in
+  // .github/workflows/ci.yml, which is what CI compares against.
+  snapshotPathTemplate: "{testDir}/__screenshots__/{arg}-{projectName}-{platform}{ext}",
   use: {
     baseURL,
     trace: "on-first-retry",
