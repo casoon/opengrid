@@ -36,18 +36,47 @@ scheduled, and nothing below it should be read as a promise that it will be.
 
 ### 👤 The parts no command covers
 
-- [ ] **The screen-reader run.** The protocol is
-      `plan/spezifikation/15-sr-testprotokoll.md`; the matrix is six pairings — NVDA with
-      Firefox and with Chrome, JAWS with Chrome, VoiceOver with Safari on macOS and on
-      iOS, TalkBack with Chrome on Android. A pairing that was not tested is a **gap in
-      the release notes**, not a tick. Two scenarios (S9, focus while scrolling, and S10,
-      the unfolding of a truncated cell) depend on `:focus` and cannot be driven from the
-      console — they need a real keyboard.
-- [ ] **The browser matrix.** Chrome, Edge, Firefox, Safari. The e2e suite runs Chromium
-      only, so three of the four are only ever covered by hand.
-- [ ] **The screenshot baselines.** `tests/e2e/__screenshots__` is committed. If a visible
-      control changed, regenerate with `pnpm run e2e:update` and **look at the diff** — a
-      baseline accepted without looking is a test that has stopped testing.
+These scale with the version. Demanding the full matrix of a `0.1.0` would mean
+demanding a QA lab of a project that has one developer, and the honest outcome of that
+is not a careful release — it is no release, or a quiet exception. So the bar is
+staged, and what was **not** tested is named in the release notes either way.
+
+#### For any `0.x`
+
+- [ ] **One pairing, in depth.** All eighteen scenarios of
+      `plan/spezifikation/15-sr-testprotokoll.md` on a screen reader you actually have.
+      Two of them (S9, focus while scrolling; S10, the unfolding of a truncated cell)
+      depend on `:focus` and cannot be driven from the console — they need a real
+      keyboard.
+- [ ] **Name the gaps.** Every pairing you did not test goes into the release notes by
+      name. "Tested with VoiceOver on Safari; NVDA, JAWS and TalkBack untested" is a
+      useful sentence. Silence is not.
+- [ ] **One browser beyond Chromium**, by hand. The e2e suite runs Chromium only, so
+      everything else is either checked by a person or unknown.
+- [ ] **The screenshot baselines.** `tests/e2e/__screenshots__` is committed. If a
+      visible control changed, regenerate with `pnpm run e2e:update` and **look at the
+      diff** — a baseline accepted without looking is a test that has stopped testing.
+
+#### Additionally for `1.0`
+
+- [ ] **The full pairing matrix**: NVDA with Firefox and with Chrome, JAWS with Chrome,
+      VoiceOver with Safari on macOS and on iOS, TalkBack with Chrome on Android
+      (`plan/spezifikation/09-accessibility.md`). At 1.0 an untested pairing stops being
+      a documented gap and becomes a blocker.
+- [ ] **The full browser matrix**: Chrome, Edge, Firefox, Safari.
+
+#### What is automated, so you do not have to listen for it
+
+`tests/e2e/announcements.spec.js` records the status line's **successive** states and
+pins the sequence, which catches the three mechanical failures — a thing said twice, a
+thing never said, a thing said too early and swallowed by the next result. It found one
+the first time it ran: turning a page announced nothing, because the row count is the
+same on every page.
+
+What it cannot do is hear. Whether the live region interrupts or queues, whether the
+wording is comprehensible, whether the whole thing is usable rather than merely
+conformant — that is what the run is for, and why it is a judgement rather than an
+inventory.
 
 ## The release
 

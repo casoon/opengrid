@@ -1165,6 +1165,15 @@ fn on_pager_click(host: &HtmlElement, target: &Element) -> bool {
         borrowed.active = ActiveCell::Data(CellRef::new(next * size, 0));
     }
     // A page change is a different set of rows, so it announces (point 41).
+    //
+    // It has to say *which* page: the row count does not change when you turn
+    // one, so without this the line reads "60 matches" before and after and the
+    // only thing that moved is invisible to anyone not looking at the pager.
+    // `page_of` is the pager's own wording, so the label and the announcement
+    // cannot drift apart. `set_notice` carries it across the query that follows
+    // (the result line would otherwise wipe it out before it was read).
+    let message = texts(host).page_of(next + 1, pages);
+    runtime.borrow_mut().state.set_notice(message);
     run_query(host, QueryKind::Data, true);
     true
 }
