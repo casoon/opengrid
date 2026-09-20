@@ -7,6 +7,8 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # Same wasm-opt the justfile is written against (E4).
+  BINARYEN_VERSION: "132"
 
 jobs:
   check:
@@ -68,7 +70,15 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: wasm-bindgen@0.2.126
-      - run: sudo apt-get update && sudo apt-get install -y binaryen
+      # binaryen pinned to the version the justfile's `wasm-opt -Oz` expects
+      # (E4: the WASM toolchain is pinned, not "whatever is installed"). The
+      # apt package was what stood here, and it is old enough that it cannot
+      # parse what a current rustc emits — "invalid code after misc prefix",
+      # which is a WASM feature the tool predates, not a broken module.
+      - name: Install binaryen ${{ env.BINARYEN_VERSION }}
+        run: |
+          curl -fsSL "https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}/binaryen-version_${BINARYEN_VERSION}-x86_64-linux.tar.gz" | tar -xz
+          echo "$PWD/binaryen-version_${BINARYEN_VERSION}/bin" >> "$GITHUB_PATH"
       - uses: pnpm/action-setup@v4
         with:
           version: 10.26.0
@@ -96,7 +106,15 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: wasm-bindgen@0.2.126
-      - run: sudo apt-get update && sudo apt-get install -y binaryen
+      # binaryen pinned to the version the justfile's `wasm-opt -Oz` expects
+      # (E4: the WASM toolchain is pinned, not "whatever is installed"). The
+      # apt package was what stood here, and it is old enough that it cannot
+      # parse what a current rustc emits — "invalid code after misc prefix",
+      # which is a WASM feature the tool predates, not a broken module.
+      - name: Install binaryen ${{ env.BINARYEN_VERSION }}
+        run: |
+          curl -fsSL "https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}/binaryen-version_${BINARYEN_VERSION}-x86_64-linux.tar.gz" | tar -xz
+          echo "$PWD/binaryen-version_${BINARYEN_VERSION}/bin" >> "$GITHUB_PATH"
       - uses: actions/setup-node@v4
         with:
           node-version: 22
