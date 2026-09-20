@@ -83,6 +83,44 @@ test("every import path the docs promise resolves in the package", async ({
   }
 });
 
+test("the package leaks nothing about the machine that built it", async ({
+  page,
+  baseURL,
+}) => {
+  // Panic locations are baked into a release build as **absolute** paths, so an
+  // unremapped module carries the build machine's home directory to everyone
+  // who installs it. Measured before `justfile`'s REMAP existed: 27 of them,
+  // e.g. "/Users/<name>/.rustup/toolchains/...". Useless to a consumer and
+  // nobody's business.
+  const files = [
+    "pkg/opengrid_web_components_bg.wasm",
+    "pkg/opengrid_web_components.js",
+    "loader.js",
+    "worker.js",
+  ];
+  for (const file of files) {
+    const response = await page.request.get(
+      `${baseURL}/target/npm-package/package/${file}`,
+    );
+    expect(response.status(), file).toBe(200);
+    const body = await response.body();
+    const text = body.toString("latin1");
+    for (const pattern of [/\/Users\//, /\/home\/[a-z]/, /C:\\Users\\/i]) {
+      expect(pattern.test(text), `${file} contains a home directory`).toBe(false);
+    }
+  }
+});
+
+test("the package says where it comes from", async ({ page }) => {
+  const manifest = await page.evaluate(() => window.__manifest);
+  // A package with no link to its source is a dead end for anyone who wants to
+  // read it, file something or check what they are running.
+  expect(manifest.repository.url).toContain("github.com/casoon/opengrid");
+  expect(manifest.homepage).toContain("github.com/casoon/opengrid");
+  expect(manifest.bugs.url).toContain("github.com/casoon/opengrid");
+  expect(manifest.files).toContain("CHANGELOG.md");
+});
+
 test("the package carries both licences", async ({ page, baseURL }) => {
   for (const file of ["LICENSE-MIT", "LICENSE-APACHE"]) {
     const response = await page.request.get(

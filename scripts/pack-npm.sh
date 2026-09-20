@@ -22,7 +22,7 @@ just wasm-build-components
 # and are copied in for the tarball. Removed again below so the working tree
 # keeps exactly one copy of each.
 staged=()
-for file in LICENSE-MIT LICENSE-APACHE README.md; do
+for file in LICENSE-MIT LICENSE-APACHE README.md CHANGELOG.md; do
     cp "$root/$file" "$pkg/$file"
     staged+=("$pkg/$file")
 done

@@ -11,6 +11,14 @@
     "wasm"
   ],
   "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/casoon/opengrid.git"
+  },
+  "homepage": "https://github.com/casoon/opengrid#readme",
+  "bugs": {
+    "url": "https://github.com/casoon/opengrid/issues"
+  },
   "exports": {
     ".": "./loader.js",
     "./loader.js": "./loader.js",
@@ -29,7 +37,8 @@
     "pkg/",
     "LICENSE-MIT",
     "LICENSE-APACHE",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "engines": {
     "node": ">=18"

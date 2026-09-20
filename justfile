@@ -2,6 +2,18 @@
 
 set shell := ["bash", "-uc"]
 
+# Panic locations are baked into a release binary as **absolute** paths, so an
+# unremapped `.wasm` carries the build machine's home directory — the
+# developer's username handed to everyone who installs the package, and useless
+# to them. Measured before this existed: 27 such paths in the shipped module,
+# 16 from the toolchain and 11 from the registry.
+#
+# `--remap-path-prefix` is the stable way; Cargo's `profile.trim-paths` is not
+# stabilized in the pinned toolchain (checked 2026-09-20, Cargo 1.98). The
+# prefixes are read from the environment, so this works on any machine.
+# tests/e2e/packaged.spec.js fails if a path ever leaks again.
+export REMAP := "--remap-path-prefix=" + env_var("HOME") + "/.cargo=/cargo --remap-path-prefix=" + env_var("HOME") + "/.rustup=/rustup --remap-path-prefix=" + justfile_directory() + "=/opengrid"
+
 # Alles, was jede Session prüfen muss (plan/spezifikation/12-qualitaet.md §CI).
 check:
     cargo fmt --all --check
@@ -30,7 +42,7 @@ wasm-test:
 # abweichende CLI bricht mit einem Versionsfehler ab (Risiko R7).
 # `${CARGO_TARGET_DIR:-target}` respektiert ein gesetztes Zielverzeichnis.
 wasm-build:
-    cargo build --release --target wasm32-unknown-unknown -p opengrid-wasm
+    RUSTFLAGS="$REMAP" cargo build --release --target wasm32-unknown-unknown -p opengrid-wasm
     wasm-bindgen --target web --out-dir examples/engine-demo/pkg --out-name opengrid_wasm "${CARGO_TARGET_DIR:-target}/wasm32-unknown-unknown/release/opengrid_wasm.wasm"
     wasm-opt -Oz -o examples/engine-demo/pkg/opengrid_wasm_bg.wasm examples/engine-demo/pkg/opengrid_wasm_bg.wasm
 
@@ -42,7 +54,7 @@ serve-demo:
 # Browser-Modul der Custom Elements; loader.js erwartet es unter packages/opengrid/pkg/.
 # Getrennt vom Engine-Demo-Modul (die Modultrennung `grid.wasm` macht Punkt 40).
 wasm-build-components:
-    cargo build --release --target wasm32-unknown-unknown -p opengrid-web-components
+    RUSTFLAGS="$REMAP" cargo build --release --target wasm32-unknown-unknown -p opengrid-web-components
     wasm-bindgen --target web --out-dir packages/opengrid/pkg --out-name opengrid_web_components "${CARGO_TARGET_DIR:-target}/wasm32-unknown-unknown/release/opengrid_web_components.wasm"
     wasm-opt -Oz -o packages/opengrid/pkg/opengrid_web_components_bg.wasm packages/opengrid/pkg/opengrid_web_components_bg.wasm
 

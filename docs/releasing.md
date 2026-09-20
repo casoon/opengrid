@@ -82,7 +82,9 @@ inventory.
 
 - [ ] Bump the version in `Cargo.toml` (`[workspace.package]`) and in
       `packages/opengrid/package.json` to the same number
-- [ ] Write the changelog entry, and say plainly what breaks if this is a minor bump
+- [ ] Move the `Unreleased` section of [CHANGELOG.md](../CHANGELOG.md) under the new
+      version, and say plainly what breaks if this is a minor bump — plus which
+      screen-reader pairings were tested and which were not
 - [ ] `just package` — builds the module, stages the licences and the readme, packs and
       unpacks the tarball to `target/npm-package/`
 - [ ] Read `target/npm-package/package/` and check that it holds what it should, and
@@ -90,7 +92,9 @@ inventory.
       before the one push that is real.
 - [ ] `cd target/npm-package/package && npm publish` — publish the **packed** directory,
       not `packages/opengrid`, so what is published is what was tested
-- [ ] Tag the commit, and push the tag
+- [ ] Tag the commit, and push the tag. The remote is
+      `https://github.com/casoon/opengrid.git`; the repository has to exist there
+      first, and `package.json` already points `repository`/`homepage`/`bugs` at it.
 
 ## After
 

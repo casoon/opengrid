@@ -14,10 +14,19 @@ a server, and against PostgreSQL — and they are proven to agree.
 |---|---|
 | **One query model** | A JSON AST, never SQL from a browser. 53 conformance cases pin its semantics (NULL ordering, binary collation, exact decimals, NaN, microseconds) and every engine answers all of them identically. |
 | **Three ways to run it** | In the tab (WebAssembly over Apache Arrow), on a server (PostgreSQL, one compiled statement), or split between the two — the planner decides from what the source declares it can do. |
-| **Accessibility as the design** | A native `<table>` where that suffices and a `role="grid"` where interaction needs one. Every feature is keyboard-operable, every state is announced, and 250+ end-to-end tests run axe-core over the result. |
+| **Accessibility as the design** | A native `<table>` where that suffices and a `role="grid"` where interaction needs one. Every feature is keyboard-operable, every state change goes through one polite live region, and 272 end-to-end tests run axe-core over the result. See [what that does and does not yet prove](#how-far-the-accessibility-claim-goes). |
 | **A pivot that is an engine** | Not a grid feature: a pivot is a set of grouping sets plus a reshaping, so it works over any source — and PostgreSQL folds it into a single `GROUPING SETS` statement. |
 
 ## Using it
+
+```sh
+npm install @casoon/opengrid
+```
+
+Three elements ship in one module. `<opengrid-table>` is a plain semantic
+`<table>` for displaying data; `<opengrid-grid>` adds selection, editing,
+filtering, sorting, column control and either virtualization or paging;
+`<opengrid-pivot>` renders a pivot.
 
 ```html
 <opengrid-grid label="Orders" datasource="orders" columns="id,customer,amount">
@@ -54,6 +63,38 @@ just e2e           # Playwright + axe-core against a real browser
 suite against a real PostgreSQL. It **skips itself** when there is none, so
 `just check` stays green on a machine without a database; point it at one with
 `OPENGRID_TEST_PG`.
+
+## How far the accessibility claim goes
+
+Calling something "uncompromisingly accessible" is easy and usually wrong, so
+here is the split.
+
+**Verified by tests, on every commit.** Roles, accessible names, `aria-rowcount`
+/ `aria-rowindex` / `aria-sort` / `aria-selected`, the roving tabindex and the
+whole keyboard matrix, target sizes, the language of the component's own words
+versus the page's data, and axe-core over eighteen scenarios. One spec records
+the status line's *successive* states, so an announcement that fires twice,
+never, or too early to survive the next result is a failing test.
+
+**Not yet verified: a screen reader has not been through the finished V1.** The
+protocol exists and is the last open item before a release. It matters: the
+sequence-recording spec, the first time it ran, found that turning a page
+announced nothing at all — the row count is identical on every page, so the one
+live region repeated itself while the content changed underneath. A conformance
+test suite would have called that grid accessible.
+
+So: the structure is tested hard, the *experience* is not signed off. Until it
+is, treat the accessibility of this library as well-built and unaudited.
+
+## What V1 deliberately does not do
+
+- **No calculated fields.** A column is stored or derived from a date part
+  (year, month); there is no expression language.
+- **One column dimension in a pivot**, at most 256 generated columns and 2 000
+  rows. Over a limit you get an error with a sentence, never a silently
+  truncated result.
+- **Paging and virtualization are exclusive**, not combined.
+- **No CDN build, no framework adapters**, and no documentation site.
 
 ## Status
 
