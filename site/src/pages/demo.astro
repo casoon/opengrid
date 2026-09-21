@@ -1,0 +1,90 @@
+---
+import { Demo } from '@casoon/pages-theme/components';
+import Base from '@casoon/pages-theme/layouts/Base.astro';
+import { url } from '@casoon/pages-theme/url';
+
+// Built by `just wasm-build-components wasm-build`, copied by scripts/demo-assets.mjs.
+const assets = url('opengrid/');
+---
+
+<Base
+  title="Demo"
+  description="opengrid running in the browser: the WASM engine answers queries from an <opengrid-grid> and an <opengrid-table>."
+>
+  <div class="page">
+    <h1>Live demo</h1>
+    <p class="lead">
+      Both elements below run on the WebAssembly engine in this tab, over the 50-row dataset the
+      conformance suite is written against (<code>crates/opengrid-conformance/data/orders.csv</code>).
+      Nothing is sent to a server. The pivot needs an <code>opengrid-server</code> and is not part of
+      this page.
+    </p>
+
+    <Demo
+      title="<opengrid-grid>"
+      lead="Interactive: arrow keys move between cells, Enter or Space on a header sorts (Shift adds a second key), Space selects a row, Enter on a cell opens the editor. The filter row applies on Enter."
+    >
+      <div class="og-demo" data-assets={assets}>
+        <opengrid-grid
+          label="Orders"
+          datasource="orders"
+          columns="id,customer,country,amount,qty,ordered_on"
+          window-size="40"></opengrid-grid>
+      </div>
+    </Demo>
+
+    <Demo
+      title="<opengrid-table>"
+      lead="Display: a plain native table with header buttons that sort one column."
+    >
+      <div class="og-demo">
+        <opengrid-table label="Orders by customer" datasource="orders" columns="id,customer,country,amount"
+        ></opengrid-table>
+      </div>
+      <script is:inline type="module">
+        const base = document.querySelector('[data-assets]').dataset.assets;
+        const { loadOpengrid, createLocalProvider } = await import(`${base}loader.js`);
+        const { default: init, Engine } = await import(`${base}engine/opengrid_wasm.js`);
+
+        await init();
+        const engine = new Engine();
+        const schema = await (await fetch(`${base}data/orders.schema.json`)).text();
+        const csv = await (await fetch(`${base}data/orders.csv`)).arrayBuffer();
+        engine.load_csv('orders', new Uint8Array(csv), schema);
+
+        const loader = await loadOpengrid();
+        for (const host of document.querySelectorAll('opengrid-grid, opengrid-table')) {
+          loader.module.set_provider(host, createLocalProvider(engine));
+        }
+      </script>
+    </Demo>
+  </div>
+</Base>
+
+<style>
+  .page {
+    display: grid;
+    gap: 32px;
+    max-width: var(--max);
+    margin: 0 auto;
+    padding: 56px 24px 72px;
+  }
+  h1 {
+    margin: 0;
+    color: var(--heading);
+  }
+  .lead {
+    max-width: 70ch;
+    margin: 0;
+  }
+  .og-demo {
+    color: var(--text);
+  }
+  .og-demo opengrid-grid {
+    display: block;
+    /* A definite height makes the grid's viewport the scroll container, so it virtualizes. */
+    height: 420px;
+    overflow: hidden;
+    --grid-border-color: var(--border);
+  }
+</style>

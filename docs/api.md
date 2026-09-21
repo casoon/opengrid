@@ -1,4 +1,9 @@
-# The public API
+---
+title: The public API
+sidebarLabel: Public API
+description: Elements, attributes, events, parts, custom properties and translatable texts — everything a page can rely on.
+order: 1
+---
 
 Everything a page can rely on. A test freezes this list
 (`crates/opengrid-web-components/src/api.rs`): when a name here changes, that

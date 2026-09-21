@@ -1,0 +1,120 @@
+---
+import {
+  Badge,
+  Badges,
+  CodeBlock,
+  Facts,
+  Features,
+  Hero,
+  Install,
+  Quickstart,
+} from '@casoon/pages-theme/components';
+import Base from '@casoon/pages-theme/layouts/Base.astro';
+import nullsLast from '../../../crates/opengrid-conformance/cases/s3-nulls-last-ascending.json?raw';
+
+// Every figure below is counted from the repository at build time.
+const cases = import.meta.glob('../../../crates/opengrid-conformance/cases/*.json');
+const pivotCases = import.meta.glob('../../../crates/opengrid-conformance/pivot-cases/*.json');
+const specs = import.meta.glob<string>('../../../tests/e2e/*.spec.js', {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+});
+// The case file as committed, with arrays of plain values on one line so it fits the hero.
+const nullsLastCase = JSON.stringify(JSON.parse(nullsLast), null, 2).replace(
+  /\[\s+([^[\]{}]*?)\s+\]/g,
+  (_, inner: string) => `[${inner.split(/,\s*/).join(', ')}]`
+);
+const axeSpecs = Object.values(specs).filter((source) => source.includes('@axe-core/playwright'));
+
+const page = `<opengrid-table label="Orders" datasource="orders"
+                columns="id,customer,country,amount"></opengrid-table>
+
+<script type="module">
+  import { loadOpengrid, createLocalProvider } from "./opengrid/loader.js";
+  import init, { Engine } from "./opengrid/engine/opengrid_wasm.js";
+
+  await init();
+  const engine = new Engine();
+  const schema = await (await fetch("./orders.schema.json")).text();
+  const csv = await (await fetch("./orders.csv")).arrayBuffer();
+  engine.load_csv("orders", new Uint8Array(csv), schema);
+
+  const loader = await loadOpengrid();
+  loader.module.set_provider(
+    document.querySelector("opengrid-table"),
+    createLocalProvider(engine),
+  );
+</script>`;
+---
+
+<Base>
+  <Hero
+    title="One query model. The same answer in the tab, on the server and in PostgreSQL."
+    lead="opengrid is a portable Rust data and query engine. On top of it sit an accessible data grid, table and pivot, delivered as Web Components. The product is the engine, not a JavaScript grid."
+  >
+    <Install
+      label="Source"
+      commands={[
+        {
+          label: 'git',
+          command:
+            'git clone https://github.com/casoon/opengrid.git && cd opengrid && just wasm-build-components wasm-build',
+        },
+      ]}
+    />
+    <Badges>
+      <Badge>MIT OR Apache-2.0</Badge>
+      <Badge>0.0.0 · unreleased</Badge>
+      <Badge>not on npm or crates.io yet</Badge>
+    </Badges>
+    <CodeBlock
+      slot="output"
+      code={nullsLastCase}
+      lang="json"
+      title="cases/s3-nulls-last-ascending.json"
+      label="Conformance case"
+    />
+  </Hero>
+
+  <Facts
+    items={[
+      { value: String(Object.keys(cases).length), label: 'query conformance cases, one JSON file each' },
+      { value: String(Object.keys(pivotCases).length), label: 'pivot conformance cases' },
+      { value: String(Object.keys(specs).length), label: 'Playwright end-to-end spec files' },
+      { value: String(axeSpecs.length), label: 'of them run axe-core over the result' },
+    ]}
+  />
+
+  <Features
+    items={[
+      {
+        title: 'One query model',
+        body: 'A JSON AST, never SQL from a browser. The conformance cases pin its semantics — NULL ordering, binary collation, exact decimals, NaN, microseconds — and the same case files run against the native engine, the WASM build in headless Chrome, the hybrid path and PostgreSQL.',
+      },
+      {
+        title: 'Three ways to run a query',
+        body: 'In the tab (WebAssembly over Apache Arrow), on a server (PostgreSQL, one compiled statement), or split between the two. The planner decides from what the source declares it can do.',
+      },
+      {
+        title: 'Accessibility as the design',
+        body: 'A native table where that suffices and role="grid" where interaction needs one. Every feature is keyboard-operable and every state change goes through one polite live region. A screen-reader run of the finished V1 is still open.',
+      },
+      {
+        title: 'A pivot that is an engine',
+        body: 'A pivot is a set of grouping sets plus a reshaping, so it works over any source — and PostgreSQL folds it into a single GROUPING SETS statement.',
+      },
+    ]}
+  />
+
+  <Quickstart
+    lead="No package is published yet, so the modules are built from the repository. The documentation has the requirements and the full walkthrough."
+    steps={[
+      'Clone the repository and build the element module and the engine module: <code>just wasm-build-components wasm-build</code>.',
+      'Put an <code>&lt;opengrid-table&gt;</code>, <code>&lt;opengrid-grid&gt;</code> or <code>&lt;opengrid-pivot&gt;</code> on the page.',
+      'Load the engine, register a source, and attach it to the element with <code>set_provider</code>.',
+    ]}
+  >
+    <CodeBlock code={page} lang="html" title="index.html" label="HTML" />
+  </Quickstart>
+</Base>

@@ -1,0 +1,63 @@
+---
+title: Installation
+description: No package is published yet. Build the two WebAssembly modules from the repository.
+order: 1
+---
+
+<Callout type="note" title="Not published yet">
+There is no `@casoon/opengrid` on npm and no `opengrid-*` crate on crates.io yet. Everything
+below builds from the Git repository.
+</Callout>
+
+## Requirements
+
+- a recent stable Rust with the `wasm32-unknown-unknown` target (`rust-toolchain.toml` in the
+  repository asks for it)
+- [`just`](https://github.com/casey/just)
+- `wasm-bindgen` CLI **0.2.126** — the crate pins the same version, and a different CLI stops
+  with a version error
+- `wasm-opt` from binaryen **132**
+- Node 22 with pnpm, only for the end-to-end tests
+
+## Build the modules
+
+```sh
+git clone https://github.com/casoon/opengrid.git
+cd opengrid
+just wasm-build-components   # the elements -> packages/opengrid/pkg/
+just wasm-build              # the engine   -> examples/engine-demo/pkg/
+```
+
+Two modules come out of this:
+
+| Module | Built into | Contains |
+|---|---|---|
+| Elements | `packages/opengrid/pkg/` | `<opengrid-table>`, `<opengrid-grid>`, `<opengrid-pivot>`; loaded by `packages/opengrid/loader.js` |
+| Engine | `examples/engine-demo/pkg/` | `Engine` (in-memory sources over Apache Arrow) and `Planner` |
+
+A page that only talks to an `opengrid-server` needs the elements alone. A page that runs
+queries in the tab needs the engine as well.
+
+## Put them next to your page
+
+`loader.js` finds its module in `pkg/` next to itself, so copy both together. The
+[Quickstart](../quickstart/) assumes this layout:
+
+```text
+opengrid/
+├── loader.js                 # packages/opengrid/loader.js
+├── pkg/                      # packages/opengrid/pkg/
+└── engine/
+    ├── opengrid_wasm.js      # examples/engine-demo/pkg/
+    └── opengrid_wasm_bg.wasm
+```
+
+The demo on this site is built exactly this way.
+
+## Check the build
+
+```sh
+just check         # fmt, clippy -D warnings, the whole test suite
+just wasm-check    # every wasm-capable crate builds for wasm32
+just e2e           # Playwright + axe-core against a real browser
+```
