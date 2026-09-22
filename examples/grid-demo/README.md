@@ -1,110 +1,105 @@
-# Grid-Demo (100k)
+# Grid demo (100k)
 
-Manuelle Demo für `<opengrid-grid>` (Plan-Punkte 16/17): eine Seite, die einen
-Datensatz über die lokale WASM-Engine lädt, vollständig per Tastatur bedienbar ist
-und bei 100 000 logischen Zeilen nur ein rund 40 Zeilen großes DOM-Fenster hält
-(Row-Recycling). Die E2E-Suite bleibt klein; **diese Demo ist der Maßstabs-Check.**
+A page that loads a data set through the local WASM engine, is fully operable
+from the keyboard, and holds a DOM window of about 40 rows while presenting
+100,000 logical ones (row recycling). The e2e suite stays small on purpose;
+**this demo is the check at scale.**
 
-## Starten
+## Running it
 
 ```console
-just wasm-build            # Engine-Modul (einmalig, oder nach Engine-Änderungen)
-just wasm-build-components # Element-Modul (nach Änderungen an den Komponenten)
-just serve-demo            # Server-Wurzel ist das Repo
+just wasm-build            # engine module (once, or after engine changes)
+just wasm-build-components # element module (after component changes)
+just serve-demo            # the server root is the repository
 ```
 
-Dann <http://127.0.0.1:8080/examples/grid-demo/> öffnen.
+Then open <http://127.0.0.1:8080/examples/grid-demo/>.
 
-## Optional: 100 000 Zeilen
+## Optional: 100,000 rows
 
-Ohne Datensatz lädt die Demo den kleinen Conformance-Datensatz. Der 100k-Datensatz
-liegt unter einem gitignorierten Pfad (`target/`) und wird nicht eingecheckt:
+Without the data set the demo falls back to the small conformance one. The 100k
+file lives under a gitignored path (`target/`) and is not checked in:
 
 ```console
 mkdir -p target/grid-demo
 cargo run -p xtask -- gen-orders --rows 100000 --seed 1 --out target/grid-demo/orders-100k.csv
 ```
 
-## Tastatur
+## Keyboard
 
-Pfeiltasten, `Home`/`End`, `Ctrl+Home`/`Ctrl+End`, `PageUp`/`PageDown`,
-`Enter`/`Leertaste` auf einer Kopfzelle sortiert, `Shift`+`Enter`/`Leertaste`
-ergänzt bzw. entfernt die Spalte als weiteren Sortierschlüssel, `Escape` springt
-zur ersten Zelle, `Tab`/`Shift+Tab` verlassen das Grid. `Ctrl+End` lädt die
-letzte logische Zeile (`aria-rowindex=100001`), rendert sie und fokussiert sie.
+Arrow keys, `Home`/`End`, `Ctrl+Home`/`Ctrl+End`, `PageUp`/`PageDown`; `Enter`
+or `Space` on a header cell sorts; `Shift`+`Enter`/`Space` adds or removes that
+column as a further sort key; `Escape` jumps to the first cell; `Tab` and
+`Shift+Tab` leave the grid. `Ctrl+End` loads the last logical row
+(`aria-rowindex=100001`), renders it and focuses it.
 
-Die Kopfzelle zeigt die **Richtung** als ▲/▼ und bei Mehrfachsortierung
-zusätzlich die Position (1, 2). Beide Marken sind `aria-hidden` — für assistive
-Technik steht die Richtung in `aria-sort`, sie wird also nicht doppelt angesagt
-(Punkt 49).
+The header shows the **direction** as ▲/▼, and with a multi-column sort also the
+position (1, 2). Both marks are `aria-hidden`: assistive technology reads the
+direction from `aria-sort`, so it is not announced twice.
 
-Eine fokussierte Zelle, deren Wert breiter ist als die Spalte, **entfaltet sich**
-und zeigt ihn vollständig über den Zeilen darunter; beim Weitergehen klappt sie
-zurück (Punkt 47). Im DOM stand der volle Wert ohnehin immer — gekürzt hat nur
-die Anzeige.
+A focused cell whose value is wider than its column **unfolds** and shows the
+value in full over the rows below, folding back as focus moves on. The full
+value was always in the DOM — only the display was truncated.
 
-## Filter und Statuszeile
+## Filter row and status line
 
-Über der Tabelle sitzt eine typ-agnostische Filterzeile (`part="filter"`): je
-Spalte ein Operator-`<select>` und ein Wert-`<input>`, beide mit `aria-label`.
-`Enter` im Eingabefeld wendet den `and`-Filter an, „Clear" leert ihn. Die
-Auswahl zeigt lesbare Bezeichnungen („greater or equal"); der `value` bleibt
-das Wire-Token (`gte`), die Query ändert sich dadurch nicht. Phase B kennt noch
-keine Spaltentypen (Punkt 23), die Werte gehen deshalb als Strings in die Query
-— Filter auf Textspalten wie `customer`/`country` funktionieren, numerische
-folgen mit Punkt 23.
+Above the table sits a type-aware filter row (`part="filter"`): one operator
+`<select>` and one value `<input>` per column, both with an `aria-label`. `Enter`
+in the input applies the `and` filter, "Clear" empties it. The select shows
+readable labels ("greater or equal") while its `value` stays the wire token
+(`gte`), so the query is unaffected by the wording.
 
-Darunter liegt die **Statuszeile** (`part="status"`, `role="status"`,
-`aria-live="polite"`) — die einzige Live-Region des Grids. Sie trägt alle vier
-Zustände: „Loading …", „N matches", „No matches" und, bei einer fehlgeschlagenen
-Abfrage, „The data could not be loaded: …". Ein Fehler ersetzt das Grid **nicht**:
-Tabelle, Zeilen und Tastaturbedienung bleiben, nur die Zeile ändert sich
-(Punkt 41). Scrollen sagt bewusst kein „Laden" an, sonst plapperte die
-Live-Region einmal pro Frame.
+Below it is the **status line** (`part="status"`, `role="status"`,
+`aria-live="polite"`) — the grid's only live region. It carries all four states:
+"Loading …", "N matches", "No matches" and, on a failed query, "The data could
+not be loaded: …". An error does **not** replace the grid: table, rows and
+keyboard operation stay, only the line changes. Scrolling deliberately announces
+nothing, or the live region would chatter once per frame.
 
-## Sprache der Texte
+## The language of the texts
 
-Die eingebauten Texte der Komponente sind **englisch** und mit `lang="en"`
-ausgezeichnet — auf dieser deutschen Seite wechselt ein Screenreader dort also
-die Stimme, und das ist richtig so. Eine Seite setzt eigene Texte mit
-`set_texts(host, …)`; diese Demo legt dafür `window.opengrid` in der Konsole ab
-(Punkt 48, Snippet im Testprotokoll `plan/21-sr-protokoll.md`).
+The component's built-in texts are **English** and marked `lang="en"`. A page
+overrides them with `set_texts(host, …)`, and this demo exposes
+`window.opengrid` in the console so the states that have no UI of their own —
+loading, error, another language — can be triggered by hand.
+
+The rule that matters: a language is declared on the nodes carrying the
+component's *own* words, never on the data. Column names and cell values are the
+page's, in the page's language.
 
 ## Theming
 
-Custom Properties auf dem Host (`--grid-row-height`, `--grid-header-height`,
+Custom properties on the host (`--grid-row-height`, `--grid-header-height`,
 `--grid-border-color`, `--grid-focus-width`, `--grid-filter-height`,
-`--grid-status-height`) und `::part(…)` für Aufbau und Marken. Fokusring,
-Systemfarben unter `forced-colors` und `prefers-reduced-motion` kann ein Theme
-nicht abschalten (Punkt 20).
+`--grid-status-height`) and `::part(…)` for structure and marks. A theme cannot
+switch off the focus ring, the system colours under `forced-colors`, or
+`prefers-reduced-motion`.
 
-## Virtualisierung (Punkt 17)
+## Virtualization
 
-Das `<tbody>` ist der Sizer (`height = total_count * 32px`), die Pool-Zeilen sind
-`position: absolute` und werden per `translateY(zelle * 32px)` platziert; `<thead>`
-ist `position: sticky`. Beim Scrollen wird nur das Fenster (`limit=40`,
-`offset=Fensterstart`) nachgeladen und die vorhandenen Zeilen werden recycelt —
-es entstehen keine neuen Knoten. Die Zeile mit dem fokussierten Feld wird nie
-recycelt, damit der Fokus das Scrollen überlebt.
+The `<tbody>` is the sizer (`height = total_count * 32px`), the pool rows are
+`position: absolute` and placed with `translateY(row * 32px)`, and `<thead>` is
+`position: sticky`. Scrolling reloads only the window (`limit=40`,
+`offset=window start`) and recycles the existing rows — no new nodes appear. The
+row holding the focused cell is never recycled, so focus survives scrolling.
 
-### Messwert (Chrome headless, 100 000 Zeilen, 5 Spalten)
+### Measured (headless Chrome, 100,000 rows, 5 columns)
 
-Ein Scroll über die gesamte Höhe in 300 Schritten (`requestAnimationFrame`,
-jeder Schritt setzt `scrollTop`):
+A scroll across the full height in 300 steps (`requestAnimationFrame`, each step
+setting `scrollTop`):
 
-| Kennzahl | Wert |
+| Metric | Value |
 |---|---|
-| DOM-Zeilen vorher / nachher | 40 / 40 (= Pool, konstant) |
-| DOM-Zellen vorher / nachher | 200 / 200 |
+| DOM rows before / after | 40 / 40 (the pool, constant) |
+| DOM cells before / after | 200 / 200 |
 | `aria-rowcount` | 100001 |
-| Schrittzahl | 300 |
-| Dauer | 5000 ms (≈ 16,7 ms/Schritt) |
+| Steps | 300 |
+| Duration | 5000 ms (≈ 16.7 ms/step) |
 | FPS | 60 |
-| `Ctrl+End` | fokussiert `data-row=99999`, `aria-rowindex=100001` |
+| `Ctrl+End` | focuses `data-row=99999`, `aria-rowindex=100001` |
 
-## Standard-Sortierung
+## Default sort
 
-Seiten brauchen eine totale Ordnung (Regel S6: `offset` ohne `sort` ist ein
-Validierungsfehler). Das Grid sortiert deshalb beim Start nach seiner ersten
-Spalte aufsteigend (`id`) und fällt darauf zurück, wenn die Sortierung
-zurückgesetzt wird.
+Paging needs a total order (rule S6: an `offset` without a `sort` is a
+validation error). So the grid sorts by its first column ascending (`id`) at
+startup, and falls back to that whenever the sort is reset.

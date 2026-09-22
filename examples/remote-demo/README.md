@@ -1,50 +1,52 @@
-# Remote-Demo (Browser → Server)
+# Remote demo (browser → server)
 
-Dasselbe `<opengrid-grid>` wie die Grid-Demo, aber die Daten kommen über
-`POST /query/orders` von einem laufenden `opengrid-server` (Plan-Punkte 23, 24,
-27). Der Browser schickt den Query-AST, nie SQL.
+The same `<opengrid-grid>` as the grid demo, but the rows arrive over
+`POST /query/orders` from a running `opengrid-server`. The browser sends the
+query AST, never SQL.
 
-## Starten
+## Running it
 
-Zwei Prozesse, zwei Ports:
+Two processes, two ports:
 
 ```console
-just wasm-build-components                              # Element-Modul
-cargo run -p opengrid-server -- examples/remote-demo/opengrid.toml   # :8081
-just serve-demo                                         # :8080
+just wasm-build-components                                          # element module
+cargo run -p opengrid-server -- examples/remote-demo/opengrid.toml  # :8081
+just serve-demo                                                     # :8080
 ```
 
-Dann <http://127.0.0.1:8080/examples/remote-demo/> öffnen.
+Then open <http://127.0.0.1:8080/examples/remote-demo/>.
 
-## Was die Seite zeigt
+## What the page shows
 
-Drei Radiobuttons schalten das **Token** um — mehr ändert die Seite nicht. Der
-Server hängt aus dem Token-Kontext einen **Pflichtfilter** an jede Abfrage
-(E16), deshalb sehen die beiden Tokens verschiedene Zeilen:
+Three radio buttons switch the **token** — that is the only thing the page
+changes. The server appends a **mandatory filter** from the token's context to
+every query, so the two tokens see different rows:
 
-| Token | Kontext | Ergebnis |
+| Token | Context | Result |
 |---|---|---|
-| `demo-token-de` | `country = "DE"` | 16 Zeilen, alle DE |
-| `demo-token-fr` | `country = "FR"` | 10 Zeilen, alle FR |
-| keins | — | `401`, Statuszeile: „The data could not be loaded: a valid bearer token is required" |
+| `demo-token-de` | `country = "DE"` | 16 rows, all DE |
+| `demo-token-fr` | `country = "FR"` | 10 rows, all FR |
+| none | — | `401`, status line: "The data could not be loaded: a valid bearer token is required" |
 
-Der Fehlerfall ist der interessante: die Fehlerform aus Punkt 23 trägt den Satz
-des Servers bis in die Statuszeile des Grids, und das Grid **bleibt stehen** —
-Tabelle, Zeilen und Tastaturbedienung funktionieren weiter (Punkt 41).
+The error case is the interesting one. The error shape carries the server's own
+sentence all the way into the grid's status line, and the grid **stays where it
+is** — table, rows and keyboard operation keep working. That is deliberate: a
+transient failure should not throw away the context the user was working in.
 
-## Was der Server nicht zulässt
+## What the server does not allow
 
-- Eine Spalte außerhalb von `allowed_fields` (`note`, `flag`, `ratio`,
-  `created_at`) ist für einen Client **nicht vorhanden**: die Antwort ist
-  `422 unknown field "note"` — dieselbe Meldung wie bei einem Tippfehler.
-- Den Pflichtfilter umgehen geht nicht: fragt das DE-Token nach `country = FR`,
-  kommen null Zeilen, nicht die französischen.
-- CORS ist per Default **aus**. `allowed_origins` in der Konfiguration listet die
-  Origins einzeln; kein `*`, weil ein Wildcard zusammen mit einem Bearer-Token
-  jedes offene Fenster berechtigen würde.
+- A column outside `allowed_fields` (`note`, `flag`, `ratio`, `created_at`)
+  simply **does not exist** for a client: the answer is
+  `422 unknown field "note"`, the same message a typo gets. A client cannot tell
+  the difference, which is the point.
+- The mandatory filter cannot be worked around: ask the DE token for
+  `country = FR` and you get zero rows, not the French ones.
+- CORS is **off** by default. `allowed_origins` lists origins one by one; no
+  wildcard, because a wildcard together with a bearer token would authorise
+  every window the user happens to have open.
 
-## Mit 100 000 Zeilen
+## With 100,000 rows
 
-`path` in `opengrid.toml` auf `../../target/grid-demo/orders-100k.csv` zeigen
-lassen (Datensatz erzeugen: siehe `examples/grid-demo/README.md`) und
-`allowed_fields`/`row_filter` an dessen Schema anpassen.
+Point `path` in `opengrid.toml` at `../../target/grid-demo/orders-100k.csv`
+(generating the data set is described in `examples/grid-demo/README.md`) and
+adjust `allowed_fields` and `row_filter` to that schema.

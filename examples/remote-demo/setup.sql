@@ -1,6 +1,6 @@
--- Demo-Tabelle für die Remote-Demo gegen PostgreSQL (Plan-Punkt 26).
--- Dieselben 50 Zeilen wie die Conformance-Fixture: NULLs, NaN, exakte Decimals,
--- das NFC/NFD-Paar und ein Datum an der Jahresgrenze.
+-- Demo table for running the remote demo against PostgreSQL.
+-- The same 50 rows as the conformance fixture: NULLs, NaN, exact decimals,
+-- the NFC/NFD pair and a date on the year boundary.
 DROP TABLE IF EXISTS opengrid_demo_orders;
 CREATE TABLE opengrid_demo_orders (
   "id" bigint, "customer" text, "country" text,

@@ -1,8 +1,8 @@
-# Wie opengrid.toml, aber die Quelle ist eine echte PostgreSQL-Tabelle
-# (Plan-Punkt 26). Der Browser merkt davon nichts: derselbe Query-AST, dieselbe
-# Antwortform — nur hinter der Registry steht jetzt eine Datenbank.
+# Like opengrid.toml, but the source is a real PostgreSQL table. The browser
+# cannot tell: the same query AST, the same answer shape — only what sits behind
+# the registry has changed.
 #
-# Tabelle anlegen:
+# Create the table with:
 #   psql -d postgres -f examples/remote-demo/setup.sql
 
 [server]
@@ -20,7 +20,7 @@ context = { country = "FR" }
 [[datasources]]
 name = "orders"
 type = "postgres"
-# In einem echten Deployment: "${ORDERS_DATABASE_URL}".
+# In a real deployment: "${ORDERS_DATABASE_URL}".
 connection = "host=localhost dbname=postgres"
 table = "opengrid_demo_orders"
 schema = "../../crates/opengrid-conformance/data/orders.schema.json"

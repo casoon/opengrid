@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="de">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -50,35 +50,35 @@
     </style>
   </head>
   <body>
-    <h1>opengrid — Remote-Demo</h1>
+    <h1>opengrid — the data comes from a server</h1>
     <p class="lead">
-      Dasselbe <code>&lt;opengrid-grid&gt;</code>, aber die Daten kommen nicht
-      aus der Engine im Tab, sondern über <code>POST /query/orders</code> von
-      einem laufenden <code>opengrid-server</code> (Plan-Punkte 23, 24, 27). Der
-      Browser schickt den Query-AST, nie SQL.
+      The same <code>&lt;opengrid-grid&gt;</code>, but the rows do not come from
+      the engine in this tab. They come over <code>POST /query/orders</code> from
+      a running <code>opengrid-server</code>. The browser sends the query AST —
+      never SQL.
     </p>
 
     <fieldset>
       <legend>Token</legend>
       <p style="margin: 0 0 0.5rem">
-        Jedes Token steht laut Serverkonfiguration für ein Land. Der Server hängt
-        daraus einen <strong>Pflichtfilter</strong> an jede Abfrage (E16) — die
-        beiden Tokens sehen deshalb verschiedene Zeilen, ohne dass die Seite
-        etwas anderes schickt.
+        Each token stands for a country in the server's configuration, and the
+        server appends a <strong>mandatory filter</strong> from it to every query.
+        The two tokens therefore see different rows while the page sends exactly
+        the same request — the page cannot opt out, which is the point.
       </p>
       <label><input type="radio" name="token" value="demo-token-de" checked /> demo-token-de (DE)</label>
       <label style="margin-left: 1rem"
         ><input type="radio" name="token" value="demo-token-fr" /> demo-token-fr (FR)</label
       >
       <label style="margin-left: 1rem"
-        ><input type="radio" name="token" value="" /> kein Token</label
+        ><input type="radio" name="token" value="" /> no token</label
       >
     </fieldset>
 
-    <p id="status" role="status" aria-live="polite">Lädt …</p>
+    <p id="status" role="status" aria-live="polite">Loading …</p>
 
     <opengrid-grid
-      label="Bestellungen"
+      label="Orders"
       datasource="orders"
       columns="id,customer,country,amount,qty"
       window-size="40"
@@ -106,8 +106,8 @@
           );
           setStatus(
             token
-              ? `Provider: ${SERVER} mit Token ${token}. Der Server hängt den Pflichtfilter dieses Tokens an jede Abfrage.`
-              : `Provider: ${SERVER} ohne Token — der Server muss jede Abfrage ablehnen.`,
+              ? `Provider: ${SERVER} with token ${token}. The server appends this token's mandatory filter to every query.`
+              : `Provider: ${SERVER} with no token — the server has to reject every query.`,
           );
         };
 

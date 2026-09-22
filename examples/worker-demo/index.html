@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="de">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>opengrid — Worker-Demo (100k)</title>
+    <title>opengrid — worker demo (100k)</title>
     <style>
       :root {
         color-scheme: light dark;
@@ -62,43 +62,43 @@
     </style>
   </head>
   <body>
-    <h1>opengrid — Worker-Demo mit 100 000 Zeilen</h1>
+    <h1>opengrid — the engine in a Web Worker</h1>
     <p class="lead">
-      Dieselbe Oberfläche wie die Grid-Demo, aber die Engine läuft in einem
-      <strong>Web Worker</strong> (<code>createWorkerProvider</code>): der Main
-      Thread behält DOM, Events und Rendering, der Worker übernimmt Ingest,
-      Filter, Sortierung und Gruppierung. Die Zahl <span id="pulse">0</span>
-      zählt <code>requestAnimationFrame</code>-Frames und zeigt, dass die
-      Oberfläche während einer großen Query weiterläuft. Bedienung vollständig
-      per Tastatur nach dem WAI-ARIA Grid Pattern; über der Tabelle sitzt die
-      Filterzeile (Operator + Wert je Spalte, <code>Enter</code> wendet an).
+      The same interface as the grid demo, but the engine runs in a
+      <strong>Web Worker</strong> (<code>createWorkerProvider</code>): the main
+      thread keeps the DOM, the events and the rendering, while the worker takes
+      ingest, filtering, sorting and grouping. The counter
+      <span id="pulse">0</span> counts <code>requestAnimationFrame</code> frames,
+      and it keeps climbing during a large query — which is the point. Fully
+      keyboard-operable under the WAI-ARIA grid pattern, with the same filter row
+      above the table.
     </p>
 
-    <p id="status" role="status" aria-live="polite">Lädt …</p>
+    <p id="status" role="status" aria-live="polite">Loading …</p>
 
     <opengrid-grid
-      label="Bestellungen"
+      label="Orders"
       datasource="orders"
       columns="id,customer,country,amount,qty"
       window-size="40"
     ></opengrid-grid>
 
     <details style="margin-top: 1rem">
-      <summary>100k-Datensatz erzeugen (optional)</summary>
+      <summary>Generate the 100k data set (optional)</summary>
       <p>
-        Der 100k-Datensatz wird nicht eingecheckt. Ohne ihn lädt die Demo den
-        kleinen Conformance-Datensatz. Zum Erzeugen aus dem Repo-Wurzelverzeichnis:
+        The 100k data set is not checked in. Without it the demo falls back to
+        the small conformance data set. To generate it, from the repository root:
       </p>
       <pre><code>mkdir -p target/worker-demo
 cargo run -p xtask -- gen-orders --rows 100000 --seed 1 --out target/worker-demo/orders-100k.csv
-just wasm-build            # Engine-Modul
-just wasm-build-components # Element-Modul
-just serve-demo            # dann http://127.0.0.1:8080/examples/worker-demo/ öffnen</code></pre>
+just wasm-build            # engine module
+just wasm-build-components # element module
+just serve-demo            # then open http://127.0.0.1:8080/examples/worker-demo/</code></pre>
       <p>
-        Die Spalten der Query (<code>id,customer,country,amount,qty</code>) sind
-        eine Teilmenge des 10-spaltigen Schemas aus <code>xtask</code>. Der
-        Standard-Sortierschlüssel ist die erste Spalte (<code>id</code>,
-        aufsteigend): Seiten brauchen eine totale Ordnung (Regel S6).
+        The query's columns (<code>id,customer,country,amount,qty</code>) are a
+        subset of the ten-column schema <code>xtask</code> generates. The default
+        sort key is the first column (<code>id</code>, ascending), because paging
+        needs a total order (rule S6).
       </p>
     </details>
 
@@ -151,19 +151,19 @@ just serve-demo            # dann http://127.0.0.1:8080/examples/worker-demo/ ö
         const host = document.querySelector("opengrid-grid");
         loader.module.set_provider(host, provider);
 
-        const rows = url === FULL_DATASET ? "100 000" : "kleiner Conformance-";
+        const rows = url === FULL_DATASET ? "100,000" : "small conformance";
         setStatus(
-          `Datensatz geladen (${rows} Zeilen) aus ${url}, Engine im Worker. ` +
-            `Tastatur: Pfeile, Home/End, Ctrl+Home/Ctrl+End, PageUp/PageDown, ` +
-            `Enter/Leertaste auf der Kopfzeile sortiert (Shift+Enter ergänzt ` +
-            `weitere Sortierschlüssel), Escape springt zur ersten Zelle. ` +
-            `Filterzeile: Operator wählen, Wert eintippen, Enter anwenden.`,
+          `Loaded the ${rows} row data set from ${url}; the engine runs in the ` +
+            `worker. Keyboard: arrows, Home/End, Ctrl+Home/Ctrl+End, ` +
+            `PageUp/PageDown; Enter or Space on a header sorts (Shift+Enter adds ` +
+            `a further sort key); Escape jumps to the first cell. Filter row: ` +
+            `pick an operator, type a value, press Enter.`,
         );
         return { fallback: loader.fallback, url };
       }
 
       window.__opengridReady = start().catch((error) => {
-        setStatus(`Fehler: ${error.message ?? error}`, true);
+        setStatus(`Error: ${error.message ?? error}`, true);
         throw error;
       });
     </script>

@@ -1,19 +1,19 @@
-# Beispielkonfiguration für die Remote-Demo (Plan-Punkt 24).
+# Example configuration for the remote demo.
 #
-# Die Quelle ist hier der Conformance-Datensatz über die lokale Engine — der
-# Server ist damit vollständig vorführbar, bevor PostgreSQL dazukommt (Punkt 26).
-# Für die 100k-Demo `path` auf target/grid-demo/orders-100k.csv zeigen lassen.
+# The source here is the conformance data set through the local engine, so the
+# server is fully demonstrable before a database is involved. For the 100k demo,
+# point `path` at target/grid-demo/orders-100k.csv.
 
 [server]
 address = "127.0.0.1:8081"
-# Die Demo-Seite wird von `just serve-demo` auf :8080 ausgeliefert und ist damit
-# ein anderer Origin. Ohne diese Liste sendet der Server keine CORS-Header und
-# der Browser darf die Antwort nicht lesen. Kein `*`: mit Bearer-Token wäre das
-# ein Token für jede Seite, die der Nutzer offen hat.
+# `just serve-demo` serves the page from :8080, which is a different origin.
+# Without this list the server sends no CORS headers and the browser is not
+# allowed to read the answer. No `*`: together with a bearer token that would
+# hand the token to every page the user has open.
 allowed_origins = ["http://127.0.0.1:8080", "http://localhost:8080"]
 
-# E15: Bearer-Token aus der Konfiguration. In einem echten Deployment steht hier
-# `value = "${ORDERS_API_TOKEN}"` und das Geheimnis kommt aus der Umgebung.
+# Bearer tokens from the configuration. In a real deployment this reads
+# `value = "${ORDERS_API_TOKEN}"` and the secret comes from the environment.
 [[tokens]]
 value = "demo-token-de"
 context = { country = "DE" }
@@ -27,7 +27,7 @@ name = "orders"
 type = "local-csv"
 path = "../../crates/opengrid-conformance/data/orders.csv"
 schema = "../../crates/opengrid-conformance/data/orders.schema.json"
-# Nur diese Spalten darf ein Client überhaupt nennen.
+# These are the only columns a client may name at all.
 allowed_fields = ["id", "customer", "country", "amount", "qty", "ordered_on", "ordered_year"]
-# E16: hängt an jeder Query, kommt aus dem Token-Kontext, nicht abschaltbar.
+# Appended to every query, taken from the token context, and not optional.
 row_filter = { field = "country", op = "eq", value = ":country" }

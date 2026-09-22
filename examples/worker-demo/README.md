@@ -1,36 +1,35 @@
-# Worker-Demo (100k)
+# Worker demo (100k)
 
-Manuelle Demo für die Engine im Web Worker (Plan-Punkt 19): dieselbe Oberfläche
-wie die Grid-Demo, aber die lokale WASM-Engine läuft in einem Modul-Worker. Der
-Main Thread behält DOM, Events, Tastatur und Rendering; Ingest, Filter,
-Sortierung und Gruppierung laufen im Worker. Die Seite nutzt dafür
-`createWorkerProvider` aus `packages/opengrid/loader.js` — derselbe Provider-Seam
-wie der Main-Thread-Pfad (`createLocalProvider`), die Grid-Elemente bleiben
-unverändert.
+The engine in a Web Worker: the same interface as the grid demo, but the local
+WASM engine runs in a module worker. The main thread keeps the DOM, the events,
+the keyboard and the rendering; ingest, filtering, sorting and grouping happen in
+the worker. The page uses `createWorkerProvider` from
+`packages/opengrid/loader.js` — the same provider seam as the main-thread path
+(`createLocalProvider`), so the elements themselves are unchanged.
 
-## Starten
+## Running it
 
 ```console
-just wasm-build            # Engine-Modul (einmalig, oder nach Engine-Änderungen)
-just wasm-build-components # Element-Modul (nach Änderungen an den Komponenten)
-just serve-demo            # Server-Wurzel ist das Repo
+just wasm-build            # engine module (once, or after engine changes)
+just wasm-build-components # element module (after component changes)
+just serve-demo            # the server root is the repository
 ```
 
-Dann <http://127.0.0.1:8080/examples/worker-demo/> öffnen.
+Then open <http://127.0.0.1:8080/examples/worker-demo/>.
 
-## Optional: 100 000 Zeilen
+## Optional: 100,000 rows
 
-Ohne Datensatz lädt die Demo den kleinen Conformance-Datensatz. Der 100k-Datensatz
-liegt unter einem gitignorierten Pfad (`target/`) und wird nicht eingecheckt:
+Without the data set the demo falls back to the small conformance one. The 100k
+file lives under a gitignored path (`target/`) and is not checked in:
 
 ```console
 mkdir -p target/worker-demo
 cargo run -p xtask -- gen-orders --rows 100000 --seed 1 --out target/worker-demo/orders-100k.csv
 ```
 
-## Worker oder Main Thread
+## Worker or main thread
 
-Beide Pfade sehen für die Seite gleich aus:
+Both paths look the same from the page:
 
 ```js
 // Worker
@@ -41,13 +40,12 @@ const provider = createWorkerProvider({
 await provider.load("orders", csv, schema);
 loader.module.set_provider(host, provider);
 
-// Main-Thread-Fallback
+// Main-thread fallback
 const provider = createLocalProvider(engine);
 await provider.load("orders", csv, schema);
 loader.module.set_provider(host, provider);
 ```
 
-Genau **ein** Worker in V1 (kein Pool, kein SharedArrayBuffer). Das
-Nachrichtenprotokoll steht in `packages/opengrid/worker.js`; die Messung zur
-Responsivität liegt in `tests/e2e/worker.spec.js` und ist in
-`plan/spezifikation/12-qualitaet.md` notiert.
+Exactly **one** worker in V1 — no pool, no SharedArrayBuffer. The message
+protocol is in `packages/opengrid/worker.js`, and the responsiveness measurement
+is in `tests/e2e/worker.spec.js`.

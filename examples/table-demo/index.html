@@ -30,20 +30,21 @@
   <body>
     <h1>opengrid — Table Mode</h1>
     <p>
-      <code>&lt;opengrid-table&gt;</code> ist die Anzeige-Variante: ein ganz normales
-      <code>&lt;table&gt;</code> mit voller Semantik — Kopieren, Browser-Suche und
-      Screenreader funktionieren wie bei jeder Tabelle. Keine Virtualisierung, kein
-      Roving Tabindex. Die Kopfzeilen-Buttons sortieren eine Spalte.
+      <code>&lt;opengrid-table&gt;</code> is the display variant: an ordinary
+      <code>&lt;table&gt;</code> with its full semantics, so copying, the browser's
+      own find-in-page and a screen reader all behave exactly as they do on any
+      other table. No virtualization, no roving tabindex. The header buttons sort
+      a column.
     </p>
     <p>
-      Für eine Tabelle, mit der <em>gearbeitet</em> wird — Auswahl, Bearbeiten,
-      hunderttausend Zeilen — ist <code>&lt;opengrid-grid&gt;</code> das richtige Element
-      (siehe <code>examples/grid-demo/</code>).
+      For a table that is <em>worked with</em> — selection, editing, a hundred
+      thousand rows — <code>&lt;opengrid-grid&gt;</code> is the right element (see
+      <code>examples/grid-demo/</code>).
     </p>
-    <p>Ausliefern mit <code>just serve-demo</code>, dann diese Seite öffnen.</p>
+    <p>Serve it with <code>just serve-demo</code>, then open this page.</p>
 
     <opengrid-table
-      label="Bestellungen"
+      label="Orders"
       datasource="orders"
       columns="id,customer,country,amount"
     ></opengrid-table>
@@ -64,11 +65,6 @@
 
       const loader = await loadOpengrid();
       const host = document.querySelector("opengrid-table");
-      loader.module.set_texts(host, {
-        lang: "de",
-        loading: "Wird geladen …",
-        error: "Die Daten konnten nicht geladen werden: {cause}",
-      });
       loader.module.set_provider(host, createLocalProvider(engine));
     </script>
   </body>

@@ -30,24 +30,28 @@
     </style>
   </head>
   <body>
-    <h1>opengrid — Pivot (Plan-Punkt 32)</h1>
+    <h1>opengrid — a pivot is one request</h1>
     <p>
-      Zeilen: Land · Spalten: Jahr · Kennzahlen: Summe Menge und Anzahl. Die ganze Abfrage
-      ist <strong>ein</strong> Request an <code>POST /pivot/orders</code>; PostgreSQL
-      beantwortet sie als eine einzige <code>GROUPING SETS</code>-Anweisung, die lokale
-      Engine als <code>n+1</code> gewöhnliche Queries — mit demselben Ergebnis.
+      Rows: country · columns: year · measures: sum of quantity, and a count.
+      The whole thing is <strong>one</strong> request to
+      <code>POST /pivot/orders</code>. PostgreSQL answers it as a single
+      <code>GROUPING SETS</code> statement and the local engine as
+      <code>n+1</code> ordinary queries — with the same result, which the
+      conformance suite checks.
     </p>
     <p>
-      Server starten: <code>cargo run -p opengrid-server -- examples/remote-demo/opengrid.toml</code>,
-      Seite ausliefern mit <code>just serve-demo</code>.
+      Start the server with
+      <code>cargo run -p opengrid-server -- examples/remote-demo/opengrid.toml</code>
+      and serve the page with <code>just serve-demo</code>. This demo needs the
+      server: the pivot has no client-side path yet.
     </p>
 
     <opengrid-pivot
-      label="Bestellungen nach Land und Jahr"
+      label="Orders by country and year"
       datasource="orders"
       rows="country"
       columns="ordered_year"
-      values='[{"field":"qty","fn":"sum","as":"Menge"},{"fn":"count","as":"Anzahl"}]'
+      values='[{"field":"qty","fn":"sum","as":"Quantity"},{"fn":"count","as":"Count"}]'
     ></opengrid-pivot>
 
     <script type="module">
@@ -61,19 +65,6 @@
 
       const loader = await loadOpengrid();
       const host = document.querySelector("opengrid-pivot");
-      // Deutsche Texte: die Komponente schreibt englisch, die Seite überschreibt.
-      loader.module.set_texts(host, {
-        lang: "de",
-        loading: "Wird geladen …",
-        matchesOne: "1 Zeile",
-        matchesOther: "{count} Zeilen",
-        empty: "Keine Treffer",
-        error: "Die Daten konnten nicht geladen werden: {cause}",
-        total: "Gesamt",
-        subtotal: "Summe {value}",
-        noValue: "(ohne Wert)",
-        emptyValue: "(leer)",
-      });
       loader.module.set_provider(host, provider);
     </script>
   </body>
