@@ -1,6 +1,6 @@
 {
   "name": "@casoon/opengrid",
-  "version": "0.1.0",
+  "version": "0.0.0",
   "type": "module",
   "description": "Accessible data grid, table and pivot as web components, driven by a portable Rust/WASM query engine.",
   "keywords": [

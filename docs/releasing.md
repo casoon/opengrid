@@ -80,8 +80,11 @@ inventory.
 
 ## The release
 
-- [ ] Bump the version in `Cargo.toml` (`[workspace.package]`) and in
-      `packages/opengrid/package.json` to the same number
+- [ ] Bump the version in `Cargo.toml` (`[workspace.package]`), in
+      `packages/opengrid/package.json` and in `site/astro.config.mjs` to the same
+      number. All three read `0.0.0` while nothing is released; the first publish
+      makes them `0.1.0` together. A version that differs between them is visible
+      to everyone — the project page prints it.
 - [ ] Move the `Unreleased` section of [CHANGELOG.md](../CHANGELOG.md) under the new
       version, and say plainly what breaks if this is a minor bump — plus which
       screen-reader pairings were tested and which were not
