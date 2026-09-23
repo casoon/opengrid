@@ -80,14 +80,16 @@ inventory.
 
 ## The release
 
-- [ ] Bump the version in `Cargo.toml` (`[workspace.package]`), in
-      `packages/opengrid/package.json` and in `site/astro.config.mjs` to the same
-      number. All three read `0.0.0` while nothing is released; the first publish
-      makes them `0.1.0` together. A version that differs between them is visible
-      to everyone — the project page prints it.
+- [ ] `just set-version 0.1.0` — sets the version in all three places that print
+      one: the Cargo workspace, the npm package and the project page's header
+      badge. They drifted once, and the page shows its version publicly, so this
+      is one command rather than three files to remember. All three read `0.0.0`
+      while nothing is released.
 - [ ] Move the `Unreleased` section of [CHANGELOG.md](../CHANGELOG.md) under the new
-      version, and say plainly what breaks if this is a minor bump — plus which
-      screen-reader pairings were tested and which were not
+      version with today's date, and say plainly what breaks if this is a minor
+      bump — plus which screen-reader pairings were tested and which were not.
+      The 0.1.0 content is already written; what is missing from it is the
+      sentence naming the pairings, which only the run can supply.
 - [ ] `just package` — builds the module, stages the licences and the readme, packs and
       unpacks the tarball to `target/npm-package/`
 - [ ] Read `target/npm-package/package/` and check that it holds what it should, and

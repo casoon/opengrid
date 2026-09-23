@@ -81,6 +81,13 @@ e2e: wasm-build-components wasm-build package
     pnpm install --frozen-lockfile
     pnpm exec playwright test --config tests/e2e/playwright.config.js
 
+# Setzt die Release-Version an allen drei Stellen, die eine drucken: Cargo-
+# Workspace, npm-Paket und der Kopf der Projektseite (Punkt 40). Sie sind
+# einmal auseinandergelaufen, und die Seite zeigt ihre Version öffentlich.
+# Beispiel: `just set-version 0.1.0`
+set-version version:
+    bash scripts/set-version.sh {{version}}
+
 # Native criterion-Benchmarks der Engine (plan/spezifikation/12-qualitaet.md §Benchmarks).
 bench-native:
     cargo bench -p opengrid-arrow-engine
