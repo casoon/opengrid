@@ -5,11 +5,15 @@
 //! trimming, no escape sequences. See the module docs of [`super`] for the
 //! dialect and for why the arrow-rs CSV reader is not used here.
 
+use std::borrow::Cow;
+
 /// One parsed record.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Record {
-    /// The fields, verbatim.
-    pub(crate) fields: Vec<String>,
+pub(crate) struct Record<'a> {
+    /// The fields, verbatim — borrowed from the input wherever a field is one
+    /// contiguous stretch of it, which is every field without a doubled quote
+    /// (point 45: no allocation per cell).
+    pub(crate) fields: Vec<Cow<'a, str>>,
     /// Physical line the record starts on (1-based).
     pub(crate) line: usize,
 }
@@ -23,12 +27,69 @@ pub(crate) struct ScanError {
     pub(crate) message: String,
 }
 
+/// A field being read: the stretches of the input it consists of.
+///
+/// One stretch stays a borrow; only a second one — after a doubled quote, or
+/// text following a closing quote — makes it an owned string.
+#[derive(Default)]
+struct Field {
+    owned: Option<String>,
+    span: Option<(usize, usize)>,
+}
+
+impl Field {
+    fn push(&mut self, input: &str, start: usize, end: usize) {
+        if let Some(owned) = &mut self.owned {
+            owned.push_str(&input[start..end]);
+            return;
+        }
+        match self.span {
+            None => self.span = Some((start, end)),
+            Some((from, to)) if start == end => self.span = Some((from, to)),
+            Some((from, to)) if from == to => self.span = Some((start, end)),
+            Some((from, to)) => {
+                let mut owned = String::with_capacity(to - from + end - start);
+                owned.push_str(&input[from..to]);
+                owned.push_str(&input[start..end]);
+                self.owned = Some(owned);
+                self.span = None;
+            }
+        }
+    }
+
+    /// A literal quote from a doubled `""` — never part of the input as is.
+    fn push_quote(&mut self, input: &str) {
+        let owned = self.owned.get_or_insert_with(|| match self.span {
+            Some((from, to)) => input[from..to].to_owned(),
+            None => String::new(),
+        });
+        owned.push('"');
+        self.span = None;
+    }
+
+    fn is_empty(&self) -> bool {
+        match (&self.owned, self.span) {
+            (Some(owned), _) => owned.is_empty(),
+            (None, Some((from, to))) => from == to,
+            (None, None) => true,
+        }
+    }
+
+    fn take<'a>(&mut self, input: &'a str) -> Cow<'a, str> {
+        match (self.owned.take(), self.span.take()) {
+            (Some(owned), _) => Cow::Owned(owned),
+            (None, Some((from, to))) => Cow::Borrowed(&input[from..to]),
+            (None, None) => Cow::Borrowed(""),
+        }
+    }
+}
+
 /// Splits `input` into records.
-pub(crate) fn scan(input: &str, delimiter: u8) -> Result<Vec<Record>, ScanError> {
+pub(crate) fn scan(input: &str, delimiter: u8) -> Result<Vec<Record<'_>>, ScanError> {
     let bytes = input.as_bytes();
     let mut records = Vec::new();
-    let mut fields: Vec<String> = Vec::new();
-    let mut field = String::new();
+    let mut fields: Vec<Cow<'_, str>> = Vec::new();
+    let mut field = Field::default();
     let mut start = 0usize;
     let mut index = 0usize;
     let mut line = 1usize;
@@ -43,13 +104,13 @@ pub(crate) fn scan(input: &str, delimiter: u8) -> Result<Vec<Record>, ScanError>
         if quoted {
             if byte == b'"' {
                 if bytes.get(index + 1) == Some(&b'"') {
-                    field.push_str(&input[start..index]);
-                    field.push('"');
+                    field.push(input, start, index);
+                    field.push_quote(input);
                     index += 2;
                     start = index;
                     continue;
                 }
-                field.push_str(&input[start..index]);
+                field.push(input, start, index);
                 quoted = false;
                 index += 1;
                 start = index;
@@ -63,8 +124,8 @@ pub(crate) fn scan(input: &str, delimiter: u8) -> Result<Vec<Record>, ScanError>
             continue;
         }
         if byte == delimiter {
-            field.push_str(&input[start..index]);
-            fields.push(std::mem::take(&mut field));
+            field.push(input, start, index);
+            fields.push(field.take(input));
             index += 1;
             start = index;
             field_start = true;
@@ -75,16 +136,19 @@ pub(crate) fn scan(input: &str, delimiter: u8) -> Result<Vec<Record>, ScanError>
             } else {
                 1
             };
-            field.push_str(&input[start..index]);
+            field.push(input, start, index);
             // A line without any content is not a record.
             if started || !field.is_empty() || !fields.is_empty() {
-                fields.push(std::mem::take(&mut field));
+                fields.push(field.take(input));
+                // The next record most likely has as many fields: sized once
+                // instead of grown from nothing for every record (point 45).
+                let width = fields.len();
                 records.push(Record {
-                    fields: std::mem::take(&mut fields),
+                    fields: std::mem::replace(&mut fields, Vec::with_capacity(width)),
                     line: record_line,
                 });
             } else {
-                field.clear();
+                field.take(input);
             }
             index += separator;
             line += 1;
@@ -113,8 +177,8 @@ pub(crate) fn scan(input: &str, delimiter: u8) -> Result<Vec<Record>, ScanError>
         });
     }
     if started || !field.is_empty() || !fields.is_empty() {
-        field.push_str(&input[start..]);
-        fields.push(std::mem::take(&mut field));
+        field.push(input, start, input.len());
+        fields.push(field.take(input));
         records.push(Record {
             fields: std::mem::take(&mut fields),
             line: record_line,
@@ -127,10 +191,10 @@ pub(crate) fn scan(input: &str, delimiter: u8) -> Result<Vec<Record>, ScanError>
 mod tests {
     use super::*;
 
-    fn fields(records: &[Record]) -> Vec<Vec<&str>> {
+    fn fields<'a>(records: &'a [Record<'a>]) -> Vec<Vec<&'a str>> {
         records
             .iter()
-            .map(|record| record.fields.iter().map(String::as_str).collect())
+            .map(|record| record.fields.iter().map(|field| field.as_ref()).collect())
             .collect()
     }
 

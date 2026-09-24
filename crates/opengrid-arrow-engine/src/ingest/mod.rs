@@ -8,10 +8,10 @@
 //!
 //! A CSV cell is text, a JSON cell is a JSON scalar, but inside a column they
 //! have to mean exactly the same thing. For `decimal`, `date` and `timestamp`
-//! the CSV text is therefore handed to the wire coercion of `opengrid-types`
-//! ([`Value::deserialize_typed`], E13) as a string, so both formats share one
-//! implementation of scale handling (rule S8) and of UTC normalization (rule
-//! S9). That is what makes "the same data in both formats yields identical
+//! the CSV text therefore goes through the wire coercion of `opengrid-types`
+//! ([`Value::from_wire_str`], the string branch of [`Value::deserialize_typed`],
+//! E13), so both formats share one implementation of scale handling (rule S8)
+//! and of UTC normalization (rule S9). That is what makes "the same data in both formats yields identical
 //! batches" hold by construction instead of by coincidence.
 //!
 //! # CSV dialect (RFC 4180 style, [`CsvOptions`])
@@ -219,11 +219,34 @@ pub fn load_csv(
             None => return batches(schema, &[], options.batch_size),
         }
     }
-    let mut rows = Vec::new();
+    // One batch of rows at a time (point 45): the typed rows of the whole file
+    // never exist at once — at 1 M rows × 10 columns that was ten million
+    // values held only to be copied into builders. Same `read_row`, same
+    // `batch::build`; only the amount held at once changed.
+    let arrow: ArrowSchema = schema.into();
+    let size = options.batch_size.max(1);
+    let mut rows = Vec::with_capacity(size.min(records.len()));
+    let mut out = Vec::new();
     for record in records {
         rows.push(layout.complete(read_row(&stored, &record, &options)?));
+        if rows.len() == size {
+            out.push(build_batch(schema, &arrow, &rows)?);
+            rows.clear();
+        }
     }
-    batches(schema, &rows, options.batch_size)
+    if !rows.is_empty() || out.is_empty() {
+        // The last, partial batch — or the one empty batch of an empty table.
+        out.push(build_batch(schema, &arrow, &rows)?);
+    }
+    Ok(out)
+}
+
+fn build_batch(
+    schema: &Schema,
+    arrow: &ArrowSchema,
+    rows: &[Vec<Value>],
+) -> Result<RecordBatch, IngestError> {
+    batch::build(schema, arrow, rows).map_err(|message| IngestError::Schema { message })
 }
 
 /// Reads JSON bytes — an array of objects in the column-oriented wire format
@@ -322,7 +345,7 @@ pub fn infer_schema_csv(bytes: &[u8], options: CsvOptions) -> Result<Schema, Ing
         .collect();
     let mut fields = Vec::with_capacity(header.fields.len());
     for (position, name) in header.fields.iter().enumerate() {
-        let name = FieldName::new(name).map_err(|error| IngestError::Schema {
+        let name = FieldName::new(name.as_ref()).map_err(|error| IngestError::Schema {
             message: error.to_string(),
         })?;
         let mut values = Vec::with_capacity(samples.len());
@@ -338,7 +361,7 @@ pub fn infer_schema_csv(bytes: &[u8], options: CsvOptions) -> Result<Schema, Ing
                         record.fields.len()
                     ),
                 })?;
-            values.push(raw.as_str());
+            values.push(raw.as_ref());
         }
         let data_type = infer(&values, &options);
         let nullable = values.iter().any(|value| is_null(value, &options));
@@ -410,9 +433,13 @@ fn check_delimiter(delimiter: u8) -> Result<(), IngestError> {
 
 /// The header names have to be the schema's columns, in order: a shifted column
 /// would silently fill the wrong types otherwise.
-fn check_header(schema: &Schema, names: &[String], line: usize) -> Result<(), IngestError> {
+fn check_header(
+    schema: &Schema,
+    names: &[std::borrow::Cow<'_, str>],
+    line: usize,
+) -> Result<(), IngestError> {
     let expected: Vec<&str> = schema.fields().iter().map(|f| f.name.as_str()).collect();
-    let found: Vec<&str> = names.iter().map(String::as_str).collect();
+    let found: Vec<&str> = names.iter().map(|name| name.as_ref()).collect();
     if expected != found {
         return Err(IngestError::Header {
             line,

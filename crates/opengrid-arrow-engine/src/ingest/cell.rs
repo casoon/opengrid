@@ -24,9 +24,10 @@ pub(crate) fn from_text(raw: &str, data_type: DataType) -> Result<Value, String>
         DataType::Float64 => parse_float(raw).map(Value::Float64),
         DataType::Utf8 => Ok(Value::Utf8(raw.to_owned())),
         // The wire coercion owns the spellings, the scale handling and the
-        // normalization of these three.
+        // normalization of these three — the very function a JSON string goes
+        // through, called on the cell's text directly (point 45).
         DataType::Decimal { .. } | DataType::Date | DataType::Timestamp => {
-            from_json(serde_json::Value::String(raw.to_owned()), data_type)
+            Value::from_wire_str(raw, &data_type).map_err(|error| error.to_string())
         }
     }
 }

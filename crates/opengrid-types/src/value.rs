@@ -158,12 +158,41 @@ fn parse_decimal(s: &str) -> Result<Decimal, ValueError> {
     }
     let scale =
         u8::try_from(frac_part.len()).map_err(|_| ValueError::InvalidDecimal(s.to_owned()))?;
-    let digits = format!("{int_part}{frac_part}");
-    let magnitude: i128 = digits
-        .parse()
-        .map_err(|_| ValueError::InvalidDecimal(s.to_owned()))?;
+    // The digits accumulate straight into the i128 — what `i128::parse` of the
+    // concatenated digits did, without allocating the concatenation per cell
+    // (point 45). An overflow is the same error it was.
+    let mut magnitude: i128 = 0;
+    for digit in int_part.bytes().chain(frac_part.bytes()) {
+        magnitude = magnitude
+            .checked_mul(10)
+            .and_then(|value| value.checked_add(i128::from(digit - b'0')))
+            .ok_or_else(|| ValueError::InvalidDecimal(s.to_owned()))?;
+    }
     let value = if negative { -magnitude } else { magnitude };
     Ok(Decimal::new(value, scale))
+}
+
+/// `10^n` for every `n` a decimal precision can take (0..=38), as `u128`.
+const POW10: [u128; 39] = {
+    let mut table = [1u128; 39];
+    let mut n = 1;
+    while n < 39 {
+        table[n] = table[n - 1] * 10;
+        n += 1;
+    }
+    table
+};
+
+/// Whether a decimal has more digits than `precision` allows — what
+/// `digit_count() > precision` says, with one comparison instead of a division
+/// per digit (point 45).
+fn exceeds_precision(value: &Decimal, precision: u8) -> bool {
+    match POW10.get(usize::from(precision)) {
+        // `digit_count` is at least 1, so a precision of 0 holds nothing.
+        Some(_) if precision == 0 => true,
+        Some(limit) => value.value().unsigned_abs() >= *limit,
+        None => value.digit_count() > u32::from(precision),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -299,11 +328,13 @@ impl Timestamp {
         if fields.next().is_some() {
             return Err(invalid());
         }
-        let micro: u32 = if frac.is_empty() {
-            0
-        } else {
-            format!("{frac:0<6}").parse().map_err(|_| invalid())?
-        };
+        // Up to six digits, padded on the right to microseconds — what parsing
+        // `format!("{frac:0<6}")` did, without the string (point 45).
+        let micro: u32 = frac
+            .bytes()
+            .chain(std::iter::repeat(b'0'))
+            .take(6)
+            .fold(0, |micro, digit| micro * 10 + u32::from(digit - b'0'));
         if hour > 23 || minute > 59 || second > 59 {
             return Err(invalid());
         }
@@ -372,6 +403,21 @@ impl Value {
     {
         let raw = deserializer.deserialize_any(RawVisitor)?;
         coerce(raw, data_type).map_err(de::Error::custom)
+    }
+
+    /// Reads a value of the given column type from its string spelling in the
+    /// wire format (E13): a decimal (S8: rescaled, never rounded), a date, a UTC
+    /// timestamp (S9), one of the non-finite floats, or a string.
+    ///
+    /// This **is** the string branch of [`Value::deserialize_typed`] — a JSON
+    /// string and a CSV cell go through the same code, so the two formats cannot
+    /// drift apart (plan point 45). It exists separately so that a caller holding
+    /// a `&str` does not have to wrap it in a JSON value first.
+    pub fn from_wire_str(text: &str, data_type: &DataType) -> Result<Self, ValueError> {
+        match data_type {
+            DataType::Utf8 => Ok(Value::Utf8(text.to_owned())),
+            _ => coerce_str(text, data_type),
+        }
     }
 }
 
@@ -505,19 +551,36 @@ fn coerce(raw: Raw, data_type: &DataType) -> Result<Value, ValueError> {
         (Raw::Float(f), DataType::Float64) => Ok(Value::Float64(f)),
         (Raw::Int(i), DataType::Float64) => Ok(Value::Float64(i as f64)),
         (Raw::UInt(u), DataType::Float64) => Ok(Value::Float64(u as f64)),
-        (Raw::Str(s), DataType::Float64) => parse_non_finite(&s)
-            .map(Value::Float64)
-            .ok_or_else(|| mismatch("string")),
+        // The owned string moves into the value; every other string goes
+        // through the one parser both formats share.
         (Raw::Str(s), DataType::Utf8) => Ok(Value::Utf8(s)),
-        (Raw::Str(s), DataType::Decimal { precision, scale }) => {
-            let parsed = parse_decimal(&s)?;
+        (Raw::Str(s), _) => coerce_str(&s, data_type),
+        (other, _) => Err(mismatch(other.kind())),
+    }
+}
+
+/// The string spellings of every non-string type: what [`coerce`] does with a
+/// JSON string, and what [`Value::from_wire_str`] does with a CSV cell.
+fn coerce_str(s: &str, data_type: &DataType) -> Result<Value, ValueError> {
+    match data_type {
+        DataType::Float64 => {
+            parse_non_finite(s)
+                .map(Value::Float64)
+                .ok_or(ValueError::TypeMismatch {
+                    expected: *data_type,
+                    found: "string",
+                })
+        }
+        DataType::Utf8 => Ok(Value::Utf8(s.to_owned())),
+        DataType::Decimal { precision, scale } => {
+            let parsed = parse_decimal(s)?;
             let rescaled = parsed
                 .rescale(*scale)
                 .ok_or(ValueError::DecimalOutOfRange {
                     precision: *precision,
                     scale: *scale,
                 })?;
-            if rescaled.digit_count() > u32::from(*precision) {
+            if exceeds_precision(&rescaled, *precision) {
                 return Err(ValueError::DecimalOutOfRange {
                     precision: *precision,
                     scale: *scale,
@@ -525,15 +588,70 @@ fn coerce(raw: Raw, data_type: &DataType) -> Result<Value, ValueError> {
             }
             Ok(Value::Decimal(rescaled))
         }
-        (Raw::Str(s), DataType::Date) => Ok(Value::Date(Date::parse(&s)?)),
-        (Raw::Str(s), DataType::Timestamp) => Ok(Value::Timestamp(Timestamp::parse(&s)?)),
-        (other, _) => Err(mismatch(other.kind())),
+        DataType::Date => Ok(Value::Date(Date::parse(s)?)),
+        DataType::Timestamp => Ok(Value::Timestamp(Timestamp::parse(s)?)),
+        DataType::Bool | DataType::Int64 => Err(ValueError::TypeMismatch {
+            expected: *data_type,
+            found: "string",
+        }),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The parsers of point 45 read digits without building a string; these are
+    /// the edges where that could differ from parsing the concatenation.
+    #[test]
+    fn decimal_and_fraction_parsing_keep_their_edges() {
+        let decimal = |text: &str, precision, scale| {
+            Value::from_wire_str(text, &DataType::decimal(precision, scale).unwrap())
+        };
+        assert_eq!(
+            decimal("+0001.50", 12, 2),
+            Ok(Value::Decimal(Decimal::new(150, 2)))
+        );
+        assert_eq!(decimal("-0", 12, 2), Ok(Value::Decimal(Decimal::new(0, 2))));
+        assert_eq!(
+            decimal(".5", 12, 2),
+            Ok(Value::Decimal(Decimal::new(50, 2)))
+        );
+        assert_eq!(
+            decimal("5.", 12, 2),
+            Ok(Value::Decimal(Decimal::new(500, 2)))
+        );
+        // The precision boundary: 12 digits fit, 13 do not.
+        assert_eq!(
+            decimal("9999999999.99", 12, 2),
+            Ok(Value::Decimal(Decimal::new(999_999_999_999, 2)))
+        );
+        assert!(decimal("10000000000.00", 12, 2).is_err());
+        assert!(decimal("99999999999999999999999999999999999999", 38, 0).is_ok());
+        // Past i128: the same error parsing the concatenation gave.
+        assert!(matches!(
+            decimal("1701411834604692317316873037158841057280", 38, 0),
+            Err(ValueError::InvalidDecimal(_))
+        ));
+        assert!(decimal("1.2.3", 12, 2).is_err());
+        assert!(decimal(".", 12, 2).is_err());
+
+        for (text, micros) in [
+            ("1970-01-01T00:00:00Z", 0),
+            ("1970-01-01T00:00:00.1Z", 100_000),
+            ("1970-01-01T00:00:00.12Z", 120_000),
+            ("1970-01-01T00:00:00.000001Z", 1),
+            ("1970-01-01T00:00:00.999999Z", 999_999),
+        ] {
+            assert_eq!(
+                Timestamp::parse(text).map(|t| t.micros()),
+                Ok(micros),
+                "{text}"
+            );
+        }
+        assert!(Timestamp::parse("1970-01-01T00:00:00.1234567Z").is_err());
+        assert!(Timestamp::parse("1970-01-01T00:00:00.12aZ").is_err());
+    }
 
     #[test]
     fn decimal_display() {
