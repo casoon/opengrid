@@ -11,7 +11,8 @@
 //! it with a small configuration once, because a 1M ingest in WASM is seconds,
 //! not microseconds.
 //!
-//! Covered: ingest, filter, sort, multi-sort, group + sum at 100k and 1M. The
+//! Covered: ingest, filter, sort, multi-sort, group + sum at 100k and 1M, and
+//! the 40-row windows the grid asks while scrolling a sorted list (point 44). The
 //! module footprint is reported from the 1M ingest setup (`memory_size`), which
 //! is the only place the numbers are collected; module *startup* is a page metric
 //! and stays out of the bench binary.
@@ -160,6 +161,44 @@ fn multi_sort_bench(_: &mut Criterion) {
         c.bench_function(&format!("multi-sort/{size}"), |b| {
             b.iter(|| execute(&batches, &query).expect("the engine answers"));
         });
+    }
+}
+
+/// A 40-row window from the middle of a sort, over every column the grid shows —
+/// what the grid asks on each scroll step (point 44).
+fn window_query(schema: &Schema, sort: &str, offset: usize) -> ValidatedQuery {
+    validate(
+        &format!(
+            r#"{{"source":"orders","select":["id","customer","country","amount","qty","ordered_on"],
+                "sort":{sort},"offset":{offset},"limit":40}}"#
+        ),
+        schema,
+    )
+}
+
+#[wasm_bindgen_bench]
+fn window_bench(_: &mut Criterion) {
+    let mut c = configured();
+    for size in SIZES {
+        let schema = schema();
+        let batches = load_csv(
+            xtask::orders_csv(size, SEED).as_bytes(),
+            &schema,
+            CsvOptions::default(),
+        )
+        .expect("ingest");
+        for (name, sort) in [
+            ("sort window", r#"[{"field":"id"}]"#),
+            (
+                "multi-sort window",
+                r#"[{"field":"customer"},{"field":"amount","direction":"desc"}]"#,
+            ),
+        ] {
+            let query = window_query(&schema, sort, size / 2);
+            c.bench_function(&format!("{name}/{size}"), |b| {
+                b.iter(|| execute(&batches, &query).expect("the engine answers"));
+            });
+        }
     }
 }
 

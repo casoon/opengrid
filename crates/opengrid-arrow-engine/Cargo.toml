@@ -16,6 +16,7 @@ opengrid-planner = { path = "../opengrid-planner" }
 arrow-array = "59"
 arrow-schema = "59"
 arrow-ord = "59"
+arrow-row = "59"
 arrow-select = "59"
 serde_json = "1"
 

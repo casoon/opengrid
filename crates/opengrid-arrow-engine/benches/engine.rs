@@ -97,6 +97,27 @@ fn benchmarks(c: &mut Criterion) {
         bench_query(c, "filter", &label, &batches, &queries.filter);
         bench_query(c, "sort", &label, &batches, &queries.sort);
         bench_query(c, "multi-sort", &label, &batches, &queries.multi_sort);
+        // What the grid asks while scrolling (point 44): a 40-row window in the
+        // middle of a two-key sort, over every column it shows.
+        let window = validate(
+            &format!(
+                r#"{{"source":"orders","select":["id","customer","country","amount","qty","ordered_on"],
+                    "sort":[{{"field":"customer"}},{{"field":"amount","direction":"desc"}}],
+                    "offset":{},"limit":40}}"#,
+                size / 2
+            ),
+            &schema,
+        );
+        bench_query(c, "multi-sort window", &label, &batches, &window);
+        let window = validate(
+            &format!(
+                r#"{{"source":"orders","select":["id","customer","country","amount","qty","ordered_on"],
+                    "sort":[{{"field":"id"}}],"offset":{},"limit":40}}"#,
+                size / 2
+            ),
+            &schema,
+        );
+        bench_query(c, "sort window", &label, &batches, &window);
         bench_query(c, "group + sum", &label, &batches, &queries.group_sum);
         bench_query(c, "aggregate", &label, &batches, &queries.aggregate);
     }

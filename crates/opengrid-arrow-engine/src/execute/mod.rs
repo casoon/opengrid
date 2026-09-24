@@ -9,8 +9,10 @@
 //! which: `filter` names *input* columns, `sort` names *output* columns
 //! (plan/spezifikation/02-query-modell.md). For a query without grouping the
 //! output columns are the selected input columns, so both resolve in the same
-//! batch — which is why the projection is the last step, exactly as the
-//! documented pipeline order says.
+//! batch. The projection therefore runs *before* the sort (point 44): it only
+//! picks column references, and the sort then copies the page of the columns
+//! the query returns rather than every row of every input column. The result is
+//! the one the documented order describes.
 //!
 //! Rules S1 (three-valued filter logic), S2 (`in`), S3/S4/S6/S7 (sorting and
 //! paging), S13/S14 (string comparison, empty string) are implemented in
@@ -137,21 +139,33 @@ pub fn execute(
     // Before paging: this is the number the grid shows next to the page.
     let total_count = batch.num_rows() as u64;
 
-    if !query.sort.is_empty() {
-        batch = order::sort(&batch, &query.sort)?;
-    }
-
-    let batch = page(&batch, query.offset, query.limit);
+    // Projection first: it only picks column references, and whatever comes
+    // after it then copies the columns the query returns, not all of them. The
+    // sort may do that, because `sort` names *output* columns.
+    let batch = project(&batch, &query.output_schema)?;
+    let batch = if query.sort.is_empty() {
+        page(&batch, query.offset, query.limit)
+    } else {
+        order::sort_page(
+            &batch,
+            &query.sort,
+            usize::try_from(query.offset.unwrap_or(0)).unwrap_or(usize::MAX),
+            query
+                .limit
+                .map(|limit| usize::try_from(limit).unwrap_or(usize::MAX)),
+        )?
+    };
 
     Ok(QueryResult {
         schema: query.output_schema.clone(),
-        batches: vec![project(&batch, &query.output_schema)?],
+        batches: vec![batch],
         total_count,
     })
 }
 
-/// Cuts the requested window out of the sorted result (rule S6: `offset`
-/// without `sort` never reaches this function — validation rejects it).
+/// Cuts the requested window out of an unsorted result — a `limit` alone, since
+/// rule S6 lets validation reject an `offset` without `sort`. A sorted result is
+/// cut by [`order::sort_page`], which copies only the page.
 ///
 /// An `offset` beyond the last row is an empty page, not an error: the grid asks
 /// for page N after the data shrank, and it should see nothing rather than a
