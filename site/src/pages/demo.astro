@@ -145,7 +145,7 @@ const presets = [
   // What the schema cannot say: which columns are facets, what a group row shows,
   // how a column looks. It narrows only — a sum over text would be refused.
   const columns = {
-    id: { width: 96, mono: true, muted: true },
+    id: { width: 120, mono: true, muted: true },
     customer: { emphasis: true, facet: 'list' },
     country: { facet: 'pills' },
     amount: { width: 150, facet: 'range', aggregate: 'sum' },
