@@ -407,7 +407,9 @@ different sort those positions hold different records.
 Shadow DOM, so the page reaches in through parts and custom properties.
 
 **Custom properties.** A page sets these; the grid computes the accented ones
-from them, so picking one accent is enough.
+from them, so picking one accent is enough. Set them **on the element** (`opengrid-grid { … }`),
+not only on an ancestor: the grid declares every default on `:host`, and a
+declaration on the element wins over an inherited value.
 
 | Set | Default | What it paints |
 |---|---|---|

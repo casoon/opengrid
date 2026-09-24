@@ -5,74 +5,198 @@ import { url } from '@casoon/pages-theme/url';
 
 // Built by `just wasm-build-components wasm-build`, copied by scripts/demo-assets.mjs.
 const assets = url('opengrid/');
+
+// The five looks of the design prototype (examples/prototype/), as custom properties only.
+const presets = [
+  { key: 'base', name: 'Base', accent: '#3d5fd6' },
+  { key: 'paper', name: 'Paper', accent: '#2a7a59' },
+  { key: 'violet', name: 'Violet', accent: '#6b4bc8' },
+  { key: 'orange', name: 'Orange', accent: '#b44c1c' },
+  { key: 'dark', name: 'Dark', accent: '#4fd1d1' },
+];
 ---
 
 <Base
   title="Demo"
-  description="opengrid running in the browser: the WASM engine answers queries from an <opengrid-grid> and an <opengrid-table>."
+  description="opengrid running in the browser: the WASM engine answers queries from <opengrid-grid> and <opengrid-table> — search, facets, grouping, views and theming included."
 >
-  <div class="page">
+  <div class="page" data-assets={assets}>
     <h1>Live demo</h1>
     <p class="lead">
-      Both elements below run on the WebAssembly engine in this tab, over the 50-row dataset the
-      conformance suite is written against (<code>crates/opengrid-conformance/data/orders.csv</code>).
+      Every element below runs on the WebAssembly engine in this tab, over the 50-row dataset the
+      conformance suite is written against (<code>crates/opengrid-conformance/data/orders.csv</code>) —
+      NULLs, empty strings, <code>-0.01</code> and <code>999999999.99</code> included on purpose.
       Nothing is sent to a server. The pivot needs an <code>opengrid-server</code> and is not part of
       this page.
     </p>
 
     <Demo
-      title="<opengrid-grid>"
-      lead="Interactive: arrow keys move between cells, Enter or Space on a header sorts (Shift adds a second key), Space selects a row, Enter on a cell opens the editor. The filter row applies on Enter. Unstyled on purpose: system form controls and system colors, so it drops into any page without fighting existing styles."
+      title="<opengrid-grid> — search, facets, column menu"
+      lead="Type a filter into the search field — country = DE and amount ≥ 10 — or plain text, then Enter. The facets count without their own restriction, so a ticked value never zeroes its neighbours. Alt+↓ on a header opens its column menu; the toolbar switches the filter row, the columns and the density, and every active filter is a chip. Colours come from this page's theme through the --og-* custom properties."
     >
-      <div class="og-demo" data-assets={assets}>
+      <div class="og-demo og-demo--site">
         <opengrid-grid
           label="Orders"
           datasource="orders"
           columns="id,customer,country,amount,qty,ordered_on"
-          window-size="40"></opengrid-grid>
+          window-size="30"
+          toolbar
+          search
+          facets
+          column-menu
+          selection></opengrid-grid>
       </div>
     </Demo>
 
     <Demo
-      title="<opengrid-grid> — themed"
-      lead="Same element, same data, only CSS added. The look comes entirely from the documented ::part() selectors and custom properties (docs/api.md) — filter-operator, filter-value, filter-clear, header, row, cell, status and the pager parts — nothing here required a change to the component."
+      title="<opengrid-grid group-by> — groups, aggregates, total"
+      lead="Grouped by country, then customer — still virtualized, and a treegrid while grouped: Enter or Space opens a group, → and ← open and close it on its first cell. Amount and quantity are summed, the order date shows the range a group spans, and the grand total is the last row, reachable like any other."
     >
-      <div class="og-demo og-demo--themed">
+      <div class="og-demo og-demo--site">
+        <opengrid-grid
+          label="Orders by country"
+          datasource="orders"
+          columns="id,customer,country,amount,qty,ordered_on"
+          window-size="30"
+          group-by="country,customer"
+          column-menu></opengrid-grid>
+      </div>
+    </Demo>
+
+    <Demo
+      title="Views are values"
+      lead="The grid hands out its whole view — sort, filters, columns, density, grouping, facets — as one value, and takes one back in a single query. A saved view is that value with a name on it; the tabs below are page code, not part of the element. Change something in the grid and the view below follows."
+    >
+      <div class="og-demo og-demo--site og-views">
+        <div class="og-tabs" role="tablist" aria-label="Saved views">
+          <button type="button" role="tab" id="og-view-0" aria-selected="true" aria-controls="og-views-panel" tabindex="0">All orders</button>
+          <button type="button" role="tab" id="og-view-1" aria-selected="false" aria-controls="og-views-panel" tabindex="-1">Germany, 10 and up</button>
+          <button type="button" role="tab" id="og-view-2" aria-selected="false" aria-controls="og-views-panel" tabindex="-1">No customer</button>
+          <button type="button" role="tab" id="og-view-3" aria-selected="false" aria-controls="og-views-panel" tabindex="-1">By country</button>
+        </div>
+        <div role="tabpanel" id="og-views-panel" aria-labelledby="og-view-0">
+          <opengrid-grid
+            id="og-views-grid"
+            label="Orders"
+            datasource="orders"
+            columns="id,customer,country,amount,qty,ordered_on"
+            window-size="30"
+            toolbar></opengrid-grid>
+        </div>
+        <details>
+          <summary>The view, as <code>get_view</code> answers it</summary>
+          <pre id="og-view-json"></pre>
+        </details>
+      </div>
+    </Demo>
+
+    <Demo
+      title="Themed — the five looks of the prototype"
+      lead="Same element, only custom properties changed: eighteen --og-* tokens, and the grid computes the soft accent, the selected and the hover colours from them. The defaults are system colours, so an unthemed grid follows light and dark on its own; under forced colours every token gives way to the user's palette."
+    >
+      <div class="og-demo og-themed" data-preset="base">
+        <fieldset class="og-presets">
+          <legend>Look</legend>
+          {presets.map((preset, index) => (
+            <label>
+              <input type="radio" name="og-preset" value={preset.key} checked={index === 0} />
+              <span class="og-swatch" style={`background:${preset.accent}`}></span>
+              {preset.name}
+            </label>
+          ))}
+        </fieldset>
         <opengrid-grid
           label="Orders"
           datasource="orders"
           columns="id,customer,country,amount,qty,ordered_on"
-          window-size="40"></opengrid-grid>
+          window-size="30"
+          density="comfortable"
+          toolbar
+          selection></opengrid-grid>
       </div>
     </Demo>
 
     <Demo
       title="<opengrid-table>"
-      lead="Display: a plain native table with header buttons that sort one column."
+      lead="Display: a plain native table with header buttons that sort one column — for answers that are read, not worked with."
     >
       <div class="og-demo">
         <opengrid-table label="Orders by customer" datasource="orders" columns="id,customer,country,amount"
         ></opengrid-table>
       </div>
-      <script is:inline type="module">
-        const base = document.querySelector('[data-assets]').dataset.assets;
-        const { loadOpengrid, createLocalProvider } = await import(`${base}loader.js`);
-        const { default: init, Engine } = await import(`${base}engine/opengrid_wasm.js`);
-
-        await init();
-        const engine = new Engine();
-        const schema = await (await fetch(`${base}data/orders.schema.json`)).text();
-        const csv = await (await fetch(`${base}data/orders.csv`)).arrayBuffer();
-        engine.load_csv('orders', new Uint8Array(csv), schema);
-
-        const loader = await loadOpengrid();
-        for (const host of document.querySelectorAll('opengrid-grid, opengrid-table')) {
-          loader.module.set_provider(host, createLocalProvider(engine));
-        }
-      </script>
     </Demo>
   </div>
 </Base>
+
+<script is:inline type="module">
+  const base = document.querySelector('[data-assets]').dataset.assets;
+  const { loadOpengrid, createLocalProvider } = await import(`${base}loader.js`);
+  const { default: init, Engine } = await import(`${base}engine/opengrid_wasm.js`);
+
+  await init();
+  const engine = new Engine();
+  const schema = await (await fetch(`${base}data/orders.schema.json`)).text();
+  const csv = await (await fetch(`${base}data/orders.csv`)).arrayBuffer();
+  engine.load_csv('orders', new Uint8Array(csv), schema);
+
+  const loader = await loadOpengrid();
+  const og = loader.module;
+
+  // What the schema cannot say: which columns are facets, what a group row shows,
+  // how a column looks. It narrows only — a sum over text would be refused.
+  const columns = {
+    id: { width: 96, mono: true, muted: true },
+    customer: { emphasis: true, facet: 'list' },
+    country: { facet: 'pills' },
+    amount: { width: 150, facet: 'range', aggregate: 'sum' },
+    qty: { aggregate: 'sum' },
+    ordered_on: { facet: 'period', aggregate: 'range' },
+  };
+  for (const host of document.querySelectorAll('opengrid-grid')) og.set_columns(host, columns);
+  for (const host of document.querySelectorAll('opengrid-grid, opengrid-table')) {
+    og.set_provider(host, createLocalProvider(engine));
+  }
+
+  // ---- Views: a few lines of page code on top of get_view / set_view ----------
+  const sort = [{ field: 'id', direction: 'asc' }];
+  const views = [
+    { sort },
+    { sort, filters: [{ column: 'country', op: 'eq', value: 'DE' }, { column: 'amount', op: 'gte', value: '10' }] },
+    { sort, filters: [{ column: 'customer', op: 'is_null', value: '' }] },
+    { sort, group: ['country'], expanded: [['DE']] },
+  ];
+  const grid = document.getElementById('og-views-grid');
+  const tabs = [...document.querySelectorAll('.og-tabs [role="tab"]')];
+  const json = document.getElementById('og-view-json');
+  const show = () => (json.textContent = JSON.stringify(og.get_view(grid), null, 2));
+  const choose = (index) => {
+    tabs.forEach((tab, at) => {
+      tab.setAttribute('aria-selected', String(at === index));
+      tab.tabIndex = at === index ? 0 : -1;
+    });
+    document.getElementById('og-views-panel').setAttribute('aria-labelledby', tabs[index].id);
+    og.set_view(grid, views[index]);
+    show();
+  };
+  tabs.forEach((tab, index) => tab.addEventListener('click', () => choose(index)));
+  tabs[0].parentElement.addEventListener('keydown', (event) => {
+    const at = tabs.indexOf(document.activeElement);
+    const next = { ArrowRight: at + 1, ArrowLeft: at - 1, Home: 0, End: tabs.length - 1 }[event.key];
+    if (at < 0 || next === undefined) return;
+    event.preventDefault();
+    const index = (next + tabs.length) % tabs.length;
+    choose(index);
+    tabs[index].focus();
+  });
+  grid.addEventListener('opengrid-view-change', show);
+  show();
+
+  // ---- Looks: a radio group that swaps a data attribute ------------------------
+  const themed = document.querySelector('.og-themed');
+  themed.addEventListener('change', (event) => {
+    if (event.target.name === 'og-preset') themed.dataset.preset = event.target.value;
+  });
+</script>
 
 <style>
   .page {
@@ -96,99 +220,139 @@ const assets = url('opengrid/');
   .og-demo opengrid-grid {
     display: block;
     /* A definite height makes the grid's viewport the scroll container, so it virtualizes. */
-    height: 420px;
+    height: 560px;
     overflow: hidden;
-    --og-line: var(--border);
   }
 
-  /* Themed variant: only ::part() selectors and the documented custom properties —
-     the same public surface any consumer has (docs/api.md). */
-  .og-demo--themed opengrid-grid {
-    --og-focus-width: 2px;
-    border-radius: 12px;
-    box-shadow: var(--shadow);
-  }
-  .og-demo--themed opengrid-grid::part(layout) {
+  /* The site's own palette, handed to the grid through its tokens — light and dark follow. */
+  .og-demo--site opengrid-grid {
+    --og-surface: var(--surface);
+    --og-surface-2: var(--bg-deep);
+    --og-ink: var(--text);
+    --og-ink-muted: var(--muted);
+    --og-line: var(--border);
+    --og-line-strong: var(--border-strong);
+    --og-accent: var(--accent);
+    --og-on-accent: var(--surface);
+    --og-radius: 8px;
     border: 1px solid var(--border);
     border-radius: 12px;
-    overflow: hidden;
-    background: var(--surface);
   }
-  .og-demo--themed opengrid-grid::part(filter) {
-    background: var(--bg-deep);
-    padding: 0.5rem 0.75rem;
+
+  /* Views */
+  .og-views {
+    display: grid;
+    gap: 12px;
   }
-  .og-demo--themed opengrid-grid::part(filter-operator),
-  .og-demo--themed opengrid-grid::part(filter-value) {
-    border: 1px solid var(--border);
-    border-radius: 7px;
-    background: var(--surface);
-    color: var(--text);
-    padding: 0.3rem 0.5rem;
-    font-size: 0.85rem;
+  .og-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    border-bottom: 1px solid var(--border);
   }
-  .og-demo--themed opengrid-grid::part(filter-value) {
-    width: 6.5rem;
-  }
-  .og-demo--themed opengrid-grid::part(filter-operator):focus-visible,
-  .og-demo--themed opengrid-grid::part(filter-value):focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 1px;
-  }
-  .og-demo--themed opengrid-grid::part(filter-clear) {
-    border: 1px solid var(--border);
-    border-radius: 999px;
+  .og-tabs [role='tab'] {
+    font: inherit;
+    min-height: 36px;
+    padding: 0 12px;
+    border: 0;
     background: transparent;
     color: var(--muted);
-    padding: 0.3rem 0.75rem;
-    font-size: 0.8rem;
+    cursor: pointer;
   }
-  .og-demo--themed opengrid-grid::part(filter-clear):hover {
-    border-color: var(--accent);
-    color: var(--accent);
-  }
-  .og-demo--themed opengrid-grid::part(status) {
-    color: var(--muted);
-    font-size: 0.8rem;
-    padding: 0.35rem 0.75rem;
-  }
-  .og-demo--themed opengrid-grid::part(header) {
-    background: var(--bg-deep);
+  .og-tabs [role='tab'][aria-selected='true'] {
     color: var(--heading);
     font-weight: 600;
-    font-size: 0.85rem;
-    border-bottom: 1px solid var(--border-strong);
+    box-shadow: inset 0 -2px 0 var(--accent);
   }
-  .og-demo--themed opengrid-grid::part(sort-direction),
-  .og-demo--themed opengrid-grid::part(sort-index) {
-    color: var(--accent);
+  .og-tabs [role='tab']:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
   }
-  .og-demo--themed opengrid-grid::part(row) {
-    background: var(--surface);
-  }
-  .og-demo--themed opengrid-grid::part(row):nth-of-type(even) {
+  .og-views pre {
+    max-height: 260px;
+    overflow: auto;
+    margin: 8px 0 0;
+    padding: 12px;
     background: var(--bg-deep);
-  }
-  .og-demo--themed opengrid-grid::part(cell) {
-    color: var(--text);
-    font-size: 0.875rem;
-  }
-  .og-demo--themed opengrid-grid::part(pager) {
-    padding: 0.4rem 0.75rem;
-  }
-  .og-demo--themed opengrid-grid::part(page-first),
-  .og-demo--themed opengrid-grid::part(page-previous),
-  .og-demo--themed opengrid-grid::part(page-next),
-  .og-demo--themed opengrid-grid::part(page-last) {
     border: 1px solid var(--border);
-    border-radius: 999px;
-    background: var(--surface);
-    color: var(--text);
-    padding: 0.25rem 0.6rem;
+    border-radius: 8px;
     font-size: 0.8rem;
   }
-  .og-demo--themed opengrid-grid::part(page-label) {
-    color: var(--muted);
-    font-size: 0.8rem;
+
+  /* Looks: the five presets of the prototype, nothing but custom properties.
+     They are set on the element itself, not only on its container: the grid
+     declares its defaults on :host, and a declaration on the element beats an
+     inherited value. The container gets them too, for its own background. */
+  .og-themed {
+    display: grid;
+    gap: 12px;
+    padding: 16px;
+    border-radius: 14px;
+    background: var(--og-canvas);
+  }
+  .og-presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 16px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    color: var(--og-ink);
+  }
+  .og-presets legend {
+    float: left;
+    margin-right: 8px;
+    font-weight: 600;
+  }
+  .og-presets label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 24px;
+    cursor: pointer;
+  }
+  .og-swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+  }
+  .og-themed opengrid-grid {
+    border: 1px solid var(--og-line-strong);
+    border-radius: var(--og-radius);
+  }
+  .og-themed[data-preset='base'],
+  .og-themed[data-preset='base'] opengrid-grid {
+    --og-canvas: #f5f6f8; --og-surface: #ffffff; --og-surface-2: #fafbfc; --og-ink: #14161a;
+    --og-ink-muted: #646b78; --og-line: #eceef2; --og-line-strong: #e0e3e9; --og-accent: #3d5fd6;
+    --og-on-accent: #ffffff; --og-radius: 12px;
+    color-scheme: light;
+  }
+  .og-themed[data-preset='paper'],
+  .og-themed[data-preset='paper'] opengrid-grid {
+    --og-canvas: #f4f1ea; --og-surface: #fffdf8; --og-surface-2: #faf7f0; --og-ink: #1f1d19;
+    --og-ink-muted: #6f685a; --og-line: #ebe6da; --og-line-strong: #ddd7c8; --og-accent: #2a7a59;
+    --og-on-accent: #ffffff; --og-radius: 8px;
+    color-scheme: light;
+  }
+  .og-themed[data-preset='violet'],
+  .og-themed[data-preset='violet'] opengrid-grid {
+    --og-canvas: #f3f3f7; --og-surface: #ffffff; --og-surface-2: #fbfbfd; --og-ink: #17161f;
+    --og-ink-muted: #6c6b80; --og-line: #ececf3; --og-line-strong: #dfdfea; --og-accent: #6b4bc8;
+    --og-on-accent: #ffffff; --og-radius: 14px;
+    color-scheme: light;
+  }
+  .og-themed[data-preset='orange'],
+  .og-themed[data-preset='orange'] opengrid-grid {
+    --og-canvas: #f7f6f4; --og-surface: #ffffff; --og-surface-2: #faf9f7; --og-ink: #111111;
+    --og-ink-muted: #6e6c69; --og-line: #ecebe8; --og-line-strong: #e2e0dc; --og-accent: #b44c1c;
+    --og-on-accent: #ffffff; --og-radius: 10px;
+    color-scheme: light;
+  }
+  .og-themed[data-preset='dark'],
+  .og-themed[data-preset='dark'] opengrid-grid {
+    --og-canvas: #0e1013; --og-surface: #15181c; --og-surface-2: #1a1e23; --og-ink: #e6e8eb;
+    --og-ink-muted: #9aa1ab; --og-line: #23282e; --og-line-strong: #2e333a; --og-accent: #4fd1d1;
+    --og-on-accent: #0b1414; --og-radius: 12px;
+    color-scheme: dark;
   }
 </style>

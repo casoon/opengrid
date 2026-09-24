@@ -104,6 +104,37 @@ test("mono, emphasis and muted reach the cell", async ({ page }) => {
   expect(Number(seen.customerWeight)).toBeGreaterThan(500);
 });
 
+test("the values stand under their header when only some columns have a width", async ({ page }) => {
+  // Every body row is its own table (it is absolutely positioned), so a width
+  // written only onto the header left the rows splitting evenly: header and
+  // values drifted apart as soon as one column had a width and the others did
+  // not. Found on the project page's demo.
+  const edges = () =>
+    page.evaluate(() => {
+      const root = document.querySelector("opengrid-grid").shadowRoot;
+      const left = (node) => Math.round(node.getBoundingClientRect().left);
+      const row = [...root.querySelectorAll("tbody tr")].find((tr) => tr.querySelector("td[data-row]"));
+      return {
+        header: [...root.querySelectorAll("thead th[data-col]")].map(left),
+        values: [...row.querySelectorAll("td[data-col]")].map(left),
+      };
+    });
+  await setColumns(page, { id: { width: 64 }, amount: { width: 220 } });
+  await settled(page);
+  await expect.poll(async () => (await edges()).header[1]).toBeLessThan(200);
+  const seen = await edges();
+  expect(seen.values).toEqual(seen.header);
+
+  // And after a resize by the reader, which writes the same way.
+  await page.evaluate(() => {
+    const th = document.querySelector("opengrid-grid").shadowRoot.querySelector('th[data-col="1"]');
+    th.focus();
+    th.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", ctrlKey: true, shiftKey: true, bubbles: true, composed: true }));
+  });
+  const resized = await edges();
+  expect(resized.values).toEqual(resized.header);
+});
+
 test("a configured width starts the column, and a resize still wins", async ({ page }) => {
   await setColumns(page, { amount: { width: 200 } });
   await settled(page);

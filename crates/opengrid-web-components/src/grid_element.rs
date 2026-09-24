@@ -1276,8 +1276,8 @@ fn announce_if_cleared(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>) {
 
 /// Makes a column wider or narrower and says so.
 ///
-/// The width is written onto the header cell; `table-layout: fixed` carries it
-/// to every row. The value is clamped so a column can never be resized into
+/// The width is written onto the header cell and the data cells (see
+/// [`apply_widths`]). The value is clamped so a column can never be resized into
 /// something nobody can find again (and below the 24 px of WCAG 2.5.8).
 fn resize_column(host: &HtmlElement, col: usize, step: i32) {
     let columns = columns_of(host);
@@ -1382,23 +1382,35 @@ fn measured_width(host: &HtmlElement, col: usize) -> Option<u32> {
     (width > 0.0).then_some(width as u32)
 }
 
-/// Writes the reader's widths onto the header cells.
+/// Writes the reader's widths onto the header cells **and** the data cells.
+///
+/// Every body row is its own `display: table` (it is absolutely positioned, so
+/// it can be moved without reflowing the others), and a row-table does not
+/// read the header's widths. As long as no column had a width, both split the
+/// same total evenly and lined up by accident; one configured width among
+/// automatic ones pulled header and values apart. So the widths also go into a
+/// small stylesheet for `td[data-col]` — one write per change rather than one
+/// per rendered cell, and pooled cells pick it up as they are recycled.
 fn apply_widths(host: &HtmlElement) {
     let Some(root) = host.shadow_root() else {
         return;
     };
     let layout = columns::layout(host);
     let layout = layout.borrow();
+    let mut rules = String::new();
     for (col, name) in columns_of(host).iter().enumerate() {
+        // The reader's resize leads; the configuration is only where a column
+        // starts (point 60, the same attribute/value relationship as the view).
+        let width = layout
+            .width(name)
+            .or_else(|| presentation::styles(host).width(name));
+        if let Some(width) = width {
+            rules.push_str(&format!("td[data-col=\"{col}\"] {{ width: {width}px; }}\n"));
+        }
         let Ok(Some(cell)) = root.query_selector(&format!("th[data-col=\"{col}\"]")) else {
             continue;
         };
-        // The reader's resize leads; the configuration is only where a column
-        // starts (point 60, the same attribute/value relationship as the view).
-        match layout
-            .width(name)
-            .or_else(|| presentation::styles(host).width(name))
-        {
+        match width {
             Some(width) => {
                 let _ = cell.set_attribute("style", &format!("width: {width}px;"));
             }
@@ -1406,6 +1418,21 @@ fn apply_widths(host: &HtmlElement) {
                 let _ = cell.remove_attribute("style");
             }
         }
+    }
+    let sheet = match root.query_selector("style[data-widths]") {
+        Ok(Some(sheet)) => Some(sheet),
+        _ => web_sys::window()
+            .and_then(|window| window.document())
+            .and_then(|document| document.create_element("style").ok())
+            .inspect(|sheet| {
+                let _ = sheet.set_attribute("data-widths", "");
+                let _ = root.append_child(sheet);
+            }),
+    };
+    if let Some(sheet) = sheet
+        && sheet.text_content().unwrap_or_default() != rules
+    {
+        sheet.set_text_content(Some(&rules));
     }
 }
 
