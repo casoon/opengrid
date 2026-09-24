@@ -9,8 +9,10 @@ A release that skips them is not a release; it is a publish.
 ## What 0.x promises
 
 The public API is frozen (the element names, their attributes, their events, their
-`::part` names and the four exported functions) and `docs/api.md` is its written form.
-A test keeps that list honest.
+`::part` names, their custom properties, their text keys and the eight exported
+functions) and `docs/api.md` is its written form. Tests keep the two honest with each
+other: a frozen name missing from the documentation fails, and so does a documented
+part the element does not write.
 
 While the version is **0.x**:
 
@@ -43,19 +45,24 @@ staged, and what was **not** tested is named in the release notes either way.
 
 #### For any `0.x`
 
-- [ ] **One pairing, in depth.** All eighteen scenarios of
-      `plan/spezifikation/15-sr-testprotokoll.md` on a screen reader you actually have.
-      Two of them (S9, focus while scrolling; S10, the unfolding of a truncated cell)
-      depend on `:focus` and cannot be driven from the console — they need a real
+- [ ] **One pairing, in depth.** All twenty-eight scenarios of
+      `plan/spezifikation/15-sr-testprotokoll.md` on a screen reader you actually have:
+      S1–S18 cover the elements as such, S19–S28 the configurable views (grouping and
+      its change of role, the column menu, the search combobox, facets, chips, the
+      language of mixed names). Several depend on `:focus` and cannot be driven from
+      the console — S9, S10, and every scenario that opens a menu — they need a real
       keyboard.
 - [ ] **Name the gaps.** Every pairing you did not test goes into the release notes by
       name. "Tested with VoiceOver on Safari; NVDA, JAWS and TalkBack untested" is a
       useful sentence. Silence is not.
 - [ ] **One browser beyond Chromium**, by hand. The e2e suite runs Chromium only, so
       everything else is either checked by a person or unknown.
-- [ ] **The screenshot baselines.** `tests/e2e/__screenshots__` is committed. If a
-      visible control changed, regenerate with `pnpm run e2e:update` and **look at the
-      diff** — a baseline accepted without looking is a test that has stopped testing.
+- [ ] **The screenshot baselines.** `tests/e2e/__screenshots__` is committed, once per
+      platform. If a visible control changed, regenerate the darwin ones with
+      `pnpm run e2e:update` and the Linux ones by running the CI workflow by hand
+      (`gh workflow run ci.yml`; its `baselines` job uploads them as an artifact), and
+      **look at the diff** of both — a baseline accepted without looking is a test that
+      has stopped testing.
 
 #### Additionally for `1.0`
 
