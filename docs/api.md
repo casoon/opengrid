@@ -186,6 +186,10 @@ how they start:
 | `country = DE and amount ≥ 10` | Writes **the filter row's own entries** — the same fields, the same view, the same chips — and empties the field. One place a filter lives. |
 | `Alpha` | A free-text search: `contains` on every shown text column, or-ed. |
 
+Input that starts with a word and an operator is read as a filter even when the
+word is not a column: `colour = red` says "colour is not a column of this grid"
+rather than searching for the words and finding nothing.
+
 Operators: `=` `≠` (`!=`) `>` `≥` (`>=`) `<` `≤` (`<=`) `~` (contains) `^`
 (starts with). Clauses are joined by the `queryAnd` word — `and` by default —
 and `and` always works as well.

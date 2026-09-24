@@ -220,6 +220,12 @@ test("a view has no selection, and applying one drops it", async ({ page }) => {
   // filtering puts different records in those positions. A restored selection
   // would not be incomplete, it would be wrong.
   await page.evaluate(() => {
+    window.__selections = [];
+    document
+      .querySelector("opengrid-grid")
+      .addEventListener("opengrid-selection-change", (event) => window.__selections.push(event.detail.count));
+  });
+  await page.evaluate(() => {
     const root = document.querySelector("opengrid-grid").shadowRoot;
     const cell = root.querySelector('td[data-row="0"][data-col="0"]');
     cell.focus();
@@ -247,6 +253,24 @@ test("a view has no selection, and applying one drops it", async ({ page }) => {
         .shadowRoot.querySelector('tr[data-selected="true"]'),
   );
   expect(stillSelected).toBe(false);
+
+  // And not silently (point 73): the status line says it, once, with the
+  // result that follows — as it does after a sort — and the page hears it.
+  const said = await page.evaluate(() =>
+    document.querySelector("opengrid-grid").shadowRoot.querySelector('[part="status"]').textContent,
+  );
+  expect(said).toMatch(/· Selection cleared$/);
+  expect(await page.evaluate(() => window.__selections.at(-1))).toBe(0);
+
+  // A view applied with nothing selected says nothing about a selection.
+  await setView(page, { ...view, density: "comfortable" });
+  await settled(page);
+  await page.waitForTimeout(200);
+  expect(
+    await page.evaluate(() =>
+      document.querySelector("opengrid-grid").shadowRoot.querySelector('[part="status"]').textContent,
+    ),
+  ).not.toContain("Selection cleared");
 });
 
 test("the later fields are already in the shape", async ({ page }) => {

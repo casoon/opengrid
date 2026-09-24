@@ -118,10 +118,15 @@ fn clauses<'a>(input: &'a str, and_word: &str) -> Vec<&'a str> {
 }
 
 /// Whether the input reads as a filter expression rather than free text: it
-/// starts with a shown column and an operator. What the field shows as its
-/// hint ("Query · Enter") depends on this, before anything is parsed in full.
-pub fn looks_like_query(input: &str, columns: &[String]) -> bool {
-    split_clause(input).is_some_and(|(column, ..)| columns.iter().any(|name| name == column))
+/// starts with a word and an operator. What the field shows as its hint
+/// ("Query · Enter") depends on this, before anything is parsed in full.
+///
+/// The word need **not** be a column (point 72): `colour = red` is a filter
+/// with a typo, and parsing it says "colour is not a column of this grid". A
+/// check against the columns here would send it to the free-text search
+/// instead — silently, and with no rows to show for it (E30).
+pub fn looks_like_query(input: &str) -> bool {
+    split_clause(input).is_some()
 }
 
 /// Parses an expression into filter entries, checked against the schema.
@@ -355,10 +360,13 @@ mod tests {
 
     #[test]
     fn a_query_is_told_from_free_text_by_its_start() {
-        assert!(looks_like_query("country = DE", &columns()));
-        assert!(looks_like_query("amount>", &columns()));
-        assert!(!looks_like_query("Alpha", &columns()));
-        assert!(!looks_like_query("nope = 1", &columns()));
+        assert!(looks_like_query("country = DE"));
+        assert!(looks_like_query("amount>"));
+        assert!(!looks_like_query("Alpha"));
+        assert!(!looks_like_query("Alpha Beta"));
+        // A typo in the column is still a filter — named by the parser, never
+        // quietly searched as text (point 72, E30).
+        assert!(looks_like_query("nope = 1"));
     }
 
     #[test]

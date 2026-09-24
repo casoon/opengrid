@@ -2678,10 +2678,17 @@ pub(crate) fn write_view(host: &HtmlElement, value: &JsValue) {
     let had_focus = host
         .shadow_root()
         .is_some_and(|root| root.active_element().is_some());
+    // The selection goes with the old state. It is dropped on purpose — a view
+    // carries none — but not silently (point 73): the fresh state is told, so
+    // the result that follows says "Selection cleared" like a sort would.
+    let had_selection = !runtime.borrow().state.selection().is_empty();
     if let Some(root) = host.shadow_root() {
         clear_root(&root);
     }
     reset_runtime(host);
+    if had_selection {
+        runtime.borrow_mut().state.note_selection_dropped();
+    }
     ensure_skeleton(host);
     {
         let mut borrowed = runtime.borrow_mut();
@@ -2775,6 +2782,10 @@ pub(crate) fn write_view(host: &HtmlElement, value: &JsValue) {
     APPLYING_VIEW.with(|flag| flag.set(false));
 
     render(host, false);
+    if had_selection {
+        // The page hears it the same way it hears every other selection change.
+        dispatch_selection(host, &[]);
+    }
     run_query(host, QueryKind::Data, had_focus);
     dispatch_view(host);
 }
@@ -4677,7 +4688,7 @@ fn update_search(host: &HtmlElement, root: &ShadowRoot) {
     let value = input.value();
     let columns = columns_of(host);
     let texts = texts(host);
-    let query = crate::search::looks_like_query(&value, &columns);
+    let query = crate::search::looks_like_query(&value);
     let _ = if query {
         hint.remove_attribute("hidden")
             .and(input.set_attribute("data-query", ""))
@@ -4860,7 +4871,7 @@ fn apply_search(host: &HtmlElement) {
     let _ = list.set_attribute("hidden", "");
     let _ = input.set_attribute("aria-expanded", "false");
 
-    if crate::search::looks_like_query(&value, &columns) {
+    if crate::search::looks_like_query(&value) {
         let schema = runtime.borrow().state.schema().clone();
         match crate::search::parse(&value, &texts.query_and, &schema) {
             Ok(entries) => {

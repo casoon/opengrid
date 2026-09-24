@@ -249,6 +249,16 @@ impl GridState {
         patches
     }
 
+    /// Records that a selection was dropped **before** this state existed, so
+    /// the next result says so like any other drop.
+    ///
+    /// Applying a view (point 59) builds a fresh state: the old selection goes
+    /// with the old state, and without this the drop would be silent — the
+    /// trap [`invalidate_selection`](Self::invalidate_selection) exists to avoid.
+    pub fn note_selection_dropped(&mut self) {
+        self.selection_dropped = true;
+    }
+
     /// The cell being edited, if any (plan point 37).
     pub fn editing(&self) -> Option<CellRef> {
         self.editing
@@ -1161,5 +1171,24 @@ mod edit_tests {
         state.apply_result(result(&[(1, "DE", 10), (2, "FR", 20)], 2));
         assert!(!state.is_changed(cell), "the source has spoken");
         assert_eq!(state.editing(), None);
+    }
+
+    /// A selection dropped before this state existed (a view applied, point 59)
+    /// is said by the next result — once — like one dropped by a sort.
+    #[test]
+    fn a_selection_dropped_elsewhere_is_said_once() {
+        let mut state = grid();
+        state.apply_result(result(&[(1, "DE", 10)], 1));
+        assert!(!state.announce_selection_cleared(), "nothing was dropped");
+
+        state.note_selection_dropped();
+        state.apply_result(result(&[(1, "DE", 10)], 1));
+        assert!(state.announce_selection_cleared());
+
+        state.apply_result(result(&[(1, "DE", 10)], 1));
+        assert!(
+            !state.announce_selection_cleared(),
+            "said once, not on every result"
+        );
     }
 }

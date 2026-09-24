@@ -134,6 +134,22 @@ test("an expression that does not parse is named, and kept for correcting", asyn
   expect(view.filters).toEqual([]);
 });
 
+test("a typo in the first column is named, not searched as text", async ({ page }) => {
+  // Point 72, E30: `colour = red` has the shape of a filter. Reading it as free
+  // text would search for the literal words, find nothing, and say "No
+  // matches" — the reader would never learn that the column name was wrong.
+  await focusSearch(page);
+  await page.keyboard.type("colour = red");
+  expect((await field(page)).hint).toBe(true);
+  await page.keyboard.press("Enter");
+  await expect.poll(() => status(page)).toBe("colour is not a column of this grid");
+  expect((await field(page)).value).toBe("colour = red");
+  const chips = await page.evaluate(() =>
+    document.querySelector("opengrid-grid").shadowRoot.querySelectorAll('[part="chip"]').length,
+  );
+  expect(chips).toBe(0);
+});
+
 test("a type the operator does not fit is named", async ({ page }) => {
   await focusSearch(page);
   await page.keyboard.type("amount ~ 5");
