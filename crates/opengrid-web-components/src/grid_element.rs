@@ -70,7 +70,7 @@ use web_sys::{
 };
 
 use opengrid_grid::{CellRef, GridState, GridStatus, Patch as GridPatch, Window};
-use opengrid_query::CmpOp;
+use opengrid_query::{CmpOp, FilterExpr, Sort, SortDirection};
 use opengrid_types::{DataType, Value};
 use opengrid_web_core::element::{
     ARIA_LABEL_ATTRIBUTE, LABEL_ATTRIBUTE, attach_open_shadow_root, define, mirror_label,
@@ -80,15 +80,19 @@ use opengrid_web_core::provider::provider;
 
 use crate::columns::{self, WIDTH_STEP};
 use crate::formats::{CellFormat, Formatter, formats};
-use crate::grid_element_events::{CELL_EVENT, SELECTION_EVENT};
+use crate::grid_element_events::{CELL_EVENT, SELECTION_EVENT, VIEW_EVENT};
 use opengrid_web_core::renderer::{Dom, WebRenderer};
 
 use crate::element::{clear_root, describe};
 use crate::grid::{
     self, ActiveCell, COLUMNS_ATTRIBUTE, DATASOURCE_ATTRIBUTE, FilterEntry, GRID_TAG, GridKey,
-    GridNodes, MODE_ATTRIBUTE, PAGE_SIZE_ATTRIBUTE, ROW_HEIGHT_PROPERTY, WINDOW_SIZE_ATTRIBUTE,
+    GridNodes, GridSkeleton, MODE_ATTRIBUTE, PAGE_SIZE_ATTRIBUTE, ROW_HEIGHT_PROPERTY,
+    WINDOW_SIZE_ATTRIBUTE,
 };
+use crate::grouping::{self, Grouping};
+use crate::presentation;
 use crate::texts::texts;
+use crate::view::GridView;
 
 /// Registers `<opengrid-grid>`; safe to call more than once.
 pub(crate) fn define_grid() -> Result<(), JsValue> {
@@ -125,7 +129,7 @@ struct GridRuntime {
     dom: Option<Dom<WebRenderer>>,
     /// The scrollable viewport element (cached for scroll math).
     viewport: Option<Element>,
-    /// The resolved pixel height of one logical row (`--grid-row-height`).
+    /// The resolved pixel height of one logical row (`--og-row-height`).
     ///
     /// Resolved per host from the computed style, so multiple grids can differ;
     /// the portable window math is parameterised by it.
@@ -140,6 +144,29 @@ struct GridRuntime {
     page: u64,
     /// Bumped per query; a result from an older generation is discarded.
     generation: u64,
+    /// The grouping, while `group-by` is set and valid (point 62).
+    grouping: Option<Grouping>,
+    /// The filter the loaded groups were counted under — a different one means
+    /// the counts are stale and the group query has to run again.
+    groups_filter: Option<Option<FilterExpr>>,
+    /// The reader's choice of aggregate per column, from the view (point 63).
+    /// Leads over what `set_columns` configured.
+    aggregate_choice: std::collections::BTreeMap<String, presentation::Summary>,
+    /// Whether the filter row shows (point 65). Part of the view; on unless
+    /// the reader or a view turned it off.
+    filter_row: bool,
+    /// The reader's facet selections, by column (point 66).
+    facets: Vec<(String, crate::facets::Selection)>,
+    /// Each list facet's values without any filter — what the facet lists.
+    facet_domain: std::collections::BTreeMap<String, Vec<grouping::Group>>,
+    /// The counts under every filter but the facet's own, by key.
+    facet_counts: std::collections::BTreeMap<String, std::collections::BTreeMap<String, u64>>,
+    /// Queries the last count round took — what a facet costs (F4).
+    facet_queries: usize,
+    /// Bumped per count round; an older round's answers are dropped.
+    facet_generation: u64,
+    /// The free text the search field applied (point 67), or empty.
+    search_text: String,
 }
 
 impl GridRuntime {
@@ -218,11 +245,29 @@ fn fresh_runtime(host: &HtmlElement) -> GridRuntime {
         raf_pending: false,
         page: 0,
         generation: 0,
+        grouping: grouping_of(host).ok().flatten(),
+        groups_filter: None,
+        aggregate_choice: Default::default(),
+        filter_row: true,
+        facets: Vec::new(),
+        facet_domain: Default::default(),
+        facet_counts: Default::default(),
+        facet_queries: 0,
+        facet_generation: 0,
+        search_text: String::new(),
     }
 }
 
-/// Resolves the `--grid-row-height` custom property on the host.
+/// Resolves the `--og-row-height` custom property on the host.
 ///
+/// Whether this grid shows the selection column (point 61).
+///
+/// A boolean attribute: present means yes, whatever its value — the HTML rule
+/// for boolean attributes, so `selection` and `selection=""` mean the same.
+fn shows_selection(host: &HtmlElement) -> bool {
+    host.has_attribute(grid::SELECTION_ATTRIBUTE)
+}
+
 /// Reads the host's computed style (the shadow stylesheet seeds the property
 /// with the default, a document/inline rule on the host overrides it and the
 /// value inherits into the shadow tree) and parses a `<number>px` value. An
@@ -249,6 +294,23 @@ fn reset_runtime(host: &HtmlElement) {
         runtime.pending_offset = None;
         runtime.raf_pending = false;
         runtime.generation = 0;
+        // A rebuild (columns, texts, presentation) is not a reason to close
+        // every group the reader opened: the same grouping keeps its expanded
+        // set, and only its counts are asked for again.
+        let keep = matches!(
+            (&runtime.grouping, &fresh.grouping),
+            (Some(old), Some(new)) if old.by() == new.by()
+        );
+        if keep {
+            if let Some(grouping) = runtime.grouping.as_mut() {
+                grouping.invalidate();
+            }
+        } else {
+            runtime.grouping = fresh.grouping;
+        }
+        runtime.groups_filter = None;
+        // `filter_row` and `aggregate_choice` are the reader's, not the
+        // skeleton's: a rebuild keeps them, like it keeps the column layout.
     }
 }
 
@@ -264,6 +326,11 @@ fn on_connected(host: HtmlElement) {
     // Re-resolve the row height on every (re)connect: the shadow stylesheet (and
     // any host override) is in place by now.
     runtime.borrow_mut().row_height = resolve_row_height(&host);
+    // A `group-by` in the markup is read before anything else happens; one the
+    // grid refuses is said with the first result, and the grid runs ungrouped.
+    if let Err(message) = grouping_of(&host) {
+        runtime.borrow_mut().state.set_notice(message);
+    }
     ensure_skeleton(&host);
     render(&host, false);
     run_query(&host, QueryKind::Data, false);
@@ -357,7 +424,50 @@ fn on_attribute_changed(
             }
             run_query(&host, QueryKind::Data, false);
         }
-        DATASOURCE_ATTRIBUTE | COLUMNS_ATTRIBUTE | WINDOW_SIZE_ATTRIBUTE | MODE_ATTRIBUTE => {
+        grid::DENSITY_ATTRIBUTE => {
+            // A density changes the row height, and the row height is the
+            // virtualization contract: the sizer's height, every row's
+            // `translateY` and the window the provider is asked for are all
+            // derived from it. Resolving it once at connect is therefore not
+            // enough — without this the sizer keeps the old total height and
+            // the rows sit at offsets that no longer match their slots.
+            if applying_view() {
+                // `write_view` sets the density on its way to setting
+                // everything else and owns the single query that follows.
+                return;
+            }
+            let Some(runtime) = runtime(&host) else {
+                return;
+            };
+            let height = resolve_row_height(&host);
+            {
+                let mut runtime = runtime.borrow_mut();
+                if runtime.row_height == height {
+                    return;
+                }
+                runtime.row_height = height;
+            }
+            // The viewport now holds a different number of rows, so the window
+            // is re-asked for rather than re-drawn at the old size.
+            sync_page_window(&host, &runtime);
+            render(&host, false);
+            run_query(&host, QueryKind::Data, false);
+            dispatch_view(&host);
+        }
+        // `write_view` sets it on its way and owns the single query after.
+        grid::GROUP_BY_ATTRIBUTE if applying_view() => {}
+        grid::GROUP_BY_ATTRIBUTE => regroup(&host),
+        // The selection column is part of the one-time skeleton, so switching
+        // it means a new skeleton — the same as changing the columns.
+        grid::SELECTION_ATTRIBUTE
+        | grid::COLUMN_MENU_ATTRIBUTE
+        | grid::TOOLBAR_ATTRIBUTE
+        | grid::FACETS_ATTRIBUTE
+        | grid::SEARCH_ATTRIBUTE
+        | DATASOURCE_ATTRIBUTE
+        | COLUMNS_ATTRIBUTE
+        | WINDOW_SIZE_ATTRIBUTE
+        | MODE_ATTRIBUTE => {
             let Some(root) = host.shadow_root() else {
                 return;
             };
@@ -407,11 +517,19 @@ fn ensure_skeleton(host: &HtmlElement) {
     let view = grid::build_grid(
         &mut buffer,
         &mut nodes,
-        label.as_deref(),
-        &schema,
-        pool,
-        &texts(host),
-        &declared,
+        &GridSkeleton {
+            label: label.as_deref(),
+            schema: &schema,
+            pool,
+            texts: &texts(host),
+            declared: &declared,
+            presentation: &presentation::styles(host),
+            selection: shows_selection(host),
+            column_menu: host.has_attribute(grid::COLUMN_MENU_ATTRIBUTE),
+            toolbar: host.has_attribute(grid::TOOLBAR_ATTRIBUTE),
+            facets: host.has_attribute(grid::FACETS_ATTRIBUTE),
+            search: host.has_attribute(grid::SEARCH_ATTRIBUTE),
+        },
     );
     let root_node: Node = root.clone().unchecked_into();
     let mut dom = Dom::new(WebRenderer::from_document(document), root_node);
@@ -489,6 +607,7 @@ fn render(host: &HtmlElement, focus_after: bool) {
             &texts(host),
             &Formatter::new(&formats(host), borrowed.state.schema()),
             paging,
+            borrowed.grouping.as_ref(),
         );
         if let Some(dom) = borrowed.dom.as_mut() {
             dom.apply_buffer(&buffer);
@@ -498,7 +617,9 @@ fn render(host: &HtmlElement, focus_after: bool) {
     if let Some(root) = host.shadow_root() {
         let schema = runtime.borrow().state.schema().clone();
         fix_operator_choices(&root, &schema);
+        fix_presentation(&root, &schema, &presentation::styles(host));
     }
+    sync_chrome(host);
 
     if focus_after {
         focus_active(host);
@@ -559,18 +680,37 @@ pub(crate) fn run_query(host: &HtmlElement, kind: QueryKind, focus: bool) {
     let Some(grid_runtime) = runtime(host) else {
         return;
     };
+    if grid_runtime.borrow().grouping.is_some() {
+        run_grouped(host, &grid_runtime, kind, focus);
+        return;
+    }
     let pool = pool_of(host);
     sync_page_window(host, &grid_runtime);
     let pool =
         grid::parse_page_size(host.get_attribute(PAGE_SIZE_ATTRIBUTE).as_deref()).unwrap_or(pool);
 
-    let (sorts, filter, offset, generation) = {
+    // Into a local first: in the `match` scrutinee the `borrow()` would live
+    // for the whole expression, and the `borrow_mut()` in the error arm would
+    // panic — a panic in an event handler is a silently dead key. (Found by
+    // the facet test of point 66: an invalid bound said nothing at all.)
+    let effective = effective_filter(host, &grid_runtime.borrow(), None);
+    let filter = match effective {
+        Ok(filter) => filter,
+        Err(message) => {
+            grid_runtime
+                .borrow_mut()
+                .state
+                .set_status(GridStatus::Error(message));
+            render(host, false);
+            return;
+        }
+    };
+    let (sorts, offset, generation) = {
         let mut runtime = grid_runtime.borrow_mut();
         let generation = runtime.generation + 1;
         runtime.generation = generation;
         (
             runtime.state.sort_keys(),
-            runtime.state.filter().cloned(),
             runtime.state.window().offset,
             generation,
         )
@@ -586,6 +726,9 @@ pub(crate) fn run_query(host: &HtmlElement, kind: QueryKind, focus: bool) {
     let query = grid::query_json(&source, &columns, &sorts, filter.as_ref(), offset, pool);
     let mode = host.get_attribute(MODE_ATTRIBUTE).unwrap_or_default();
     let promise = provider.execute(&query, &mode);
+    if kind == QueryKind::Data {
+        refresh_facets(host);
+    }
 
     let host = host.clone();
     spawn_local(async move {
@@ -633,6 +776,12 @@ fn settle(
             }
         }
     }
+    // The first result brings the real schema, and a `set_columns` made before
+    // the provider was attached has only met the display schema so far — where
+    // every column is `Utf8` and `sum` on a number would read as a sum on text
+    // (point 60). Re-checking here is cheap and terminates: it only rebuilds
+    // when the checked presentation actually changed.
+    recolumn(host);
     render(host, focus);
 }
 
@@ -697,6 +846,15 @@ fn set_tabindex(root: &ShadowRoot, active: ActiveCell, value: &str) {
 /// [`grid::patch_grid`]).
 fn selector(active: ActiveCell) -> String {
     match active {
+        // The selection column is addressed by `data-select`, not by a
+        // `data-col` of its own: `data-col` means *schema column* everywhere
+        // else, and the selection column is not one (point 61).
+        // The cell is the target, the mark inside it is the widget that takes
+        // the focus — a `columnheader` may not be a checkbox (point 61).
+        ActiveCell::SelectAll => "[data-select=\"all\"] > [part=\"select-mark\"]".to_owned(),
+        ActiveCell::Select { row } => {
+            format!("tr:has(td[data-row=\"{row}\"]) > td[data-select=\"row\"]")
+        }
         ActiveCell::Header { col } => format!("th[data-col=\"{col}\"]"),
         ActiveCell::Data(cell) => {
             format!("td[data-row=\"{}\"][data-col=\"{}\"]", cell.row, cell.col)
@@ -706,6 +864,25 @@ fn selector(active: ActiveCell) -> String {
 
 /// Reads the active cell back from a DOM cell (click or `focusin`).
 fn active_from_element(element: &Element) -> Option<ActiveCell> {
+    // `closest`, not the attribute: the focus lands on the checkbox *inside*
+    // the header cell, and a click can land on either.
+    if let Some(cell) = element.closest("[data-select]").ok().flatten()
+        && let Some(kind) = cell.get_attribute("data-select")
+    {
+        let element = &cell;
+        return match kind.as_str() {
+            "all" => Some(ActiveCell::SelectAll),
+            "row" => element
+                .closest("tr")
+                .ok()
+                .flatten()
+                .and_then(|row| row.query_selector("td[data-row]").ok().flatten())
+                .and_then(|cell| cell.get_attribute("data-row"))
+                .and_then(|row| row.parse().ok())
+                .map(|row| ActiveCell::Select { row }),
+            _ => None,
+        };
+    }
     let col: usize = element.get_attribute("data-col")?.parse().ok()?;
     match element.tag_name().to_ascii_lowercase().as_str() {
         "th" => Some(ActiveCell::Header { col }),
@@ -733,6 +910,9 @@ fn add_listeners(root: &ShadowRoot) {
     // next frame (point 51).
     let change = Closure::<dyn FnMut(Event)>::new(on_filter_change).into_js_value();
     let _ = root.add_event_listener_with_callback("change", change.unchecked_ref());
+    // The search field follows the typing: its hint and its suggestions (67).
+    let input = Closure::<dyn FnMut(Event)>::new(on_search_input).into_js_value();
+    let _ = root.add_event_listener_with_callback("input", input.unchecked_ref());
     // Scroll does not bubble, but a capture listener on the shadow root sees the
     // viewport's scroll events.
     let scroll = Closure::<dyn FnMut(Event)>::new(on_scroll).into_js_value();
@@ -795,11 +975,20 @@ fn on_key_down(event: KeyboardEvent) {
     }
     // The paging buttons sit outside the grid table and keep their **native**
     // keyboard activation: the grid's matrix below would call
-    // `prevent_default()` on `Enter` and swallow the click (point 38).
+    // `prevent_default()` on `Enter` and swallow the click (point 38). The
+    // toolbar and the chips of point 65 are the same kind of control, and hit
+    // the same trap the first time they were tried.
     if let Some(target) = event
         .target()
         .and_then(|node| node.dyn_into::<Element>().ok())
-        && target.closest("[part=\"pager\"]").ok().flatten().is_some()
+        && target
+            .closest(
+                "[part=\"pager\"], [part=\"toolbar\"], [part=\"chips\"], [part=\"facets\"], \
+                 [part=\"empty\"]",
+            )
+            .ok()
+            .flatten()
+            .is_some()
     {
         return;
     }
@@ -811,6 +1000,30 @@ fn on_key_down(event: KeyboardEvent) {
         return;
     };
     let viewport_rows = viewport_rows(&runtime);
+
+    // In the search field the keys are the combobox's (point 67).
+    if let Some(target) = event
+        .target()
+        .and_then(|node| node.dyn_into::<Element>().ok())
+        && target.closest("[part=\"search\"]").ok().flatten().is_some()
+    {
+        on_search_key(&host, &event, &target);
+        return;
+    }
+
+    // Inside an open column menu the keys are the menu's (point 64).
+    if let Some(target) = event
+        .target()
+        .and_then(|node| node.dyn_into::<Element>().ok())
+        && target
+            .closest("[part=\"column-menu\"]")
+            .ok()
+            .flatten()
+            .is_some()
+    {
+        on_menu_key(&host, &event, &target);
+        return;
+    }
 
     // Keys inside an open editor belong to the editor (point 37): `Enter`
     // commits, `Escape` discards, everything else is ordinary typing. The grid
@@ -831,6 +1044,20 @@ fn on_key_down(event: KeyboardEvent) {
             }
             _ => {}
         }
+        return;
+    }
+
+    // The column menu opens from its header cell (point 64): `Alt`+`↓`, the
+    // way a menu button or a combobox opens, and the two context-menu keys.
+    let opens_menu = (event.alt_key() && event.key() == "ArrowDown")
+        || (event.shift_key() && event.key() == "F10")
+        || event.key() == "ContextMenu";
+    if opens_menu
+        && host.has_attribute(grid::COLUMN_MENU_ATTRIBUTE)
+        && let ActiveCell::Header { col } = runtime.borrow().active
+    {
+        event.prevent_default();
+        open_column_menu(&host, col);
         return;
     }
 
@@ -855,6 +1082,36 @@ fn on_key_down(event: KeyboardEvent) {
         return;
     }
 
+    // A group header (point 62): `Enter` and `Space` open and close it, and on
+    // its first cell `→` opens and `←` closes — the treegrid keys (F2). `→` on
+    // an open group and `←` on a closed one fall through to moving, so nothing
+    // is a dead end.
+    if let Some((position, expanded)) = active_group(&host) {
+        let on_first = matches!(active, ActiveCell::Data(cell) if cell.col == 0);
+        let toggles = match event.key().as_str() {
+            "Enter" | " " => true,
+            "ArrowRight" => on_first && !expanded,
+            "ArrowLeft" => on_first && expanded,
+            _ => false,
+        };
+        if toggles && !event.ctrl_key() && !event.meta_key() {
+            event.prevent_default();
+            toggle_group(&host, position);
+            return;
+        }
+    }
+    // Grouped, a position is a display position: a selection would name
+    // headers as well as rows and move on every toggle, and an edit would be
+    // reported against a row number the page cannot map to anything. Both are
+    // off while `group-by` is set — recorded as an open question of point 62.
+    if is_grouped(&host)
+        && (matches!(event.key().as_str(), "Enter" | " ")
+            || (event.key().eq_ignore_ascii_case("a") && (event.ctrl_key() || event.meta_key())))
+    {
+        event.prevent_default();
+        return;
+    }
+
     // `Ctrl`/`Cmd`+`A` selects every matching row, not only the loaded page.
     if event.key().eq_ignore_ascii_case("a") && (event.ctrl_key() || event.meta_key()) {
         event.prevent_default();
@@ -869,6 +1126,11 @@ fn on_key_down(event: KeyboardEvent) {
             // On a header `Enter` sorts, as it always has; on a data cell it
             // opens the editor — the meaning point 16 left free for this.
             match active {
+                // The selection column's two cells do the same on `Enter` as
+                // on `Space`: there is nothing else they could mean, and a key
+                // that does nothing on a focusable cell is a dead end.
+                ActiveCell::SelectAll => toggle_all(&host, &runtime),
+                ActiveCell::Select { row } => toggle_row(&host, &runtime, row, false),
                 ActiveCell::Header { .. } => activate_header(&host, &runtime, event.shift_key()),
                 ActiveCell::Data(cell) => begin_edit(&host, cell),
             }
@@ -878,19 +1140,13 @@ fn on_key_down(event: KeyboardEvent) {
             // On a header `Space` sorts, as it always has; on a data cell it
             // now selects the row (point 35). `Shift` extends from the anchor.
             match active {
+                ActiveCell::SelectAll => toggle_all(&host, &runtime),
+                ActiveCell::Select { row } => toggle_row(&host, &runtime, row, event.shift_key()),
                 ActiveCell::Header { .. } => {
                     activate_header(&host, &runtime, event.shift_key());
                 }
                 ActiveCell::Data(cell) => {
-                    let patches = {
-                        let mut runtime = runtime.borrow_mut();
-                        if event.shift_key() {
-                            runtime.state.extend_selection(cell.row)
-                        } else {
-                            runtime.state.toggle_selection(cell.row)
-                        }
-                    };
-                    settle_selection(&host, &runtime, patches);
+                    toggle_row(&host, &runtime, cell.row, event.shift_key());
                 }
             }
         }
@@ -918,6 +1174,43 @@ fn on_key_down(event: KeyboardEvent) {
     }
 }
 
+/// Selects or deselects one row; `extend` continues a range from the anchor.
+fn toggle_row(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>, row: u64, extend: bool) {
+    let patches = {
+        let mut borrowed = runtime.borrow_mut();
+        if extend {
+            borrowed.state.extend_selection(row)
+        } else {
+            borrowed.state.toggle_selection(row)
+        }
+    };
+    settle_selection(host, runtime, patches);
+}
+
+/// Selects **every matching row**, or clears the selection if all are already
+/// selected.
+///
+/// The same promise `Ctrl`+`A` has made since point 35, now with a control
+/// attached: a header that said "all" about the loaded window would be a
+/// different and smaller promise, and the grid holds one window at a time.
+fn toggle_all(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>) {
+    let (patches, count) = {
+        let mut borrowed = runtime.borrow_mut();
+        let total = borrowed.state.total_count();
+        let all = borrowed.state.selection().len() as u64 >= total && total > 0;
+        let patches = if all {
+            borrowed.state.clear_selection()
+        } else {
+            borrowed.state.select_all()
+        };
+        (patches, if all { 0 } else { total })
+    };
+    settle_selection(host, runtime, patches);
+    // Said in words, because the change is off screen: selecting 100 000 rows
+    // looks, on screen, exactly like selecting the eight that are visible.
+    announce(host, &texts(host).selected_all(count));
+}
+
 /// Moves focus for one navigation key, reloading the window only when the target
 /// leaves it (the window follows the focus).
 fn move_with_key(
@@ -943,7 +1236,14 @@ fn move_with_key(
             pool,
         )
     };
-    let next = grid::move_active(active, key, ncols, total_count, viewport_rows);
+    let next = grid::move_active(
+        active,
+        key,
+        ncols,
+        total_count,
+        viewport_rows,
+        shows_selection(host),
+    );
     let reload = grid::requested_window(key, next, window, total_count, pool);
 
     runtime.borrow_mut().set_active(next);
@@ -990,6 +1290,7 @@ fn resize_column(host: &HtmlElement, col: usize, step: i32) {
         .resize(&name, step, current);
     apply_widths(host);
     announce(host, &texts(host).column_width(&name, width));
+    dispatch_view(host);
 }
 
 /// Moves a column one place and re-runs the query.
@@ -1025,6 +1326,7 @@ fn move_column(host: &HtmlElement, col: usize, by: i32) {
         host,
         &texts(host).column_moved(&name, position as u64 + 1, order.len() as u64),
     );
+    dispatch_view(host);
 }
 
 /// Shows or hides a column and re-runs the query.
@@ -1042,6 +1344,7 @@ fn set_column_hidden(host: &HtmlElement, name: &str, hidden: bool) {
         host,
         &texts(host).column_visibility(name, hidden, visible, declared),
     );
+    dispatch_view(host);
 }
 
 /// Rebuilds the skeleton because the set or order of columns changed.
@@ -1090,7 +1393,12 @@ fn apply_widths(host: &HtmlElement) {
         let Ok(Some(cell)) = root.query_selector(&format!("th[data-col=\"{col}\"]")) else {
             continue;
         };
-        match layout.width(name) {
+        // The reader's resize leads; the configuration is only where a column
+        // starts (point 60, the same attribute/value relationship as the view).
+        match layout
+            .width(name)
+            .or_else(|| presentation::styles(host).width(name))
+        {
             Some(width) => {
                 let _ = cell.set_attribute("style", &format!("width: {width}px;"));
             }
@@ -1563,6 +1871,7 @@ fn activate_header(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>, multi
     // selection change.
     announce_if_cleared(host, runtime);
     run_query(host, QueryKind::Data, true);
+    dispatch_view(host);
 }
 
 /// Whether `element` sits inside the filter row (and not in the grid table).
@@ -1648,10 +1957,21 @@ fn apply_filters(host: &HtmlElement) {
     // A filter changes which rows exist, so the selection is gone (point 35).
     announce_if_cleared(host, &runtime);
     run_query(host, QueryKind::Data, false);
+    dispatch_view(host);
 }
 
 /// An operator control changed: bring its value field in line.
 fn on_filter_change(event: Event) {
+    if let Some(target) = event
+        .target()
+        .and_then(|node| node.dyn_into::<Element>().ok())
+        && target.closest("[part=\"facets\"]").ok().flatten().is_some()
+        && let Some(root) = current_shadow_root(&event)
+        && let Ok(host) = root.host().dyn_into::<HtmlElement>()
+    {
+        on_facet_change(&host, &target);
+        return;
+    }
     let Some(root) = current_shadow_root(&event) else {
         return;
     };
@@ -1683,6 +2003,50 @@ fn on_filter_change(event: Event) {
 /// selection can be one the column does not offer — `contains` on a number.
 /// Patches can disable that option, but the *selection* is a DOM property, so it
 /// is corrected here, after the frame landed.
+/// Writes the presentation markers of point 60 onto the header and the pool.
+///
+/// The same reason `fix_operator_choices` exists next to it: the skeleton is
+/// built at connect, from the **display schema** of point 23 where every column
+/// is `Utf8` — and the real types only arrive with the first result. An
+/// alignment derived at build time would say "text, so left" about every
+/// column, including the numbers, and would stay wrong for the life of the
+/// grid.
+///
+/// Written per result rather than per frame: it is a handful of attributes per
+/// column, and the browser ignores a `setAttribute` that changes nothing.
+fn fix_presentation(
+    root: &ShadowRoot,
+    schema: &opengrid_types::Schema,
+    styles: &presentation::ColumnStyles,
+) {
+    for (col, field) in schema.fields().iter().enumerate() {
+        let markers = styles.markers(field.name.as_str(), field.data_type);
+        let Ok(cells) = root.query_selector_all(&format!("[data-col=\"{col}\"]")) else {
+            continue;
+        };
+        for index in 0..cells.length() {
+            let Some(cell) = cells
+                .item(index)
+                .and_then(|node| node.dyn_into::<Element>().ok())
+            else {
+                continue;
+            };
+            // Only the table's own cells: the filter row shares `data-col`.
+            if !matches!(cell.tag_name().as_str(), "TD" | "TH") {
+                continue;
+            }
+            for name in ["data-mono", "data-emphasis", "data-muted"] {
+                if !markers.iter().any(|(marker, _)| *marker == name) {
+                    let _ = cell.remove_attribute(name);
+                }
+            }
+            for (name, value) in &markers {
+                let _ = cell.set_attribute(name, value);
+            }
+        }
+    }
+}
+
 fn fix_operator_choices(root: &ShadowRoot, schema: &opengrid_types::Schema) {
     for (col, field) in schema.fields().iter().enumerate() {
         let Ok(Some(node)) = root.query_selector(&format!("select[data-col=\"{col}\"]")) else {
@@ -1741,6 +2105,158 @@ fn on_filter_clear(event: Event) {
         && on_pager_click(&host, &target)
     {
         return;
+    }
+
+    // The empty state's reset (point 68): the same as "Remove all" (65), not
+    // a second way with its own behaviour.
+    if target
+        .closest("[data-empty-reset]")
+        .ok()
+        .flatten()
+        .is_some()
+        && let Ok(host) = root.host().dyn_into::<HtmlElement>()
+    {
+        clear_chips(&host);
+        // The button is gone with the rows back; the focus goes to the top of
+        // the grid rather than to the document.
+        if let Some(runtime) = runtime(&host)
+            && root
+                .query_selector("[data-toolbar=\"filter-row\"]")
+                .ok()
+                .flatten()
+                .is_none()
+        {
+            runtime
+                .borrow_mut()
+                .set_active(ActiveCell::Header { col: 0 });
+            focus_active(&host);
+        }
+        return;
+    }
+
+    // A suggestion of the search field (point 67).
+    if let Ok(Some(option)) = target.closest("[part=\"search-list\"] [role=\"option\"]")
+        && let Ok(host) = root.host().dyn_into::<HtmlElement>()
+    {
+        take_suggestion(&host, &option);
+        return;
+    }
+
+    // The facet sidebar (point 66): its switch, its pills, its reset.
+    if let Ok(host) = root.host().dyn_into::<HtmlElement>() {
+        if target
+            .closest("[data-toolbar=\"facets\"]")
+            .ok()
+            .flatten()
+            .is_some()
+        {
+            let _ = if host.has_attribute(grid::FACETS_ATTRIBUTE) {
+                host.remove_attribute(grid::FACETS_ATTRIBUTE)
+            } else {
+                host.set_attribute(grid::FACETS_ATTRIBUTE, "")
+            };
+            return;
+        }
+        if let Ok(Some(pill)) = target.closest("[part=\"facet-pill\"]") {
+            toggle_facet_value(&host, &pill);
+            return;
+        }
+        if target
+            .closest("[data-facets-reset]")
+            .ok()
+            .flatten()
+            .is_some()
+        {
+            reset_facets(&host);
+            return;
+        }
+    }
+
+    // The toolbar and the chips (point 65).
+    if let Ok(host) = root.host().dyn_into::<HtmlElement>() {
+        if target
+            .closest("[data-toolbar=\"filter-row\"]")
+            .ok()
+            .flatten()
+            .is_some()
+        {
+            toggle_filter_row(&host);
+            return;
+        }
+        if let Ok(Some(button)) = target.closest("[data-density]")
+            && let Some(density) = button.get_attribute("data-density")
+        {
+            let _ = host.set_attribute(grid::DENSITY_ATTRIBUTE, &density);
+            return;
+        }
+        if let Ok(Some(button)) = target.closest("[data-chip-remove]") {
+            remove_chip(&host, &button);
+            return;
+        }
+        if target
+            .closest("[data-chips-clear]")
+            .ok()
+            .flatten()
+            .is_some()
+        {
+            clear_chips(&host);
+            return;
+        }
+    }
+
+    // The column menu (point 64): its trigger opens it, its entries act.
+    if let Ok(host) = root.host().dyn_into::<HtmlElement>() {
+        if let Ok(Some(item)) = target.closest("[part=\"column-menu\"] [data-action]") {
+            activate_menu_item(&host, &item);
+            return;
+        }
+        if let Ok(Some(trigger)) = target.closest("[part=\"column-menu-button\"]")
+            && let Some(col) = trigger
+                .closest("th")
+                .ok()
+                .flatten()
+                .and_then(|th| th.get_attribute("data-col"))
+                .and_then(|col| col.parse::<usize>().ok())
+        {
+            open_column_menu(&host, col);
+            return;
+        }
+    }
+
+    // A group row (point 62): a click anywhere on it opens or closes it — the
+    // pointer path to what `Enter` does.
+    if let Ok(Some(row)) = target.closest("tr[data-kind=\"group\"]")
+        && let Ok(host) = root.host().dyn_into::<HtmlElement>()
+        && let Some(position) = row
+            .query_selector("td[data-row]")
+            .ok()
+            .flatten()
+            .and_then(|cell| cell.get_attribute("data-row"))
+            .and_then(|row| row.parse::<u64>().ok())
+    {
+        toggle_group(&host, position);
+        return;
+    }
+
+    // The selection column (point 61). The mouse path only: the keys already
+    // reach it through the grid matrix, and a `click` here would otherwise fire
+    // a second time for the keyboard activation.
+    if let Ok(Some(cell)) = target.closest("[data-select]")
+        && let Ok(host) = root.host().dyn_into::<HtmlElement>()
+        && let Some(runtime) = runtime(&host)
+        && !is_grouped(&host)
+    {
+        match active_from_element(&cell) {
+            Some(ActiveCell::SelectAll) => {
+                toggle_all(&host, &runtime);
+                return;
+            }
+            Some(ActiveCell::Select { row }) => {
+                toggle_row(&host, &runtime, row, false);
+                return;
+            }
+            _ => {}
+        }
     }
     if target
         .closest("[data-filter-clear]")
@@ -1956,4 +2472,2450 @@ fn update_label(root: &ShadowRoot, label: Option<&str>) {
             let _ = table.remove_attribute(ARIA_LABEL_ATTRIBUTE);
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// The view as a value (point 59)
+// ---------------------------------------------------------------------------
+
+thread_local! {
+    /// True while [`write_view`] is applying a view.
+    ///
+    /// The attribute callback of `density` runs its own query, and a view sets
+    /// the density on its way to setting everything else. Without this guard a
+    /// restore would fire two queries and announce two results — the second one
+    /// overwriting the first before anyone heard it, which is exactly the class
+    /// of bug `announcements.spec.js` exists to catch.
+    static APPLYING_VIEW: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Whether a view is being applied right now.
+fn applying_view() -> bool {
+    APPLYING_VIEW.with(std::cell::Cell::get)
+}
+
+/// Gathers the view from the four places it actually lives.
+pub(crate) fn current_view(host: &HtmlElement) -> Option<GridView> {
+    let runtime = runtime(host)?;
+    let root = host.shadow_root();
+    let columns = columns_of(host);
+
+    let sort = runtime
+        .borrow()
+        .state
+        .sort_keys()
+        .into_iter()
+        .map(|(field, direction)| (field, direction.to_owned()))
+        .collect();
+
+    // Only the columns that carry a filter: a view is what the reader chose,
+    // and an empty operator on every column is not a choice.
+    let filters = root
+        .as_ref()
+        .map(|root| read_filter_entries(root, &columns))
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|entry| !grid::takes_value(entry.op.as_str()) || !entry.value.trim().is_empty())
+        .collect();
+
+    let layout = columns::layout(host).borrow().clone();
+    let density = grid::density_of(host.get_attribute(grid::DENSITY_ATTRIBUTE).as_deref())
+        .0
+        .to_owned();
+
+    let (group, expanded) = {
+        let borrowed = runtime.borrow();
+        match borrowed.grouping.as_ref() {
+            Some(grouping) => (grouping.by().to_vec(), grouping.expanded()),
+            None => (Vec::new(), Vec::new()),
+        }
+    };
+
+    let aggregates = runtime
+        .borrow()
+        .aggregate_choice
+        .iter()
+        .map(|(column, function)| (column.clone(), function.as_str().to_owned()))
+        .collect();
+
+    let filter_row = runtime.borrow().filter_row;
+    let facets = crate::facets::to_json(&runtime.borrow().facets);
+
+    Some(GridView {
+        sort,
+        filters,
+        columns: layout,
+        density,
+        group,
+        expanded,
+        aggregates,
+        filter_row,
+        facets,
+    })
+}
+
+/// [`crate::element::get_view`] — the view as a JS object.
+pub(crate) fn read_view(host: &HtmlElement) -> JsValue {
+    let Some(view) = current_view(host) else {
+        return JsValue::NULL;
+    };
+    to_js(&view.to_json())
+}
+
+/// A `serde_json::Value` as a real JS value, through `JSON.parse`.
+///
+/// Not `serde-wasm-bindgen`: the crate has `serde_json` already and this is the
+/// only place that needs the bridge — a dependency for one conversion is not
+/// one this project takes.
+fn to_js(value: &serde_json::Value) -> JsValue {
+    js_sys::JSON::parse(&value.to_string()).unwrap_or(JsValue::NULL)
+}
+
+/// [`crate::element::set_view`] — applies a whole view in one query.
+pub(crate) fn write_view(host: &HtmlElement, value: &JsValue) {
+    let Some(runtime) = runtime(host) else {
+        return;
+    };
+    let Ok(text) = js_sys::JSON::stringify(value).map(String::from) else {
+        return;
+    };
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return;
+    };
+
+    let declared = grid::parse_columns(host.get_attribute(COLUMNS_ATTRIBUTE).as_deref());
+    let view = match GridView::from_json(&json, &declared) {
+        Ok(view) => view,
+        Err(problems) => {
+            // Named, not swallowed: a view saved against another data source
+            // would otherwise leave a grid that looks restored and is not.
+            let message = problems
+                .iter()
+                .map(|problem| format!("{}: {}", problem.field, problem.reason))
+                .collect::<Vec<_>>()
+                .join(" ");
+            runtime
+                .borrow_mut()
+                .state
+                .set_status(GridStatus::Error(message));
+            render(host, false);
+            return;
+        }
+    };
+
+    if current_view(host).as_ref() == Some(&view) {
+        // Setting the view it already has is not a change, and must not cost a
+        // query or an announcement.
+        return;
+    }
+
+    APPLYING_VIEW.with(|flag| flag.set(true));
+
+    // Density first: it only changes geometry, and the rebuild below wants the
+    // resolved row height. The attribute callback sees the guard and does not
+    // run a query of its own.
+    if host.get_attribute(grid::DENSITY_ATTRIBUTE).as_deref() != Some(view.density.as_str()) {
+        let _ = host.set_attribute(grid::DENSITY_ATTRIBUTE, &view.density);
+    }
+    runtime.borrow_mut().row_height = resolve_row_height(host);
+
+    // The grouping, the same way as the density: the attribute is set, its
+    // callback sees the guard and does not query on its own.
+    let group_by = view.group.join(",");
+    if host
+        .get_attribute(grid::GROUP_BY_ATTRIBUTE)
+        .unwrap_or_default()
+        != group_by
+    {
+        if group_by.is_empty() {
+            let _ = host.remove_attribute(grid::GROUP_BY_ATTRIBUTE);
+        } else {
+            let _ = host.set_attribute(grid::GROUP_BY_ATTRIBUTE, &group_by);
+        }
+    }
+
+    // The column layout decides which query is sent, so it is set before the
+    // skeleton is rebuilt around it.
+    columns::update(host, |layout| {
+        *layout = view.columns.clone();
+        true
+    });
+
+    // A rebuild, because the filter row is part of the one-time skeleton and a
+    // different column set means a different filter row. It ends in a query,
+    // which is the one query this whole call is allowed.
+    //
+    // The focus comes back only if it was in the grid: a page that applies a
+    // view from its own control — a tab, a menu — keeps the focus there. Taking
+    // it would break that control's keyboard pattern (point 69).
+    let had_focus = host
+        .shadow_root()
+        .is_some_and(|root| root.active_element().is_some());
+    if let Some(root) = host.shadow_root() {
+        clear_root(&root);
+    }
+    reset_runtime(host);
+    ensure_skeleton(host);
+    {
+        let mut borrowed = runtime.borrow_mut();
+        borrowed.grouping = grouping_of(host).ok().flatten();
+        borrowed.groups_filter = None;
+        if let Some(grouping) = borrowed.grouping.as_mut() {
+            grouping.set_expanded(&view.expanded);
+        }
+        borrowed.filter_row = view.filter_row;
+        // The search is not part of a view — the prototype's views leave it out
+        // too — and a restored view with an old search still applied would show
+        // rows the view never named.
+        borrowed.search_text.clear();
+        borrowed.facets = view
+            .facets
+            .as_object()
+            .map(|facets| {
+                facets
+                    .iter()
+                    .filter_map(|(column, selection)| {
+                        crate::facets::Selection::from_json(selection)
+                            .map(|selection| (column.clone(), selection))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        borrowed.aggregate_choice = view
+            .aggregates
+            .iter()
+            .filter_map(|(column, function)| {
+                presentation::aggregate_from(function).map(|function| (column.clone(), function))
+            })
+            .collect();
+    }
+
+    // Now the DOM exists again: write the filters into it and the sort into the
+    // state, then render and ask once.
+    let visible = columns_of(host);
+    if let Some(root) = host.shadow_root() {
+        let entries: Vec<FilterEntry> = visible
+            .iter()
+            .map(|column| {
+                view.filters
+                    .iter()
+                    .find(|entry| &entry.column == column)
+                    .cloned()
+                    .unwrap_or(FilterEntry {
+                        column: column.clone(),
+                        op: grid::FilterOp::Cmp(CmpOp::Eq),
+                        value: String::new(),
+                    })
+            })
+            .collect();
+        write_filter_entries(&root, &entries);
+    }
+
+    {
+        let schema = runtime.borrow().state.schema().clone();
+        let entries: Vec<FilterEntry> = view.filters.clone();
+        let filter = grid::filter_expr(&entries, &schema).ok().flatten();
+        let mut borrowed = runtime.borrow_mut();
+        borrowed.state.set_filter(filter);
+        borrowed.state.set_sort(
+            view.sort
+                .iter()
+                .filter_map(|(field, direction)| {
+                    opengrid_types::FieldName::new(field)
+                        .ok()
+                        .map(|field| Sort {
+                            field,
+                            direction: if direction == "desc" {
+                                SortDirection::Desc
+                            } else {
+                                SortDirection::Asc
+                            },
+                            // The defaults are the query model's (S4: sorting is
+                            // binary), and a view has no business overriding them —
+                            // it records what the reader chose, and the reader
+                            // chooses a column and a direction.
+                            nulls: Default::default(),
+                            collation: Default::default(),
+                        })
+                })
+                .collect(),
+        );
+        // A view saved without a sort still pages under a total order (S6),
+        // the same fallback as clearing the last sort by hand.
+        borrowed.state.ensure_sorted();
+    }
+
+    APPLYING_VIEW.with(|flag| flag.set(false));
+
+    render(host, false);
+    run_query(host, QueryKind::Data, had_focus);
+    dispatch_view(host);
+}
+
+/// Fires `opengrid-view-change`, unless a view is being applied.
+///
+/// The same contract as the other two events (point 35): on the host, `bubbles`
+/// and `composed` — without `composed` it would not leave a shadow root the page
+/// wrapped the element in — and not `cancelable`, because it reports what has
+/// already happened.
+pub(crate) fn dispatch_view(host: &HtmlElement) {
+    let Some(view) = current_view(host) else {
+        return;
+    };
+    let detail = js_sys::Object::new();
+    let _ = js_sys::Reflect::set(&detail, &JsValue::from_str("view"), &to_js(&view.to_json()));
+
+    let init = web_sys::CustomEventInit::new();
+    init.set_bubbles(true);
+    init.set_composed(true);
+    init.set_cancelable(false);
+    init.set_detail(&detail);
+    if let Ok(event) = web_sys::CustomEvent::new_with_event_init_dict(VIEW_EVENT, &init) {
+        let _ = host.dispatch_event(&event);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Column presentation (point 60)
+// ---------------------------------------------------------------------------
+
+/// Checks the stored `set_columns` configuration against the current schema and
+/// rebuilds if it holds.
+///
+/// Called twice for the same configuration, and deliberately: once when the page
+/// sets it, and once when the first result brings the real schema. A page that
+/// configures before attaching a provider — which is the ordinary order, exactly
+/// as `set_texts` documents — would otherwise be checked against the display
+/// schema of point 23, where every column is `Utf8` and `sum` on a number would
+/// be refused for being a sum on text.
+pub(crate) fn recolumn(host: &HtmlElement) {
+    let Some(runtime) = runtime(host) else {
+        return;
+    };
+    let raw = presentation::raw(host);
+    if raw.is_empty() {
+        return;
+    }
+    let schema = runtime.borrow().state.schema().clone();
+    match presentation::validate(
+        &raw,
+        &schema,
+        &grid::parse_columns(host.get_attribute(COLUMNS_ATTRIBUTE).as_deref()),
+    ) {
+        Ok(checked) => {
+            let styles = presentation::ColumnStyles::new(checked);
+            if *presentation::styles(host) == styles {
+                return;
+            }
+            presentation::store(host, styles);
+            // The markers live in the one-time skeleton (a pool cell always
+            // shows the same column), so a new presentation is a new skeleton.
+            rebuild(host);
+        }
+        Err(problems) => {
+            let message = problems
+                .iter()
+                .map(|problem| format!("{}: {}", problem.column, problem.reason))
+                .collect::<Vec<_>>()
+                .join(" ");
+            runtime
+                .borrow_mut()
+                .state
+                .set_status(GridStatus::Error(message));
+            render(host, false);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Grouping (point 62)
+// ---------------------------------------------------------------------------
+
+/// The grouping the attributes ask for, or why it cannot be had.
+///
+/// `Ok(None)`: no `group-by`. `Err`: a sentence for the status line — more than
+/// two levels, a column the grid does not show, or paging, which grouping
+/// cannot live beside (paging excludes virtualization since point 38, and the
+/// group arithmetic presupposes it).
+fn grouping_of(host: &HtmlElement) -> Result<Option<Grouping>, String> {
+    let raw = host.get_attribute(grid::GROUP_BY_ATTRIBUTE);
+    let texts = texts(host);
+    let by = grouping::parse_group_by(raw.as_deref()).map_err(|all| texts.group_invalid(&all))?;
+    if by.is_empty() {
+        return Ok(None);
+    }
+    let shown = columns_of(host);
+    if let Some(missing) = by.iter().find(|name| !shown.contains(name)) {
+        return Err(texts.group_invalid(missing));
+    }
+    if host.has_attribute(PAGE_SIZE_ATTRIBUTE) {
+        return Err(format!(
+            "{} ({PAGE_SIZE_ATTRIBUTE})",
+            texts.group_invalid(&by.join(","))
+        ));
+    }
+    Ok(Some(Grouping::new(by)))
+}
+
+/// Whether the grid is grouped right now.
+fn is_grouped(host: &HtmlElement) -> bool {
+    runtime(host).is_some_and(|runtime| runtime.borrow().grouping.is_some())
+}
+
+/// Takes a new `group-by`: starts at the top, drops the selection, and says it
+/// when the grouping is refused — once, riding with the next result.
+fn regroup(host: &HtmlElement) {
+    let Some(runtime) = runtime(host) else {
+        return;
+    };
+    let pool = pool_of(host);
+    let grouping = grouping_of(host);
+    {
+        let mut borrowed = runtime.borrow_mut();
+        borrowed.grouping = grouping.clone().ok().flatten();
+        borrowed.groups_filter = None;
+        borrowed.state.set_window(Window::new(0, pool));
+        borrowed.active = ActiveCell::Header { col: 0 };
+        // Grouped, a position is a display position — a selection naming them
+        // would name headers as well as rows, and would move on every toggle.
+        borrowed.state.clear_selection();
+        if let Err(message) = &grouping {
+            borrowed.state.set_notice(message.clone());
+        }
+    }
+    let viewport = runtime.borrow().viewport.clone();
+    if let Some(viewport) = viewport {
+        viewport.set_scroll_top(0);
+    }
+    run_query(host, QueryKind::Data, false);
+    dispatch_view(host);
+}
+
+/// The aggregates the groups show, and what could not be had (point 63).
+///
+/// Per shown column: the reader's choice from the view, else what `set_columns`
+/// configured, else **nothing** — a default "sum every number" would sum the
+/// ids. A choice the column's type does not allow (a sum over text) is named,
+/// not tried: the view is checked against names when it is set, but types are
+/// only known once a result has come.
+fn effective_aggregates(
+    host: &HtmlElement,
+    schema: &opengrid_types::Schema,
+    choice: &std::collections::BTreeMap<String, presentation::Summary>,
+) -> (Vec<(String, presentation::Summary)>, Vec<String>) {
+    let configured = presentation::styles(host);
+    let mut chosen = Vec::new();
+    let mut refused = Vec::new();
+    for field in schema.fields() {
+        let name = field.name.as_str();
+        let Some(function) = choice
+            .get(name)
+            .copied()
+            .or_else(|| configured.get(name).and_then(|column| column.aggregate))
+        else {
+            continue;
+        };
+        if presentation::aggregates_for(field.data_type).contains(&function) {
+            chosen.push((name.to_owned(), function));
+        } else {
+            refused.push(format!(
+                "{name}: {} is not an aggregate for this type",
+                function.as_str()
+            ));
+        }
+    }
+    (chosen, refused)
+}
+
+/// Runs one query through the provider and reads its result.
+async fn ask(
+    provider: &Rc<dyn opengrid_web_core::provider::DataProvider>,
+    query: &str,
+    mode: &str,
+) -> Result<opengrid_datasource::QueryResult, String> {
+    match JsFuture::from(provider.execute(query, mode)).await {
+        Ok(value) => match value.as_string() {
+            Some(json) => grid::parse_result(&json),
+            None => Err("provider returned a non-string result".to_owned()),
+        },
+        Err(value) => Err(describe(&value)),
+    }
+}
+
+/// The grouped counterpart of [`run_query`]: several queries, one result.
+///
+/// 1. the level-1 groups with their row counts — only when they are not loaded
+///    yet or the filter changed;
+/// 2. the level-2 groups of every open level-1 group that has none yet;
+/// 3. the rows of the window, **one query per group it touches**, each filtered
+///    on the group key and paged with `offset`/`limit`.
+///
+/// The answers are assembled into one ordinary `QueryResult` whose rows are the
+/// window's display positions — group headers carry NULLs, which the renderer
+/// never shows — and whose `total_count` is the display list's length. From
+/// there it takes the same path as every other result: [`settle`], one render.
+fn run_grouped(
+    host: &HtmlElement,
+    grid_runtime: &Rc<RefCell<GridRuntime>>,
+    kind: QueryKind,
+    focus: bool,
+) {
+    let Some(provider) = provider(host) else {
+        return;
+    };
+    let Some(source) = host.get_attribute(DATASOURCE_ATTRIBUTE) else {
+        return;
+    };
+    let columns = columns_of(host);
+    let pool = pool_of(host);
+    let mode = host.get_attribute(MODE_ATTRIBUTE).unwrap_or_default();
+
+    let (mut sorts, filter, offset, generation, need_groups, choice) = {
+        let mut runtime = grid_runtime.borrow_mut();
+        let generation = runtime.generation + 1;
+        runtime.generation = generation;
+        // The filter row *and* the facets (point 66): a facet change makes the
+        // group counts stale exactly like a filter change does.
+        let filter = effective_filter(host, &runtime, None)
+            .unwrap_or_else(|_| runtime.state.filter().cloned());
+        let need_groups = runtime.groups_filter.as_ref() != Some(&filter)
+            || !runtime.grouping.as_ref().is_some_and(Grouping::is_loaded);
+        (
+            runtime.state.sort_keys(),
+            filter,
+            runtime.state.window().offset,
+            generation,
+            need_groups,
+            runtime.aggregate_choice.clone(),
+        )
+    };
+    // The rows inside a group are paged with `offset`, and paging needs a total
+    // order (S6).
+    if sorts.is_empty()
+        && let Some(first) = columns.first()
+    {
+        sorts.push((first.clone(), "asc"));
+    }
+    if kind == QueryKind::Data {
+        grid_runtime
+            .borrow_mut()
+            .state
+            .set_status(GridStatus::Loading);
+        render(host, false);
+        refresh_facets(host);
+    }
+
+    let host = host.clone();
+    let grid_runtime = grid_runtime.clone();
+    spawn_local(async move {
+        let stale = |runtime: &Rc<RefCell<GridRuntime>>| runtime.borrow().generation != generation;
+        let fail = |message: String| settle(&host, generation, Err(message), focus);
+
+        // The typed schema, when the groups are asked again: which aggregates
+        // a column allows depends on its type, and the display schema of
+        // point 23 calls every column text.
+        let mut typed: Option<opengrid_types::Schema> = None;
+
+        // 1. The level-1 groups, their aggregates, and the grand total.
+        if need_groups {
+            let Some(by) = grid_runtime
+                .borrow()
+                .grouping
+                .as_ref()
+                .map(|grouping| grouping.by()[0].clone())
+            else {
+                return;
+            };
+            let probe = grid::query_json(&source, &columns, &sorts, filter.as_ref(), 0, 0);
+            let schema = match ask(&provider, &probe, &mode).await {
+                Ok(result) => result.schema,
+                Err(message) => return fail(message),
+            };
+            if stale(&grid_runtime) {
+                return;
+            }
+            let (aggregates, refused) = effective_aggregates(&host, &schema, &choice);
+            typed = Some(schema);
+            {
+                let mut runtime = grid_runtime.borrow_mut();
+                if !refused.is_empty() {
+                    runtime.state.set_notice(refused.join(" "));
+                }
+                if let Some(grouping) = runtime.grouping.as_mut() {
+                    grouping.set_aggregates(aggregates.clone());
+                }
+            }
+
+            let query = grouping::group_query_json(&source, &by, filter.as_ref(), &aggregates);
+            let result = match ask(&provider, &query, &mode).await {
+                Ok(result) => result,
+                Err(message) => return fail(message),
+            };
+            if stale(&grid_runtime) {
+                return;
+            }
+            // The type of the key is only known now. A key that does not
+            // repeat is refused here, said once, and the grid falls back to
+            // ungrouped rather than to nothing.
+            if let Some(field) = result.schema.fields().first()
+                && !grouping::groupable(field.data_type)
+            {
+                let message = texts(&host).group_invalid(field.name.as_str());
+                {
+                    let mut runtime = grid_runtime.borrow_mut();
+                    runtime.grouping = None;
+                    runtime.state.set_notice(message);
+                }
+                return run_query(&host, QueryKind::Data, focus);
+            }
+            let groups = match grouping::groups_from(&result) {
+                Ok(groups) => groups,
+                Err(message) => return fail(message),
+            };
+            {
+                let mut runtime = grid_runtime.borrow_mut();
+                runtime.groups_filter = Some(filter.clone());
+                if let Some(grouping) = runtime.grouping.as_mut() {
+                    grouping.set_groups(groups);
+                }
+            }
+
+            // The grand total: the same aggregates, no `group` — one row.
+            let query = grouping::total_query_json(&source, filter.as_ref(), &aggregates);
+            let total = match ask(&provider, &query, &mode).await {
+                Ok(result) => grouping::total_from(&result),
+                Err(message) => return fail(message),
+            };
+            if stale(&grid_runtime) {
+                return;
+            }
+            if let Some(grouping) = grid_runtime.borrow_mut().grouping.as_mut() {
+                grouping.set_total(total);
+            }
+        }
+
+        // 2. The level-2 groups of open level-1 groups that have none yet.
+        let (missing, second) = {
+            let runtime = grid_runtime.borrow();
+            let Some(grouping) = runtime.grouping.as_ref() else {
+                return;
+            };
+            (grouping.missing_children(), grouping.by().get(1).cloned())
+        };
+        if let Some(second) = second {
+            for key in missing {
+                let (scoped, aggregates) = {
+                    let runtime = grid_runtime.borrow();
+                    let Some(grouping) = runtime.grouping.as_ref() else {
+                        return;
+                    };
+                    (
+                        grouping.filter_for(std::slice::from_ref(&key), filter.as_ref()),
+                        grouping.aggregates().to_vec(),
+                    )
+                };
+                let query =
+                    grouping::group_query_json(&source, &second, scoped.as_ref(), &aggregates);
+                let result = match ask(&provider, &query, &mode).await {
+                    Ok(result) => result,
+                    Err(message) => return fail(message),
+                };
+                if stale(&grid_runtime) {
+                    return;
+                }
+                let children = match grouping::groups_from(&result) {
+                    Ok(children) => children,
+                    Err(message) => return fail(message),
+                };
+                if let Some(grouping) = grid_runtime.borrow_mut().grouping.as_mut() {
+                    grouping.set_children(&key, children);
+                }
+            }
+        }
+
+        // 3. The rows of the window, one query per group it touches.
+        let (fetches, total, offset) = {
+            let mut runtime = grid_runtime.borrow_mut();
+            let Some(grouping) = runtime.grouping.as_ref() else {
+                return;
+            };
+            let total = grouping.len();
+            // A toggle can shorten the list under the window; keep the window
+            // inside it, the way the scroll math clamps an ordinary one.
+            let offset = grid::window_offset_for_row(offset.min(total), total, pool);
+            let fetches = grouping.fetches(offset, pool);
+            runtime.state.set_window(Window::new(offset, pool));
+            (fetches, total, offset)
+        };
+
+        let mut schema: Option<opengrid_types::Schema> = None;
+        let mut rows: Vec<(u64, Vec<Vec<Value>>)> = Vec::new();
+        for fetch in &fetches {
+            let scoped = grid_runtime
+                .borrow()
+                .grouping
+                .as_ref()
+                .and_then(|grouping| grouping.filter_for(&fetch.keys, filter.as_ref()));
+            let query = grid::query_json(
+                &source,
+                &columns,
+                &sorts,
+                scoped.as_ref(),
+                fetch.offset,
+                fetch.limit,
+            );
+            let result = match ask(&provider, &query, &mode).await {
+                Ok(result) => result,
+                Err(message) => return fail(message),
+            };
+            if stale(&grid_runtime) {
+                return;
+            }
+            schema.get_or_insert_with(|| result.schema.clone());
+            rows.push((fetch.position, result.columns));
+        }
+        // No open group in the window: the typed schema still has to arrive,
+        // or the header would keep the display schema's all-`Utf8` types.
+        let schema = match schema.or(typed) {
+            Some(schema) => schema,
+            None => {
+                let query = grid::query_json(&source, &columns, &sorts, filter.as_ref(), 0, 0);
+                match ask(&provider, &query, &mode).await {
+                    Ok(result) => result.schema,
+                    Err(message) => return fail(message),
+                }
+            }
+        };
+        if stale(&grid_runtime) {
+            return;
+        }
+
+        // Assemble: one column-major page over the window's display positions.
+        let width = schema.fields().len();
+        let height = total.saturating_sub(offset).min(pool) as usize;
+        let mut page: Vec<Vec<Value>> = vec![vec![Value::Null; height]; width];
+        for (position, columns) in rows {
+            let first = (position - offset) as usize;
+            for (col, values) in columns.into_iter().enumerate().take(width) {
+                for (index, value) in values.into_iter().enumerate() {
+                    if let Some(slot) = page[col].get_mut(first + index) {
+                        *slot = value;
+                    }
+                }
+            }
+        }
+        let result = opengrid_datasource::QueryResult {
+            schema,
+            columns: page,
+            total_count: total,
+        };
+        settle(&host, generation, Ok(result), focus);
+    });
+}
+
+/// Opens or closes the group whose header is at `position`.
+///
+/// The focus stays where it is: a group's own position does not move when it
+/// opens — only what comes after it does. The change is said once, riding with
+/// the result that follows (`set_notice`), and the window is re-asked without
+/// the "loading" line, so the reader hears the group, not the machinery.
+fn toggle_group(host: &HtmlElement, position: u64) {
+    let Some(runtime) = runtime(host) else {
+        return;
+    };
+    let message = {
+        let mut borrowed = runtime.borrow_mut();
+        let schema = borrowed.state.schema().clone();
+        let Some(grouping) = borrowed.grouping.as_mut() else {
+            return;
+        };
+        let Some(grouping::Item::Group {
+            keys,
+            value,
+            count,
+            level,
+            ..
+        }) = grouping.item_at(position)
+        else {
+            return;
+        };
+        let open = grouping.toggle(&keys);
+        let column = grouping.by()[level - 1].clone();
+        let texts = texts(host);
+        let label = grid::group_value_text(
+            &value,
+            &column,
+            schema.fields(),
+            &texts,
+            &Formatter::new(&formats(host), &schema),
+        );
+        texts.group_toggled(&label, count, open)
+    };
+    runtime.borrow_mut().state.set_notice(message);
+    run_query(host, QueryKind::Window, true);
+    dispatch_view(host);
+}
+
+/// The display position of the group header the active cell stands on, if any.
+fn active_group(host: &HtmlElement) -> Option<(u64, bool)> {
+    let runtime = runtime(host)?;
+    let borrowed = runtime.borrow();
+    let row = borrowed.active.row()?;
+    match borrowed.grouping.as_ref()?.item_at(row)? {
+        grouping::Item::Group { expanded, .. } => Some((row, expanded)),
+        // The total opens nothing; `Enter` on it is simply not a toggle.
+        grouping::Item::Row { .. } | grouping::Item::Total { .. } => None,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The column menu (point 64)
+// ---------------------------------------------------------------------------
+
+/// Opens the menu of the column at `col`, focus on its first entry.
+///
+/// Built when it opens rather than kept in the skeleton: it shows *current*
+/// state — which sort is checked, which aggregate, whether the column is
+/// grouped — and a menu that is rebuilt cannot be stale.
+fn open_column_menu(host: &HtmlElement, col: usize) {
+    let Some(root) = host.shadow_root() else {
+        return;
+    };
+    let Some(runtime) = runtime(host) else {
+        return;
+    };
+    close_column_menu(host, false);
+
+    let texts = texts(host);
+    let (entries, name) = {
+        let borrowed = runtime.borrow();
+        let Some(field) = borrowed.state.schema().fields().get(col).cloned() else {
+            return;
+        };
+        let name = field.name.as_str().to_owned();
+        let sort = borrowed
+            .state
+            .sort_keys()
+            .into_iter()
+            .find(|(column, _)| column == &name)
+            .map(|(_, direction)| direction);
+        let aggregate = borrowed.aggregate_choice.get(&name).copied().or_else(|| {
+            borrowed
+                .grouping
+                .as_ref()
+                .and_then(|grouping| {
+                    grouping
+                        .aggregates()
+                        .iter()
+                        .find(|(column, _)| column == &name)
+                        .map(|(_, function)| *function)
+                })
+                .or_else(|| {
+                    presentation::styles(host)
+                        .get(&name)
+                        .and_then(|column| column.aggregate)
+                })
+        });
+        let group_by = borrowed
+            .grouping
+            .as_ref()
+            .map(|grouping| grouping.by().to_vec())
+            .unwrap_or_default();
+        let column = crate::column_menu::Column {
+            name: &name,
+            data_type: field.data_type,
+            sort,
+            aggregate,
+            group_by: &group_by,
+            can_group: !host.has_attribute(PAGE_SIZE_ATTRIBUTE),
+            visible: borrowed.state.schema().fields().len(),
+        };
+        (crate::column_menu::entries(&column, &texts), name)
+    };
+
+    let Some(document) = web_sys::window().and_then(|window| window.document()) else {
+        return;
+    };
+    let Ok(menu) = document.create_element("div") else {
+        return;
+    };
+    for (attribute, value) in [
+        ("part", "column-menu"),
+        ("role", "menu"),
+        ("popover", "auto"),
+        ("data-col", &col.to_string()),
+    ] {
+        let _ = menu.set_attribute(attribute, value);
+    }
+    let _ = menu.set_attribute("aria-label", &texts.column_menu(&name));
+    // Our words throughout — the menu names no data of the page's except the
+    // column in its label, and that one is also the page's word for it.
+    if !texts.lang.trim().is_empty() {
+        let _ = menu.set_attribute("lang", &texts.lang);
+    }
+    append_entries(&document, &menu, &entries);
+    let _ = root.append_child(&menu);
+
+    let Ok(menu) = menu.dyn_into::<HtmlElement>() else {
+        return;
+    };
+    let _ = menu.show_popover();
+    place_menu(&root, &menu, col);
+    if let Ok(Some(first)) = menu.query_selector("[role^=\"menuitem\"]")
+        && let Ok(first) = first.dyn_into::<HtmlElement>()
+    {
+        let _ = first.focus();
+    }
+}
+
+/// Writes the entries into the menu element.
+fn append_entries(
+    document: &web_sys::Document,
+    parent: &Element,
+    entries: &[crate::column_menu::Entry],
+) {
+    use crate::column_menu::Entry;
+    for entry in entries {
+        match entry {
+            Entry::Separator => {
+                if let Ok(line) = document.create_element("div") {
+                    let _ = line.set_attribute("role", "separator");
+                    let _ = parent.append_child(&line);
+                }
+            }
+            Entry::Group { label, entries } => {
+                let Ok(group) = document.create_element("div") else {
+                    continue;
+                };
+                let _ = group.set_attribute("role", "group");
+                // The group's name, visible and referenced: `aria-labelledby`
+                // points inside the same shadow root, which E8/R6 allows.
+                if let Ok(caption) = document.create_element("div") {
+                    let id = format!("og-menu-{}", label.len());
+                    let _ = caption.set_attribute("part", "menu-label");
+                    let _ = caption.set_attribute("id", &id);
+                    caption.set_text_content(Some(label));
+                    let _ = group.append_child(&caption);
+                    let _ = group.set_attribute("aria-labelledby", &id);
+                }
+                append_entries(document, &group, entries);
+                let _ = parent.append_child(&group);
+            }
+            Entry::Item {
+                action,
+                label,
+                checked,
+            } => {
+                let Ok(item) = document.create_element("div") else {
+                    continue;
+                };
+                match checked {
+                    Some(checked) => {
+                        let _ = item.set_attribute("role", "menuitemradio");
+                        let _ = item.set_attribute("aria-checked", &checked.to_string());
+                    }
+                    None => {
+                        let _ = item.set_attribute("role", "menuitem");
+                    }
+                }
+                let _ = item.set_attribute("tabindex", "-1");
+                let _ = item.set_attribute("data-action", action);
+                item.set_text_content(Some(label));
+                let _ = parent.append_child(&item);
+            }
+        }
+    }
+}
+
+/// Puts the menu under its header — never over it (WCAG 2.2 §2.4.11): the
+/// focus returns there when the menu closes, and a menu that covered it would
+/// have hidden where the reader is going back to. Right-aligned when it would
+/// run off the right edge, above the header when it would run off the bottom.
+fn place_menu(root: &ShadowRoot, menu: &HtmlElement, col: usize) {
+    let Ok(Some(header)) = root.query_selector(&format!("th[data-col=\"{col}\"]")) else {
+        return;
+    };
+    let cell = header.get_bounding_client_rect();
+    let own = menu.get_bounding_client_rect();
+    let (width, height) = web_sys::window()
+        .map(|window| {
+            (
+                window
+                    .inner_width()
+                    .ok()
+                    .and_then(|value| value.as_f64())
+                    .unwrap_or(1024.0),
+                window
+                    .inner_height()
+                    .ok()
+                    .and_then(|value| value.as_f64())
+                    .unwrap_or(768.0),
+            )
+        })
+        .unwrap_or((1024.0, 768.0));
+    const GAP: f64 = 4.0;
+    let mut left = cell.left();
+    if left + own.width() > width - GAP {
+        left = (cell.right() - own.width()).max(GAP);
+    }
+    let mut top = cell.bottom() + GAP;
+    if top + own.height() > height - GAP && cell.top() - own.height() - GAP >= GAP {
+        top = cell.top() - own.height() - GAP;
+    }
+    let _ = menu.style().set_property("left", &format!("{left}px"));
+    let _ = menu.style().set_property("top", &format!("{top}px"));
+}
+
+/// Closes an open menu; with `refocus`, the focus goes back to its header.
+fn close_column_menu(host: &HtmlElement, refocus: bool) {
+    let Some(root) = host.shadow_root() else {
+        return;
+    };
+    let Ok(menus) = root.query_selector_all("[part=\"column-menu\"]") else {
+        return;
+    };
+    let mut col = None;
+    for index in 0..menus.length() {
+        let Some(menu) = menus
+            .item(index)
+            .and_then(|node| node.dyn_into::<HtmlElement>().ok())
+        else {
+            continue;
+        };
+        col = col.or_else(|| {
+            menu.get_attribute("data-col")
+                .and_then(|col| col.parse().ok())
+        });
+        let _ = menu.hide_popover();
+        menu.remove();
+    }
+    if refocus
+        && let Some(col) = col
+        && let Some(runtime) = runtime(host)
+    {
+        runtime.borrow_mut().set_active(ActiveCell::Header { col });
+        focus_active(host);
+    }
+}
+
+/// The keys inside the menu: the arrows, `Home`/`End`, `Enter`/`Space`,
+/// `Escape` and `Tab` — the protocol written down in point 64 before building.
+fn on_menu_key(host: &HtmlElement, event: &KeyboardEvent, target: &Element) {
+    let Ok(Some(menu)) = target.closest("[part=\"column-menu\"]") else {
+        return;
+    };
+    let Ok(items) = menu.query_selector_all("[role^=\"menuitem\"]") else {
+        return;
+    };
+    let items: Vec<HtmlElement> = (0..items.length())
+        .filter_map(|index| items.item(index))
+        .filter_map(|node| node.dyn_into::<HtmlElement>().ok())
+        .collect();
+    if items.is_empty() {
+        return;
+    }
+    let at = items
+        .iter()
+        .position(|item| item.is_same_node(Some(target)))
+        .unwrap_or(0);
+    let go = |index: usize| {
+        let _ = items[index].focus();
+    };
+    match event.key().as_str() {
+        "ArrowDown" => {
+            event.prevent_default();
+            go((at + 1) % items.len());
+        }
+        "ArrowUp" => {
+            event.prevent_default();
+            go((at + items.len() - 1) % items.len());
+        }
+        "Home" => {
+            event.prevent_default();
+            go(0);
+        }
+        "End" => {
+            event.prevent_default();
+            go(items.len() - 1);
+        }
+        "Enter" | " " => {
+            event.prevent_default();
+            activate_menu_item(host, &items[at]);
+        }
+        "Escape" => {
+            event.prevent_default();
+            close_column_menu(host, true);
+        }
+        // Not prevented: the focus goes back to the header and `Tab` then moves
+        // on from there, as it always does from a header cell. No trap — it is
+        // a menu, not a dialog.
+        "Tab" => close_column_menu(host, true),
+        _ => {}
+    }
+}
+
+/// Does what an entry says, closes the menu, and puts the focus back.
+///
+/// Nothing here announces: the result of each action does, through the one
+/// live region (point 41) — a sort re-queries, a hidden column says so, a
+/// grouping reloads.
+fn activate_menu_item(host: &HtmlElement, item: &Element) {
+    let Some(action) = item.get_attribute("data-action") else {
+        return;
+    };
+    let Some(col) = item
+        .closest("[part=\"column-menu\"]")
+        .ok()
+        .flatten()
+        .and_then(|menu| menu.get_attribute("data-col"))
+        .and_then(|col| col.parse::<usize>().ok())
+    else {
+        return;
+    };
+    let Some(runtime) = runtime(host) else {
+        return;
+    };
+    let Some(name) = runtime
+        .borrow()
+        .state
+        .schema()
+        .fields()
+        .get(col)
+        .map(|field| field.name.as_str().to_owned())
+    else {
+        return;
+    };
+    close_column_menu(host, true);
+
+    match action.as_str() {
+        "sort:asc" | "sort:desc" => {
+            let direction = if action == "sort:asc" {
+                SortDirection::Asc
+            } else {
+                SortDirection::Desc
+            };
+            let pool = pool_of(host);
+            {
+                let mut borrowed = runtime.borrow_mut();
+                if let Ok(field) = opengrid_types::FieldName::new(&name) {
+                    borrowed.state.set_sort(vec![Sort {
+                        field,
+                        direction,
+                        nulls: Default::default(),
+                        collation: Default::default(),
+                    }]);
+                }
+                borrowed.state.set_window(Window::new(0, pool));
+            }
+            announce_if_cleared(host, &runtime);
+            run_query(host, QueryKind::Data, true);
+            dispatch_view(host);
+        }
+        "filter" => {
+            // Into the filter row, where filtering already lives (point 48). A
+            // column whose operator takes no value has its field disabled, so
+            // the operator is where the focus can go.
+            if let Some(root) = host.shadow_root() {
+                let field = root
+                    .query_selector(&format!("input[data-col=\"{col}\"]:not([disabled])"))
+                    .ok()
+                    .flatten()
+                    .or_else(|| {
+                        root.query_selector(&format!("select[data-col=\"{col}\"]"))
+                            .ok()
+                            .flatten()
+                    });
+                if let Some(field) = field.and_then(|field| field.dyn_into::<HtmlElement>().ok()) {
+                    let _ = field.focus();
+                }
+            }
+        }
+        "hide" => set_column_hidden(host, &name, true),
+        grouping if grouping.starts_with("group:") => {
+            let current = runtime
+                .borrow()
+                .grouping
+                .as_ref()
+                .map(|grouping| grouping.by().to_vec())
+                .unwrap_or_default();
+            let next = crate::column_menu::regrouped(grouping, &name, &current);
+            if next.is_empty() {
+                let _ = host.remove_attribute(grid::GROUP_BY_ATTRIBUTE);
+            } else {
+                let _ = host.set_attribute(grid::GROUP_BY_ATTRIBUTE, &next.join(","));
+            }
+        }
+        aggregate if aggregate.starts_with("aggregate:") => {
+            let choice = presentation::aggregate_from(&aggregate["aggregate:".len()..]);
+            {
+                let mut borrowed = runtime.borrow_mut();
+                match choice {
+                    Some(function) => {
+                        borrowed.aggregate_choice.insert(name.clone(), function);
+                    }
+                    None => {
+                        borrowed.aggregate_choice.remove(&name);
+                    }
+                }
+                // The counts were asked together with the old aggregates.
+                if let Some(grouping) = borrowed.grouping.as_mut() {
+                    grouping.invalidate();
+                }
+                borrowed.groups_filter = None;
+            }
+            run_query(host, QueryKind::Window, true);
+            dispatch_view(host);
+        }
+        _ => {}
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The toolbar and the chips (point 65)
+// ---------------------------------------------------------------------------
+
+/// Brings the toolbar, the chips and the filter row in line with the state.
+///
+/// Runs after every render, so it has to be cheap and it must **not** touch
+/// what did not change: the chips are rebuilt only when what they say changed.
+/// A scroll frame that rebuilt them would take the focus off a chip the reader
+/// is standing on.
+fn sync_chrome(host: &HtmlElement) {
+    let Some(root) = host.shadow_root() else {
+        return;
+    };
+    let Some(runtime) = runtime(host) else {
+        return;
+    };
+    draw_facets(host, &root);
+    draw_empty(host, &root, &runtime);
+    let shown = runtime.borrow().filter_row;
+    if let Ok(Some(row)) = root.query_selector("[part=\"filter\"]") {
+        let _ = if shown {
+            row.remove_attribute("hidden")
+        } else {
+            row.set_attribute("hidden", "")
+        };
+    }
+    let Ok(Some(toolbar)) = root.query_selector("[part=\"toolbar\"]") else {
+        return;
+    };
+    if let Ok(Some(toggle)) = toolbar.query_selector("[data-toolbar=\"filter-row\"]") {
+        let _ = toggle.set_attribute("aria-pressed", &shown.to_string());
+    }
+    let density = grid::density_of(host.get_attribute(grid::DENSITY_ATTRIBUTE).as_deref()).0;
+    if let Ok(buttons) = toolbar.query_selector_all("[data-density]") {
+        for index in 0..buttons.length() {
+            if let Some(button) = buttons
+                .item(index)
+                .and_then(|node| node.dyn_into::<Element>().ok())
+            {
+                let pressed = button.get_attribute("data-density").as_deref() == Some(density);
+                let _ = button.set_attribute("aria-pressed", &pressed.to_string());
+            }
+        }
+    }
+    if let Ok(Some(switch)) = toolbar.query_selector("[data-toolbar=\"facets\"]") {
+        let _ = switch.set_attribute(
+            "aria-pressed",
+            &host.has_attribute(grid::FACETS_ATTRIBUTE).to_string(),
+        );
+    }
+    draw_chips(host, &root);
+}
+
+/// One chip: what it says, and how it is removed.
+struct Chip {
+    /// The filter or grouping in words: "country is DE".
+    text: String,
+    /// `column:<name>` for a filter, `group` for the grouping.
+    removes: String,
+}
+
+/// The chips the current view calls for.
+fn chips_of(host: &HtmlElement) -> Vec<Chip> {
+    let Some(view) = current_view(host) else {
+        return Vec::new();
+    };
+    let texts = texts(host);
+    let mut out = Vec::new();
+    if !view.group.is_empty() {
+        out.push(Chip {
+            text: texts.group_chip(&view.group.join(" \u{203A} ")),
+            removes: "group".to_owned(),
+        });
+    }
+    let facet_chips: Vec<Chip> = runtime(host)
+        .map(|runtime| {
+            let borrowed = runtime.borrow();
+            let schema = borrowed.state.schema().clone();
+            borrowed
+                .facets
+                .iter()
+                .filter(|(_, selection)| selection.is_active())
+                .map(|(column, selection)| Chip {
+                    text: facet_chip_text(
+                        host,
+                        column,
+                        selection,
+                        &schema,
+                        borrowed.facet_domain.get(column),
+                    ),
+                    removes: format!("facet:{column}"),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    out.extend(facet_chips);
+    if let Some(runtime) = runtime(host) {
+        let text = runtime.borrow().search_text.clone();
+        if !text.trim().is_empty() {
+            out.push(Chip {
+                text: texts.search_chip(text.trim()),
+                removes: "search".to_owned(),
+            });
+        }
+    }
+    for entry in &view.filters {
+        let token = entry.op.as_str();
+        let index = crate::shared::FILTER_OPERATORS
+            .iter()
+            .position(|op| *op == token)
+            .unwrap_or(0);
+        let operator = texts.operator(index, token);
+        let text = if grid::takes_value(token) {
+            format!("{} {operator} {}", entry.column, entry.value.trim())
+        } else {
+            format!("{} {operator}", entry.column)
+        };
+        out.push(Chip {
+            text,
+            removes: format!("column:{}", entry.column),
+        });
+    }
+    out
+}
+
+/// Draws the chips, but only when they say something different from before.
+fn draw_chips(host: &HtmlElement, root: &ShadowRoot) {
+    let Ok(Some(group)) = root.query_selector("[part=\"chips\"]") else {
+        return;
+    };
+    let chips = chips_of(host);
+    let signature = chips
+        .iter()
+        .map(|chip| format!("{}={}", chip.removes, chip.text))
+        .collect::<Vec<_>>()
+        .join("\u{1F}");
+    if group.get_attribute("data-drawn").as_deref() == Some(signature.as_str()) {
+        return;
+    }
+    let _ = group.set_attribute("data-drawn", &signature);
+    group.set_inner_html("");
+    if chips.is_empty() {
+        let _ = group.set_attribute("hidden", "");
+        return;
+    }
+    let _ = group.remove_attribute("hidden");
+
+    let Some(document) = web_sys::window().and_then(|window| window.document()) else {
+        return;
+    };
+    let texts = texts(host);
+    for chip in &chips {
+        let Ok(span) = document.create_element("span") else {
+            continue;
+        };
+        let _ = span.set_attribute("part", "chip");
+        // The chip's words are the page's column name and value mixed with our
+        // operator word — no `lang` fits both halves (the open question from
+        // phase E (k), for point 71).
+        if let Ok(text) = document.create_element("span") {
+            text.set_text_content(Some(&chip.text));
+            let _ = span.append_child(&text);
+        }
+        if let Ok(button) = document.create_element("button") {
+            let _ = button.set_attribute("type", "button");
+            let _ = button.set_attribute("part", "chip-remove");
+            let _ = button.set_attribute("data-chip-remove", &chip.removes);
+            // A name that says *which* filter: ten buttons called "Remove"
+            // are ten buttons nobody can tell apart.
+            let _ = button.set_attribute("aria-label", &texts.chip_remove(&chip.text));
+            button.set_text_content(Some("\u{00D7}"));
+            let _ = span.append_child(&button);
+        }
+        let _ = group.append_child(&span);
+    }
+    if let Ok(clear) = document.create_element("button") {
+        let _ = clear.set_attribute("type", "button");
+        let _ = clear.set_attribute("part", "chips-clear");
+        let _ = clear.set_attribute("data-chips-clear", "");
+        if !texts.lang.trim().is_empty() {
+            let _ = clear.set_attribute("lang", &texts.lang);
+        }
+        clear.set_text_content(Some(&texts.chips_clear));
+        let _ = group.append_child(&clear);
+    }
+}
+
+/// Shows or hides the filter row.
+///
+/// The viewport grows by exactly the row's height when it hides — `display:
+/// none`, not `visibility` — so `PageUp`/`PageDown` step by what is really
+/// there. The window is asked again, because more rows may now fit.
+fn toggle_filter_row(host: &HtmlElement) {
+    let Some(runtime) = runtime(host) else {
+        return;
+    };
+    {
+        let mut borrowed = runtime.borrow_mut();
+        borrowed.filter_row = !borrowed.filter_row;
+    }
+    sync_chrome(host);
+    run_query(host, QueryKind::Window, false);
+    dispatch_view(host);
+}
+
+/// Resets one column of the filter row to "no filter".
+///
+/// Not only the value: an `is_null` filter takes none, so emptying the field
+/// would leave it standing. The operator goes back to the column's first
+/// offered one.
+fn reset_filter_column(root: &ShadowRoot, col: usize) {
+    if let Ok(Some(node)) = root.query_selector(&format!("select[data-col=\"{col}\"]"))
+        && let Ok(select) = node.dyn_into::<HtmlSelectElement>()
+        && let Ok(options) = select.query_selector_all("option")
+    {
+        for index in 0..options.length() {
+            if let Some(option) = options
+                .item(index)
+                .and_then(|node| node.dyn_into::<Element>().ok())
+                && !option.has_attribute("hidden")
+                && let Some(value) = option.get_attribute("value")
+            {
+                select.set_value(&value);
+                break;
+            }
+        }
+    }
+    if let Ok(Some(node)) = root.query_selector(&format!("input[data-col=\"{col}\"]"))
+        && let Ok(input) = node.dyn_into::<HtmlInputElement>()
+    {
+        input.set_value("");
+        input.set_disabled(false);
+    }
+}
+
+/// Removes what one chip stands for, says so, and keeps the focus in the chips.
+fn remove_chip(host: &HtmlElement, button: &Element) {
+    let Some(root) = host.shadow_root() else {
+        return;
+    };
+    let Some(removes) = button.get_attribute("data-chip-remove") else {
+        return;
+    };
+    let said = button
+        .closest("[part=\"chip\"]")
+        .ok()
+        .flatten()
+        .and_then(|chip| chip.text_content())
+        .map(|text| text.trim_end_matches('\u{00D7}').trim().to_owned())
+        .unwrap_or_default();
+    // Where the focus goes next: the chip after this one, else the one before,
+    // else "Remove all" — never lost to the document.
+    let position = root
+        .query_selector_all("[data-chip-remove]")
+        .ok()
+        .and_then(|all| {
+            (0..all.length()).position(|index| {
+                all.item(index)
+                    .is_some_and(|node| node.is_same_node(Some(button.as_ref())))
+            })
+        })
+        .unwrap_or(0);
+
+    // The query first, the sentence after: `set_notice` rides with the *next*
+    // result, and set before the query it would also ride with the "loading"
+    // frame the query draws — said twice (phase E (j)).
+    if removes == "group" {
+        let _ = host.remove_attribute(grid::GROUP_BY_ATTRIBUTE);
+    } else if removes == "search" {
+        if let Some(runtime) = runtime(host) {
+            runtime.borrow_mut().search_text.clear();
+        }
+        apply_facets(host);
+    } else if let Some(column) = removes.strip_prefix("facet:") {
+        if let Some(runtime) = runtime(host) {
+            for (name, selection) in runtime.borrow_mut().facets.iter_mut() {
+                if name == column {
+                    *selection = clear_selection(selection);
+                }
+            }
+        }
+        apply_facets(host);
+    } else if let Some(column) = removes.strip_prefix("column:")
+        && let Some(col) = columns_of(host).iter().position(|name| name == column)
+    {
+        reset_filter_column(&root, col);
+        apply_filters(host);
+    }
+    if let Some(runtime) = runtime(host) {
+        runtime
+            .borrow_mut()
+            .state
+            .set_notice(texts(host).filter_removed(&said));
+    }
+
+    draw_chips(host, &root);
+    let next = root
+        .query_selector_all("[data-chip-remove]")
+        .ok()
+        .and_then(|all| {
+            let count = all.length() as usize;
+            (count > 0)
+                .then(|| all.item(position.min(count - 1) as u32))
+                .flatten()
+        })
+        .or_else(|| {
+            root.query_selector("[data-toolbar=\"filter-row\"]")
+                .ok()
+                .flatten()
+                .map(Node::from)
+        });
+    if let Some(next) = next.and_then(|node| node.dyn_into::<HtmlElement>().ok()) {
+        let _ = next.focus();
+    }
+}
+
+/// Removes every filter and the grouping, says so once, and puts the focus on
+/// the toolbar — the chips it stood in are gone.
+fn clear_chips(host: &HtmlElement) {
+    let Some(root) = host.shadow_root() else {
+        return;
+    };
+    for col in 0..columns_of(host).len() {
+        reset_filter_column(&root, col);
+    }
+    let grouped = host.has_attribute(grid::GROUP_BY_ATTRIBUTE);
+    if grouped {
+        let _ = host.remove_attribute(grid::GROUP_BY_ATTRIBUTE);
+    }
+    if let Some(runtime) = runtime(host) {
+        let mut borrowed = runtime.borrow_mut();
+        for (_, selection) in borrowed.facets.iter_mut() {
+            *selection = clear_selection(selection);
+        }
+        borrowed.search_text.clear();
+    }
+    apply_filters(host);
+    // After the query, so the sentence rides with its result only (phase E (j)).
+    if let Some(runtime) = runtime(host) {
+        runtime
+            .borrow_mut()
+            .state
+            .set_notice(texts(host).filters_cleared.clone());
+    }
+    draw_chips(host, &root);
+    if let Ok(Some(toggle)) = root.query_selector("[data-toolbar=\"filter-row\"]")
+        && let Ok(toggle) = toggle.dyn_into::<HtmlElement>()
+    {
+        let _ = toggle.focus();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Facets (point 66)
+// ---------------------------------------------------------------------------
+
+/// The filter a query runs under: the filter row's **and** every facet's —
+/// except `except`, which is how a facet is counted without its own
+/// restriction. A bound that is not a value of its column is a sentence for the
+/// status line, not a silently dropped half of a range.
+fn effective_filter(
+    host: &HtmlElement,
+    runtime: &GridRuntime,
+    except: Option<&str>,
+) -> Result<Option<FilterExpr>, String> {
+    // The free text of the search field is one more filter under the facets
+    // (point 67) — part of the base, so the facet counts see it too.
+    let text = crate::search::free_text(&runtime.search_text, runtime.state.schema());
+    let base = match (runtime.state.filter().cloned(), text) {
+        (Some(row), Some(text)) => Some(FilterExpr::And(vec![row, text])),
+        (row, text) => row.or(text),
+    };
+    crate::facets::effective(
+        base.as_ref(),
+        &runtime.facets,
+        except,
+        runtime.state.schema(),
+    )
+    .map_err(|problems| {
+        let texts = texts(host);
+        problems
+            .iter()
+            .map(|problem| texts.filter_invalid(&problem.column, &problem.value))
+            .collect::<Vec<_>>()
+            .join(" ")
+    })
+}
+
+/// The empty selection of the same kind.
+fn clear_selection(selection: &crate::facets::Selection) -> crate::facets::Selection {
+    use crate::facets::Selection;
+    match selection {
+        Selection::Values(_) => Selection::Values(Vec::new()),
+        Selection::Range { .. } => Selection::Range {
+            min: String::new(),
+            max: String::new(),
+        },
+        Selection::Period { .. } => Selection::Period {
+            from: String::new(),
+            to: String::new(),
+        },
+    }
+}
+
+/// Brings the reader's selections in line with what the page configured: one
+/// per configured facet, in the page's order, keeping what was chosen.
+fn sync_facets(host: &HtmlElement, runtime: &mut GridRuntime) {
+    let configured = presentation::styles(host).facets();
+    let mut next = Vec::with_capacity(configured.len());
+    for (column, kind) in configured {
+        let kept = runtime
+            .facets
+            .iter()
+            .find(|(name, _)| name == &column)
+            .map(|(_, selection)| selection.clone())
+            .filter(|selection| {
+                matches!(
+                    (selection, kind),
+                    (
+                        crate::facets::Selection::Values(_),
+                        presentation::FacetKind::List | presentation::FacetKind::Pills
+                    ) | (
+                        crate::facets::Selection::Range { .. },
+                        presentation::FacetKind::Range
+                    ) | (
+                        crate::facets::Selection::Period { .. },
+                        presentation::FacetKind::Period
+                    )
+                )
+            });
+        next.push((
+            column,
+            kept.unwrap_or_else(|| crate::facets::Selection::empty(kind)),
+        ));
+    }
+    runtime.facets = next;
+}
+
+/// Counts every list facet under every filter but its own (F4: always).
+///
+/// One `group` query per facet column — plus, once, the unfiltered list of its
+/// values, so a value the other facets exclude still shows (with 0) instead of
+/// vanishing from under the reader's pointer.
+fn refresh_facets(host: &HtmlElement) {
+    if !host.has_attribute(grid::FACETS_ATTRIBUTE) {
+        return;
+    }
+    let Some(provider) = provider(host) else {
+        return;
+    };
+    let Some(source) = host.get_attribute(DATASOURCE_ATTRIBUTE) else {
+        return;
+    };
+    let Some(grid_runtime) = runtime(host) else {
+        return;
+    };
+    let mode = host.get_attribute(MODE_ATTRIBUTE).unwrap_or_default();
+    let configured = presentation::styles(host).facets();
+    let (generation, plan) = {
+        let mut runtime = grid_runtime.borrow_mut();
+        sync_facets(host, &mut runtime);
+        runtime.facet_generation += 1;
+        let plan: Vec<(String, bool, Option<FilterExpr>)> = configured
+            .iter()
+            .filter(|(_, kind)| {
+                matches!(
+                    kind,
+                    presentation::FacetKind::List | presentation::FacetKind::Pills
+                )
+            })
+            .filter_map(|(column, _)| {
+                let filter = effective_filter(host, &runtime, Some(column)).ok()?;
+                Some((
+                    column.clone(),
+                    !runtime.facet_domain.contains_key(column),
+                    filter,
+                ))
+            })
+            .collect();
+        (runtime.facet_generation, plan)
+    };
+
+    let host = host.clone();
+    spawn_local(async move {
+        let mut queries = 0usize;
+        for (column, needs_domain, filter) in plan {
+            if needs_domain {
+                let query = grouping::group_query_json(&source, &column, None, &[]);
+                queries += 1;
+                let Ok(result) = ask(&provider, &query, &mode).await else {
+                    continue;
+                };
+                if let Ok(domain) = grouping::groups_from(&result) {
+                    grid_runtime
+                        .borrow_mut()
+                        .facet_domain
+                        .insert(column.clone(), domain);
+                }
+            }
+            let query = grouping::group_query_json(&source, &column, filter.as_ref(), &[]);
+            queries += 1;
+            let Ok(result) = ask(&provider, &query, &mode).await else {
+                continue;
+            };
+            if grid_runtime.borrow().facet_generation != generation {
+                return;
+            }
+            let counts = grouping::groups_from(&result)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|group| (group.key.to_string(), group.count))
+                .collect();
+            grid_runtime
+                .borrow_mut()
+                .facet_counts
+                .insert(column, counts);
+        }
+        if grid_runtime.borrow().facet_generation != generation {
+            return;
+        }
+        grid_runtime.borrow_mut().facet_queries = queries;
+        if let Some(root) = host.shadow_root() {
+            draw_facets(&host, &root);
+        }
+    });
+}
+
+/// A facet value as the reader sees it — the group-key rule of point 62:
+/// NULL and the empty string are two values with two names.
+fn facet_label(
+    host: &HtmlElement,
+    column: &str,
+    value: &Value,
+    schema: &opengrid_types::Schema,
+) -> String {
+    grid::group_value_text(
+        value,
+        column,
+        schema.fields(),
+        &texts(host),
+        &Formatter::new(&formats(host), schema),
+    )
+}
+
+/// What a facet's chip says.
+fn facet_chip_text(
+    host: &HtmlElement,
+    column: &str,
+    selection: &crate::facets::Selection,
+    schema: &opengrid_types::Schema,
+    domain: Option<&Vec<grouping::Group>>,
+) -> String {
+    use crate::facets::Selection;
+    let texts = texts(host);
+    match selection {
+        Selection::Values(keys) => {
+            let labels: Vec<String> = keys
+                .iter()
+                .map(|key| {
+                    // The typed value comes from the facet's own list: a key
+                    // is wire JSON, and JSON alone does not say its type.
+                    let value = domain
+                        .and_then(|domain| domain.iter().find(|group| &group.key == key))
+                        .map(|group| group.value.clone())
+                        .unwrap_or_else(|| match key {
+                            serde_json::Value::Null => Value::Null,
+                            serde_json::Value::String(text) => Value::Utf8(text.clone()),
+                            other => Value::Utf8(other.to_string()),
+                        });
+                    facet_label(host, column, &value, schema)
+                })
+                .collect();
+            if labels.len() == 1 {
+                let is = texts.operator(2, "eq");
+                format!("{column} {is} {}", labels[0])
+            } else {
+                texts.facet_chip_values(column, &labels.join(", "))
+            }
+        }
+        Selection::Range {
+            min: low,
+            max: high,
+        }
+        | Selection::Period {
+            from: low,
+            to: high,
+        } => {
+            format!(
+                "{column} {} \u{2013} {}",
+                if low.trim().is_empty() {
+                    "\u{2026}"
+                } else {
+                    low.trim()
+                },
+                if high.trim().is_empty() {
+                    "\u{2026}"
+                } else {
+                    high.trim()
+                }
+            )
+        }
+    }
+}
+
+/// Draws the sidebar. The structure is rebuilt only when what it lists
+/// changed; checked states, counts and the cost line are updated in place —
+/// a rebuild after every count round would take the focus off the box the
+/// reader just ticked.
+fn draw_facets(host: &HtmlElement, root: &ShadowRoot) {
+    let Ok(Some(sidebar)) = root.query_selector("[part=\"facets\"]") else {
+        return;
+    };
+    let Some(runtime) = runtime(host) else {
+        return;
+    };
+    let configured = presentation::styles(host).facets();
+    {
+        let mut borrowed = runtime.borrow_mut();
+        if borrowed.facets.len() != configured.len() {
+            sync_facets(host, &mut borrowed);
+        }
+    }
+    let borrowed = runtime.borrow();
+    let schema = borrowed.state.schema().clone();
+    let texts = texts(host);
+
+    let signature = configured
+        .iter()
+        .map(|(column, kind)| {
+            let keys = borrowed
+                .facet_domain
+                .get(column)
+                .map(|domain| {
+                    domain
+                        .iter()
+                        .map(|group| group.key.to_string())
+                        .collect::<Vec<_>>()
+                        .join(",")
+                })
+                .unwrap_or_default();
+            format!("{column}:{}:{keys}", kind.as_str())
+        })
+        .collect::<Vec<_>>()
+        .join("|");
+    let Some(document) = web_sys::window().and_then(|window| window.document()) else {
+        return;
+    };
+    let new = |tag: &str| document.create_element(tag).ok();
+
+    if sidebar.get_attribute("data-drawn").as_deref() != Some(signature.as_str()) {
+        let _ = sidebar.set_attribute("data-drawn", &signature);
+        sidebar.set_inner_html("");
+
+        if let Some(head) = new("div") {
+            let _ = head.set_attribute("part", "facets-head");
+            if let Some(cost) = new("span") {
+                let _ = cost.set_attribute("part", "facet-cost");
+                // Our sentence around a number — nothing of the page's in it.
+                if !texts.lang.trim().is_empty() {
+                    let _ = cost.set_attribute("lang", &texts.lang);
+                }
+                let _ = head.append_child(&cost);
+            }
+            if let Some(reset) = new("button") {
+                let _ = reset.set_attribute("type", "button");
+                let _ = reset.set_attribute("data-facets-reset", "");
+                if !texts.lang.trim().is_empty() {
+                    let _ = reset.set_attribute("lang", &texts.lang);
+                }
+                reset.set_text_content(Some(&texts.facets_reset));
+                let _ = head.append_child(&reset);
+            }
+            let _ = sidebar.append_child(&head);
+        }
+
+        for (column, kind) in &configured {
+            let Some(fieldset) = new("fieldset") else {
+                continue;
+            };
+            let _ = fieldset.set_attribute("part", "facet");
+            let _ = fieldset.set_attribute("data-facet", column);
+            if let Some(legend) = new("legend") {
+                legend.set_text_content(Some(column));
+                let _ = fieldset.append_child(&legend);
+            }
+            match kind {
+                presentation::FacetKind::List => {
+                    for group in borrowed.facet_domain.get(column).into_iter().flatten() {
+                        let Some(label) = new("label") else { continue };
+                        let _ = label.set_attribute("part", "facet-value");
+                        if let Some(input) = new("input") {
+                            let _ = input.set_attribute("type", "checkbox");
+                            let _ = input.set_attribute("data-facet", column);
+                            let _ = input.set_attribute("data-key", &group.key.to_string());
+                            let _ = label.append_child(&input);
+                        }
+                        if let Some(name) = new("span") {
+                            name.set_text_content(Some(&facet_label(
+                                host,
+                                column,
+                                &group.value,
+                                &schema,
+                            )));
+                            let _ = label.append_child(&name);
+                        }
+                        if let Some(count) = new("span") {
+                            let _ = count.set_attribute("part", "facet-count");
+                            let _ = label.append_child(&count);
+                        }
+                        let _ = fieldset.append_child(&label);
+                    }
+                }
+                presentation::FacetKind::Pills => {
+                    let Some(pills) = new("div") else { continue };
+                    let _ = pills.set_attribute("part", "facet-pills");
+                    for group in borrowed.facet_domain.get(column).into_iter().flatten() {
+                        let Some(pill) = new("button") else { continue };
+                        let _ = pill.set_attribute("type", "button");
+                        let _ = pill.set_attribute("part", "facet-pill");
+                        let _ = pill.set_attribute("data-facet", column);
+                        let _ = pill.set_attribute("data-key", &group.key.to_string());
+                        let _ = pill.set_attribute("aria-pressed", "false");
+                        if let Some(name) = new("span") {
+                            name.set_text_content(Some(&facet_label(
+                                host,
+                                column,
+                                &group.value,
+                                &schema,
+                            )));
+                            let _ = pill.append_child(&name);
+                        }
+                        if let Some(count) = new("span") {
+                            let _ = count.set_attribute("part", "facet-count");
+                            let _ = pill.append_child(&count);
+                        }
+                        let _ = pills.append_child(&pill);
+                    }
+                    let _ = fieldset.append_child(&pills);
+                }
+                presentation::FacetKind::Range | presentation::FacetKind::Period => {
+                    let Some(bounds) = new("div") else { continue };
+                    let _ = bounds.set_attribute("part", "facet-bounds");
+                    for (bound, word) in [("low", &texts.facet_from), ("high", &texts.facet_to)] {
+                        let Some(label) = new("label") else { continue };
+                        // A visible word, not a placeholder: "min" in an empty
+                        // field is gone the moment someone types (3.3.2).
+                        if let Some(caption) = new("span") {
+                            caption.set_text_content(Some(word));
+                            if !texts.lang.trim().is_empty() {
+                                let _ = caption.set_attribute("lang", &texts.lang);
+                            }
+                            let _ = label.append_child(&caption);
+                        }
+                        if let Some(input) = new("input") {
+                            let date = *kind == presentation::FacetKind::Period;
+                            let _ = input.set_attribute("type", if date { "date" } else { "text" });
+                            if !date {
+                                let _ = input.set_attribute("inputmode", "decimal");
+                            }
+                            let _ = input.set_attribute("data-facet", column);
+                            let _ = input.set_attribute("data-bound", bound);
+                            let _ = label.append_child(&input);
+                        }
+                        let _ = bounds.append_child(&label);
+                    }
+                    let _ = fieldset.append_child(&bounds);
+                }
+            }
+            let _ = sidebar.append_child(&fieldset);
+        }
+    }
+
+    // States, counts, the cost line — in place.
+    if let Ok(Some(cost)) = sidebar.query_selector("[part=\"facet-cost\"]") {
+        cost.set_text_content(Some(&texts.facet_queries(borrowed.facet_queries)));
+    }
+    let focused = root.active_element();
+    for (column, selection) in &borrowed.facets {
+        let counts = borrowed.facet_counts.get(column);
+        let Ok(items) = sidebar.query_selector_all(&format!("[data-facet=\"{column}\"][data-key]"))
+        else {
+            continue;
+        };
+        for index in 0..items.length() {
+            let Some(item) = items
+                .item(index)
+                .and_then(|node| node.dyn_into::<Element>().ok())
+            else {
+                continue;
+            };
+            let key = item.get_attribute("data-key").unwrap_or_default();
+            let parsed = serde_json::from_str::<serde_json::Value>(&key).ok();
+            let chosen = matches!(selection, crate::facets::Selection::Values(values)
+                if values.iter().any(|value| Some(value) == parsed.as_ref()));
+            if let Ok(input) = item.clone().dyn_into::<HtmlInputElement>() {
+                input.set_checked(chosen);
+            } else {
+                let _ = item.set_attribute("aria-pressed", &chosen.to_string());
+            }
+            let count = counts
+                .and_then(|counts| counts.get(&key))
+                .copied()
+                .unwrap_or(0);
+            let holder = item
+                .closest("[part=\"facet-value\"]")
+                .ok()
+                .flatten()
+                .unwrap_or(item.clone());
+            if let Ok(Some(number)) = holder.query_selector("[part=\"facet-count\"]") {
+                number.set_text_content(Some(&count.to_string()));
+            }
+        }
+        let (low, high) = match selection {
+            crate::facets::Selection::Range { min, max } => (min.clone(), max.clone()),
+            crate::facets::Selection::Period { from, to } => (from.clone(), to.clone()),
+            crate::facets::Selection::Values(_) => continue,
+        };
+        for (bound, value) in [("low", low), ("high", high)] {
+            if let Ok(Some(node)) =
+                sidebar.query_selector(&format!("input[data-facet=\"{column}\"][data-bound=\"{bound}\"]"))
+                && let Ok(input) = node.dyn_into::<HtmlInputElement>()
+                // Never overwrite the field someone is typing in.
+                && focused.as_ref().is_none_or(|focused| !focused.is_same_node(Some(input.as_ref())))
+            {
+                input.set_value(&value);
+            }
+        }
+    }
+}
+
+/// Applies the facets: the rows change, so the window starts over and the
+/// selection goes — the same rule a filter follows (point 35).
+fn apply_facets(host: &HtmlElement) {
+    let Some(runtime) = runtime(host) else {
+        return;
+    };
+    let pool = pool_of(host);
+    {
+        let mut borrowed = runtime.borrow_mut();
+        borrowed.state.invalidate_selection();
+        borrowed.state.set_window(Window::new(0, pool));
+    }
+    announce_if_cleared(host, &runtime);
+    run_query(host, QueryKind::Data, false);
+    dispatch_view(host);
+}
+
+/// A list checkbox or a bound field changed.
+fn on_facet_change(host: &HtmlElement, target: &Element) {
+    let Some(column) = target.get_attribute("data-facet") else {
+        return;
+    };
+    let Some(runtime) = runtime(host) else {
+        return;
+    };
+    if let Some(key) = target.get_attribute("data-key") {
+        toggle_key(&runtime, &column, &key);
+    } else if let Some(bound) = target.get_attribute("data-bound")
+        && let Ok(input) = target.clone().dyn_into::<HtmlInputElement>()
+    {
+        let value = input.value();
+        for (name, selection) in runtime.borrow_mut().facets.iter_mut() {
+            if name != &column {
+                continue;
+            }
+            match selection {
+                crate::facets::Selection::Range {
+                    min: low,
+                    max: high,
+                }
+                | crate::facets::Selection::Period {
+                    from: low,
+                    to: high,
+                } => {
+                    if bound == "low" {
+                        *low = value.clone();
+                    } else {
+                        *high = value.clone();
+                    }
+                }
+                crate::facets::Selection::Values(_) => {}
+            }
+        }
+    }
+    apply_facets(host);
+}
+
+/// A pill was pressed.
+fn toggle_facet_value(host: &HtmlElement, pill: &Element) {
+    let (Some(column), Some(key)) = (
+        pill.get_attribute("data-facet"),
+        pill.get_attribute("data-key"),
+    ) else {
+        return;
+    };
+    if let Some(runtime) = runtime(host) {
+        toggle_key(&runtime, &column, &key);
+    }
+    apply_facets(host);
+}
+
+fn toggle_key(runtime: &Rc<RefCell<GridRuntime>>, column: &str, key: &str) {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(key) else {
+        return;
+    };
+    for (name, selection) in runtime.borrow_mut().facets.iter_mut() {
+        if name == column
+            && let crate::facets::Selection::Values(values) = selection
+        {
+            if let Some(at) = values.iter().position(|chosen| chosen == &value) {
+                values.remove(at);
+            } else {
+                values.push(value.clone());
+            }
+        }
+    }
+}
+
+/// Clears every facet.
+fn reset_facets(host: &HtmlElement) {
+    if let Some(runtime) = runtime(host) {
+        for (_, selection) in runtime.borrow_mut().facets.iter_mut() {
+            *selection = clear_selection(selection);
+        }
+    }
+    apply_facets(host);
+}
+
+// ---------------------------------------------------------------------------
+// The search field (point 67)
+// ---------------------------------------------------------------------------
+
+/// The field, its hint and its list, if the grid has them.
+fn search_parts(root: &ShadowRoot) -> Option<(HtmlInputElement, Element, Element)> {
+    let input = root
+        .query_selector("[part=\"search-input\"]")
+        .ok()
+        .flatten()?
+        .dyn_into::<HtmlInputElement>()
+        .ok()?;
+    let hint = root
+        .query_selector("[part=\"search-hint\"]")
+        .ok()
+        .flatten()?;
+    let list = root
+        .query_selector("[part=\"search-list\"]")
+        .ok()
+        .flatten()?;
+    Some((input, hint, list))
+}
+
+/// Typing: the hint says whether the input reads as a filter, the list offers
+/// the columns the last word could be.
+fn on_search_input(event: Event) {
+    let Some(root) = current_shadow_root(&event) else {
+        return;
+    };
+    let Some(target) = event
+        .target()
+        .and_then(|node| node.dyn_into::<Element>().ok())
+    else {
+        return;
+    };
+    if target.get_attribute("part").as_deref() != Some("search-input") {
+        return;
+    }
+    let Ok(host) = root.host().dyn_into::<HtmlElement>() else {
+        return;
+    };
+    update_search(&host, &root);
+}
+
+fn update_search(host: &HtmlElement, root: &ShadowRoot) {
+    let Some((input, hint, list)) = search_parts(root) else {
+        return;
+    };
+    let value = input.value();
+    let columns = columns_of(host);
+    let texts = texts(host);
+    let query = crate::search::looks_like_query(&value, &columns);
+    let _ = if query {
+        hint.remove_attribute("hidden")
+            .and(input.set_attribute("data-query", ""))
+    } else {
+        hint.set_attribute("hidden", "")
+            .and(input.remove_attribute("data-query"))
+    };
+
+    list.set_inner_html("");
+    let _ = input.remove_attribute("aria-activedescendant");
+    let offered = crate::search::suggestions(&value, &texts.query_and, &columns);
+    let Some(document) = web_sys::window().and_then(|window| window.document()) else {
+        return;
+    };
+    let schema = runtime(host).map(|runtime| runtime.borrow().state.schema().clone());
+    for (index, column) in offered.iter().enumerate() {
+        let Ok(option) = document.create_element("li") else {
+            continue;
+        };
+        let _ = option.set_attribute("role", "option");
+        let _ = option.set_attribute("id", &format!("og-search-option-{index}"));
+        let _ = option.set_attribute("aria-selected", "false");
+        let _ = option.set_attribute("data-column", column);
+        option.set_text_content(Some(column));
+        // The type beside the name, as the prototype shows it. The option is
+        // the page's column name and claims no language; the type is our word
+        // (F8), so it carries ours.
+        if let Some(field) = schema.as_ref().and_then(|schema| {
+            schema
+                .fields()
+                .iter()
+                .find(|field| field.name.as_str() == column)
+        }) && let Ok(kind) = document.create_element("span")
+        {
+            let _ = kind.set_attribute("aria-hidden", "true");
+            if !texts.lang.trim().is_empty() {
+                let _ = kind.set_attribute("lang", &texts.lang);
+            }
+            let name = match field.data_type {
+                DataType::Utf8 => &texts.type_text,
+                DataType::Bool => &texts.type_bool,
+                DataType::Int64 => &texts.type_integer,
+                DataType::Float64 | DataType::Decimal { .. } => &texts.type_number,
+                DataType::Date => &texts.type_date,
+                DataType::Timestamp => &texts.type_time,
+            };
+            kind.set_text_content(Some(name));
+            let _ = option.append_child(&kind);
+        }
+        let _ = list.append_child(&option);
+    }
+    let open = !offered.is_empty();
+    let _ = if open {
+        list.remove_attribute("hidden")
+    } else {
+        list.set_attribute("hidden", "")
+    };
+    let _ = input.set_attribute("aria-expanded", &open.to_string());
+}
+
+/// The combobox keys: `↓`/`↑` through the suggestions, `Enter` takes one or
+/// applies the field, `Escape` closes the list — or, when it is closed, empties
+/// the field and the search. The focus stays in the field throughout.
+fn on_search_key(host: &HtmlElement, event: &KeyboardEvent, target: &Element) {
+    let Some(root) = host.shadow_root() else {
+        return;
+    };
+    if target.get_attribute("part").as_deref() != Some("search-input") {
+        return;
+    }
+    let Some((input, _, list)) = search_parts(&root) else {
+        return;
+    };
+    let options: Vec<Element> = list
+        .query_selector_all("[role=\"option\"]")
+        .ok()
+        .map(|all| {
+            (0..all.length())
+                .filter_map(|index| all.item(index))
+                .filter_map(|node| node.dyn_into::<Element>().ok())
+                .collect()
+        })
+        .unwrap_or_default();
+    let open = !list.has_attribute("hidden") && !options.is_empty();
+    let active = input
+        .get_attribute("aria-activedescendant")
+        .and_then(|id| options.iter().position(|option| option.id() == id));
+    let point = |at: usize| {
+        for (index, option) in options.iter().enumerate() {
+            let _ = option.set_attribute("aria-selected", &(index == at).to_string());
+        }
+        let _ = input.set_attribute("aria-activedescendant", &options[at].id());
+    };
+    match event.key().as_str() {
+        "ArrowDown" if open => {
+            event.prevent_default();
+            point(active.map_or(0, |at| (at + 1) % options.len()));
+        }
+        "ArrowUp" if open => {
+            event.prevent_default();
+            point(active.map_or(options.len() - 1, |at| {
+                (at + options.len() - 1) % options.len()
+            }));
+        }
+        "Enter" => {
+            event.prevent_default();
+            match active.filter(|_| open) {
+                Some(at) => take_suggestion(host, &options[at]),
+                None => apply_search(host),
+            }
+        }
+        "Escape" => {
+            event.prevent_default();
+            if open {
+                let _ = list.set_attribute("hidden", "");
+                let _ = input.set_attribute("aria-expanded", "false");
+                let _ = input.remove_attribute("aria-activedescendant");
+            } else {
+                input.set_value("");
+                update_search(host, &root);
+                let had =
+                    runtime(host).is_some_and(|runtime| !runtime.borrow().search_text.is_empty());
+                if had {
+                    if let Some(runtime) = runtime(host) {
+                        runtime.borrow_mut().search_text.clear();
+                    }
+                    apply_facets(host);
+                }
+            }
+        }
+        "Tab" => {
+            let _ = list.set_attribute("hidden", "");
+            let _ = input.set_attribute("aria-expanded", "false");
+        }
+        _ => {}
+    }
+}
+
+/// Puts a suggested column into the field, followed by a space, and keeps the
+/// focus there — the next thing to type is the operator.
+fn take_suggestion(host: &HtmlElement, option: &Element) {
+    let Some(root) = host.shadow_root() else {
+        return;
+    };
+    let Some(column) = option.get_attribute("data-column") else {
+        return;
+    };
+    let Some((input, _, _)) = search_parts(&root) else {
+        return;
+    };
+    let texts = texts(host);
+    input.set_value(&crate::search::complete(
+        &input.value(),
+        &texts.query_and,
+        &column,
+    ));
+    update_search(host, &root);
+    let _ = input.focus();
+}
+
+/// Applies the field: an expression becomes filter-row entries, anything else
+/// a free-text search.
+///
+/// An expression that does not parse is **said**, and the field keeps it so
+/// it can be corrected — falling back to free text would look like it worked
+/// and show the wrong rows.
+fn apply_search(host: &HtmlElement) {
+    let Some(root) = host.shadow_root() else {
+        return;
+    };
+    let Some((input, _, list)) = search_parts(&root) else {
+        return;
+    };
+    let Some(runtime) = runtime(host) else {
+        return;
+    };
+    let value = input.value();
+    let columns = columns_of(host);
+    let texts = texts(host);
+    let _ = list.set_attribute("hidden", "");
+    let _ = input.set_attribute("aria-expanded", "false");
+
+    if crate::search::looks_like_query(&value, &columns) {
+        let schema = runtime.borrow().state.schema().clone();
+        match crate::search::parse(&value, &texts.query_and, &schema) {
+            Ok(entries) => {
+                // Written into the filter row's own fields and applied by its
+                // own code: one place a filter lives (F5).
+                for entry in &entries {
+                    let Some(col) = columns.iter().position(|name| name == &entry.column) else {
+                        continue;
+                    };
+                    if let Ok(Some(node)) =
+                        root.query_selector(&format!("select[data-col=\"{col}\"]"))
+                        && let Ok(select) = node.dyn_into::<HtmlSelectElement>()
+                    {
+                        select.set_value(entry.op.as_str());
+                    }
+                    if let Ok(Some(node)) =
+                        root.query_selector(&format!("input[data-col=\"{col}\"]"))
+                        && let Ok(field) = node.dyn_into::<HtmlInputElement>()
+                    {
+                        field.set_disabled(false);
+                        field.set_value(&entry.value);
+                    }
+                }
+                input.set_value("");
+                update_search(host, &root);
+                apply_filters(host);
+            }
+            Err(problem) => {
+                runtime
+                    .borrow_mut()
+                    .state
+                    .set_status(GridStatus::Error(texts.query_problem(&problem)));
+                render(host, false);
+            }
+        }
+        return;
+    }
+
+    runtime.borrow_mut().search_text = value.trim().to_owned();
+    apply_facets(host);
+}
+
+// ---------------------------------------------------------------------------
+// The empty state (point 68)
+// ---------------------------------------------------------------------------
+
+/// Shows the empty state when a result has no rows.
+///
+/// Two sentences, because they are two situations: no row matches **these
+/// filters** — and then there is a way out, the reset — or the source has no
+/// rows at all, where a reset would promise something it cannot do.
+fn draw_empty(host: &HtmlElement, root: &ShadowRoot, runtime: &Rc<RefCell<GridRuntime>>) {
+    let Ok(Some(panel)) = root.query_selector("[part=\"empty\"]") else {
+        return;
+    };
+    let (empty, filtered) = {
+        let borrowed = runtime.borrow();
+        let empty = matches!(borrowed.state.status(), GridStatus::Empty);
+        let filtered = effective_filter(host, &borrowed, None).is_ok_and(|filter| filter.is_some());
+        (empty, filtered)
+    };
+    if !empty {
+        let _ = panel.set_attribute("hidden", "");
+        return;
+    }
+    let texts = texts(host);
+    if let Ok(Some(sentence)) = panel.query_selector("[part=\"empty-text\"]") {
+        let text = if filtered {
+            &texts.empty_filtered
+        } else {
+            &texts.empty_source
+        };
+        if sentence.text_content().as_deref() != Some(text.as_str()) {
+            sentence.set_text_content(Some(text));
+        }
+    }
+    if let Ok(Some(reset)) = panel.query_selector("[part=\"empty-reset\"]") {
+        let _ = if filtered {
+            reset.remove_attribute("hidden")
+        } else {
+            reset.set_attribute("hidden", "")
+        };
+    }
+    let _ = panel.remove_attribute("hidden");
 }

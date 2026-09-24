@@ -41,16 +41,28 @@
 #[cfg(test)]
 mod api;
 #[cfg(feature = "grid")]
+pub(crate) mod column_menu;
+#[cfg(feature = "grid")]
 pub(crate) mod columns;
+#[cfg(feature = "grid")]
+pub(crate) mod facets;
 #[cfg(feature = "grid")]
 pub(crate) mod formats;
 #[cfg(feature = "grid")]
 pub(crate) mod grid;
+#[cfg(feature = "grid")]
+pub(crate) mod grouping;
 #[cfg(feature = "pivot")]
 pub(crate) mod pivot;
+#[cfg(feature = "grid")]
+pub(crate) mod presentation;
+#[cfg(feature = "grid")]
+pub(crate) mod search;
 pub(crate) mod shared;
 pub(crate) mod table;
 pub(crate) mod texts;
+#[cfg(feature = "grid")]
+pub(crate) mod view;
 
 #[cfg(target_arch = "wasm32")]
 mod element;
@@ -68,6 +80,9 @@ pub(crate) mod grid_element_events {
     pub const SELECTION_EVENT: &str = "opengrid-selection-change";
     /// Fired when a cell was edited (plan point 37).
     pub const CELL_EVENT: &str = "opengrid-cell-change";
+    /// Fired when the view changed — sort, filters, columns or density
+    /// (plan point 59). Scrolling and selecting are not view changes.
+    pub const VIEW_EVENT: &str = "opengrid-view-change";
 }
 #[cfg(target_arch = "wasm32")]
 pub use element::register;

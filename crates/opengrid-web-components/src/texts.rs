@@ -57,6 +57,117 @@ pub struct GridTexts {
     pub value_label: String,
     /// The button that empties the filter row.
     pub clear: String,
+    /// Accessible name of the selection column's header (point 61).
+    ///
+    /// A word, not the glyph: "✓" read aloud is not a promise anybody can act
+    /// on, and the cell it names selects **every matching row**, not the page.
+    pub select_all: String,
+    /// Said after the header cell selected or cleared everything. May use
+    /// `{count}`.
+    pub selected_all: String,
+    /// A group row (point 62). May use `{column}`, `{value}` and `{rows}`.
+    ///
+    /// One sentence, not three cells: a group header is read as one thing, and
+    /// "country: DE (52 rows)" is what a reader needs before deciding to open it.
+    pub group_row: String,
+    /// The size of a group, singular.
+    pub rows_one: String,
+    /// The size of a group. May use `{count}`.
+    pub rows_other: String,
+    /// Said when a group opens. May use `{group}` and `{rows}`.
+    pub group_expanded: String,
+    /// Said when a group closes. May use `{group}`.
+    pub group_collapsed: String,
+    /// A `group-by` the grid refuses. May use `{column}`.
+    pub group_invalid: String,
+    /// The grand total row (point 63). May use `{rows}`.
+    pub total_row: String,
+    /// What an aggregate cell is called, for a screen reader (point 63). May use
+    /// `{aggregate}` and `{value}`.
+    ///
+    /// The cell *shows* "Σ 1,234.00" — the glyph drawn by the stylesheet with an
+    /// empty alternative — and *says* "Sum: 1,234.00". A glyph read aloud is
+    /// "sigma", which is not what anybody meant.
+    pub aggregate_cell: String,
+    /// The names of the five aggregates.
+    pub aggregate_sum: String,
+    pub aggregate_avg: String,
+    pub aggregate_count: String,
+    pub aggregate_min: String,
+    pub aggregate_max: String,
+    /// The range of a column in a group row, "from – to" (F7).
+    pub aggregate_range: String,
+    /// The column menu (point 64). May use `{column}`.
+    pub column_menu: String,
+    pub sort_ascending: String,
+    pub sort_descending: String,
+    /// The entry that jumps to the column's filter field.
+    pub filter_column: String,
+    /// The group of aggregate choices in the menu.
+    pub aggregate_group: String,
+    pub aggregate_none: String,
+    pub group_by_column: String,
+    pub group_second_level: String,
+    pub ungroup_column: String,
+    pub hide_column: String,
+    /// The toolbar above the grid (point 65).
+    pub toolbar_group: String,
+    pub filter_row_toggle: String,
+    pub density_group: String,
+    pub density_compact: String,
+    pub density_normal: String,
+    pub density_comfortable: String,
+    /// The group of active-filter chips.
+    pub chips_group: String,
+    /// A chip's remove button. May use `{filter}`.
+    pub chip_remove: String,
+    pub chips_clear: String,
+    /// Said when one chip was removed. May use `{filter}`.
+    pub filter_removed: String,
+    /// Said when "Remove all" was used.
+    pub filters_cleared: String,
+    /// The grouping chip. May use `{columns}`.
+    pub group_chip: String,
+    /// The facet sidebar and its switch (point 66).
+    pub facets_group: String,
+    pub facets_toggle: String,
+    pub facets_reset: String,
+    /// The two bounds of a range or a period.
+    pub facet_from: String,
+    pub facet_to: String,
+    /// What the counts cost. May use `{count}`.
+    pub facet_queries: String,
+    /// A facet chip with more than one value. May use `{column}` and `{values}`.
+    pub facet_chip_values: String,
+    /// The search field (point 67).
+    pub search_label: String,
+    pub search_placeholder: String,
+    /// The word that joins two clauses, in the page's language.
+    pub query_and: String,
+    /// The hint shown when the input reads as a filter.
+    pub search_hint: String,
+    /// The list of column suggestions.
+    pub search_suggestions: String,
+    /// The type shown beside a suggested column (F8, decided 2026-09-24): one
+    /// word per kind of column, so a German page does not show "integer".
+    pub type_text: String,
+    pub type_bool: String,
+    pub type_integer: String,
+    pub type_number: String,
+    pub type_date: String,
+    pub type_time: String,
+    /// The free-text chip. May use `{text}`.
+    pub search_chip: String,
+    /// Why an expression did not parse. May use `{column}`, `{operator}`, `{value}`.
+    pub query_unknown_column: String,
+    pub query_missing_value: String,
+    pub query_wrong_operator: String,
+    /// The empty state (point 68): no rows because of the filters …
+    pub empty_filtered: String,
+    /// … and no rows at all.
+    pub empty_source: String,
+    /// The button that clears every filter, facet and search.
+    pub empty_reset: String,
     /// A filter input the column cannot hold (point 51). May use `{column}` and
     /// `{value}`.
     pub filter_invalid: String,
@@ -123,6 +234,69 @@ pub(crate) const KEYS: &[&str] = &[
     "operatorLabel",
     "valueLabel",
     "clear",
+    "selectAll",
+    "selectedAll",
+    "groupRow",
+    "rowsOne",
+    "rowsOther",
+    "groupExpanded",
+    "groupCollapsed",
+    "groupInvalid",
+    "totalRow",
+    "aggregateCell",
+    "aggregateSum",
+    "aggregateAvg",
+    "aggregateCount",
+    "aggregateMin",
+    "aggregateMax",
+    "aggregateRange",
+    "columnMenu",
+    "sortAscending",
+    "sortDescending",
+    "filterColumn",
+    "aggregateGroup",
+    "aggregateNone",
+    "groupByColumn",
+    "groupSecondLevel",
+    "ungroupColumn",
+    "hideColumn",
+    "toolbarGroup",
+    "filterRowToggle",
+    "densityGroup",
+    "densityCompact",
+    "densityNormal",
+    "densityComfortable",
+    "chipsGroup",
+    "chipRemove",
+    "chipsClear",
+    "filterRemoved",
+    "filtersCleared",
+    "groupChip",
+    "facetsGroup",
+    "facetsToggle",
+    "facetsReset",
+    "facetFrom",
+    "facetTo",
+    "facetQueries",
+    "facetChipValues",
+    "searchLabel",
+    "searchPlaceholder",
+    "queryAnd",
+    "searchHint",
+    "searchSuggestions",
+    "typeText",
+    "typeBool",
+    "typeInteger",
+    "typeNumber",
+    "typeDate",
+    "typeTime",
+    "searchChip",
+    "queryUnknownColumn",
+    "queryMissingValue",
+    "queryWrongOperator",
+    "emptyFiltered",
+    "emptySource",
+    "emptyReset",
     "filterInvalid",
     "cellRequired",
     "columnWidth",
@@ -183,6 +357,69 @@ impl Default for GridTexts {
             operator_label: "{column} operator".to_owned(),
             value_label: "{column} value".to_owned(),
             clear: "Clear".to_owned(),
+            select_all: "Select all matching rows".to_owned(),
+            selected_all: "{count} rows selected".to_owned(),
+            group_row: "{column}: {value} ({rows})".to_owned(),
+            rows_one: "1 row".to_owned(),
+            rows_other: "{count} rows".to_owned(),
+            group_expanded: "{group} expanded, {rows}".to_owned(),
+            group_collapsed: "{group} collapsed".to_owned(),
+            group_invalid: "Cannot group by {column}".to_owned(),
+            total_row: "Total ({rows})".to_owned(),
+            aggregate_cell: "{aggregate}: {value}".to_owned(),
+            aggregate_sum: "Sum".to_owned(),
+            aggregate_avg: "Average".to_owned(),
+            aggregate_count: "Count".to_owned(),
+            aggregate_min: "Minimum".to_owned(),
+            aggregate_max: "Maximum".to_owned(),
+            aggregate_range: "Range".to_owned(),
+            column_menu: "{column} column menu".to_owned(),
+            sort_ascending: "Sort ascending".to_owned(),
+            sort_descending: "Sort descending".to_owned(),
+            filter_column: "Filter …".to_owned(),
+            aggregate_group: "Aggregate in groups".to_owned(),
+            aggregate_none: "No aggregate".to_owned(),
+            group_by_column: "Group by this column".to_owned(),
+            group_second_level: "Group as second level".to_owned(),
+            ungroup_column: "Remove this grouping".to_owned(),
+            hide_column: "Hide column".to_owned(),
+            toolbar_group: "Grid tools".to_owned(),
+            filter_row_toggle: "Filter row".to_owned(),
+            density_group: "Density".to_owned(),
+            density_compact: "Compact".to_owned(),
+            density_normal: "Normal".to_owned(),
+            density_comfortable: "Comfortable".to_owned(),
+            chips_group: "Active filters".to_owned(),
+            chip_remove: "Remove {filter}".to_owned(),
+            chips_clear: "Remove all".to_owned(),
+            filter_removed: "{filter} removed".to_owned(),
+            filters_cleared: "All filters removed".to_owned(),
+            group_chip: "Grouped by {columns}".to_owned(),
+            facets_group: "Facets".to_owned(),
+            facets_toggle: "Facets".to_owned(),
+            facets_reset: "Reset facets".to_owned(),
+            facet_from: "From".to_owned(),
+            facet_to: "To".to_owned(),
+            facet_queries: "Counted with {count} queries".to_owned(),
+            facet_chip_values: "{column} is one of {values}".to_owned(),
+            search_label: "Search or filter".to_owned(),
+            search_placeholder: "Search, or filter: country = DE and amount \u{2265} 10".to_owned(),
+            query_and: "and".to_owned(),
+            search_hint: "Query \u{00B7} Enter".to_owned(),
+            search_suggestions: "Columns".to_owned(),
+            type_text: "text".to_owned(),
+            type_bool: "yes/no".to_owned(),
+            type_integer: "integer".to_owned(),
+            type_number: "number".to_owned(),
+            type_date: "date".to_owned(),
+            type_time: "time".to_owned(),
+            search_chip: "Text contains \u{201C}{text}\u{201D}".to_owned(),
+            query_unknown_column: "{column} is not a column of this grid".to_owned(),
+            query_missing_value: "{column}: the value is missing".to_owned(),
+            query_wrong_operator: "{column} does not take {operator}".to_owned(),
+            empty_filtered: "No row matches these filters.".to_owned(),
+            empty_source: "There are no rows.".to_owned(),
+            empty_reset: "Reset filters".to_owned(),
             filter_invalid: "{column}: {value} is not a value for this column".to_owned(),
             cell_required: "{column} needs a value".to_owned(),
             column_width: "{column} is {width} pixels wide".to_owned(),
@@ -260,6 +497,142 @@ impl GridTexts {
     ///
     /// A width, a move or a hidden column is a change only the sighted see, so
     /// each one gets a sentence.
+    /// "1 row" or "{count} rows" (point 62).
+    pub fn rows(&self, count: u64) -> String {
+        if count == 1 {
+            self.rows_one.clone()
+        } else {
+            fill(&self.rows_other, "count", &count.to_string())
+        }
+    }
+
+    /// The text of a group row (point 62).
+    pub fn group_row(&self, column: &str, value: &str, count: u64) -> String {
+        fill(
+            &fill(&fill(&self.group_row, "column", column), "value", value),
+            "rows",
+            &self.rows(count),
+        )
+    }
+
+    /// What is said when a group opens or closes (point 62).
+    pub fn group_toggled(&self, group: &str, count: u64, open: bool) -> String {
+        if open {
+            fill(
+                &fill(&self.group_expanded, "group", group),
+                "rows",
+                &self.rows(count),
+            )
+        } else {
+            fill(&self.group_collapsed, "group", group)
+        }
+    }
+
+    /// A chip's remove button (point 65).
+    pub fn chip_remove(&self, filter: &str) -> String {
+        fill(&self.chip_remove, "filter", filter)
+    }
+
+    /// What is said when a chip was removed (point 65).
+    pub fn filter_removed(&self, filter: &str) -> String {
+        fill(&self.filter_removed, "filter", filter)
+    }
+
+    /// Why an expression in the search field did not parse (point 67).
+    #[cfg(feature = "grid")]
+    pub fn query_problem(&self, problem: &crate::search::Problem) -> String {
+        use crate::search::Problem;
+        match problem {
+            Problem::UnknownColumn(column) => fill(&self.query_unknown_column, "column", column),
+            Problem::MissingValue(column) => fill(&self.query_missing_value, "column", column),
+            Problem::WrongOperator { column, operator } => fill(
+                &fill(&self.query_wrong_operator, "column", column),
+                "operator",
+                operator,
+            ),
+            Problem::WrongValue { column, value } => self.filter_invalid(column, value),
+        }
+    }
+
+    /// The free-text chip (point 67).
+    pub fn search_chip(&self, text: &str) -> String {
+        fill(&self.search_chip, "text", text)
+    }
+
+    /// What the facet counts cost (point 66).
+    pub fn facet_queries(&self, count: usize) -> String {
+        fill(&self.facet_queries, "count", &count.to_string())
+    }
+
+    /// A chip for a facet with several values (point 66).
+    pub fn facet_chip_values(&self, column: &str, values: &str) -> String {
+        fill(
+            &fill(&self.facet_chip_values, "column", column),
+            "values",
+            values,
+        )
+    }
+
+    /// The grouping chip (point 65).
+    pub fn group_chip(&self, columns: &str) -> String {
+        fill(&self.group_chip, "columns", columns)
+    }
+
+    /// The name of one density (point 65).
+    pub fn density(&self, name: &str) -> &str {
+        match name {
+            "compact" => &self.density_compact,
+            "comfortable" => &self.density_comfortable,
+            _ => &self.density_normal,
+        }
+    }
+
+    /// The column menu's accessible name (point 64).
+    pub fn column_menu(&self, column: &str) -> String {
+        fill(&self.column_menu, "column", column)
+    }
+
+    /// The name of one aggregate, as a menu entry and a cell say it.
+    #[cfg(feature = "grid")]
+    pub fn aggregate_name(&self, summary: crate::presentation::Summary) -> &str {
+        use crate::presentation::Summary;
+        use opengrid_query::AggregateFn;
+        match summary {
+            Summary::Fn(AggregateFn::Sum) => &self.aggregate_sum,
+            Summary::Fn(AggregateFn::Avg) => &self.aggregate_avg,
+            Summary::Fn(AggregateFn::Count) => &self.aggregate_count,
+            Summary::Fn(AggregateFn::Min) => &self.aggregate_min,
+            Summary::Fn(AggregateFn::Max) => &self.aggregate_max,
+            Summary::Range => &self.aggregate_range,
+        }
+    }
+
+    /// The grand total row's label (point 63).
+    pub fn total_row(&self, count: u64) -> String {
+        fill(&self.total_row, "rows", &self.rows(count))
+    }
+
+    /// What an aggregate cell says (point 63).
+    #[cfg(feature = "grid")]
+    pub fn aggregate_cell(&self, summary: crate::presentation::Summary, value: &str) -> String {
+        let name = self.aggregate_name(summary);
+        fill(
+            &fill(&self.aggregate_cell, "aggregate", name),
+            "value",
+            value,
+        )
+    }
+
+    /// A `group-by` the grid refuses (point 62).
+    pub fn group_invalid(&self, column: &str) -> String {
+        fill(&self.group_invalid, "column", column)
+    }
+
+    /// What the selection column's header says after it acted (point 61).
+    pub fn selected_all(&self, count: u64) -> String {
+        fill(&self.selected_all, "count", &count.to_string())
+    }
+
     pub fn column_width(&self, column: &str, width: u32) -> String {
         fill(
             &fill(&self.column_width, "column", column),
@@ -458,6 +831,75 @@ mod host {
         overwrite(&mut texts.operator_label, string("operatorLabel"));
         overwrite(&mut texts.value_label, string("valueLabel"));
         overwrite(&mut texts.clear, string("clear"));
+        overwrite(&mut texts.select_all, string("selectAll"));
+        overwrite(&mut texts.selected_all, string("selectedAll"));
+        overwrite(&mut texts.group_row, string("groupRow"));
+        overwrite(&mut texts.rows_one, string("rowsOne"));
+        overwrite(&mut texts.rows_other, string("rowsOther"));
+        overwrite(&mut texts.group_expanded, string("groupExpanded"));
+        overwrite(&mut texts.group_collapsed, string("groupCollapsed"));
+        overwrite(&mut texts.group_invalid, string("groupInvalid"));
+        overwrite(&mut texts.total_row, string("totalRow"));
+        overwrite(&mut texts.aggregate_cell, string("aggregateCell"));
+        overwrite(&mut texts.aggregate_sum, string("aggregateSum"));
+        overwrite(&mut texts.aggregate_avg, string("aggregateAvg"));
+        overwrite(&mut texts.aggregate_count, string("aggregateCount"));
+        overwrite(&mut texts.aggregate_min, string("aggregateMin"));
+        overwrite(&mut texts.aggregate_max, string("aggregateMax"));
+        overwrite(&mut texts.aggregate_range, string("aggregateRange"));
+        overwrite(&mut texts.column_menu, string("columnMenu"));
+        overwrite(&mut texts.sort_ascending, string("sortAscending"));
+        overwrite(&mut texts.sort_descending, string("sortDescending"));
+        overwrite(&mut texts.filter_column, string("filterColumn"));
+        overwrite(&mut texts.aggregate_group, string("aggregateGroup"));
+        overwrite(&mut texts.aggregate_none, string("aggregateNone"));
+        overwrite(&mut texts.group_by_column, string("groupByColumn"));
+        overwrite(&mut texts.group_second_level, string("groupSecondLevel"));
+        overwrite(&mut texts.ungroup_column, string("ungroupColumn"));
+        overwrite(&mut texts.hide_column, string("hideColumn"));
+        overwrite(&mut texts.toolbar_group, string("toolbarGroup"));
+        overwrite(&mut texts.filter_row_toggle, string("filterRowToggle"));
+        overwrite(&mut texts.density_group, string("densityGroup"));
+        overwrite(&mut texts.density_compact, string("densityCompact"));
+        overwrite(&mut texts.density_normal, string("densityNormal"));
+        overwrite(&mut texts.density_comfortable, string("densityComfortable"));
+        overwrite(&mut texts.chips_group, string("chipsGroup"));
+        overwrite(&mut texts.chip_remove, string("chipRemove"));
+        overwrite(&mut texts.chips_clear, string("chipsClear"));
+        overwrite(&mut texts.filter_removed, string("filterRemoved"));
+        overwrite(&mut texts.filters_cleared, string("filtersCleared"));
+        overwrite(&mut texts.group_chip, string("groupChip"));
+        overwrite(&mut texts.facets_group, string("facetsGroup"));
+        overwrite(&mut texts.facets_toggle, string("facetsToggle"));
+        overwrite(&mut texts.facets_reset, string("facetsReset"));
+        overwrite(&mut texts.facet_from, string("facetFrom"));
+        overwrite(&mut texts.facet_to, string("facetTo"));
+        overwrite(&mut texts.facet_queries, string("facetQueries"));
+        overwrite(&mut texts.facet_chip_values, string("facetChipValues"));
+        overwrite(&mut texts.search_label, string("searchLabel"));
+        overwrite(&mut texts.search_placeholder, string("searchPlaceholder"));
+        overwrite(&mut texts.query_and, string("queryAnd"));
+        overwrite(&mut texts.search_hint, string("searchHint"));
+        overwrite(&mut texts.search_suggestions, string("searchSuggestions"));
+        overwrite(&mut texts.type_text, string("typeText"));
+        overwrite(&mut texts.type_bool, string("typeBool"));
+        overwrite(&mut texts.type_integer, string("typeInteger"));
+        overwrite(&mut texts.type_number, string("typeNumber"));
+        overwrite(&mut texts.type_date, string("typeDate"));
+        overwrite(&mut texts.type_time, string("typeTime"));
+        overwrite(&mut texts.search_chip, string("searchChip"));
+        overwrite(
+            &mut texts.query_unknown_column,
+            string("queryUnknownColumn"),
+        );
+        overwrite(&mut texts.query_missing_value, string("queryMissingValue"));
+        overwrite(
+            &mut texts.query_wrong_operator,
+            string("queryWrongOperator"),
+        );
+        overwrite(&mut texts.empty_filtered, string("emptyFiltered"));
+        overwrite(&mut texts.empty_source, string("emptySource"));
+        overwrite(&mut texts.empty_reset, string("emptyReset"));
         overwrite(&mut texts.filter_invalid, string("filterInvalid"));
         overwrite(&mut texts.cell_required, string("cellRequired"));
         overwrite(&mut texts.column_width, string("columnWidth"));

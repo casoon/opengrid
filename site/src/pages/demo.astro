@@ -22,9 +22,22 @@ const assets = url('opengrid/');
 
     <Demo
       title="<opengrid-grid>"
-      lead="Interactive: arrow keys move between cells, Enter or Space on a header sorts (Shift adds a second key), Space selects a row, Enter on a cell opens the editor. The filter row applies on Enter."
+      lead="Interactive: arrow keys move between cells, Enter or Space on a header sorts (Shift adds a second key), Space selects a row, Enter on a cell opens the editor. The filter row applies on Enter. Unstyled on purpose: system form controls and system colors, so it drops into any page without fighting existing styles."
     >
       <div class="og-demo" data-assets={assets}>
+        <opengrid-grid
+          label="Orders"
+          datasource="orders"
+          columns="id,customer,country,amount,qty,ordered_on"
+          window-size="40"></opengrid-grid>
+      </div>
+    </Demo>
+
+    <Demo
+      title="<opengrid-grid> — themed"
+      lead="Same element, same data, only CSS added. The look comes entirely from the documented ::part() selectors and custom properties (docs/api.md) — filter-operator, filter-value, filter-clear, header, row, cell, status and the pager parts — nothing here required a change to the component."
+    >
+      <div class="og-demo og-demo--themed">
         <opengrid-grid
           label="Orders"
           datasource="orders"
@@ -85,6 +98,97 @@ const assets = url('opengrid/');
     /* A definite height makes the grid's viewport the scroll container, so it virtualizes. */
     height: 420px;
     overflow: hidden;
-    --grid-border-color: var(--border);
+    --og-line: var(--border);
+  }
+
+  /* Themed variant: only ::part() selectors and the documented custom properties —
+     the same public surface any consumer has (docs/api.md). */
+  .og-demo--themed opengrid-grid {
+    --og-focus-width: 2px;
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+  }
+  .og-demo--themed opengrid-grid::part(layout) {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--surface);
+  }
+  .og-demo--themed opengrid-grid::part(filter) {
+    background: var(--bg-deep);
+    padding: 0.5rem 0.75rem;
+  }
+  .og-demo--themed opengrid-grid::part(filter-operator),
+  .og-demo--themed opengrid-grid::part(filter-value) {
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    background: var(--surface);
+    color: var(--text);
+    padding: 0.3rem 0.5rem;
+    font-size: 0.85rem;
+  }
+  .og-demo--themed opengrid-grid::part(filter-value) {
+    width: 6.5rem;
+  }
+  .og-demo--themed opengrid-grid::part(filter-operator):focus-visible,
+  .og-demo--themed opengrid-grid::part(filter-value):focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+  .og-demo--themed opengrid-grid::part(filter-clear) {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--muted);
+    padding: 0.3rem 0.75rem;
+    font-size: 0.8rem;
+  }
+  .og-demo--themed opengrid-grid::part(filter-clear):hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .og-demo--themed opengrid-grid::part(status) {
+    color: var(--muted);
+    font-size: 0.8rem;
+    padding: 0.35rem 0.75rem;
+  }
+  .og-demo--themed opengrid-grid::part(header) {
+    background: var(--bg-deep);
+    color: var(--heading);
+    font-weight: 600;
+    font-size: 0.85rem;
+    border-bottom: 1px solid var(--border-strong);
+  }
+  .og-demo--themed opengrid-grid::part(sort-direction),
+  .og-demo--themed opengrid-grid::part(sort-index) {
+    color: var(--accent);
+  }
+  .og-demo--themed opengrid-grid::part(row) {
+    background: var(--surface);
+  }
+  .og-demo--themed opengrid-grid::part(row):nth-of-type(even) {
+    background: var(--bg-deep);
+  }
+  .og-demo--themed opengrid-grid::part(cell) {
+    color: var(--text);
+    font-size: 0.875rem;
+  }
+  .og-demo--themed opengrid-grid::part(pager) {
+    padding: 0.4rem 0.75rem;
+  }
+  .og-demo--themed opengrid-grid::part(page-first),
+  .og-demo--themed opengrid-grid::part(page-previous),
+  .og-demo--themed opengrid-grid::part(page-next),
+  .og-demo--themed opengrid-grid::part(page-last) {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface);
+    color: var(--text);
+    padding: 0.25rem 0.6rem;
+    font-size: 0.8rem;
+  }
+  .og-demo--themed opengrid-grid::part(page-label) {
+    color: var(--muted);
+    font-size: 0.8rem;
   }
 </style>

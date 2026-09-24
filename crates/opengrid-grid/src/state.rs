@@ -237,7 +237,11 @@ impl GridState {
     ///
     /// Silently would be a trap, so the caller announces it (point 41's status
     /// line).
-    fn invalidate_selection(&mut self) -> Vec<Patch> {
+    ///
+    /// Public since point 66: a facet restricts the rows on top of the filter,
+    /// and the state does not see it — the element calls this for the same
+    /// reason `set_filter` does.
+    pub fn invalidate_selection(&mut self) -> Vec<Patch> {
         let patches = self.clear_selection();
         if !patches.is_empty() {
             self.selection_dropped = true;

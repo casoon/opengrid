@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>opengrid grid row-height fixture</title>
     <style>
-      /* The row height is configurable through --grid-row-height. A document
+      /* The row height is configurable through --og-row-height. A document
          rule on the host overrides the shadow default (32px) and inherits into
          the shadow tree; the window math follows the configured height. The
          host is 64px taller than the 160px viewport: the 40px filter row plus
@@ -13,7 +13,7 @@
       opengrid-grid {
         display: block;
         height: 224px;
-        --grid-row-height: 48px;
+        --og-row-height: 48px;
       }
     </style>
   </head>
@@ -29,7 +29,7 @@
     </main>
     <script type="module">
       // Point 17 review: the same provider seam as the virtual grid, over 200
-      // rows, with a non-default `--grid-row-height`.
+      // rows, with a non-default `--og-row-height`.
       import { loadOpengrid } from "/packages/opengrid/loader.js";
       import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
 

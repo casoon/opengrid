@@ -91,6 +91,53 @@ impl ColumnLayout {
         next
     }
 
+    // ---------------------------------------------------------------------
+    // Reading and writing the layout as a whole (point 59)
+    // ---------------------------------------------------------------------
+    //
+    // A view is the reader's layout plus the rest of what they chose, so the
+    // layout has to be sayable in one piece and settable in one piece. The
+    // per-column setters above stay: they are what a key press uses, and they
+    // announce.
+
+    /// The order the reader arranged, if they arranged one.
+    pub fn order(&self) -> &[String] {
+        &self.order
+    }
+
+    /// Replaces the order wholesale (restoring a view).
+    pub fn set_order(&mut self, order: Vec<String>) {
+        self.order = order;
+    }
+
+    /// The hidden columns, sorted so the same layout always says the same
+    /// thing — a `HashSet` iterates in whatever order it likes, and a view that
+    /// serialised differently each time would look changed when it was not.
+    pub fn hidden(&self) -> Vec<String> {
+        let mut hidden: Vec<String> = self.hidden.iter().cloned().collect();
+        hidden.sort_unstable();
+        hidden
+    }
+
+    /// The widths the reader set, sorted by column for the same reason.
+    pub fn widths(&self) -> Vec<(String, u32)> {
+        let mut widths: Vec<(String, u32)> = self
+            .widths
+            .iter()
+            .map(|(name, width)| (name.clone(), *width))
+            .collect();
+        widths.sort_unstable();
+        widths
+    }
+
+    /// Sets a width directly (restoring a view), clamped like a key press.
+    pub fn set_width(&mut self, name: &str, width: u32) {
+        self.widths.insert(
+            name.to_owned(),
+            width.clamp(MIN_COLUMN_WIDTH, MAX_COLUMN_WIDTH),
+        );
+    }
+
     /// Moves a column one place left (`-1`) or right (`1`) among the visible
     /// ones. Answers the new order, or `None` when it would fall off an end.
     pub fn move_column(&mut self, declared: &[String], name: &str, by: i32) -> Option<Vec<String>> {

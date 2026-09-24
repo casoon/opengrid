@@ -210,3 +210,61 @@ test.describe("states", () => {
     }
   });
 });
+
+test.describe("the view as a value (point 59)", () => {
+  test("restoring a view announces one result, not one per field", async ({ page }) => {
+    // The reason `set_view` is a single operation rather than four setters: a
+    // restore that applied sort, filters, columns and density one at a time
+    // would announce four states that never existed, and the reader would hear
+    // three of them get overwritten before they meant anything. That is the
+    // "said at the wrong moment" failure this spec exists for — and it is
+    // invisible to a test that reads the status line once at the end.
+    await open(page, "grid-view.html");
+    await page.waitForFunction(() => window.__opengridModule);
+
+    // `record` starts with whatever the line already says, so the restore is
+    // counted from here rather than from the first result of the page load.
+    await expect.poll(() => announced(page).then((said) => said.length)).toBeGreaterThan(0);
+    const alreadySaid = (await announcedStates(page)).length;
+
+    await page.evaluate(() => {
+      window.__opengridModule.set_view(document.querySelector("opengrid-grid"), {
+        sort: [{ field: "amount", direction: "desc" }],
+        filters: [{ column: "country", op: "eq", value: "DE" }],
+        columns: { order: [], hidden: ["qty"], widths: {} },
+        density: "comfortable",
+      });
+    });
+
+    await expect
+      .poll(() => announced(page).then((said) => said.at(-1)))
+      .toMatch(/matches|Treffer/);
+    // Let a stray second result arrive before counting, if there is one.
+    await page.waitForTimeout(250);
+
+    const said = (await announcedStates(page)).slice(alreadySaid);
+    // Exactly one loading and one result for the whole restore.
+    const loading = said.filter(([, state]) => state === "loading");
+    const ready = said.filter(([, state]) => state === "ready");
+    expect(loading, "one query, so one loading").toHaveLength(1);
+    expect(ready, "one query, so one result").toHaveLength(1);
+  });
+
+  test("setting the view a grid already has says nothing at all", async ({ page }) => {
+    // A no-op has to be silent. A page that writes the view back on every
+    // event — which is exactly what a "saved views" bar does — would otherwise
+    // make the grid talk to itself.
+    await open(page, "grid-view.html");
+    await page.waitForFunction(() => window.__opengridModule);
+    await expect.poll(() => announced(page).then((said) => said.length)).toBeGreaterThan(0);
+
+    const before = await announced(page);
+    await page.evaluate(() => {
+      const host = document.querySelector("opengrid-grid");
+      window.__opengridModule.set_view(host, window.__opengridModule.get_view(host));
+    });
+    await page.waitForTimeout(250);
+
+    expect(await announced(page)).toEqual(before);
+  });
+});

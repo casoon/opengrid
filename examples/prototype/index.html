@@ -1,0 +1,470 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>opengrid — Prototyp</title>
+    <style>
+      /* The host page of the design prototype (plan point 69).
+         Everything on this page that is not the grid — the views, the look
+         studio, the header — is page code. That is the point of it: the
+         element hands out its view and takes one back (point 59), and takes
+         its look from custom properties (point 57); the rest is the page's. */
+      :root {
+        --page-canvas: #f5f6f8;
+        --page-ink: #14161a;
+        --page-muted: #646b78;
+        --page-line: #e0e3e9;
+        --page-surface: #ffffff;
+        --page-accent: #3d5fd6;
+        --page-font: "Geist", system-ui, sans-serif;
+        color-scheme: light;
+      }
+      :root[data-scheme="dark"] { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--page-canvas);
+        color: var(--page-ink);
+        font-family: var(--page-font);
+        font-size: 14px;
+        -webkit-font-smoothing: antialiased;
+      }
+      .bar {
+        display: flex; flex-wrap: wrap; align-items: center; gap: 14px;
+        padding: 14px 32px; border-bottom: 1px solid var(--page-line);
+      }
+      .brand { font-weight: 600; font-size: 15px; }
+      .brand small { font-family: "Geist Mono", ui-monospace, monospace; font-weight: 400;
+        font-size: 12px; color: var(--page-muted); margin-left: 10px; }
+      .spacer { flex: 1; }
+      fieldset.presets { display: flex; gap: 2px; padding: 3px; margin: 0;
+        border: 1px solid var(--page-line); border-radius: 10px; background: var(--page-surface); }
+      fieldset.presets legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+      .presets label { display: inline-flex; align-items: center; gap: 7px; height: 28px;
+        padding: 0 10px; border-radius: 7px; cursor: pointer; font-weight: 500; font-size: 13px; }
+      .presets input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+      .presets [hidden] { display: none; }
+      .presets input:checked + label { background: var(--page-ink); color: var(--page-surface); }
+      .presets input:focus-visible + label { outline: 2px solid Highlight; outline-offset: 2px; }
+      .swatch { width: 10px; height: 10px; border-radius: 999px; box-shadow: 0 0 0 1px rgb(0 0 0 / 0.12); }
+      button.plain { font: inherit; height: 34px; padding: 0 14px; border-radius: 8px;
+        border: 1px solid var(--page-line); background: var(--page-surface); color: var(--page-ink);
+        font-weight: 500; cursor: pointer; }
+      button.plain[aria-expanded="true"] { background: var(--page-ink); color: var(--page-surface); }
+      main { display: flex; gap: 24px; align-items: flex-start; padding: 28px 32px 48px; }
+      .content { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 18px; }
+      .crumb { font-size: 13px; color: var(--page-muted); }
+      h1 { margin: 4px 0 0; font-size: 24px; font-weight: 600; letter-spacing: -0.015em; }
+      .card { background: var(--page-surface); border: 1px solid var(--page-line);
+        border-radius: var(--card-radius, 12px); overflow: hidden;
+        box-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 6px 20px rgb(0 0 0 / 0.04); }
+      .tabbar { display: flex; flex-wrap: wrap; align-items: center; gap: 2px;
+        padding: 6px 10px 0; border-bottom: 1px solid var(--page-line); }
+      [role="tablist"] { display: flex; flex-wrap: wrap; gap: 2px; }
+      [role="tab"] { font: inherit; height: 38px; padding: 0 12px; border: 0; background: transparent;
+        color: var(--page-muted); cursor: pointer; font-size: 13px; }
+      [role="tab"][aria-selected="true"] { color: var(--page-ink); font-weight: 600;
+        box-shadow: inset 0 -2px 0 var(--page-accent); }
+      [role="tab"] .dirty { color: var(--page-accent); }
+      .tab-actions { margin-left: auto; display: flex; gap: 4px; }
+      .tab-actions button { font: inherit; height: 28px; padding: 0 10px; border: 0;
+        border-radius: 6px; background: transparent; color: var(--page-accent); cursor: pointer;
+        font-size: 13px; font-weight: 500; }
+      opengrid-grid { display: block; height: 640px; }
+      .code { margin: 0; font-family: "Geist Mono", ui-monospace, monospace; font-size: 12px; line-height: 1.6;
+        color: var(--page-muted); overflow-wrap: anywhere; }
+      aside.studio { width: 340px; flex: none; position: sticky; top: 28px; display: flex;
+        flex-direction: column; gap: 18px; padding: 20px; background: var(--page-surface);
+        border: 1px solid var(--page-line); border-radius: 12px; }
+      aside.studio[hidden] { display: none; }
+      .studio h2 { margin: 0; font-size: 15px; font-weight: 600; }
+      .studio p { margin: 0; font-size: 13px; line-height: 1.45; color: var(--page-muted); }
+      .studio .colors { display: flex; flex-direction: column; gap: 6px; }
+      .studio .colors label { display: grid; grid-template-columns: 28px 1fr auto; align-items: center;
+        gap: 10px; min-height: 32px; font-size: 13px; }
+      .studio input[type="color"] { width: 28px; height: 28px; padding: 0; border: 1px solid var(--page-line);
+        border-radius: 6px; background: transparent; cursor: pointer; }
+      .studio .hex { font-family: "Geist Mono", ui-monospace, monospace; font-size: 12px; color: var(--page-muted); }
+      .studio .more { display: grid; grid-template-columns: 1fr auto; gap: 8px 10px; align-items: center; font-size: 13px; }
+      .studio .more input[type="range"] { grid-column: span 2; accent-color: var(--page-accent); }
+      .studio select { font: inherit; height: 30px; }
+      .studio pre { margin: 0; padding: 12px; background: var(--page-canvas); border: 1px solid var(--page-line);
+        border-radius: 8px; font-family: "Geist Mono", ui-monospace, monospace; font-size: 11.5px;
+        line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+      .studio .css-head { display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: 500; }
+      .studio .css-head button { font: inherit; height: 26px; padding: 0 10px; font-size: 12px;
+        border: 1px solid var(--page-line); border-radius: 6px; background: var(--page-surface);
+        color: var(--page-ink); cursor: pointer; }
+      .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+      @media (max-width: 900px) { main { flex-direction: column; align-items: stretch; padding: 20px 16px 40px; } aside.studio { width: 100%; position: static; } }
+    </style>
+  </head>
+  <body>
+    <header class="bar">
+      <div class="brand">opengrid <small>Prototyp · Host-Seite</small></div>
+      <div class="spacer"></div>
+      <fieldset class="presets" id="presets">
+        <legend>Ausprägung</legend>
+      </fieldset>
+      <button type="button" class="plain" id="studio-toggle" aria-expanded="false" aria-controls="studio">
+        Ausprägung anpassen
+      </button>
+    </header>
+
+    <main>
+      <div class="content">
+        <div>
+          <div class="crumb">Vertrieb / Bestellungen</div>
+          <h1>Bestellungen</h1>
+        </div>
+
+        <div class="card">
+          <div class="tabbar">
+            <div role="tablist" aria-label="Ansichten" id="tabs"></div>
+            <div class="tab-actions" id="tab-actions">
+              <button type="button" id="discard" hidden>Verwerfen</button>
+              <button type="button" id="save">+ Ansicht</button>
+            </div>
+          </div>
+          <div role="tabpanel" id="panel" tabindex="-1">
+            <opengrid-grid
+              id="grid"
+              label="Bestellungen"
+              datasource="orders"
+              columns="id,customer,country,amount,qty,ordered_on"
+              window-size="30"
+              toolbar
+              search
+              facets
+              column-menu
+              selection
+            ></opengrid-grid>
+          </div>
+        </div>
+        <p class="code"><code id="code"></code></p>
+      </div>
+
+      <aside class="studio" id="studio" hidden aria-labelledby="studio-title">
+        <div>
+          <h2 id="studio-title">Ausprägung anpassen</h2>
+          <p id="studio-base"></p>
+        </div>
+        <div class="colors" id="colors"></div>
+        <div class="more">
+          <label for="radius">Radius</label><span class="hex" id="radius-text"></span>
+          <input type="range" id="radius" min="0" max="20" />
+          <label for="font">Schrift</label>
+          <select id="font">
+            <option value="Geist">Geist</option>
+            <option value="IBM Plex Sans">IBM Plex Sans</option>
+            <option value="system-ui">System</option>
+          </select>
+        </div>
+        <div>
+          <div class="css-head"><span>theme.css</span><button type="button" id="copy">Kopieren</button></div>
+          <pre id="css"></pre>
+        </div>
+      </aside>
+    </main>
+    <!-- The one live region of the page: what the copy button did. -->
+    <p class="visually-hidden" role="status" id="page-status"></p>
+
+    <script type="module">
+      import { loadOpengrid } from "/packages/opengrid/loader.js";
+      import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+
+      // ---- The five looks of the prototype ------------------------------------
+      // Only what the grid itself reads goes into `theme.css`: `--og-canvas` is
+      // the page's background, not the grid's (point 57), so the page applies
+      // it to itself.
+      const PRESETS = {
+        base: { name: "Base", font: "Geist", canvas: "#f5f6f8", surface: "#ffffff", surface2: "#fafbfc", ink: "#14161a", muted: "#646b78", line: "#eceef2", lineStrong: "#e0e3e9", accent: "#3d5fd6", onAccent: "#ffffff", radius: 12, scheme: "light" },
+        paper: { name: "Papier", font: "IBM Plex Sans", canvas: "#f4f1ea", surface: "#fffdf8", surface2: "#faf7f0", ink: "#1f1d19", muted: "#6f685a", line: "#ebe6da", lineStrong: "#ddd7c8", accent: "#2a7a59", onAccent: "#ffffff", radius: 8, scheme: "light" },
+        violet: { name: "Violett", font: "Geist", canvas: "#f3f3f7", surface: "#ffffff", surface2: "#fbfbfd", ink: "#17161f", muted: "#6c6b80", line: "#ececf3", lineStrong: "#dfdfea", accent: "#6b4bc8", onAccent: "#ffffff", radius: 14, scheme: "light" },
+        orange: { name: "Orange", font: "Geist", canvas: "#f7f6f4", surface: "#ffffff", surface2: "#faf9f7", ink: "#111111", muted: "#6e6c69", line: "#ecebe8", lineStrong: "#e2e0dc", accent: "#b44c1c", onAccent: "#ffffff", radius: 10, scheme: "light" },
+        dark: { name: "Dunkel", font: "Geist", canvas: "#0e1013", surface: "#15181c", surface2: "#1a1e23", ink: "#e6e8eb", muted: "#9aa1ab", line: "#23282e", lineStrong: "#2e333a", accent: "#4fd1d1", onAccent: "#0b1414", radius: 12, scheme: "dark" },
+      };
+      const FIELDS = [
+        ["accent", "Akzent", "--og-accent"],
+        ["onAccent", "Text auf Akzent", "--og-on-accent"],
+        ["surface", "Fläche", "--og-surface"],
+        ["surface2", "Fläche 2", "--og-surface-2"],
+        ["ink", "Text", "--og-ink"],
+        ["muted", "Text gedämpft", "--og-ink-muted"],
+        ["line", "Linie", "--og-line"],
+        ["lineStrong", "Rahmen", "--og-line-strong"],
+        ["canvas", "Seite", null],
+      ];
+
+      let look = { ...PRESETS.base };
+      let base = "base";
+
+      const grid = document.getElementById("grid");
+      const font = (name) => (name === "system-ui" ? "system-ui, sans-serif" : `"${name}", system-ui, sans-serif`);
+
+      function themeCss() {
+        const lines = [`  --og-font: ${font(look.font)};`];
+        for (const [key, , token] of FIELDS) if (token) lines.push(`  ${token}: ${look[key]};`);
+        lines.push(`  --og-radius: ${look.radius}px;`);
+        return `opengrid-grid {\n${lines.join("\n")}\n}`;
+      }
+
+      function applyLook() {
+        for (const [key, , token] of FIELDS) if (token) grid.style.setProperty(token, look[key]);
+        grid.style.setProperty("--og-font", font(look.font));
+        grid.style.setProperty("--og-radius", `${look.radius}px`);
+        const root = document.documentElement.style;
+        root.setProperty("--page-canvas", look.canvas);
+        root.setProperty("--page-surface", look.surface);
+        root.setProperty("--page-ink", look.ink);
+        root.setProperty("--page-muted", look.muted);
+        root.setProperty("--page-line", look.lineStrong);
+        root.setProperty("--page-accent", look.accent);
+        root.setProperty("--page-font", font(look.font));
+        root.setProperty("--card-radius", `${look.radius}px`);
+        document.documentElement.dataset.scheme = look.scheme;
+        document.getElementById("css").textContent = themeCss();
+        document.getElementById("radius").value = look.radius;
+        document.getElementById("radius-text").textContent = `${look.radius}px`;
+        document.getElementById("font").value = look.font;
+        document.getElementById("studio-base").textContent =
+          `Basiert auf „${base === "custom" ? "Eigene" : PRESETS[base].name}". Jede Änderung erzeugt eine eigene Ausprägung. Das Ergebnis ist CSS, das beim Nutzer liegt, nicht im Paket.`;
+        for (const [key] of FIELDS) {
+          const input = document.getElementById(`color-${key}`);
+          if (input) input.value = look[key];
+          const hex = document.getElementById(`hex-${key}`);
+          if (hex) hex.textContent = look[key];
+        }
+      }
+
+      // Presets: a group of native radios — the arrows move between them, as in
+      // any radio group, and one is always chosen.
+      const presets = document.getElementById("presets");
+      for (const [key, preset] of [...Object.entries(PRESETS), ["custom", { name: "Eigene", accent: "#999999" }]]) {
+        const input = Object.assign(document.createElement("input"), { type: "radio", name: "preset", id: `preset-${key}`, value: key });
+        const label = Object.assign(document.createElement("label"), { htmlFor: input.id });
+        label.innerHTML = `<span class="swatch" style="background:${preset.accent}"></span>${preset.name}`;
+        if (key === "custom") { input.disabled = true; input.hidden = true; label.hidden = true; }
+        input.addEventListener("change", () => {
+          base = key;
+          look = { ...PRESETS[key] };
+          applyLook();
+        });
+        presets.append(input, label);
+      }
+      document.getElementById("preset-base").checked = true;
+
+      function makeCustom(patch) {
+        look = { ...look, ...patch };
+        base = "custom";
+        const custom = document.getElementById("preset-custom");
+        custom.disabled = false; custom.hidden = false; custom.nextElementSibling.hidden = false;
+        custom.checked = true;
+        custom.nextElementSibling.querySelector(".swatch").style.background = look.accent;
+        applyLook();
+      }
+
+      // The studio.
+      const colors = document.getElementById("colors");
+      for (const [key, name] of FIELDS) {
+        const label = document.createElement("label");
+        label.innerHTML = `<input type="color" id="color-${key}"><span>${name}</span><span class="hex" id="hex-${key}"></span>`;
+        label.querySelector("input").addEventListener("input", (event) => makeCustom({ [key]: event.target.value }));
+        colors.append(label);
+      }
+      document.getElementById("radius").addEventListener("input", (event) => makeCustom({ radius: Number(event.target.value) }));
+      document.getElementById("font").addEventListener("change", (event) => makeCustom({ font: event.target.value }));
+      document.getElementById("studio-toggle").addEventListener("click", (event) => {
+        const open = event.currentTarget.getAttribute("aria-expanded") !== "true";
+        event.currentTarget.setAttribute("aria-expanded", String(open));
+        document.getElementById("studio").hidden = !open;
+      });
+      document.getElementById("copy").addEventListener("click", async () => {
+        let said = "Kopiert";
+        try { await navigator.clipboard.writeText(themeCss()); } catch { said = "Kopieren nicht möglich"; }
+        document.getElementById("copy").textContent = said;
+        document.getElementById("page-status").textContent = `theme.css: ${said}`;
+        setTimeout(() => (document.getElementById("copy").textContent = "Kopieren"), 1500);
+      });
+
+      // ---- The views -------------------------------------------------------------
+      // A saved view is the grid's view with a name on it (point 59). Naming,
+      // storing and telling what changed is this page's job — in a few lines,
+      // which is the proof that the element's seam sits in the right place.
+      const SORT = [{ field: "id", direction: "asc" }];
+      const DEFAULT_VIEWS = [
+        { name: "Alle", view: { sort: SORT } },
+        { name: "Deutschland ab 10 €", view: { sort: SORT, filters: [
+          { column: "country", op: "eq", value: "DE" },
+          { column: "amount", op: "gte", value: "10" },
+        ] } },
+        { name: "Ohne Kunde", view: { sort: SORT, filters: [{ column: "customer", op: "is_null", value: "" }] } },
+        { name: "Umsatz nach Land", view: { sort: SORT, group: ["country", "customer"], expanded: [["DE"]],
+          aggregates: { amount: "sum", qty: "sum" } } },
+      ];
+      const STORE = "opengrid.prototype.views";
+      let views;
+      try { views = JSON.parse(localStorage.getItem(STORE)) ?? DEFAULT_VIEWS; } catch { views = DEFAULT_VIEWS; }
+      let current = 0;
+
+      // What makes two views "the same" for the dirty mark: what the prototype
+      // compares — filters, facets, grouping.
+      const essence = (view) => JSON.stringify({
+        filters: view.filters ?? [], facets: view.facets ?? {}, group: view.group ?? [],
+      });
+
+      // The tabs are drawn in place, not rebuilt: every view change redraws
+      // them, and a rebuilt tab would take the keyboard focus with it.
+      const tabs = document.getElementById("tabs");
+      const actions = document.getElementById("tab-actions");
+      function drawTabs() {
+        const now = window.__opengrid?.get_view(grid);
+        const dirty = !!now && essence(now) !== essence(views[current].view);
+        views.forEach((saved, index) => {
+          let tab = document.getElementById(`tab-${index}`);
+          if (!tab) {
+            tab = Object.assign(document.createElement("button"), { type: "button", id: `tab-${index}` });
+            tab.setAttribute("role", "tab");
+            tab.setAttribute("aria-controls", "panel");
+            tab.addEventListener("click", () => choose(index));
+            tabs.append(tab);
+          }
+          tab.setAttribute("aria-selected", String(index === current));
+          tab.tabIndex = index === current ? 0 : -1;
+          tab.textContent = saved.name;
+          if (index === current && dirty) {
+            // The dot is seen, the word is heard; the name still starts with
+            // what is written on the tab (2.5.3).
+            tab.append(Object.assign(document.createElement("span"), { className: "dirty", textContent: " •" }));
+            tab.setAttribute("aria-label", `${saved.name}, geändert`);
+          } else {
+            tab.removeAttribute("aria-label");
+          }
+        });
+        document.getElementById("discard").hidden = !dirty;
+        document.getElementById("save").textContent = dirty ? "Als Ansicht speichern" : "+ Ansicht";
+        document.getElementById("panel").setAttribute("aria-labelledby", `tab-${current}`);
+      }
+      function choose(index) {
+        current = index;
+        window.__opengrid.set_view(grid, views[index].view);
+        drawTabs();
+      }
+      document.getElementById("discard").addEventListener("click", () => choose(current));
+      document.getElementById("save").addEventListener("click", () => {
+        views = [...views, { name: `Ansicht ${views.length + 1}`, view: window.__opengrid.get_view(grid) }];
+        try { localStorage.setItem(STORE, JSON.stringify(views)); } catch {}
+        current = views.length - 1;
+        drawTabs();
+        document.getElementById(`tab-${current}`).focus();
+      });
+      // The tabs pattern: arrows move, Home/End jump, and moving activates.
+      tabs.addEventListener("keydown", (event) => {
+        const all = [...tabs.querySelectorAll('[role="tab"]')];
+        const at = all.indexOf(document.activeElement);
+        const next = { ArrowRight: at + 1, ArrowLeft: at - 1, Home: 0, End: all.length - 1 }[event.key];
+        if (at < 0 || next === undefined) return;
+        event.preventDefault();
+        const index = (next + all.length) % all.length;
+        choose(index);
+        all[index].focus();
+      });
+
+      // The element, as its attributes and view say it is — the prototype's
+      // code line under the grid.
+      function drawCode() {
+        const view = window.__opengrid.get_view(grid);
+        const attrs = ['datasource="orders"', `density="${view.density}"`];
+        for (const name of ["toolbar", "search", "facets", "column-menu", "selection"]) if (grid.hasAttribute(name)) attrs.push(name);
+        if (view.group.length) attrs.push(`group-by="${view.group.join(",")}"`);
+        document.getElementById("code").textContent = `<opengrid-grid ${attrs.join(" ")}>`;
+      }
+
+      // ---- The grid ----------------------------------------------------------------
+      // A decimal is exact text (S8): `999999999.99` through `Number` would be
+      // fine, a larger one would not. So the German form is written on the text —
+      // thousands with a dot, the decimal comma, a real minus.
+      function euro(text) {
+        if (text === "") return "";
+        const negative = text.startsWith("-");
+        const [whole, fraction = ""] = text.replace(/^-/, "").split(".");
+        const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+        return `${negative ? "−" : ""}${grouped},${fraction.padEnd(2, "0")}`;
+      }
+
+      async function start() {
+        const loader = await loadOpengrid();
+        window.__opengrid = loader.module;
+        await init();
+        const engine = new Engine();
+        const schema = await (await fetch("/examples/prototype/orders.schema.json")).text();
+        const csv = await (await fetch("/examples/prototype/orders.csv")).arrayBuffer();
+        engine.load_csv("orders", new Uint8Array(csv), schema);
+
+        // German, like the prototype — every word the element writes, set
+        // before the provider so the first paint already speaks it.
+        loader.module.set_texts(grid, {
+          lang: "de", loading: "Wird geladen …", matchesOne: "{count} Treffer", matchesOther: "{count} Treffer",
+          empty: "Keine Treffer", error: "Die Daten konnten nicht geladen werden: {cause}",
+          errorUnknown: "Die Daten konnten nicht geladen werden.",
+          filterGroup: "Filter", operatorLabel: "{column} Bedingung", valueLabel: "{column} Wert", clear: "Leeren",
+          operators: { contains: "enthält", starts_with: "beginnt mit", eq: "ist", ne: "ist nicht",
+            gt: "größer als", gte: "größer oder gleich", lt: "kleiner als", lte: "kleiner oder gleich",
+            is_null: "hat keinen Wert", is_not_null: "hat einen Wert" },
+          selectAll: "Alle Treffer auswählen", selectedAll: "{count} Zeilen ausgewählt",
+          groupRow: "{column}: {value} ({rows})", rowsOne: "1 Zeile", rowsOther: "{count} Zeilen",
+          groupExpanded: "{group} aufgeklappt, {rows}", groupCollapsed: "{group} zugeklappt",
+          groupInvalid: "Gruppieren nach {column} ist nicht möglich", totalRow: "Gesamt ({rows})",
+          aggregateCell: "{aggregate}: {value}", aggregateSum: "Summe", aggregateAvg: "Durchschnitt",
+          aggregateCount: "Anzahl", aggregateMin: "Minimum", aggregateMax: "Maximum", aggregateRange: "Spanne",
+          columnMenu: "Spaltenmenü {column}", sortAscending: "Aufsteigend sortieren", sortDescending: "Absteigend sortieren",
+          filterColumn: "Filtern …", aggregateGroup: "Aggregat in Gruppen", aggregateNone: "Kein Aggregat",
+          groupByColumn: "Nach dieser Spalte gruppieren", groupSecondLevel: "Als 2. Ebene gruppieren",
+          ungroupColumn: "Gruppierung aufheben", hideColumn: "Spalte ausblenden",
+          toolbarGroup: "Werkzeuge", filterRowToggle: "Filterzeile", densityGroup: "Dichte",
+          densityCompact: "Kompakt", densityNormal: "Normal", densityComfortable: "Luftig",
+          chipsGroup: "Aktive Filter", chipRemove: "{filter} entfernen", chipsClear: "Alle entfernen",
+          filterRemoved: "{filter} entfernt", filtersCleared: "Alle Filter entfernt", groupChip: "Gruppiert nach {columns}",
+          facetsGroup: "Facetten", facetsToggle: "Facetten", facetsReset: "Zurücksetzen", facetFrom: "Von", facetTo: "Bis",
+          facetQueries: "Gezählt mit {count} Abfragen", facetChipValues: "{column} ist eines von {values}",
+          searchLabel: "Suchen oder filtern", searchPlaceholder: "Suchen oder filtern: country = DE und amount ≥ 10",
+          queryAnd: "und", searchHint: "Abfrage · Enter", searchSuggestions: "Spalten",
+          typeText: "Text", typeBool: "ja/nein", typeInteger: "Ganzzahl", typeNumber: "Zahl",
+          typeDate: "Datum", typeTime: "Zeitpunkt", searchChip: "Text enthält „{text}“",
+          queryUnknownColumn: "{column} ist keine Spalte dieses Grids", queryMissingValue: "{column}: der Wert fehlt",
+          queryWrongOperator: "{column} kennt {operator} nicht",
+          emptyFiltered: "Für diese Filter gibt es keine Zeilen.", emptySource: "Es gibt keine Zeilen.", emptyReset: "Filter zurücksetzen",
+          filterInvalid: "{column}: {value} ist kein Wert dieser Spalte", selectionCleared: "Auswahl aufgehoben",
+          cellRequired: "{column} braucht einen Wert", columnWidth: "{column} ist {width} Pixel breit",
+          columnMoved: "{column} an Position {position} von {count} verschoben", columnAtEdge: "{column} ist schon am Rand",
+          columnsGroup: "Spalten", columnHidden: "{column} ausgeblendet, {visible} von {count} Spalten sichtbar",
+          columnShown: "{column} eingeblendet, {visible} von {count} Spalten sichtbar",
+          pageFirst: "Erste Seite", pagePrevious: "Vorige Seite", pageNext: "Nächste Seite", pageLast: "Letzte Seite",
+          pageOf: "Seite {page} von {pages}", noValue: "(kein Wert)", emptyValue: "(leer)", total: "Gesamt",
+          subtotal: "Gesamt {value}",
+        });
+        loader.module.set_formats(grid, {
+          amount: euro,
+          ordered_on: { kind: "date", locale: "de-DE", timeZone: "UTC" },
+        });
+        loader.module.set_columns(grid, {
+          id: { width: 96, mono: true, muted: true, align: "start" },
+          customer: { width: 150, emphasis: true, facet: "list" },
+          country: { width: 124, facet: "pills" },
+          amount: { width: 150, facet: "range", aggregate: "sum" },
+          qty: { width: 104, aggregate: "sum" },
+          ordered_on: { width: 196, muted: true, facet: "period", aggregate: "range" },
+        });
+        loader.module.set_provider(grid, { execute: (query) => engine.execute(query) });
+
+        grid.addEventListener("opengrid-view-change", () => { drawTabs(); drawCode(); });
+        applyLook();
+        choose(0);
+        drawCode();
+        return { fallback: loader.fallback };
+      }
+      window.__opengridReady = start();
+    </script>
+  </body>
+</html>

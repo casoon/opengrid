@@ -1,0 +1,10 @@
+{
+  "fields": [
+    { "name": "id", "type": "int64", "nullable": false },
+    { "name": "customer", "type": "utf8", "nullable": true },
+    { "name": "country", "type": "utf8", "nullable": true },
+    { "name": "amount", "type": { "decimal": { "precision": 12, "scale": 2 } }, "nullable": true },
+    { "name": "qty", "type": "int64", "nullable": true },
+    { "name": "ordered_on", "type": "date", "nullable": true }
+  ]
+}

@@ -17,7 +17,9 @@ async function texts(page) {
     return {
       status: root.querySelector('[part="status"]').textContent,
       clear: root.querySelector('[part="filter-clear"]').textContent,
-      filterGroup: root.querySelector('[part="filter"]').getAttribute("aria-label"),
+      // Named by reference (F9): the name is ours, the group holds the page's
+      // column names, so the name sits in its own element with its own `lang`.
+      filterGroup: root.getElementById(root.querySelector('[part="filter"]').getAttribute("aria-labelledby")).textContent,
       operatorLabel: select.getAttribute("aria-label"),
       valueLabel: root.querySelector('input[data-col="1"]').getAttribute("aria-label"),
       // What the user reads, and what the query actually sends.

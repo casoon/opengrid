@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>opengrid view fixture</title>
+    <style>
+      /* Point 59: the view as a value. No `--og-row-height` here — the density
+         is part of a view, and a page rule on the host would beat the
+         `:host([density=…])` rule in the shadow stylesheet. */
+      opengrid-grid {
+        display: block;
+        height: 260px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid view fixture</h1>
+      <opengrid-grid
+        label="Bestellungen"
+        datasource="orders"
+        columns="id,customer,country,amount,qty"
+        window-size="8"
+      ></opengrid-grid>
+    </main>
+    <script type="module">
+      import { loadOpengrid } from "/packages/opengrid/loader.js";
+      import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+
+      async function start() {
+        const loader = await loadOpengrid();
+
+        await init();
+        const engine = new Engine();
+        const schema = await (
+          await fetch("/crates/opengrid-conformance/data/orders.schema.json")
+        ).text();
+        const csv = await (
+          await fetch("/tests/e2e/fixtures/grid-virtual.csv")
+        ).arrayBuffer();
+        engine.load_csv("orders", new Uint8Array(csv), schema);
+
+        // Every query the element asks for, so a test can count them: point 59
+        // promises that restoring a view costs *one*.
+        window.__queries = [];
+
+        const host = document.querySelector("opengrid-grid");
+        loader.module.set_provider(host, {
+          execute: (queryJson) => {
+            window.__queries.push(queryJson);
+            return engine.execute(queryJson);
+          },
+        });
+        // The module itself, so the tests can call `get_view`/`set_view`.
+        window.__opengridModule = loader.module;
+        return { fallback: loader.fallback };
+      }
+
+      window.__opengridReady = start();
+    </script>
+  </body>
+</html>

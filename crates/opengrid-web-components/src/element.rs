@@ -135,6 +135,67 @@ pub fn set_choices(host: &HtmlElement, choices: JsValue) {
     );
 }
 
+/// Sets how each column is presented (plan point 60).
+///
+/// ```js
+/// loader.module.set_columns(host, {
+///   id:       { width: 96, mono: true, muted: true },
+///   customer: { emphasis: true },
+///   amount:   { width: 150, align: "end", aggregate: "sum", facet: "range" },
+/// });
+/// ```
+///
+/// **The configuration narrows; it never widens.** A name the schema does not
+/// have, an aggregate the type does not allow (`sum` over text), a facet that
+/// does not fit — each is reported in the status line rather than ignored. A
+/// grid that looks configured and is not hides the typo that caused it.
+///
+/// What the type already answers is not configurable: which filter operators a
+/// column offers is meaning, not taste. The alignment is taste, so it may be
+/// overridden.
+#[cfg(feature = "grid")]
+#[wasm_bindgen(js_name = set_columns)]
+pub fn set_columns(host: &HtmlElement, columns: JsValue) {
+    crate::presentation::set_columns_for(host, &columns);
+    if host.shadow_root().is_none() {
+        // Not connected yet — the check runs when the schema arrives.
+        return;
+    }
+    crate::grid_element::recolumn(host);
+}
+
+/// Reads the whole view as a plain JS object (plan point 59).
+///
+/// Sort, filters, column layout and density — everything the reader chose about
+/// what is shown and how. **Not the selection**: it names positions, the grid
+/// has no key column, and sorting or filtering drops it precisely because after
+/// a different sort those positions hold different records. A restored view
+/// carrying one would not be incomplete, it would be wrong.
+///
+/// A "saved view" is this value with a name on it, which is why the element has
+/// no view management of its own: naming, storing and deleting are the page's,
+/// the same line `docs/api.md` draws for editing.
+#[cfg(feature = "grid")]
+#[wasm_bindgen(js_name = get_view)]
+pub fn get_view(host: &HtmlElement) -> JsValue {
+    crate::grid_element::read_view(host)
+}
+
+/// Applies a whole view at once (plan point 59).
+///
+/// **One query, not one per field.** Restoring a view field by field would flash
+/// through five intermediate results and announce each of them; the reader would
+/// hear four states that never existed.
+///
+/// A view that names a column this grid does not have is reported in the status
+/// line and **not** applied in part — a grid that looks restored and is not is
+/// the worse failure (point 56 §Das Modell §2).
+#[cfg(feature = "grid")]
+#[wasm_bindgen(js_name = set_view)]
+pub fn set_view(host: &HtmlElement, view: JsValue) {
+    crate::grid_element::write_view(host, &view);
+}
+
 #[wasm_bindgen(js_name = set_texts)]
 pub fn set_texts(host: &HtmlElement, values: JsValue) {
     texts::store(host, Rc::new(texts::from_js(&values)));

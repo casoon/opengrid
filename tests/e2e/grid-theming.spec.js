@@ -40,18 +40,121 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("custom properties on the host reach the shadow tree", async ({ page }) => {
-  // --grid-header-height only moves the header: it sits outside the <tbody>
+  // --og-header-height only moves the header: it sits outside the <tbody>
   // sizer, so the row height (and the window math) is untouched.
   expect(await computed(page, "thead th", ["height"])).toEqual({ height: "48px" });
   expect(await computed(page, "tbody td", ["height"])).toEqual({ height: "32px" });
 
-  // --grid-border-color paints every rule of the grid.
+  // Two rule colours, because they separate two different things: --og-line
+  // draws between rows, --og-line-strong between regions.
   expect(
     await computed(page, "tbody td", ["border-bottom-color", "border-bottom-width"]),
   ).toEqual({ "border-bottom-color": "rgb(0, 0, 255)", "border-bottom-width": "1px" });
   expect(await computed(page, '[part="filter"]', ["border-bottom-color"])).toEqual({
-    "border-bottom-color": "rgb(0, 0, 255)",
+    "border-bottom-color": "rgb(0, 128, 0)",
   });
+});
+
+test("the grid computes the accented colours from the accent it is given", async ({
+  page,
+}) => {
+  // The point of the split (point 57): a page picks one accent and the grid
+  // works out what a selected row and a hover look like against *its* surface.
+  // The fixture sets --og-accent and nothing else accented.
+  const tokens = await page.evaluate(() => {
+    const style = getComputedStyle(document.querySelector("opengrid-grid"));
+    return Object.fromEntries(
+      ["--og-accent", "--og-accent-ink", "--og-selected", "--og-hover"].map((name) => [
+        name,
+        style.getPropertyValue(name).trim(),
+      ]),
+    );
+  });
+  expect(tokens["--og-accent"]).toBe("rgb(204, 0, 102)");
+  // Computed, not empty, and not simply the accent repeated.
+  for (const name of ["--og-accent-ink", "--og-selected", "--og-hover"]) {
+    expect(tokens[name]).not.toBe("");
+    expect(tokens[name]).not.toBe(tokens["--og-accent"]);
+  }
+});
+
+test("every token a page may set arrives in the shadow tree", async ({ page }) => {
+  // The promise of point 57 is the whole list, not a sample of it: a page sets
+  // these and the grid uses them. A token that is declared and then ignored is
+  // a promise the element does not keep — the Rust test guards that side, this
+  // one guards that the value actually travels.
+  const TOKENS = {
+    "--og-font": "cursive",
+    "--og-font-size": "19px",
+    "--og-surface": "rgb(1, 2, 3)",
+    "--og-surface-2": "rgb(4, 5, 6)",
+    "--og-ink": "rgb(7, 8, 9)",
+    "--og-ink-muted": "rgb(10, 11, 12)",
+    "--og-line": "rgb(13, 14, 15)",
+    "--og-line-strong": "rgb(16, 17, 18)",
+    "--og-accent": "rgb(19, 20, 21)",
+    "--og-radius": "7px",
+    "--og-pad": "13px",
+    "--og-focus-width": "5px",
+    "--og-row-height": "41px",
+    "--og-header-height": "43px",
+    "--og-filter-height": "47px",
+    "--og-status-height": "29px",
+  };
+  const arrived = await page.evaluate((tokens) => {
+    const host = document.querySelector("opengrid-grid");
+    for (const [name, value] of Object.entries(tokens)) host.style.setProperty(name, value);
+    const root = host.shadowRoot;
+    // `outline-width` only has the themed value while the cell is focused —
+    // unfocused, the browser reports `medium` and the token looks lost.
+    root.querySelector('td[data-row="0"][data-col="0"]').focus();
+    const of = (selector, property) =>
+      getComputedStyle(root.querySelector(selector)).getPropertyValue(property).trim();
+    return {
+      "--og-font": of("tbody td", "font-family"),
+      "--og-font-size": of("tbody td", "font-size"),
+      "--og-surface": of("tbody tr", "background-color"),
+      "--og-surface-2": of("thead th", "background-color"),
+      "--og-ink": of('[part="layout"]', "color"),
+      "--og-ink-muted": of('[part="status"]', "color"),
+      "--og-line": of("tbody td", "border-bottom-color"),
+      "--og-line-strong": of('[part="filter"]', "border-bottom-color"),
+      "--og-accent": getComputedStyle(host).getPropertyValue("--og-accent").trim(),
+      "--og-radius": of('[part="filter"] select', "border-radius"),
+      "--og-pad": of("tbody td", "padding-left"),
+      "--og-focus-width": of('td[data-row="0"][data-col="0"]', "outline-width"),
+      "--og-row-height": of("tbody td", "height"),
+      "--og-header-height": of("thead th", "height"),
+      "--og-filter-height": of('[part="filter"]', "height"),
+      "--og-status-height": of('[part="status"]', "min-height"),
+    };
+  }, TOKENS);
+
+  expect(arrived).toEqual({
+    ...TOKENS,
+    // `--og-radius` is capped for the small controls (`min(radius, 8px)`), and
+    // 7px is under the cap, so it arrives unchanged.
+    "--og-radius": "7px",
+  });
+});
+
+test("a selected row is more than a tint", async ({ page }) => {
+  // Colour alone would be 1.4.1, so the row also carries an inset accent bar.
+  // Before point 57 a selected row was announced and looked like every other.
+  await focusIn(page, 'td[data-row="0"][data-col="0"]');
+  await page.keyboard.press(" ");
+  await page.waitForFunction(
+    () =>
+      !!document
+        .querySelector("opengrid-grid")
+        .shadowRoot.querySelector('tbody tr[data-selected="true"]'),
+  );
+  const row = await computed(page, 'tbody tr[data-selected="true"]', [
+    "background-color",
+    "box-shadow",
+  ]);
+  expect(row["box-shadow"]).toContain("inset");
+  expect(row["background-color"]).not.toBe("rgba(0, 0, 0, 0)");
 });
 
 test("::part reaches header, row and cell", async ({ page }) => {
@@ -193,6 +296,19 @@ test.describe("forced colors", () => {
         "border-bottom-color": "rgb(0, 0, 255)",
       });
     }
+  });
+
+  test("no computed colour survives as a mix", async ({ page }) => {
+    // A `color-mix` of two system colours resolves unpredictably once a forced
+    // palette is active, so every computed token is reset to a system colour.
+    const mixed = await page.evaluate(() => {
+      const style = getComputedStyle(document.querySelector("opengrid-grid"));
+      return ["--og-accent-ink", "--og-selected", "--og-hover", "--og-ink-muted",
+              "--og-line", "--og-line-strong"]
+        .map((name) => [name, style.getPropertyValue(name).trim()])
+        .filter(([, value]) => value.includes("color-mix"));
+    });
+    expect(mixed).toEqual([]);
   });
 
   test("matches the forced-colors baseline", async ({ page }) => {

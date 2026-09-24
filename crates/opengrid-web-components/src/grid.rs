@@ -32,7 +32,7 @@
 //!   `window-size` overrides it), each row a `<tr>` with one `<td>` per column.
 //!   The pool is built once; scrolling only patches text, `data-row`,
 //!   `aria-rowindex` and the row's `translateY`.
-//! * **Row height** is the CSS custom property `--grid-row-height` (default
+//! * **Row height** is the CSS custom property `--og-row-height` (default
 //!   [`DEFAULT_ROW_HEIGHT`]px). The element resolves it once per host and passes
 //!   the pixel value into the portable window math, so a logical row always
 //!   occupies exactly that many pixels and the math stays stable.
@@ -192,14 +192,14 @@ pub const DEFAULT_POOL_SIZE: u64 = 40;
 /// The host can override it with the CSS custom property
 /// [`ROW_HEIGHT_PROPERTY`]; the element resolves the computed value once per
 /// host and feeds it into the portable window math.
-pub const DEFAULT_ROW_HEIGHT: u64 = 32;
+pub const DEFAULT_ROW_HEIGHT: u64 = 42;
 
 /// The CSS custom property a host can set to override the row height.
 ///
 /// A shadow-root stylesheet seeds it with [`DEFAULT_ROW_HEIGHT`]; a document
 /// rule on the host (or an inline style) overrides it and the value inherits
 /// into the shadow tree.
-pub const ROW_HEIGHT_PROPERTY: &str = "--grid-row-height";
+pub const ROW_HEIGHT_PROPERTY: &str = "--og-row-height";
 
 /// Rows kept above the first visible row so scrolling stays smooth.
 pub const OVERSCAN: u64 = 6;
@@ -217,7 +217,7 @@ pub const DEFAULT_VIEWPORT_ROWS: u64 = 12;
 pub const FILTER_HEIGHT: u64 = 40;
 
 /// The CSS custom property overriding [`FILTER_HEIGHT`].
-pub const FILTER_HEIGHT_PROPERTY: &str = "--grid-filter-height";
+pub const FILTER_HEIGHT_PROPERTY: &str = "--og-filter-height";
 
 /// The pixel height of the status line (`part="status"`, point 41).
 ///
@@ -229,7 +229,7 @@ pub const FILTER_HEIGHT_PROPERTY: &str = "--grid-filter-height";
 pub const STATUS_HEIGHT: u64 = 24;
 
 /// The CSS custom property overriding [`STATUS_HEIGHT`].
-pub const STATUS_HEIGHT_PROPERTY: &str = "--grid-status-height";
+pub const STATUS_HEIGHT_PROPERTY: &str = "--og-status-height";
 
 /// The CSS custom property for the header row's height (point 20).
 ///
@@ -237,17 +237,211 @@ pub const STATUS_HEIGHT_PROPERTY: &str = "--grid-status-height";
 /// header is sticky inside the viewport and sits outside the `<tbody>` sizer, so
 /// its height is independent of the virtualization math — unlike the row height,
 /// which the element has to resolve in Rust.
-pub const HEADER_HEIGHT_PROPERTY: &str = "--grid-header-height";
-
-/// The CSS custom property for the grid's rules (point 20).
-pub const BORDER_COLOR_PROPERTY: &str = "--grid-border-color";
-
-/// The default rule colour: a light grey, replaced by a system colour under
-/// `forced-colors`.
-pub const DEFAULT_BORDER_COLOR: &str = "#d4d4d4";
+pub const HEADER_HEIGHT_PROPERTY: &str = "--og-header-height";
 
 /// The CSS custom property for the width of the focus ring (point 20).
-pub const FOCUS_WIDTH_PROPERTY: &str = "--grid-focus-width";
+pub const FOCUS_WIDTH_PROPERTY: &str = "--og-focus-width";
+
+// ---------------------------------------------------------------------------
+// The appearance tokens (point 57)
+// ---------------------------------------------------------------------------
+//
+// Eleven properties a page sets, five the stylesheet computes from them. The
+// split is the whole idea: a page picks an accent and the grid works out what a
+// soft accent, a hover tint and a selected row look like against *its* surface,
+// instead of asking for eleven more colours it would have to keep consistent.
+//
+// **The defaults are the system colours.** Two reasons, and both are
+// accessibility rather than taste: a grid with no page CSS stays legible and in
+// the right light/dark, and `forced-colors` keeps winning. `color-mix` with a
+// system colour is valid CSS but resolves unpredictably once a forced palette is
+// active, so the whole computed set is reset to system colours there — that is
+// the one rule this layer has, and it is one line per token.
+//
+// Two tokens the prototype shows are deliberately **not** here, both for the
+// same reason: a property the element declares and then ignores is a promise it
+// does not keep, and the test below enforces exactly that.
+//
+// * `--og-canvas` is the page's own background. The grid is the card that sits
+//   on it and uses [`SURFACE_PROPERTY`].
+// * `--og-font-mono` has nothing to apply to until a column can ask for it
+//   (point 60, `mono: true`). It arrives with the thing that uses it.
+//
+// Three more of the prototype's tokens wait for their feature for the same
+// reason: `--og-on-accent` and `--og-accent-soft` until something is drawn *on*
+// the accent (points 61 and 65), `--og-faint` until a cell has a placeholder to
+// draw faintly (point 60).
+
+/// The font family of everything the grid draws. Defaults to `inherit`.
+pub const FONT_PROPERTY: &str = "--og-font";
+
+/// The face of a column a page marked `mono` (point 60) — values that line up
+/// character by character, such as ids and codes.
+pub const FONT_MONO_PROPERTY: &str = "--og-font-mono";
+
+/// The font size of everything the grid draws. Density drives it (point 58).
+pub const FONT_SIZE_PROPERTY: &str = "--og-font-size";
+
+/// The grid's own surface: rows, the body of the card.
+pub const SURFACE_PROPERTY: &str = "--og-surface";
+
+/// The surface one step away from the data: header, filter row, status line.
+pub const SURFACE_2_PROPERTY: &str = "--og-surface-2";
+
+/// The colour of the text.
+pub const INK_PROPERTY: &str = "--og-ink";
+
+/// The colour of text that is there but not the point.
+pub const INK_MUTED_PROPERTY: &str = "--og-ink-muted";
+
+/// Text drawn **on** the accent — the tick of a checked selection box
+/// (point 61).
+pub const ON_ACCENT_PROPERTY: &str = "--og-on-accent";
+
+/// The rules between rows and cells.
+pub const LINE_PROPERTY: &str = "--og-line";
+
+/// The rules that separate regions — the filter row from the data, the status
+/// line from the viewport.
+pub const LINE_STRONG_PROPERTY: &str = "--og-line-strong";
+
+/// The one colour a page picks. Everything accented is computed from it.
+pub const ACCENT_PROPERTY: &str = "--og-accent";
+
+/// The corner radius of the grid's boxes.
+pub const RADIUS_PROPERTY: &str = "--og-radius";
+
+/// The horizontal padding inside a cell. Density drives it (point 58).
+pub const PAD_PROPERTY: &str = "--og-pad";
+
+// ---------------------------------------------------------------------------
+// Density (point 58)
+// ---------------------------------------------------------------------------
+
+/// The attribute that picks a density.
+pub const DENSITY_ATTRIBUTE: &str = "density";
+
+/// The columns a grid groups by, outermost first (point 62).
+///
+/// At most two. Setting it turns the `grid` into a `treegrid` for as long as it
+/// is set (F2, 2026-09-23): an expandable hierarchy is what `treegrid` exists
+/// for, and a `grid` with buttons in it would describe the structure worse.
+pub const GROUP_BY_ATTRIBUTE: &str = "group-by";
+
+/// The boolean attribute that puts a toolbar above the grid (point 65): the
+/// active filters as chips, a switch for the filter row, the column list and
+/// the density.
+///
+/// Opt-in, and not `filter-row`: the filter row has always been there, and a
+/// boolean attribute is *off* by default in HTML — an attribute named for the
+/// row would have taken it away from every grid that does not say it. Whether
+/// the row shows is part of the view instead (`filterRow`), on by default.
+pub const TOOLBAR_ATTRIBUTE: &str = "toolbar";
+
+/// The boolean attribute that puts a search field above the grid (point 67):
+/// free text, or a filter written out (`country = DE and amount ≥ 10`).
+pub const SEARCH_ATTRIBUTE: &str = "search";
+
+/// The boolean attribute that shows the facet sidebar (point 66).
+///
+/// The facets themselves are what a page configured with `set_columns`
+/// (`facet: "list" | "pills" | "range" | "period"`) — there is no facet per
+/// column by default, for the reason there is no aggregate by default: a range
+/// over the ids would be a control nobody asked for.
+pub const FACETS_ATTRIBUTE: &str = "facets";
+
+/// The boolean attribute that gives every column header a menu (point 64).
+///
+/// Opt-in like the selection column: a grid that is read rather than worked
+/// with has no use for a menu in every header.
+pub const COLUMN_MENU_ATTRIBUTE: &str = "column-menu";
+
+/// The boolean attribute that shows the selection column (point 61).
+///
+/// **Opt-in, like every other piece of chrome in this phase** (`filter-row`,
+/// `facets`, `column-menu`). Selecting rows has worked from the keyboard since
+/// point 35 whether or not this is set; what the attribute adds is the column
+/// that *shows* it and the pointer path to it. A grid that is read rather than
+/// worked with should not pay for a column in its `aria-colcount`, and a reader
+/// should not be told there is a control where there is nothing to do.
+pub const SELECTION_ATTRIBUTE: &str = "selection";
+
+/// The three steps, as `(attribute value, row height px, padding px, font size)`.
+///
+/// `normal` is the default and is declared on `:host` itself, so a grid without
+/// the attribute is a normal one — there is no fourth, nameless density.
+///
+/// **The row height is pixels and the font size is `rem`**, and that is not an
+/// oversight. The row height is the virtualization contract: the element reads
+/// the *specified* value of the custom property and parses `<number>px` from it,
+/// because an unregistered custom property is not resolved for
+/// `getComputedStyle`. The font size has no such reader, so it can be relative —
+/// and it should be, or a reader who raised their browser's font size would be
+/// overruled by ours (1.4.4). The consequence a page has to know: raising the
+/// font size means raising [`ROW_HEIGHT_PROPERTY`] with it.
+pub const DENSITIES: &[(&str, u64, u64, &str)] = &[
+    ("compact", 34, 10, "0.8125rem"),
+    ("normal", DEFAULT_ROW_HEIGHT, 12, "0.875rem"),
+    ("comfortable", 50, 16, "0.875rem"),
+];
+
+/// The density a value names, or `normal` for anything else — including absent.
+pub fn density_of(raw: Option<&str>) -> &'static (&'static str, u64, u64, &'static str) {
+    let wanted = raw.unwrap_or("").trim();
+    DENSITIES
+        .iter()
+        .find(|(name, ..)| *name == wanted)
+        .unwrap_or(&DENSITIES[1])
+}
+
+/// Computed: the accent as a background behind accented text — a pressed
+/// toolbar switch, a filter chip (point 65).
+pub const ACCENT_SOFT_PROPERTY: &str = "--og-accent-soft";
+
+/// Computed: the accent as readable text on the surface.
+pub const ACCENT_INK_PROPERTY: &str = "--og-accent-ink";
+
+/// Computed: the background of a selected row.
+///
+/// Never the only sign of selection — the row also carries an inset accent bar,
+/// because colour alone is 1.4.1.
+pub const SELECTED_PROPERTY: &str = "--og-selected";
+
+/// Computed: the background of a hovered row.
+pub const HOVER_PROPERTY: &str = "--og-hover";
+
+/// Every token the page sets, in the order the documentation lists them.
+pub const SET_TOKENS: &[&str] = &[
+    FONT_PROPERTY,
+    FONT_MONO_PROPERTY,
+    FONT_SIZE_PROPERTY,
+    SURFACE_PROPERTY,
+    SURFACE_2_PROPERTY,
+    INK_PROPERTY,
+    INK_MUTED_PROPERTY,
+    LINE_PROPERTY,
+    LINE_STRONG_PROPERTY,
+    ACCENT_PROPERTY,
+    ON_ACCENT_PROPERTY,
+    RADIUS_PROPERTY,
+    PAD_PROPERTY,
+    FOCUS_WIDTH_PROPERTY,
+    ROW_HEIGHT_PROPERTY,
+    HEADER_HEIGHT_PROPERTY,
+    FILTER_HEIGHT_PROPERTY,
+    STATUS_HEIGHT_PROPERTY,
+];
+
+/// Every token the stylesheet computes from [`SET_TOKENS`].
+///
+/// A page may override one, but it does not have to — and under a forced palette
+/// every one of them is reset to a system colour.
+pub const COMPUTED_TOKENS: &[&str] = &[
+    ACCENT_SOFT_PROPERTY,
+    ACCENT_INK_PROPERTY,
+    SELECTED_PROPERTY,
+    HOVER_PROPERTY,
+];
 
 /// The default focus ring width. Drawn **inside** the cell
 /// (`outline-offset: -width`), so the scroll container cannot clip it at the
@@ -338,6 +532,13 @@ pub const OBSERVED: &[&str] = &[
     WINDOW_SIZE_ATTRIBUTE,
     MODE_ATTRIBUTE,
     PAGE_SIZE_ATTRIBUTE,
+    DENSITY_ATTRIBUTE,
+    SELECTION_ATTRIBUTE,
+    GROUP_BY_ATTRIBUTE,
+    COLUMN_MENU_ATTRIBUTE,
+    TOOLBAR_ATTRIBUTE,
+    FACETS_ATTRIBUTE,
+    SEARCH_ATTRIBUTE,
 ];
 
 /// Reads `page-size`; absent, empty or unusable means "do not page".
@@ -405,6 +606,19 @@ impl Paging {
 /// header row, so it cannot be a [`CellRef`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ActiveCell {
+    /// The `<th>` above the selection column (point 61).
+    ///
+    /// Its own variant rather than `Header { col: 0 }` with everything shifted:
+    /// `col` means **schema column** everywhere else in this crate — formats,
+    /// presentation, filters and every `data-col` in the DOM key on it. Making
+    /// it mean "position in the row" instead would have renumbered all of them
+    /// to save two variants.
+    SelectAll,
+    /// The `<td>` of a row's selection column.
+    Select {
+        /// Logical row in the whole result.
+        row: u64,
+    },
     /// A `<th>` of the header row.
     Header {
         /// Column index into the schema.
@@ -415,11 +629,20 @@ pub enum ActiveCell {
 }
 
 impl ActiveCell {
-    /// The logical data cell, or `None` for a header cell.
+    /// The logical data cell, or `None` for a header or selection cell.
     pub const fn data(self) -> Option<CellRef> {
         match self {
-            Self::Header { .. } => None,
+            Self::SelectAll | Self::Select { .. } | Self::Header { .. } => None,
             Self::Data(cell) => Some(cell),
+        }
+    }
+
+    /// The logical row this cell belongs to, header rows excluded.
+    pub const fn row(self) -> Option<u64> {
+        match self {
+            Self::SelectAll | Self::Header { .. } => None,
+            Self::Select { row } => Some(row),
+            Self::Data(cell) => Some(cell.row),
         }
     }
 }
@@ -471,6 +694,14 @@ pub struct GridNodes {
     pub tbody: NodeId,
     /// The `<table role="grid">`.
     pub table: NodeId,
+    /// The `<th>` above the selection column, when the column is shown.
+    ///
+    /// `Option`, not a sentinel node: [`NodeId::ROOT`] is a **legal** node, and
+    /// a patch aimed at it replaces the whole shadow tree. That is not a
+    /// theoretical objection — it is what happened.
+    pub select_all: Option<NodeId>,
+    /// The mark inside it, whose text is the checkbox glyph.
+    pub select_all_mark: Option<NodeId>,
     /// The header cells, one per column.
     pub header_cells: Vec<GridHeaderNodes>,
     /// The recycled pool: one entry per slot.
@@ -480,6 +711,8 @@ pub struct GridNodes {
     pub pager: PagerNodes,
     /// One checkbox per declared column (`part="columns"`, plan point 36).
     pub columns: ColumnsNodes,
+    /// The empty state (point 68).
+    pub empty: NodeId,
 }
 
 /// The column-visibility controls.
@@ -557,6 +790,10 @@ pub struct FilterColumnNodes {
 pub struct GridRowNodes {
     /// The `<tr>`.
     pub row: NodeId,
+    /// The `<td>` of the selection column, when the column is shown.
+    pub select: Option<NodeId>,
+    /// The mark inside it.
+    pub select_mark: Option<NodeId>,
     /// The `<td>`s, one per column.
     pub cells: Vec<NodeId>,
 }
@@ -804,7 +1041,18 @@ pub fn status_text(texts: &GridTexts, status: &GridStatus, total_count: u64) -> 
 /// getting a live region of its own — point 41 left the grid exactly **one**,
 /// and two would talk over each other.
 pub fn status_line(texts: &GridTexts, state: &opengrid_grid::GridState) -> String {
-    let mut text = status_text(texts, state.status(), state.total_count());
+    status_line_counting(texts, state, state.total_count())
+}
+
+/// [`status_line`] with the number of matches given rather than read — under
+/// grouping (point 62) the state counts display positions, and those include
+/// the group headers.
+pub fn status_line_counting(
+    texts: &GridTexts,
+    state: &opengrid_grid::GridState,
+    matches: u64,
+) -> String {
+    let mut text = status_text(texts, state.status(), matches);
     if state.announce_selection_cleared() {
         text = format!("{text} · {}", texts.selection_cleared);
     }
@@ -988,51 +1236,95 @@ pub fn move_active(
     ncols: usize,
     total_count: u64,
     viewport_rows: u64,
+    selection: bool,
 ) -> ActiveCell {
     if ncols == 0 {
         return active;
     }
-    let last_col = ncols - 1;
     let last_row = total_count.saturating_sub(1);
-    let header = |col: usize| ActiveCell::Header {
-        col: col.min(last_col),
+
+    // One axis for the whole row, so the selection column is a place rather
+    // than a special case in every arm: `-1` is the selection cell, `0..ncols`
+    // are the schema columns (point 61). Without the column the axis simply
+    // starts at 0, and nothing else in here changes.
+    const SELECT: isize = -1;
+    let first_col = if selection { SELECT } else { 0 };
+    let last_col = ncols as isize - 1;
+    let clamp = |col: isize| col.clamp(first_col, last_col);
+
+    let column_of = |cell: ActiveCell| -> isize {
+        match cell {
+            ActiveCell::SelectAll | ActiveCell::Select { .. } => SELECT,
+            ActiveCell::Header { col } => col as isize,
+            ActiveCell::Data(reference) => reference.col as isize,
+        }
     };
-    let data =
-        |row: u64, col: usize| ActiveCell::Data(CellRef::new(row.min(last_row), col.min(last_col)));
+    let header = |col: isize| match clamp(col) {
+        SELECT => ActiveCell::SelectAll,
+        col => ActiveCell::Header { col: col as usize },
+    };
+    let data = |row: u64, col: isize| match clamp(col) {
+        SELECT => ActiveCell::Select {
+            row: row.min(last_row),
+        },
+        col => ActiveCell::Data(CellRef::new(row.min(last_row), col as usize)),
+    };
+    let is_header = matches!(active, ActiveCell::SelectAll | ActiveCell::Header { .. });
+    let row = active.row().unwrap_or(0);
+    let col = column_of(active);
 
     match key {
-        GridKey::ArrowUp => match active {
-            ActiveCell::Header { .. } => active,
-            ActiveCell::Data(cell) if cell.row == 0 => ActiveCell::Header { col: cell.col },
-            ActiveCell::Data(cell) => data(cell.row - 1, cell.col),
-        },
-        GridKey::ArrowDown => match active {
-            ActiveCell::Header { col } => {
+        GridKey::ArrowUp => {
+            if is_header {
+                active
+            } else if row == 0 {
+                header(col)
+            } else {
+                data(row - 1, col)
+            }
+        }
+        GridKey::ArrowDown => {
+            if is_header {
                 if total_count == 0 {
                     active
                 } else {
                     data(0, col)
                 }
+            } else {
+                data(row + 1, col)
             }
-            ActiveCell::Data(cell) => data(cell.row + 1, cell.col),
-        },
-        GridKey::ArrowLeft => match active {
-            ActiveCell::Header { col } => header(col.saturating_sub(1)),
-            ActiveCell::Data(cell) => data(cell.row, cell.col.saturating_sub(1)),
-        },
-        GridKey::ArrowRight => match active {
-            ActiveCell::Header { col } => header(col + 1),
-            ActiveCell::Data(cell) => data(cell.row, cell.col + 1),
-        },
-        GridKey::Home => match active {
-            ActiveCell::Header { .. } => header(0),
-            ActiveCell::Data(cell) => data(cell.row, 0),
-        },
-        GridKey::End => match active {
-            ActiveCell::Header { .. } => header(last_col),
-            ActiveCell::Data(cell) => data(cell.row, last_col),
-        },
-        GridKey::CtrlHome => header(0),
+        }
+        GridKey::ArrowLeft => {
+            if is_header {
+                header(col - 1)
+            } else {
+                data(row, col - 1)
+            }
+        }
+        GridKey::ArrowRight => {
+            if is_header {
+                header(col + 1)
+            } else {
+                data(row, col + 1)
+            }
+        }
+        // `Home` is the start of the row, and since point 61 that is the
+        // selection cell — the same place the eye starts.
+        GridKey::Home => {
+            if is_header {
+                header(first_col)
+            } else {
+                data(row, first_col)
+            }
+        }
+        GridKey::End => {
+            if is_header {
+                header(last_col)
+            } else {
+                data(row, last_col)
+            }
+        }
+        GridKey::CtrlHome => header(first_col),
         GridKey::CtrlEnd => {
             if total_count == 0 {
                 header(last_col)
@@ -1040,20 +1332,24 @@ pub fn move_active(
                 data(last_row, last_col)
             }
         }
-        GridKey::PageUp => match active {
-            ActiveCell::Header { .. } => active,
-            ActiveCell::Data(cell) => data(cell.row.saturating_sub(viewport_rows), cell.col),
-        },
-        GridKey::PageDown => match active {
-            ActiveCell::Header { col } => {
+        GridKey::PageUp => {
+            if is_header {
+                active
+            } else {
+                data(row.saturating_sub(viewport_rows), col)
+            }
+        }
+        GridKey::PageDown => {
+            if is_header {
                 if total_count == 0 {
                     active
                 } else {
                     data(viewport_rows.saturating_sub(1), col)
                 }
+            } else {
+                data(row.saturating_add(viewport_rows), col)
             }
-            ActiveCell::Data(cell) => data(cell.row.saturating_add(viewport_rows), cell.col),
-        },
+        }
     }
 }
 
@@ -1090,60 +1386,146 @@ pub fn requested_window(
 ///
 /// This runs exactly once per data-attribute configuration. [`patch_grid`] then
 /// recycles the returned nodes for every frame.
+/// Everything the skeleton is built from, in one place.
+///
+/// A struct rather than eight parameters, and not only because clippy counts:
+/// the skeleton is what every later feature of phase F adds to — a selection
+/// column (61), group rows (62), a column menu (64) — and each of those would
+/// otherwise be one more positional argument at every call site.
+pub struct GridSkeleton<'a> {
+    pub label: Option<&'a str>,
+    pub schema: &'a Schema,
+    /// Number of recycled DOM rows.
+    pub pool: usize,
+    pub texts: &'a GridTexts,
+    /// Declared columns with their visibility, for the column list.
+    pub declared: &'a [(String, bool)],
+    pub presentation: &'a crate::presentation::ColumnStyles,
+    /// Whether the selection column is shown (point 61).
+    pub selection: bool,
+    /// Whether every header gets a column menu (point 64).
+    pub column_menu: bool,
+    /// Whether the toolbar is built (point 65).
+    pub toolbar: bool,
+    /// Whether the facet sidebar is built (point 66).
+    pub facets: bool,
+    /// Whether the search field is built (point 67).
+    pub search: bool,
+}
+
 pub fn build_grid(
     buffer: &mut PatchBuffer,
     nodes: &mut NodeAllocator,
-    label: Option<&str>,
-    schema: &Schema,
-    pool: usize,
-    texts: &GridTexts,
-    declared: &[(String, bool)],
+    skeleton: &GridSkeleton<'_>,
 ) -> GridNodes {
+    let GridSkeleton {
+        label,
+        schema,
+        pool,
+        texts,
+        declared,
+        presentation,
+        selection,
+        column_menu,
+        toolbar,
+        facets,
+        search,
+    } = *skeleton;
     let fields = schema.fields();
     let ncols = fields.len();
 
-    // One shadow-root stylesheet: the `--grid-row-height` default plus the
+    // One shadow-root stylesheet: the `--og-row-height` default plus the
     // positioning rules the virtualized rows need. The property is declared on
     // `:host` with the default and can be overridden from the document (or an
     // inline style) on the host; the inner elements inherit the resolved value.
+    // The three densities, unpacked so the stylesheet below reads as CSS.
+    let (compact_name, compact_row, compact_pad, compact_font) = DENSITIES[0];
+    let (_, _, normal_pad, normal_font) = DENSITIES[1];
+    let (comfy_name, comfy_row, comfy_pad, comfy_font) = DENSITIES[2];
     let styles = format!(
-        ":host {{ {ROW_HEIGHT_PROPERTY}: {DEFAULT_ROW_HEIGHT}px;
+        ":host {{ {FONT_PROPERTY}: inherit;
+                   {FONT_MONO_PROPERTY}: ui-monospace, SFMono-Regular, Menlo, monospace;
+                   {FONT_SIZE_PROPERTY}: {normal_font};
+                   {SURFACE_PROPERTY}: Canvas;
+                   {SURFACE_2_PROPERTY}: Canvas;
+                   {INK_PROPERTY}: CanvasText;
+                   {INK_MUTED_PROPERTY}: color-mix(in oklab, CanvasText 62%, Canvas);
+                   {LINE_PROPERTY}: color-mix(in oklab, CanvasText 14%, Canvas);
+                   {LINE_STRONG_PROPERTY}: color-mix(in oklab, CanvasText 26%, Canvas);
+                   /* `LinkText`, not `Highlight`: `Highlight` is the background of
+                      a text selection — a pale colour meant to have dark text
+                      on it — and the accent is also drawn *as* text
+                      (`--og-accent-ink`). Found by axe in point 65 at 2.6:1. */
+                   {ACCENT_PROPERTY}: LinkText;
+                   {ON_ACCENT_PROPERTY}: Canvas;
+                   {RADIUS_PROPERTY}: 0;
+                   {PAD_PROPERTY}: {normal_pad}px;
+                   {FOCUS_WIDTH_PROPERTY}: {DEFAULT_FOCUS_WIDTH};
+                   {ROW_HEIGHT_PROPERTY}: {DEFAULT_ROW_HEIGHT}px;
                    {HEADER_HEIGHT_PROPERTY}: var({ROW_HEIGHT_PROPERTY});
                    {FILTER_HEIGHT_PROPERTY}: {FILTER_HEIGHT}px;
                    {STATUS_HEIGHT_PROPERTY}: {STATUS_HEIGHT}px;
-                   {BORDER_COLOR_PROPERTY}: {DEFAULT_BORDER_COLOR};
-                   {FOCUS_WIDTH_PROPERTY}: {DEFAULT_FOCUS_WIDTH}; }}
+                   /* Computed from the eleven above; reset under forced colors. */
+                   {ACCENT_SOFT_PROPERTY}: color-mix(in oklab, var({ACCENT_PROPERTY}) 13%, var({SURFACE_PROPERTY}));
+                   {ACCENT_INK_PROPERTY}: color-mix(in oklab, var({ACCENT_PROPERTY}) 80%, var({INK_PROPERTY}));
+                   {SELECTED_PROPERTY}: color-mix(in oklab, var({ACCENT_PROPERTY}) 9%, var({SURFACE_PROPERTY}));
+                   {HOVER_PROPERTY}: color-mix(in oklab, var({INK_PROPERTY}) 4%, var({SURFACE_PROPERTY}));
+                   background: var({SURFACE_PROPERTY}); color: var({INK_PROPERTY});
+                   font-family: var({FONT_PROPERTY}); font-size: var({FONT_SIZE_PROPERTY}); }}
+         /* Density (point 58). `normal` is `:host` itself, so a grid without the
+            attribute is a normal one rather than a fourth, nameless density. */
+         :host([{DENSITY_ATTRIBUTE}=\"{compact_name}\"]) {{ {ROW_HEIGHT_PROPERTY}: {compact_row}px;
+                   {PAD_PROPERTY}: {compact_pad}px; {FONT_SIZE_PROPERTY}: {compact_font}; }}
+         :host([{DENSITY_ATTRIBUTE}=\"{comfy_name}\"]) {{ {ROW_HEIGHT_PROPERTY}: {comfy_row}px;
+                   {PAD_PROPERTY}: {comfy_pad}px; {FONT_SIZE_PROPERTY}: {comfy_font}; }}
          [part=\"layout\"] {{ display: flex; flex-direction: column; height: 100%; min-height: 0; }}
          [part=\"filter\"] {{ display: flex; align-items: center; gap: 0.5rem; box-sizing: border-box;
                              flex: 0 0 auto;
-                             height: var({FILTER_HEIGHT_PROPERTY}); padding: 0 0.5rem;
-                             border-bottom: 1px solid var({BORDER_COLOR_PROPERTY});
+                             height: var({FILTER_HEIGHT_PROPERTY}); padding: 0 var({PAD_PROPERTY});
+                             background: var({SURFACE_2_PROPERTY});
+                             border-bottom: 1px solid var({LINE_STRONG_PROPERTY});
                              overflow-x: auto; overflow-y: hidden; white-space: nowrap; }}
          [part=\"filter\"] select, [part=\"filter\"] input, [part=\"filter\"] button {{
-                             font: inherit; min-height: {MIN_TARGET_SIZE}px; }}
+                             font: inherit; min-height: {MIN_TARGET_SIZE}px;
+                             color: var({INK_PROPERTY}); background: var({SURFACE_PROPERTY});
+                             border-radius: min(var({RADIUS_PROPERTY}), 8px); }}
          td[data-changed] {{ font-style: italic; }}
          td[data-changed]::after {{ content: \" *\"; }}
          [part=\"editor\"] {{ font: inherit; width: 100%; box-sizing: border-box;
-                             min-height: {MIN_TARGET_SIZE}px; }}
+                             min-height: {MIN_TARGET_SIZE}px;
+                             color: var({INK_PROPERTY});
+                             border-radius: min(var({RADIUS_PROPERTY}), 8px); }}
          [part=\"columns\"] {{ display: flex; gap: 0.5rem; align-items: center; }}
          [part=\"columns\"][hidden] {{ display: none; }}
          [part=\"column-toggle\"] {{ display: inline-flex; gap: 0.25rem; align-items: center;
                              min-height: {MIN_TARGET_SIZE}px; }}
          [part=\"column-toggle\"] input {{ min-width: {MIN_TARGET_SIZE}px;
-                             min-height: {MIN_TARGET_SIZE}px; }}
+                             min-height: {MIN_TARGET_SIZE}px;
+                             accent-color: var({ACCENT_PROPERTY}); }}
          [part=\"pager\"] {{ flex: 0 0 auto; display: flex; gap: 0.5rem; align-items: center;
-                             padding: 0.25rem 0.5rem; }}
+                             padding: 0.25rem var({PAD_PROPERTY});
+                             background: var({SURFACE_2_PROPERTY});
+                             border-top: 1px solid var({LINE_STRONG_PROPERTY}); }}
          /* `display` beats the user agent's `[hidden] {{ display: none }}`, so
             the hidden pager has to be told again — otherwise it takes height
             and shrinks the viewport that PageUp/PageDown step by. */
          [part=\"pager\"][hidden] {{ display: none; }}
          [part=\"pager\"] button {{ font: inherit; min-height: {MIN_TARGET_SIZE}px;
-                             min-width: {MIN_TARGET_SIZE}px; }}
-         [part=\"status\"] {{ flex: 0 0 auto; margin: 0; padding: 0 0.5rem; box-sizing: border-box;
-                             min-height: var({STATUS_HEIGHT_PROPERTY}); }}
-         [part=\"status\"][data-state=\"error\"] {{ font-weight: bold; }}
+                             min-width: {MIN_TARGET_SIZE}px;
+                             color: var({INK_PROPERTY}); background: var({SURFACE_PROPERTY});
+                             border-radius: min(var({RADIUS_PROPERTY}), 8px); }}
+         /* No border of its own: the status line sits directly under the
+            filter row, whose bottom border already separates the two. A top
+            border here draws the same line twice. */
+         [part=\"status\"] {{ flex: 0 0 auto; margin: 0; padding: 0 var({PAD_PROPERTY});
+                             box-sizing: border-box;
+                             min-height: var({STATUS_HEIGHT_PROPERTY});
+                             background: var({SURFACE_2_PROPERTY});
+                             color: var({INK_MUTED_PROPERTY}); }}
+         [part=\"status\"][data-state=\"error\"] {{ font-weight: bold; color: var({INK_PROPERTY}); }}
          [part=\"viewport\"] {{ flex: 1 1 0; min-height: 0; overflow-y: auto; position: relative; display: block; }}
-         [part=\"sort-direction\"], [part=\"sort-index\"] {{ margin-left: 0.25rem; font-size: 0.75em; }}
+         [part=\"sort-direction\"], [part=\"sort-index\"] {{ margin-left: 0.25rem; font-size: 0.75em;
+                             color: var({ACCENT_INK_PROPERTY}); }}
          /* An empty mark must not reserve space: an unsorted header would
             otherwise truncate its name earlier than the cells below it. */
          [part=\"sort-direction\"]:empty, [part=\"sort-index\"]:empty {{ margin-left: 0; }}
@@ -1157,21 +1539,229 @@ pub fn build_grid(
          [part=\"header\"][aria-sort=\"ascending\"] > span:first-child,
          [part=\"header\"][aria-sort=\"descending\"] > span:first-child {{ max-width: calc(100% - 2.75em); }}
          table {{ width: 100%; table-layout: fixed; border-collapse: collapse; }}
-         thead {{ position: sticky; top: 0; z-index: 2; background: Canvas; color: CanvasText; }}
+         thead {{ position: sticky; top: 0; z-index: 2;
+                  background: var({SURFACE_2_PROPERTY}); color: var({INK_PROPERTY}); }}
          tbody tr {{ position: absolute; left: 0; width: 100%; display: table; table-layout: fixed;
-                     background: Canvas; }}
+                     background: var({SURFACE_PROPERTY}); }}
+         tbody tr:hover {{ background: var({HOVER_PROPERTY}); }}
+         /* Until now a selected row was announced and invisible. The tint alone
+            would be 1.4.1, so the bar carries the information and the tint only
+            helps it. Selected beats hovered, hence the order. */
+         tbody tr[data-selected=\"true\"] {{ background: var({SELECTED_PROPERTY});
+                     box-shadow: inset 3px 0 0 var({ACCENT_PROPERTY}); }}
          tbody tr:has(:focus) {{ z-index: 1; }}
          tbody td:focus {{ white-space: normal; overflow-wrap: anywhere; }}
          tbody td {{ scroll-margin-top: var({HEADER_HEIGHT_PROPERTY}); }}
-         th, td {{ box-sizing: border-box; padding: 0 8px;
-                   border-bottom: 1px solid var({BORDER_COLOR_PROPERTY});
+         th, td {{ box-sizing: border-box; padding: 0 var({PAD_PROPERTY});
+                   border-bottom: 1px solid var({LINE_PROPERTY});
                    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
          td {{ height: var({ROW_HEIGHT_PROPERTY}); }}
-         th {{ height: var({HEADER_HEIGHT_PROPERTY}); background: Canvas; text-align: left; }}
+         /* The selection column (point 61). A fixed, narrow column: its
+            content is one glyph, and letting it share the table's flexible
+            width would make it move as the data changes. */
+         [part=\"select\"], [part=\"select-all\"] {{ width: 44px; text-align: center;
+                   padding: 0;
+                   cursor: pointer; }}
+         [part=\"select-mark\"] {{ position: relative; display: inline-flex;
+                   align-items: center; justify-content: center;
+                   width: 16px; height: 16px; box-sizing: border-box;
+                   border: 1.5px solid var({LINE_STRONG_PROPERTY});
+                   border-radius: min(var({RADIUS_PROPERTY}), 4px);
+                   font-size: 0.75em; line-height: 1; }}
+         /* The drawn box stays 16px — that is the design. The **target** is the
+            whole cell, which is 44px wide and a row tall: WCAG 2.2 §2.5.8
+            measures what a pointer can hit, not what it can see. */
+         [part=\"select-mark\"][aria-checked=\"true\"],
+         [part=\"select-mark\"][aria-checked=\"mixed\"],
+         tr[data-selected=\"true\"] [part=\"select-mark\"] {{
+                   border-color: var({ACCENT_PROPERTY});
+                   background: var({ACCENT_PROPERTY}); color: var({ON_ACCENT_PROPERTY}); }}
+         /* Group rows (point 62). The label runs across the empty cells beside
+            it — they have no background, so the text stays visible. The
+            chevron is drawn from `aria-expanded` with an empty alternative
+            text: it is seen, and not read a second time after the state. */
+         tr[data-kind=\"group\"] {{ background: var({SURFACE_2_PROPERTY}); font-weight: 600; }}
+         /* Left-aligned whatever the column is: the label is a sentence, and in
+            a right-aligned number column it would overflow to the left, out of
+            the row. */
+         tr[data-kind=\"group\"] td[data-col=\"0\"] {{ overflow: visible; text-align: left; }}
+         tr[data-kind=\"group\"] td[data-col=\"0\"]::before {{ content: \"\\25B8\" / \"\";
+                   display: inline-block; width: 1.25em; color: var({INK_MUTED_PROPERTY}); }}
+         tr[data-kind=\"group\"][aria-expanded=\"true\"] td[data-col=\"0\"]::before {{
+                   content: \"\\25BE\" / \"\"; }}
+         tr[data-kind=\"group\"][data-level=\"2\"] td[data-col=\"0\"] {{
+                   padding-left: calc(var({PAD_PROPERTY}) + 1.25em); }}
+         /* Aggregates (point 63): the glyph is drawn, with an empty
+            alternative — the cell's `aria-label` says the word. */
+         tr[data-kind=\"total\"] {{ background: var({SURFACE_2_PROPERTY}); font-weight: 600;
+                   border-top: 1px solid var({LINE_STRONG_PROPERTY}); }}
+         tr[data-kind=\"total\"] td[data-col=\"0\"] {{ overflow: visible; text-align: left; }}
+         td[data-aggregate]::before, th[data-aggregate]::after {{
+                   color: var({ACCENT_INK_PROPERTY}); font-weight: 500; }}
+         td[data-aggregate]::before {{ margin-right: 0.35em; }}
+         th[data-aggregate]::after {{ margin-left: 0.35em; }}
+         [data-aggregate=\"sum\"]::before, th[data-aggregate=\"sum\"]::after {{ content: \"\\03A3\" / \"\"; }}
+         [data-aggregate=\"avg\"]::before, th[data-aggregate=\"avg\"]::after {{ content: \"\\2300\" / \"\"; }}
+         [data-aggregate=\"count\"]::before, th[data-aggregate=\"count\"]::after {{ content: \"#\" / \"\"; }}
+         [data-aggregate=\"min\"]::before, th[data-aggregate=\"min\"]::after {{ content: \"min\" / \"\"; }}
+         [data-aggregate=\"max\"]::before, th[data-aggregate=\"max\"]::after {{ content: \"max\" / \"\"; }}
+         /* A range needs no glyph in its cell — the dash between its ends says
+            it — but the header says which summary the column shows (F7). */
+         th[data-aggregate=\"range\"]::after {{ content: \"\\2194\" / \"\"; }}
+         th[data-aggregate]::before {{ content: none; }}
+         /* The column menu (point 64). The trigger is 24px square (2.5.8) and
+            sits at the end of the header; the name gives way to it. */
+         [part=\"column-menu-button\"] {{ display: inline-flex; align-items: center;
+                   justify-content: center; width: {MIN_TARGET_SIZE}px; height: {MIN_TARGET_SIZE}px;
+                   margin-left: 0.25rem; vertical-align: middle; cursor: pointer;
+                   border-radius: min(var({RADIUS_PROPERTY}), 5px); color: var({INK_MUTED_PROPERTY}); }}
+         [part=\"column-menu-button\"]:hover {{ background: var({HOVER_PROPERTY}); }}
+         [part=\"header\"]:has([part=\"column-menu-button\"]) > span:first-child {{
+                   max-width: calc(100% - {MIN_TARGET_SIZE}px - 0.5rem); }}
+         [part=\"header\"][aria-sort=\"ascending\"]:has([part=\"column-menu-button\"]) > span:first-child,
+         [part=\"header\"][aria-sort=\"descending\"]:has([part=\"column-menu-button\"]) > span:first-child {{
+                   max-width: calc(100% - 2.75em - {MIN_TARGET_SIZE}px - 0.5rem); }}
+         [part=\"column-menu\"] {{ position: fixed; inset: auto; margin: 0; padding: 6px;
+                   min-width: 14rem; box-sizing: border-box;
+                   background: var({SURFACE_PROPERTY}); color: var({INK_PROPERTY});
+                   border: 1px solid var({LINE_STRONG_PROPERTY});
+                   border-radius: min(var({RADIUS_PROPERTY}), 10px);
+                   box-shadow: 0 12px 32px rgb(0 0 0 / 0.18);
+                   font-family: var({FONT_PROPERTY}); font-size: var({FONT_SIZE_PROPERTY}); }}
+         [part=\"column-menu\"] [role^=\"menuitem\"] {{ display: flex; align-items: center;
+                   gap: 0.5rem; min-height: 32px; padding: 0 8px; cursor: pointer;
+                   border-radius: min(var({RADIUS_PROPERTY}), 6px); }}
+         [part=\"column-menu\"] [role^=\"menuitem\"]:hover {{ background: var({HOVER_PROPERTY}); }}
+         [part=\"column-menu\"] [role^=\"menuitem\"]:focus {{
+                   outline: var({FOCUS_WIDTH_PROPERTY}) solid Highlight;
+                   outline-offset: calc(-1 * var({FOCUS_WIDTH_PROPERTY})); }}
+         [part=\"column-menu\"] [role=\"menuitemradio\"]::before {{ content: \"\" / \"\";
+                   display: inline-block; width: 1em; }}
+         [part=\"column-menu\"] [role=\"menuitemradio\"][aria-checked=\"true\"]::before {{
+                   content: \"\\2713\" / \"\"; color: var({ACCENT_INK_PROPERTY}); }}
+         [part=\"column-menu\"] [role=\"separator\"] {{ height: 1px; margin: 5px 0;
+                   background: var({LINE_PROPERTY}); }}
+         [part=\"column-menu\"] [role=\"group\"] > [part=\"menu-label\"] {{
+                   padding: 4px 8px; font-size: 0.75em; color: var({INK_MUTED_PROPERTY});
+                   text-transform: uppercase; letter-spacing: 0.05em; }}
+         /* The toolbar and the chips (point 65). Each hidden group says
+            `display: none` again: `display` beats `[hidden]` (phase E (h)), and
+            a hidden row that kept its height would shrink the viewport. */
+         [part=\"toolbar\"] {{ display: flex; flex-wrap: wrap; align-items: center;
+                   gap: 0.5rem; padding: 0.375rem var({PAD_PROPERTY});
+                   border-bottom: 1px solid var({LINE_PROPERTY}); }}
+         [part=\"toolbar\"] button, [part=\"chips\"] button {{ font: inherit;
+                   min-height: {MIN_TARGET_SIZE}px; min-width: {MIN_TARGET_SIZE}px;
+                   color: var({INK_PROPERTY}); background: var({SURFACE_PROPERTY});
+                   border-radius: min(var({RADIUS_PROPERTY}), 8px); }}
+         [part=\"toolbar\"] button[aria-pressed=\"true\"] {{ background: var({ACCENT_SOFT_PROPERTY});
+                   color: var({ACCENT_INK_PROPERTY}); }}
+         [part=\"density\"] {{ display: inline-flex; gap: 2px; margin-left: auto; }}
+         [part=\"chips\"] {{ display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem;
+                   padding: 0.375rem var({PAD_PROPERTY}); }}
+         [part=\"chips\"][hidden], [part=\"filter\"][hidden] {{ display: none; }}
+         [part=\"chip\"] {{ display: inline-flex; align-items: center; gap: 0.25rem;
+                   padding: 0 0 0 0.75rem; border-radius: 999px;
+                   background: var({ACCENT_SOFT_PROPERTY}); color: var({ACCENT_INK_PROPERTY}); }}
+         [part=\"chips\"] [part=\"chip-remove\"] {{ border: 0; background: transparent; border-radius: 999px;
+                   cursor: pointer; }}
+         /* The facet sidebar (point 66). */
+         [part=\"body\"] {{ flex: 1 1 0; min-height: 0; display: flex; }}
+         [part=\"body\"] > [part=\"viewport\"] {{ flex: 1 1 0; min-width: 0; }}
+         [part=\"facets\"] {{ flex: 0 0 15.5rem; overflow-y: auto; box-sizing: border-box;
+                   padding: 0.75rem var({PAD_PROPERTY}); display: flex; flex-direction: column;
+                   gap: 1rem; background: var({SURFACE_2_PROPERTY});
+                   border-right: 1px solid var({LINE_PROPERTY}); }}
+         [part=\"facets-head\"] {{ display: flex; justify-content: space-between;
+                   align-items: center; gap: 0.5rem; }}
+         [part=\"facets-head\"] button, [part=\"facet\"] button {{ font: inherit;
+                   min-height: {MIN_TARGET_SIZE}px; color: var({INK_PROPERTY});
+                   background: var({SURFACE_PROPERTY});
+                   border-radius: min(var({RADIUS_PROPERTY}), 8px); }}
+         [part=\"facet-cost\"] {{ color: var({INK_MUTED_PROPERTY}); font-size: 0.85em; }}
+         [part=\"facet\"] {{ border: 0; margin: 0; padding: 0; display: flex;
+                   flex-direction: column; gap: 0.25rem; min-width: 0; }}
+         [part=\"facet\"] legend {{ padding: 0 0 0.25rem; font-size: 0.85em;
+                   color: var({INK_MUTED_PROPERTY}); }}
+         [part=\"facet-value\"] {{ display: flex; align-items: center; gap: 0.5rem;
+                   min-height: {MIN_TARGET_SIZE}px; }}
+         [part=\"facet-value\"] input {{ min-width: {MIN_TARGET_SIZE}px;
+                   min-height: {MIN_TARGET_SIZE}px; margin: 0; accent-color: var({ACCENT_PROPERTY}); }}
+         [part=\"facet-value\"] [part=\"facet-count\"], [part=\"facet-pill\"] [part=\"facet-count\"] {{
+                   margin-left: auto; font-family: var({FONT_MONO_PROPERTY}); font-size: 0.85em;
+                   color: var({INK_MUTED_PROPERTY}); }}
+         [part=\"facet-pills\"] {{ display: flex; flex-wrap: wrap; gap: 0.375rem; }}
+         [part=\"facet-pill\"] {{ display: inline-flex; gap: 0.375rem; align-items: center;
+                   border: 1px solid var({LINE_STRONG_PROPERTY}); background: var({SURFACE_PROPERTY}); }}
+         [part=\"facet-pill\"][aria-pressed=\"true\"] {{ border-color: var({ACCENT_PROPERTY});
+                   background: var({ACCENT_SOFT_PROPERTY}); color: var({ACCENT_INK_PROPERTY}); }}
+         [part=\"facet-bounds\"] {{ display: grid; grid-template-columns: 1fr 1fr; gap: 0.375rem; }}
+         [part=\"facet-bounds\"] label {{ display: flex; flex-direction: column; gap: 0.125rem;
+                   font-size: 0.85em; color: var({INK_MUTED_PROPERTY}); min-width: 0; }}
+         [part=\"facet-bounds\"] input {{ font: inherit; min-height: {MIN_TARGET_SIZE}px;
+                   min-width: 0; color: var({INK_PROPERTY}); background: var({SURFACE_PROPERTY}); }}
+         /* The search field (point 67). */
+         [part=\"search\"] {{ position: relative; display: flex; align-items: center; gap: 0.5rem;
+                   padding: 0.375rem var({PAD_PROPERTY}); }}
+         [part=\"search-input\"] {{ flex: 1 1 18rem; max-width: 32rem; font: inherit;
+                   min-height: 32px; box-sizing: border-box; padding: 0 0.625rem;
+                   color: var({INK_PROPERTY}); background: var({SURFACE_2_PROPERTY});
+                   border: 1px solid var({LINE_STRONG_PROPERTY});
+                   border-radius: min(var({RADIUS_PROPERTY}), 9px); }}
+         [part=\"search-input\"][data-query] {{ font-family: var({FONT_MONO_PROPERTY}); }}
+         [part=\"search-hint\"] {{ font-size: 0.75em; padding: 0.2em 0.5em; border-radius: 5px;
+                   background: var({ACCENT_SOFT_PROPERTY}); color: var({ACCENT_INK_PROPERTY}); }}
+         [part=\"search-hint\"][hidden], [part=\"search-list\"][hidden] {{ display: none; }}
+         [part=\"search-list\"] {{ position: absolute; top: 100%; left: var({PAD_PROPERTY}); z-index: 5;
+                   margin: 0; padding: 6px; list-style: none; min-width: 16rem;
+                   background: var({SURFACE_PROPERTY}); border: 1px solid var({LINE_STRONG_PROPERTY});
+                   border-radius: min(var({RADIUS_PROPERTY}), 10px);
+                   box-shadow: 0 12px 32px rgb(0 0 0 / 0.16); }}
+         [part=\"search-list\"] [role=\"option\"] {{ display: flex; justify-content: space-between;
+                   gap: 1rem; min-height: 32px; align-items: center; padding: 0 8px;
+                   border-radius: 6px; cursor: pointer; font-family: var({FONT_MONO_PROPERTY}); }}
+         [part=\"search-list\"] [role=\"option\"][aria-selected=\"true\"] {{
+                   background: var({ACCENT_SOFT_PROPERTY}); color: var({ACCENT_INK_PROPERTY}); }}
+         /* The empty state (point 68). */
+         [part=\"empty\"] {{ display: flex; flex-direction: column; align-items: center;
+                   gap: 0.75rem; padding: 3rem 1.5rem; text-align: center; }}
+         [part=\"empty\"][hidden], [part=\"empty-reset\"][hidden] {{ display: none; }}
+         [part=\"empty-text\"] {{ margin: 0; color: var({INK_MUTED_PROPERTY}); }}
+         [part=\"empty-reset\"] {{ font: inherit; min-height: 32px; padding: 0 0.875rem;
+                   color: var({INK_PROPERTY}); background: var({SURFACE_PROPERTY});
+                   border: 1px solid var({LINE_STRONG_PROPERTY});
+                   border-radius: min(var({RADIUS_PROPERTY}), 8px); }}
+         /* Column presentation (point 60). Markers rather than inline styles,
+            so the sheet decides what \"muted\" looks like and a page can still
+            reach the cell through `::part(cell)`. */
+         [data-align=\"end\"] {{ text-align: right; }}
+         [data-align=\"center\"] {{ text-align: center; }}
+         [data-align=\"start\"] {{ text-align: left; }}
+         /* Tabular figures on every number, not only on the mono columns:
+            digits of the same magnitude have to stand under each other or the
+            column cannot be read down. */
+         td[data-align=\"end\"] {{ font-variant-numeric: tabular-nums; }}
+         /* Values only: a group or total row reuses the pooled cells, and its
+            label in the first column is not an `id` because the column is. */
+         tr:not([data-kind]) td[data-mono] {{ font-family: var({FONT_MONO_PROPERTY}); }}
+         tr:not([data-kind]) td[data-emphasis] {{ font-weight: 600; }}
+         tr:not([data-kind]) td[data-muted] {{ color: var({INK_MUTED_PROPERTY}); }}
+         th {{ height: var({HEADER_HEIGHT_PROPERTY}); background: var({SURFACE_2_PROPERTY});
+               color: var({INK_MUTED_PROPERTY}); text-align: left; }}
+         /* The focus ring never uses the accent: a pale accent would make it
+            invisible, and the ring is not decoration. */
          th:focus, td:focus {{ outline: var({FOCUS_WIDTH_PROPERTY}) solid Highlight;
                                outline-offset: calc(-1 * var({FOCUS_WIDTH_PROPERTY})); }}
+         /* Under a forced palette every computed colour is a system colour: a
+            `color-mix` of two system colours resolves unpredictably, and the
+            user's palette is the one that has to win. */
          @media (forced-colors: active) {{
-           :host {{ {BORDER_COLOR_PROPERTY}: CanvasText; }}
+           :host {{ {SURFACE_PROPERTY}: Canvas; {SURFACE_2_PROPERTY}: Canvas;
+                    {INK_PROPERTY}: CanvasText; {INK_MUTED_PROPERTY}: CanvasText;
+                    {LINE_PROPERTY}: CanvasText; {LINE_STRONG_PROPERTY}: CanvasText;
+                    {ACCENT_PROPERTY}: Highlight; {ON_ACCENT_PROPERTY}: HighlightText;
+                    {ACCENT_SOFT_PROPERTY}: Canvas; {ACCENT_INK_PROPERTY}: CanvasText;
+                    {SELECTED_PROPERTY}: Canvas; {HOVER_PROPERTY}: Canvas; }}
          }}
          @media (prefers-reduced-motion: reduce) {{
            * {{ animation-duration: 0.01ms !important; animation-iteration-count: 1 !important;
@@ -1190,15 +1780,70 @@ pub fn build_grid(
         name: "part".to_owned(),
         value: "layout".to_owned(),
     });
+    // The search field (point 67), first: it is where a reader starts.
+    if search {
+        build_search(buffer, nodes, layout, texts);
+    }
+    // The toolbar and the chips (point 65), above the filter row.
+    let tools = toolbar.then(|| {
+        build_toolbar(
+            buffer,
+            nodes,
+            layout,
+            texts,
+            !presentation.facets().is_empty(),
+            facets,
+        )
+    });
     let filter = build_filter(buffer, nodes, layout, fields, texts);
     let status = build_status(buffer, nodes, layout, texts);
 
     // Inside the filter row, not above it: a new row of its own would shrink
-    // the viewport, and the viewport is what `PageUp`/`PageDown` step by.
-    let columns = build_columns(buffer, nodes, filter.container, declared, texts);
+    // the viewport, and the viewport is what `PageUp`/`PageDown` step by. With a
+    // toolbar it moves there, where the prototype has it — and where it stays
+    // reachable when the reader hides the filter row.
+    let columns = build_columns(
+        buffer,
+        nodes,
+        tools.unwrap_or(filter.container),
+        declared,
+        texts,
+    );
     let pager = build_pager(buffer, nodes, layout, texts);
 
-    let viewport = element(buffer, nodes, Some(layout), "div");
+    // With facets, the viewport shares a row with the sidebar (point 66).
+    // Without, the skeleton is exactly what it was: the wrapper would be one
+    // more box around the viewport, and the viewport's height is what the
+    // window math and `PageDown` are made of.
+    let viewport_parent = if facets {
+        let body = element(buffer, nodes, Some(layout), "div");
+        buffer.push(Patch::SetAttribute {
+            node: body,
+            name: "part".to_owned(),
+            value: "body".to_owned(),
+        });
+        let sidebar = element(buffer, nodes, Some(body), "div");
+        for (name, value) in [("part", "facets"), ("role", "group")] {
+            buffer.push(Patch::SetAttribute {
+                node: sidebar,
+                name: name.to_owned(),
+                value: value.to_owned(),
+            });
+        }
+        label_by(
+            buffer,
+            nodes,
+            body,
+            sidebar,
+            "og-label-facets",
+            &texts.facets_group,
+            texts,
+        );
+        body
+    } else {
+        layout
+    };
+    let viewport = element(buffer, nodes, Some(viewport_parent), "div");
     buffer.push(Patch::SetAttribute {
         node: viewport,
         name: "part".to_owned(),
@@ -1226,7 +1871,9 @@ pub fn build_grid(
     buffer.push(Patch::SetAttribute {
         node: table,
         name: "aria-colcount".to_owned(),
-        value: ncols.to_string(),
+        // The selection column counts when it is there: a reader told there are
+        // five would look for a sixth.
+        value: (ncols + usize::from(selection)).to_string(),
     });
 
     let thead = element(buffer, nodes, Some(table), "thead");
@@ -1236,6 +1883,60 @@ pub fn build_grid(
         name: "aria-rowindex".to_owned(),
         value: "1".to_owned(),
     });
+    let (select_all, select_all_mark) = if selection {
+        // The selection column's header (point 61). A `<th>` like any other, so
+        // the arrow keys reach it and a screen reader counts it; `Enter`/`Space` on
+        // it selects every matching row — the same promise `Ctrl`+`A` already made,
+        // now visible.
+        let select_all = element(buffer, nodes, Some(header_row), "th");
+        for (name, value) in [
+            ("part", "select-all"),
+            ("scope", "col"),
+            // On the **cell**: this is what a pointer hits (44px wide, a row tall),
+            // and WCAG 2.2 §2.5.8 measures the target, not the drawn box. The
+            // widget below carries the role and the state.
+            ("data-select", "all"),
+        ] {
+            buffer.push(Patch::SetAttribute {
+                node: select_all,
+                name: name.to_owned(),
+                value: value.to_owned(),
+            });
+        }
+        // The checkbox is the **span**, not the cell. `aria-checked` on a
+        // `columnheader` is not allowed (axe says so, and it is right): a cell is
+        // not a widget. The grid pattern answers this directly — when a cell holds
+        // a single widget, the widget is the focusable element — so the roving
+        // tabindex lands here and the cell stays a plain header.
+        let select_all_mark = element(buffer, nodes, Some(select_all), "span");
+        for (name, value) in [
+            ("role", "checkbox"),
+            ("part", "select-mark"),
+            ("tabindex", "-1"),
+            ("aria-checked", "false"),
+        ] {
+            buffer.push(Patch::SetAttribute {
+                node: select_all_mark,
+                name: name.to_owned(),
+                value: value.to_owned(),
+            });
+        }
+        // A word, not the glyph: "✓" read aloud is not a promise anybody can act
+        // on, and what this selects is **every matching row**, not the page.
+        buffer.push(Patch::SetAttribute {
+            node: select_all_mark,
+            name: "aria-label".to_owned(),
+            value: texts.select_all.clone(),
+        });
+        // The label is our sentence, so the language sits here — and not on the
+        // `<th>`, whose siblings hold the page's column names (point 39, and the
+        // lesson of phase E (k)).
+        set_lang(buffer, select_all_mark, texts);
+        (Some(select_all), Some(select_all_mark))
+    } else {
+        (None, None)
+    };
+
     let mut header_cells = Vec::with_capacity(ncols);
     for (col, field) in fields.iter().enumerate() {
         let th = element(buffer, nodes, Some(header_row), "th");
@@ -1254,6 +1955,15 @@ pub fn build_grid(
             name: "data-col".to_owned(),
             value: col.to_string(),
         });
+        // The header lines up with the values under it, or the column reads
+        // as two columns.
+        for (marker, value) in presentation.markers(field.name.as_str(), field.data_type) {
+            buffer.push(Patch::SetAttribute {
+                node: th,
+                name: marker.to_owned(),
+                value,
+            });
+        }
         buffer.push(Patch::SetAttribute {
             node: th,
             name: "aria-sort".to_owned(),
@@ -1276,6 +1986,29 @@ pub fn build_grid(
         });
         let direction = marker(buffer, nodes, th, "sort-direction");
         let index = marker(buffer, nodes, th, "sort-index");
+        // The column menu (point 64): a pointer target only. The keyboard path
+        // is `Alt`+`↓` on the cell itself, said by `aria-keyshortcuts` — a
+        // focusable button in here would be a second tab stop inside the grid,
+        // next to the cell that already holds the roving tabindex.
+        if column_menu {
+            buffer.push(Patch::SetAttribute {
+                node: th,
+                name: "aria-keyshortcuts".to_owned(),
+                value: "Alt+ArrowDown".to_owned(),
+            });
+            let button = element(buffer, nodes, Some(th), "span");
+            for (name, value) in [("part", "column-menu-button"), ("aria-hidden", "true")] {
+                buffer.push(Patch::SetAttribute {
+                    node: button,
+                    name: name.to_owned(),
+                    value: value.to_owned(),
+                });
+            }
+            buffer.push(Patch::SetText {
+                node: button,
+                text: "\u{22EF}".to_owned(),
+            });
+        }
         header_cells.push(GridHeaderNodes {
             cell: th,
             direction,
@@ -1296,7 +2029,39 @@ pub fn build_grid(
         });
         set_style(buffer, tr, ROW_HIDDEN_STYLE);
         let mut cells = Vec::with_capacity(ncols);
-        for col in 0..ncols {
+        let (select, select_mark) = if selection {
+            let select = element(buffer, nodes, Some(tr), "td");
+            for (name, value) in [
+                ("part", "select"),
+                ("data-select", "row"),
+                ("tabindex", "-1"),
+            ] {
+                buffer.push(Patch::SetAttribute {
+                    node: select,
+                    name: name.to_owned(),
+                    value: value.to_owned(),
+                });
+            }
+            let select_mark = element(buffer, nodes, Some(select), "span");
+            // Decoration: the row already says whether it is selected
+            // (`aria-selected`), and a second voice per row would double every
+            // announcement.
+            buffer.push(Patch::SetAttribute {
+                node: select_mark,
+                name: "aria-hidden".to_owned(),
+                value: "true".to_owned(),
+            });
+            buffer.push(Patch::SetAttribute {
+                node: select_mark,
+                name: "part".to_owned(),
+                value: "select-mark".to_owned(),
+            });
+            (Some(select), Some(select_mark))
+        } else {
+            (None, None)
+        };
+
+        for (col, field) in fields.iter().enumerate() {
             let td = element(buffer, nodes, Some(tr), "td");
             buffer.push(Patch::SetAttribute {
                 node: td,
@@ -1308,6 +2073,16 @@ pub fn build_grid(
                 name: "data-col".to_owned(),
                 value: col.to_string(),
             });
+            // The presentation of point 60. It belongs in the skeleton, not in
+            // the per-frame patch: a pool cell always shows the same column, so
+            // writing these once is the whole cost of them.
+            for (marker, value) in presentation.markers(field.name.as_str(), field.data_type) {
+                buffer.push(Patch::SetAttribute {
+                    node: td,
+                    name: marker.to_owned(),
+                    value,
+                });
+            }
             buffer.push(Patch::SetAttribute {
                 node: td,
                 name: "tabindex".to_owned(),
@@ -1315,8 +2090,49 @@ pub fn build_grid(
             });
             cells.push(td);
         }
-        rows.push(GridRowNodes { row: tr, cells });
+        rows.push(GridRowNodes {
+            row: tr,
+            select,
+            select_mark,
+            cells,
+        });
     }
+
+    // The empty state (point 68): drawn by the element when a result has no
+    // rows. It sits in the viewport, under the header, where the rows would
+    // be — and says nothing aloud: the status line already said "No matches",
+    // and a second voice would be the doubling phase E (o) made visible.
+    let empty = element(buffer, nodes, Some(viewport), "div");
+    for (name, value) in [("part", "empty"), ("hidden", "")] {
+        buffer.push(Patch::SetAttribute {
+            node: empty,
+            name: name.to_owned(),
+            value: value.to_owned(),
+        });
+    }
+    set_lang(buffer, empty, texts);
+    let sentence = element(buffer, nodes, Some(empty), "p");
+    buffer.push(Patch::SetAttribute {
+        node: sentence,
+        name: "part".to_owned(),
+        value: "empty-text".to_owned(),
+    });
+    let reset = element(buffer, nodes, Some(empty), "button");
+    for (name, value) in [
+        ("type", "button"),
+        ("part", "empty-reset"),
+        ("data-empty-reset", ""),
+    ] {
+        buffer.push(Patch::SetAttribute {
+            node: reset,
+            name: name.to_owned(),
+            value: value.to_owned(),
+        });
+    }
+    buffer.push(Patch::SetText {
+        node: reset,
+        text: texts.empty_reset.clone(),
+    });
 
     GridNodes {
         filter,
@@ -1324,11 +2140,186 @@ pub fn build_grid(
         viewport,
         tbody,
         table,
+        select_all,
+        select_all_mark,
         header_cells,
         rows,
         pager,
         columns,
+        empty,
     }
+}
+
+/// Builds the search field (point 67): an ARIA combobox — the text field, a
+/// listbox of column suggestions it controls, and the hint that says an input
+/// reads as a filter. The listbox is filled by the element as the reader
+/// types; `aria-activedescendant` moves through it while the focus stays in the
+/// field, as the combobox pattern has it.
+fn build_search(
+    buffer: &mut PatchBuffer,
+    nodes: &mut NodeAllocator,
+    parent: NodeId,
+    texts: &GridTexts,
+) {
+    let attribute = |buffer: &mut PatchBuffer, node: NodeId, name: &str, value: &str| {
+        buffer.push(Patch::SetAttribute {
+            node,
+            name: name.to_owned(),
+            value: value.to_owned(),
+        });
+    };
+    let row = element(buffer, nodes, Some(parent), "div");
+    attribute(buffer, row, "part", "search");
+
+    let input = element(buffer, nodes, Some(row), "input");
+    for (name, value) in [
+        ("type", "text"),
+        ("part", "search-input"),
+        ("role", "combobox"),
+        ("aria-autocomplete", "list"),
+        ("aria-expanded", "false"),
+        ("aria-controls", "og-search-list"),
+        ("autocomplete", "off"),
+        ("spellcheck", "false"),
+    ] {
+        attribute(buffer, input, name, value);
+    }
+    label_by(
+        buffer,
+        nodes,
+        row,
+        input,
+        "og-label-search",
+        &texts.search_label,
+        texts,
+    );
+    attribute(buffer, input, "placeholder", &texts.search_placeholder);
+
+    let hint = element(buffer, nodes, Some(row), "span");
+    attribute(buffer, hint, "part", "search-hint");
+    attribute(buffer, hint, "hidden", "");
+    set_lang(buffer, hint, texts);
+    buffer.push(Patch::SetText {
+        node: hint,
+        text: texts.search_hint.clone(),
+    });
+
+    let list = element(buffer, nodes, Some(row), "ul");
+    for (name, value) in [
+        ("part", "search-list"),
+        ("role", "listbox"),
+        ("id", "og-search-list"),
+        ("hidden", ""),
+    ] {
+        attribute(buffer, list, name, value);
+    }
+    label_by(
+        buffer,
+        nodes,
+        row,
+        list,
+        "og-label-suggestions",
+        &texts.search_suggestions,
+        texts,
+    );
+}
+
+/// Builds the toolbar and the (empty) chip group (point 65); answers the
+/// toolbar's node, into which the column list is then put.
+///
+/// A labelled `group` of ordinary buttons, **outside** `role="grid"`, like the
+/// filter row: `role="toolbar"` would promise arrow-key movement between the
+/// controls, and a promise not kept is worse than the plainer role. The chips
+/// are filled by the element from the view, because the filters live in the
+/// filter row's fields rather than in the grid state.
+fn build_toolbar(
+    buffer: &mut PatchBuffer,
+    nodes: &mut NodeAllocator,
+    parent: NodeId,
+    texts: &GridTexts,
+    has_facets: bool,
+    facets_shown: bool,
+) -> NodeId {
+    let attribute = |buffer: &mut PatchBuffer, node: NodeId, name: &str, value: &str| {
+        buffer.push(Patch::SetAttribute {
+            node,
+            name: name.to_owned(),
+            value: value.to_owned(),
+        });
+    };
+    let bar = element(buffer, nodes, Some(parent), "div");
+    attribute(buffer, bar, "part", "toolbar");
+    attribute(buffer, bar, "role", "group");
+    label_by(
+        buffer,
+        nodes,
+        parent,
+        bar,
+        "og-label-toolbar",
+        &texts.toolbar_group,
+        texts,
+    );
+
+    let toggle = element(buffer, nodes, Some(bar), "button");
+    attribute(buffer, toggle, "type", "button");
+    attribute(buffer, toggle, "part", "filter-row-toggle");
+    attribute(buffer, toggle, "data-toolbar", "filter-row");
+    attribute(buffer, toggle, "aria-pressed", "true");
+    buffer.push(Patch::SetText {
+        node: toggle,
+        text: texts.filter_row_toggle.clone(),
+    });
+    set_lang(buffer, toggle, texts);
+
+    // The facet switch, only where there are facets to show (point 66).
+    if has_facets {
+        let switch = element(buffer, nodes, Some(bar), "button");
+        attribute(buffer, switch, "type", "button");
+        attribute(buffer, switch, "part", "facets-toggle");
+        attribute(buffer, switch, "data-toolbar", "facets");
+        attribute(buffer, switch, "aria-pressed", &facets_shown.to_string());
+        buffer.push(Patch::SetText {
+            node: switch,
+            text: texts.facets_toggle.clone(),
+        });
+        set_lang(buffer, switch, texts);
+    }
+
+    let density = element(buffer, nodes, Some(bar), "div");
+    attribute(buffer, density, "part", "density");
+    attribute(buffer, density, "role", "group");
+    attribute(buffer, density, "aria-label", &texts.density_group);
+    set_lang(buffer, density, texts);
+    for (name, ..) in DENSITIES {
+        let button = element(buffer, nodes, Some(density), "button");
+        attribute(buffer, button, "type", "button");
+        attribute(buffer, button, "data-density", name);
+        attribute(
+            buffer,
+            button,
+            "aria-pressed",
+            if *name == "normal" { "true" } else { "false" },
+        );
+        buffer.push(Patch::SetText {
+            node: button,
+            text: texts.density(name).to_owned(),
+        });
+    }
+
+    let chips = element(buffer, nodes, Some(parent), "div");
+    attribute(buffer, chips, "part", "chips");
+    attribute(buffer, chips, "role", "group");
+    label_by(
+        buffer,
+        nodes,
+        parent,
+        chips,
+        "og-label-chips",
+        &texts.chips_group,
+        texts,
+    );
+    attribute(buffer, chips, "hidden", "");
+    bar
 }
 
 /// Builds the column-visibility group (plan point 36).
@@ -1373,11 +2364,15 @@ fn build_columns(
             value: value.to_owned(),
         });
     }
-    buffer.push(Patch::SetAttribute {
-        node: container,
-        name: "aria-label".to_owned(),
-        value: texts.columns_group.clone(),
-    });
+    label_by(
+        buffer,
+        nodes,
+        parent,
+        container,
+        "og-label-columns",
+        &texts.columns_group,
+        texts,
+    );
 
     let mut boxes = Vec::with_capacity(declared.len());
     for (name, visible) in declared {
@@ -1544,11 +2539,15 @@ fn build_filter(
         name: "role".to_owned(),
         value: "group".to_owned(),
     });
-    buffer.push(Patch::SetAttribute {
-        node: container,
-        name: "aria-label".to_owned(),
-        value: texts.filter_group.clone(),
-    });
+    label_by(
+        buffer,
+        nodes,
+        parent,
+        container,
+        "og-label-filter",
+        &texts.filter_group,
+        texts,
+    );
 
     let mut columns = Vec::with_capacity(fields.len());
     for (col, field) in fields.iter().enumerate() {
@@ -1687,9 +2686,25 @@ pub fn patch_grid(
     texts: &GridTexts,
     format: &dyn CellFormat,
     paging: Paging,
+    grouping: Option<&crate::grouping::Grouping>,
 ) {
     let fields = state.schema().fields();
     let total_count = state.total_count();
+
+    // **The one place the role is decided** (F2): a grouped grid is a
+    // `treegrid`, an ungrouped one a `grid`. Kept here, and nowhere else, so
+    // that the screen-reader run of point 71 can turn it back with one line if
+    // the switch at run time turns out to be louder than the lie it avoids.
+    buffer.push(Patch::SetAttribute {
+        node: nodes.table,
+        name: "role".to_owned(),
+        value: if grouping.is_some() {
+            "treegrid"
+        } else {
+            "grid"
+        }
+        .to_owned(),
+    });
 
     buffer.push(Patch::SetAttribute {
         node: nodes.tbody,
@@ -1706,6 +2721,25 @@ pub fn patch_grid(
     });
     patch_pager(buffer, &nodes.pager, paging, total_count, texts);
 
+    // The select-all header, in its three states (point 61).
+    if let Some(mark) = nodes.select_all_mark {
+        let all = select_all_state(state.selection().len(), total_count);
+        buffer.push(Patch::SetAttribute {
+            node: mark,
+            name: "tabindex".to_owned(),
+            value: tabindex_for(active == ActiveCell::SelectAll).to_owned(),
+        });
+        buffer.push(Patch::SetAttribute {
+            node: mark,
+            name: "aria-checked".to_owned(),
+            value: all.as_str().to_owned(),
+        });
+        buffer.push(Patch::SetText {
+            node: mark,
+            text: check_glyph(all).to_owned(),
+        });
+    }
+
     buffer.push(Patch::SetAttribute {
         node: nodes.status,
         name: "data-state".to_owned(),
@@ -1713,7 +2747,12 @@ pub fn patch_grid(
     });
     buffer.push(Patch::SetText {
         node: nodes.status,
-        text: status_line(texts, state),
+        text: match grouping {
+            // "57 matches" for 52 rows and five group headers would be false:
+            // under grouping the display list is longer than the result.
+            Some(grouping) => status_line_counting(texts, state, grouping.row_count()),
+            None => status_line(texts, state),
+        },
     });
 
     // The filter row follows the schema: which operators a column offers and what
@@ -1779,6 +2818,28 @@ pub fn patch_grid(
             name: "tabindex".to_owned(),
             value: tabindex_for(active == ActiveCell::Header { col }).to_owned(),
         });
+        // The aggregate a column shows in groups (point 63), drawn as a glyph
+        // next to the name — the cells themselves say the word.
+        let aggregate = grouping.and_then(|grouping| {
+            fields.get(col).and_then(|field| {
+                grouping
+                    .aggregates()
+                    .iter()
+                    .find(|(column, _)| column == field.name.as_str())
+                    .map(|(_, function)| function.as_str())
+            })
+        });
+        match aggregate {
+            Some(function) => buffer.push(Patch::SetAttribute {
+                node: header.cell,
+                name: "data-aggregate".to_owned(),
+                value: function.to_owned(),
+            }),
+            None => buffer.push(Patch::RemoveAttribute {
+                node: header.cell,
+                name: "data-aggregate".to_owned(),
+            }),
+        }
         // Both marks come from the same key as `aria-sort`, so what is seen and
         // what is announced cannot drift apart.
         buffer.push(Patch::SetText {
@@ -1808,7 +2869,40 @@ pub fn patch_grid(
             // standing on would show nothing: `aria-selected` touches neither
             // identity nor focus.
             if let Some(row) = slots.get(slot).copied().flatten() {
-                selection_attributes(buffer, row_nodes.row, state.is_selected(row));
+                // A group header is exactly what the focus stands on when it is
+                // toggled — the fourth time the pin of point 17 meets a feature
+                // (phase E (i)). Its own label and `aria-expanded` are rewritten;
+                // its position and identity are not, so the focus stays.
+                if let Some(grouping) = grouping
+                    && let Some(
+                        item @ (crate::grouping::Item::Group { .. }
+                        | crate::grouping::Item::Total { .. }),
+                    ) = grouping.item_at(row)
+                {
+                    patch_group_row(buffer, row_nodes, &item, grouping, fields, texts, format);
+                    continue;
+                }
+                let selected = state.is_selected(row);
+                selection_attributes(buffer, row_nodes.row, selected);
+                if let (Some(cell), Some(mark)) = (row_nodes.select, row_nodes.select_mark) {
+                    buffer.push(Patch::SetAttribute {
+                        node: cell,
+                        name: "tabindex".to_owned(),
+                        value: tabindex_for(active == ActiveCell::Select { row }).to_owned(),
+                    });
+                    // The mark is decoration: the row already carries
+                    // `aria-selected`, and a second voice per row would double
+                    // every announcement (point 61).
+                    buffer.push(Patch::SetText {
+                        node: mark,
+                        text: check_glyph(if selected {
+                            CheckState::On
+                        } else {
+                            CheckState::Off
+                        })
+                        .to_owned(),
+                    });
+                }
             }
             continue;
         }
@@ -1821,17 +2915,117 @@ pub fn patch_grid(
                     name: "aria-rowindex".to_owned(),
                     value: (local + 2).to_string(),
                 });
+                // Under grouping a position is a group header or a data row, and
+                // the same pooled `<tr>` draws either — so scrolling still adds
+                // no node, grouped or not (point 17's promise, kept).
+                let item = grouping.and_then(|grouping| grouping.item_at(row));
+                if let (
+                    Some(grouping),
+                    Some(
+                        item @ (crate::grouping::Item::Group { .. }
+                        | crate::grouping::Item::Total { .. }),
+                    ),
+                ) = (grouping, &item)
+                {
+                    for (col, cell) in row_nodes.cells.iter().enumerate() {
+                        buffer.push(Patch::SetAttribute {
+                            node: *cell,
+                            name: "data-row".to_owned(),
+                            value: row.to_string(),
+                        });
+                        let is_active = active == ActiveCell::Data(CellRef::new(row, col));
+                        buffer.push(Patch::SetAttribute {
+                            node: *cell,
+                            name: "tabindex".to_owned(),
+                            value: tabindex_for(is_active).to_owned(),
+                        });
+                        buffer.push(Patch::RemoveAttribute {
+                            node: *cell,
+                            name: "data-changed".to_owned(),
+                        });
+                    }
+                    if let (Some(cell), Some(mark)) = (row_nodes.select, row_nodes.select_mark) {
+                        buffer.push(Patch::SetAttribute {
+                            node: cell,
+                            name: "tabindex".to_owned(),
+                            value: tabindex_for(active == ActiveCell::Select { row }).to_owned(),
+                        });
+                        buffer.push(Patch::SetText {
+                            node: mark,
+                            text: String::new(),
+                        });
+                    }
+                    patch_group_row(buffer, row_nodes, item, grouping, fields, texts, format);
+                    continue;
+                }
+                // A data row: one level deeper than the innermost group, or no
+                // level at all when nothing is grouped.
+                match grouping {
+                    Some(grouping) => buffer.push(Patch::SetAttribute {
+                        node: row_nodes.row,
+                        name: "aria-level".to_owned(),
+                        value: (grouping.levels() + 1).to_string(),
+                    }),
+                    None => buffer.push(Patch::RemoveAttribute {
+                        node: row_nodes.row,
+                        name: "aria-level".to_owned(),
+                    }),
+                }
+                for name in ["aria-expanded", "data-kind", "data-level"] {
+                    buffer.push(Patch::RemoveAttribute {
+                        node: row_nodes.row,
+                        name: name.to_owned(),
+                    });
+                }
+                // A slot that showed the total carried our `lang` on its label;
+                // a value in it is the page's word again.
+                if let Some(first) = row_nodes.cells.first() {
+                    buffer.push(Patch::RemoveAttribute {
+                        node: *first,
+                        name: "lang".to_owned(),
+                    });
+                }
                 // Selection is per **logical** row, so a recycled slot picks up
                 // the state of whatever row it now shows — that is what makes a
                 // selection survive scrolling (point 35). `data-selected` is the
                 // styling hook; `aria-selected` is the announcement.
-                selection_attributes(buffer, row_nodes.row, state.is_selected(row));
+                let selected = state.is_selected(row);
+                selection_attributes(buffer, row_nodes.row, selected);
+                if let (Some(cell), Some(mark)) = (row_nodes.select, row_nodes.select_mark) {
+                    buffer.push(Patch::SetAttribute {
+                        node: cell,
+                        name: "tabindex".to_owned(),
+                        value: tabindex_for(active == ActiveCell::Select { row }).to_owned(),
+                    });
+                    // The mark is decoration: the row already carries
+                    // `aria-selected`, and a second voice per row would double
+                    // every announcement (point 61).
+                    buffer.push(Patch::SetText {
+                        node: mark,
+                        text: check_glyph(if selected {
+                            CheckState::On
+                        } else {
+                            CheckState::Off
+                        })
+                        .to_owned(),
+                    });
+                }
                 for (col, cell) in row_nodes.cells.iter().enumerate() {
                     buffer.push(Patch::SetAttribute {
                         node: *cell,
                         name: "data-row".to_owned(),
                         value: row.to_string(),
                     });
+                    // A pooled cell that drew a group row a frame ago still
+                    // carries its aggregate name; a data cell must not.
+                    if grouping.is_some() {
+                        for name in ["data-aggregate", "aria-label"] {
+                            buffer.push(Patch::RemoveAttribute {
+                                node: *cell,
+                                name: name.to_owned(),
+                            });
+                        }
+                    }
                     let reference = CellRef::new(row, col);
                     let is_active = active == ActiveCell::Data(reference);
                     buffer.push(Patch::SetAttribute {
@@ -1894,6 +3088,271 @@ pub fn patch_grid(
 /// `aria-selected` is what assistive technology reads; `data-selected` is what a
 /// theme can shade. Both, because shading alone is not information
 /// (WCAG 1.4.1) and an ARIA state alone is invisible.
+/// Writes a group header — or the grand total — into a pooled row (points 62
+/// and 63).
+///
+/// The label goes into the first data cell, as one sentence ("country: DE
+/// (52 rows)", "Total (200 rows)"). Every column with a chosen aggregate gets
+/// its value; the rest are emptied. The chevron is not text: it is drawn from
+/// `aria-expanded` in the stylesheet, with an empty alternative, so it is seen
+/// and not read twice — the state is already said by `aria-expanded` itself.
+fn patch_group_row(
+    buffer: &mut PatchBuffer,
+    row_nodes: &GridRowNodes,
+    item: &crate::grouping::Item,
+    grouping: &crate::grouping::Grouping,
+    fields: &[opengrid_types::Field],
+    texts: &GridTexts,
+    format: &dyn CellFormat,
+) {
+    use crate::grouping::Item;
+    let (label, level, expanded, aggregates, kind) = match item {
+        Item::Group {
+            level,
+            value,
+            count,
+            expanded,
+            aggregates,
+            ..
+        } => {
+            let column = grouping
+                .by()
+                .get(level - 1)
+                .map(String::as_str)
+                .unwrap_or_default();
+            let value = group_value_text(value, column, fields, texts, format);
+            (
+                texts.group_row(column, &value, *count),
+                *level,
+                Some(*expanded),
+                aggregates,
+                "group",
+            )
+        }
+        Item::Total { count, aggregates } => {
+            (texts.total_row(*count), 1, None, aggregates, "total")
+        }
+        Item::Row { .. } => return,
+    };
+
+    for (name, value) in [
+        ("data-kind", kind.to_owned()),
+        ("data-level", level.to_string()),
+        ("aria-level", level.to_string()),
+    ] {
+        buffer.push(Patch::SetAttribute {
+            node: row_nodes.row,
+            name: name.to_owned(),
+            value,
+        });
+    }
+    match expanded {
+        Some(expanded) => buffer.push(Patch::SetAttribute {
+            node: row_nodes.row,
+            name: "aria-expanded".to_owned(),
+            value: expanded.to_string(),
+        }),
+        // The total opens nothing, and `aria-expanded` on it would promise that
+        // it does.
+        None => buffer.push(Patch::RemoveAttribute {
+            node: row_nodes.row,
+            name: "aria-expanded".to_owned(),
+        }),
+    }
+    // A group is not a record: it cannot be selected, and saying
+    // `aria-selected="false"` about it would invite trying.
+    for name in ["aria-selected", "data-selected"] {
+        buffer.push(Patch::RemoveAttribute {
+            node: row_nodes.row,
+            name: name.to_owned(),
+        });
+    }
+
+    // One slice of values per chosen summary: a range answers two.
+    let values = crate::grouping::split(grouping.aggregates(), aggregates);
+    for (col, cell) in row_nodes.cells.iter().enumerate() {
+        let chosen = fields.get(col).and_then(|field| {
+            grouping
+                .aggregates()
+                .iter()
+                .position(|(column, _)| column == field.name.as_str())
+                .map(|index| (index, grouping.aggregates()[index].1))
+        });
+        // The first cell is the label, even when its column has an aggregate:
+        // a row nobody can name is worse than one number fewer.
+        let (text, aggregate) = if col == 0 {
+            // The total's label is all ours ("Total (6 rows)"); a group's names
+            // a column and a value, the page's words, so it claims no language.
+            if kind == "total" && !texts.lang.trim().is_empty() {
+                buffer.push(Patch::SetAttribute {
+                    node: *cell,
+                    name: "lang".to_owned(),
+                    value: texts.lang.clone(),
+                });
+            } else {
+                buffer.push(Patch::RemoveAttribute {
+                    node: *cell,
+                    name: "lang".to_owned(),
+                });
+            }
+            (label.clone(), None)
+        } else if let Some((index, function)) = chosen {
+            let value = values.get(index).copied().unwrap_or(&[]);
+            (aggregate_text(function, col, value, format), Some(function))
+        } else {
+            (String::new(), None)
+        };
+        match aggregate {
+            // An aggregate over nothing is NULL (S11): the cell stays empty and
+            // draws no glyph — a "Σ" with no number beside it reads as a zero —
+            // but it still *says* what it is, with the word every other missing
+            // value gets. "Average: " would be half a sentence.
+            Some(function) if text.is_empty() => {
+                buffer.push(Patch::RemoveAttribute {
+                    node: *cell,
+                    name: "data-aggregate".to_owned(),
+                });
+                buffer.push(Patch::SetAttribute {
+                    node: *cell,
+                    name: "aria-label".to_owned(),
+                    value: texts.aggregate_cell(function, &texts.no_value),
+                });
+            }
+            Some(function) => {
+                buffer.push(Patch::SetAttribute {
+                    node: *cell,
+                    name: "data-aggregate".to_owned(),
+                    value: function.as_str().to_owned(),
+                });
+                buffer.push(Patch::SetAttribute {
+                    node: *cell,
+                    name: "aria-label".to_owned(),
+                    value: texts.aggregate_cell(function, &text),
+                });
+            }
+            None => {
+                for name in ["data-aggregate", "aria-label"] {
+                    buffer.push(Patch::RemoveAttribute {
+                        node: *cell,
+                        name: name.to_owned(),
+                    });
+                }
+            }
+        }
+        buffer.push(Patch::SetText { node: *cell, text });
+    }
+}
+
+/// An aggregate as text.
+///
+/// `count` is a number of rows, whatever the column holds — a count of a
+/// currency column printed as currency would be "€52.00" rows. Everything else
+/// goes through the column's format, so a sum reads like the values it sums.
+/// NULL (S11: a sum over nothing) is empty, not zero: zero would be a claim.
+///
+/// A range (F7) is its two ends, "from – to", each in the column's format; a
+/// group whose rows all hold the same value shows it once, since "2.3.2026 –
+/// 2.3.2026" says less than "2.3.2026".
+fn aggregate_text(
+    summary: crate::presentation::Summary,
+    col: usize,
+    values: &[opengrid_types::Value],
+    format: &dyn CellFormat,
+) -> String {
+    use crate::presentation::Summary;
+    use opengrid_types::Value;
+    match (summary, values) {
+        (Summary::Range, [Value::Null, Value::Null]) => String::new(),
+        (Summary::Range, [low, high]) if low == high => format.text(col, low),
+        (Summary::Range, [low, high]) => {
+            format!(
+                "{} \u{2013} {}",
+                format.text(col, low),
+                format.text(col, high)
+            )
+        }
+        (_, [Value::Null] | []) => String::new(),
+        (Summary::Fn(opengrid_query::AggregateFn::Count), [value]) => {
+            crate::formats::plain_text(value)
+        }
+        (_, [value, ..]) => format.text(col, value),
+    }
+}
+
+/// The key of a group as a reader sees it.
+///
+/// NULL and the empty string are different groups (S10, S14) and get different
+/// words — an empty label is silence to a screen reader, the reason
+/// `noValue`/`emptyValue` exist since the pivot of point 32. Anything else goes
+/// through the column's format, so a date key reads like the dates below it.
+pub fn group_value_text(
+    value: &opengrid_types::Value,
+    column: &str,
+    fields: &[opengrid_types::Field],
+    texts: &GridTexts,
+    format: &dyn CellFormat,
+) -> String {
+    match value {
+        opengrid_types::Value::Null => texts.no_value.clone(),
+        opengrid_types::Value::Utf8(text) if text.is_empty() => texts.empty_value.clone(),
+        value => match fields
+            .iter()
+            .position(|field| field.name.as_str() == column)
+        {
+            Some(col) => format.text(col, value),
+            None => crate::formats::plain_text(value),
+        },
+    }
+}
+
+/// The glyph of a checkbox in one of its three states.
+///
+/// Text, not an image or a pseudo-element: it survives forced colours, it
+/// scales with the font, and it costs nothing. It is `aria-hidden` wherever it
+/// appears — the state is on the cell, in words.
+pub const fn check_glyph(state: CheckState) -> &'static str {
+    match state {
+        CheckState::On => "\u{2713}",
+        CheckState::Mixed => "\u{2013}",
+        CheckState::Off => "",
+    }
+}
+
+/// What a checkbox says.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CheckState {
+    Off,
+    Mixed,
+    On,
+}
+
+impl CheckState {
+    /// The `aria-checked` value.
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            CheckState::Off => "false",
+            CheckState::Mixed => "mixed",
+            CheckState::On => "true",
+        }
+    }
+}
+
+/// The state of the select-all header for a selection over `total_count` rows.
+///
+/// **"All" means all matching rows, not the loaded page.** The grid holds one
+/// window at a time; a header that said "all" about what happens to be on
+/// screen would be a different promise from `Ctrl`+`A`, which has selected
+/// every matching row since point 35.
+pub fn select_all_state(selected: usize, total_count: u64) -> CheckState {
+    if total_count == 0 || selected == 0 {
+        CheckState::Off
+    } else if selected as u64 >= total_count {
+        CheckState::On
+    } else {
+        CheckState::Mixed
+    }
+}
+
 fn selection_attributes(buffer: &mut PatchBuffer, row: NodeId, selected: bool) {
     buffer.push(Patch::SetAttribute {
         node: row,
@@ -2060,6 +3519,45 @@ fn set_lang(buffer: &mut PatchBuffer, node: NodeId, texts: &GridTexts) {
     });
 }
 
+/// Names `target` with our words when its subtree holds the page's (F9,
+/// decided 2026-09-24).
+///
+/// A toolbar, the facets, the search field and the column list are named in
+/// our language but contain column names or typed values — a `lang` on the
+/// container would claim those, and an `aria-label` cannot carry one of its
+/// own. So the name lives in a hidden `<span>` beside the target, with our
+/// `lang`, and the target points at it with `aria-labelledby`. A hidden element
+/// still names what refers to it, and the reference stays inside the shadow
+/// root (E8).
+fn label_by(
+    buffer: &mut PatchBuffer,
+    nodes: &mut NodeAllocator,
+    parent: NodeId,
+    target: NodeId,
+    id: &str,
+    text: &str,
+    texts: &GridTexts,
+) {
+    let label = element(buffer, nodes, Some(parent), "span");
+    for (name, value) in [("id", id), ("hidden", "")] {
+        buffer.push(Patch::SetAttribute {
+            node: label,
+            name: name.to_owned(),
+            value: value.to_owned(),
+        });
+    }
+    set_lang(buffer, label, texts);
+    buffer.push(Patch::SetText {
+        node: label,
+        text: text.to_owned(),
+    });
+    buffer.push(Patch::SetAttribute {
+        node: target,
+        name: "aria-labelledby".to_owned(),
+        value: id.to_owned(),
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2114,10 +3612,10 @@ mod tests {
     fn row_height_parses_pixels_and_falls_back() {
         assert_eq!(parse_row_height("48px"), 48);
         assert_eq!(parse_row_height(" 20px "), 20);
-        assert_eq!(parse_row_height("48"), 32);
-        assert_eq!(parse_row_height("48em"), 32);
-        assert_eq!(parse_row_height("0px"), 32);
-        assert_eq!(parse_row_height(""), 32);
+        assert_eq!(parse_row_height("48"), DEFAULT_ROW_HEIGHT);
+        assert_eq!(parse_row_height("48em"), DEFAULT_ROW_HEIGHT);
+        assert_eq!(parse_row_height("0px"), DEFAULT_ROW_HEIGHT);
+        assert_eq!(parse_row_height(""), DEFAULT_ROW_HEIGHT);
     }
 
     /// The query carries select, limit and offset, and omits sort when unsorted.
@@ -2432,11 +3930,19 @@ mod tests {
         let view = build_grid(
             &mut buffer,
             &mut nodes,
-            Some("Bestellungen"),
-            &schema,
-            3,
-            &GridTexts::default(),
-            &[],
+            &GridSkeleton {
+                label: Some("Bestellungen"),
+                schema: &schema,
+                pool: 3,
+                texts: &GridTexts::default(),
+                declared: &[],
+                presentation: &crate::presentation::ColumnStyles::default(),
+                selection: false,
+                column_menu: false,
+                toolbar: false,
+                facets: false,
+                search: false,
+            },
         );
 
         assert_eq!(view.pool(), 3);
@@ -2466,10 +3972,25 @@ mod tests {
             ["group", "status", "group", "group", "grid"]
         );
         assert_eq!(attributes("aria-live"), ["polite"]);
-        // The filter row is labelled separately; the grid label comes last.
+        // Three accessible names, and each names a different thing: the filter
+        // group, the selection column's header (point 61) and the grid itself.
+        // Asserted as a set, not by position — the order is where they happen
+        // to be built, which is not a promise to anybody.
+        // (The filter row adds an operator and a value name per column, so the
+        // list is longer than these two.) Asserted as a set, not by position —
+        // the order is where they happen to be built, which is not a promise.
         let labels = attributes("aria-label");
-        assert_eq!(labels.first().map(String::as_str), Some("Filter"));
-        assert_eq!(labels.last().map(String::as_str), Some("Bestellungen"));
+        assert!(
+            labels.iter().any(|label| label == "Bestellungen"),
+            "the grid is not named"
+        );
+        // The filter group and the column list are named by reference (F9):
+        // the name sits in a hidden element that can carry our language.
+        assert_eq!(
+            attributes("aria-labelledby"),
+            ["og-label-filter", "og-label-columns"]
+        );
+        // Two columns, and no selection column: it is opt-in (point 61).
         assert_eq!(attributes("aria-colcount"), ["2"]);
         // Only the header row carries an index in the skeleton; the pool rows
         // get theirs from `patch_grid`.
@@ -2504,11 +4025,19 @@ mod tests {
         let view = build_grid(
             &mut buffer,
             &mut nodes,
-            Some("Bestellungen"),
-            &schema,
-            4,
-            &GridTexts::default(),
-            &[],
+            &GridSkeleton {
+                label: Some("Bestellungen"),
+                schema: &schema,
+                pool: 4,
+                texts: &GridTexts::default(),
+                declared: &[],
+                presentation: &crate::presentation::ColumnStyles::default(),
+                selection: false,
+                column_menu: false,
+                toolbar: false,
+                facets: false,
+                search: false,
+            },
         );
         let state = state_with(&["Gamma", "Alpha"], 5, 0, 4);
         let slots = assign_pool(&[None; 4], None, &window_rows(0, 5, 4), 4);
@@ -2526,6 +4055,7 @@ mod tests {
             &GridTexts::default(),
             &crate::formats::Plain,
             Paging::whole(state.total_count()),
+            None,
         );
 
         let attributes = |name: &str| -> Vec<String> {
@@ -2565,11 +4095,19 @@ mod tests {
         let view = build_grid(
             &mut buffer,
             &mut nodes,
-            None,
-            &schema,
-            1,
-            &GridTexts::default(),
-            &[],
+            &GridSkeleton {
+                label: None,
+                schema: &schema,
+                pool: 1,
+                texts: &GridTexts::default(),
+                declared: &[],
+                presentation: &crate::presentation::ColumnStyles::default(),
+                selection: false,
+                column_menu: false,
+                toolbar: false,
+                facets: false,
+                search: false,
+            },
         );
         let state = state_with(&["Gamma"], 1, 0, 1);
         let slots = assign_pool(&[None], None, &window_rows(0, 1, 1), 1);
@@ -2587,6 +4125,7 @@ mod tests {
             &GridTexts::default(),
             &crate::formats::Plain,
             Paging::whole(state.total_count()),
+            None,
         );
         let sorts: Vec<&str> = buffer
             .patches()
@@ -2610,11 +4149,19 @@ mod tests {
         let view = build_grid(
             &mut buffer,
             &mut nodes,
-            None,
-            &schema,
-            1,
-            &GridTexts::default(),
-            &[],
+            &GridSkeleton {
+                label: None,
+                schema: &schema,
+                pool: 1,
+                texts: &GridTexts::default(),
+                declared: &[],
+                presentation: &crate::presentation::ColumnStyles::default(),
+                selection: false,
+                column_menu: false,
+                toolbar: false,
+                facets: false,
+                search: false,
+            },
         );
         let state = state_with(&["Gamma"], 1, 0, 1);
         let slots = assign_pool(&[None], None, &window_rows(0, 1, 1), 1);
@@ -2632,6 +4179,7 @@ mod tests {
             &GridTexts::default(),
             &crate::formats::Plain,
             Paging::whole(state.total_count()),
+            None,
         );
 
         let aria: Vec<&str> = buffer
@@ -2674,11 +4222,19 @@ mod tests {
         let view = build_grid(
             &mut buffer,
             &mut nodes,
-            None,
-            &schema,
-            2,
-            &GridTexts::default(),
-            &[],
+            &GridSkeleton {
+                label: None,
+                schema: &schema,
+                pool: 2,
+                texts: &GridTexts::default(),
+                declared: &[],
+                presentation: &Default::default(),
+                selection: false,
+                column_menu: false,
+                toolbar: false,
+                facets: false,
+                search: false,
+            },
         );
 
         let tagged: Vec<NodeId> = buffer
@@ -2693,10 +4249,32 @@ mod tests {
         // status line, the pager (it writes words too, point 38), the
         // disclosure's toggle, each operator `select` (its options are our
         // words) and the clear button.
-        let mut expected = vec![view.status, view.columns.toggle, view.pager.container];
+        // And the empty state of point 68: its sentence and its button are
+        // ours, and it holds no data of the page's.
+        let mut expected = vec![
+            view.status,
+            view.columns.toggle,
+            view.pager.container,
+            view.empty,
+        ];
         expected.push(view.filter.clear);
         for column in &view.filter.columns {
             expected.push(column.select);
+        }
+        // And the hidden names of the two containers below (F9): the name is
+        // ours even where the container's contents are not.
+        for id in ["og-label-filter", "og-label-columns"] {
+            let label = buffer
+                .patches()
+                .iter()
+                .find_map(|patch| match patch {
+                    Patch::SetAttribute { node, name, value } if name == "id" && value == id => {
+                        Some(*node)
+                    }
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("{id} names its container"));
+            expected.push(label);
         }
         for node in &expected {
             assert!(tagged.contains(node), "{node:?} should carry the language");
@@ -2726,7 +4304,23 @@ mod tests {
             lang: String::new(),
             ..GridTexts::default()
         };
-        build_grid(&mut buffer, &mut nodes, None, &schema, 2, &silent, &[]);
+        build_grid(
+            &mut buffer,
+            &mut nodes,
+            &GridSkeleton {
+                label: None,
+                schema: &schema,
+                pool: 2,
+                texts: &silent,
+                declared: &[],
+                presentation: &Default::default(),
+                selection: false,
+                column_menu: false,
+                toolbar: false,
+                facets: false,
+                search: false,
+            },
+        );
         assert!(
             !buffer
                 .patches()
@@ -2745,11 +4339,19 @@ mod tests {
         let view = build_grid(
             &mut buffer,
             &mut nodes,
-            None,
-            &schema,
-            1,
-            &GridTexts::default(),
-            &[],
+            &GridSkeleton {
+                label: None,
+                schema: &schema,
+                pool: 1,
+                texts: &GridTexts::default(),
+                declared: &[],
+                presentation: &crate::presentation::ColumnStyles::default(),
+                selection: false,
+                column_menu: false,
+                toolbar: false,
+                facets: false,
+                search: false,
+            },
         );
         let state = state_with(&["Gamma"], 1, 0, 1);
 
@@ -2767,6 +4369,7 @@ mod tests {
                 &GridTexts::default(),
                 &crate::formats::Plain,
                 Paging::whole(state.total_count()),
+                None,
             );
             view.header_cells
                 .iter()
@@ -2811,11 +4414,19 @@ mod tests {
         build_grid(
             &mut buffer,
             &mut nodes,
-            None,
-            &schema,
-            1,
-            &GridTexts::default(),
-            &[],
+            &GridSkeleton {
+                label: None,
+                schema: &schema,
+                pool: 1,
+                texts: &GridTexts::default(),
+                declared: &[],
+                presentation: &Default::default(),
+                selection: false,
+                column_menu: false,
+                toolbar: false,
+                facets: false,
+                search: false,
+            },
         );
 
         let mut parts: Vec<&str> = buffer
@@ -2834,6 +4445,9 @@ mod tests {
                 "cell",
                 "columns",
                 "columns-toggle",
+                "empty",
+                "empty-reset",
+                "empty-text",
                 "filter",
                 "filter-clear",
                 "filter-operator",
@@ -2855,6 +4469,83 @@ mod tests {
         );
     }
 
+    /// A range reads "from – to" in the column's format, once when both ends
+    /// are the same, and not at all over nothing (F7, S11).
+    #[test]
+    fn a_range_reads_from_to() {
+        use crate::presentation::Summary;
+        use opengrid_types::Value;
+        let range =
+            |values: &[Value]| aggregate_text(Summary::Range, 0, values, &crate::formats::Plain);
+        assert_eq!(range(&[Value::Int64(1), Value::Int64(9)]), "1 \u{2013} 9");
+        assert_eq!(range(&[Value::Int64(4), Value::Int64(4)]), "4");
+        assert_eq!(range(&[Value::Null, Value::Null]), "");
+        assert_eq!(
+            aggregate_text(
+                Summary::Fn(opengrid_query::AggregateFn::Count),
+                0,
+                &[Value::Int64(3)],
+                &crate::formats::Plain
+            ),
+            "3"
+        );
+    }
+
+    /// A control that takes its text colour from the theme takes its background
+    /// from it too. Otherwise the background is the system's `ButtonFace` or
+    /// `Field`, which follows the page's `color-scheme` and not the theme: the
+    /// light ink of a dark theme on a mid-grey button read at 4.34:1 (point 69).
+    #[test]
+    fn a_themed_control_colour_comes_with_its_background() {
+        let schema = initial_schema(&["customer".to_owned()]);
+        let mut nodes = NodeAllocator::new();
+        let mut buffer = PatchBuffer::new();
+        build_grid(
+            &mut buffer,
+            &mut nodes,
+            &GridSkeleton {
+                label: None,
+                schema: &schema,
+                pool: 1,
+                texts: &GridTexts::default(),
+                declared: &[],
+                presentation: &Default::default(),
+                selection: true,
+                column_menu: true,
+                toolbar: true,
+                facets: true,
+                search: true,
+            },
+        );
+        let styles = buffer
+            .patches()
+            .iter()
+            .find_map(|patch| match patch {
+                Patch::SetText { text, .. } if text.contains(":host") => Some(text.clone()),
+                _ => None,
+            })
+            .expect("the skeleton carries a stylesheet");
+
+        let mut checked = 0;
+        for rule in styles.split('}') {
+            let Some((selector, body)) = rule.split_once('{') else {
+                continue;
+            };
+            let control = ["button", "input", "select"]
+                .iter()
+                .any(|tag| selector.split([' ', ',', '>']).any(|part| part == *tag));
+            if control && body.contains("color:") && !body.contains("accent-color") {
+                checked += 1;
+                assert!(
+                    body.contains("background"),
+                    "{} sets a colour but leaves the background to the system",
+                    selector.trim()
+                );
+            }
+        }
+        assert!(checked >= 4, "the check found the control rules");
+    }
+
     /// Every themeable property is declared on `:host` with a default, so a page
     /// can override one without knowing the others.
     #[test]
@@ -2865,11 +4556,19 @@ mod tests {
         build_grid(
             &mut buffer,
             &mut nodes,
-            None,
-            &schema,
-            1,
-            &GridTexts::default(),
-            &[],
+            &GridSkeleton {
+                label: None,
+                schema: &schema,
+                pool: 1,
+                texts: &GridTexts::default(),
+                declared: &[],
+                presentation: &Default::default(),
+                selection: false,
+                column_menu: false,
+                toolbar: false,
+                facets: false,
+                search: false,
+            },
         );
 
         let styles = buffer
@@ -2881,14 +4580,7 @@ mod tests {
             })
             .expect("the skeleton carries a stylesheet");
 
-        for property in [
-            ROW_HEIGHT_PROPERTY,
-            HEADER_HEIGHT_PROPERTY,
-            FILTER_HEIGHT_PROPERTY,
-            STATUS_HEIGHT_PROPERTY,
-            BORDER_COLOR_PROPERTY,
-            FOCUS_WIDTH_PROPERTY,
-        ] {
+        for property in SET_TOKENS.iter().chain(COMPUTED_TOKENS) {
             assert!(
                 styles.contains(&format!("{property}:")),
                 "{property} has no default"
@@ -2898,6 +4590,40 @@ mod tests {
                 "{property} is declared but never used"
             );
         }
+
+        // Every computed colour is reset under a forced palette. A `color-mix`
+        // of two system colours resolves unpredictably, and the user's palette
+        // is the one that has to win.
+        let forced = styles
+            .split("forced-colors: active")
+            .nth(1)
+            .expect("the stylesheet has a forced-colors block");
+        let forced = &forced[..forced
+            .find("prefers-reduced-motion")
+            .unwrap_or(forced.len())];
+        for property in COMPUTED_TOKENS {
+            assert!(
+                forced.contains(&format!("{property}:")),
+                "{property} survives a forced palette"
+            );
+        }
+        assert!(
+            !forced.contains("color-mix"),
+            "a forced palette must resolve to system colours, not to a mix"
+        );
+
+        // The focus ring does not hang off the accent: a pale accent would make
+        // it invisible, and the ring is not decoration.
+        let ring = styles
+            .split("th:focus, td:focus")
+            .nth(1)
+            .expect("the stylesheet draws a focus ring");
+        let ring = &ring[..ring.find('}').unwrap_or(ring.len())];
+        assert!(
+            ring.contains("Highlight") && !ring.contains(ACCENT_PROPERTY),
+            "the focus ring must not be themable away"
+        );
+
         // The two guarantees a theme must not be able to switch off.
         assert!(styles.contains("forced-colors: active"));
         assert!(styles.contains("prefers-reduced-motion: reduce"));
@@ -2914,11 +4640,19 @@ mod tests {
         build_grid(
             &mut buffer,
             &mut nodes,
-            None,
-            &schema,
-            1,
-            &GridTexts::default(),
-            &[],
+            &GridSkeleton {
+                label: None,
+                schema: &schema,
+                pool: 1,
+                texts: &GridTexts::default(),
+                declared: &[],
+                presentation: &Default::default(),
+                selection: false,
+                column_menu: false,
+                toolbar: false,
+                facets: false,
+                search: false,
+            },
         );
 
         let styles = buffer
@@ -2951,11 +4685,19 @@ mod tests {
         let view = build_grid(
             &mut buffer,
             &mut nodes,
-            None,
-            &schema,
-            1,
-            &GridTexts::default(),
-            &[],
+            &GridSkeleton {
+                label: None,
+                schema: &schema,
+                pool: 1,
+                texts: &GridTexts::default(),
+                declared: &[],
+                presentation: &crate::presentation::ColumnStyles::default(),
+                selection: false,
+                column_menu: false,
+                toolbar: false,
+                facets: false,
+                search: false,
+            },
         );
         let state = state_with(&["Gamma"], 1, 0, 1);
         let slots = assign_pool(&[None], None, &window_rows(0, 1, 1), 1);
@@ -2973,6 +4715,7 @@ mod tests {
             &GridTexts::default(),
             &crate::formats::Plain,
             Paging::whole(state.total_count()),
+            None,
         );
         let indexes: Vec<&str> = buffer
             .patches()
@@ -2996,11 +4739,19 @@ mod tests {
         let view = build_grid(
             &mut buffer,
             &mut nodes,
-            None,
-            &schema,
-            2,
-            &GridTexts::default(),
-            &[],
+            &GridSkeleton {
+                label: None,
+                schema: &schema,
+                pool: 2,
+                texts: &GridTexts::default(),
+                declared: &[],
+                presentation: &Default::default(),
+                selection: false,
+                column_menu: false,
+                toolbar: false,
+                facets: false,
+                search: false,
+            },
         );
         let state = state_with(&["Gamma", "Alpha"], 5, 0, 2);
         let slots = assign_pool(&[None, None], None, &window_rows(0, 5, 2), 2);
@@ -3018,11 +4769,13 @@ mod tests {
             &GridTexts::default(),
             &crate::formats::Plain,
             Paging::whole(state.total_count()),
+            None,
         );
         assert!(buffer.patches().iter().any(|patch| matches!(
             patch,
             Patch::SetAttribute { node, name, value }
-                if *node == view.tbody && name == "style" && value == "position: relative; height: 160px;"
+                if *node == view.tbody && name == "style"
+                    && *value == format!("position: relative; height: {}px;", 5 * DEFAULT_ROW_HEIGHT)
         )));
     }
 
@@ -3035,11 +4788,19 @@ mod tests {
         let view = build_grid(
             &mut buffer,
             &mut nodes,
-            None,
-            &schema,
-            3,
-            &GridTexts::default(),
-            &[],
+            &GridSkeleton {
+                label: None,
+                schema: &schema,
+                pool: 3,
+                texts: &GridTexts::default(),
+                declared: &[],
+                presentation: &crate::presentation::ColumnStyles::default(),
+                selection: false,
+                column_menu: false,
+                toolbar: false,
+                facets: false,
+                search: false,
+            },
         );
         let state = state_with(&["Gamma", "Alpha"], 5, 0, 3);
         let slots = assign_pool(&[None, None, None], None, &window_rows(0, 5, 3), 3);
@@ -3057,6 +4818,7 @@ mod tests {
             &GridTexts::default(),
             &crate::formats::Plain,
             Paging::whole(state.total_count()),
+            None,
         );
 
         // The sizer is `total * 48`, not `total * 32`.
@@ -3082,11 +4844,19 @@ mod tests {
         let view = build_grid(
             &mut buffer,
             &mut nodes,
-            None,
-            &schema,
-            4,
-            &GridTexts::default(),
-            &[],
+            &GridSkeleton {
+                label: None,
+                schema: &schema,
+                pool: 4,
+                texts: &GridTexts::default(),
+                declared: &[],
+                presentation: &crate::presentation::ColumnStyles::default(),
+                selection: false,
+                column_menu: false,
+                toolbar: false,
+                facets: false,
+                search: false,
+            },
         );
         // Slot 3 holds the focused row 6; the window scrolled to rows 20..24.
         let old = [Some(20), Some(21), Some(22), Some(6)];
@@ -3108,6 +4878,7 @@ mod tests {
             &GridTexts::default(),
             &crate::formats::Plain,
             Paging::whole(100),
+            None,
         );
 
         let pinned_row = view.rows[3].row;
@@ -3145,7 +4916,7 @@ mod tests {
     #[test]
     fn arrows_move_and_clamp() {
         let active = ActiveCell::Data(CellRef::new(0, 0));
-        let down = move_active(active, GridKey::ArrowDown, 2, 5, 3);
+        let down = move_active(active, GridKey::ArrowDown, 2, 5, 3, true);
         assert_eq!(down, ActiveCell::Data(CellRef::new(1, 0)));
         // At the last row the move is clamped.
         assert_eq!(
@@ -3154,23 +4925,31 @@ mod tests {
                 GridKey::ArrowDown,
                 2,
                 5,
-                3
+                3,
+                true,
             ),
             ActiveCell::Data(CellRef::new(4, 0))
         );
         // Up from the first row enters the header.
         assert_eq!(
-            move_active(active, GridKey::ArrowUp, 2, 5, 3),
+            move_active(active, GridKey::ArrowUp, 2, 5, 3, true),
             ActiveCell::Header { col: 0 }
         );
         // Down from the header enters the first row.
         assert_eq!(
-            move_active(ActiveCell::Header { col: 0 }, GridKey::ArrowDown, 2, 5, 3),
+            move_active(
+                ActiveCell::Header { col: 0 },
+                GridKey::ArrowDown,
+                2,
+                5,
+                3,
+                true
+            ),
             ActiveCell::Data(CellRef::new(0, 0))
         );
         // Right/left clamp at the last/first column.
         assert_eq!(
-            move_active(active, GridKey::ArrowRight, 2, 5, 3),
+            move_active(active, GridKey::ArrowRight, 2, 5, 3, true),
             ActiveCell::Data(CellRef::new(0, 1))
         );
         assert_eq!(
@@ -3179,13 +4958,70 @@ mod tests {
                 GridKey::ArrowRight,
                 2,
                 5,
-                3
+                3,
+                true,
             ),
             ActiveCell::Data(CellRef::new(0, 1))
         );
+        // Left from the first schema column is the selection cell — since
+        // point 61 that is the start of the row, not column 0.
         assert_eq!(
-            move_active(active, GridKey::ArrowLeft, 2, 5, 3),
+            move_active(active, GridKey::ArrowLeft, 2, 5, 3, true),
+            ActiveCell::Select { row: 0 }
+        );
+        assert_eq!(
+            move_active(
+                ActiveCell::Select { row: 0 },
+                GridKey::ArrowLeft,
+                2,
+                5,
+                3,
+                true
+            ),
+            ActiveCell::Select { row: 0 }
+        );
+        assert_eq!(
+            move_active(
+                ActiveCell::Select { row: 0 },
+                GridKey::ArrowRight,
+                2,
+                5,
+                3,
+                true
+            ),
             ActiveCell::Data(CellRef::new(0, 0))
+        );
+        // The selection column has a header of its own, and the vertical moves
+        // treat it like any other column.
+        assert_eq!(
+            move_active(
+                ActiveCell::Select { row: 0 },
+                GridKey::ArrowUp,
+                2,
+                5,
+                3,
+                true
+            ),
+            ActiveCell::SelectAll
+        );
+        assert_eq!(
+            move_active(ActiveCell::SelectAll, GridKey::ArrowDown, 2, 5, 3, true),
+            ActiveCell::Select { row: 0 }
+        );
+        assert_eq!(
+            move_active(ActiveCell::SelectAll, GridKey::ArrowRight, 2, 5, 3, true),
+            ActiveCell::Header { col: 0 }
+        );
+        assert_eq!(
+            move_active(
+                ActiveCell::Header { col: 0 },
+                GridKey::ArrowLeft,
+                2,
+                5,
+                3,
+                true
+            ),
+            ActiveCell::SelectAll
         );
     }
 
@@ -3193,20 +5029,22 @@ mod tests {
     #[test]
     fn home_end_and_ctrl_jump() {
         let active = ActiveCell::Data(CellRef::new(1, 1));
+        // `Home` is the start of the row, and since point 61 that is the
+        // selection cell — the same place the eye starts.
         assert_eq!(
-            move_active(active, GridKey::Home, 2, 5, 3),
-            ActiveCell::Data(CellRef::new(1, 0))
+            move_active(active, GridKey::Home, 2, 5, 3, true),
+            ActiveCell::Select { row: 1 }
         );
         assert_eq!(
-            move_active(active, GridKey::End, 2, 5, 3),
+            move_active(active, GridKey::End, 2, 5, 3, true),
             ActiveCell::Data(CellRef::new(1, 1))
         );
         assert_eq!(
-            move_active(active, GridKey::CtrlHome, 2, 5, 3),
-            ActiveCell::Header { col: 0 }
+            move_active(active, GridKey::CtrlHome, 2, 5, 3, true),
+            ActiveCell::SelectAll
         );
         assert_eq!(
-            move_active(active, GridKey::CtrlEnd, 2, 5, 3),
+            move_active(active, GridKey::CtrlEnd, 2, 5, 3, true),
             ActiveCell::Data(CellRef::new(4, 1))
         );
     }
@@ -3215,7 +5053,7 @@ mod tests {
     #[test]
     fn page_keys_move_by_a_viewport() {
         let active = ActiveCell::Data(CellRef::new(0, 0));
-        let next = move_active(active, GridKey::PageDown, 2, 100, 10);
+        let next = move_active(active, GridKey::PageDown, 2, 100, 10, true);
         assert_eq!(next, ActiveCell::Data(CellRef::new(10, 0)));
         let up = move_active(
             ActiveCell::Data(CellRef::new(30, 0)),
@@ -3223,6 +5061,7 @@ mod tests {
             2,
             100,
             10,
+            true,
         );
         assert_eq!(up, ActiveCell::Data(CellRef::new(20, 0)));
         // At the last row the move clamps.
@@ -3232,7 +5071,8 @@ mod tests {
                 GridKey::PageDown,
                 2,
                 100,
-                10
+                10,
+                true,
             ),
             ActiveCell::Data(CellRef::new(99, 0))
         );
@@ -3288,9 +5128,12 @@ mod tests {
     #[test]
     fn scroll_offset_maps_to_the_visible_row() {
         assert_eq!(visible_start(0, DEFAULT_ROW_HEIGHT), 0);
-        assert_eq!(visible_start(31, DEFAULT_ROW_HEIGHT), 0);
-        assert_eq!(visible_start(32, DEFAULT_ROW_HEIGHT), 1);
-        assert_eq!(visible_start(1_000_000, DEFAULT_ROW_HEIGHT), 31_250);
+        assert_eq!(visible_start(DEFAULT_ROW_HEIGHT - 1, DEFAULT_ROW_HEIGHT), 0);
+        assert_eq!(visible_start(DEFAULT_ROW_HEIGHT, DEFAULT_ROW_HEIGHT), 1);
+        assert_eq!(
+            visible_start(1_000_000, DEFAULT_ROW_HEIGHT),
+            1_000_000 / DEFAULT_ROW_HEIGHT
+        );
         // A configured row height scales the same math.
         assert_eq!(visible_start(95, 48), 1);
         assert_eq!(visible_start(96, 48), 2);
@@ -3323,6 +5166,154 @@ mod tests {
         let old = [Some(0), Some(1), Some(2)];
         let slots = assign_pool(&old, None, &[0, 1, 2, 3], 3);
         assert_eq!(slots, [Some(0), Some(1), Some(2)]);
+    }
+
+    /// **No frame ever patches the shadow root itself.**
+    ///
+    /// [`NodeId::ROOT`] is a legal node, so a `SetText` aimed at it replaces
+    /// every child the skeleton built — the whole grid disappears, in silence,
+    /// and every DOM test times out waiting for a row. That is what an
+    /// `Option`-shaped node was used as a sentinel for, once. This test is the
+    /// wall that keeps it from happening again: the portable patch tests cannot
+    /// see the consequence, because destroying a subtree is a DOM semantic and
+    /// they hold no DOM.
+    #[test]
+    fn no_frame_writes_to_the_shadow_root() {
+        for selection in [false, true] {
+            let schema = initial_schema(&["customer".to_owned(), "qty".to_owned()]);
+            let mut nodes = NodeAllocator::new();
+            let mut buffer = PatchBuffer::new();
+            let view = build_grid(
+                &mut buffer,
+                &mut nodes,
+                &GridSkeleton {
+                    label: None,
+                    schema: &schema,
+                    pool: 2,
+                    texts: &GridTexts::default(),
+                    declared: &[],
+                    presentation: &Default::default(),
+                    selection,
+                    column_menu: false,
+                    toolbar: false,
+                    facets: false,
+                    search: false,
+                },
+            );
+
+            let mut state = GridState::new(schema);
+            state.set_window(Window::new(0, 2));
+            let mut frame = PatchBuffer::new();
+            patch_grid(
+                &mut frame,
+                &view,
+                &state,
+                &[Some(0), Some(1)],
+                ActiveCell::Header { col: 0 },
+                &[],
+                None,
+                DEFAULT_ROW_HEIGHT,
+                &GridTexts::default(),
+                &crate::formats::Plain,
+                Paging::whole(state.total_count()),
+                None,
+            );
+
+            for patch in frame.patches() {
+                let node = match patch {
+                    Patch::SetAttribute { node, .. }
+                    | Patch::RemoveAttribute { node, .. }
+                    | Patch::SetText { node, .. } => Some(*node),
+                    _ => None,
+                };
+                assert_ne!(
+                    node,
+                    Some(NodeId::ROOT),
+                    "selection={selection}: a frame patched the shadow root ({patch:?})"
+                );
+            }
+        }
+    }
+
+    /// Without the attribute nothing of the selection column exists — no cell,
+    /// no header, and no place on the keyboard axis. It is opt-in for the same
+    /// reason the filter row and the column menu are: a grid that is read
+    /// rather than worked with should not carry a control that does nothing
+    /// for it, and a reader should not be told there is a column there.
+    #[test]
+    fn the_selection_column_is_opt_in() {
+        let schema = initial_schema(&["customer".to_owned(), "qty".to_owned()]);
+        let build = |selection: bool| {
+            let mut nodes = NodeAllocator::new();
+            let mut buffer = PatchBuffer::new();
+            build_grid(
+                &mut buffer,
+                &mut nodes,
+                &GridSkeleton {
+                    label: None,
+                    schema: &schema,
+                    pool: 1,
+                    texts: &GridTexts::default(),
+                    declared: &[],
+                    presentation: &Default::default(),
+                    selection,
+                    column_menu: false,
+                    toolbar: false,
+                    facets: false,
+                    search: false,
+                },
+            );
+            buffer
+        };
+
+        let value_of = |buffer: &PatchBuffer, wanted: &str| -> Vec<String> {
+            buffer
+                .patches()
+                .iter()
+                .filter_map(|patch| match patch {
+                    Patch::SetAttribute { name, value, .. } if name == wanted => {
+                        Some(value.clone())
+                    }
+                    _ => None,
+                })
+                .collect()
+        };
+
+        let without = build(false);
+        assert_eq!(value_of(&without, "aria-colcount"), ["2"]);
+        assert!(value_of(&without, "data-select").is_empty());
+        assert!(!value_of(&without, "role").iter().any(|r| r == "checkbox"));
+
+        let with = build(true);
+        assert_eq!(value_of(&with, "aria-colcount"), ["3"]);
+        assert_eq!(value_of(&with, "data-select"), ["all", "row"]);
+        assert!(value_of(&with, "role").iter().any(|r| r == "checkbox"));
+    }
+
+    /// The keyboard axis has the column only when the column is there.
+    #[test]
+    fn home_stops_at_the_first_schema_column_without_the_selection_column() {
+        let at = ActiveCell::Data(CellRef::new(1, 1));
+        assert_eq!(
+            move_active(at, GridKey::Home, 2, 5, 3, false),
+            ActiveCell::Data(CellRef::new(1, 0))
+        );
+        assert_eq!(
+            move_active(at, GridKey::CtrlHome, 2, 5, 3, false),
+            ActiveCell::Header { col: 0 }
+        );
+        // And left from the first column stays put rather than falling off.
+        assert_eq!(
+            move_active(
+                ActiveCell::Data(CellRef::new(1, 0)),
+                GridKey::ArrowLeft,
+                2,
+                5,
+                3,
+                false,
+            ),
+            ActiveCell::Data(CellRef::new(1, 0))
+        );
     }
 
     /// The focused row is pinned even when it left the window.

@@ -14,9 +14,18 @@
       opengrid-grid {
         display: block;
         height: 240px;
-        --grid-header-height: 48px;
-        --grid-border-color: rgb(0, 0, 255);
-        --grid-focus-width: 4px;
+        /* Pinned, not inherited: the assertions in the matching spec are
+           arithmetic on a 32px row (sizer heights, scroll offsets, cell
+           heights). They are about the window math, not about what a grid
+           looks like by default — since point 58 that default is the `normal`
+           density, and a math test must not move when a design decision does.
+           The densities themselves are covered by grid-density.spec.js. */
+        --og-row-height: 32px;
+        --og-header-height: 48px;
+        --og-line: rgb(0, 0, 255);
+        --og-line-strong: rgb(0, 128, 0);
+        --og-accent: rgb(204, 0, 102);
+        --og-focus-width: 4px;
       }
 
       opengrid-grid::part(header) {

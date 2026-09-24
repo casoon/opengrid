@@ -14,6 +14,13 @@
          knowingly: the point of the second project here is the axe and geometry
          run, not a different picture. */
       opengrid-grid {
+        /* Pinned, not inherited: the assertions in the matching spec are
+           arithmetic on a 32px row (sizer heights, scroll offsets, cell
+           heights). They are about the window math, not about what a grid
+           looks like by default — since point 58 that default is the `normal`
+           density, and a math test must not move when a design decision does.
+           The densities themselves are covered by grid-density.spec.js. */
+        --og-row-height: 32px;
         display: block;
         width: 100%;
         max-width: 420px;

@@ -13,6 +13,12 @@
       opengrid-grid {
         display: block;
         height: 224px;
+        /* Pinned, not inherited: the PageUp/PageDown step in the matching spec
+           is arithmetic on a 32px row. That is about the viewport step, not
+           about what a grid looks like by default — since point 58 that default
+           is the `normal` density, and a math test must not move when a design
+           decision does. */
+        --og-row-height: 32px;
       }
     </style>
   </head>

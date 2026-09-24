@@ -3,7 +3,7 @@ import AxeBuilder from "@axe-core/playwright";
 
 // `<opengrid-grid>` configurable row height (plan point 17 review).
 //
-// The fixture sets `--grid-row-height: 48px` on the host (overriding the shadow
+// The fixture sets `--og-row-height: 48px` on the host (overriding the shadow
 // default of 32px). This spec proves that the resolved value inherits into the
 // shadow tree and drives the sizer, the row offsets and the scroll→window math.
 
@@ -15,7 +15,7 @@ async function facts(page) {
     const tbody = root.querySelector("tbody");
     return {
       rowHeight: getComputedStyle(viewport)
-        .getPropertyValue("--grid-row-height")
+        .getPropertyValue("--og-row-height")
         .trim(),
       tbodyStyle: tbody.getAttribute("style"),
       scrollHeight: viewport.scrollHeight,
@@ -107,4 +107,33 @@ test("PageDown steps by a viewport of 48px rows", async ({ page }) => {
 test("has no axe violations", async ({ page }) => {
   const { violations } = await new AxeBuilder({ page }).analyze();
   expect(violations).toEqual([]);
+});
+test("a grid nobody has themed wears the system colours", async ({ page }) => {
+  // The defaults are `Canvas`, `CanvasText` and `Highlight` — not a palette of
+  // our own. Two reasons, and both are accessibility rather than taste: a grid
+  // with no page CSS stays legible and in the right light or dark, and
+  // `forced-colors` keeps winning. The fixture sets only --og-row-height, so
+  // every colour below is a default.
+  const system = await page.evaluate(() => {
+    const probe = document.createElement("div");
+    probe.style.cssText = "background: Canvas; color: CanvasText";
+    document.body.append(probe);
+    const wanted = getComputedStyle(probe);
+    const canvas = wanted.backgroundColor;
+    const canvasText = wanted.color;
+    probe.remove();
+
+    const root = document.querySelector("opengrid-grid").shadowRoot;
+    const row = getComputedStyle(root.querySelector("tbody tr"));
+    const layout = getComputedStyle(root.querySelector('[part="layout"]'));
+    return {
+      rowBackground: row.backgroundColor,
+      canvas,
+      ink: layout.color,
+      canvasText,
+    };
+  });
+
+  expect(system.rowBackground).toBe(system.canvas);
+  expect(system.ink).toBe(system.canvasText);
 });

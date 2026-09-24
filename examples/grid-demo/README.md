@@ -69,9 +69,9 @@ page's, in the page's language.
 
 ## Theming
 
-Custom properties on the host (`--grid-row-height`, `--grid-header-height`,
-`--grid-border-color`, `--grid-focus-width`, `--grid-filter-height`,
-`--grid-status-height`) and `::part(…)` for structure and marks. A theme cannot
+Custom properties on the host (`--og-row-height`, `--og-header-height`,
+`--og-line`, `--og-line-strong`, `--og-focus-width`, `--og-filter-height`,
+`--og-status-height`) and `::part(…)` for structure and marks. A theme cannot
 switch off the focus ring, the system colours under `forced-colors`, or
 `prefers-reduced-motion`.
 
