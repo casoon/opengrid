@@ -738,55 +738,32 @@ pub use host::texts;
 #[cfg(target_arch = "wasm32")]
 pub(crate) use host::{from_js, store};
 
-/// Per-host storage of the texts, mirroring the provider seam.
+/// Per-host storage of the texts, keyed by the host id and released when the
+/// host is collected (`opengrid_web_core::host`, point 74).
 #[cfg(target_arch = "wasm32")]
 mod host {
     use std::cell::RefCell;
     use std::collections::HashMap;
     use std::rc::Rc;
 
+    use opengrid_web_core::host::{existing_id, id as host_id, on_release};
     use wasm_bindgen::JsValue;
     use web_sys::HtmlElement;
 
     use super::GridTexts;
 
     thread_local! {
-        static NEXT_ID: RefCell<u32> = const { RefCell::new(1) };
         static TEXTS: RefCell<HashMap<u32, Rc<GridTexts>>> = RefCell::new(HashMap::new());
     }
 
-    /// The global symbol the id is stored under (as the provider seam).
-    fn id_symbol() -> js_sys::Symbol {
-        js_sys::Symbol::for_("opengrid.texts_id")
-    }
-
-    /// The id `host` already carries, if any.
-    fn id_of(host: &HtmlElement) -> Option<u32> {
-        js_sys::Reflect::get(host.as_ref(), id_symbol().as_ref())
-            .ok()
-            .and_then(|value| value.as_f64())
-            .map(|id| id as u32)
+    fn release(id: u32) {
+        TEXTS.with(|map| map.borrow_mut().remove(&id));
     }
 
     /// Attaches `texts` to `host`, replacing any previous ones.
-    ///
-    /// A host that already has an id keeps it, so calling `set_texts` twice
-    /// replaces the entry instead of leaving the first one behind.
     pub(crate) fn store(host: &HtmlElement, texts: Rc<GridTexts>) {
-        let id = id_of(host).unwrap_or_else(|| {
-            let id = NEXT_ID.with(|next| {
-                let mut next = next.borrow_mut();
-                let id = *next;
-                *next += 1;
-                id
-            });
-            let _ = js_sys::Reflect::set(
-                host.as_ref(),
-                id_symbol().as_ref(),
-                &JsValue::from_f64(f64::from(id)),
-            );
-            id
-        });
+        on_release(release);
+        let id = host_id(host);
         TEXTS.with(|map| map.borrow_mut().insert(id, texts));
     }
 
@@ -798,7 +775,8 @@ mod host {
         thread_local! {
             static DEFAULT: Rc<GridTexts> = Rc::new(GridTexts::default());
         }
-        let stored = id_of(host).and_then(|id| TEXTS.with(|map| map.borrow().get(&id).cloned()));
+        let stored =
+            existing_id(host).and_then(|id| TEXTS.with(|map| map.borrow().get(&id).cloned()));
         stored.unwrap_or_else(|| DEFAULT.with(Rc::clone))
     }
 

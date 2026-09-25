@@ -80,6 +80,15 @@ Everything below is built and tested; none of it has been listened to.
   **empty state** that says why and offers a way out only where one exists.
 - **A frozen public API**, written down in `docs/api.md` and held by a test.
 
+- **Elements that come and go.** A grid or table removed from the page is
+  garbage-collected, and with it its rows and whatever the page handed only to
+  it — the provider, a format function — even when those close over the
+  element. A grid that is moved, or taken out and put back later (Vue's
+  `<KeepAlive>`, a detached tab panel), keeps its view, selection, active cell
+  and scroll position. It asks its source again only for rows it no longer
+  holds: when its active cell had been scrolled out of the loaded window, it
+  comes back at that cell, so `Tab` still finds the grid.
+
 ### Accessibility
 
 - Every feature is keyboard-operable; nothing requires dragging (WCAG 2.5.7),

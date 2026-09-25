@@ -25,6 +25,7 @@
 //!   implementation for a Worker-backed one.
 
 pub mod element;
+pub mod host;
 pub mod patch;
 pub mod provider;
 pub mod renderer;

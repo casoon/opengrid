@@ -170,55 +170,39 @@ pub use host::{provider, set_provider};
 
 /// Per-host storage of the data provider.
 ///
-/// Keyed by a global symbol id on the host element instead of a side table
-/// keyed by the JS object, because a `web_sys::HtmlElement` has no stable Rust
-/// identity across callbacks. The provider itself is a Rust `Rc`, so the map is
-/// thread-local; nothing here crosses a thread.
+/// **On the host, not in a Rust table** (point 74). The provider is the
+/// page's object, and a page's object may well reach the host — a closure over
+/// a component's ref is the everyday case. Held from WASM, that would be a
+/// cycle through a root the garbage collector cannot see through, and a grid
+/// removed for good would never be collected. On the host, the cycle lives in
+/// the JS heap alone, where it is collected like any other.
 #[cfg(target_arch = "wasm32")]
 mod host {
-    use std::cell::RefCell;
-    use std::collections::HashMap;
     use std::rc::Rc;
 
     use wasm_bindgen::JsValue;
     use web_sys::HtmlElement;
 
-    use super::DataProvider;
+    use super::{DataProvider, JsProvider};
 
-    thread_local! {
-        static NEXT_ID: RefCell<u32> = const { RefCell::new(1) };
-        static PROVIDERS: RefCell<HashMap<u32, Rc<dyn DataProvider>>> =
-            RefCell::new(HashMap::new());
+    /// The global symbol the provider is stored under; `Symbol.for` is stable
+    /// across modules in the same realm, unlike a private `Symbol()`.
+    fn provider_symbol() -> js_sys::Symbol {
+        js_sys::Symbol::for_("opengrid.provider")
     }
 
-    /// The global symbol the id is stored under; `Symbol.for` is stable across
-    /// modules in the same realm, unlike a private `Symbol()`.
-    fn id_symbol() -> js_sys::Symbol {
-        js_sys::Symbol::for_("opengrid.provider_id")
-    }
-
-    /// Attaches a provider to `host`, replacing any previous one.
-    pub fn set_provider(host: &HtmlElement, provider: Rc<dyn DataProvider>) {
-        let id = NEXT_ID.with(|next| {
-            let mut next = next.borrow_mut();
-            let id = *next;
-            *next += 1;
-            id
-        });
-        PROVIDERS.with(|providers| providers.borrow_mut().insert(id, provider));
-        let _ = js_sys::Reflect::set(
-            host.as_ref(),
-            id_symbol().as_ref(),
-            &JsValue::from_f64(f64::from(id)),
-        );
+    /// Attaches a provider object to `host`, replacing any previous one.
+    pub fn set_provider(host: &HtmlElement, provider: &JsValue) {
+        let _ = js_sys::Reflect::set(host.as_ref(), provider_symbol().as_ref(), provider);
     }
 
     /// The provider attached to `host`, if any.
     pub fn provider(host: &HtmlElement) -> Option<Rc<dyn DataProvider>> {
-        let id = js_sys::Reflect::get(host.as_ref(), id_symbol().as_ref())
-            .ok()
-            .and_then(|value| value.as_f64())? as u32;
-        PROVIDERS.with(|providers| providers.borrow().get(&id).cloned())
+        let object = js_sys::Reflect::get(host.as_ref(), provider_symbol().as_ref()).ok()?;
+        if object.is_undefined() || object.is_null() {
+            return None;
+        }
+        Some(Rc::new(JsProvider::new(object)))
     }
 }
 

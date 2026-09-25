@@ -75,6 +75,7 @@ use opengrid_types::{DataType, Value};
 use opengrid_web_core::element::{
     ARIA_LABEL_ATTRIBUTE, LABEL_ATTRIBUTE, attach_open_shadow_root, define, mirror_label,
 };
+use opengrid_web_core::host;
 use opengrid_web_core::patch::{NodeAllocator, PatchBuffer};
 use opengrid_web_core::provider::provider;
 
@@ -167,6 +168,10 @@ struct GridRuntime {
     facet_generation: u64,
     /// The free text the search field applied (point 67), or empty.
     search_text: String,
+    /// The viewport's scroll offset, as the reader left it. A browser forgets
+    /// the offset of an element that leaves the document, even for a move;
+    /// this is what puts it back (point 74).
+    scroll_top: i32,
 }
 
 impl GridRuntime {
@@ -178,38 +183,26 @@ impl GridRuntime {
 }
 
 thread_local! {
-    static NEXT_ID: RefCell<u32> = const { RefCell::new(1) };
     static RUNTIMES: RefCell<HashMap<u32, Rc<RefCell<GridRuntime>>>> =
         RefCell::new(HashMap::new());
 }
 
-/// The global symbol the runtime id is stored under (as the provider seam).
-fn id_symbol() -> js_sys::Symbol {
-    js_sys::Symbol::for_("opengrid.grid_id")
+/// Forgets the runtime of a collected host (point 74).
+fn release(id: u32) {
+    RUNTIMES.with(|runtimes| runtimes.borrow_mut().remove(&id));
 }
 
 /// The runtime attached to `host`, if any.
 fn runtime(host: &HtmlElement) -> Option<Rc<RefCell<GridRuntime>>> {
-    let id = js_sys::Reflect::get(host.as_ref(), id_symbol().as_ref())
-        .ok()
-        .and_then(|value| value.as_f64())? as u32;
+    let id = host::existing_id(host)?;
     RUNTIMES.with(|runtimes| runtimes.borrow().get(&id).cloned())
 }
 
-/// Stores `runtime` on `host` under a fresh id.
+/// Stores `runtime` under the host's id.
 fn attach_runtime(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>) {
-    let id = NEXT_ID.with(|next| {
-        let mut next = next.borrow_mut();
-        let id = *next;
-        *next += 1;
-        id
-    });
+    host::on_release(release);
+    let id = host::id(host);
     RUNTIMES.with(|runtimes| runtimes.borrow_mut().insert(id, Rc::clone(runtime)));
-    let _ = js_sys::Reflect::set(
-        host.as_ref(),
-        id_symbol().as_ref(),
-        &JsValue::from_f64(f64::from(id)),
-    );
 }
 
 /// Creates the runtime from the host attributes if it does not exist yet.
@@ -255,6 +248,7 @@ fn fresh_runtime(host: &HtmlElement) -> GridRuntime {
         facet_queries: 0,
         facet_generation: 0,
         search_text: String::new(),
+        scroll_top: 0,
     }
 }
 
@@ -294,6 +288,7 @@ fn reset_runtime(host: &HtmlElement) {
         runtime.pending_offset = None;
         runtime.raf_pending = false;
         runtime.generation = 0;
+        runtime.scroll_top = 0;
         // A rebuild (columns, texts, presentation) is not a reason to close
         // every group the reader opened: the same grouping keeps its expanded
         // set, and only its counts are asked for again.
@@ -314,31 +309,147 @@ fn reset_runtime(host: &HtmlElement) {
     }
 }
 
-/// Renders the skeleton, installs the listeners and runs the first query.
+/// Renders the skeleton, installs the listeners and runs the first query — or,
+/// for a grid that comes back, puts it back as the reader left it.
+///
+/// Coming back is a move within the page (disconnect and connect in one task)
+/// or a return from a cache like Vue's `<KeepAlive>`, after the grid let go of
+/// its DOM (see [`on_disconnected`]). Neither is a new result: the state still
+/// holds the rows, so the grid redraws and asks nothing — unless the new place
+/// gives it a different row height, which changes the window it needs.
 fn on_connected(host: HtmlElement) {
     let Ok(root) = attach_open_shadow_root(&host) else {
         return;
     };
-    if root.child_element_count() == 0 {
-        add_listeners(&root);
-    }
+    let returning = runtime(&host).is_some();
     let runtime = runtime_or_init(&host);
-    // Re-resolve the row height on every (re)connect: the shadow stylesheet (and
-    // any host override) is in place by now.
-    runtime.borrow_mut().row_height = resolve_row_height(&host);
-    // A `group-by` in the markup is read before anything else happens; one the
-    // grid refuses is said with the first result, and the grid runs ungrouped.
-    if let Err(message) = grouping_of(&host) {
-        runtime.borrow_mut().state.set_notice(message);
+    let height = resolve_row_height(&host);
+
+    if !returning {
+        add_listeners(&root);
+        runtime.borrow_mut().row_height = height;
+        // A `group-by` in the markup is read before anything else happens; one
+        // the grid refuses is said with the first result, and it runs ungrouped.
+        if let Err(message) = grouping_of(&host) {
+            runtime.borrow_mut().state.set_notice(message);
+        }
+        ensure_skeleton(&host);
+        render(&host, false);
+        run_query(&host, QueryKind::Data, false);
+        return;
     }
-    ensure_skeleton(&host);
+
+    let resized = {
+        let mut borrowed = runtime.borrow_mut();
+        let resized = borrowed.row_height != height;
+        borrowed.row_height = height;
+        resized
+    };
+    let refetch = runtime.borrow().view.is_none() && follow_active_row(&host, &runtime);
+    if resized {
+        // The same pixel offset is a different row now; the window follows
+        // it, so the scroll event after the restore finds it in place.
+        window_from_scroll(&runtime);
+    }
+    // Drawn first: a fresh skeleton gets its scroll height from the frame, and
+    // an offset set before that is clamped to nothing.
     render(&host, false);
-    run_query(&host, QueryKind::Data, false);
+    restore_scroll(&runtime);
+    if resized {
+        run_query(&host, QueryKind::Data, false);
+    } else if refetch {
+        run_query(&host, QueryKind::Window, false);
+    }
 }
 
-/// Nothing to tear down: the root, its listeners and the runtime die with the
-/// host (the runtime is a thread-local like the provider, point 13/14).
-fn on_disconnected(_host: HtmlElement) {}
+/// Puts the viewport back at the offset the runtime remembers.
+fn restore_scroll(runtime: &Rc<RefCell<GridRuntime>>) {
+    let (viewport, top) = {
+        let borrowed = runtime.borrow();
+        (borrowed.viewport.clone(), borrowed.scroll_top)
+    };
+    if let Some(viewport) = viewport
+        && viewport.scroll_top() != top
+    {
+        viewport.set_scroll_top(top);
+    }
+}
+
+/// Sets the window to the one the remembered offset shows — what
+/// [`on_scroll`] would ask for, so its event after a restore asks nothing.
+fn window_from_scroll(runtime: &Rc<RefCell<GridRuntime>>) {
+    let mut borrowed = runtime.borrow_mut();
+    let window = borrowed.state.window();
+    let offset = grid::window_offset(
+        grid::visible_start(borrowed.scroll_top.max(0) as u64, borrowed.row_height),
+        borrowed.state.total_count(),
+        window.count,
+    );
+    borrowed.state.set_window(Window::new(offset, window.count));
+}
+
+/// Scrolls to the active row when a fresh pool cannot show it, and answers
+/// whether it did.
+///
+/// A fresh pool has no pinned slot (see [`grid::assign_pool`]): an active row
+/// the pin kept on screen outside the loaded window exists only in the DOM the
+/// grid just threw away. Left like that, no cell would carry `tabindex="0"`,
+/// and `Tab` would skip the grid. The grid goes where its active cell is —
+/// where `Tab` would take the reader anyway — and loads that window: one
+/// [`QueryKind::Window`] query, because what the result *is* has not changed.
+fn follow_active_row(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>) -> bool {
+    // While paging, the window is the page, and the active row is on it.
+    if grid::parse_page_size(host.get_attribute(PAGE_SIZE_ATTRIBUTE).as_deref()).is_some() {
+        return false;
+    }
+    {
+        let mut borrowed = runtime.borrow_mut();
+        let Some(row) = borrowed.active.data().map(|cell| cell.row) else {
+            return false;
+        };
+        let window = borrowed.state.window();
+        if (window.offset..window.offset.saturating_add(window.count)).contains(&row) {
+            return false;
+        }
+        let top = row.saturating_mul(borrowed.row_height);
+        borrowed.scroll_top = i32::try_from(top).unwrap_or(i32::MAX);
+    }
+    window_from_scroll(runtime);
+    true
+}
+
+/// Lets go of the DOM once the grid has really left the document (point 74).
+///
+/// Not at once: a move disconnects and reconnects in the same task, and must
+/// not cost a rebuild. After that, the grid drops every reference it holds into
+/// its shadow tree. A reference from WASM is a root the garbage collector
+/// cannot see through; as long as one exists, a grid removed for good would be
+/// kept alive for ever, and with it its rows and whatever the page handed it.
+/// The shadow tree itself stays — it is the host's, and it still holds what
+/// the reader typed into the filter row, which [`ensure_skeleton`] carries
+/// into a fresh skeleton if the grid comes back.
+fn on_disconnected(host: HtmlElement) {
+    park_later(&host);
+}
+
+/// Parks `host` once the current script and its microtasks are through, if it
+/// is still out of the document by then. A framework that removes and inserts
+/// further apart pays a rebuild — correct, only dearer.
+fn park_later(host: &HtmlElement) {
+    let host = host.clone();
+    spawn_local(async move {
+        let _ = JsFuture::from(js_sys::Promise::resolve(&JsValue::UNDEFINED)).await;
+        if host.is_connected() {
+            return;
+        }
+        if let Some(runtime) = runtime(&host) {
+            let mut runtime = runtime.borrow_mut();
+            runtime.view = None;
+            runtime.dom = None;
+            runtime.viewport = None;
+        }
+    });
+}
 
 /// Rebuilds the grid after its texts changed (point 48).
 ///
@@ -347,39 +458,29 @@ fn on_disconnected(_host: HtmlElement) {}
 /// *model* would leave the user somewhere else entirely: the new filter row
 /// would be empty while the query still filters, the new viewport would sit at
 /// the top while the window is at row 500, and the focused cell would be gone
-/// from the DOM. So everything the user can see is carried across: the filter
-/// controls are read out of the old row and written into the new one, the scroll
-/// offset is restored, and the active cell takes the focus back.
+/// from the DOM. So everything the user can see is carried across: the grid
+/// lets go of its skeleton the way a parked grid does, [`ensure_skeleton`]
+/// carries the filter row and the search into the new one, the scroll offset is
+/// restored once the frame gave the viewport its height, and the active cell
+/// takes the focus back.
 pub(crate) fn retext(host: &HtmlElement) {
-    let Some(root) = host.shadow_root() else {
+    if host.shadow_root().is_none() {
         return;
-    };
+    }
     let Some(runtime) = runtime(host) else {
         return;
     };
-    let columns = columns_of(host);
-    let entries = read_filter_entries(&root, &columns);
-    let scroll_top = runtime
-        .borrow()
-        .viewport
-        .as_ref()
-        .map(|viewport| viewport.scroll_top());
-
-    clear_root(&root);
     {
         let mut runtime = runtime.borrow_mut();
         runtime.view = None;
         runtime.dom = None;
         runtime.viewport = None;
     }
-    ensure_skeleton(host);
-    if let Some(root) = host.shadow_root() {
-        write_filter_entries(&root, &entries);
-    }
-    if let (Some(top), Some(viewport)) = (scroll_top, runtime.borrow().viewport.clone()) {
-        viewport.set_scroll_top(top);
-    }
-    render(host, true);
+    // The query below asks for whatever window this leaves.
+    follow_active_row(host, &runtime);
+    render(host, false);
+    restore_scroll(&runtime);
+    focus_active(host);
     run_query(host, QueryKind::Data, true);
 }
 
@@ -495,6 +596,16 @@ fn ensure_skeleton(host: &HtmlElement) {
     let Some(document) = host.owner_document() else {
         return;
     };
+    // Children without a view: a skeleton the grid let go of — parked while
+    // it was out of the document, or dropped for new texts. What the reader
+    // typed lives in it (the filter row is where a view reads its filters
+    // from), so it is carried into the new one.
+    let carried = (root.child_element_count() > 0).then(|| {
+        let entries = read_filter_entries(&root, &columns_of(host));
+        let search = search_input(&root).map(|input| input.value());
+        clear_root(&root);
+        (entries, search)
+    });
     let pool = pool_of(host) as usize;
     let label = host.get_attribute(LABEL_ATTRIBUTE);
     let schema = runtime.borrow().state.schema().clone();
@@ -546,6 +657,25 @@ fn ensure_skeleton(host: &HtmlElement) {
     // The reader's widths live on the header cells and survive the frames that
     // follow; a fresh skeleton has to get them back (point 36).
     apply_widths(host);
+    if let Some((entries, search)) = carried {
+        write_filter_entries(&root, &entries);
+        if let (Some(input), Some(search)) = (search_input(&root), search) {
+            input.set_value(&search);
+        }
+    }
+    // Built while out of the document — a page called into a parked grid, or a
+    // result arrived after it left: let go again, or it is never collected.
+    if !host.is_connected() {
+        park_later(host);
+    }
+}
+
+/// The search field, when the grid has one (point 67).
+fn search_input(root: &ShadowRoot) -> Option<HtmlInputElement> {
+    root.query_selector("[part~=\"search-input\"]")
+        .ok()
+        .flatten()
+        .and_then(|element| element.dyn_into::<HtmlInputElement>().ok())
 }
 
 /// Computes the current window assignment and applies it as one patch list.
@@ -554,6 +684,11 @@ fn ensure_skeleton(host: &HtmlElement) {
 /// rebuilds the table. `focus_after` re-focuses the active cell once the frame
 /// landed, so a keyboard-driven reload does not drop the focus.
 fn render(host: &HtmlElement, focus_after: bool) {
+    // Nobody sees a grid out of the document, and drawing would only build a
+    // skeleton to let go of again; it draws when it comes back (point 74).
+    if !host.is_connected() {
+        return;
+    }
     ensure_skeleton(host);
     let Some(runtime) = runtime(host) else {
         return;
@@ -2354,11 +2489,23 @@ fn on_scroll(event: Event) {
     let Some(runtime) = runtime(&host) else {
         return;
     };
-    let scroll_top = event
+    // The capture listener hears every scroller in the root — the filter row
+    // and the facets scroll too — and only the viewport moves the window.
+    let Some(viewport) = event
         .target()
         .and_then(|target| target.dyn_into::<Element>().ok())
-        .map(|viewport| viewport.scroll_top().max(0) as u64)
-        .unwrap_or(0);
+        .filter(|target| {
+            target
+                .get_attribute("part")
+                .is_some_and(|part| part.split_whitespace().any(|name| name == "viewport"))
+        })
+    else {
+        return;
+    };
+    let scroll_top = viewport.scroll_top().max(0);
+    // Remembered for the return: a browser forgets it (point 74).
+    runtime.borrow_mut().scroll_top = scroll_top;
+    let scroll_top = scroll_top as u64;
 
     let (total_count, pool, offset, row_height) = {
         let runtime = runtime.borrow();

@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>opengrid lifecycle fixture</title>
+    <style>
+      /* Point 74: grids that come and go, the way a page with routing uses them. */
+      opengrid-grid {
+        display: block;
+        height: 260px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid lifecycle fixture</h1>
+      <div id="a"></div>
+      <div id="b"></div>
+    </main>
+    <script type="module">
+      import { loadOpengrid } from "/packages/opengrid/loader.js";
+      import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+
+      async function start() {
+        const loader = await loadOpengrid();
+
+        await init();
+        const engine = new Engine();
+        const schema = await (
+          await fetch("/crates/opengrid-conformance/data/orders.schema.json")
+        ).text();
+        const csv = await (
+          await fetch("/tests/e2e/fixtures/grid-virtual.csv")
+        ).arrayBuffer();
+        engine.load_csv("orders", new Uint8Array(csv), schema);
+
+        // Every query any grid asks for, so a test can tell a reconnect that
+        // re-queries from one that does not.
+        window.__queries = [];
+
+        /** A fresh provider object — its own identity, so a test can watch it. */
+        window.__provider = () => ({
+          execute: (queryJson) => {
+            window.__queries.push(queryJson);
+            return engine.execute(queryJson);
+          },
+        });
+
+        /** A grid, not yet in the document. */
+        window.__grid = (label = "Bestellungen") => {
+          const grid = document.createElement("opengrid-grid");
+          grid.setAttribute("label", label);
+          grid.setAttribute("datasource", "orders");
+          grid.setAttribute("columns", "id,customer,country,amount,qty");
+          grid.setAttribute("window-size", "20");
+          grid.setAttribute("selection", "");
+          return grid;
+        };
+
+        window.__opengridModule = loader.module;
+        return { fallback: loader.fallback };
+      }
+
+      window.__opengridReady = start();
+    </script>
+  </body>
+</html>

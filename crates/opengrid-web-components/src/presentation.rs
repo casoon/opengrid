@@ -627,6 +627,7 @@ mod host {
     use std::collections::HashMap;
     use std::rc::Rc;
 
+    use opengrid_web_core::host::{id as host_id, on_release};
     use wasm_bindgen::{JsCast, JsValue};
     use web_sys::HtmlElement;
 
@@ -636,7 +637,6 @@ mod host {
     type Raw = Rc<Vec<(String, RawColumn)>>;
 
     thread_local! {
-        static NEXT_ID: RefCell<u32> = const { RefCell::new(1) };
         static STYLES: RefCell<HashMap<u32, Rc<ColumnStyles>>> = RefCell::new(HashMap::new());
         /// What the page last asked for, unchecked.
         ///
@@ -646,29 +646,15 @@ mod host {
         static RAW: RefCell<HashMap<u32, Raw>> = RefCell::new(HashMap::new());
     }
 
-    fn id_symbol() -> js_sys::Symbol {
-        js_sys::Symbol::for_("opengrid.columns_id")
+    fn release(id: u32) {
+        STYLES.with(|map| map.borrow_mut().remove(&id));
+        RAW.with(|map| map.borrow_mut().remove(&id));
     }
 
+    /// The host's id, with this store's release registered.
     fn id_of(host: &HtmlElement) -> u32 {
-        if let Some(id) = js_sys::Reflect::get(host.as_ref(), id_symbol().as_ref())
-            .ok()
-            .and_then(|value| value.as_f64())
-        {
-            return id as u32;
-        }
-        let id = NEXT_ID.with(|next| {
-            let mut next = next.borrow_mut();
-            let id = *next;
-            *next += 1;
-            id
-        });
-        let _ = js_sys::Reflect::set(
-            host.as_ref(),
-            id_symbol().as_ref(),
-            &JsValue::from_f64(id as f64),
-        );
-        id
+        on_release(release);
+        host_id(host)
     }
 
     /// The checked presentation of a host; empty when nobody configured one.

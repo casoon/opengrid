@@ -28,8 +28,8 @@ use opengrid_web_core::element::{
     ARIA_LABEL_ATTRIBUTE, LABEL_ATTRIBUTE, attach_open_shadow_root, define, mirror_label,
 };
 use opengrid_web_core::patch::{NodeAllocator, PatchBuffer};
+use opengrid_web_core::provider::provider;
 use opengrid_web_core::provider::set_provider as attach_provider;
-use opengrid_web_core::provider::{DataProvider, JsProvider, provider};
 use opengrid_web_core::renderer::{Dom, WebRenderer};
 
 use crate::table::{
@@ -67,8 +67,7 @@ pub fn register() -> Result<(), JsValue> {
 /// name decides whether the table or the grid path runs.
 #[wasm_bindgen(js_name = set_provider)]
 pub fn set_provider(host: &HtmlElement, provider: JsValue) {
-    let provider: Rc<dyn DataProvider> = Rc::new(JsProvider::new(provider));
-    attach_provider(host, provider);
+    attach_provider(host, &provider);
     match host.tag_name().to_ascii_lowercase().as_str() {
         #[cfg(feature = "grid")]
         "opengrid-grid" => crate::grid_element::start(host),
@@ -227,7 +226,9 @@ fn on_connected(host: HtmlElement) {
     run_query(&host, None, None);
 }
 
-/// Nothing to tear down: the root and its listener die with the host.
+/// Nothing to tear down: the root and its listener die with the host, and what
+/// the table keeps in Rust goes once the host is collected
+/// (`opengrid_web_core::host`, point 74).
 fn on_disconnected(_host: HtmlElement) {}
 
 /// Re-mirrors `label`, re-runs the query when the data attributes change.

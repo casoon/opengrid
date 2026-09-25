@@ -78,10 +78,14 @@ pub fn plain_text(value: &Value) -> String {
 #[cfg(target_arch = "wasm32")]
 pub use host::{formats, set_formats_for};
 
-/// Per-host storage of the column formats, mirroring the texts seam.
+/// Per-host storage of the column formats.
+///
+/// **On the host, not in a Rust table** (point 74), like the provider: a
+/// format function is the page's, and a closure over a component's ref reaches
+/// the host. Held from WASM, that cycle could never be collected; on the host
+/// it is ordinary garbage.
 #[cfg(target_arch = "wasm32")]
 mod host {
-    use std::cell::RefCell;
     use std::collections::HashMap;
     use std::rc::Rc;
 
@@ -91,20 +95,9 @@ mod host {
 
     use super::{CellFormat, plain_text};
 
-    thread_local! {
-        static NEXT_ID: RefCell<u32> = const { RefCell::new(1) };
-        static FORMATS: RefCell<HashMap<u32, Rc<ColumnFormats>>> = RefCell::new(HashMap::new());
-    }
-
-    fn id_symbol() -> js_sys::Symbol {
-        js_sys::Symbol::for_("opengrid.formats_id")
-    }
-
-    fn id_of(host: &HtmlElement) -> Option<u32> {
-        js_sys::Reflect::get(host.as_ref(), id_symbol().as_ref())
-            .ok()
-            .and_then(|value| value.as_f64())
-            .map(|id| id as u32)
+    /// The global symbol the resolved formats are stored under.
+    fn formats_symbol() -> js_sys::Symbol {
+        js_sys::Symbol::for_("opengrid.formats")
     }
 
     /// The formats a host carries, keyed by column name.
@@ -190,39 +183,21 @@ mod host {
             .and_then(|value| value.dyn_into::<js_sys::Function>().ok())
     }
 
-    /// Attaches `formats` to `host`, replacing any previous ones.
-    pub fn store(host: &HtmlElement, formats: Rc<ColumnFormats>) {
-        let id = id_of(host).unwrap_or_else(|| {
-            let id = NEXT_ID.with(|next| {
-                let mut next = next.borrow_mut();
-                let id = *next;
-                *next += 1;
-                id
-            });
-            let _ = js_sys::Reflect::set(
-                host.as_ref(),
-                id_symbol().as_ref(),
-                &JsValue::from_f64(f64::from(id)),
-            );
-            id
-        });
-        FORMATS.with(|map| map.borrow_mut().insert(id, formats));
+    /// Resolves `value` — `Intl` options become functions here, once — and
+    /// attaches the result to `host`, replacing any previous formats.
+    pub fn set_formats_for(host: &HtmlElement, value: &JsValue) {
+        let resolved = js_sys::Object::new();
+        for (name, function) in ColumnFormats::from_js(value).by_name {
+            let _ = js_sys::Reflect::set(&resolved, &JsValue::from_str(&name), &function);
+        }
+        let _ = js_sys::Reflect::set(host.as_ref(), formats_symbol().as_ref(), &resolved);
     }
 
     /// The formats attached to `host`, or empty ones.
     pub fn formats(host: &HtmlElement) -> Rc<ColumnFormats> {
-        id_of(host)
-            .and_then(|id| FORMATS.with(|map| map.borrow().get(&id).cloned()))
-            .unwrap_or_else(|| {
-                Rc::new(ColumnFormats {
-                    by_name: HashMap::new(),
-                })
-            })
-    }
-
-    /// Stores formats read from a JS object.
-    pub fn set_formats_for(host: &HtmlElement, value: &JsValue) {
-        store(host, Rc::new(ColumnFormats::from_js(value)));
+        let stored = js_sys::Reflect::get(host.as_ref(), formats_symbol().as_ref())
+            .unwrap_or(JsValue::UNDEFINED);
+        Rc::new(ColumnFormats::from_js(&stored))
     }
 
     /// The formats bound to a schema, ready for the renderer.

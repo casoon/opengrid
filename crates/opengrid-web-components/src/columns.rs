@@ -171,41 +171,24 @@ mod host {
     use std::collections::HashMap;
     use std::rc::Rc;
 
-    use wasm_bindgen::JsValue;
+    use opengrid_web_core::host::{id as host_id, on_release};
     use web_sys::HtmlElement;
 
     use super::ColumnLayout;
 
     thread_local! {
-        static NEXT_ID: RefCell<u32> = const { RefCell::new(1) };
         static LAYOUTS: RefCell<HashMap<u32, Rc<RefCell<ColumnLayout>>>> =
             RefCell::new(HashMap::new());
     }
 
-    fn id_symbol() -> js_sys::Symbol {
-        js_sys::Symbol::for_("opengrid.columns_id")
+    fn release(id: u32) {
+        LAYOUTS.with(|map| map.borrow_mut().remove(&id));
     }
 
     /// The layout of `host`, creating an empty one on first use.
     pub fn layout(host: &HtmlElement) -> Rc<RefCell<ColumnLayout>> {
-        let id = js_sys::Reflect::get(host.as_ref(), id_symbol().as_ref())
-            .ok()
-            .and_then(|value| value.as_f64())
-            .map(|id| id as u32)
-            .unwrap_or_else(|| {
-                let id = NEXT_ID.with(|next| {
-                    let mut next = next.borrow_mut();
-                    let id = *next;
-                    *next += 1;
-                    id
-                });
-                let _ = js_sys::Reflect::set(
-                    host.as_ref(),
-                    id_symbol().as_ref(),
-                    &JsValue::from_f64(f64::from(id)),
-                );
-                id
-            });
+        on_release(release);
+        let id = host_id(host);
         LAYOUTS.with(|map| {
             map.borrow_mut()
                 .entry(id)
