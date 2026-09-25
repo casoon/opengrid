@@ -14,7 +14,7 @@ like.
 
 ## Contents
 
-- [Loading](#loading) · [Providers](#providers)
+- [Loading](#loading) · [Providers](#providers) · [Connecting](#connecting)
 - [`<opengrid-grid>`](#opengrid-grid) · [`<opengrid-table>`](#opengrid-table) · [`<opengrid-pivot>`](#opengrid-pivot)
 - [The view](#the-view) · [Events](#events) · [Styling](#styling) · [Texts](#texts)
 
@@ -63,6 +63,48 @@ All from `loader.js`, all the same shape:
 | `createRestProvider({ url, source, token })` | `POST /query/{source}` of an `opengrid-server`. Also offers `describe()` → `{ name, schema, capabilities, pivot_limits }`. |
 | `createHybridProvider({ remote, planner, mode, onPlan })` | Splits each query between a remote source and the engine in the tab. `onPlan` receives the plan before anything is sent. |
 | `createPivotProvider({ url, source, token })` | `POST /pivot/{source}` — a whole pivot in one request. |
+
+## Connecting
+
+The module functions have rules — wait for the module, texts before the
+provider, the view before the provider, a controlled view written back without
+a loop. `connect` knows them, so a page or a framework adapter supplies an
+element from one object and keeps it supplied:
+
+```js
+import { connect } from "@casoon/opengrid";
+
+const grid = document.querySelector("opengrid-grid");
+const connection = connect(grid, {
+  provider,
+  texts: { lang: "de", loading: "Wird geladen …" },
+  presentation: { amount: { align: "end", aggregate: "sum" } },
+  view: saved,
+  onViewChange: (view) => save(view),
+});
+connection.update({ view: other });   // applies only what changed
+connection.disconnect();              // the listeners go; the element keeps its state
+```
+
+| Option | Module function |
+|---|---|
+| `provider`, `texts`, `formats`, `choices`, `view` | `set_provider`, `set_texts`, `set_formats`, `set_choices`, `set_view` |
+| `defaultView` | `set_view`, once — the uncontrolled form: after that the grid leads |
+| `presentation` | `set_columns` — named apart from the `columns` attribute, which is the projection |
+| `onViewChange`, `onSelectionChange`, `onCellChange` | the three [events](#events); each callback receives the `detail` (for the view: the view itself) |
+
+| | |
+|---|---|
+| Order | Texts, formats, presentation, choices, view, provider — so the first query is the only one, and the first paint is in the right words. An `update` that changes the texts or the presentation rebuilds the grid, and one that changes the view as well rebuilds it twice: the source is asked twice, and only the second answer is shown. |
+| Changes | `update` writes an option only when it differs from what the element has. A key left out keeps its value; a key given as `undefined` resets it — texts to English, no formats, no presentation, no choices. `provider` has no "none"; for `view`, `undefined` means the grid leads. |
+| Controlled | `view` is written whenever it differs from what the grid shows: after the reader sorted, passing the same saved view again restores it — and a page that keeps passing a view without taking the reader's changes back holds the grid there, as a controlled input does. Writing back what the grid just reported costs nothing: `onViewChange: (view) => connection.update({ view })`. `onViewChange` hears the reader, not the views `connect` wrote. A view the grid refuses — a column it does not have yet — is tried again on the next `update`. Formats compare functions by identity — keep them stable, or each update redraws. |
+| Timing | `connect` returns at once; `connection.ready` settles once the module is loaded and the options are applied. Updates before that are folded in. On the [fallback](#loading), nothing is applied and `ready` says so. |
+| The view | needs the element in the document. On one that is not, the view **and the provider** wait for the next `update`, together, so the first query still asks for the view; the console says so. Everything else may come first. |
+| Loading | `connect` calls `loadOpengrid()`, whose first call decides the URLs: a page that needs its own calls `loadOpengrid(options)` first. |
+| Attributes | are not options. `label`, `datasource`, `columns`, `group-by` and the rest are set on the element, by the page or the framework, as always. |
+
+Importing the package touches no DOM, so it is safe in server-side rendering;
+`connect` belongs where the element exists.
 
 ## `<opengrid-grid>`
 

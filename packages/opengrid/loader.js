@@ -387,6 +387,229 @@ export function createHybridProvider({ remote, planner, mode = "auto", onPlan } 
 }
 
 /**
+ * Supplies an element from one options object, and keeps it supplied (plan
+ * point 76).
+ *
+ * Every page — and every framework adapter — would otherwise have to know the
+ * rules of the module functions itself: wait for the module; set the texts
+ * before the provider, or the first paint is in English and the grid rebuilds;
+ * set the view before the provider, or the grid asks twice and announces
+ * twice; and write a controlled view back without looping. They live here,
+ * once.
+ *
+ * `update` applies only what changed. A key left out of an update keeps its
+ * value; a key given as `undefined` resets it (texts to English, no formats, no
+ * presentation, no choices) — except `provider`, which has no "none", and
+ * `view`, where `undefined` (or `null`) means the grid leads. Attributes
+ * (`label`, `columns`, `group-by`, …) are not options: the page or the
+ * framework sets them on the element as usual.
+ *
+ * **The view is controlled.** It is written whenever it differs from what the
+ * grid shows: after the reader sorted, passing the same saved view again puts
+ * it back. Writing back what the grid just reported costs nothing. `defaultView`
+ * is the uncontrolled form: applied once, then the grid leads.
+ *
+ * The view needs the element in the document (before that it has no view to
+ * set). On an element that is not, the view **and the provider** wait for the
+ * next `update` — together, so the first query still asks for the view.
+ *
+ * `connect` loads the module with `loadOpengrid()`, whose first call decides
+ * the URLs: a page that needs its own calls `loadOpengrid(options)` first.
+ *
+ * @param {HTMLElement} host an `<opengrid-grid>`, `-table` or `-pivot`.
+ * @param {object} options see `ConnectOptions` in `loader.d.ts`.
+ * @returns {{ready: Promise<{fallback: boolean, module?: object}>, update: Function, disconnect: Function}}
+ */
+export function connect(host, options = {}) {
+  let current = { ...options };
+  let module;
+  let connected = true;
+  /** What was last written to the element, per option, as a comparable key. */
+  const applied = new Map();
+  /** The whole view the element last reported, as a key. */
+  let reported;
+  /** The view this connection last wrote, and what the grid reported for it. */
+  let written;
+  let writtenResult;
+  /** True while this connection's own `set_view` runs. */
+  let writing = false;
+  let defaultApplied = false;
+  let deferred = false;
+
+  const listeners = [
+    [
+      "opengrid-view-change",
+      (event) => {
+        reported = stableKey(event.detail.view);
+        if (writing) {
+          // The report of our own write: the grid took the view.
+          writtenResult = reported;
+          return;
+        }
+        current.onViewChange?.(event.detail.view);
+      },
+    ],
+    ["opengrid-selection-change", (event) => current.onSelectionChange?.(event.detail)],
+    ["opengrid-cell-change", (event) => current.onCellChange?.(event.detail)],
+  ];
+  for (const [type, listener] of listeners) {
+    host.addEventListener(type, listener);
+  }
+
+  /** Writes one option if it differs from what the element has. */
+  function write(name, value, key, apply) {
+    if (applied.has(name) && applied.get(name) === key) {
+      return;
+    }
+    applied.set(name, key);
+    apply(value);
+  }
+
+  /**
+   * Writes `view` unless the grid shows it already: it just reported exactly
+   * this, or this connection wrote it and the grid has not moved since. Only a
+   * view the grid took counts as written — one it refused (a column it does
+   * not have yet) is tried again on the next update.
+   */
+  function writeView(view) {
+    const key = stableKey(view);
+    if (key === reported || (key === written && writtenResult === reported)) {
+      return;
+    }
+    writing = true;
+    writtenResult = undefined;
+    try {
+      module.set_view(host, view);
+    } finally {
+      writing = false;
+    }
+    if (writtenResult !== undefined) {
+      written = key;
+    } else {
+      written = undefined;
+    }
+    // The view the element now has, whether or not it changed.
+    reported = stableKey(module.get_view(host));
+    if (written !== undefined) {
+      writtenResult = reported;
+    }
+  }
+
+  function apply(changed) {
+    if (!module || !connected) {
+      return;
+    }
+    // The order is the point: texts first (they are in the skeleton), then
+    // what the rows are drawn with, then the view, then the provider — so the
+    // first query is the only one and asks for the right thing.
+    if ("texts" in changed) {
+      const texts = changed.texts ?? {};
+      write("texts", texts, stableKey(texts), (value) => module.set_texts(host, value));
+    }
+    if ("formats" in changed) {
+      const formats = changed.formats ?? {};
+      write("formats", formats, formatsKey(formats), (value) => module.set_formats(host, value));
+    }
+    if ("presentation" in changed) {
+      const presentation = changed.presentation ?? {};
+      write("presentation", presentation, stableKey(presentation), (value) =>
+        module.set_columns(host, value),
+      );
+    }
+    if ("choices" in changed) {
+      const choices = changed.choices ?? {};
+      write("choices", choices, stableKey(choices), (value) => module.set_choices(host, value));
+    }
+
+    const wantsView =
+      current.view != null ? "view" in changed || deferred : !defaultApplied && current.defaultView != null;
+    if (wantsView && !host.isConnected) {
+      // Nothing to set a view on yet; the provider waits with it, or the grid
+      // would ask for its default order first.
+      if (!deferred) {
+        console.warn("[opengrid] connect: the element is not in the document; call update() once it is");
+      }
+      deferred = true;
+      return;
+    }
+    if (wantsView) {
+      deferred = false;
+      if (reported === undefined) {
+        reported = stableKey(module.get_view(host));
+      }
+      if (current.view != null) {
+        writeView(current.view);
+      } else {
+        defaultApplied = true;
+        writeView(current.defaultView);
+      }
+    }
+    if (("provider" in changed || "provider" in current) && current.provider) {
+      write("provider", current.provider, current.provider, (value) =>
+        module.set_provider(host, value),
+      );
+    }
+  }
+
+  const ready = loadOpengrid().then((loaded) => {
+    if (!loaded.fallback) {
+      module = loaded.module;
+      apply(current);
+    }
+    return loaded;
+  });
+
+  return {
+    ready,
+    update(next = {}) {
+      if (!connected) {
+        return;
+      }
+      current = { ...current, ...next };
+      apply(next);
+    },
+    disconnect() {
+      connected = false;
+      for (const [type, listener] of listeners) {
+        host.removeEventListener(type, listener);
+      }
+    },
+  };
+}
+
+/** A JSON key that does not depend on the order an object's keys were written in. */
+function stableKey(value) {
+  return JSON.stringify(value, (_, inner) =>
+    inner && typeof inner === "object" && !Array.isArray(inner)
+      ? Object.fromEntries(Object.entries(inner).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+      : inner,
+  );
+}
+
+/**
+ * Formats compare by identity where they are functions and by value where
+ * they are `Intl` options. Function identities are numbered per call site so
+ * two different functions never compare equal.
+ */
+const functionIds = new WeakMap();
+let nextFunctionId = 1;
+function formatsKey(formats) {
+  return stableKey(
+    Object.fromEntries(
+      Object.entries(formats).map(([column, format]) => {
+        if (typeof format !== "function") {
+          return [column, format];
+        }
+        if (!functionIds.has(format)) {
+          functionIds.set(format, nextFunctionId++);
+        }
+        return [column, { function: functionIds.get(format) }];
+      }),
+    ),
+  );
+}
+
+/**
  * The CSV bytes as a transferable `ArrayBuffer`.
  *
  * A view into a larger buffer is copied first, so transferring never detaches

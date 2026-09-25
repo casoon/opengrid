@@ -55,6 +55,59 @@ export interface OpengridModule {
 }
 
 // ---------------------------------------------------------------------------
+// Connecting
+// ---------------------------------------------------------------------------
+
+/**
+ * What `connect` supplies an element with. Each is one module function —
+ * `presentation` is `set_columns`, named apart from the `columns` attribute —
+ * and the three callbacks receive the event's `detail`.
+ */
+export interface ConnectOptions {
+  provider?: Provider;
+  texts?: Texts;
+  formats?: Formats;
+  /** Per-column presentation, as `set_columns` takes it (type {@link Columns}). */
+  presentation?: Columns;
+  choices?: Choices;
+  /**
+   * The view, controlled: written whenever it differs from what the grid shows
+   * — after the reader sorted, passing the same view again puts it back. Writing
+   * back what the grid just reported costs nothing. `undefined` or `null`: the
+   * grid leads.
+   */
+  view?: ViewInput | null;
+  /** The view, uncontrolled: applied once, then the grid leads. */
+  defaultView?: ViewInput;
+  /** The reader changed the view. Not called for views `connect` wrote. */
+  onViewChange?: (view: View) => void;
+  onSelectionChange?: (detail: SelectionChangeDetail) => void;
+  onCellChange?: (detail: CellChangeDetail) => void;
+}
+
+export interface Connection {
+  /** Settles once the module is loaded and the options are applied. */
+  ready: Promise<LoadResult>;
+  /**
+   * Applies what changed. A key left out keeps its value; a key given as
+   * `undefined` resets it — except `provider`, and `view`, where it means the
+   * grid leads.
+   */
+  update(options?: ConnectOptions): void;
+  /** Removes the listeners. The element keeps its state. */
+  disconnect(): void;
+}
+
+/**
+ * Supplies an element from one options object — in the right order, once the
+ * module is loaded, asking once — and keeps it supplied. The view needs the
+ * element in the document: on one that is not, the view and the provider wait
+ * together for the next `update`. The module is loaded with `loadOpengrid()`;
+ * a page that needs its own URLs calls `loadOpengrid(options)` first.
+ */
+export function connect(host: HTMLElement, options?: ConnectOptions): Connection;
+
+// ---------------------------------------------------------------------------
 // Providers
 // ---------------------------------------------------------------------------
 
@@ -183,7 +236,7 @@ export type FacetKind = "list" | "pills" | "range" | "period";
 /** A value as the wire format writes it: decimals and dates are strings. */
 export type WireValue = string | number | boolean | null;
 
-/** Per-column presentation for `set_columns`. */
+/** Per-column presentation for `set_columns` — `presentation` in `connect`. */
 export interface ColumnConfig {
   /** The starting width in pixels; a reader's resize leads after that. */
   width?: number;

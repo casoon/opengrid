@@ -6,6 +6,7 @@
 // loose fails here as surely as one that went wrong.
 
 import {
+  connect,
   createHybridProvider,
   createLocalProvider,
   createPivotProvider,
@@ -146,4 +147,24 @@ export async function page(): Promise<void> {
   });
 
   module.register();
+
+  // `connect`: the same shapes, from one object.
+  const connection = connect(grid, {
+    provider: local,
+    texts: { lang: "de" },
+    presentation: { amount: { aggregate: "sum" } },
+    view: { sort: [{ field: "amount", direction: "desc" }] },
+    onViewChange: (next) => connection.update({ view: next }),
+    onSelectionChange: (detail) => detail.rows satisfies number[],
+    onCellChange: (detail) => detail.column satisfies string,
+  });
+  (await connection.ready).fallback satisfies boolean;
+  connection.update({ texts: undefined, view: null });
+  connection.update();
+  connect(table, { provider: local, defaultView: { density: "compact" } }).disconnect();
+  // @ts-expect-error — `presentation`, not `columns`: that is the attribute
+  connection.update({ columns: { amount: { aggregate: "sum" } } });
+  // @ts-expect-error — the callback gets the view, not the event
+  connect(grid, { onViewChange: (event: CustomEvent) => event.detail });
+  connection.disconnect();
 }

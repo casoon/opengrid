@@ -14,6 +14,17 @@
 
 use crate::{grid, pivot, table};
 
+/// What `packages/opengrid/loader.js` exports.
+const LOADER_EXPORTS: [&str; 7] = [
+    "loadOpengrid",
+    "connect",
+    "createLocalProvider",
+    "createWorkerProvider",
+    "createRestProvider",
+    "createPivotProvider",
+    "createHybridProvider",
+];
+
 /// Every name a page can rely on, in one string.
 fn surface() -> String {
     let mut out = String::new();
@@ -54,6 +65,13 @@ fn surface() -> String {
         "set_view",
         "set_columns",
     ] {
+        out.push_str(&format!("  {name}\n"));
+    }
+
+    // The loader's own exports (point 76): the page imports these by name, so
+    // they are as much a promise as the module functions.
+    out.push_str("\nloader exports\n");
+    for name in LOADER_EXPORTS {
         out.push_str(&format!("  {name}\n"));
     }
 
@@ -206,6 +224,15 @@ functions
   set_view
   set_columns
 
+loader exports
+  loadOpengrid
+  connect
+  createLocalProvider
+  createWorkerProvider
+  createRestProvider
+  createPivotProvider
+  createHybridProvider
+
 custom properties (set)
   --og-font --og-font-mono --og-font-size --og-surface --og-surface-2 --og-ink --og-ink-muted \
 --og-line --og-line-strong --og-accent --og-on-accent --og-radius --og-pad --og-focus-width \
@@ -325,11 +352,16 @@ typeText typeTime ungroupColumn valueLabel
             .iter()
             .any(|form| types.contains(form.as_str()))
         };
-        let mut missing: Vec<String> =
-            frozen_names_in(&["elements", "events", "functions", "text keys"])
-                .into_iter()
-                .filter(|name| !typed(name))
-                .collect();
+        let mut missing: Vec<String> = frozen_names_in(&[
+            "elements",
+            "events",
+            "functions",
+            "loader exports",
+            "text keys",
+        ])
+        .into_iter()
+        .filter(|name| !typed(name))
+        .collect();
 
         // An attribute is a property of **its element's** interface — `mode`
         // on the grid, not somewhere in the file (the hybrid provider has a
@@ -364,6 +396,29 @@ typeText typeTime ungroupColumn valueLabel
         assert!(
             missing.is_empty(),
             "frozen but not in packages/opengrid/loader.d.ts: {missing:?}"
+        );
+    }
+
+    /// The loader exports what the freeze lists — no more, no fewer. An export
+    /// is a promise (point 39), and one added without the list is a promise
+    /// nobody decided to make.
+    #[test]
+    fn the_loader_exports_are_the_frozen_ones() {
+        let loader = include_str!("../../../packages/opengrid/loader.js");
+        let mut exported: Vec<&str> = loader
+            .lines()
+            .filter_map(|line| line.strip_prefix("export function "))
+            .filter_map(|rest| rest.split('(').next())
+            .collect();
+        exported.sort_unstable();
+        let mut frozen = LOADER_EXPORTS.to_vec();
+        frozen.sort_unstable();
+        assert_eq!(exported, frozen);
+        assert!(
+            !loader
+                .lines()
+                .any(|line| line.starts_with("export ") && !line.starts_with("export function ")),
+            "loader.js exports something other than a function"
         );
     }
 

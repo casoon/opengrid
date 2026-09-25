@@ -83,6 +83,12 @@ Everything below is built and tested; none of it has been listened to.
   [docs/api.md](docs/api.md), resolved through the package's `exports`. The
   event `detail`s are typed on the element and on the document; a view, a
   column configuration or a text key the API does not take is a compile error.
+- **`connect(host, options)`** supplies an element from one object — provider,
+  texts, formats, presentation, choices, a controlled view and the three event
+  callbacks — in the one order that asks the source once, after the module has
+  loaded, and keeps it supplied: `update` writes only what changed, and writing
+  back the view the grid just reported costs nothing. The seam for framework
+  adapters, usable as it is from Angular, Lit or plain pages.
 - **Elements that come and go.** A grid or table removed from the page is
   garbage-collected, and with it its rows and whatever the page handed only to
   it — the provider, a format function — even when those close over the
