@@ -6,6 +6,7 @@ packages:
   - packages/*
   - examples/react
   - examples/vue
+  - examples/svelte
 
 onlyBuiltDependencies:
   - esbuild

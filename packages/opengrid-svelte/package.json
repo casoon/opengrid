@@ -1,0 +1,55 @@
+{
+  "name": "@casoon/opengrid-svelte",
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Svelte 5 components for @casoon/opengrid: the accessible grid, table and pivot, supplied through connect.",
+  "keywords": [
+    "svelte",
+    "datagrid",
+    "pivot",
+    "web-components",
+    "accessibility"
+  ],
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/casoon/opengrid.git",
+    "directory": "packages/opengrid-svelte"
+  },
+  "homepage": "https://github.com/casoon/opengrid#readme",
+  "bugs": {
+    "url": "https://github.com/casoon/opengrid/issues"
+  },
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "svelte": "./index.js",
+      "default": "./index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "svelte": "./index.js",
+  "types": "./index.d.ts",
+  "sideEffects": false,
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "Opengrid.svelte",
+    "OpengridGrid.svelte",
+    "OpengridTable.svelte",
+    "OpengridPivot.svelte",
+    "LICENSE-MIT",
+    "LICENSE-APACHE"
+  ],
+  "peerDependencies": {
+    "@casoon/opengrid": "workspace:^",
+    "svelte": "^5.0.0"
+  },
+  "devDependencies": {
+    "@casoon/opengrid": "workspace:^",
+    "svelte": "5.57.1"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

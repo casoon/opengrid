@@ -101,6 +101,11 @@ Everything below is built and tested; none of it has been listened to.
   options as props. Under `<KeepAlive>` a grid comes back with its view and
   selection and asks nothing; taken out for good, it is collected. Rendered
   on the server, and its packed tarball checked like the React one.
+- **`@casoon/opengrid-svelte`** — the three components for Svelte 5, shipped
+  as `.svelte` sources: `bind:view`, `bind:element`, `onselectionchange`,
+  `oncellchange`, the other options as props. Rendered on the server through
+  Vite's SSR with the Svelte plugin, and its packed tarball checked like the
+  others.
 - **Elements that come and go.** A grid or table removed from the page is
   garbage-collected, and with it its rows and whatever the page handed only to
   it — the provider, a format function — even when those close over the

@@ -34,9 +34,12 @@ export default defineConfig(({ mode }) => {
       minify: false,
       rollupOptions: {
         // The adapter says "use client" for React Server Components; a
-        // client bundle has no use for it, and the bundler says so.
+        // client bundle has no use for it, and the bundler says so — for the
+        // adapter only, so a stray directive anywhere else still warns.
         onwarn(warning, warn) {
-          if (warning.code !== "MODULE_LEVEL_DIRECTIVE") warn(warning);
+          const ours =
+            warning.code === "MODULE_LEVEL_DIRECTIVE" && warning.id?.includes("opengrid-react");
+          if (!ours) warn(warning);
         },
       },
     },

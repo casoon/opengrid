@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Runs a **packed** framework adapter the way an installing project would
-# (plan points 77, 78): a scratch project whose node_modules holds copies of
+# (plan points 77–79): a scratch project whose node_modules holds copies of
 # the unpacked tarballs from `just package` — the element package and the
 # adapter — and the framework from the example, nothing from the workspace.
 # There the adapter renders on the server exactly as it does in the
@@ -9,12 +9,12 @@
 # That catches what the workspace hides: a file missing from `files`, a peer
 # range still reading `workspace:`, an import the tarball cannot resolve.
 #
-# Usage: bash scripts/check-adapter-package.sh react|vue   (after `just package`)
+# Usage: bash scripts/check-adapter-package.sh react|vue|svelte   (after `just package`)
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 root="$PWD"
-adapter="${1:?usage: check-adapter-package.sh <react|vue>}"
+adapter="${1:?usage: check-adapter-package.sh <react|vue|svelte>}"
 packed="$root/target/npm-package/package"
 packed_adapter="$root/target/npm-package-$adapter/package"
 example="$root/examples/$adapter"
@@ -39,19 +39,25 @@ mkdir -p "$work/node_modules/@casoon"
 # from the tarball's own directory instead.
 cp -R "$packed" "$work/node_modules/@casoon/opengrid"
 cp -R "$packed_adapter" "$work/node_modules/@casoon/opengrid-$adapter"
-# Everything else the example has installed, as the store's real directories
-# (so what those packages depend on resolves beside them).
-link() {
-    mkdir -p "$(dirname "$work/node_modules/$2")"
-    ln -s "$(cd "$1" && pwd -P)" "$work/node_modules/$2"
-}
-for entry in "$example"/node_modules/*; do
-    name="$(basename "$entry")"
-    case "$name" in
-        .* | @casoon) continue ;;
-        @*) for scoped in "$entry"/*; do link "$scoped" "$name/$(basename "$scoped")"; done ;;
-        *) link "$entry" "$name" ;;
-    esac
+# The framework, named per adapter — its peers, the types they need, and what
+# rendering on the server takes — linked from the example as the store's real
+# directories, so what those depend on resolves beside them. Nothing else: an
+# import the adapter does not declare must fail here, not find a package the
+# example happens to have.
+case "$adapter" in
+    react) framework=(react react-dom @types/react @types/react-dom) ;;
+    vue) framework=(vue) ;;
+    svelte) framework=(svelte vite @sveltejs/vite-plugin-svelte) ;;
+    *) echo "unknown adapter: $adapter" >&2; exit 1 ;;
+esac
+for name in "${framework[@]}"; do
+    source_dir="$example/node_modules/$name"
+    [[ -d "$source_dir" ]] || {
+        echo "$name is not installed in $example — run \`pnpm install\`" >&2
+        exit 1
+    }
+    mkdir -p "$(dirname "$work/node_modules/$name")"
+    ln -s "$(cd "$source_dir" && pwd -P)" "$work/node_modules/$name"
 done
 echo '{ "type": "module" }' > "$work/package.json"
 

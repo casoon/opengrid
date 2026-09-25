@@ -1,0 +1,18 @@
+{
+  "name": "opengrid-example-svelte",
+  "private": true,
+  "type": "module",
+  "description": "An opengrid grid in Svelte 5: bind:view, and a grid that is taken out and put back (plan point 79).",
+  "scripts": {
+    "build": "vite build --mode development"
+  },
+  "dependencies": {
+    "@casoon/opengrid": "workspace:*",
+    "@casoon/opengrid-svelte": "workspace:*",
+    "svelte": "5.57.1"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "7.3.1",
+    "vite": "8.3.1"
+  }
+}

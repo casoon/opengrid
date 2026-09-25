@@ -38,6 +38,7 @@ function App({ provider }) {
   const [view, setView] = useState({ sort: [{ field: "id", direction: "asc" }] });
   const [selected, setSelected] = useState(0);
   const [german, setGerman] = useState(false);
+  const [hidden, setHidden] = useState(false);
   const grid = useRef(null);
 
   // For the tests: what React holds, the element behind the ref, and how often
@@ -62,13 +63,16 @@ function App({ provider }) {
         </button>{" "}
         <button type="button" aria-pressed={german} onClick={() => setGerman((now) => !now)}>
           German
+        </button>{" "}
+        <button type="button" aria-pressed={hidden} onClick={() => setHidden((now) => !now)}>
+          Hidden
         </button>
       </p>
       <p id="selected">{selected} rows selected</p>
       {shown && (
         <OpengridGrid
           ref={grid}
-          hidden={false}
+          hidden={hidden}
           label="Orders"
           datasource="orders"
           columns="id,customer,country,amount,qty"

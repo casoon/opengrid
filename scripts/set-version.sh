@@ -17,9 +17,9 @@ version="${1:?usage: set-version.sh <x.y.z>}"
 
 # Cargo workspace: the first `version = "..."` under [workspace.package].
 perl -0pi -e "s/(\[workspace\.package\]\nversion = \")[^\"]+(\")/\${1}$version\${2}/" Cargo.toml
-# npm packages: the element package and the adapters (points 77, 78), which carry
+# npm packages: the element package and the adapters (points 77–79), which carry
 # the same version and are released with it.
-for manifest in packages/opengrid/package.json packages/opengrid-react/package.json packages/opengrid-vue/package.json; do
+for manifest in packages/opengrid/package.json packages/opengrid-react/package.json packages/opengrid-vue/package.json packages/opengrid-svelte/package.json; do
     perl -0pi -e "s/(\"version\": \")[^\"]+(\")/\${1}$version\${2}/" "$manifest"
 done
 # The project page's header badge.
@@ -27,7 +27,7 @@ perl -0pi -e "s/(version: ')[^']+(')/\${1}$version\${2}/" site/astro.config.mjs
 
 echo "set to $version:"
 grep -m1 -A1 '^\[workspace.package\]' Cargo.toml | tail -1
-grep -m1 '"version"' packages/opengrid/package.json packages/opengrid-react/package.json packages/opengrid-vue/package.json
+grep -m1 '"version"' packages/opengrid/package.json packages/opengrid-react/package.json packages/opengrid-vue/package.json packages/opengrid-svelte/package.json
 grep -m1 "version: '" site/astro.config.mjs
 
 # Cargo.lock carries the workspace members' versions too.

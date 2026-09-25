@@ -26,8 +26,8 @@ for file in LICENSE-MIT LICENSE-APACHE README.md CHANGELOG.md; do
     cp "$root/$file" "$pkg/$file"
     staged+=("$pkg/$file")
 done
-# The framework adapters (points 77, 78) ship the licences too.
-adapters=(react vue)
+# The framework adapters (points 77–79) ship the licences too.
+adapters=(react vue svelte)
 for adapter in "${adapters[@]}"; do
     for file in LICENSE-MIT LICENSE-APACHE; do
         cp "$root/$file" "$root/packages/opengrid-$adapter/$file"
@@ -48,13 +48,14 @@ echo
 echo "contents:"
 tar -tzf "$dest/$tarball" | sort
 
-# The framework adapters (points 77, 78). Packed with pnpm, which writes the
+# The framework adapters (points 77–79). Packed with pnpm, which writes the
 # version of `@casoon/opengrid` into the peer range where the workspace has
 # `workspace:^` — npm would ship the protocol as it is, and no one could
 # install it. pnpm resolves that version from the installed workspace, so the
 # workspace is installed first (a no-op when it already is; on a fresh clone
 # or a CI runner it is the step that makes packing possible).
-pnpm install --frozen-lockfile --silent
+# stdout only is quiet: an install that fails says why on stderr.
+pnpm install --frozen-lockfile >/dev/null
 for adapter in "${adapters[@]}"; do
     adapter_dest="$root/target/npm-package-$adapter"
     rm -rf "$adapter_dest"

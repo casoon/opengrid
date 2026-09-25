@@ -20,10 +20,18 @@
  *   back is no change, so the loop ends there.
  * - **`<KeepAlive>` detaches, it does not unmount:** the connection stays, and
  *   the element brings back its own view and selection when it returns
- *   (docs/api.md §Connecting, plan point 74). Only an unmount disconnects.
+ *   (docs/api.md §Connecting, plan point 74). Only an unmount disconnects. A
+ *   view that changed while the grid was away waited in `connect` (there is no
+ *   view to set on a detached element); reactivation hands it over.
+ * - **Watchers run after the render** (`flush: "post"`), so the element has
+ *   its new attributes before an option follows: a new `datasource` and a new
+ *   `provider` together ask once, a view naming a new column finds it.
+ * - **The view is controlled like in React:** a view the page does not take
+ *   back from `update:view` is written again — on the next tick, once Vue has
+ *   had its chance to pass the new one down.
  */
 
-import { defineComponent, h, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { defineComponent, h, nextTick, onActivated, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { connect } from "@casoon/opengrid";
 
 /** The options of `connect` that are props; deep ones compare by value. */
@@ -56,8 +64,16 @@ function component(tag, name, attributes, booleans) {
       let connection = null;
 
       onMounted(() => {
+        if (props.view != null && props.defaultView != null) {
+          console.warn(`[opengrid] <${name}> has both view and defaultView; the view is controlled and leads`);
+        }
         const options = {
-          onViewChange: (view) => emit("update:view", view),
+          onViewChange: (view) => {
+            emit("update:view", view);
+            nextTick(() => {
+              if (props.view != null) connection?.update({ view: props.view });
+            });
+          },
           onSelectionChange: (detail) => emit("selectionChange", detail),
           onCellChange: (detail) => emit("cellChange", detail),
         };
@@ -75,15 +91,17 @@ function component(tag, name, attributes, booleans) {
         watch(
           () => props[option],
           (value) => connection?.update({ [option]: value }),
+          { flush: "post" },
         );
       }
       for (const option of DEEP) {
         watch(
           () => props[option],
           (value) => connection?.update({ [option]: value }),
-          { deep: true },
+          { deep: true, flush: "post" },
         );
       }
+      onActivated(() => connection?.update({}));
 
       onBeforeUnmount(() => {
         connection?.disconnect();

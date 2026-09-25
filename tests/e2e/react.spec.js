@@ -138,12 +138,20 @@ for (const build of BUILDS) {
       await expect.poll(status).toMatch(/matches$/);
     });
 
-    test("hidden={false} does not hide the grid", async ({ page }) => {
-      // Checked on the element React rendered: the adapter turns a false HTML
-      // boolean into no attribute, where React 18 would write "false".
-      expect(
-        await page.evaluate(() => document.querySelector("opengrid-grid").hasAttribute("hidden")),
-      ).toBe(false);
+    test("hidden hides the grid when true, and only then", async ({ page }) => {
+      // React 18 wrote hidden="false" for false — hidden. React 19 sets the
+      // property for a name the element has, so "" for true would be falsy —
+      // shown. Both are checked on the element React rendered.
+      const hidden = () =>
+        page.evaluate(() => {
+          const grid = document.querySelector("opengrid-grid");
+          return [grid.hidden, grid.hasAttribute("hidden")];
+        });
+      expect(await hidden()).toEqual([false, false]);
+      await page.getByRole("button", { name: "Hidden" }).click();
+      await expect.poll(hidden).toEqual([true, true]);
+      await page.getByRole("button", { name: "Hidden" }).click();
+      await expect.poll(hidden).toEqual([false, false]);
     });
 
     test("a selection reaches React", async ({ page }) => {

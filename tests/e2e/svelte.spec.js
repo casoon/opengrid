@@ -3,14 +3,14 @@ import AxeBuilder from "@axe-core/playwright";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-// The Vue adapter (plan point 78), against the built example: `v-model:view`,
-// the events, `<KeepAlive>` — which detaches the grid without unmounting it —
-// and a grid that is taken out for good. A development build, so Vue's
-// warnings exist, and every test fails on any of them.
+// The Svelte adapter (plan point 79), against the built example: `bind:view`,
+// the callbacks, a prop taken away, and a grid that `{#if}` takes out and puts
+// back. A development build, so Svelte's warnings exist, and every test fails
+// on any of them.
 
 test.use({ launchOptions: { args: ["--js-flags=--expose-gc"] } });
 
-const PAGE = "/examples/vue/dist/index.html";
+const PAGE = "/examples/svelte/dist/index.html";
 
 async function rows(page) {
   await page.waitForFunction(
@@ -90,7 +90,7 @@ test.describe("in the browser", () => {
     expect(queries[0].sort).toEqual([{ field: "id", direction: "asc" }]);
   });
 
-  test("v-model:view holds the view, and a saved one comes back", async ({ page }) => {
+  test("bind:view holds the view, and a saved one comes back", async ({ page }) => {
     await page.evaluate(() => {
       window.__queries.length = 0;
     });
@@ -108,7 +108,7 @@ test.describe("in the browser", () => {
     expect(await page.evaluate(() => window.__queries.length)).toBe(2);
   });
 
-  test("a selection reaches Vue", async ({ page }) => {
+  test("a selection reaches Svelte", async ({ page }) => {
     await page.evaluate(() =>
       document
         .querySelector("opengrid-grid")
@@ -119,50 +119,36 @@ test.describe("in the browser", () => {
     await expect(page.locator("#selected")).toHaveText("1 rows selected");
   });
 
-  test("KeepAlive: away and back, the same grid, and nothing asked", async ({ page }) => {
-    await sortByAmount(page);
-    await expect.poll(() => ariaSort(page, 3)).toBe("ascending");
-    await page.evaluate(() =>
-      document
-        .querySelector("opengrid-grid")
-        .shadowRoot.querySelector('td[data-row="2"][data-col="0"]')
-        .focus(),
-    );
-    await page.keyboard.press(" ");
-    await expect(page.locator("#selected")).toHaveText("1 rows selected");
-    const selected = await selectedRows(page);
-    const status = await page.evaluate(
-      () =>
-        document.querySelector("opengrid-grid").shadowRoot.querySelector('[part="status"]')
-          .textContent,
-    );
-    const queries = await page.evaluate(() => window.__queries.length);
-
-    await page.getByRole("button", { name: "Other" }).click();
-    await expect(page.locator("opengrid-grid")).toHaveCount(0);
-    // Long enough for the grid to let go of its DOM (plan point 74).
-    await page.waitForTimeout(300);
-    await page.getByRole("button", { name: "Orders" }).click();
-    await rows(page);
-    await page.waitForTimeout(250);
-
-    expect(await ariaSort(page, 3)).toBe("ascending");
-    expect(await selectedRows(page)).toEqual(selected);
-    await expect(page.locator("#selected")).toHaveText("1 rows selected");
+  test("bind:element is the element", async ({ page }) => {
     expect(
-      await page.evaluate(
+      await page.evaluate(() => window.__element === document.querySelector("opengrid-grid")),
+    ).toBe(true);
+  });
+
+  test("a change inside a $state object reaches the grid", async ({ page }) => {
+    const status = () =>
+      page.evaluate(
         () =>
           document.querySelector("opengrid-grid").shadowRoot.querySelector('[part="status"]')
             .textContent,
-      ),
-    ).toBe(status);
-    expect(await page.evaluate(() => window.__queries.length)).toBe(queries);
+      );
+    await page.getByRole("button", { name: "German" }).click();
+    await expect.poll(status).toMatch(/Treffer$/);
+    // The same object, one key changed in place.
+    await page.getByRole("button", { name: "Say rows" }).click();
+    await expect.poll(status).toMatch(/Zeilen$/);
+  });
 
-    // And still connected: the reader's next change reaches Vue.
+  test("a binding that refuses the reader's view gets its own back", async ({ page }) => {
+    // Controlled: the page's setter keeps the old view, so the grid returns
+    // to it — after one tick, not left showing what the page refused.
+    await page.getByRole("button", { name: "Lock the view" }).click();
     await sortByAmount(page);
-    await expect
-      .poll(() => page.evaluate(() => window.__view.sort))
-      .toEqual([{ field: "amount", direction: "desc" }]);
+    await expect.poll(() => ariaSort(page, 0)).toBe("ascending");
+    expect(await ariaSort(page, 3)).toBe("none");
+    expect(await page.evaluate(() => window.__view.sort)).toEqual([
+      { field: "id", direction: "asc" },
+    ]);
   });
 
   test("a prop set and taken away again is reset", async ({ page }) => {
@@ -182,12 +168,8 @@ test.describe("in the browser", () => {
     await page.evaluate(() => {
       window.__weak = new WeakRef(document.querySelector("opengrid-grid"));
     });
-    await page.getByRole("button", { name: "Leave the page" }).click();
+    await page.getByRole("button", { name: "Hide the grid" }).click();
     await expect(page.locator("opengrid-grid")).toHaveCount(0);
-    // A development build of Vue buffers its devtools events — component
-    // instances among them — for three seconds after start when no devtools
-    // are installed. Not ours to hold; past that, the grid has to go.
-    await page.waitForTimeout(3500);
 
     let alive = true;
     for (let round = 0; round < 20 && alive; round += 1) {
@@ -200,7 +182,7 @@ test.describe("in the browser", () => {
     await page.evaluate(() => {
       window.__queries.length = 0;
     });
-    await page.getByRole("button", { name: "Come back" }).click();
+    await page.getByRole("button", { name: "Show the grid" }).click();
     await rows(page);
     await page.waitForTimeout(250);
     expect(await page.evaluate(() => window.__queries.length)).toBe(1);
@@ -213,15 +195,16 @@ test.describe("in the browser", () => {
 });
 
 test("the adapter renders on the server", () => {
-  // In Node: no window, no document, no customElements. The script lives in the
-  // example, where `vue` and the adapter resolve.
-  const html = execFileSync("node", ["examples/vue/ssr.mjs"], {
+  // In Node, compiled by Vite with the Svelte plugin (the adapter ships
+  // `.svelte` sources). The script lives in the example, where `svelte`, Vite
+  // and the adapter resolve.
+  const html = execFileSync("node", ["examples/svelte/ssr.mjs"], {
     cwd: fileURLToPath(new URL("../..", import.meta.url)),
     encoding: "utf8",
   });
-  // Vue writes a boolean attribute bare (`selection`), React as `selection=""`:
-  // the same attribute.
-  expect(html).toBe(
-    '<opengrid-grid label="Orders" datasource="orders" columns="id,customer" window-size="40" selection class="orders"></opengrid-grid>',
+  // Svelte marks its blocks with comments for hydration; the element is what
+  // this is about.
+  expect(html.replace(/<!--.*?-->/g, "")).toBe(
+    '<opengrid-grid label="Orders" datasource="orders" columns="id,customer" window-size="40" selection="" class="orders"></opengrid-grid>',
   );
 });

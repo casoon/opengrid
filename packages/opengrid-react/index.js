@@ -14,9 +14,13 @@
  *   HTML too. A boolean attribute (`selection`, `toolbar`, …) is present or
  *   absent: React 18 would write `selection="false"` for `false`, and for a
  *   boolean attribute presence is what counts, so `true` becomes `""` and
- *   `false` leaves it out — the same in React 18 and 19. The same holds for
- *   the HTML booleans a page passes through (`hidden`, `inert`, `autoFocus`):
- *   React 18 would write `hidden="false"`, and hide the grid.
+ *   `false` leaves it out — the same in React 18 and 19. (`""` is safe only
+ *   because the element has no JS property of those names: React 19 sets a
+ *   property where one exists, and `""` is falsy.) The HTML booleans a page
+ *   passes through — `hidden`, `inert`, `autoFocus` — *are* properties of
+ *   every element, so they go on as `true`, which React 19 sets as the
+ *   property and React 18 writes as a present attribute; `false` leaves them
+ *   out, where React 18 would write `hidden="false"` and hide the grid.
  * - **`"use client"`:** hooks and refs, so a Server Component imports it as a
  *   client boundary.
  * - **StrictMode mounts twice in development**, and that costs nothing:
@@ -70,7 +74,7 @@ function component(tag, displayName, attributes, booleans) {
       if (OPTIONS.includes(name)) {
         options[name] = value;
       } else if (name in HTML_BOOLEANS) {
-        rendered[HTML_BOOLEANS[name]] = value ? "" : undefined;
+        rendered[HTML_BOOLEANS[name]] = value ? true : undefined;
       } else if (name in attributes) {
         if (booleans.includes(name)) {
           rendered[attributes[name]] = value ? "" : undefined;
