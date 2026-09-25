@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * React components for `@casoon/opengrid` (plan point 77, E32).
  *
@@ -12,7 +14,11 @@
  *   HTML too. A boolean attribute (`selection`, `toolbar`, …) is present or
  *   absent: React 18 would write `selection="false"` for `false`, and for a
  *   boolean attribute presence is what counts, so `true` becomes `""` and
- *   `false` leaves it out — the same in React 18 and 19.
+ *   `false` leaves it out — the same in React 18 and 19. The same holds for
+ *   the HTML booleans a page passes through (`hidden`, `inert`, `autoFocus`):
+ *   React 18 would write `hidden="false"`, and hide the grid.
+ * - **`"use client"`:** hooks and refs, so a Server Component imports it as a
+ *   client boundary.
  * - **StrictMode mounts twice in development**, and that costs nothing:
  *   `connect` applies only once the module has loaded, a microtask later at
  *   the earliest, so the first connection is disconnected before it has
@@ -24,6 +30,9 @@
 
 import { createElement, forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { connect } from "@casoon/opengrid";
+
+/** The HTML boolean attributes a page may pass through, by prop name. */
+const HTML_BOOLEANS = { hidden: "hidden", inert: "inert", autoFocus: "autofocus" };
 
 /** What `connect` takes, by prop name. */
 const OPTIONS = [
@@ -60,6 +69,8 @@ function component(tag, displayName, attributes, booleans) {
     for (const [name, value] of Object.entries(props)) {
       if (OPTIONS.includes(name)) {
         options[name] = value;
+      } else if (name in HTML_BOOLEANS) {
+        rendered[HTML_BOOLEANS[name]] = value ? "" : undefined;
       } else if (name in attributes) {
         if (booleans.includes(name)) {
           rendered[attributes[name]] = value ? "" : undefined;
@@ -103,7 +114,11 @@ function component(tag, displayName, attributes, booleans) {
             `[opengrid] <${displayName}> has both view and defaultView; the view is controlled and leads`,
           );
         }
-        connection.current = connect(element.current, options);
+        // Only what is set: `texts={undefined}` is no texts, not a reset.
+        connection.current = connect(
+          element.current,
+          Object.fromEntries(Object.entries(options).filter(([, value]) => value !== undefined)),
+        );
       }
     });
 

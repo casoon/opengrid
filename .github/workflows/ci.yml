@@ -116,7 +116,7 @@ jobs:
         run: |
           curl -fsSL "https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}/binaryen-version_${BINARYEN_VERSION}-x86_64-linux.tar.gz" | tar -xz
           echo "$PWD/binaryen-version_${BINARYEN_VERSION}/bin" >> "$GITHUB_PATH"
-      # pnpm packs the React adapter: it writes the element package's version
+      # pnpm packs the adapters: it writes the element package's version
       # where the workspace has `workspace:^` (plan point 77).
       - uses: pnpm/action-setup@v4
         with:
@@ -131,6 +131,9 @@ jobs:
       - name: npm publish --dry-run (React adapter)
         run: npm publish --dry-run
         working-directory: target/npm-package-react/package
+      - name: npm publish --dry-run (Vue adapter)
+        run: npm publish --dry-run
+        working-directory: target/npm-package-vue/package
 
   baselines:
     runs-on: ubuntu-latest
@@ -170,6 +173,8 @@ jobs:
       - run: just wasm-build
       - run: cargo build -p opengrid-server
       - run: just package
+      # The framework examples the React and Vue specs run against.
+      - run: pnpm --filter opengrid-example-react --filter opengrid-example-vue build
       - name: Regenerate the Linux baselines
         run: pnpm exec playwright test --config tests/e2e/playwright.config.js --update-snapshots
       - uses: actions/upload-artifact@v4

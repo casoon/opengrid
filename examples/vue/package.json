@@ -1,0 +1,18 @@
+{
+  "name": "opengrid-example-vue",
+  "private": true,
+  "type": "module",
+  "description": "An opengrid grid in Vue: v-model:view, KeepAlive, and a grid that is taken out for good (plan point 78).",
+  "scripts": {
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@casoon/opengrid": "workspace:*",
+    "@casoon/opengrid-vue": "workspace:*",
+    "vue": "3.5.43"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "6.0.9",
+    "vite": "8.3.1"
+  }
+}

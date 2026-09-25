@@ -83,6 +83,8 @@ for (const build of BUILDS) {
     });
 
     test("StrictMode mounts twice, and the source is asked once", async ({ page }) => {
+      // Twice — so this is the double mount, not a production build.
+      expect(await page.evaluate(() => window.__mounts)).toBe(2);
       const queries = await page.evaluate(() => window.__queries.map((q) => JSON.parse(q)));
       expect(queries).toHaveLength(1);
       expect(queries[0].sort).toEqual([{ field: "id", direction: "asc" }]);
@@ -115,6 +117,33 @@ for (const build of BUILDS) {
       expect(await ariaSort(page, 3)).toBe("none");
       await page.waitForTimeout(250);
       expect(await page.evaluate(() => window.__queries.length)).toBe(2);
+    });
+
+    test("the ref is the element", async ({ page }) => {
+      expect(await page.evaluate(() => window.__grid.current === document.querySelector("opengrid-grid"))).toBe(
+        true,
+      );
+    });
+
+    test("a prop set and taken away again is reset", async ({ page }) => {
+      const status = () =>
+        page.evaluate(
+          () =>
+            document.querySelector("opengrid-grid").shadowRoot.querySelector('[part="status"]')
+              .textContent,
+        );
+      await page.getByRole("button", { name: "German" }).click();
+      await expect.poll(status).toMatch(/Treffer$/);
+      await page.getByRole("button", { name: "German" }).click();
+      await expect.poll(status).toMatch(/matches$/);
+    });
+
+    test("hidden={false} does not hide the grid", async ({ page }) => {
+      // Checked on the element React rendered: the adapter turns a false HTML
+      // boolean into no attribute, where React 18 would write "false".
+      expect(
+        await page.evaluate(() => document.querySelector("opengrid-grid").hasAttribute("hidden")),
+      ).toBe(false);
     });
 
     test("a selection reaches React", async ({ page }) => {

@@ -1,9 +1,18 @@
 # The JS packages of the repository (E32): the element package, the framework
-# adapters, and the examples that build with them. `site/` keeps its own
-# lockfile and is not part of this.
+# adapters, and the examples that build with them. `site/` is not part of it:
+# it has its own lockfile and its own pnpm-workspace.yaml, which stops pnpm
+# from finding this one when it runs there.
 packages:
   - packages/*
   - examples/react
+  - examples/vue
 
 onlyBuiltDependencies:
   - esbuild
+
+# The React example also builds against React 18 through npm aliases; at
+# install time `react-dom-18` sees React 19 as its peer, and the build points
+# it at `react-18` instead (examples/react/vite.config.js).
+peerDependencyRules:
+  allowedVersions:
+    react-dom>react: "19"

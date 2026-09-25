@@ -1,0 +1,6 @@
+# The site is its own project with its own lockfile (pnpm-lock.yaml here), not
+# a member of the repository's JS workspace (../pnpm-workspace.yaml, plan
+# point 77). pnpm looks upward for a workspace file; this one stops it here,
+# so `pnpm install` in site/ installs the site and nothing else.
+packages:
+  - .

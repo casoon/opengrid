@@ -1,0 +1,14 @@
+{
+  // The adapter's types in use (plan point 78): src/types.ts takes what the
+  // components take and holds what they refuse. `just types` runs it.
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": []
+  },
+  "files": ["src/types.ts"]
+}

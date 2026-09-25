@@ -93,8 +93,14 @@ Everything below is built and tested; none of it has been listened to.
   `OpengridPivot` for React 18 and 19: the attributes as props (rendered, so
   they are in the server HTML), everything else through `connect`, the view
   controlled (`view` + `onViewChange`) or not (`defaultView`), the element
-  through `ref`. Tested in both React versions under StrictMode, rendered on
-  the server, and installed from its packed tarball.
+  through `ref`, `"use client"` for Server Components. Tested in React 18
+  and 19 under StrictMode; rendered on the server with React 19; the packed
+  tarball checked in a scratch project (server rendering and types).
+- **`@casoon/opengrid-vue`** — the same three components for Vue 3.3 and
+  later: `v-model:view`, `@selection-change`, `@cell-change`, the other
+  options as props. Under `<KeepAlive>` a grid comes back with its view and
+  selection and asks nothing; taken out for good, it is collected. Rendered
+  on the server, and its packed tarball checked like the React one.
 - **Elements that come and go.** A grid or table removed from the page is
   garbage-collected, and with it its rows and whatever the page handed only to
   it — the provider, a format function — even when those close over the

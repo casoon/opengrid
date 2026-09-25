@@ -32,6 +32,13 @@ export default defineConfig(({ mode }) => {
       outDir: react18 ? "dist-18" : "dist",
       emptyOutDir: true,
       minify: false,
+      rollupOptions: {
+        // The adapter says "use client" for React Server Components; a
+        // client bundle has no use for it, and the bundler says so.
+        onwarn(warning, warn) {
+          if (warning.code !== "MODULE_LEVEL_DIRECTIVE") warn(warning);
+        },
+      },
     },
   };
 });
