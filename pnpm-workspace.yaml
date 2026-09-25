@@ -1,0 +1,9 @@
+# The JS packages of the repository (E32): the element package, the framework
+# adapters, and the examples that build with them. `site/` keeps its own
+# lockfile and is not part of this.
+packages:
+  - packages/*
+  - examples/react
+
+onlyBuiltDependencies:
+  - esbuild

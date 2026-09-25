@@ -89,6 +89,12 @@ Everything below is built and tested; none of it has been listened to.
   loaded, and keeps it supplied: `update` writes only what changed, and writing
   back the view the grid just reported costs nothing. The seam for framework
   adapters, usable as it is from Angular, Lit or plain pages.
+- **`@casoon/opengrid-react`** — `OpengridGrid`, `OpengridTable` and
+  `OpengridPivot` for React 18 and 19: the attributes as props (rendered, so
+  they are in the server HTML), everything else through `connect`, the view
+  controlled (`view` + `onViewChange`) or not (`defaultView`), the element
+  through `ref`. Tested in both React versions under StrictMode, rendered on
+  the server, and installed from its packed tarball.
 - **Elements that come and go.** A grid or table removed from the page is
   garbage-collected, and with it its rows and whatever the page handed only to
   it — the provider, a format function — even when those close over the

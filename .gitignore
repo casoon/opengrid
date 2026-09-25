@@ -2,6 +2,7 @@ plan/
 target/
 node_modules/
 dist/
+dist-18/
 pkg/
 .DS_Store
 

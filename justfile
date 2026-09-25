@@ -66,10 +66,14 @@ package:
 
 # Typen der öffentlichen API (Punkt 75): tests/types/api.ts gegen das Repository
 # und gegen das gepackte Paket — dort über dessen `exports`, wie bei einem Nutzer.
+# Dazu der React-Adapter (Punkt 77): seine Typen im Beispiel, und das gepackte
+# Paket in einem Wegwerf-Projekt, serverseitig gerendert und typgeprüft.
 # Braucht `just package` vorher; `just e2e` ruft es auf.
 types:
     pnpm exec tsc -p tests/types
     bash scripts/typecheck-package.sh
+    pnpm exec tsc -p examples/react
+    bash scripts/check-react-package.sh
 
 # Größen der Elementmodule: beide Elemente, nur Grid, nur Pivot — roh, gzip,
 # brotli (Punkt 40). Die Zahlen stehen in plan/spezifikation/12-qualitaet.md.
@@ -86,6 +90,7 @@ e2e: wasm-build-components wasm-build package
     # Kaltbau innerhalb des webServer-Timeouts wäre ein Glücksspiel.
     cargo build -p opengrid-server
     pnpm install --frozen-lockfile
+    pnpm --filter opengrid-example-react build
     just types
     pnpm exec playwright test --config tests/e2e/playwright.config.js
 

@@ -26,6 +26,11 @@ for file in LICENSE-MIT LICENSE-APACHE README.md CHANGELOG.md; do
     cp "$root/$file" "$pkg/$file"
     staged+=("$pkg/$file")
 done
+react="$root/packages/opengrid-react"
+for file in LICENSE-MIT LICENSE-APACHE; do
+    cp "$root/$file" "$react/$file"
+    staged+=("$react/$file")
+done
 cleanup() { rm -f "${staged[@]}"; }
 trap cleanup EXIT
 
@@ -39,3 +44,20 @@ echo "unpacked: $dest/package"
 echo
 echo "contents:"
 tar -tzf "$dest/$tarball" | sort
+
+# The React adapter (point 77). Packed with pnpm, which writes the version of
+# `@casoon/opengrid` into the peer range where the workspace has `workspace:^`
+# — npm would ship the protocol as it is, and no one could install it.
+react_dest="$root/target/npm-package-react"
+rm -rf "$react_dest"
+mkdir -p "$react_dest"
+(cd "$react" && pnpm pack --pack-destination "$react_dest" >/dev/null)
+react_tarball="$(cd "$react_dest" && ls *.tgz)"
+tar -xzf "$react_dest/$react_tarball" -C "$react_dest"
+
+echo
+echo "packed:   $react_dest/$react_tarball"
+echo "unpacked: $react_dest/package"
+echo
+echo "contents:"
+tar -tzf "$react_dest/$react_tarball" | sort

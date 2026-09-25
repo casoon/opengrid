@@ -1,0 +1,56 @@
+{
+  "name": "@casoon/opengrid-react",
+  "version": "0.0.0",
+  "type": "module",
+  "description": "React components for @casoon/opengrid: the accessible grid, table and pivot, supplied through connect.",
+  "keywords": [
+    "react",
+    "datagrid",
+    "pivot",
+    "web-components",
+    "accessibility"
+  ],
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/casoon/opengrid.git",
+    "directory": "packages/opengrid-react"
+  },
+  "homepage": "https://github.com/casoon/opengrid#readme",
+  "bugs": {
+    "url": "https://github.com/casoon/opengrid/issues"
+  },
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "sideEffects": false,
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "LICENSE-MIT",
+    "LICENSE-APACHE"
+  ],
+  "peerDependencies": {
+    "@casoon/opengrid": "workspace:^",
+    "@types/react": ">=18",
+    "react": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "@types/react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@casoon/opengrid": "workspace:^",
+    "@types/react": "19.3.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
