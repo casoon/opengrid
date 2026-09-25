@@ -64,6 +64,13 @@ wasm-build-components:
 package:
     bash scripts/pack-npm.sh
 
+# Typen der öffentlichen API (Punkt 75): tests/types/api.ts gegen das Repository
+# und gegen das gepackte Paket — dort über dessen `exports`, wie bei einem Nutzer.
+# Braucht `just package` vorher; `just e2e` ruft es auf.
+types:
+    pnpm exec tsc -p tests/types
+    bash scripts/typecheck-package.sh
+
 # Größen der Elementmodule: beide Elemente, nur Grid, nur Pivot — roh, gzip,
 # brotli (Punkt 40). Die Zahlen stehen in plan/spezifikation/12-qualitaet.md.
 measure-modules:
@@ -79,6 +86,7 @@ e2e: wasm-build-components wasm-build package
     # Kaltbau innerhalb des webServer-Timeouts wäre ein Glücksspiel.
     cargo build -p opengrid-server
     pnpm install --frozen-lockfile
+    just types
     pnpm exec playwright test --config tests/e2e/playwright.config.js
 
 # Setzt die Release-Version an allen drei Stellen, die eine drucken: Cargo-

@@ -41,6 +41,13 @@ instead.
 | `set_columns(host, columns)` | Per-column presentation — see [`<opengrid-grid>`](#opengrid-grid). |
 | `register()` | Defines the three elements. `loadOpengrid()` calls it; a page that loads the module itself calls it once. |
 
+**Types.** The package ships `loader.d.ts`: every name on this page is typed —
+the view, the column configuration, the texts, the formats, the providers, and
+the attributes of each element as `Opengrid…Attributes` for adapters and JSX
+typings to build on — and the three events are in the global event map,
+so `grid.addEventListener("opengrid-view-change", e => e.detail.view)` knows what
+`detail` holds, on the element and on the document alike.
+
 **A provider is a seam, not a class.** Anything with an `execute` method fits,
 which is how the engine can sit in the tab, in a worker, behind HTTP, or be
 split across two of them without the elements knowing.

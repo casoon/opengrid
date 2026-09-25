@@ -20,19 +20,26 @@
     "url": "https://github.com/casoon/opengrid/issues"
   },
   "exports": {
-    ".": "./loader.js",
-    "./loader.js": "./loader.js",
+    ".": {
+      "types": "./loader.d.ts",
+      "default": "./loader.js"
+    },
+    "./loader.js": {
+      "types": "./loader.d.ts",
+      "default": "./loader.js"
+    },
     "./worker.js": "./worker.js",
     "./pkg/*": "./pkg/*",
     "./package.json": "./package.json"
   },
   "main": "./loader.js",
-  "types": "./pkg/opengrid_web_components.d.ts",
+  "types": "./loader.d.ts",
   "sideEffects": [
     "./worker.js"
   ],
   "files": [
     "loader.js",
+    "loader.d.ts",
     "worker.js",
     "pkg/",
     "LICENSE-MIT",

@@ -1,0 +1,19 @@
+{
+  // The type test of the public API (plan point 75), against the repository.
+  // scripts/typecheck-package.sh runs the same file against the packed package,
+  // resolved through its `exports` the way a user's project resolves it.
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": [],
+    "skipLibCheck": false,
+    "paths": {
+      "@casoon/opengrid": ["../../packages/opengrid/loader.d.ts"]
+    }
+  },
+  "files": ["api.ts"]
+}

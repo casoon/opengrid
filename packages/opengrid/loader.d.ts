@@ -1,0 +1,461 @@
+/// <reference lib="dom" />
+/**
+ * Types for `@casoon/opengrid` (plan point 75).
+ *
+ * Written by hand after `docs/api.md`, which is the source: everything a page
+ * can rely on is typed here, and nothing else. The freeze test in
+ * `crates/opengrid-web-components/src/api.rs` fails when a frozen name is
+ * missing from this file, so the two cannot drift apart silently.
+ *
+ * The module functions (`set_provider`, `set_view`, …) are reached through
+ * `loadOpengrid()`: `(await loadOpengrid()).module`.
+ */
+
+// ---------------------------------------------------------------------------
+// Loading
+// ---------------------------------------------------------------------------
+
+export interface LoadOptions {
+  /** The wasm-bindgen glue of the element module; defaults to the packaged one. */
+  moduleUrl?: URL | string;
+  /** An explicit `.wasm` URL, if it is not next to the glue. */
+  wasmUrl?: URL | string;
+}
+
+/**
+ * What `loadOpengrid()` answers. `fallback` is `true` when the WebAssembly
+ * module could not be loaded and a plain-DOM stand-in was installed instead —
+ * then there is no module to call.
+ */
+export type LoadResult =
+  | { fallback: false; module: OpengridModule }
+  | { fallback: true; module?: undefined };
+
+/** Loads the WASM module and registers the three elements; runs once. */
+export function loadOpengrid(options?: LoadOptions): Promise<LoadResult>;
+
+/** The functions of the element module. */
+export interface OpengridModule {
+  /** Attaches the data source. Call {@link OpengridModule.set_texts} first. */
+  set_provider(host: HTMLElement, provider: Provider): void;
+  /** Overrides any subset of the texts; call it before `set_provider`. */
+  set_texts(host: HTMLElement, texts: Texts): void;
+  /** Per-column display formatting. Never reaches a query. */
+  set_formats(host: HTMLElement, formats: Formats): void;
+  /** Per-column editor choices: `{ customer: ["Alpha", "Beta"] }`. */
+  set_choices(host: HTMLElement, choices: Choices): void;
+  /** The whole view as one value; `null` before the grid is connected. */
+  get_view(host: HTMLElement): View | null;
+  /** Applies a view in one step and one query. Parts left out keep their default. */
+  set_view(host: HTMLElement, view: ViewInput): void;
+  /** Per-column presentation; narrows what the schema allows, never widens it. */
+  set_columns(host: HTMLElement, columns: Columns): void;
+  /** Defines the three elements. `loadOpengrid()` calls it. */
+  register(): void;
+}
+
+// ---------------------------------------------------------------------------
+// Providers
+// ---------------------------------------------------------------------------
+
+/**
+ * Where the data comes from. A seam, not a class: anything with an `execute`
+ * method fits. `queryJson` is the query as JSON; the answer is the result as
+ * JSON, or a Promise of it. `mode` is the element's `mode` attribute, `""`
+ * without one.
+ */
+export interface Provider {
+  execute(queryJson: string, mode: string): string | Promise<string>;
+}
+
+/** A provider over an engine that holds data: the tab or a worker. */
+export interface EngineProvider extends Provider {
+  /** Loads CSV bytes as the source `name`, against a schema (JSON). */
+  load(name: string, bytes: ArrayBuffer | Uint8Array, schema: string): Promise<void>;
+  /** Stops a worker; a no-op in the tab. */
+  terminate(): void;
+}
+
+/** The engine of the engine module, as `createLocalProvider` uses it. */
+export interface Engine {
+  load_csv(name: string, bytes: Uint8Array, schema: string): void;
+  execute(queryJson: string): string;
+}
+
+/** What a server says a source is. */
+export interface SourceDescription {
+  name: string;
+  schema: unknown;
+  capabilities: unknown;
+  pivot_limits: unknown;
+}
+
+export interface RestProvider extends Provider {
+  /** `GET /source/{name}`: what a `Planner` needs to split queries. */
+  describe(): Promise<SourceDescription>;
+}
+
+/** The `Planner` of the engine module, as `createHybridProvider` uses it. */
+export interface PlannerLike {
+  /** The plan as JSON: `{ mode, describe, steps, source, client }`. */
+  plan(queryJson: string, mode: string): string;
+  /** Finishes the client half over the source's answer; the result as JSON. */
+  finish(clientQueryJson: string, resultJson: string): string;
+}
+
+/** The plan `createHybridProvider` hands to `onPlan` before anything is sent. */
+export interface ExecutionPlan {
+  mode: Mode;
+  /** One line for tools: `source: filter · sort | client: group · aggregate`. */
+  describe: string;
+  steps: string[];
+  source: unknown;
+  /** The half the tab finishes; `null` when the source answers everything. */
+  client: unknown;
+}
+
+export interface ServerOptions {
+  /** The server's base URL. */
+  url: string;
+  /** The configured data source name. */
+  source: string;
+  /** Bearer token; the server refuses without one. */
+  token?: string;
+}
+
+/** The engine on the main thread. */
+export function createLocalProvider(engine: Engine): EngineProvider;
+
+/**
+ * The engine in a module worker, started lazily and once. `moduleUrl` and
+ * `wasmUrl` travel to the worker by `postMessage`, so they are strings — a
+ * `URL` object cannot be copied there; pass `url.href`. The package ships no
+ * engine module, so there is no default.
+ */
+export function createWorkerProvider(options: {
+  moduleUrl: string;
+  wasmUrl?: string;
+  workerUrl?: URL | string;
+}): EngineProvider & { readonly worker: Worker | undefined };
+
+/** `POST /query/{source}` of an `opengrid-server`. */
+export function createRestProvider(options: ServerOptions): RestProvider;
+
+/** `POST /pivot/{source}` — a whole pivot in one request. */
+export function createPivotProvider(options: ServerOptions): Provider;
+
+/** Splits each query between a remote source and the engine in the tab. */
+export function createHybridProvider(options: {
+  remote: Provider;
+  planner: PlannerLike;
+  mode?: Mode;
+  onPlan?: (plan: ExecutionPlan) => void;
+}): Provider;
+
+// ---------------------------------------------------------------------------
+// Configuration
+// ---------------------------------------------------------------------------
+
+/** Where a query may run; handed to the provider unchanged. */
+export type Mode = "local" | "remote" | "hybrid" | "auto";
+
+export type Density = "compact" | "normal" | "comfortable";
+
+/** The filter operators, by wire token. */
+export type FilterOperator =
+  | "eq"
+  | "ne"
+  | "gt"
+  | "gte"
+  | "lt"
+  | "lte"
+  | "contains"
+  | "starts_with"
+  | "is_null"
+  | "is_not_null";
+
+/** An aggregate in group rows and the grand total. */
+export type Aggregate = "sum" | "avg" | "count" | "min" | "max" | "range";
+
+/** How a column is offered as a facet. */
+export type FacetKind = "list" | "pills" | "range" | "period";
+
+/** A value as the wire format writes it: decimals and dates are strings. */
+export type WireValue = string | number | boolean | null;
+
+/** Per-column presentation for `set_columns`. */
+export interface ColumnConfig {
+  /** The starting width in pixels; a reader's resize leads after that. */
+  width?: number;
+  align?: "start" | "end" | "center";
+  mono?: boolean;
+  emphasis?: boolean;
+  muted?: boolean;
+  aggregate?: Aggregate;
+  facet?: FacetKind;
+}
+
+export type Columns = Record<string, ColumnConfig>;
+
+/** A display format: a function, or `Intl` options with a `kind`. */
+export type Format =
+  | ((text: string, value: WireValue) => string)
+  | ({ kind?: "number"; locale?: string } & Intl.NumberFormatOptions)
+  | ({ kind: "date"; locale?: string } & Intl.DateTimeFormatOptions);
+
+export type Formats = Record<string, Format>;
+
+export type Choices = Record<string, string[]>;
+
+// ---------------------------------------------------------------------------
+// The view
+// ---------------------------------------------------------------------------
+
+export interface SortKey {
+  field: string;
+  direction: "asc" | "desc";
+}
+
+export interface FilterEntry {
+  column: string;
+  op: FilterOperator;
+  /** The value as typed, in the notation of the column's type. */
+  value: string;
+}
+
+/** A facet selection: values for `list`/`pills`, bounds for `range`/`period`. */
+export type FacetSelection =
+  | { values: WireValue[] }
+  | { min: string; max: string }
+  | { from: string; to: string };
+
+/**
+ * Sort, filters, column layout, density, grouping, aggregates and facets as
+ * one value — as `get_view` writes it, every field present. `set_view` reads
+ * some fields more leniently (a missing direction is `asc`, a missing operator
+ * `eq`); the types ask for the full form on purpose, so a saved view says what
+ * it means. A saved view is this value with a name on it. The selection and
+ * the free-text search are deliberately not part of it.
+ */
+export interface View {
+  sort: SortKey[];
+  filters: FilterEntry[];
+  columns: { order: string[]; hidden: string[]; widths: Record<string, number> };
+  density: Density;
+  group: string[];
+  /** The open groups, each as its path of keys. */
+  expanded: WireValue[][];
+  /** The reader's aggregate per column; leads over `set_columns`. */
+  aggregates: Record<string, Aggregate>;
+  /** Whether the filter row shows. */
+  filterRow: boolean;
+  facets: Record<string, FacetSelection>;
+}
+
+/**
+ * What `set_view` takes: any part of a view. A part left out is not "unchanged"
+ * but its default — no sort falls back to the first column, no filters is none.
+ */
+export type ViewInput = Partial<Omit<View, "columns">> & {
+  columns?: Partial<View["columns"]>;
+};
+
+// ---------------------------------------------------------------------------
+// Texts
+// ---------------------------------------------------------------------------
+
+/** Every text key, `lang` and `operators` aside. */
+export type TextKey =
+  | "loading"
+  | "matchesOne"
+  | "matchesOther"
+  | "empty"
+  | "error"
+  | "errorUnknown"
+  | "filterGroup"
+  | "operatorLabel"
+  | "valueLabel"
+  | "clear"
+  | "selectAll"
+  | "selectedAll"
+  | "groupRow"
+  | "rowsOne"
+  | "rowsOther"
+  | "groupExpanded"
+  | "groupCollapsed"
+  | "groupInvalid"
+  | "totalRow"
+  | "aggregateCell"
+  | "aggregateSum"
+  | "aggregateAvg"
+  | "aggregateCount"
+  | "aggregateMin"
+  | "aggregateMax"
+  | "aggregateRange"
+  | "columnMenu"
+  | "sortAscending"
+  | "sortDescending"
+  | "filterColumn"
+  | "aggregateGroup"
+  | "aggregateNone"
+  | "groupByColumn"
+  | "groupSecondLevel"
+  | "ungroupColumn"
+  | "hideColumn"
+  | "toolbarGroup"
+  | "filterRowToggle"
+  | "densityGroup"
+  | "densityCompact"
+  | "densityNormal"
+  | "densityComfortable"
+  | "chipsGroup"
+  | "chipsClear"
+  | "chipRemove"
+  | "filterRemoved"
+  | "filtersCleared"
+  | "groupChip"
+  | "facetsGroup"
+  | "facetsToggle"
+  | "facetsReset"
+  | "facetFrom"
+  | "facetTo"
+  | "facetQueries"
+  | "facetChipValues"
+  | "searchLabel"
+  | "searchPlaceholder"
+  | "queryAnd"
+  | "searchHint"
+  | "searchSuggestions"
+  | "typeText"
+  | "typeBool"
+  | "typeInteger"
+  | "typeNumber"
+  | "typeDate"
+  | "typeTime"
+  | "searchChip"
+  | "queryUnknownColumn"
+  | "queryMissingValue"
+  | "queryWrongOperator"
+  | "emptyFiltered"
+  | "emptySource"
+  | "emptyReset"
+  | "filterInvalid"
+  | "cellRequired"
+  | "selectionCleared"
+  | "columnWidth"
+  | "columnMoved"
+  | "columnAtEdge"
+  | "columnHidden"
+  | "columnShown"
+  | "columnsGroup"
+  | "pageFirst"
+  | "pagePrevious"
+  | "pageNext"
+  | "pageLast"
+  | "pageOf"
+  | "total"
+  | "subtotal"
+  | "noValue"
+  | "emptyValue";
+
+/**
+ * Any subset of the texts; what is left out keeps its English default. `lang`
+ * goes onto the elements that carry these texts, never onto the data.
+ */
+export type Texts = Partial<Record<TextKey, string>> & {
+  lang?: string;
+  operators?: Partial<Record<FilterOperator, string>>;
+};
+
+// ---------------------------------------------------------------------------
+// Events
+// ---------------------------------------------------------------------------
+
+/** `opengrid-selection-change`: logical row numbers, ascending. */
+export interface SelectionChangeDetail {
+  rows: number[];
+  count: number;
+}
+
+/** `opengrid-cell-change`: everything a page needs to persist an edit. */
+export interface CellChangeDetail {
+  row: number;
+  column: string;
+  value: string;
+  previous: string;
+}
+
+/** `opengrid-view-change`: the whole view after the change. */
+export interface ViewChangeDetail {
+  view: View;
+}
+
+/** The events, by name. All bubble, all are composed, none is cancelable. */
+export interface OpengridEventMap {
+  "opengrid-selection-change": CustomEvent<SelectionChangeDetail>;
+  "opengrid-cell-change": CustomEvent<CellChangeDetail>;
+  "opengrid-view-change": CustomEvent<ViewChangeDetail>;
+}
+
+// ---------------------------------------------------------------------------
+// Elements and their attributes
+// ---------------------------------------------------------------------------
+
+/**
+ * The attributes of `<opengrid-grid>`, as strings the way HTML has them — for
+ * adapters and JSX typings to build on. For
+ * the boolean ones — `selection`, `toolbar`, `search`, `facets`,
+ * `column-menu` — presence is what counts, whatever the value.
+ */
+export interface OpengridGridAttributes {
+  label?: string;
+  datasource?: string;
+  columns?: string;
+  "window-size"?: string;
+  "page-size"?: string;
+  mode?: Mode;
+  "group-by"?: string;
+  search?: string;
+  facets?: string;
+  toolbar?: string;
+  "column-menu"?: string;
+  selection?: string;
+  density?: Density;
+}
+
+export interface OpengridTableAttributes {
+  label?: string;
+  datasource?: string;
+  columns?: string;
+}
+
+export interface OpengridPivotAttributes {
+  label?: string;
+  datasource?: string;
+  /** Comma-separated row dimensions, outermost first. */
+  rows?: string;
+  /** Comma-separated column dimensions; V1 allows one. */
+  columns?: string;
+  /** The measures as the contract's JSON: `[{"field":"qty","fn":"sum","as":"total"}]`. */
+  values?: string;
+}
+
+/** `<opengrid-grid>`; it fires the three events. */
+export interface OpengridGridElement extends HTMLElement {}
+/** `<opengrid-table>`. */
+export interface OpengridTableElement extends HTMLElement {}
+/** `<opengrid-pivot>`. */
+export interface OpengridPivotElement extends HTMLElement {}
+
+declare global {
+  interface HTMLElementTagNameMap {
+    "opengrid-grid": OpengridGridElement;
+    "opengrid-table": OpengridTableElement;
+    "opengrid-pivot": OpengridPivotElement;
+  }
+  /**
+   * The events bubble and are composed, so a listener on an ancestor, the
+   * document or the window hears them too — hence the global handler map.
+   */
+  interface GlobalEventHandlersEventMap extends OpengridEventMap {}
+}

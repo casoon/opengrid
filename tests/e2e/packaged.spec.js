@@ -51,7 +51,15 @@ test("the manifest promises what a consumer needs", async ({ page }) => {
   expect(manifest.license).toBe("MIT OR Apache-2.0");
   // The loader resolves `./pkg/...` against `import.meta.url`, so a bundler
   // has to be allowed through the exports map as well.
-  expect(manifest.exports["."]).toBe("./loader.js");
+  // Point 75. TypeScript would find `loader.d.ts` beside `loader.js` without
+  // the conditions; they are here so a resolver that reads only `exports` finds
+  // it too, and this is the test that holds their shape.
+  expect(manifest.exports["."]).toEqual({ types: "./loader.d.ts", default: "./loader.js" });
+  expect(manifest.exports["./loader.js"]).toEqual({
+    types: "./loader.d.ts",
+    default: "./loader.js",
+  });
+  expect(manifest.types).toBe("./loader.d.ts");
   expect(manifest.exports["./pkg/*"]).toBe("./pkg/*");
   // `worker.js` installs an `onmessage` handler at import time; the rest of the
   // package is side-effect free and may be tree-shaken.

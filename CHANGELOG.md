@@ -79,7 +79,10 @@ Everything below is built and tested; none of it has been listened to.
   way to sort, filter, aggregate, group and hide, a **selection column**, and an
   **empty state** that says why and offers a way out only where one exists.
 - **A frozen public API**, written down in `docs/api.md` and held by a test.
-
+- **TypeScript declarations** (`loader.d.ts`) for everything in
+  [docs/api.md](docs/api.md), resolved through the package's `exports`. The
+  event `detail`s are typed on the element and on the document; a view, a
+  column configuration or a text key the API does not take is a compile error.
 - **Elements that come and go.** A grid or table removed from the page is
   garbage-collected, and with it its rows and whatever the page handed only to
   it — the provider, a format function — even when those close over the

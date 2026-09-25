@@ -125,7 +125,8 @@ function installFallback(name = "opengrid-table") {
  * shape, so the page code is the same for both paths.
  *
  * @param {object} options
- * @param {URL|string} options.moduleUrl wasm-bindgen glue of the engine module.
+ * @param {string} options.moduleUrl wasm-bindgen glue of the engine module. A
+ *   string, not a `URL`: it travels to the worker by `postMessage`.
  * @param {string} [options.wasmUrl] explicit `.wasm` URL, if it is not next to the glue.
  * @param {URL|string} [options.workerUrl] the worker entry; defaults to `worker.js` next to this file.
  * @returns {{load: Function, execute: Function, terminate: Function, worker?: Worker}}

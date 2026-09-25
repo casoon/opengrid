@@ -284,6 +284,89 @@ typeText typeTime ungroupColumn valueLabel
         );
     }
 
+    /// The frozen names of some sections of the surface, without the headings
+    /// and element prefixes.
+    fn frozen_names_in(sections: &[&str]) -> Vec<String> {
+        let mut section = "";
+        let mut names = Vec::new();
+        for line in surface().lines() {
+            if !line.starts_with("  ") {
+                section = line;
+                continue;
+            }
+            if !sections.contains(&section) {
+                continue;
+            }
+            let line = line.trim();
+            if let Some((tag, rest)) = line.split_once(": ") {
+                names.push(tag.to_owned());
+                names.extend(rest.split_whitespace().map(str::to_owned));
+            } else {
+                names.extend(line.split_whitespace().map(str::to_owned));
+            }
+        }
+        names
+    }
+
+    /// The types are the same promise again (point 75). A page in TypeScript
+    /// reads `loader.d.ts`, not `docs/api.md`; a frozen name missing there is a
+    /// name that page cannot use without casting. Parts and custom properties
+    /// are CSS and have no type to be in.
+    #[test]
+    fn every_frozen_name_is_typed() {
+        let types = include_str!("../../../packages/opengrid/loader.d.ts");
+        // A tag, event or text key is a string literal, a function a method.
+        let typed = |name: &str| {
+            [
+                format!("\"{name}\""),
+                format!("{name}?:"),
+                format!("{name}("),
+            ]
+            .iter()
+            .any(|form| types.contains(form.as_str()))
+        };
+        let mut missing: Vec<String> =
+            frozen_names_in(&["elements", "events", "functions", "text keys"])
+                .into_iter()
+                .filter(|name| !typed(name))
+                .collect();
+
+        // An attribute is a property of **its element's** interface — `mode`
+        // on the grid, not somewhere in the file (the hybrid provider has a
+        // `mode` too).
+        for line in surface()
+            .split("\nattributes\n")
+            .nth(1)
+            .and_then(|rest| rest.split("\n\n").next())
+            .expect("the surface lists attributes")
+            .lines()
+        {
+            let (tag, names) = line.trim().split_once(": ").expect("tag: names");
+            let interface = match tag {
+                "opengrid-grid" => "OpengridGridAttributes",
+                "opengrid-table" => "OpengridTableAttributes",
+                "opengrid-pivot" => "OpengridPivotAttributes",
+                other => panic!("an element without an attributes interface: {other}"),
+            };
+            let block = types
+                .split(&format!("export interface {interface} {{"))
+                .nth(1)
+                .and_then(|rest| rest.split("\n}").next())
+                .unwrap_or_else(|| panic!("loader.d.ts declares {interface}"));
+            for name in names.split_whitespace() {
+                let property = [format!("\n  {name}?:"), format!("\n  \"{name}\"?:")];
+                if !property.iter().any(|form| block.contains(form.as_str())) {
+                    missing.push(format!("{tag}[{name}]"));
+                }
+            }
+        }
+
+        assert!(
+            missing.is_empty(),
+            "frozen but not in packages/opengrid/loader.d.ts: {missing:?}"
+        );
+    }
+
     /// The parts list of the documentation is the frozen one — no more, no
     /// fewer. A documented part the element does not write is a promise it
     /// breaks the first time a page styles it.
