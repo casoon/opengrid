@@ -47,6 +47,11 @@ The full surface — elements, attributes, events, parts, custom properties and
 translatable texts — is in **[docs/api.md](docs/api.md)**. Runnable examples are
 under `examples/`.
 
+In **React, Vue or Svelte**, `@casoon/opengrid-react`, `@casoon/opengrid-vue`
+and `@casoon/opengrid-svelte` give the three elements as components, with the
+view as state you bind; anywhere else, `connect(host, options)` does the same
+from one object. See **[docs/guides/frameworks.md](docs/guides/frameworks.md)**.
+
 ## Building
 
 Requires a recent stable Rust with the `wasm32-unknown-unknown` target,
@@ -94,7 +99,8 @@ is, treat the accessibility of this library as well-built and unaudited.
   rows. Over a limit you get an error with a sentence, never a silently
   truncated result.
 - **Paging and virtualization are exclusive**, not combined.
-- **No CDN build, no framework adapters**, and no documentation site.
+- **No CDN build.** Adapters exist for React, Vue and Svelte; Angular, Lit and
+  the rest use `connect` directly.
 
 ## Status
 

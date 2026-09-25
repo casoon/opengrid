@@ -33,6 +33,7 @@
   "files": [
     "index.js",
     "index.d.ts",
+    "README.md",
     "LICENSE-MIT",
     "LICENSE-APACHE"
   ],

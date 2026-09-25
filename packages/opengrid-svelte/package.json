@@ -38,6 +38,7 @@
     "OpengridGrid.svelte",
     "OpengridTable.svelte",
     "OpengridPivot.svelte",
+    "README.md",
     "LICENSE-MIT",
     "LICENSE-APACHE"
   ],

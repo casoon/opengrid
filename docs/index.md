@@ -29,7 +29,8 @@ That freezes the list, not the design: it may still change before 1.0.
 | `<opengrid-pivot>` | Rows crossed with one column dimension, with subtotals. |
 
 All three ship in one module. The Cargo features `grid` and `pivot` exist for anyone who wants
-only one.
+only one. In React, Vue and Svelte they come as components — see
+[Frameworks](guides/frameworks/).
 
 ## What V1 deliberately does not do
 
@@ -38,4 +39,5 @@ only one.
 - **One column dimension in a pivot**, at most 256 generated columns and 2 000 rows. Over a
   limit you get an error with a sentence, never a silently truncated result.
 - **Paging and virtualization are exclusive**, not combined.
-- **No CDN build and no framework adapters.**
+- **No CDN build.** Adapters exist for React, Vue and Svelte; Angular, Lit and the rest use
+  `connect` directly.

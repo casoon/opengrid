@@ -38,6 +38,10 @@ Two modules come out of this:
 A page that only talks to an `opengrid-server` needs the elements alone. A page that runs
 queries in the tab needs the engine as well.
 
+The React, Vue and Svelte components are in `packages/opengrid-react`, `packages/opengrid-vue`
+and `packages/opengrid-svelte`, one pnpm workspace with the element package — see
+[Frameworks](../../guides/frameworks/).
+
 ## Put them next to your page
 
 `loader.js` finds its module in `pkg/` next to itself, so copy both together. The

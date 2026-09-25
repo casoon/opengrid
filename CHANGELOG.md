@@ -142,5 +142,8 @@ Everything below is built and tested; none of it has been listened to.
   the group headers.
 - `<opengrid-pivot>` requires a server: the browser engine has no pivot export,
   so the element cannot run client-side.
-- No CDN build, no framework adapters, no documentation site beyond the project
-  page.
+- No CDN build, no documentation site beyond the project page. Adapters exist for
+  React, Vue and Svelte; Angular and the rest use `connect`
+  ([docs/guides/frameworks.md](docs/guides/frameworks.md)). Not tested in them:
+  hydration of server-rendered HTML, React 18 on the server, SvelteKit and Astro
+  as real applications, Vite's development-server pre-bundling.
