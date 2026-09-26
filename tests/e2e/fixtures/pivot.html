@@ -29,6 +29,8 @@
 
       const loader = await loadOpengrid();
       loader.module.set_provider(document.querySelector("opengrid-pivot"), provider);
+      // The module itself, so the tests can call `get_pivot`/`set_texts`.
+      window.__opengridModule = loader.module;
       window.__ready = true;
     </script>
   </body>

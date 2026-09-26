@@ -10,14 +10,19 @@
 //! microseconds, `NaN`/`Infinity`/`-Infinity` spelled out (E13). A display
 //! format is the page's; an export is data for the next machine.
 //!
+//! A pivot is exported **as it is shown** ([`pivot_csv`], issue #3): its
+//! values follow the same rules, its headers are the element's words.
+//!
 //! Portable: no `web-sys`, no `js-sys` (plan/spezifikation/11-crates.md
 //! §Portabilität), no Arrow — [`QueryResult`] is Arrow-free (E14).
 
 mod csv;
 mod json;
+mod pivot;
 
 pub use csv::{CsvOptions, CsvWriter, csv_header, csv_rows};
 pub use json::{JsonWriter, json_rows};
+pub use pivot::{PATH_SEPARATOR, PivotLabels, pivot_csv};
 
 use opengrid_types::Value;
 

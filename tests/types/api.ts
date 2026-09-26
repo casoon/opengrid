@@ -157,6 +157,15 @@ export async function page(): Promise<void> {
     void query.limit;
   }
 
+  // The pivot as it is shown, as CSV.
+  const csv = module.get_pivot(pivot, { delimiter: ";", bom: false, null: "\\N" });
+  csv satisfies string | null;
+  module.get_pivot(pivot);
+  // @ts-expect-error — a misspelt option is not an option
+  module.get_pivot(pivot, { delimeter: ";" });
+  // @ts-expect-error — `bom` is a boolean, not the text of one
+  module.get_pivot(pivot, { bom: "false" });
+
   // `connect`: the same shapes, from one object.
   const connection = connect(grid, {
     provider: local,

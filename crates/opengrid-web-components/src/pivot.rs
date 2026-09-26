@@ -281,6 +281,9 @@ pub fn build_pivot(
                 let th = element(buffer, nodes, Some(first_row), "th");
                 attribute(buffer, th, "scope", "colgroup");
                 attribute(buffer, th, "colspan", &measures.to_string());
+                // The separator is the one `get_pivot`'s CSV header composes
+                // with (`opengrid_export::PATH_SEPARATOR`), so a column is named
+                // in the same words in the table and in its export.
                 buffer.push(Patch::SetText {
                     node: th,
                     text: group
