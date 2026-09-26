@@ -50,10 +50,11 @@
 //!    reading keeps the channel full; when a piece waits longer than that, the
 //!    body is broken off and the export dropped — connection out of the pool,
 //!    transaction and cursor gone.
-//! 2. **At most `max_concurrent_exports` at once** (by default half the
-//!    smallest PostgreSQL pool, see `Registry::default_concurrent_exports`).
-//!    One more is a `503` before any database work, so exports never take the
-//!    connections `/query` needs.
+//! 2. **At most `max_concurrent_exports` at once** (its default in
+//!    `Registry::default_concurrent_exports`, why in
+//!    `docs/guides/where-queries-run.md`, "For operators"). One more is a `503`
+//!    before any database work, so exports never take the connections `/query`
+//!    needs.
 //! 3. **PostgreSQL's own backstop**: the transaction sets
 //!    `idle_in_transaction_session_timeout` to [`BACKSTOP_FACTOR`] times
 //!    `timeout_ms`, and the database ends it if the server's own bound ever
