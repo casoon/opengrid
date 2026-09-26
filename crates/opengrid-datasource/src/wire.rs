@@ -57,7 +57,8 @@ pub enum ErrorCode {
     /// No source of that name is configured.
     UnknownSource,
     /// The request exceeded a server limit — payload size, timeout, page size.
-    /// The same request fails again; a smaller one may not.
+    /// The same request usually fails again — a timeout may pass under less
+    /// load — and a smaller one may not.
     LimitExceeded,
     /// The server is running as much of this as it runs at once — an export
     /// over `max_concurrent_exports` (issue #16). The request itself is fine:

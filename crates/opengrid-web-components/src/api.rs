@@ -587,28 +587,47 @@ typeText typeTime ungroupColumn valueLabel
         assert_eq!(documented, parts());
     }
 
-    /// The server's codes in the freeze are the wire's `ErrorCode`, one for
-    /// one. The match is exhaustive, so a code added to the wire does not
-    /// compile here until it has a place in the list — the list is closed,
-    /// and growing it is a wire-format change (issue #16 added `busy`).
+    /// The server's codes in the freeze are the wire's `ErrorCode`, the same
+    /// set in the same order. The variants are read from the enum's source —
+    /// no host code can enumerate them — so a variant added to the wire
+    /// without its place in the list fails here; and every listed name has to
+    /// read as a variant and serialize back to itself, so a misspelt one fails
+    /// too. The list is closed, and growing it is a wire-format change
+    /// (issue #16 added `busy`).
     #[test]
     fn the_server_codes_are_the_wire_codes() {
         use opengrid_datasource::wire::ErrorCode;
-        fn place(code: ErrorCode) -> usize {
-            match code {
-                ErrorCode::Validation => 0,
-                ErrorCode::UnknownSource => 1,
-                ErrorCode::LimitExceeded => 2,
-                ErrorCode::Busy => 3,
-                ErrorCode::Unauthorized => 4,
-                ErrorCode::Backend => 5,
-                ErrorCode::Malformed => 6,
-            }
-        }
-        for (at, name) in SERVER_ERROR_CODES.iter().enumerate() {
+        let wire = include_str!("../../opengrid-datasource/src/wire.rs");
+        let body = wire
+            .split("pub enum ErrorCode {")
+            .nth(1)
+            .and_then(|rest| rest.split("\n}").next())
+            .expect("wire.rs declares ErrorCode");
+        // `UnknownSource,` → `unknown_source`, as `rename_all = "snake_case"`.
+        let variants: Vec<String> = body
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.starts_with("//") && !line.starts_with('#'))
+            .filter_map(|line| line.strip_suffix(','))
+            .map(|name| {
+                let mut snake = String::new();
+                for (at, c) in name.chars().enumerate() {
+                    if c.is_ascii_uppercase() && at > 0 {
+                        snake.push('_');
+                    }
+                    snake.push(c.to_ascii_lowercase());
+                }
+                snake
+            })
+            .collect();
+        assert_eq!(
+            variants, SERVER_ERROR_CODES,
+            "the wire's variants, in order"
+        );
+        for name in SERVER_ERROR_CODES {
             let code: ErrorCode = serde_json::from_str(&format!("\"{name}\""))
                 .unwrap_or_else(|_| panic!("not a wire code: {name}"));
-            assert_eq!(place(code), at, "{name}");
+            assert_eq!(serde_json::to_string(&code).unwrap(), format!("\"{name}\""));
         }
     }
 

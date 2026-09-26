@@ -317,11 +317,27 @@ export type ErrorCode =
  * without the fields. A wrong option is a `TypeError`, an abort a
  * `DOMException` named `"AbortError"` — test its `name`: its `code` is the
  * DOM's legacy number, never one of these strings.
+ *
+ * ```ts
+ * try {
+ *   await exportRows(provider, query);
+ * } catch (error) {
+ *   if ((error as Error).name === "AbortError") return;
+ *   switch ((error as CodedError).code) {
+ *     case "busy": // try again in a moment
+ *     case "too_many_rows": // narrow the view
+ *     default: // the export failed
+ *   }
+ * }
+ * ```
  */
 export interface CodedError extends Error {
   /** The HTTP status, when a server refused the request. */
   status?: number;
-  /** Absent when neither the server nor the loader named one. */
+  /**
+   * Absent when neither the server nor the loader named one. A newer server
+   * may send a code this list does not have yet: keep a `default:` branch.
+   */
   code?: ErrorCode;
   /** Where in the query, when the server says: `filter.and[1].value`. */
   path?: string;
