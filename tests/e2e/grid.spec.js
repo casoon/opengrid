@@ -266,6 +266,41 @@ test("Tab leaves the grid forwards and Shift+Tab backwards", async ({ page, brow
   expect(await page.evaluate(() => document.activeElement?.id)).toBe("before");
 });
 
+test("at 480px every filter control is in sight when the Tab reaches it", async ({
+  page,
+  browserName,
+}) => {
+  // The filter row scrolls sideways when it does not fit. A control the focus
+  // lands on past its edge is a focus nobody can see (WCAG 2.4.11).
+  await page.setViewportSize({ width: 480, height: 500 });
+  const tab = browserName === "webkit" ? "Alt+Tab" : "Tab";
+  await page.evaluate(() => document.getElementById("before").focus());
+  await page.keyboard.press(tab);
+
+  const seen = [];
+  for (let step = 0; step < 40; step += 1) {
+    const reading = await page.evaluate(() => {
+      const root = document.querySelector("opengrid-grid").shadowRoot;
+      const control = root.activeElement;
+      const row = root.querySelector('[part="filter"]');
+      if (!control || !row.contains(control)) return null;
+      const box = control.getBoundingClientRect();
+      const frame = row.getBoundingClientRect();
+      return {
+        control: `${control.getAttribute("part")}#${control.getAttribute("data-col") ?? ""}`,
+        visible: box.left >= frame.left - 0.5 && box.right <= frame.right + 0.5,
+        overflows: row.scrollWidth > row.clientWidth,
+      };
+    });
+    if (reading === null) break;
+    seen.push(reading);
+    await page.keyboard.press(tab);
+  }
+  expect(seen.length, "the walk went through the filter row").toBeGreaterThan(6);
+  expect(seen.every((reading) => reading.overflows), "the row is wider than the window").toBe(true);
+  expect(seen.filter((reading) => !reading.visible)).toEqual([]);
+});
+
 test("has no axe violations", async ({ page }) => {
   const { violations } = await new AxeBuilder({ page }).analyze();
   expect(violations).toEqual([]);
