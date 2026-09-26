@@ -7,11 +7,13 @@
   "description": "JS tooling for opengrid: end-to-end and accessibility tests (Phase B).",
   "scripts": {
     "e2e": "playwright test --config tests/e2e/playwright.config.js",
-    "e2e:update": "playwright test --config tests/e2e/playwright.config.js --update-snapshots"
+    "e2e:update": "playwright test --config tests/e2e/playwright.config.js --update-snapshots",
+    "release": "bash scripts/release.sh"
   },
   "scripts-info": {
     "e2e": "Führt die Playwright-E2E-/A11y-Tests aus",
-    "e2e:update": "Führt die E2E-Tests aus und aktualisiert die Screenshot-Baselines"
+    "e2e:update": "Führt die E2E-Tests aus und aktualisiert die Screenshot-Baselines",
+    "release": "Veröffentlicht die von der CI gebauten npm-Pakete und setzt den Tag (--dry-run: nur prüfen)"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",

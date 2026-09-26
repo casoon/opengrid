@@ -138,20 +138,18 @@ inventory.
       this on every push (`publish-dry-run`), but read it anyway before the one push that is
       real. This local pack is for **reading**, not for publishing: it was built with this
       machine's `wasm-opt`, and `just package` warns when that is not the binaryen CI pins.
-- [ ] Publish **the tarballs from the CI run of the release commit** — the `npm-packages`
-      artifact of its `publish-dry-run` job: built with the pinned toolchain and checked
-      by that very job. `gh run list --commit <sha>` names the run, then
-      `gh run download <run> -n npm-packages -D target/release`, which gives one directory
-      per package.
-- [ ] `npm publish target/release/npm-package/casoon-opengrid-<version>.tgz` — the element
-      package first.
-- [ ] Then the adapters, the same way, from `target/release/npm-package-react/`,
-      `npm-package-vue/` and `npm-package-svelte/`. **The element package first:** an
-      adapter's peer range points at its version, and an install in the minutes between
-      would find nothing to satisfy it.
-- [ ] Tag the commit, and push the tag. The remote is
-      `https://github.com/casoon/opengrid.git`; the repository has to exist there
-      first, and `package.json` already points `repository`/`homepage`/`bugs` at it.
+- [ ] Commit the version and the changelog, merge to `main`, and wait for its CI run.
+- [ ] `pnpm release` — publishes **the tarballs from the CI run of the release commit**
+      (the `npm-packages` artifact of its `publish-dry-run` job, built with the pinned
+      toolchain and checked by that very job), never a local build. It refuses unless
+      `main` is clean and at `origin/main`, that commit has a successful CI run, the tag
+      does not exist yet and every tarball carries the version; then it shows what it
+      will do and asks you to type the version. It publishes the element package first —
+      an adapter's peer range points at its version, and an install in the minutes
+      between would find nothing to satisfy it — then the adapters, then tags the commit
+      and pushes the tag. Interrupted halfway, run it again: what is on npm is skipped.
+      `pnpm release --dry-run` does every check and `npm publish --dry-run`, and publishes
+      nothing.
 
 ## After
 
