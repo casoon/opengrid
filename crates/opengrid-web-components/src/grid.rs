@@ -1108,7 +1108,11 @@ pub fn query_json(
     limit: u64,
 ) -> String {
     use serde_json::{Value as Json, json};
-    let mut query = query_object(source, columns, sorts, filter);
+    let sort = sorts
+        .iter()
+        .map(|(field, direction)| json!({ "field": field, "direction": direction }))
+        .collect();
+    let mut query = query_object(source, columns, sort, filter);
     query.insert("limit".to_owned(), json!(limit));
     query.insert("offset".to_owned(), json!(offset));
     Json::Object(query).to_string()
@@ -1116,23 +1120,40 @@ pub fn query_json(
 
 /// The query of a whole view — the same as the grid asks, without a window
 /// (plan point 82): what a page exports.
+///
+/// `groups` come first, ascending with **NULL last** stated explicitly — the
+/// order [`crate::grouping::group_query_json`] gives the groups, written the
+/// same way, so the rows of a grouped grid come in the order it shows them.
+/// Then `sorts`, without the keys `groups` already has.
 pub fn view_query_json(
     source: &str,
     columns: &[String],
+    groups: &[String],
     sorts: &[(String, &str)],
     filter: Option<&FilterExpr>,
 ) -> String {
-    serde_json::Value::Object(query_object(source, columns, sorts, filter)).to_string()
+    use serde_json::json;
+    let sort = groups
+        .iter()
+        .map(|field| json!({ "field": field, "direction": "asc", "nulls": "last" }))
+        .chain(
+            sorts
+                .iter()
+                .filter(|(field, _)| !groups.contains(field))
+                .map(|(field, direction)| json!({ "field": field, "direction": direction })),
+        )
+        .collect();
+    serde_json::Value::Object(query_object(source, columns, sort, filter)).to_string()
 }
 
 /// Source, projection, filter and sort — everything but the window.
 fn query_object(
     source: &str,
     columns: &[String],
-    sorts: &[(String, &str)],
+    sort: Vec<serde_json::Value>,
     filter: Option<&FilterExpr>,
 ) -> serde_json::Map<String, serde_json::Value> {
-    use serde_json::{Value as Json, json};
+    use serde_json::Value as Json;
     let mut query = serde_json::Map::new();
     query.insert("source".to_owned(), Json::String(source.to_owned()));
     query.insert(
@@ -1143,12 +1164,8 @@ fn query_object(
         let filter = serde_json::to_value(filter).expect("a filter expression serializes");
         query.insert("filter".to_owned(), filter);
     }
-    if !sorts.is_empty() {
-        let sorts: Vec<Json> = sorts
-            .iter()
-            .map(|(field, direction)| json!({ "field": field, "direction": direction }))
-            .collect();
-        query.insert("sort".to_owned(), Json::Array(sorts));
+    if !sort.is_empty() {
+        query.insert("sort".to_owned(), Json::Array(sort));
     }
     query
 }
@@ -3688,6 +3705,48 @@ mod tests {
         assert_eq!(
             value["sort"],
             json!([{ "field": "customer", "direction": "desc" }])
+        );
+    }
+
+    /// A view's query: the group keys first, NULL last said explicitly as the
+    /// group query says it, then the sort without the keys already there —
+    /// and no window.
+    #[test]
+    fn a_view_query_leads_with_the_group_keys_null_last() {
+        use serde_json::{Value as Json, json};
+        let query = view_query_json(
+            "orders",
+            &["country".to_owned(), "amount".to_owned()],
+            &["country".to_owned(), "customer".to_owned()],
+            &[
+                ("amount".to_owned(), "desc"),
+                ("country".to_owned(), "desc"),
+            ],
+            None,
+        );
+        let value: Json = serde_json::from_str(&query).expect("valid JSON");
+        assert_eq!(
+            value["sort"],
+            json!([
+                { "field": "country", "direction": "asc", "nulls": "last" },
+                { "field": "customer", "direction": "asc", "nulls": "last" },
+                { "field": "amount", "direction": "desc" }
+            ])
+        );
+        assert!(value.get("limit").is_none());
+        assert!(value.get("offset").is_none());
+        // Ungrouped, the sort is the sort as it is.
+        let plain = view_query_json(
+            "orders",
+            &["amount".to_owned()],
+            &[],
+            &[("amount".to_owned(), "desc")],
+            None,
+        );
+        let value: Json = serde_json::from_str(&plain).expect("valid JSON");
+        assert_eq!(
+            value["sort"],
+            json!([{ "field": "amount", "direction": "desc" }])
         );
     }
 

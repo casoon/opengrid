@@ -2888,29 +2888,20 @@ fn current_query(host: &HtmlElement) -> Option<String> {
     }
     let borrowed = runtime.borrow();
     let filter = effective_filter(host, &borrowed, None).ok()?;
-    let mut sorts: Vec<(String, &str)> = borrowed
+    let groups: Vec<String> = borrowed
         .grouping
         .as_ref()
-        .map(|grouping| {
-            grouping
-                .by()
-                .iter()
-                .map(|column| (column.clone(), "asc"))
-                .collect()
-        })
+        .map(|grouping| grouping.by().to_vec())
         .unwrap_or_default();
-    for (field, direction) in borrowed.state.sort_keys() {
-        if !sorts.iter().any(|(known, _)| *known == field) {
-            sorts.push((field, direction));
-        }
-    }
-    // A total order (S6), as the grid itself pages under one.
-    if sorts.is_empty() {
+    let mut sorts = borrowed.state.sort_keys();
+    // A sort key (S6), as the grid itself pages under one.
+    if groups.is_empty() && sorts.is_empty() {
         sorts.push((columns[0].clone(), "asc"));
     }
     Some(grid::view_query_json(
         &source,
         &columns,
+        &groups,
         &sorts,
         filter.as_ref(),
     ))
@@ -3383,19 +3374,33 @@ fn run_grouped(
     let pool = pool_of(host);
     let mode = host.get_attribute(MODE_ATTRIBUTE).unwrap_or_default();
 
-    let (mut sorts, filter, offset, generation, need_groups, choice) = {
+    // The filter row *and* the facets (point 66): a facet change makes the
+    // group counts stale exactly like a filter change does. A bound that is
+    // not a value of its column is the same sentence for the status line as
+    // ungrouped (`run_query`). This fell back to the filter row alone once —
+    // silently dropping the facets and the search, and showing rows that
+    // `get_query` (which answers `null` here) would not export.
+    let effective = effective_filter(host, &grid_runtime.borrow(), None);
+    let filter = match effective {
+        Ok(filter) => filter,
+        Err(message) => {
+            grid_runtime
+                .borrow_mut()
+                .state
+                .set_status(GridStatus::Error(message));
+            render(host, false);
+            return;
+        }
+    };
+
+    let (mut sorts, offset, generation, need_groups, choice) = {
         let mut runtime = grid_runtime.borrow_mut();
         let generation = runtime.generation + 1;
         runtime.generation = generation;
-        // The filter row *and* the facets (point 66): a facet change makes the
-        // group counts stale exactly like a filter change does.
-        let filter = effective_filter(host, &runtime, None)
-            .unwrap_or_else(|_| runtime.state.filter().cloned());
         let need_groups = runtime.groups_filter.as_ref() != Some(&filter)
             || !runtime.grouping.as_ref().is_some_and(Grouping::is_loaded);
         (
             runtime.state.sort_keys(),
-            filter,
             runtime.state.window().offset,
             generation,
             need_groups,
