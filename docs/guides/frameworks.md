@@ -89,6 +89,9 @@ export function Orders() {
 - The module says `"use client"`, so a Server Component can import it as a client boundary.
 - `hidden`, `inert` and `autoFocus` follow the present-or-absent rule too: React 18 would write
   `hidden="false"` — hidden — and React 19 sets them as properties.
+- **Exporting:** with `const grid = useRef(null)` and `ref={grid}`, a handler exports the view
+  as `exportRows(provider, loader.module.get_query(grid.current))` — see
+  [Exporting](../export/#in-the-browser).
 
 ## Vue
 
@@ -123,6 +126,10 @@ const view = ref(null);
 - A provider held in `ref()` is a proxy. That is fine for the providers `@casoon/opengrid`
   creates; a provider class of your own with `#private` fields belongs in `markRaw` or
   `shallowRef`.
+- **Exporting:** a template ref is the component, and its `$el` the element — with
+  `const grid = ref(null)` and `ref="grid"`, a handler exports the view as
+  `exportRows(provider, loader.module.get_query(grid.value.$el))` — see
+  [Exporting](../export/#in-the-browser).
 
 ## Svelte
 
@@ -156,6 +163,9 @@ const view = ref(null);
   `<input value>` without `bind:` does.
 - A change **inside** a `$state` object — `texts.loading = "…"` — reaches the grid as much as a
   new object does.
+- **Exporting:** `bind:element={grid}` is the element, so a handler exports the view as
+  `exportRows(provider, loader.module.get_query(grid))` — see
+  [Exporting](../export/#in-the-browser).
 
 ## Without an adapter
 
@@ -237,6 +247,11 @@ export class OpengridDirective implements OnChanges, OnDestroy {
   the page's view back.
 - Add inputs for `formats`, `presentation`, `choices` and `defaultView` the same way when a page
   needs them.
+- **Exporting:** a template variable on the element is the element — `#grid` on
+  `<opengrid-grid>` and `(click)="exportView(grid)"` — and the component's
+  `exportView(grid: HTMLElement)` exports it as `exportRows(this.provider, query)` when
+  `const query = (await loadOpengrid()).module?.get_query(grid)` gives one — see
+  [Exporting](../export/#in-the-browser).
 
 ### Astro
 
@@ -258,6 +273,10 @@ Using a React, Vue or Svelte adapter inside an Astro island works as it does in 
 with one catch: an island receives its props **serialized**, and a provider or a format function
 does not survive that. Create them inside the island's own component instead.
 
+Exporting is the same script's: `exportRows(provider, loader.module.get_query(grid))` with
+`grid = document.querySelector("opengrid-grid")` — the whole button is in
+[Exporting](../export/#in-the-browser).
+
 ### Server-rendered pages
 
 ASP.NET Razor, Django, Laravel, plain HTML: the server writes the element with its attributes,
@@ -275,6 +294,10 @@ and one module script supplies it.
   });
 </script>
 ```
+
+An export button is the same module script's, as in [Exporting](../export/#in-the-browser):
+`exportRows(provider, loader.module.get_query(grid))`, the provider kept in a variable rather
+than created inline.
 
 ## What is tested, and what is not
 

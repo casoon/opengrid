@@ -135,6 +135,10 @@ Everything below is built and tested; none of it has been listened to.
 - Against PostgreSQL, a query with aggregates and no grouping reports
   `total_count` 1 — its one row — as the local engine does, instead of the
   number of rows it aggregated.
+- **An export guide** ([docs/guides/export.md](docs/guides/export.md)): what an export
+  holds and why raw values, the browser and the server path, a pivot as shown, the formula
+  guard and when to switch it off, NULL in a CSV, reading an export back into opengrid, and
+  the errors a page handles. The framework guide shows the export for each adapter.
 - **`get_pivot(host, options)`** exports an `<opengrid-pivot>` as it is shown,
   as CSV: the row dimensions as columns, one header line naming each generated
   column by its value and measure (`2025 · total`), the subtotals and the grand

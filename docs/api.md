@@ -466,7 +466,9 @@ const query = loader.module.get_query(grid);
 | `null` | A grid without a query yet (not connected, no `datasource`, no columns), one whose filter does not hold — its status line says why — and `<opengrid-table>` and `<opengrid-pivot>`. |
 
 The grid has no export button: what to export, in which format, under which name, is the
-page's (the same line as for saving an edit).
+page's (the same line as for saving an edit). How a page uses what follows — a button, the
+formula guard, reading a file back into opengrid, the errors to handle — is the
+[Exporting](../guides/export/) guide.
 
 ### `exportRows(provider, query, options)`
 
