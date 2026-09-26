@@ -19,6 +19,7 @@
 
 pub mod api;
 pub mod config;
+mod export;
 pub mod registry;
 
 use std::path::Path;

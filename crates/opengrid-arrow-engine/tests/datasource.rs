@@ -198,3 +198,37 @@ fn an_empty_result_still_carries_its_schema() {
     let again = LocalDataSource::from_result(&empty).expect("an empty result is still data");
     assert_eq!(block_on(DataSource::schema(&again)).unwrap(), empty.schema);
 }
+
+/// The pieces of one run are the rows of the query's answer, in its order and
+/// after its window — nothing repeated at a seam, nothing missing (issue #2).
+#[test]
+fn the_pieces_add_up_to_the_answer() {
+    let source = LocalDataSource::new(common::csv_batches()).expect("the dataset has batches");
+    let schema = common::schema().materialized();
+    let query = validate(
+        r#"{"source":"orders","select":["id","customer"],"sort":[{"field":"customer","direction":"desc"},{"field":"id","direction":"asc"}],"offset":3,"limit":40}"#,
+        &schema,
+    );
+    let whole = block_on(source.execute(query.clone())).expect("the answer");
+
+    let mut pieces = source.pieces(&query).expect("the pieces");
+    assert_eq!(pieces.rows(), 40);
+    let mut rows: Vec<Vec<Value>> = vec![Vec::new(); 2];
+    let mut sizes = Vec::new();
+    // Bounded: pieces that never get shorter must fail here, not hang.
+    for _ in 0..10 {
+        let piece = pieces.next_piece(15).expect("a piece");
+        assert_eq!(piece.schema, whole.schema);
+        sizes.push(piece.row_count());
+        for (column, values) in piece.columns.into_iter().enumerate() {
+            rows[column].extend(values);
+        }
+        if sizes.last() < Some(&15) {
+            break;
+        }
+    }
+    assert_eq!(sizes, vec![15, 15, 10]);
+    assert_eq!(rows, whole.columns);
+    // After the last piece there is nothing left, not the rows again.
+    assert_eq!(pieces.next_piece(15).expect("a piece").row_count(), 0);
+}

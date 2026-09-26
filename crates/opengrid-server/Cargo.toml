@@ -21,11 +21,18 @@ opengrid-datasource-postgres = { path = "../opengrid-datasource-postgres" }
 
 # Server stack, decision E12.
 axum = "0.8"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "signal"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "signal", "sync"] }
 tower = { version = "0.5", features = ["timeout"] }
 # CORS. A gateway whose whole purpose is to answer a browser on another origin
 # needs it; off by default, the configuration opts in per origin.
 tower-http = { version = "0.6", features = ["cors"] }
+
+# The export's response body (issue #2): a bounded channel the rows are
+# written into, a piece at a time. Already in the tree through axum; decided on
+# the issue over `futures-util` or a hand-written body.
+http-body-util = { version = "0.1", features = ["channel"] }
+# The export writes its rows in the one notation every export uses (E33).
+opengrid-export = { path = "../opengrid-export" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -34,4 +41,7 @@ toml = "0.8"
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
-http-body-util = "0.1"
+# The PostgreSQL export tests (issue #2) make their table and watch
+# `pg_stat_activity` directly. Already in the tree through
+# opengrid-datasource-postgres; test-only.
+tokio-postgres = "0.7"

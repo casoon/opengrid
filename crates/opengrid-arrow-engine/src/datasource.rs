@@ -62,6 +62,62 @@ impl LocalDataSource {
             batches,
         })
     }
+
+    /// Runs `query` **once** and hands its rows out in pieces (issue #2, the
+    /// server's export).
+    ///
+    /// Paging the query instead — one `offset`/`limit` run per piece — would
+    /// sort the whole table again for every piece, so a million rows would be
+    /// a hundred full sorts. Here the answer stays one Arrow batch, which is as
+    /// compact as the data it came from, and only the piece being written is
+    /// turned into values.
+    pub fn pieces(&self, query: &ValidatedQuery) -> Result<LocalPieces, DataSourceError> {
+        let BatchResult {
+            schema, batches, ..
+        } = execute(&self.batches, query).map_err(|error| DataSourceError::Backend {
+            message: format!("local engine: {error}"),
+        })?;
+        let batch = batches
+            .into_iter()
+            .next()
+            .ok_or_else(|| DataSourceError::Backend {
+                message: "the local engine returned no batch".to_owned(),
+            })?;
+        Ok(LocalPieces {
+            schema,
+            batch,
+            next: 0,
+        })
+    }
+}
+
+/// The answer of [`LocalDataSource::pieces`], handed out a piece at a time.
+pub struct LocalPieces {
+    schema: Schema,
+    batch: RecordBatch,
+    next: usize,
+}
+
+impl LocalPieces {
+    /// How many rows the pieces hold together — the rows of the query's
+    /// answer, after its `offset` and `limit`.
+    pub fn rows(&self) -> u64 {
+        self.batch.num_rows() as u64
+    }
+
+    /// The next piece of at most `rows` rows. A piece shorter than `rows` is
+    /// the last one; after it, every piece is empty.
+    pub fn next_piece(&mut self, rows: usize) -> Result<QueryResult, DataSourceError> {
+        let start = self.next.min(self.batch.num_rows());
+        let length = rows.min(self.batch.num_rows() - start);
+        self.next = start + length;
+        let columns = batch::decode(&self.batch.slice(start, length)).map_err(|message| {
+            DataSourceError::Backend {
+                message: format!("local engine: {message}"),
+            }
+        })?;
+        Ok(QueryResult::new(self.schema.clone(), columns, self.rows()))
+    }
 }
 
 impl SendDataSource for LocalDataSource {

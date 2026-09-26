@@ -177,6 +177,20 @@ export async function page(): Promise<void> {
     await exportRows(local, query, { filename: "orders.csv" });
     // @ts-expect-error — an export is of a view's rows, not of groups
     await exportRows(local, { ...query, group: ["country"] });
+
+    // The server's export: one request, the same options without pieces.
+    const file: Blob = await rest.export(query, {
+      format: "json",
+      signal: controller.signal,
+      maxRows: 50_000,
+      onProgress: ({ total }) => total satisfies number,
+    });
+    void file;
+    await rest.export(query, { delimiter: ";", bom: false, protectFormulas: false });
+    // @ts-expect-error — there are no pieces to size
+    await rest.export(query, { chunkSize: 1_000 });
+    // @ts-expect-error — optional on a provider, and the tab has none: `exportRows` pieces it
+    await local.export(query);
   }
   // A provider hears the signal as its third argument; one written for two still fits.
   const cancellable: Provider = {
