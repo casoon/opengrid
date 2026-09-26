@@ -60,8 +60,22 @@ staged, and what was **not** tested is named in the release notes either way.
       footnote. Once a pass is done, every pairing that was not tested goes in by name:
       "Tested with VoiceOver on Safari; NVDA, JAWS and TalkBack untested" is a useful
       sentence. Silence is not.
-- [ ] **One browser beyond Chromium**, by hand. The e2e suite runs Chromium only, so
-      everything else is either checked by a person or unknown.
+- [ ] **Two engines beyond Chromium**: `just e2e-browsers` runs the whole e2e suite in
+      Playwright's Firefox and WebKit (once: `pnpm exec playwright install firefox
+      webkit`). `just e2e` and CI stay Chromium-only. What it does not cover:
+      - **No screenshots.** The baselines are Chromium's; the other engines skip
+        `phase-f-baselines.spec.js` and every `toHaveScreenshot`, so how the grid
+        *looks* there is only checked by the layout assertions (sizes, overlap,
+        reflow) — look at it once in each.
+      - **WebKit is not Safari.** Playwright's WebKit is the engine, built by
+        Playwright, headless — not Safari's shell, its settings or its release
+        cadence, and not iOS. Safari proper is still a by-hand check.
+      - **Edge is Chromium** and is covered by the default run as far as the engine
+        goes; nothing Edge adds on top is tested.
+      - Forcing a garbage collection exists only in Chromium, so the tests that
+        prove a removed grid is collected run there alone; and WebKit matches
+        `forced-colors` under emulation without forcing a colour, so the forced
+        palette is checked in Chromium and Firefox only.
 - [ ] **The screenshot baselines.** `tests/e2e/__screenshots__` is committed, once per
       platform. If a visible control changed, regenerate the darwin ones with
       `pnpm run e2e:update` and the Linux ones by running the CI workflow by hand
