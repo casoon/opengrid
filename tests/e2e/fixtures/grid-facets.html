@@ -26,6 +26,9 @@
         facets
         window-size="8"
       ></opengrid-grid>
+      <!-- Where a Tab walk through the grid has to arrive: without it, a walk
+           that never leaves the grid could not be told from one that ends. -->
+      <button id="after" type="button">after</button>
     </main>
     <script type="module">
       import { loadOpengrid } from "/packages/opengrid/loader.js";
