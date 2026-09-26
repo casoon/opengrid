@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>opengrid export fixture</title>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid export fixture</h1>
+    </main>
+    <script type="module">
+      // Issue #1: `exportRows` over two providers holding the same 100 000
+      // rows — the engine in this tab, and a real `opengrid-server` (started by
+      // the Playwright config from the same generator). No grid: what an export
+      // fetches is the query's, and `get_query` has its own spec.
+      import {
+        loadOpengrid,
+        createLocalProvider,
+        createRestProvider,
+        createPivotProvider,
+        createHybridProvider,
+        exportRows,
+      } from "/packages/opengrid/loader.js";
+      import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+      import { exportCsv } from "/tests/e2e/fixtures/export-data.js";
+
+      async function start() {
+        const loader = await loadOpengrid();
+        await init();
+        const engine = new Engine();
+        const schema = await (await fetch("/tests/e2e/fixtures/export.schema.json")).text();
+        engine.load_csv("export", new TextEncoder().encode(exportCsv()), schema);
+
+        window.__engine = engine;
+        window.__module = loader.module;
+        window.__exportRows = exportRows;
+        window.__tab = createLocalProvider(engine);
+        const server = { url: "http://127.0.0.1:8082", source: "export", token: "e2e-token" };
+        window.__rest = createRestProvider(server);
+        // The other two that talk HTTP, for the signal: a pivot, and a hybrid
+        // whose planner sends everything to the source.
+        window.__pivot = createPivotProvider(server);
+        window.__hybrid = createHybridProvider({
+          remote: window.__rest,
+          planner: {
+            plan: (json) => JSON.stringify({ source: JSON.parse(json), client: null }),
+            finish: () => {
+              throw new Error("nothing is left for the tab");
+            },
+          },
+        });
+      }
+
+      window.__ready = start();
+    </script>
+  </body>
+</html>

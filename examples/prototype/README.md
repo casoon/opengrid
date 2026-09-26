@@ -30,6 +30,13 @@ element. The generated `theme.css` names only `opengrid-grid`: the table and the
 pivot ship no stylesheet of their own. The page's own background (*Seite*) is
 not a grid token and goes to the page.
 
+**Export is the page's too.** *Exportieren* takes `get_query(grid)` — the
+filters, facets, search, sort and shown columns of the current view, every match
+— and hands it to `exportRows` with the grid's own provider. The CSV is written
+with `;` for a German Excel, raw values rather than the formatted ones, and
+downloaded as `bestellungen.csv`; how many rows it held is said in the page's
+live region, not the grid's status line.
+
 **The data has edges on purpose.** The 50 rows of the prototype contain NULL
 (`\N` in the CSV), the empty string, `-0.01`, `0.00` and `999999999.99`. NULL
 and the empty string are different values and read differently (*(kein Wert)*,
@@ -37,8 +44,8 @@ and the empty string are different values and read differently (*(kein Wert)*,
 
 ## Deliberately left out
 
-- The prototype's *Exportieren* and *Neue Bestellung* buttons. They did nothing
-  there, and a button that does nothing is not an example.
+- The prototype's *Neue Bestellung* button. It did nothing there, and a button
+  that does nothing is not an example.
 - The web fonts. The presets name *Geist* and *IBM Plex Sans* and fall back to
   the system face when they are not installed — an example that loads fonts
   from a third party would send every visitor there.

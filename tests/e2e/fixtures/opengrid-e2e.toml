@@ -20,3 +20,13 @@ type = "local-csv"
 path = "../../../crates/opengrid-conformance/data/orders.csv"
 schema = "../../../crates/opengrid-conformance/data/orders.schema.json"
 allowed_fields = ["id", "customer", "country", "amount", "qty", "ordered_on", "ordered_year"]
+
+# The export spec's 100 000 rows (issue #1): several pieces of the server's
+# `max_limit` (10 000). Made by write-export-data.mjs before the server starts
+# (tests/e2e/playwright.config.js) — the same rows export.html loads into the
+# tab, so an export over either source can be compared with the other.
+[[datasources]]
+name = "export"
+type = "local-csv"
+path = "../../../target/e2e/export.csv"
+schema = "export.schema.json"

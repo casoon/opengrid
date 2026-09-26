@@ -1,0 +1,9 @@
+{
+  "fields": [
+    { "name": "id", "type": "int64", "nullable": false },
+    { "name": "region", "type": "utf8", "nullable": true },
+    { "name": "amount", "type": { "decimal": { "precision": 12, "scale": 2 } }, "nullable": true },
+    { "name": "day", "type": "date", "nullable": true },
+    { "name": "note", "type": "utf8", "nullable": true }
+  ]
+}

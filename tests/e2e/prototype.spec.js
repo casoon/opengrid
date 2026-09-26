@@ -117,6 +117,28 @@ test("theme.css names only opengrid-grid, and copying it is announced", async ({
   await expect(page.locator("#page-status")).toHaveText(/^theme\.css: /);
 });
 
+test("Exportieren downloads the current view, and the page says how much", async ({ page }) => {
+  // Issue #1: the button is page code over `get_query` and `exportRows`.
+  await page.getByRole("tab", { name: "Deutschland ab 10 €" }).click();
+  await expect.poll(() => status(page)).not.toBe("50 Treffer");
+  const matches = Number((await status(page)).split(" ")[0]);
+
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("button", { name: "Exportieren" }).click(),
+  ]);
+  expect(download.suggestedFilename()).toBe("bestellungen.csv");
+  const text = await (await download.createReadStream()).toArray().then((chunks) => Buffer.concat(chunks).toString("utf8"));
+  const lines = text.split("\r\n");
+  // The raw values, `;` for a German Excel, the shown columns in their order.
+  expect(lines[0]).toBe("﻿id;customer;country;amount;qty;ordered_on");
+  expect(lines.slice(1, -1)).toHaveLength(matches);
+  expect(lines.slice(1, -1).every((line) => line.split(";")[2] === "DE")).toBe(true);
+  // Said in the page's live region, not the grid's status line.
+  await expect(page.locator("#page-status")).toHaveText(`${matches} Zeilen als bestellungen.csv exportiert`);
+  expect(await status(page)).toBe(`${matches} Treffer`);
+});
+
 test("decimals are shown exactly, with a real minus", async ({ page }) => {
   // S8: `999999999.99` and `-0.01` are in the prototype's rows on purpose.
   const cells = await page.evaluate(() =>

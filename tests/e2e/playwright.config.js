@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 // is pinned in package.json; `just e2e` builds the module first.
 
 const PORT = 8080;
-// The `opengrid-server` the hybrid fixture queries; the port is also written in
+// The `opengrid-server` the hybrid and export fixtures query; the port is also written in
 // tests/e2e/fixtures/opengrid-e2e.toml.
 const SERVER_PORT = 8082;
 const baseURL = `http://127.0.0.1:${PORT}`;
@@ -63,7 +63,10 @@ export default defineConfig({
       // The real gateway for the hybrid tests (point 28). Waiting on the port
       // rather than a URL: every endpoint needs a bearer token, so a health
       // check would be a 401 and Playwright would call that a failed start.
-      command: "cargo run -p opengrid-server -- tests/e2e/fixtures/opengrid-e2e.toml",
+      // The export spec's rows are written first: the server reads its CSV
+      // sources once, at startup.
+      command:
+        "node tests/e2e/fixtures/write-export-data.mjs && cargo run -p opengrid-server -- tests/e2e/fixtures/opengrid-e2e.toml",
       cwd: repoRoot,
       port: SERVER_PORT,
       reuseExistingServer: !process.env.CI,

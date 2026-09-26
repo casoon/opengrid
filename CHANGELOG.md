@@ -92,7 +92,21 @@ Everything below is built and tested; none of it has been listened to.
 - **`get_query(host)`** hands out the query of the grid's current view —
   the filter row, the facets and the search and-ed together, the sort, the
   shown columns in their order — without a window: what a page exports is
-  then what the reader sees, every match of it.
+  then what the reader sees, every match of it. Grouped, the group keys lead,
+  NULL last said explicitly, and the rows come in the order the grid draws
+  them. A grouped grid whose filter does not hold says so in its status line,
+  as an ungrouped one does, instead of falling back to the filter row alone.
+- **`exportRows(provider, query, options)`** — every match of a query, through
+  any provider, fetched in pieces of `chunkSize` (10 000) and handed back as a
+  `Blob` of CSV or JSON in the `opengrid-export` notation. The sort is made
+  total by appending every selected column not yet in it, so no row repeats or
+  goes missing between two pieces, even over PostgreSQL; within a tie the
+  export follows the columns, not the grid. Progress after each piece, an
+  `AbortSignal` that stops the request in flight, and `maxRows` (1 000 000) as
+  an error with a sentence, never a truncated file. Providers take the signal
+  as an optional third argument, `execute(query, mode, { signal })`; the REST,
+  pivot and hybrid providers hand it to `fetch`. The prototype page exports its
+  current view with it.
 - **`get_pivot(host, options)`** exports an `<opengrid-pivot>` as it is shown,
   as CSV: the row dimensions as columns, one header line naming each generated
   column by its value and measure (`2025 · total`), the subtotals and the grand
