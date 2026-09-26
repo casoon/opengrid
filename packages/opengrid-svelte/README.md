@@ -1,15 +1,31 @@
 # @casoon/opengrid-svelte
 
-The accessible grid, table and pivot of [`@casoon/opengrid`](https://github.com/casoon/opengrid)
+The accessible grid, table and pivot of [`@casoon/opengrid`](https://www.npmjs.com/package/@casoon/opengrid)
 as components for Svelte 5: `OpengridGrid`, `OpengridTable` and `OpengridPivot`.
 
-The element's attributes are props in camelCase; the provider, the texts, the formats, the
-presentation, the choices and the view go to `connect` — with the view bound as the framework
-binds anything (`bind:view`).
+```sh
+npm install @casoon/opengrid @casoon/opengrid-svelte
+```
 
-Install it next to `@casoon/opengrid`, which it names as a peer and releases with.
+```svelte
+<script>
+  import { createRestProvider } from "@casoon/opengrid";
+  import { OpengridGrid } from "@casoon/opengrid-svelte";
 
-Everything — the rules the adapters share, an example for each framework, and what is and is not
-tested — is in [docs/guides/frameworks.md](https://github.com/casoon/opengrid/blob/main/docs/guides/frameworks.md).
+  const provider = createRestProvider({ url: "https://example.org", source: "orders", token: "…" });
+  let view = $state(null);
+</script>
+
+<OpengridGrid label="Orders" datasource="orders" columns="id,customer,amount"
+              {provider} bind:view />
+```
+
+The element's attributes are props; the provider, texts, formats, presentation and the view
+are options — the view bound the way Svelte binds anything. The package ships `.svelte` sources; your bundler's Svelte plugin compiles them.
+
+For data in the browser instead of a server, pass `createLocalProvider(engine)` — see the
+[`@casoon/opengrid` README](https://github.com/casoon/opengrid#data-in-the-browser). Everything
+the adapters share, and what is tested, is in
+[Frameworks](https://github.com/casoon/opengrid/blob/main/docs/guides/frameworks.md).
 
 Licensed under MIT or Apache-2.0, at your option.

@@ -96,7 +96,7 @@ test("every import path the docs promise resolves in the package", async ({
   page,
   baseURL,
 }) => {
-  // README.md and docs/api.md both show `@casoon/opengrid/loader.js`. A subpath
+  // README.md and docs/api.md show imports from `@casoon/opengrid`. A subpath
   // that is not in the `exports` map does not resolve, however present the file
   // is — so the documentation is the source of this list, not a copy of it.
   const documented = new Set();
