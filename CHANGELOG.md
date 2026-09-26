@@ -98,8 +98,9 @@ Everything below is built and tested; none of it has been listened to.
   column by its value and measure (`2025 · total`), the subtotals and the grand
   total as rows with their labels, NULL and the empty group named as in the
   table — in the element's own texts. The element exports the answer it holds
-  rather than asking again, so the file is the table on screen. In the crate:
-  `opengrid_export::pivot_csv`.
+  rather than asking again, so the file is the table on screen. In the crates:
+  `opengrid_export::pivot_csv`, and `opengrid_pivot::pivot_from_json`, which
+  reads the pivot wire form back and refuses one of the wrong shape.
 - **`connect(host, options)`** supplies an element from one object — provider,
   texts, formats, presentation, choices, a controlled view and the three event
   callbacks — in the one order that asks the source once, after the module has

@@ -60,7 +60,9 @@ export interface OpengridModule {
    * The pivot as it is shown, as CSV text: one header line (`2025 · total`),
    * every row including subtotals and the grand total, the element's labels.
    * `null` while nothing is shown, and for the grid and the table. Throws on an
-   * unknown or mistyped option.
+   * unknown or mistyped option, and on a shown answer it cannot read (cells
+   * that do not match its row dimensions and columns — a custom provider's).
+   * Values are in the canonical wire notation: a float `2` reads `2.0`.
    */
   get_pivot(host: HTMLElement, options?: CsvOptions): string | null;
   /** Defines the three elements. `loadOpengrid()` calls it. */

@@ -30,6 +30,6 @@ mod result;
 
 pub use engine::{ExecuteError, PivotEngine, assemble, execute};
 pub use query::{PivotError, PivotLimits, PivotQuery, ValidatedPivotQuery, grouping_sets};
-pub use result::{PivotColumn, PivotResult, pivot_to_json};
+pub use result::{PivotColumn, PivotReadError, PivotResult, pivot_from_json, pivot_to_json};
 
 pub(crate) use assemble::{Key, same_key};

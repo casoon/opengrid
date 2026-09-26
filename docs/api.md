@@ -469,7 +469,7 @@ table as CSV text, or `null` while nothing is shown.
 
 ```js
 const csv = loader.module.get_pivot(pivot, { delimiter: ";" });
-// "﻿country;2025 · total;2026 · total;(no value) · total\r\n(empty);;114;\r\n…"
+// "\uFEFFcountry;2025 · total;2026 · total;(no value) · total\r\n(empty);;114;\r\n…"
 const blob = csv && new Blob([csv], { type: "text/csv;charset=utf-8" }); // the file name is the page's
 ```
 
@@ -478,10 +478,11 @@ const blob = csv && new Blob([csv], { type: "text/csv;charset=utf-8" }); // the 
 | Columns | The row dimensions, then one column per generated column, in the table's order. |
 | Header | **One line.** A generated column is named by its value and its measure, `2025 · total`; without a column dimension, by its measure. |
 | Rows | Every row the table shows, in its order: data rows, subtotals, the grand total. |
-| Subtotals | Their label — `Total DE`, `Total` — in the first dimension column; the dimension columns it spans are empty fields. |
-| Labels | The element's own [texts](#texts): NULL is `(no value)`, the empty string `(empty)`, as in the table, and a page's `set_texts` changes both. |
-| Values | As every export writes them: the wire notation, NULL as the `null` option, the formula guard — which covers every header and label, since a dimension value is data. |
+| Subtotals | Their label — `Total DE`, `Total` — in the first dimension column; the dimension columns it spans are empty fields. There is no level column, as the table has none: a subtotal is known by its label alone, so a group literally named `Total` looks like the grand total. |
+| Labels | The element's own [texts](#texts): NULL is `(no value)`, the empty string `(empty)`, as in the table, and a page's `set_texts` changes both. With non-empty texts a data row's dimension cell is never empty, so an empty one means "spanned by the total"; a text set to `""` gives that up. |
+| Values | As every export writes them: the wire notation, NULL as the `null` option, the formula guard — which covers every header and label, since a dimension value is data. The notation is the canonical one, whatever the provider sent: a custom provider's float `2` reads `2.0`, a decimal `12.5` at scale 2 reads `12.50`, where the table shows the text as it came. |
 | `options` | `{ delimiter, bom, protectFormulas, null }`, each optional, as for a query's export. Any other key is an error. |
+| Errors | A wrong option, and an answer the export cannot read — one whose cells do not match its row dimensions and columns, as a page's own provider could send. Both throw with a sentence. |
 | `null` | Before the first answer, while one loads, after an error, and for the grid and the table. |
 
 **Why the element, not a query.** A pivot is bounded — 256 columns, 2 000 rows — and the

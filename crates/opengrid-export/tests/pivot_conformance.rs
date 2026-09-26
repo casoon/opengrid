@@ -16,7 +16,7 @@ use opengrid_conformance::{block_on, load_schema};
 use opengrid_export::{CsvOptions, PivotLabels, pivot_csv};
 use opengrid_pivot::{PivotLimits, PivotQuery, PivotResult, execute};
 use opengrid_query::Limits;
-use opengrid_types::Schema;
+use opengrid_types::{Schema, Value};
 
 /// The element's English defaults (`GridTexts::default`).
 struct English;
@@ -96,8 +96,17 @@ fn plain_options() -> CsvOptions {
     }
 }
 
+/// A dimension value's text, as the element reads it from the wire.
+fn text_of(value: &Value) -> Option<String> {
+    match value {
+        Value::Null => None,
+        Value::Utf8(text) => Some(text.clone()),
+        other => Some(serde_json::to_value(other).expect("JSON").to_string()),
+    }
+}
+
 #[test]
-fn every_pivot_case_is_exported_row_for_row() {
+fn every_pivot_case_has_the_shape_of_its_table() {
     let cases = cases();
     assert!(cases.len() >= 5, "the pivot suite is smaller than expected");
     for (id, pivot) in &cases {
@@ -112,21 +121,31 @@ fn every_pivot_case_is_exported_row_for_row() {
         let width = lines[0].split(',').count();
         assert_eq!(width, dimensions + result.columns.len(), "{id}: {csv}");
 
-        for (line, level) in lines[1..].iter().zip(&result.row_levels) {
+        for (row, (line, level)) in lines[1..].iter().zip(&result.row_levels).enumerate() {
             // No value in the conformance data holds a comma or a quote.
             let cells: Vec<&str> = line.split(',').collect();
             assert_eq!(cells.len(), width, "{id}: {line}");
             let level = usize::from(*level);
             if level < dimensions {
-                let label = if level == 0 { "Total" } else { "Total " };
-                assert!(cells[0].starts_with(label), "{id}: {line}");
+                // The label of exactly this depth: the total, or the subtotal
+                // of the group it closes.
+                let label = if level == 0 {
+                    English.total()
+                } else {
+                    let closed = text_of(&result.data.columns[level - 1][row]);
+                    English.subtotal(&English.dimension(closed.as_deref()))
+                };
+                assert_eq!(cells[0], label, "{id}: {line}");
                 assert!(
                     cells[1..dimensions].iter().all(|cell| cell.is_empty()),
                     "{id}: a total spans its dimension columns: {line}"
                 );
             } else {
+                // Neither an empty field nor a quoted empty string: a named one.
                 assert!(
-                    cells[..dimensions].iter().all(|cell| !cell.is_empty()),
+                    cells[..dimensions]
+                        .iter()
+                        .all(|cell| !cell.is_empty() && *cell != "\"\""),
                     "{id}: a row header is never blank: {line}"
                 );
             }

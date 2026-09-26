@@ -26,10 +26,17 @@ async function ready(page) {
   });
 }
 
-/** The rendered table as rows of text, the header composed into one line. */
-function shown(page) {
-  return page.evaluate(() => {
-    const root = document.querySelector("opengrid-pivot").shadowRoot;
+/**
+ * `get_pivot` and the rendered table, read in **one** evaluation — so no answer
+ * can arrive between the two and make them disagree for the wrong reason. The
+ * table is rows of text, its header composed into one line the way the export
+ * composes it.
+ */
+function exported(page, options) {
+  return page.evaluate((options) => {
+    const pivot = document.querySelector("opengrid-pivot");
+    const csv = window.__opengridModule.get_pivot(pivot, options);
+    const root = pivot.shadowRoot;
     const head = [...root.querySelectorAll("thead tr")];
     let header;
     if (head.length === 2) {
@@ -49,8 +56,8 @@ function shown(page) {
         ...Array(Number(cell.getAttribute("colspan") ?? 1) - 1).fill(""),
       ]),
     );
-    return [header, ...rows];
-  });
+    return { csv, table: [header, ...rows] };
+  }, options);
 }
 
 const getPivot = (page, options) =>
@@ -99,12 +106,11 @@ function parse(csv) {
 
 test("the CSV of the pivot is its table, row for row, with one header line", async ({ page }) => {
   await open(page);
-  const csv = await getPivot(page);
+  const { csv, table } = await exported(page);
 
   expect(csv.split("\r\n")[0]).toBe(
-    "﻿country,2025 · total,2025 · n,2026 · total,2026 · n,(no value) · total,(no value) · n",
+    "\uFEFFcountry,2025 · total,2025 · n,2026 · total,2026 · n,(no value) · total,(no value) · n",
   );
-  const table = await shown(page);
   expect(parse(csv.slice(1))).toEqual(table);
   // The NULL country is a row of its own and named; the last row is the total.
   expect(table.map((row) => row[0])).toContain("(no value)");
@@ -130,9 +136,7 @@ test("subtotals are rows with their label, spanning the dimensions", async ({ pa
       root.querySelectorAll("tbody tr[data-total]").length > 1
     );
   });
-  const csv = await getPivot(page, { bom: false, delimiter: ",", null: "\\N" });
-
-  const table = await shown(page);
+  const { csv, table } = await exported(page, { bom: false, delimiter: ",", null: "\\N" });
   expect(parse(csv)).toEqual(table);
   expect(table[0]).toEqual(["country", "customer", "n"]);
   expect(table).toContainEqual(["Total DE", "", "16"]);
@@ -157,9 +161,7 @@ test("the page's texts are the export's labels", async ({ page }) => {
       (th) => th.textContent === "Summe (ohne Wert)",
     ),
   );
-  const csv = await getPivot(page, { bom: false });
-
-  const table = await shown(page);
+  const { csv, table } = await exported(page, { bom: false });
   expect(parse(csv)).toEqual(table);
   expect(csv).toContain("(ohne Wert) · total");
   expect(csv).toContain("\r\n(leer),");
@@ -179,14 +181,20 @@ test("nothing shown is null, and a wrong option is an error", async ({ page }) =
         return String(e.message);
       }
     };
+    // A real grid and a real table, in the document: neither is a pivot.
+    const grid = document.createElement("opengrid-grid");
+    const table = document.createElement("opengrid-table");
+    document.body.append(grid, table);
     return {
-      grid: module.get_pivot(document.body),
+      grid: module.get_pivot(grid),
+      table: module.get_pivot(table),
       misspelt: error({ delimeter: ";" }),
       mistyped: error({ bom: "false" }),
       tooLong: error({ delimiter: ";;" }),
     };
   });
   expect(answers.grid).toBeNull();
+  expect(answers.table).toBeNull();
   expect(answers.misspelt).toContain("delimeter");
   expect(answers.mistyped).toContain("bom");
   expect(answers.tooLong).toContain("delimiter");
@@ -203,4 +211,70 @@ test("nothing shown is null, and a wrong option is an error", async ({ page }) =
         .getAttribute("data-state") === "error",
   );
   expect(await getPivot(page)).toBeNull();
+});
+
+/** A pivot answer a page's own provider could send: one row and the total. */
+function answer(columns) {
+  return {
+    row_dimensions: ["country"],
+    columns,
+    levels: [1, 0],
+    result: {
+      total_count: 2,
+      row_count: 2,
+      columns: [
+        { name: "country", type: "utf8", nullable: true, values: ["DE", null] },
+        { name: "total_0", type: "float64", nullable: true, values: [2, 2] },
+      ],
+    },
+  };
+}
+
+/** Gives the pivot a provider that answers `body`, and waits for it to show. */
+async function provide(page, body) {
+  // The provider alone is swapped: an attribute change would ask the server
+  // again, and its answer could land after this one.
+  await page.evaluate((body) => {
+    const pivot = document.querySelector("opengrid-pivot");
+    window.__opengridModule.set_provider(pivot, { execute: () => JSON.stringify(body) });
+  }, body);
+  await page.waitForFunction(
+    () =>
+      document.querySelector("opengrid-pivot").shadowRoot.querySelector("tbody td")
+        ?.textContent === "2",
+  );
+  await ready(page);
+}
+
+test("a custom provider's values are written in the canonical notation", async ({ page }) => {
+  await open(page);
+  await provide(page, answer([{ path: [2025], measure: "total" }]));
+  const { csv, table } = await exported(page, { bom: false });
+
+  // The table shows the text as it came; the export writes the float's notation.
+  expect(table).toEqual([["country", "2025 · total"], ["DE", "2"], ["Total", "2"]]);
+  expect(csv).toBe("country,2025 · total\r\nDE,2.0\r\nTotal,2.0\r\n");
+});
+
+test("an answer of the wrong shape is an error with a sentence, not a trap", async ({ page }) => {
+  await open(page);
+  // Two generated columns announced, one sent: the element draws what it can,
+  // the export refuses to guess which column is which.
+  await provide(
+    page,
+    answer([
+      { path: [2025], measure: "total" },
+      { path: [2026], measure: "total" },
+    ]),
+  );
+  const message = await page.evaluate(() => {
+    try {
+      window.__opengridModule.get_pivot(document.querySelector("opengrid-pivot"));
+      return "no error";
+    } catch (e) {
+      return String(e.message);
+    }
+  });
+  expect(message).toContain("the shown pivot");
+  expect(message).toContain("need 3");
 });
