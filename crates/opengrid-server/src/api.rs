@@ -144,23 +144,18 @@ impl IntoResponse for Failure {
             ErrorCode::UnknownSource => StatusCode::NOT_FOUND,
             ErrorCode::Validation => StatusCode::UNPROCESSABLE_ENTITY,
             ErrorCode::LimitExceeded => StatusCode::PAYLOAD_TOO_LARGE,
+            // Trying again later helps: an export turned away while others run.
+            ErrorCode::Busy => StatusCode::SERVICE_UNAVAILABLE,
             // The gateway is fine; the source behind it is not.
             ErrorCode::Backend => StatusCode::BAD_GATEWAY,
         };
-        error_response(status, &self.0)
+        (
+            status,
+            [(header::CONTENT_TYPE, "application/json")],
+            self.0.to_json(),
+        )
+            .into_response()
     }
-}
-
-/// The error form with a status of the caller's choosing — for the one case
-/// where the code alone does not say it: an export turned away while others
-/// run is `limit_exceeded`, but a `503`, since trying again later helps.
-pub(crate) fn error_response(status: StatusCode, error: &WireError) -> Response {
-    (
-        status,
-        [(header::CONTENT_TYPE, "application/json")],
-        error.to_json(),
-    )
-        .into_response()
 }
 
 async fn query(

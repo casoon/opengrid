@@ -57,7 +57,14 @@ pub enum ErrorCode {
     /// No source of that name is configured.
     UnknownSource,
     /// The request exceeded a server limit — payload size, timeout, page size.
+    /// The same request fails again; a smaller one may not.
     LimitExceeded,
+    /// The server is running as much of this as it runs at once — an export
+    /// over `max_concurrent_exports` (issue #16). The request itself is fine:
+    /// the same one may succeed later. Kept apart from
+    /// [`LimitExceeded`](Self::LimitExceeded) because a client does the
+    /// opposite for the two: wait and retry here, narrow the request there.
+    Busy,
     /// The caller may not do this: no token, wrong token.
     Unauthorized,
     /// The source failed: engine, database, transport.
@@ -411,5 +418,28 @@ mod tests {
 
         // A result body is not an error body.
         assert!(WireError::from_json(r#"{"total_count":0,"columns":[]}"#).is_none());
+    }
+
+    /// Every code travels as its snake_case name and reads back as itself —
+    /// `busy` (issue #16) included, apart from `limit_exceeded`. The names are
+    /// what a page branches on, so they are spelled out here, not derived.
+    #[test]
+    fn every_code_travels_under_its_name() {
+        for (code, name) in [
+            (ErrorCode::Validation, "validation"),
+            (ErrorCode::UnknownSource, "unknown_source"),
+            (ErrorCode::LimitExceeded, "limit_exceeded"),
+            (ErrorCode::Busy, "busy"),
+            (ErrorCode::Unauthorized, "unauthorized"),
+            (ErrorCode::Backend, "backend"),
+            (ErrorCode::Malformed, "malformed"),
+        ] {
+            let error = WireError::new(code, "a sentence");
+            let json = error.to_json();
+            assert!(json.contains(&format!(r#""code":"{name}""#)), "{json}");
+            assert_eq!(WireError::from_json(&json).unwrap().code, code, "{json}");
+        }
+        let busy = r#"{"error":{"code":"busy","message":"try again later"}}"#;
+        assert_eq!(WireError::from_json(busy).unwrap().code, ErrorCode::Busy);
     }
 }

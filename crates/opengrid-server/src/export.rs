@@ -52,8 +52,8 @@
 //!    transaction and cursor gone.
 //! 2. **At most `max_concurrent_exports` at once** (its default in
 //!    `Registry::default_concurrent_exports`, why in
-//!    `docs/guides/where-queries-run.md`, "For operators"). One more is a `503`
-//!    before any database work, so exports never take the connections `/query`
+//!    `docs/guides/where-queries-run.md`, "For operators"). One more is a `503`,
+//!    code `busy`, before any database work, so exports never take the connections `/query`
 //!    needs.
 //! 3. **PostgreSQL's own backstop**: the transaction sets
 //!    `idle_in_transaction_session_timeout` to [`BACKSTOP_FACTOR`] times
@@ -80,7 +80,7 @@ use std::time::Duration;
 
 use axum::body::{Body, Bytes};
 use axum::extract::{Path, Query as Parameters, State};
-use axum::http::{HeaderMap, HeaderValue, StatusCode, Uri, header};
+use axum::http::{HeaderMap, HeaderValue, Uri, header};
 use axum::response::Response;
 use http_body_util::channel::{Channel, Sender};
 use opengrid_datasource::wire::{ErrorCode, WireError};
@@ -90,7 +90,7 @@ use opengrid_export::{CsvOptions, CsvWriter, JsonWriter};
 use opengrid_query::{Limits, ValidatedQuery};
 use tokio::sync::{OwnedSemaphorePermit, oneshot};
 
-use crate::api::{AppState, Failure, admit, error_response, source_failed};
+use crate::api::{AppState, Failure, admit, source_failed};
 use crate::registry::Source;
 
 /// Rows read from the source at a time — the `max_limit` a page has by default,
@@ -153,17 +153,16 @@ pub(crate) async fn export(
 
     // Before any database work: an export over the bound costs nothing.
     let Ok(permit) = Arc::clone(&state.exports).try_acquire_owned() else {
-        return Ok(error_response(
-            StatusCode::SERVICE_UNAVAILABLE,
-            &WireError::new(
-                ErrorCode::LimitExceeded,
-                format!(
-                    "{} exports are running, the most this server runs at once \
-                     (max_concurrent_exports); try again later",
-                    state.max_concurrent_exports
-                ),
+        // `busy`, a `503`: the same export may pass in a moment.
+        return Err(WireError::new(
+            ErrorCode::Busy,
+            format!(
+                "{} exports are running, the most this server runs at once \
+                 (max_concurrent_exports); try again later",
+                state.max_concurrent_exports
             ),
-        ));
+        )
+        .into());
     };
 
     let (ready, started) = oneshot::channel();
