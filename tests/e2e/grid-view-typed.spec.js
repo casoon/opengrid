@@ -70,6 +70,52 @@ for (const { column, op, value, literal } of CASES) {
   });
 }
 
+/**
+ * A fresh grid in the page with a view before its first result — the order
+ * `connect` uses on mount — then `between(grid)` right after the provider.
+ */
+async function beforeFirstResult(page, { presentation = false, between = "" } = {}) {
+  return page.evaluate(
+    async ({ presentation, between }) => {
+      const module = window.__opengridModule;
+      const grid = document.createElement("opengrid-grid");
+      for (const [name, value] of [
+        ["label", "Später"],
+        ["datasource", "orders"],
+        ["columns", "id,qty,amount,ordered_on"],
+        ["facets", ""],
+      ]) {
+        grid.setAttribute(name, value);
+      }
+      document.querySelector("main").append(grid);
+      if (presentation) {
+        module.set_columns(grid, { amount: { facet: "range" }, ordered_on: { facet: "period" } });
+      }
+      module.set_view(grid, { filters: [{ column: "qty", op: "gte", value: "500" }] });
+      window.__queries.length = 0;
+      module.set_provider(grid, window.__provider());
+      if (between === "density") grid.setAttribute("density", "compact");
+      const line = () => grid.shadowRoot.querySelector('[part="status"]');
+      for (let i = 0; i < 50 && line().getAttribute("data-state") !== "ready"; i += 1) {
+        if (line().getAttribute("data-state") === "error") break;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      return {
+        state: line().getAttribute("data-state"),
+        text: line().textContent,
+        queries: window.__queries.map((json) => JSON.parse(json)),
+        filters: module.get_view(grid).filters,
+      };
+    },
+    { presentation, between },
+  );
+}
+
+/** The queries that asked for rows (not a probe, not a facet count). */
+const rowQueries = (queries) =>
+  queries.filter((query) => !query.group && "offset" in query && query.limit !== 0);
+
 test("a view with a typed filter before the first result asks for the types first", async ({
   page,
 }) => {
@@ -77,31 +123,62 @@ test("a view with a typed filter before the first result asks for the types firs
   // has typed a column yet. The grid asks for the schema with `limit 0` (no
   // filter, so it cannot fail on the literal), types the filter, then asks.
   await open(page);
-  const outcome = await page.evaluate(async () => {
-    const module = window.__opengridModule;
-    const grid = document.createElement("opengrid-grid");
-    for (const [name, value] of [
-      ["label", "Später"],
-      ["datasource", "orders"],
-      ["columns", "id,qty,amount"],
-    ]) {
-      grid.setAttribute(name, value);
-    }
-    document.querySelector("main").append(grid);
-    module.set_view(grid, { filters: [{ column: "qty", op: "gte", value: "500" }] });
-    window.__queries.length = 0;
-    module.set_provider(grid, window.__provider());
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    const line = grid.shadowRoot.querySelector('[part="status"]');
-    return {
-      text: line.textContent,
-      state: line.getAttribute("data-state"),
-      queries: window.__queries.map((json) => JSON.parse(json)),
-    };
-  });
+  const outcome = await beforeFirstResult(page);
   expect(outcome.state).toBe("ready");
-  expect(outcome.queries).toHaveLength(2);
-  expect(outcome.queries[0]).toMatchObject({ limit: 0 });
-  expect(outcome.queries[0]).not.toHaveProperty("filter");
-  expect(JSON.stringify(outcome.queries[1].filter)).toContain('"field":"qty","op":"gte","value":500');
+  const probes = outcome.queries.filter((query) => query.limit === 0);
+  expect(probes).toHaveLength(1);
+  expect(probes[0]).not.toHaveProperty("filter");
+  expect(outcome.queries.indexOf(probes[0])).toBe(0);
+  for (const query of rowQueries(outcome.queries)) {
+    expect(JSON.stringify(query.filter)).toContain('"field":"qty","op":"gte","value":500');
+  }
+});
+
+test("a query that comes in while the types are asked for waits for them too", async ({
+  page,
+}) => {
+  // The density changes right after the provider — a query while the probe is
+  // out. It must not send the text literal (review of point 88).
+  await open(page);
+  const outcome = await beforeFirstResult(page, { between: "density" });
+  expect(outcome.state).toBe("ready");
+  for (const query of rowQueries(outcome.queries)) {
+    expect(JSON.stringify(query.filter)).toContain('"value":500');
+  }
+});
+
+test("with facets configured, the view's filter survives the first result", async ({ page }) => {
+  // The first typed result lets the range and period facets through, and the
+  // skeleton is rebuilt for them — around the same state: the filter stays
+  // (review of point 88; before, it was silently dropped).
+  await open(page);
+  const outcome = await beforeFirstResult(page, { presentation: true });
+  expect(outcome.state).toBe("ready");
+  expect(outcome.filters).toEqual([{ column: "qty", op: "gte", value: "500" }]);
+  const rows = rowQueries(outcome.queries);
+  expect(rows.length).toBeGreaterThan(0);
+  expect(JSON.stringify(rows.at(-1).filter)).toContain('"field":"qty","op":"gte","value":500');
+});
+
+test("a literal the column cannot hold is said, and the view is not applied", async ({
+  page,
+}) => {
+  await open(page);
+  const before = await page.evaluate(() =>
+    window.__opengridModule.get_view(document.querySelector("opengrid-grid")),
+  );
+  await page.evaluate(() => {
+    window.__queries.length = 0;
+    window.__opengridModule.set_view(document.querySelector("opengrid-grid"), {
+      sort: [{ field: "amount", direction: "desc" }],
+      filters: [{ column: "qty", op: "gte", value: "abc" }],
+    });
+  });
+  await expect.poll(async () => (await status(page)).state).toBe("error");
+  expect((await status(page)).text).toContain("abc");
+  expect(await page.evaluate(() => window.__queries.length)).toBe(0);
+  const after = await page.evaluate(() =>
+    window.__opengridModule.get_view(document.querySelector("opengrid-grid")),
+  );
+  expect(after).toEqual(before);
 });

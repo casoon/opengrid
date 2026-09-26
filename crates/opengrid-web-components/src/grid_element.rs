@@ -111,6 +111,10 @@ pub(crate) fn define_grid() -> Result<(), JsValue> {
 /// Shared with the table: [`crate::element::set_provider`] dispatches on the tag
 /// name and calls this once the provider is stored.
 pub(crate) fn start(host: &HtmlElement) {
+    // Another provider may answer the same source name with other types.
+    if let Some(runtime) = runtime(host) {
+        runtime.borrow_mut().known.clear();
+    }
     ensure_skeleton(host);
     render(host, false);
     run_query(host, QueryKind::Data, false);
@@ -300,7 +304,6 @@ fn reset_runtime(host: &HtmlElement) {
         runtime.slots = fresh.slots;
         runtime.pending_offset = None;
         runtime.raf_pending = false;
-        runtime.generation = 0;
         runtime.scroll_top = 0;
         // A rebuild (columns, texts, presentation) is not a reason to close
         // every group the reader opened: the same grouping keeps its expanded
@@ -483,18 +486,29 @@ pub(crate) fn retext(host: &HtmlElement) {
     let Some(runtime) = runtime(host) else {
         return;
     };
+    reskeleton(host, &runtime);
+    focus_active(host);
+    run_query(host, QueryKind::Data, true);
+}
+
+/// A new skeleton around the **same** state: the words or the markers of the
+/// columns changed, not what is shown (points 48, 60, 88).
+///
+/// The grid lets go of its skeleton the way a parked grid does, and
+/// [`ensure_skeleton`] carries the filter row and the search into the new one;
+/// sort, filter, selection and the window stay in the state. Answers whether
+/// the window had to move to the active row — then its rows are one query away.
+fn reskeleton(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>) -> bool {
     {
         let mut runtime = runtime.borrow_mut();
         runtime.view = None;
         runtime.dom = None;
         runtime.viewport = None;
     }
-    // The query below asks for whatever window this leaves.
-    follow_active_row(host, &runtime);
+    let moved = follow_active_row(host, runtime);
     render(host, false);
-    restore_scroll(&runtime);
-    focus_active(host);
-    run_query(host, QueryKind::Data, true);
+    restore_scroll(runtime);
+    moved
 }
 
 /// Writes `entries` back into the filter row after a rebuild.
@@ -934,7 +948,9 @@ fn probe_then_query(
     let mode = host.get_attribute(MODE_ATTRIBUTE).unwrap_or_default();
     let (generation, sorts) = {
         let mut runtime = grid_runtime.borrow_mut();
-        runtime.retype_filter = false;
+        // `retype_filter` stays set until the filter is typed: a query that
+        // comes in meanwhile — a density, a key, an update from a page — must
+        // not send the text literal; it probes again instead.
         runtime.generation += 1;
         runtime.state.set_status(GridStatus::Loading);
         (runtime.generation, runtime.state.sort_keys())
@@ -949,6 +965,8 @@ fn probe_then_query(
             Ok(result) => result.schema,
             Err(message) => return settle(&host, generation, Err(message), focus),
         };
+        // The types are the source's, whichever query asked for them.
+        learn_types(&mut grid_runtime.borrow_mut(), &schema);
         if grid_runtime.borrow().generation != generation {
             return;
         }
@@ -956,12 +974,28 @@ fn probe_then_query(
             return;
         };
         let entries = read_filter_entries(&root, &columns_of(&host));
+        let typed = grid::filter_expr(&entries, &schema);
         {
             let mut runtime = grid_runtime.borrow_mut();
-            learn_types(&mut runtime, &schema);
+            runtime.retype_filter = false;
             runtime.state.adopt_schema(schema.clone());
-            let filter = grid::filter_expr(&entries, &schema).ok().flatten();
-            runtime.state.set_filter(filter);
+            match typed {
+                Ok(filter) => runtime.state.set_filter(filter),
+                Err(problems) => {
+                    // Said, not dropped: a view that looks applied and is not
+                    // is the worse failure (the rule of set_view).
+                    let texts = texts(&host);
+                    let message = problems
+                        .iter()
+                        .map(|problem| texts.filter_invalid(&problem.column, &problem.value))
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    runtime.state.set_status(GridStatus::Error(message));
+                    drop(runtime);
+                    render(&host, false);
+                    return;
+                }
+            };
         }
         run_query(&host, kind, focus);
     });
@@ -2921,6 +2955,26 @@ pub(crate) fn write_view(host: &HtmlElement, value: &JsValue) {
         }
     };
 
+    // A literal a typed column cannot hold is said, and the view is not
+    // applied — the same rule as an unknown column: a grid that looks restored
+    // and is not is the worse failure (point 88). Only columns a result has
+    // typed can be checked here; the others are checked when the types arrive.
+    let checked = grid::known_schema(&declared, &runtime.borrow().known);
+    if let Err(problems) = grid::filter_expr(&view.filters, &checked) {
+        let texts = texts(host);
+        let message = problems
+            .iter()
+            .map(|problem| texts.filter_invalid(&problem.column, &problem.value))
+            .collect::<Vec<_>>()
+            .join(" ");
+        runtime
+            .borrow_mut()
+            .state
+            .set_status(GridStatus::Error(message));
+        render(host, false);
+        return;
+    }
+
     if current_view(host).as_ref() == Some(&view) {
         // Setting the view it already has is not a change, and must not cost a
         // query or an announcement.
@@ -3041,11 +3095,14 @@ pub(crate) fn write_view(host: &HtmlElement, value: &JsValue) {
         let entries: Vec<FilterEntry> = view.filters.clone();
         let filter = grid::filter_expr(&entries, &schema).ok().flatten();
         let mut borrowed = runtime.borrow_mut();
-        // A filter on a column no result has typed yet is text for now; the
-        // query that follows asks for the types first (point 88).
-        borrowed.retype_filter = entries
-            .iter()
-            .any(|entry| !borrowed.known.contains_key(&entry.column));
+        // A literal on a column no result has typed yet is text for now; the
+        // query that follows asks for the types first (point 88). An entry
+        // without a value — empty, or a null test — needs no type.
+        borrowed.retype_filter = entries.iter().any(|entry| {
+            grid::takes_value(entry.op.as_str())
+                && !entry.value.trim().is_empty()
+                && !borrowed.known.contains_key(&entry.column)
+        });
         borrowed.state.set_filter(filter);
         borrowed.state.set_sort(
             view.sort
@@ -3143,8 +3200,20 @@ pub(crate) fn recolumn(host: &HtmlElement) {
             }
             presentation::store(host, styles);
             // The markers live in the one-time skeleton (a pool cell always
-            // shows the same column), so a new presentation is a new skeleton.
-            rebuild(host);
+            // shows the same column), so a new presentation is a new skeleton
+            // — around the same state: the columns are the same, and a view
+            // applied before the first result must not be thrown away with the
+            // old skeleton (point 88). The aggregates and facets the
+            // presentation names are asked for again, as the rebuild did.
+            {
+                let mut borrowed = runtime.borrow_mut();
+                if let Some(grouping) = borrowed.grouping.as_mut() {
+                    grouping.invalidate();
+                }
+                borrowed.groups_filter = None;
+            }
+            reskeleton(host, &runtime);
+            run_query(host, QueryKind::Data, false);
         }
         Err(problems) => {
             let message = problems

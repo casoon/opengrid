@@ -634,10 +634,12 @@ fn sort_key<'a>(sort: &'a [Sort], field: &Field) -> Option<&'a Sort> {
 mod tests {
     use super::*;
 
+    use opengrid_query::{Collation, NullsOrder, SortDirection};
+    use opengrid_types::{DataType, FieldName};
+
     /// A probe's schema is taken without touching rows or status (point 88).
     #[test]
     fn a_probe_schema_is_adopted_alone() {
-        use opengrid_types::{DataType, Field, FieldName};
         let text = Schema::new(vec![Field::new(
             FieldName::new("qty").unwrap(),
             DataType::Utf8,
@@ -660,8 +662,6 @@ mod tests {
             "the same schema is no change"
         );
     }
-    use opengrid_query::{Collation, NullsOrder, SortDirection};
-    use opengrid_types::{DataType, FieldName};
 
     pub(super) fn schema() -> Schema {
         Schema::new(vec![
