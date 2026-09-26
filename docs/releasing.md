@@ -11,8 +11,9 @@ A release that skips them is not a release; it is a publish.
 ## What 0.x promises
 
 The public API is frozen (the element names, their attributes, their events, their
-`::part` names, their custom properties, their text keys, the nine module functions and
-the seven exports of `loader.js`) and `docs/api.md` is its written form. Tests keep the
+`::part` names, their custom properties, their text keys, the ten module functions, the
+eight exports of `loader.js`, the REST provider's methods, and the fields and codes of an
+error) and `docs/api.md` is its written form. Tests keep the
 two honest with each other, and with `loader.d.ts`: a frozen name missing from the
 documentation or the declarations fails, and so does a documented
 part the element does not write.
@@ -40,9 +41,9 @@ scheduled, and nothing below it should be read as a promise that it will be.
       puts each packed adapter into a scratch project to render and type-check it there
 - [ ] `cargo check -p opengrid-web-components --no-default-features --features grid`, and
       the same with `--features pivot` — E25 keeps both as a way out, so both must build
-- [ ] `just measure-modules` — if a number moved noticeably, the table in
-      `plan/spezifikation/12-qualitaet.md` §Elementmodul und Modultrennung is stale, and
-      E25 was decided on those numbers
+- [ ] `just measure-modules` — if a number moved noticeably against the last release, say
+      so in the changelog: shipping grid and pivot as one module (E25) was decided on
+      those numbers
 
 ### 👤 The parts no command covers
 
@@ -53,16 +54,12 @@ staged, and what was **not** tested is named in the release notes either way.
 
 #### For any `0.x`
 
-- [ ] **One pairing, in depth.** All twenty-eight scenarios of
-      `plan/spezifikation/15-sr-testprotokoll.md` on a screen reader you actually have:
-      S1–S18 cover the elements as such, S19–S28 the configurable views (grouping and
-      its change of role, the column menu, the search combobox, facets, chips, the
-      language of mixed names). Several depend on `:focus` and cannot be driven from
-      the console — S9, S10, and every scenario that opens a menu — they need a real
-      keyboard.
-- [ ] **Name the gaps.** Every pairing you did not test goes into the release notes by
-      name. "Tested with VoiceOver on Safari; NVDA, JAWS and TalkBack untested" is a
-      useful sentence. Silence is not.
+- [ ] **Name the gaps.** Until the screen-reader passes are done
+      ([issue #5](https://github.com/casoon/opengrid/issues/5)), the release notes say
+      "Not yet verified by a screen reader" — plainly, in the first lines, not in a
+      footnote. Once a pass is done, every pairing that was not tested goes in by name:
+      "Tested with VoiceOver on Safari; NVDA, JAWS and TalkBack untested" is a useful
+      sentence. Silence is not.
 - [ ] **One browser beyond Chromium**, by hand. The e2e suite runs Chromium only, so
       everything else is either checked by a person or unknown.
 - [ ] **The screenshot baselines.** `tests/e2e/__screenshots__` is committed, once per
@@ -72,11 +69,24 @@ staged, and what was **not** tested is named in the release notes either way.
       **look at the diff** of both — a baseline accepted without looking is a test that
       has stopped testing.
 
+#### When the screen-reader passes are done
+
+The passes come after the first release, by decision: how the components look and what
+they do come first ([issue #5](https://github.com/casoon/opengrid/issues/5)). When a pass
+is done, the next release carries it:
+
+- [ ] **One pairing, in depth.** Every scenario of the protocol in issue #5 on a screen
+      reader you actually have — the elements as such, and the configurable views
+      (grouping and its change of role, the column menu, the search combobox, facets,
+      chips, the language of mixed names). Several depend on `:focus` and cannot be
+      driven from the console — every scenario that opens a menu, for one — they need
+      a real keyboard.
+
 #### Additionally for `1.0`
 
 - [ ] **The full pairing matrix**: NVDA with Firefox and with Chrome, JAWS with Chrome,
-      VoiceOver with Safari on macOS and on iOS, TalkBack with Chrome on Android
-      (`plan/spezifikation/09-accessibility.md`). At 1.0 an untested pairing stops being
+      VoiceOver with Safari on macOS and on iOS, TalkBack with Chrome on Android.
+      At 1.0 an untested pairing stops being
       a documented gap and becomes a blocker.
 - [ ] **The full browser matrix**: Chrome, Edge, Firefox, Safari.
 
@@ -102,9 +112,8 @@ inventory.
       files to remember. All of them read `0.0.0` while nothing is released.
 - [ ] Move the `Unreleased` section of [CHANGELOG.md](../CHANGELOG.md) under the new
       version with today's date, and say plainly what breaks if this is a minor
-      bump — plus which screen-reader pairings were tested and which were not.
-      The 0.1.0 content is already written; what is missing from it is the
-      sentence naming the pairings, which only the run can supply.
+      bump — plus which screen-reader pairings were tested and which were not, or,
+      before the passes, that none was.
 - [ ] `just package` — builds the module, stages the licences and the readmes, packs and
       unpacks four tarballs: `target/npm-package/` and `target/npm-package-{react,vue,svelte}/`
 - [ ] Read each `package/` directory there and check that it holds what it should, and
