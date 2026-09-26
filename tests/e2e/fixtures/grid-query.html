@@ -5,10 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>opengrid query fixture</title>
     <style>
-      /* Point 66: the four kinds of facet over the 200 conformance rows —
-         customer as a list, country as pills, amount as a range, ordered_on as
-         a period. Queries are counted: every facet counts with one `group`
-         query per column, not one per value. */
+      /* Point 82: the query of the view (`get_query`) over the 200 rows of
+         grid-virtual.csv, with every way a reader restricts them at hand —
+         the filter row, the search, and the four kinds of facet (customer as
+         a list, country as pills, amount as a range, ordered_on as a period).
+         Every query the grid asks is recorded, so a test can compare its own
+         query with `get_query`. */
       opengrid-grid {
         display: block;
         height: 520px;
