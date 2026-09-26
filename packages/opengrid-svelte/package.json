@@ -1,6 +1,6 @@
 {
   "name": "@casoon/opengrid-svelte",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "description": "Svelte 5 components for @casoon/opengrid: the accessible grid, table and pivot, supplied through connect.",
   "keywords": [

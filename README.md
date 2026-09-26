@@ -104,7 +104,7 @@ is, treat the accessibility of this library as well-built and unaudited.
 
 ## Status
 
-Pre-1.0, and not published yet. The API is frozen in the sense that it is
+Pre-1.0. The API is frozen in the sense that it is
 written down and a test fails when it changes
 (`crates/opengrid-web-components/src/api.rs`) — not in the sense that it will
 not change before 1.0. What a `0.x` bump is allowed to break, and the steps a

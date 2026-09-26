@@ -18,13 +18,19 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
-Nothing is published yet — no npm package, no crates, no tag. The version reads
-`0.0.0` everywhere until the first release turns this section into `[0.1.0]`.
+## [0.1.0] — 2026-09-26
 
-Everything below is built and tested; none of it has been listened to with a
-screen reader yet. The screen-reader passes follow the first release
-([issue #5](https://github.com/casoon/opengrid/issues/5)); until then the
-release notes say so.
+The first release: `@casoon/opengrid`, `@casoon/opengrid-react`,
+`@casoon/opengrid-vue`, `@casoon/opengrid-svelte` and the `opengrid-*` crates,
+all at `0.1.0`. Nothing breaks — there was nothing before it.
+
+**Screen-reader pairings tested: none yet.** Everything below is built and
+tested — keyboard, focus, announcements, axe-core in every state — but no screen
+reader has been run over it. The passes follow this release
+([issue #5](https://github.com/casoon/opengrid/issues/5)). **Browsers:**
+Chromium, Firefox and WebKit through the end-to-end suite (Firefox and WebKit at
+a desktop viewport, `just e2e-browsers`); Safari itself, iOS and Edge not
+tested.
 
 ### Added
 
@@ -199,7 +205,9 @@ release notes say so.
   and targets meet 2.5.8.
 - One polite live region carries every state: loading, N matches, no matches,
   and an error that does **not** replace the grid.
-- 872 end-to-end test runs — most specs on both a desktop and a narrow viewport — with
+- 880 end-to-end test runs in Chromium — most specs on both a desktop and a
+  narrow viewport — and the same suite in Firefox (433) and WebKit (432) before a
+  release, with
   axe-core in every state the components can be in — open menus, the facet
   sidebar and all five looks of the design prototype included — and a spec that
   records the status line's *successive* states, so an announcement made twice,
@@ -211,6 +219,15 @@ release notes say so.
   the active cell gets it back only if the grid had it, so `set_texts` while a
   page loads — or from the page's own language switch — leaves the focus where
   the reader put it.
+- Scroll areas are not tab stops in Firefox, which makes every scroller
+  focusable: Tab meets the controls and the grid, never an unnamed box. A key
+  pressed on the grid's scroll area after a click into empty space scrolls, and
+  does nothing to a cell the reader cannot see.
+- A filter or facet control reached by Tab is scrolled fully into view, also in
+  the narrow layout.
+- In WebKit the filter row's selects are drawn by the grid, so they meet the
+  24 px target and follow the theme; under forced colours they fall back to the
+  native control.
 - **Not yet verified by a screen reader.** The passes follow the first release
   ([issue #5](https://github.com/casoon/opengrid/issues/5)); see `docs/releasing.md`.
 

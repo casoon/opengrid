@@ -1,6 +1,6 @@
 {
   "name": "@casoon/opengrid-react",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "description": "React components for @casoon/opengrid: the accessible grid, table and pivot, supplied through connect.",
   "keywords": [
