@@ -11,7 +11,7 @@ HTTP, or be split across two of them without the elements knowing.
 | Provider (from `loader.js`) | Where the query runs |
 |---|---|
 | `createLocalProvider(engine)` | The engine on the main thread. |
-| `createWorkerProvider({ moduleUrl, wasmUrl })` | The engine in a module worker, started lazily, once. |
+| `createWorkerProvider({ moduleUrl?, wasmUrl?, workerUrl? })` | The engine in a module worker, started lazily, once. Without options, the engine the package ships under `engine/`. |
 | `createRestProvider({ url, source, token })` | `POST /query/{source}` of an `opengrid-server`; `export(query, options)` streams a whole export from `POST /export/{source}`. |
 | `createHybridProvider({ remote, planner, mode, onPlan })` | Split between a remote source and the engine in the tab. |
 | `createPivotProvider({ url, source, token })` | `POST /pivot/{source}` — a whole pivot in one request. |

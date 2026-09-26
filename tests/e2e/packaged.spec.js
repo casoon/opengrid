@@ -1,4 +1,7 @@
 import { test, expect } from "@playwright/test";
+import { existsSync, readdirSync } from "node:fs";
+import { join, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 
 // The packed npm package, not the repository (plan point 40).
 //
@@ -111,10 +114,49 @@ test("every import path the docs promise resolves in the package", async ({
   // it, as `./engine/*` does the engine module.
   const exported = Object.keys(manifest.exports);
   for (const path of documented) {
-    const covered = exported.some((key) =>
-      key.endsWith("/*") ? path.startsWith(key.slice(0, -1)) : key === path,
+    const wildcard = exported.find(
+      (key) => key.endsWith("/*") && path.startsWith(key.slice(0, -1)),
     );
+    const covered = wildcard !== undefined || exported.includes(path);
     expect(covered, `${path} is exported (${exported.join(", ")})`).toBe(true);
+    // A wildcard exports any name under it, so the entry alone does not say the
+    // documented file exists: fetch it from the package.
+    if (wildcard) {
+      const response = await page.request.get(
+        `${baseURL}/target/npm-package/package/${path.slice(2)}`,
+      );
+      expect(response.status(), `${path} is in the package`).toBe(200);
+    }
+  }
+});
+
+test("every snippet the package ships is one its module imports", async ({
+  page,
+  baseURL,
+}) => {
+  // wasm-bindgen writes into its directory and never deletes, and `files`
+  // ships whatever is there: a snippet directory from an older build would go
+  // out with the release, dead. scripts/pack-npm.sh empties the directories
+  // before it builds; this holds it. Each snippet is named in its glue as
+  // `./snippets/<crate-hash>/<file>`.
+  const root = fileURLToPath(new URL("../../target/npm-package/package/", import.meta.url));
+  for (const [dir, glue] of [
+    ["pkg", "opengrid_web_components.js"],
+    ["engine", "opengrid_wasm.js"],
+  ]) {
+    const snippets = join(root, dir, "snippets");
+    const files = existsSync(snippets)
+      ? readdirSync(snippets, { recursive: true }).filter((entry) =>
+          entry.endsWith(".js"),
+        )
+      : [];
+    const text = await (
+      await page.request.get(`${baseURL}/target/npm-package/package/${dir}/${glue}`)
+    ).text();
+    for (const file of files) {
+      const imported = `./snippets/${file.split(sep).join("/")}`;
+      expect(text.includes(imported), `${dir}/${glue} imports ${imported}`).toBe(true);
+    }
   }
 });
 

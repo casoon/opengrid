@@ -98,10 +98,15 @@ jobs:
 
   publish-dry-run:
     runs-on: ubuntu-latest
+    # About a minute with a warm cache; a cold Rust build takes several.
+    timeout-minutes: 30
     # The release path, walked without releasing (plan point 40, step 6). It
     # packs `@casoon/opengrid` exactly as `just package` does and asks npm what
     # it would send. A dry run needs no token, so this runs on every push and
     # the tarball can never drift from the checklist in docs/releasing.md.
+    # The four tarballs are kept as the `npm-packages` artifact: they were
+    # built with the pinned binaryen and checked here, and the release
+    # publishes exactly these (docs/releasing.md → The release).
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -142,6 +147,11 @@ jobs:
       - name: npm publish --dry-run (Svelte adapter)
         run: npm publish --dry-run
         working-directory: target/npm-package-svelte/package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-packages
+          path: target/npm-package*/*.tgz
+          if-no-files-found: error
 
   baselines:
     runs-on: ubuntu-latest
