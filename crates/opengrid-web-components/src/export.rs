@@ -20,7 +20,10 @@ use crate::texts::GridTexts;
 
 /// The keys of the CSV options object, in the order [`csv_options`] reads
 /// them. One list, so the reader and the key check of `get_pivot` cannot
-/// disagree about what an option is.
+/// disagree about what an option is. `exportRows` keeps the same list as
+/// `CSV_OPTIONS` in packages/opengrid/loader.js to split its own options from
+/// these; the two must stay in step (checked in `api.rs`, since this module is
+/// wasm32-only and its tests would not run on the host).
 const CSV_OPTION_KEYS: [&str; 4] = ["delimiter", "bom", "protectFormulas", "null"];
 
 /// One piece of a CSV: with `header`, the header line (and the byte order

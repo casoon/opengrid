@@ -405,6 +405,31 @@ typeText typeTime ungroupColumn valueLabel
         );
     }
 
+    /// `exportRows` (loader.js) splits the CSV options off its own with a list
+    /// of its own; `export.rs` reads them with `CSV_OPTION_KEYS`. One key more
+    /// in the loader and it would hand on a key the module refuses, one fewer
+    /// and a CSV option would be an "unknown option". Compared as text: the
+    /// module is wasm32-only, so no host test can name the constant.
+    #[test]
+    fn the_loader_and_the_module_agree_on_the_csv_options() {
+        fn keys<'a>(source: &'a str, declaration: &str) -> Vec<&'a str> {
+            let line = source
+                .lines()
+                .find(|line| line.starts_with(declaration))
+                .unwrap_or_else(|| panic!("declared: {declaration}"));
+            let list = line.split_once('[').map_or("", |(_, rest)| rest);
+            let list = list.rsplit_once('[').map_or(list, |(_, rest)| rest);
+            list.split('"').skip(1).step_by(2).collect()
+        }
+        let loader = keys(
+            include_str!("../../../packages/opengrid/loader.js"),
+            "const CSV_OPTIONS = [",
+        );
+        let module = keys(include_str!("export.rs"), "const CSV_OPTION_KEYS:");
+        assert_eq!(loader.len(), 4, "{loader:?}");
+        assert_eq!(loader, module);
+    }
+
     /// The loader exports what the freeze lists — no more, no fewer. An export
     /// is a promise (point 39), and one added without the list is a promise
     /// nobody decided to make.

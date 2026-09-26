@@ -243,10 +243,11 @@ export interface ExportProgress {
 }
 
 /**
- * How `exportRows` fetches and writes. A key not listed here is an error, and
- * so is a CSV option on a JSON export.
+ * How `exportRows` fetches and writes: its own keys, plus the
+ * {@link CsvOptions} `get_pivot` takes too. Any other key is an error, and so
+ * is a CSV option on a JSON export.
  */
-export interface ExportOptions {
+export interface ExportOptions extends CsvOptions {
   /** `"csv"` (the default) or `"json"` — an array of row objects. */
   format?: "csv" | "json";
   /** Rows per request; 10 000 by default, the server's `max_limit`. */
@@ -257,14 +258,6 @@ export interface ExportOptions {
   onProgress?: (progress: ExportProgress) => void;
   /** Aborts the export: it rejects with an `AbortError` and gives no `Blob`. */
   signal?: AbortSignal;
-  /** CSV: the field delimiter, `","` by default; `";"` for a German Excel. */
-  delimiter?: string;
-  /** CSV: start with a UTF-8 byte order mark; on by default. */
-  bom?: boolean;
-  /** CSV: prefix text cells a spreadsheet would run as a formula; on by default. */
-  protectFormulas?: boolean;
-  /** CSV: how NULL is written; empty by default, `"\\N"` reads back into opengrid. */
-  null?: string;
 }
 
 /**
