@@ -231,25 +231,41 @@ test.describe("over a real server", () => {
   });
 });
 
-test("a short piece ends the export, whatever the total said", async ({ page }) => {
-  // The rows shrank after the first piece counted them: the total says 150 000,
-  // the source has 100 000. The export ends with the first short piece.
+test("a source that changes during the export is refused, not exported", async ({ page }) => {
+  // Rows that come or go between two pieces shift the windows: a row would
+  // repeat or go missing. The tie-breaker cannot help there, so the export
+  // says so instead of writing a file that is wrong without saying it.
   const outcome = await page.evaluate(async () => {
-    let calls = 0;
-    const shrinking = {
-      execute(json, mode, options) {
-        calls += 1;
-        const result = JSON.parse(window.__tab.execute(json, mode, options));
-        return JSON.stringify({ ...result, total_count: 150_000 });
-      },
+    const attempt = async (provider) => {
+      let calls = 0;
+      const counted = {
+        execute(json, mode, options) {
+          calls += 1;
+          return provider(calls, JSON.parse(window.__tab.execute(json, mode, options)));
+        },
+      };
+      try {
+        await window.__exportRows(counted, { source: "export", select: ["id"], sort: [] });
+        return { outcome: "a Blob", calls };
+      } catch (error) {
+        return { outcome: error.message, calls };
+      }
     };
-    const seen = [];
-    await window.__exportRows(shrinking, { source: "export", select: ["id"], sort: [] }, {
-      onProgress: (step) => seen.push(step),
-    });
-    return { calls, last: seen.at(-1) };
+    return {
+      // The count moves at the third piece.
+      grown: await attempt((call, result) =>
+        JSON.stringify({ ...result, total_count: call >= 3 ? 100_001 : result.total_count }),
+      ),
+      // The count holds at 150 000, the rows end at 100 000.
+      ended: await attempt((call, result) => JSON.stringify({ ...result, total_count: 150_000 })),
+    };
   });
-  expect(outcome).toEqual({ calls: 11, last: { rows: 100_000, total: 150_000 } });
+  expect(outcome.grown.outcome).toContain("the source changed during the export");
+  expect(outcome.grown.outcome).toContain("100000 rows matched at first, 100001");
+  expect(outcome.grown.calls).toBe(3);
+  expect(outcome.ended.outcome).toContain("the source changed during the export");
+  expect(outcome.ended.outcome).toContain("ended at 100000 of 150000");
+  expect(outcome.ended.calls).toBe(11);
 });
 
 test("a sort with many ties exports every row exactly once", async ({ page }) => {
@@ -284,6 +300,49 @@ test("a sort with many ties exports every row exactly once", async ({ page }) =>
   expect(outcome.unique).toBe(100_000);
   // The ties stay together, in the sort's order; NULL last.
   expect(outcome.regions).toEqual(["centre", "east", "north", "south", "west", ""]);
+});
+
+test("without a unique column, the rows are the engine's rows all the same", async ({ page }) => {
+  // `region, day` repeats: the tie-breaker cannot make the order total, and
+  // the provider keeps shuffling what is left of a tie by `id`, a column the
+  // export does not have. Those rows are equal in every exported column, so
+  // the file is the same whichever copy comes — the multiset of lines is the
+  // engine's.
+  const outcome = await page.evaluate(async () => {
+    let calls = 0;
+    const shuffling = {
+      execute(json, mode, options) {
+        const query = JSON.parse(json);
+        calls += 1;
+        // A sort names output columns: `id` is fetched, ordered by, and
+        // dropped again, the way a database orders by what it does not return.
+        query.select = [...query.select, "id"];
+        query.sort = [...query.sort, { field: "id", direction: calls % 2 ? "asc" : "desc" }];
+        const result = JSON.parse(window.__tab.execute(JSON.stringify(query), mode, options));
+        result.columns = result.columns.filter((column) => column.name !== "id");
+        return JSON.stringify(result);
+      },
+    };
+    const query = {
+      source: "export",
+      select: ["region", "day"],
+      sort: [{ field: "region", direction: "asc" }],
+    };
+    const blob = await window.__exportRows(shuffling, query, { chunkSize: 7_000, bom: false });
+    const exported = (await blob.text()).split("\r\n").slice(1, -1);
+    const whole = window.__engine.execute(JSON.stringify({ source: "export", select: ["region", "day"] }));
+    const engine = window.__module.export_csv(whole, { bom: false }, false).split("\r\n").slice(0, -1);
+    const pairs = new Set(engine);
+    return {
+      calls,
+      repeated: engine.length - pairs.size,
+      same: JSON.stringify([...exported].sort()) === JSON.stringify([...engine].sort()),
+    };
+  });
+  expect(outcome.calls).toBe(15);
+  // There are ties the selected columns cannot break.
+  expect(outcome.repeated).toBeGreaterThan(1_000);
+  expect(outcome.same).toBe(true);
 });
 
 test("progress after every piece, against the first piece's total", async ({ page }) => {
@@ -442,6 +501,16 @@ test("a wrong option is refused before anything is asked", async ({ page }) => {
       delimiter: await refused(query, { delimiter: "ab" }),
       nullQuery: await refused(null, {}),
       windowed: await refused({ ...query, limit: 10 }, {}),
+      // Its output is `region` and an alias `select` does not name; the
+      // tie-breaker could not order by it.
+      grouped: await refused(
+        { source: "export", select: ["region", "rows"], group: ["region"], aggregate: [{ fn: "count", as: "rows" }], sort: [] },
+        {},
+      ),
+      aggregated: await refused(
+        { source: "export", select: ["rows"], aggregate: [{ fn: "count", as: "rows" }], sort: [] },
+        {},
+      ),
       calls,
     };
   });
@@ -451,5 +520,7 @@ test("a wrong option is refused before anything is asked", async ({ page }) => {
   expect(outcome.delimiter).toContain("delimiter");
   expect(outcome.nullQuery).toContain("get_query");
   expect(outcome.windowed).toContain("window");
+  expect(outcome.grouped).toContain("groups or aggregates");
+  expect(outcome.aggregated).toContain("groups or aggregates");
   expect(outcome.calls).toBe(0);
 });

@@ -105,6 +105,8 @@ export async function page(): Promise<void> {
   const view = module.get_view(grid);
   if (view) {
     view.sort[0]?.direction satisfies "asc" | "desc" | undefined;
+    // @ts-expect-error — where NULLs land is a query's word, not a view's
+    void view.sort[0]?.nulls;
     view.columns.widths["amount"] satisfies number | undefined;
     view.filterRow satisfies boolean;
     module.set_view(grid, view);
@@ -173,6 +175,8 @@ export async function page(): Promise<void> {
     await exportRows(local, query, { format: "xlsx" });
     // @ts-expect-error — not an option
     await exportRows(local, query, { filename: "orders.csv" });
+    // @ts-expect-error — an export is of a view's rows, not of groups
+    await exportRows(local, { ...query, group: ["country"] });
   }
   // A provider hears the signal as its third argument; one written for two still fits.
   const cancellable: Provider = {

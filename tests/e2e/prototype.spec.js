@@ -120,7 +120,8 @@ test("theme.css names only opengrid-grid, and copying it is announced", async ({
 test("Exportieren downloads the current view, and the page says how much", async ({ page }) => {
   // Issue #1: the button is page code over `get_query` and `exportRows`.
   await page.getByRole("tab", { name: "Deutschland ab 10 €" }).click();
-  await expect.poll(() => status(page)).not.toBe("50 Treffer");
+  // A count, and not the unfiltered one: "Wird geladen …" is no answer yet.
+  await expect.poll(() => status(page)).toMatch(/^(?!50 )\d+ Treffer$/);
   const matches = Number((await status(page)).split(" ")[0]);
 
   const [download] = await Promise.all([

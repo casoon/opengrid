@@ -49,6 +49,9 @@ export default defineConfig({
     {
       name: "narrow",
       use: { ...devices["Desktop Chrome"], viewport: { width: 480, height: 900 } },
+      // No element on that page: the viewport changes nothing there, and its
+      // 100 000 rows twice would only cost time.
+      testIgnore: "**/export.spec.js",
     },
   ],
   webServer: [
@@ -64,7 +67,10 @@ export default defineConfig({
       // rather than a URL: every endpoint needs a bearer token, so a health
       // check would be a 401 and Playwright would call that a failed start.
       // The export spec's rows are written first: the server reads its CSV
-      // sources once, at startup.
+      // sources once, at startup. Locally a server already on the port is
+      // reused — one started from an older checkout has no `export` source,
+      // and the export spec fails with "unknown source". Stop it; or run with
+      // CI=1, which never reuses and says so when the port is still taken.
       command:
         "node tests/e2e/fixtures/write-export-data.mjs && cargo run -p opengrid-server -- tests/e2e/fixtures/opengrid-e2e.toml",
       cwd: repoRoot,
