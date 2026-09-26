@@ -195,22 +195,28 @@ export async function page(): Promise<void> {
     await local.export(query);
 
     // A rejection is an `Error` with fields: a page switches on the code.
-    await exportRows(rest, query).catch((error: CodedError) => {
-      error.message satisfies string;
-      error.status satisfies number | undefined;
-      error.path satisfies string | undefined;
-      const code: ErrorCode | undefined = error.code;
-      switch (code) {
+    try {
+      await exportRows(rest, query);
+    } catch (error) {
+      if ((error as Error).name === "AbortError") return;
+      const refused = error as CodedError;
+      refused.message satisfies string;
+      refused.status satisfies number | undefined;
+      refused.path satisfies string | undefined;
+      refused.code satisfies ErrorCode | undefined;
+      switch (refused.code) {
         case "busy":
         case "limit_exceeded":
         case "too_many_rows":
         case "source_changed":
-          return;
+          break;
         // @ts-expect-error — 503 is `busy`; there is no such code
         case "unavailable":
-          return;
+          break;
+        default:
+          break;
       }
-    });
+    }
   }
   // A provider hears the signal as its third argument; one written for two still fits.
   const cancellable: Provider = {

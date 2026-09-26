@@ -589,16 +589,20 @@ server's own, or the loader's — and a page does not parse it: to tell failures
 | `code` | What went wrong, from the closed list below. Absent when nobody named it: a body that is not the server's error form (a proxy's `502` page), a server that did not say how many rows follow. |
 | `path` | Where in the query, when the server knows: `select[1]`, `filter.and[1].value`. The message ends with it in parentheses, as it always has. |
 
-```js
+```ts
+import { exportRows, type CodedError } from "@casoon/opengrid";
+
 try {
   blob = await exportRows(provider, query);
 } catch (error) {
-  switch (error.code) {
+  if ((error as Error).name === "AbortError") return; // the reader cancelled
+  switch ((error as CodedError).code) {
     case "busy": status.textContent = "The server is busy. Try again in a moment."; break;
     case "limit_exceeded":
     case "too_many_rows": status.textContent = "Too many rows. Narrow the view."; break;
     case "unauthorized": signIn(); break;
-    default: if (error.name !== "AbortError") status.textContent = "The export failed.";
+    // Also a code this loader does not know yet, from a newer server.
+    default: status.textContent = "The export failed.";
   }
 }
 ```
@@ -619,7 +623,7 @@ the same for `/query`, `/pivot`, `/source` and `/export`:
 | `malformed` | `400` | The body or a parameter is not readable: not JSON, an unknown export parameter, a `delimiter` of two characters. | The same. |
 | `unauthorized` | `401` | No token, or one the server does not accept. | Sign in again. |
 | `unknown_source` | `404` | No source of that name. | A bug in the configuration. |
-| `limit_exceeded` | `413` | Too big for the server: a body over `max_payload_bytes`, a query over `timeout_ms`, more rows than `max_export_rows`, an export without its first byte within `timeout_ms`. The same request fails again. | Narrow the view. |
+| `limit_exceeded` | `413` | Too big for the server: a body over `max_payload_bytes`, a query over `timeout_ms`, more rows than `max_export_rows`, an export without its first byte within `timeout_ms`. The same request usually fails again — a timeout may pass under less load. | Narrow the view. |
 | `busy` | `503` | `max_concurrent_exports` exports are already running. The request itself is fine. | Try again in a moment. |
 | `backend` | `502` | The source behind the server failed. | Try again later; the operator's log says why. |
 
