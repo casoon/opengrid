@@ -55,6 +55,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test -p opengrid-datasource-postgres
+      # The export endpoint against the same database (issue #2): the tenant
+      # filter in SQL, the count before the first byte, a client that leaves.
+      - run: cargo test -p opengrid-server --test export_postgres
 
   e2e:
     runs-on: ubuntu-latest

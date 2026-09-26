@@ -249,7 +249,7 @@ export function createLocalProvider(engine) {
  * @param {string} options.url base URL of the server, e.g. `http://127.0.0.1:8081`.
  * @param {string} options.source the configured data source name.
  * @param {string} [options.token] bearer token; the server refuses without one.
- * @returns {{execute: Function}}
+ * @returns {{execute: Function, describe: Function, export: Function}}
  */
 export function createRestProvider({ url, source, token } = {}) {
   const base = String(url).replace(/\/$/, "");
@@ -290,6 +290,63 @@ export function createRestProvider({ url, source, token } = {}) {
         return text;
       }
       throw new Error(messageOf(text, response.status));
+    },
+
+    /**
+     * `POST /export/{source}`: every row of `query` in **one** streamed request,
+     * as a `Blob` (issue #2). The server reads its source through a cursor
+     * and writes the rows in the notation `exportRows` writes in the tab, so
+     * the file is the same byte for byte — one request instead of pieces, and
+     * against PostgreSQL no `OFFSET` that gets dearer with every piece.
+     *
+     * The server's rules are `/query`'s: the token, `allowed_fields`, the
+     * mandatory row filter. Its own bound is `max_export_rows`; more is an
+     * error with the server's sentence before the first byte. The row count
+     * arrives before the rows (`X-Total-Count`), so `maxRows` refuses without
+     * reading the body, and `onProgress` hears `{ rows, total }` once, at the
+     * end. `signal` aborts the request, the download included; the server
+     * notices at its next piece and ends the query.
+     *
+     * @param {object} query the query, as an object — as `exportRows` takes it.
+     * @param {object} [options] `format`, `signal`, `maxRows`, `onProgress`
+     *   and the CSV options (`delimiter`, `bom`, `protectFormulas`, `null`).
+     * @returns {Promise<Blob>} `text/csv;charset=utf-8` or `application/json`.
+     */
+    async export(query, { format = "csv", signal, maxRows, onProgress, ...csv } = {}) {
+      for (const key of Object.keys(csv)) {
+        if (!CSV_OPTIONS.includes(key)) {
+          throw new TypeError(`export: unknown option "${key}"`);
+        }
+      }
+      // The server checks the options (a wrong one is its 400, with a
+      // sentence); here they only become parameters, under their own names.
+      const parameters = new URLSearchParams({ format });
+      for (const key of CSV_OPTIONS) {
+        if (csv[key] !== undefined) {
+          parameters.set(key, String(csv[key]));
+        }
+      }
+      const response = await fetch(`${base}/export/${encodeURIComponent(source)}?${parameters}`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(query),
+        signal,
+      });
+      if (!response.ok) {
+        throw new Error(messageOf(await response.text(), response.status));
+      }
+      const total = Number(response.headers.get("X-Total-Count"));
+      if (maxRows !== undefined && total > maxRows) {
+        // Not one row more than needed: the body is dropped unread.
+        await response.body?.cancel();
+        throw new Error(`export: ${total} rows match, more than the ${maxRows} an export may have (maxRows)`);
+      }
+      const blob = await response.blob();
+      onProgress?.({ rows: total, total });
+      // The type `exportRows` gives its Blob, whatever the header's spelling.
+      return new Blob([blob], {
+        type: format === "json" ? "application/json" : "text/csv;charset=utf-8",
+      });
     },
   };
 }
@@ -442,6 +499,12 @@ const NO_ROWS = '{"total_count":0,"columns":[]}';
  * { signal })`; an abort rejects with an `AbortError` at once, leaves no request
  * running where the provider can stop one, and produces no `Blob`.
  *
+ * **One request where the provider can.** A provider with an `export(query,
+ * options)` method — `createRestProvider` — gets the whole export in one
+ * streamed request (issue #2): the same query, the same options checked here
+ * first, `signal`, `maxRows` and `onProgress` handed on. `chunkSize` does not
+ * apply, and `onProgress` hears the end.
+ *
  * @param {{execute: Function}} provider any provider — the one the grid uses.
  * @param {object} query a query without a window, as `get_query(host)` gives it.
  * @param {object} [options] see `ExportOptions` in `loader.d.ts`.
@@ -515,6 +578,25 @@ export async function exportRows(provider, query, options = {}) {
     if (!sort.some((key) => key.field === field)) {
       sort.push({ field, direction: "asc" });
     }
+  }
+
+  if (typeof provider.export === "function") {
+    // A provider that exports by itself — `createRestProvider` — does it in
+    // one request. The query is the same, tie-breaker included, so the file
+    // is the one the pieces would have made; one cursor needs no tie-breaker,
+    // but the order within a tie is then the same whichever way was taken.
+    const blob = await unlessAborted(
+      provider.export(
+        { ...query, sort },
+        { format, signal, maxRows, onProgress, ...(format === "csv" ? csvOptions : {}) },
+      ),
+      signal,
+    );
+    // An abort during `onProgress` still means no file.
+    if (signal?.aborted) {
+      throw aborted();
+    }
+    return blob;
   }
 
   // Each piece becomes a Blob of its own as soon as it is written, so its text

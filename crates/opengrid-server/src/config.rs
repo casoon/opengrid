@@ -53,7 +53,10 @@ pub struct ServerConfig {
     /// Largest request body, in bytes (07-server.md §Sicherheit).
     #[serde(default = "default_max_payload")]
     pub max_payload_bytes: usize,
-    /// How long a single query may take before it is cut off.
+    /// How long a single query may take before it is cut off. For an export:
+    /// how long it may take to the first byte, and then each single fetch from
+    /// the source — its whole length is bounded by `max_export_rows`, not by a
+    /// clock.
     #[serde(default = "default_timeout_ms")]
     pub timeout_ms: u64,
     /// `Limits::max_limit` for every source (02-query-modell.md).
@@ -68,6 +71,11 @@ pub struct ServerConfig {
     /// `PivotLimits::max_rows` — how long a pivot may get.
     #[serde(default)]
     pub max_pivot_rows: Option<usize>,
+    /// How many rows one `POST /export/{source}` may have (issue #2). It takes
+    /// the place of `max_limit` there: an export is every match, not a page.
+    /// More is a `413` before the first byte, never a file cut short.
+    #[serde(default = "default_max_export_rows")]
+    pub max_export_rows: u64,
     /// Origins a browser may call this server from. Empty means **none**: no
     /// CORS headers are sent, and a page on another origin cannot read the
     /// answer. Opt in per origin, never `*` — a wildcard plus a bearer token is
@@ -86,6 +94,7 @@ impl Default for ServerConfig {
             max_depth: None,
             max_pivot_columns: None,
             max_pivot_rows: None,
+            max_export_rows: default_max_export_rows(),
             allowed_origins: Vec::new(),
         }
     }
@@ -101,6 +110,12 @@ fn default_max_payload() -> usize {
 
 fn default_timeout_ms() -> u64 {
     10_000
+}
+
+/// E33: an export has at most a million rows unless the configuration says
+/// otherwise — the same bound `exportRows` keeps in the browser.
+fn default_max_export_rows() -> u64 {
+    1_000_000
 }
 
 /// One accepted bearer token and the context it stands for.

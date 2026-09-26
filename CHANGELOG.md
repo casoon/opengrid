@@ -109,6 +109,21 @@ Everything below is built and tested; none of it has been listened to.
   as an optional third argument, `execute(query, mode, { signal })`; the REST,
   pivot and hybrid providers hand it to `fetch`. The prototype page exports its
   current view with it.
+- **`POST /export/{source}`** on `opengrid-server` streams every row of a query
+  as CSV or JSON, under the rules of `POST /query` — the token, `allowed_fields`,
+  the tenant's `row_filter`, both validations — with its own bound,
+  `max_export_rows` (1 000 000), instead of `max_limit`. More rows are a `413`
+  before the first byte, counted in the same `REPEATABLE READ` snapshot a
+  PostgreSQL cursor then reads; `timeout_ms` bounds the time to the first byte
+  and each fetch. The body is a bounded channel, so a slow client slows the
+  reading and a client that leaves ends the query; a failure midway breaks the
+  connection off rather than ending a short file. `Content-Disposition` names
+  the file after the source, `X-Total-Count` carries the row count. A million
+  rows keep the server under 40 MiB (measured in
+  [docs/guides/where-queries-run.md](docs/guides/where-queries-run.md)).
+  `createRestProvider(...).export(query, options)` fetches it as a `Blob`, and
+  `exportRows` uses a provider's `export` when there is one — one request
+  instead of pieces, the same file.
 - **`get_pivot(host, options)`** exports an `<opengrid-pivot>` as it is shown,
   as CSV: the row dimensions as columns, one header line naming each generated
   column by its value and measure (`2025 · total`), the subtotals and the grand

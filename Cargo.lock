@@ -751,6 +751,7 @@ dependencies = [
  "http",
  "http-body",
  "pin-project-lite",
+ "tokio",
 ]
 
 [[package]]
@@ -1183,12 +1184,14 @@ dependencies = [
  "opengrid-arrow-engine",
  "opengrid-datasource",
  "opengrid-datasource-postgres",
+ "opengrid-export",
  "opengrid-pivot",
  "opengrid-query",
  "opengrid-types",
  "serde",
  "serde_json",
  "tokio",
+ "tokio-postgres",
  "toml",
  "tower",
  "tower-http",

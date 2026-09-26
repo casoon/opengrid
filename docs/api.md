@@ -62,7 +62,7 @@ All from `loader.js`, all the same shape:
 |---|---|
 | `createLocalProvider(engine)` | The engine on the main thread. |
 | `createWorkerProvider({ moduleUrl, wasmUrl })` | The engine in a module worker; started lazily, once. |
-| `createRestProvider({ url, source, token })` | `POST /query/{source}` of an `opengrid-server`. Also offers `describe()` → `{ name, schema, capabilities, pivot_limits }`. |
+| `createRestProvider({ url, source, token })` | `POST /query/{source}` of an `opengrid-server`. Also offers `describe()` → `{ name, schema, capabilities, pivot_limits }`, and `export(query, options)` → a `Blob` from `POST /export/{source}` ([below](#over-a-server-one-request)). |
 | `createHybridProvider({ remote, planner, mode, onPlan })` | Splits each query between a remote source and the engine in the tab. `onPlan` receives the plan before anything is sent. |
 | `createPivotProvider({ url, source, token })` | `POST /pivot/{source}` — a whole pivot in one request. |
 
@@ -494,7 +494,7 @@ setTimeout(() => URL.revokeObjectURL(link.href), 0);
 | Option | |
 |---|---|
 | `format` | `"csv"` (default) or `"json"`. |
-| `chunkSize` | Rows per request; 10 000 by default — the server's `max_limit`. |
+| `chunkSize` | Rows per request; 10 000 by default — the server's `max_limit`. Not used when the provider exports by itself. |
 | `maxRows` | 1 000 000 by default. More matches than that is an error with a sentence, before anything else is fetched — never a truncated file. |
 | `onProgress` | Called after each piece with `{ rows, total }`. |
 | `signal` | An `AbortSignal`. An abort rejects with an `AbortError` at once, hands the signal to the provider so an HTTP request stops, and gives no `Blob`. |
@@ -512,6 +512,30 @@ Any other key is an error, and so is a CSV option on a JSON export.
 | A changing source | The tie-breaker fixes ties, not rows that come or go while the export runs — they shift the windows. So it is **detected and refused**: a piece whose `total_count` differs from the first one's, or that ends before the total, rejects the export with an error, and there is no `Blob`. A change that keeps the count and only moves a row is not visible to the export; for such a source, export from a snapshot. |
 | `mode` | The provider is asked with the mode `""` — its own default. |
 | `query` | Without `offset` and `limit`, with a `select`, without `group` and `aggregate` — the rows of a view. `get_query` gives exactly that; `null` from it is an error here. |
+
+#### Over a server: one request
+
+A provider with an `export(query, options)` method exports by itself, and `exportRows` lets
+it: `createRestProvider` has one, `POST /export/{source}` of an `opengrid-server`. Then the
+whole export is **one streamed request** instead of pieces — against PostgreSQL one statement
+read through a cursor, instead of `OFFSET` windows that get dearer with every piece.
+
+```js
+const rest = createRestProvider({ url, source: "orders", token });
+const blob = await exportRows(rest, loader.module.get_query(grid), { format: "csv" });
+// or directly:
+const same = await rest.export(query, { format: "csv", delimiter: ";" });
+```
+
+| | |
+|---|---|
+| The file | The same bytes the pieces would have made: `exportRows` checks the options the same way and sends the same query, tie-breaker included; the server writes it with the same `opengrid-export`. |
+| Options | `format`, `signal`, `maxRows`, `onProgress` and the CSV options — `exportRows`' own, without `chunkSize`. Any other key is an error. |
+| `maxRows` | The server sends the row count before the rows (`X-Total-Count`); more than `maxRows` is an error before the body is read. The server has its own bound, `max_export_rows` — more is its `413`, with a sentence, before the first byte. |
+| `onProgress` | Called once, at the end, with `{ rows, total }`. |
+| `signal` | Aborts the request, the download included: an `AbortError`, no `Blob`. The server notices at its next piece and ends the database query. |
+| Rules | The server's for `/query`, unchanged: the token, `allowed_fields`, the tenant's `row_filter`. |
+| A break | A failure after the first byte cannot be a status any more; the server breaks the connection off, and the export rejects — never a shorter file. |
 
 ### Exporting a pivot
 

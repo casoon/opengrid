@@ -16,6 +16,10 @@
 //! 5. **Execution**, with the configured timeout, and the answer in the wire form
 //!    of point 23.
 //!
+//! `POST /export/{source}` takes the same path through steps 1–4 (see
+//! [`admit`]) and then streams every row of the answer as a file — the
+//! `export` module.
+//!
 //! `GET /source/{source}` answers what a *planner* needs before it can ask
 //! anything: the client schema and the capabilities of the backend (plan point
 //! 28). It is the same token and the same narrowing — a column outside
@@ -39,11 +43,11 @@ use axum::routing::{get, post};
 use opengrid_datasource::DataSourceError;
 use opengrid_datasource::wire::{ErrorCode, WireError, result_to_json};
 use opengrid_pivot::PivotQuery;
-use opengrid_query::Query;
+use opengrid_query::{Limits, Query, ValidatedQuery};
 use tower_http::cors::CorsLayer;
 
 use crate::config::Config;
-use crate::registry::{PrepareError, Registry};
+use crate::registry::{PrepareError, Registry, Source};
 
 /// Everything a request needs, shared by every handler.
 pub struct AppState {
@@ -54,6 +58,8 @@ pub struct AppState {
     pub timeout: Duration,
     /// Origins a browser may call from; empty means no CORS headers.
     pub allowed_origins: Vec<String>,
+    /// The most rows one export may have (issue #2).
+    pub max_export_rows: u64,
 }
 
 impl AppState {
@@ -70,6 +76,7 @@ impl AppState {
             max_payload_bytes: config.server.max_payload_bytes,
             timeout: Duration::from_millis(config.server.timeout_ms),
             allowed_origins: config.server.allowed_origins.clone(),
+            max_export_rows: config.server.max_export_rows,
         }
     }
 }
@@ -86,6 +93,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/query/{source}", post(query))
         .route("/pivot/{source}", post(pivot))
         .route("/source/{source}", get(describe))
+        .route("/export/{source}", post(crate::export::export))
         .with_state(state);
 
     if !origins.is_empty() {
@@ -97,14 +105,20 @@ pub fn router(state: Arc<AppState>) -> Router {
             CorsLayer::new()
                 .allow_origin(parsed)
                 .allow_methods([Method::GET, Method::POST])
-                .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE]),
+                .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE])
+                // A page reads the export's file name and its row count; a
+                // browser hides every other header of a cross-origin answer.
+                .expose_headers([
+                    header::CONTENT_DISPOSITION,
+                    header::HeaderName::from_static(crate::export::ROWS_HEADER),
+                ]),
         );
     }
     router
 }
 
 /// An error on its way out: the wire form plus the status that goes with it.
-struct Failure(WireError);
+pub(crate) struct Failure(WireError);
 
 impl From<WireError> for Failure {
     fn from(error: WireError) -> Self {
@@ -138,7 +152,51 @@ async fn query(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Response, Failure> {
-    let context = authorize(&state, &headers)?;
+    let (source, validated) = admit(
+        &state,
+        &source_name,
+        &headers,
+        &body,
+        &state.registry.limits,
+    )?;
+
+    let executed = tokio::time::timeout(state.timeout, source.data.execute(validated))
+        .await
+        .map_err(|_| {
+            WireError::new(
+                ErrorCode::LimitExceeded,
+                format!(
+                    "the query took longer than {} ms",
+                    state.timeout.as_millis()
+                ),
+            )
+        })?;
+
+    let result = executed.map_err(source_failed)?;
+
+    Ok((
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "application/json")],
+        result_to_json(&result),
+    )
+        .into_response())
+}
+
+/// Everything a query goes through before it may run: the token, the payload
+/// limit, the source from the path, a body that is a query for that source,
+/// validation against the client schema, the mandatory row filter (E16) and
+/// validation against the full schema. `POST /query` and `POST /export` both
+/// come through here (issue #2), so an export cannot be a way around a rule a
+/// query keeps; they differ only in `limits` — an export's `max_limit` is
+/// `max_export_rows`.
+pub(crate) fn admit(
+    state: &AppState,
+    source_name: &str,
+    headers: &HeaderMap,
+    body: &Bytes,
+    limits: &Limits,
+) -> Result<(Arc<Source>, ValidatedQuery), Failure> {
+    let context = authorize(state, headers)?;
 
     if body.len() > state.max_payload_bytes {
         return Err(WireError::new(
@@ -152,14 +210,14 @@ async fn query(
         .into());
     }
 
-    let source = state.registry.get(&source_name).ok_or_else(|| {
+    let source = state.registry.get(source_name).ok_or_else(|| {
         WireError::new(
             ErrorCode::UnknownSource,
             format!("unknown source {source_name:?}"),
         )
     })?;
 
-    let query: Query = serde_json::from_slice(&body)
+    let query: Query = serde_json::from_slice(body)
         .map_err(|error| WireError::new(ErrorCode::Malformed, format!("request body: {error}")))?;
     if query.source.as_str() != source_name {
         return Err(WireError::at(
@@ -174,34 +232,19 @@ async fn query(
     }
 
     let validated = source
-        .prepare(query, &state.registry.limits, context)
+        .prepare(query, limits, context)
         .map_err(prepare_failed)?;
+    Ok((source, validated))
+}
 
-    let executed = tokio::time::timeout(state.timeout, source.data.execute(validated))
-        .await
-        .map_err(|_| {
-            WireError::new(
-                ErrorCode::LimitExceeded,
-                format!(
-                    "the query took longer than {} ms",
-                    state.timeout.as_millis()
-                ),
-            )
-        })?;
-
-    let result = executed.map_err(|error| match error {
+/// A source that could not answer, as the wire error it becomes.
+pub(crate) fn source_failed(error: DataSourceError) -> WireError {
+    match error {
         DataSourceError::NoData => {
             WireError::new(ErrorCode::Backend, "the data source holds no data")
         }
         DataSourceError::Backend { message } => WireError::new(ErrorCode::Backend, message),
-    })?;
-
-    Ok((
-        StatusCode::OK,
-        [(header::CONTENT_TYPE, "application/json")],
-        result_to_json(&result),
-    )
-        .into_response())
+    }
 }
 
 /// A failed `prepare`, as the wire error it becomes.

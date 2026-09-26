@@ -22,10 +22,10 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 
-use opengrid_arrow_engine::datasource::LocalDataSource;
+use opengrid_arrow_engine::datasource::{LocalDataSource, LocalPieces};
 use opengrid_arrow_engine::ingest::{CsvOptions, load_csv};
 use opengrid_datasource::SendDataSource;
-use opengrid_datasource_postgres::PostgresDataSource;
+use opengrid_datasource_postgres::{ExportCanceller, PostgresDataSource, PostgresExport};
 use opengrid_pivot::{PivotError, PivotLimits, PivotQuery, PivotResult, ValidatedPivotQuery};
 use opengrid_query::{CmpOp, FilterExpr, Limits, Query, ValidatedQuery};
 use opengrid_types::{FieldName, Schema};
@@ -87,6 +87,22 @@ impl Backend {
         }
     }
 
+    /// Starts an export of `query` (issue #2): the rows of the whole answer,
+    /// handed out a piece at a time. Nothing heavy has run when this returns —
+    /// [`ExportRows::count`] is the first step that can take long, so a caller
+    /// holds the [`ExportRows::canceller`] before it.
+    pub async fn export(
+        &self,
+        query: &ValidatedQuery,
+    ) -> Result<ExportRows, opengrid_datasource::DataSourceError> {
+        match self {
+            Backend::LocalCsv(source) => Ok(ExportRows::Local(source.pieces(query)?)),
+            Backend::Postgres(source) => {
+                Ok(ExportRows::Postgres(Box::new(source.export(query).await?)))
+            }
+        }
+    }
+
     /// Runs a query against whichever backend this is.
     pub async fn execute(
         &self,
@@ -95,6 +111,48 @@ impl Backend {
         match self {
             Backend::LocalCsv(source) => SendDataSource::execute(source, query).await,
             Backend::Postgres(source) => SendDataSource::execute(source, query).await,
+        }
+    }
+}
+
+/// An export in progress, whichever backend runs it.
+///
+/// The local engine has answered by the time this exists — its data is in
+/// memory, and one run beats paging it — and hands out slices of that answer.
+/// PostgreSQL counts and then reads through a cursor in one snapshot
+/// ([`PostgresExport`]).
+pub enum ExportRows {
+    Local(LocalPieces),
+    /// Boxed: a connection and two compiled statements, once per export.
+    Postgres(Box<PostgresExport>),
+}
+
+impl ExportRows {
+    /// The rows the export will have, before the first of them is read.
+    pub async fn count(&mut self) -> Result<u64, opengrid_datasource::DataSourceError> {
+        match self {
+            ExportRows::Local(pieces) => Ok(pieces.rows()),
+            ExportRows::Postgres(export) => export.count().await,
+        }
+    }
+
+    /// The next piece of at most `rows` rows; a shorter one is the last.
+    pub async fn next_piece(
+        &mut self,
+        rows: usize,
+    ) -> Result<opengrid_datasource::QueryResult, opengrid_datasource::DataSourceError> {
+        match self {
+            ExportRows::Local(pieces) => pieces.next_piece(rows),
+            ExportRows::Postgres(export) => export.next_piece(rows).await,
+        }
+    }
+
+    /// What stops a statement that is still running, where there is one to
+    /// stop: the local engine answers synchronously and has none.
+    pub fn canceller(&self) -> Option<ExportCanceller> {
+        match self {
+            ExportRows::Local(_) => None,
+            ExportRows::Postgres(export) => Some(export.canceller()),
         }
     }
 }

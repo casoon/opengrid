@@ -36,8 +36,8 @@ use crate::compiler::{CompiledQuery, GROUPING_PREFIX, PostgresCompiler, QueryCom
 
 /// A table in a PostgreSQL database, behind the `DataSource` contract.
 pub struct PostgresDataSource {
-    pool: Pool,
-    compiler: PostgresCompiler,
+    pub(crate) pool: Pool,
+    pub(crate) compiler: PostgresCompiler,
     schema: Schema,
 }
 
@@ -82,15 +82,34 @@ impl PostgresDataSource {
             .collect();
 
         let rows = client.query(&sql, &refs).await.map_err(backend)?;
-        Ok(rows
-            .iter()
-            .map(|row| {
-                (0..output.len())
-                    .map(|index| row.get::<_, Option<String>>(index))
-                    .collect()
-            })
-            .collect())
+        Ok(texts(&rows, output.len()))
     }
+}
+
+/// Every cell of `rows` as the text PostgreSQL wrote, or NULL.
+pub(crate) fn texts(rows: &[tokio_postgres::Row], width: usize) -> Vec<Vec<Option<String>>> {
+    rows.iter()
+        .map(|row| {
+            (0..width)
+                .map(|index| row.get::<_, Option<String>>(index))
+                .collect()
+        })
+        .collect()
+}
+
+/// Rows of text, turned column-oriented in output order (E14).
+pub(crate) fn columns_of(
+    rows: Vec<Vec<Option<String>>>,
+    output: &[(String, DataType)],
+) -> Result<Vec<Vec<Value>>, DataSourceError> {
+    let mut columns = vec![Vec::with_capacity(rows.len()); output.len()];
+    for row in rows {
+        for (index, cell) in row.into_iter().enumerate() {
+            let (name, data_type) = &output[index];
+            columns[index].push(value_from_text(cell.as_deref(), *data_type, name)?);
+        }
+    }
+    Ok(columns)
 }
 
 impl SendDataSource for PostgresDataSource {
@@ -123,14 +142,7 @@ impl SendDataSource for PostgresDataSource {
                 .and_then(|text| text.parse().ok())
                 .unwrap_or(rows.len() as u64);
 
-            // Column-oriented, in output order (E14).
-            let mut columns = vec![Vec::with_capacity(rows.len()); output.len()];
-            for row in rows {
-                for (index, cell) in row.into_iter().enumerate() {
-                    let (name, data_type) = &output[index];
-                    columns[index].push(value_from_text(cell.as_deref(), *data_type, name)?);
-                }
-            }
+            let columns = columns_of(rows, &output)?;
 
             Ok(QueryResult::new(
                 query.output_schema.clone(),
@@ -156,7 +168,7 @@ impl SendDataSource for PostgresDataSource {
 }
 
 /// Wraps a compiled statement so every column comes back as text or NULL.
-fn wrap_for_reading(sql: &str, output: &[(String, DataType)]) -> String {
+pub(crate) fn wrap_for_reading(sql: &str, output: &[(String, DataType)]) -> String {
     let projection: Vec<String> = output
         .iter()
         .map(|(name, data_type)| {
@@ -185,7 +197,7 @@ fn wrap_for_reading(sql: &str, output: &[(String, DataType)]) -> String {
 }
 
 /// Every parameter as text or NULL — the cast in the statement gives it its type.
-fn text_params(values: &[Value]) -> Vec<Option<String>> {
+pub(crate) fn text_params(values: &[Value]) -> Vec<Option<String>> {
     values.iter().map(text_of).collect()
 }
 
@@ -238,13 +250,13 @@ fn value_from_text(
     })
 }
 
-fn backend(error: impl std::fmt::Display) -> DataSourceError {
+pub(crate) fn backend(error: impl std::fmt::Display) -> DataSourceError {
     DataSourceError::Backend {
         message: error.to_string(),
     }
 }
 
-fn compile(error: crate::compiler::CompileError) -> DataSourceError {
+pub(crate) fn compile(error: crate::compiler::CompileError) -> DataSourceError {
     DataSourceError::Backend {
         message: error.to_string(),
     }

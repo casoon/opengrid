@@ -26,6 +26,10 @@ const LOADER_EXPORTS: [&str; 8] = [
     "exportRows",
 ];
 
+/// The methods of the provider `createRestProvider` answers — `export` is
+/// the server's export (issue #2), which `exportRows` uses when it is there.
+const REST_PROVIDER_METHODS: [&str; 3] = ["describe", "execute", "export"];
+
 /// Every name a page can rely on, in one string.
 fn surface() -> String {
     let mut out = String::new();
@@ -77,6 +81,12 @@ fn surface() -> String {
     for name in LOADER_EXPORTS {
         out.push_str(&format!("  {name}\n"));
     }
+
+    out.push_str("\nprovider methods\n");
+    out.push_str(&format!(
+        "  createRestProvider: {}\n",
+        REST_PROVIDER_METHODS.join(" ")
+    ));
 
     // Two groups, because they are two promises: a page *sets* the first and
     // may override the second, which the grid otherwise computes for it.
@@ -239,6 +249,9 @@ loader exports
   createHybridProvider
   exportRows
 
+provider methods
+  createRestProvider: describe execute export
+
 custom properties (set)
   --og-font --og-font-mono --og-font-size --og-surface --og-surface-2 --og-ink --og-ink-muted \
 --og-line --og-line-strong --og-accent --og-on-accent --og-radius --og-pad --og-focus-width \
@@ -363,6 +376,7 @@ typeText typeTime ungroupColumn valueLabel
             "events",
             "functions",
             "loader exports",
+            "provider methods",
             "text keys",
         ])
         .into_iter()
@@ -428,6 +442,59 @@ typeText typeTime ungroupColumn valueLabel
         let module = keys(include_str!("export.rs"), "const CSV_OPTION_KEYS:");
         assert_eq!(loader.len(), 4, "{loader:?}");
         assert_eq!(loader, module);
+    }
+
+    /// The server takes the CSV options as parameters of `POST /export`, under
+    /// the names `exportRows` takes them (issue #2): `exportRows` hands them to
+    /// `createRestProvider(...).export` as they are, and a name the server does
+    /// not know is its `400`. Compared as text, as above: the server is a
+    /// crate this one does not depend on.
+    #[test]
+    fn the_loader_and_the_server_agree_on_the_csv_options() {
+        let line = |source: &'static str, declaration: &str| -> Vec<&'static str> {
+            let line = source
+                .lines()
+                .find(|line| line.starts_with(declaration))
+                .unwrap_or_else(|| panic!("declared: {declaration}"));
+            let list = line.rsplit_once('[').map_or("", |(_, rest)| rest);
+            list.split('"').skip(1).step_by(2).collect()
+        };
+        let loader = line(
+            include_str!("../../../packages/opengrid/loader.js"),
+            "const CSV_OPTIONS = [",
+        );
+        let server = line(
+            include_str!("../../opengrid-server/src/export.rs"),
+            "const CSV_PARAMETERS:",
+        );
+        assert_eq!(server.len(), 4, "{server:?}");
+        assert_eq!(loader, server);
+    }
+
+    /// `createRestProvider` answers the methods the freeze lists — no more,
+    /// no fewer. A method is a promise like an export is.
+    #[test]
+    fn the_rest_provider_has_the_frozen_methods() {
+        let loader = include_str!("../../../packages/opengrid/loader.js");
+        let body = loader
+            .split("export function createRestProvider(")
+            .nth(1)
+            .and_then(|rest| rest.split("\n}\n").next())
+            .expect("loader.js defines createRestProvider");
+        let mut methods: Vec<&str> = body
+            .lines()
+            // A method is a line at the object's indent that is a name and `(`;
+            // `if (`, `return fetch(` and deeper lines are not.
+            .filter_map(|line| {
+                let line = line.strip_prefix("    ")?;
+                let line = line.strip_prefix("async ").unwrap_or(line);
+                let (name, _) = line.split_once('(')?;
+                (!name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric()))
+                    .then_some(name)
+            })
+            .collect();
+        methods.sort_unstable();
+        assert_eq!(methods, REST_PROVIDER_METHODS);
     }
 
     /// The loader exports what the freeze lists — no more, no fewer. An export

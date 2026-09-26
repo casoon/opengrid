@@ -135,6 +135,12 @@ export function connect(host: HTMLElement, options?: ConnectOptions): Connection
  */
 export interface Provider {
   execute(queryJson: string, mode: string, options?: ExecuteOptions): string | Promise<string>;
+  /**
+   * Optional: the whole export of `query` in one go. `exportRows` uses it when
+   * it is there instead of fetching pieces over `execute` —
+   * `createRestProvider` has it, as `POST /export/{source}`.
+   */
+  export?(query: ViewQuery, options?: ProviderExportOptions): Promise<Blob>;
 }
 
 /**
@@ -171,6 +177,13 @@ export interface SourceDescription {
 export interface RestProvider extends Provider {
   /** `GET /source/{name}`: what a `Planner` needs to split queries. */
   describe(): Promise<SourceDescription>;
+  /**
+   * `POST /export/{source}`: every row of `query` in one streamed request, in
+   * the notation `exportRows` writes. The server's rules are `/query`'s; its
+   * bound is `max_export_rows`. `maxRows` refuses before the body is read,
+   * `onProgress` hears the end, `signal` aborts the download too.
+   */
+  export(query: ViewQuery, options?: ProviderExportOptions): Promise<Blob>;
 }
 
 /** The `Planner` of the engine module, as `createHybridProvider` uses it. */
@@ -261,12 +274,19 @@ export interface ExportOptions extends CsvOptions {
 }
 
 /**
+ * What a provider's `export` takes: {@link ExportOptions} without
+ * `chunkSize` — there are no pieces to size. Any other key is an error.
+ */
+export type ProviderExportOptions = Omit<ExportOptions, "chunkSize">;
+
+/**
  * Every match of `query` — as `get_query(host)` gives it — through `provider`,
  * in pieces, as a `Blob` of `text/csv;charset=utf-8` or `application/json`.
  * Raw values in the wire notation, a header of field names. The sort is made
  * total by appending every selected column not yet in it, ascending; within a
  * tie the export follows the columns, not the grid. A source whose count
- * changes between two pieces is refused with an error, not exported.
+ * changes between two pieces is refused with an error, not exported. A
+ * provider with an `export` method gets the same query in one request instead.
  */
 export function exportRows(provider: Provider, query: ViewQuery, options?: ExportOptions): Promise<Blob>;
 

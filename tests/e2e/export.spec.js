@@ -153,6 +153,158 @@ test.describe("over a real server", () => {
     expect(outcome.pieces).toHaveLength(13);
   });
 
+  test.describe("in one request, through the provider's export", () => {
+    /** The server's requests of this page, by path. */
+    function watch(page) {
+      const paths = [];
+      page.on("request", (request) => {
+        const url = new URL(request.url());
+        if (url.port === "8082" && request.method() === "POST") paths.push(url.pathname);
+      });
+      return paths;
+    }
+
+    /** `exportRows` over `window.__rest` itself, which has `export`. */
+    function exportDirect(page, { query, total, options = {} }) {
+      return page.evaluate(
+        async ({ query, total, options }) => {
+          const progress = [];
+          const blob = await window.__exportRows(window.__rest, query, {
+            ...options,
+            onProgress: (step) => progress.push(step),
+          });
+          const text = new TextDecoder("utf-8", { ignoreBOM: true }).decode(await blob.arrayBuffer());
+          const whole = window.__engine.execute(JSON.stringify({ ...query, sort: total }));
+          const { format = "csv", ...csv } = options;
+          const expected =
+            format === "json"
+              ? `[${window.__module.export_json(whole, true)}]`
+              : window.__module.export_csv(whole, csv, true);
+          return { same: text === expected, length: text.length, type: blob.type, progress };
+        },
+        { query, total, options },
+      );
+    }
+
+    test("the server's file is the pieces' file, byte for byte, in one request", async ({ page }) => {
+      const paths = watch(page);
+      const csv = await exportDirect(page, {
+        query: BY_DAY,
+        total: BY_DAY_TOTAL,
+        options: { delimiter: ";", bom: false, protectFormulas: false, null: "\\N" },
+      });
+      expect(csv.same).toBe(true);
+      expect(csv.type).toBe("text/csv;charset=utf-8");
+      // Progress once, at the end — the count came before the rows.
+      expect(csv.progress).toEqual([{ rows: 100_000, total: 100_000 }]);
+
+      const json = await exportDirect(page, {
+        query: { ...BY_DAY, select: ["id", "note"], sort: [{ field: "note", direction: "asc" }] },
+        total: [
+          { field: "note", direction: "asc" },
+          { field: "id", direction: "asc" },
+        ],
+        options: { format: "json" },
+      });
+      expect(json.same).toBe(true);
+      expect(json.type).toBe("application/json");
+      // Two exports, two requests, and not one piece over `/query`.
+      expect(paths).toEqual(["/export/export", "/export/export"]);
+    });
+
+    test("the file name and the row count reach a page on another origin", async ({ page }) => {
+      const headers = await page.evaluate(async () => {
+        const response = await fetch("http://127.0.0.1:8082/export/export?format=json", {
+          method: "POST",
+          headers: { Authorization: "Bearer e2e-token", "Content-Type": "application/json" },
+          body: JSON.stringify({ source: "export", select: ["id"], filter: { field: "id", op: "lte", value: 3 } }),
+        });
+        return {
+          status: response.status,
+          name: response.headers.get("Content-Disposition"),
+          rows: response.headers.get("X-Total-Count"),
+          body: await response.text(),
+        };
+      });
+      expect(headers).toEqual({
+        status: 200,
+        name: "attachment; filename=\"export.json\"; filename*=UTF-8''export.json",
+        rows: "3",
+        body: '[{"id":1},{"id":2},{"id":3}]',
+      });
+    });
+
+    test("an abort during the download stops it, and there is no Blob", async ({ page }) => {
+      // Whether the network layer still reports the request as failed depends
+      // on how much of 7 MB over loopback it had already taken; what the page
+      // gets does not. The server's side — a client that leaves ends the
+      // query — is opengrid-server's `export_postgres` test.
+      const outcome = await page.evaluate(async () => {
+        const controller = new AbortController();
+        // Aborted once the answer has begun — the status and the count are
+        // in, the rows are on their way.
+        const fetchBefore = window.fetch;
+        let started = false;
+        window.fetch = async (...args) => {
+          const response = await fetchBefore(...args);
+          started = true;
+          controller.abort();
+          return response;
+        };
+        const progress = [];
+        try {
+          const blob = await window.__exportRows(window.__rest, {
+            source: "export",
+            select: ["id", "region", "amount", "day", "note"],
+            sort: [{ field: "note", direction: "desc" }],
+          }, { signal: controller.signal, onProgress: (step) => progress.push(step) });
+          return { blob: blob instanceof Blob, started, progress };
+        } catch (error) {
+          return { name: error.name, started, progress };
+        } finally {
+          window.fetch = fetchBefore;
+        }
+      });
+      // Aborted after the answer began, and the end was never reached.
+      expect(outcome).toEqual({ name: "AbortError", started: true, progress: [] });
+    });
+
+    test("maxRows refuses before the rows, and the server's sentences arrive", async ({ page }) => {
+      const paths = watch(page);
+      const outcome = await page.evaluate(async () => {
+        const refused = async (query, options) => {
+          try {
+            await window.__exportRows(window.__rest, query, options);
+            return "accepted";
+          } catch (error) {
+            return error.message;
+          }
+        };
+        const query = { source: "export", select: ["id"], sort: [] };
+        return {
+          maxRows: await refused(query, { maxRows: 99_999 }),
+          // Checked in the tab, before any request, as for pieces.
+          delimiter: await refused(query, { delimiter: "ab" }),
+          unknown: await refused(query, { filename: "x.csv" }),
+          // The server's own: a column that does not exist for this token.
+          field: await refused({ ...query, select: ["id", "no_such_column"] }, {}),
+          direct: await window.__rest.export(query, { delimiter: "ab" }).then(
+            () => "accepted",
+            (error) => error.message,
+          ),
+        };
+      });
+      expect(outcome.maxRows).toContain("100000 rows match");
+      expect(outcome.maxRows).toContain("maxRows");
+      expect(outcome.delimiter).toContain("delimiter");
+      expect(outcome.unknown).toContain('unknown option "filename"');
+      expect(outcome.field).toContain("no_such_column");
+      expect(outcome.direct).toContain("delimiter: one character");
+      // maxRows and the two bad ones from the server; the tab's refusals asked nothing.
+      expect(paths).toEqual(["/export/export", "/export/export", "/export/export"]);
+    });
+  });
+
   test("an abort stops the request in flight, and there is no Blob", async ({ page }) => {
     const failed = [];
     page.on("requestfailed", (request) => {
