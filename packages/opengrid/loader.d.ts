@@ -291,6 +291,43 @@ export type ProviderExportOptions = Omit<ExportOptions, "chunkSize">;
 export function exportRows(provider: Provider, query: ViewQuery, options?: ExportOptions): Promise<Blob>;
 
 // ---------------------------------------------------------------------------
+// Errors
+// ---------------------------------------------------------------------------
+
+/**
+ * What went wrong, as a closed list a page can switch on. The first seven are
+ * the server's, from its error form; the last three are `exportRows`' own.
+ */
+export type ErrorCode =
+  | "validation"
+  | "unknown_source"
+  | "limit_exceeded"
+  | "busy"
+  | "unauthorized"
+  | "backend"
+  | "malformed"
+  | "too_many_rows"
+  | "source_changed"
+  | "module_not_loaded";
+
+/**
+ * What the REST and pivot providers and `exportRows` reject with: a plain
+ * `Error` with these fields — not a class of its own, so test `error.code`,
+ * not `instanceof`. The message is a sentence for the developer, the same as
+ * without the fields. A wrong option is a `TypeError`, an abort a
+ * `DOMException` named `"AbortError"` — test its `name`: its `code` is the
+ * DOM's legacy number, never one of these strings.
+ */
+export interface CodedError extends Error {
+  /** The HTTP status, when a server refused the request. */
+  status?: number;
+  /** Absent when neither the server nor the loader named one. */
+  code?: ErrorCode;
+  /** Where in the query, when the server says: `filter.and[1].value`. */
+  path?: string;
+}
+
+// ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
 

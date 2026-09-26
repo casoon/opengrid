@@ -15,7 +15,9 @@ import {
   exportRows,
   loadOpengrid,
   type CellChangeDetail,
+  type CodedError,
   type Engine,
+  type ErrorCode,
   type PlannerLike,
   type Provider,
   type SelectionChangeDetail,
@@ -191,6 +193,24 @@ export async function page(): Promise<void> {
     await rest.export(query, { chunkSize: 1_000 });
     // @ts-expect-error — optional on a provider, and the tab has none: `exportRows` pieces it
     await local.export(query);
+
+    // A rejection is an `Error` with fields: a page switches on the code.
+    await exportRows(rest, query).catch((error: CodedError) => {
+      error.message satisfies string;
+      error.status satisfies number | undefined;
+      error.path satisfies string | undefined;
+      const code: ErrorCode | undefined = error.code;
+      switch (code) {
+        case "busy":
+        case "limit_exceeded":
+        case "too_many_rows":
+        case "source_changed":
+          return;
+        // @ts-expect-error — 503 is `busy`; there is no such code
+        case "unavailable":
+          return;
+      }
+    });
   }
   // A provider hears the signal as its third argument; one written for two still fits.
   const cancellable: Provider = {

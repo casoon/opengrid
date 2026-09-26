@@ -129,6 +129,22 @@ Everything below is built and tested; none of it has been listened to.
   `exportRows` uses a provider's `export` when there is one — one request
   instead of pieces, the same file. No request of the REST or pivot provider
   follows a redirect, so the token goes nowhere but the configured URL.
+- **Errors a page can tell apart without reading the sentence.** A rejection
+  of `createRestProvider` (`describe`, `execute`, `export`) and
+  `createPivotProvider` carries the server's HTTP `status`, and the `code` and
+  `path` of its error form, as fields on the `Error`; `exportRows`' own
+  refusals carry a `code` — `too_many_rows`, `source_changed`,
+  `module_not_loaded`. The message is what it was, and there is no error class:
+  a page switches on `error.code`. Typed as `CodedError` and `ErrorCode`,
+  frozen with the rest of the API, and listed with their statuses in
+  [docs/api.md → Errors](docs/api.md#errors).
+- **Wire format: the error code `busy`.** The closed list of the error form
+  `{ "error": { "code", "message", "path" } }` grows by one. An export turned
+  away because `max_concurrent_exports` are running is a `503` with the code
+  `busy` — it was `limit_exceeded`, the code of the `413` for a request that
+  is too big, so a client could not tell "try again later" from "narrow the
+  request" by the code. A client that reads the error form has to know the new
+  code.
 - Under the formula guard, the CSV option `null` may not start like a formula
   (`=`, `+`, `-`, `@`, a tab): it is written into every empty cell unguarded.
   `exportRows`, `get_pivot` and the server refuse it with a sentence.

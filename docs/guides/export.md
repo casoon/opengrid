@@ -261,23 +261,26 @@ const blob = await exportRows(provider, query, { null: "\\N", protectFormulas: f
 ## Limits and errors
 
 Every refusal is a rejection with a sentence, never a shorter file. The sentences are English
-and written for the developer; a page logs them and tells the reader in its own words. Only an
-abort is meant to be told apart, by its `name`; the others carry no code, and what a page wants
-to tell apart beyond that it checks itself.
+and written for the developer; a page logs them and tells the reader in its own words, chosen
+by the error's `code` — never by the sentence. A server's refusal carries its HTTP `status` as
+well. An abort is told apart by its `name`. The fields and the whole list of codes are in
+[The public API → Errors](../../api/#errors).
 
-| What happened | What the page gets | What it can say |
-|---|---|---|
-| `get_query` answered `null` | Nothing yet — check before exporting (`exportRows` would reject with a `TypeError`). | There is nothing to export. |
-| The reader cancelled | A `DOMException` whose `name` is `"AbortError"`; no `Blob`. | That it was cancelled — or nothing, since the reader did it. |
-| More matches than `maxRows` | `exportRows: … rows match, more than the … an export may have (maxRows)`, before anything else is fetched. | Too many rows: narrow the view. |
-| More than the server's `max_export_rows` | The server's `413`: `the export has … rows, more than the … allowed (max_export_rows)`, before the first byte. | The same. |
-| Too many exports at once | The server's `503`: `… exports are running, the most this server runs at once (max_concurrent_exports); try again later`. | Try again in a moment. |
-| The source changed during the export | `exportRows: the source changed during the export (…); export again` — pieces only. | Export again. For a source that changes all the time, export from the server, which reads one snapshot. |
-| The server broke off mid-download | The browser's own network error from the response body. | The export failed; try again. |
-| A wrong option — an unknown key, a CSV option on JSON, a `delimiter` of two characters, a `null` that starts like a formula under the guard | A `TypeError` or an `Error`, before any request. | Nothing: that is the page's bug. |
-| The WebAssembly module did not load | `exportRows: the WebAssembly module did not load, and the export notation is in it` | The export is not available. |
+| What happened | What the page gets | `code` | What it can say |
+|---|---|---|---|
+| `get_query` answered `null` | Nothing yet — check before exporting (`exportRows` would reject with a `TypeError`). | — | There is nothing to export. |
+| The reader cancelled | A `DOMException` whose `name` is `"AbortError"`; no `Blob`. | — | That it was cancelled — or nothing, since the reader did it. |
+| More matches than `maxRows` | `exportRows: … rows match, more than the … an export may have (maxRows)`, before anything else is fetched. | `too_many_rows` | Too many rows: narrow the view. |
+| More than the server's `max_export_rows` | The server's `413`: `the export has … rows, more than the … allowed (max_export_rows)`, before the first byte. | `limit_exceeded` | The same. |
+| Too many exports at once | The server's `503`: `… exports are running, the most this server runs at once (max_concurrent_exports); try again later`. | `busy` | Try again in a moment. |
+| The token was refused | The server's `401`. | `unauthorized` | Sign in again. |
+| The source changed during the export | `exportRows: the source changed during the export (…); export again` — pieces only. | `source_changed` | Export again. For a source that changes all the time, export from the server, which reads one snapshot. |
+| The server broke off mid-download | The browser's own network error from the response body. | — | The export failed; try again. |
+| A wrong option — an unknown key, a CSV option on JSON, a `delimiter` of two characters, a `null` that starts like a formula under the guard | A `TypeError` or an `Error`, before any request. Sent to `rest.export` directly, the server's `400`. | — (`malformed` from the server) | Nothing: that is the page's bug. |
+| The WebAssembly module did not load | `exportRows: the WebAssembly module did not load, and the export notation is in it` | `module_not_loaded` | The export is not available. |
 
-The server's other answers are those of `/query`: `401` without a valid token, `422` for a
-field outside `allowed_fields` — the same `unknown field` as a typo — and a `413` for a timeout
-before the first byte, `the export took longer than … ms to start`. For `get_pivot` the errors are thrown,
-not rejected: a wrong option, and a shown answer it cannot read.
+The server's other answers are those of `/query`: a `422` (`validation`) for a field outside
+`allowed_fields` — the same `unknown field` as a typo — and a `413` (`limit_exceeded`) for a
+timeout before the first byte, `the export took longer than … ms to start`. For `get_pivot` the
+errors are thrown, not rejected, and carry no code: a wrong option, and a shown answer it cannot
+read.

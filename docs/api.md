@@ -16,7 +16,7 @@ like.
 
 - [Loading](#loading) · [Providers](#providers) · [Connecting](#connecting)
 - [`<opengrid-grid>`](#opengrid-grid) · [`<opengrid-table>`](#opengrid-table) · [`<opengrid-pivot>`](#opengrid-pivot)
-- [The view](#the-view) · [Events](#events) · [Styling](#styling) · [Texts](#texts)
+- [The view](#the-view) · [Errors](#errors) · [Events](#events) · [Styling](#styling) · [Texts](#texts)
 
 ## Loading
 
@@ -497,7 +497,7 @@ setTimeout(() => URL.revokeObjectURL(link.href), 0);
 |---|---|
 | `format` | `"csv"` (default) or `"json"`. |
 | `chunkSize` | Rows per request; 10 000 by default — the server's `max_limit`. Not used when the provider exports by itself. |
-| `maxRows` | 1 000 000 by default. More matches than that is an error with a sentence, before anything else is fetched — never a truncated file. |
+| `maxRows` | 1 000 000 by default. More matches than that is an error with a sentence and the code `too_many_rows` ([Errors](#errors)), before anything else is fetched — never a truncated file. |
 | `onProgress` | Called after each piece with `{ rows, total }`. |
 | `signal` | An `AbortSignal`. An abort rejects with an `AbortError` at once, hands the signal to the provider so an HTTP request stops, and gives no `Blob`. |
 | `delimiter`, `bom`, `protectFormulas`, `null` | **The CSV options**, each optional, for a CSV only — `get_pivot` takes the same: `delimiter`, one character, `,` by default (`;` for a German Excel); `bom`, a UTF-8 byte order mark, on; `protectFormulas`, the guard against formula injection, on; `null`, how NULL is written, empty (`\N` reads back into opengrid) — under the guard not starting with `=`, `+`, `-`, `@` or a tab, since it is written into every empty cell unguarded. |
@@ -511,7 +511,7 @@ Any other key is an error, and so is a CSV option on a JSON export.
 | JSON | One array of row objects. `application/json`. |
 | Pieces | `offset`/`limit` windows of `chunkSize` under the query's sort. The total is the first piece's `total_count`; the pieces stop at it. |
 | Order | A window is only stable under a total order, and the grid's sort may tie — against PostgreSQL a row could repeat or go missing between two pieces. So every selected column not yet in the sort is appended, ascending. The export is then deterministic, and rows equal in every selected column look the same whichever comes first. **Within a tie the export follows the columns, not the grid:** two rows the grid showed in one order may come in the other. One tie is left: `-0.0` and `0.0` compare equal, so a source that does not order them may swap them between two pieces. |
-| A changing source | The tie-breaker fixes ties, not rows that come or go while the export runs — they shift the windows. So it is **detected and refused**: a piece whose `total_count` differs from the first one's, or that ends before the total, rejects the export with an error, and there is no `Blob`. A change that keeps the count and only moves a row is not visible to the export; for such a source, export from a snapshot. |
+| A changing source | The tie-breaker fixes ties, not rows that come or go while the export runs — they shift the windows. So it is **detected and refused**: a piece whose `total_count` differs from the first one's, or that ends before the total, rejects the export with an error (code `source_changed`), and there is no `Blob`. A change that keeps the count and only moves a row is not visible to the export; for such a source, export from a snapshot. |
 | `mode` | The provider is asked with the mode `""` — its own default. |
 | `query` | Without `offset` and `limit`, with a `select`, without `group` and `aggregate` — the rows of a view. `get_query` gives exactly that; `null` from it is an error here. |
 
@@ -533,7 +533,7 @@ const same = await rest.export(query, { format: "csv", delimiter: ";" });
 |---|---|
 | The file | The same bytes the pieces would have made: `exportRows` checks the options the same way and sends the same query, tie-breaker included; the server writes it with the same `opengrid-export`. |
 | Options | `format`, `signal`, `maxRows`, `onProgress` and the CSV options — `exportRows`' own, without `chunkSize`. Any other key is an error. |
-| `maxRows` | The server sends the row count before the rows (`X-Total-Count`); more than `maxRows` is an error before the body is read, and so is an answer without a readable count. The server has its own bound, `max_export_rows` — more is its `413`, with a sentence, before the first byte; too many exports at once are its `503`. |
+| `maxRows` | The server sends the row count before the rows (`X-Total-Count`); more than `maxRows` is an error (`too_many_rows`) before the body is read, and so is an answer without a readable count. The server has its own bound, `max_export_rows` — more is its `413` (`limit_exceeded`), with a sentence, before the first byte; too many exports at once are its `503` (`busy`). |
 | `onProgress` | Called once, at the end, with `{ rows, total }`. |
 | `signal` | Aborts the request, the download included: an `AbortError`, no `Blob`. The server notices at its next piece and ends the database query. |
 | Rules | The server's for `/query`, unchanged: the token, `allowed_fields`, the tenant's `row_filter`. |
@@ -575,6 +575,61 @@ arrive as a row of text in number columns. A CSV has no merged cells either, so 
 would repeat each value over its measures anyway, or leave header cells empty — the silence the
 element refuses. `2025 · total` is also what a screen reader announces for such a cell: the
 group's header, then the column's.
+
+## Errors
+
+A rejection of `createRestProvider` (`describe`, `execute`, `export`), of `createPivotProvider`
+or of `exportRows` is a plain `Error`. Its message is a sentence for the developer — the
+server's own, or the loader's — and a page does not parse it: to tell failures apart, the
+`Error` carries fields.
+
+| Field | |
+|---|---|
+| `status` | The HTTP status, when a server refused the request. |
+| `code` | What went wrong, from the closed list below. Absent when nobody named it: a body that is not the server's error form (a proxy's `502` page), a server that did not say how many rows follow. |
+| `path` | Where in the query, when the server knows: `select[1]`, `filter.and[1].value`. The message ends with it in parentheses, as it always has. |
+
+```js
+try {
+  blob = await exportRows(provider, query);
+} catch (error) {
+  switch (error.code) {
+    case "busy": status.textContent = "The server is busy. Try again in a moment."; break;
+    case "limit_exceeded":
+    case "too_many_rows": status.textContent = "Too many rows. Narrow the view."; break;
+    case "unauthorized": signIn(); break;
+    default: if (error.name !== "AbortError") status.textContent = "The export failed.";
+  }
+}
+```
+
+There is no error class: test `error.code`, not `instanceof`. In TypeScript the shape is
+`CodedError` and the list `ErrorCode`. A wrong option is a `TypeError`, an abort a
+`DOMException` named `"AbortError"` — test its `name`: its `code` is the DOM's legacy number
+`20`, never one of the strings below. The hybrid provider hands its remote's
+rejection on as it came. The tab and the worker reject with the engine's sentence and no fields —
+the engine has no error form.
+
+**The server's codes** come from its error form, `{ "error": { "code", "message", "path" } }`,
+the same for `/query`, `/pivot`, `/source` and `/export`:
+
+| `code` | Status | What happened | What a page does |
+|---|---|---|---|
+| `validation` | `422` | The query does not hold against the source's schema — a field outside `allowed_fields` is the same `unknown field` as a typo — or breaks a limit of its own, such as a `limit` above `max_limit` or a pivot too wide. | Nothing to tell the reader; a bug in the page. |
+| `malformed` | `400` | The body or a parameter is not readable: not JSON, an unknown export parameter, a `delimiter` of two characters. | The same. |
+| `unauthorized` | `401` | No token, or one the server does not accept. | Sign in again. |
+| `unknown_source` | `404` | No source of that name. | A bug in the configuration. |
+| `limit_exceeded` | `413` | Too big for the server: a body over `max_payload_bytes`, a query over `timeout_ms`, more rows than `max_export_rows`, an export without its first byte within `timeout_ms`. The same request fails again. | Narrow the view. |
+| `busy` | `503` | `max_concurrent_exports` exports are already running. The request itself is fine. | Try again in a moment. |
+| `backend` | `502` | The source behind the server failed. | Try again later; the operator's log says why. |
+
+**`exportRows`' own codes** never come from a server:
+
+| `code` | What happened | What a page does |
+|---|---|---|
+| `too_many_rows` | More matches than `maxRows` — the first piece's `total_count`, or the server's `X-Total-Count` before the body. Nothing more is fetched. | Narrow the view. |
+| `source_changed` | A piece reported a different `total_count` than the first, or ended before the total. | Export again, or from a server, which reads one snapshot. |
+| `module_not_loaded` | The WebAssembly module did not load, and the export notation is in it. | Say the export is not available. |
 
 ## Events
 
