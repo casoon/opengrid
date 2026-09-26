@@ -131,18 +131,24 @@ inventory.
       version with today's date, and say plainly what breaks if this is a minor
       bump — plus which screen-reader pairings were tested and which were not, or,
       before the passes, that none was.
-- [ ] `just package` — builds the module, stages the licences and the readmes, packs and
+- [ ] `just package` — builds the modules, stages the licences and the readmes, packs and
       unpacks four tarballs: `target/npm-package/` and `target/npm-package-{react,vue,svelte}/`
 - [ ] Read each `package/` directory there and check that it holds what it should, and
       nothing more — and that no adapter's `package.json` still says `workspace:`. CI does
       this on every push (`publish-dry-run`), but read it anyway before the one push that is
-      real.
-- [ ] `cd target/npm-package/package && npm publish` — publish the **packed** directory,
-      not `packages/opengrid`, so what is published is what was tested
-- [ ] Then the adapters, the same way, from `target/npm-package-react/package`,
-      `target/npm-package-vue/package` and `target/npm-package-svelte/package`. **The element
-      package first:** an adapter's peer range points at its version, and an install in the
-      minutes between would find nothing to satisfy it.
+      real. This local pack is for **reading**, not for publishing: it was built with this
+      machine's `wasm-opt`, and `just package` warns when that is not the binaryen CI pins.
+- [ ] Publish **the tarballs from the CI run of the release commit** — the `npm-packages`
+      artifact of its `publish-dry-run` job: built with the pinned toolchain and checked
+      by that very job. `gh run list --commit <sha>` names the run, then
+      `gh run download <run> -n npm-packages -D target/release`, which gives one directory
+      per package.
+- [ ] `npm publish target/release/npm-package/casoon-opengrid-<version>.tgz` — the element
+      package first.
+- [ ] Then the adapters, the same way, from `target/release/npm-package-react/`,
+      `npm-package-vue/` and `npm-package-svelte/`. **The element package first:** an
+      adapter's peer range points at its version, and an install in the minutes between
+      would find nothing to satisfy it.
 - [ ] Tag the commit, and push the tag. The remote is
       `https://github.com/casoon/opengrid.git`; the repository has to exist there
       first, and `package.json` already points `repository`/`homepage`/`bugs` at it.

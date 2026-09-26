@@ -110,7 +110,7 @@ written down and a test fails when it changes
 not change before 1.0. What a `0.x` bump is allowed to break, and the steps a
 release actually takes, are in **[docs/releasing.md](docs/releasing.md)**.
 
-One module ships, with all three elements in it: 193 KiB brotli; the pivot costs
+One element module ships, with all three elements in it: 193 KiB brotli; the pivot costs
 8.3 KiB of that next to the grid, while splitting them would duplicate 69.1 KiB
 (`just measure-modules`). The Cargo
 features `grid` and `pivot` are there for anyone who wants only one.
