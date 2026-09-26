@@ -47,6 +47,7 @@ row_filter = { field = "country", op = "eq", value = ":country" }
 `[server]` also takes `max_payload_bytes` (64 KiB), `timeout_ms` (10 000), `max_limit`
 (10 000 rows a page), `max_depth`, the pivot bounds, and for exports `max_export_rows`
 (1 000 000) and `max_concurrent_exports` (half the smallest PostgreSQL pool) — both below.
+What a page does with an export is in [Exporting](../export/).
 
 The full example, including a PostgreSQL variant, is in `examples/remote-demo/`:
 
@@ -93,8 +94,9 @@ that is, so three bounds keep it from being forever:
    (not returned to the pool) and the transaction with its cursor gone.
 2. **`max_concurrent_exports`.** One more is a `503` before any database work. Unset, it is half
    the smallest PostgreSQL pool — the pool is two connections per CPU — so even if every export
-   hits the same source, half its connections stay for `/query` and `/pivot`. Set it lower on a
-   database that serves others, or higher only with a pool that has room.
+   hits the same source, half its connections stay for `/query` and `/pivot`; on a server
+   without a PostgreSQL source it is the number of CPUs. Set it lower on a database that serves
+   others, or higher only with a pool that has room.
 3. **PostgreSQL's backstop.** The export's transaction sets
    `idle_in_transaction_session_timeout` to twice `timeout_ms`, so the database ends it on its
    own if the server's bound ever fails. The server's own pauses are shorter: a piece is
