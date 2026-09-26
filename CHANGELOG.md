@@ -114,16 +114,27 @@ Everything below is built and tested; none of it has been listened to.
   the tenant's `row_filter`, both validations — with its own bound,
   `max_export_rows` (1 000 000), instead of `max_limit`. More rows are a `413`
   before the first byte, counted in the same `REPEATABLE READ` snapshot a
-  PostgreSQL cursor then reads; `timeout_ms` bounds the time to the first byte
-  and each fetch. The body is a bounded channel, so a slow client slows the
-  reading and a client that leaves ends the query; a failure midway breaks the
+  PostgreSQL cursor then reads; `timeout_ms` bounds the time to the first byte,
+  each fetch, and the time a client may take to accept each piece. At most
+  `max_concurrent_exports` run at once (half the smallest PostgreSQL pool by
+  default; one more is a `503` before any database work), and PostgreSQL's own
+  `idle_in_transaction_session_timeout` backs both up. The body is a bounded
+  channel, so a slow client slows the reading and a client that leaves or
+  stalls ends the query; a failure midway — a panic included — breaks the
   connection off rather than ending a short file. `Content-Disposition` names
   the file after the source, `X-Total-Count` carries the row count. A million
-  rows keep the server under 40 MiB (measured in
+  rows from PostgreSQL keep the server under 40 MiB (measured in
   [docs/guides/where-queries-run.md](docs/guides/where-queries-run.md)).
   `createRestProvider(...).export(query, options)` fetches it as a `Blob`, and
   `exportRows` uses a provider's `export` when there is one — one request
-  instead of pieces, the same file.
+  instead of pieces, the same file. No request of the REST or pivot provider
+  follows a redirect, so the token goes nowhere but the configured URL.
+- Under the formula guard, the CSV option `null` may not start like a formula
+  (`=`, `+`, `-`, `@`, a tab): it is written into every empty cell unguarded.
+  `exportRows`, `get_pivot` and the server refuse it with a sentence.
+- Against PostgreSQL, a query with aggregates and no grouping reports
+  `total_count` 1 — its one row — as the local engine does, instead of the
+  number of rows it aggregated.
 - **`get_pivot(host, options)`** exports an `<opengrid-pivot>` as it is shown,
   as CSV: the row dimensions as columns, one header line naming each generated
   column by its value and measure (`2025 · total`), the subtotals and the grand

@@ -17,6 +17,15 @@
 //! cursor run in one read-only `REPEATABLE READ` transaction: both see the same
 //! snapshot, so the number counted is the number of rows that come.
 //!
+//! # Planned for every row, bounded from inside
+//!
+//! A cursor is planned for its first rows by default (`cursor_tuple_fraction`
+//! is 0.1); an export reads all of them, so the transaction says so. It also
+//! sets `idle_in_transaction_session_timeout` to the backstop its caller
+//! passes: the server bounds every pause between two fetches itself, and the
+//! database ends a transaction that stays idle longer anyway — whatever went
+//! wrong on the server's side.
+//!
 //! # Ending early
 //!
 //! An export dropped before its last piece — the client went away, a fetch
@@ -28,6 +37,8 @@
 //! running is only stopped by a cancel request: [`ExportCanceller`], which a
 //! caller that gives up in the middle of a step sends before it drops the
 //! export.
+
+use std::time::Duration;
 
 use deadpool_postgres::Object;
 use opengrid_datasource::{DataSourceError, QueryResult};
@@ -80,10 +91,17 @@ impl PostgresDataSource {
     /// `REPEATABLE READ` transaction. Nothing is counted or read yet, so the
     /// caller holds the [`ExportCanceller`] before anything long runs.
     ///
+    /// `idle_backstop` is the longest the transaction may sit idle between
+    /// two statements before PostgreSQL ends it (module docs).
+    ///
     /// The statement is the one [`execute`](opengrid_datasource::SendDataSource::execute)
     /// runs for the same query — the same compiler, the same parameters, the
     /// same text form of every value — only read through a cursor.
-    pub async fn export(&self, query: &ValidatedQuery) -> Result<PostgresExport, DataSourceError> {
+    pub async fn export(
+        &self,
+        query: &ValidatedQuery,
+        idle_backstop: Duration,
+    ) -> Result<PostgresExport, DataSourceError> {
         let output: Vec<(String, DataType)> = query
             .output_schema
             .fields()
@@ -92,7 +110,7 @@ impl PostgresDataSource {
             .collect();
         let compiled = self.compiler.compile(query).map_err(compile)?;
         let statement = CompiledQuery {
-            sql: wrap_for_reading(&compiled.sql, &output),
+            sql: wrap_for_reading(&compiled.sql, &output).map_err(compile)?,
             params: compiled.params,
         };
         let counting = CompiledQuery::count_of(query, &self.compiler).map_err(compile)?;
@@ -113,9 +131,15 @@ impl PostgresDataSource {
             rows: 0,
             finished: false,
         };
+        // At least a millisecond: PostgreSQL reads 0 as "no timeout".
+        let backstop = idle_backstop.as_millis().clamp(1, i32::MAX as u128);
         export
             .client()
-            .batch_execute("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY")
+            .batch_execute(&format!(
+                "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;
+                 SET LOCAL cursor_tuple_fraction = 1.0;
+                 SET LOCAL idle_in_transaction_session_timeout = {backstop};"
+            ))
             .await
             .map_err(backend)?;
         Ok(export)
@@ -198,6 +222,18 @@ impl PostgresExport {
             self.finished = true;
         }
         Ok(QueryResult::new(self.schema.clone(), columns, self.rows))
+    }
+}
+
+impl PostgresExport {
+    /// Ends an export that stops before its last piece **cleanly** — refused
+    /// for its length, say — so its connection can go back to the pool. The
+    /// transaction is rolled back; if even that fails, the connection is
+    /// dropped as in any other early end.
+    pub async fn close(mut self) {
+        if !self.finished && self.client().batch_execute("ROLLBACK").await.is_ok() {
+            self.finished = true;
+        }
     }
 }
 

@@ -56,6 +56,35 @@ async fn connect() -> Option<tokio_postgres::Client> {
     }
 }
 
+/// The states of the backends connected under `application`.
+async fn states_of(client: &tokio_postgres::Client, application: &str) -> Vec<String> {
+    client
+        .query(
+            "SELECT coalesce(state, '') FROM pg_stat_activity WHERE application_name = $1",
+            &[&application],
+        )
+        .await
+        .unwrap()
+        .iter()
+        .map(|row| row.get::<_, String>(0))
+        .collect()
+}
+
+/// Polls `states_of` until it is `expected`, for up to five seconds.
+async fn settles_to(
+    client: &tokio_postgres::Client,
+    application: &str,
+    expected: &[&str],
+) -> Vec<String> {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut states = states_of(client, application).await;
+    while states != expected && Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        states = states_of(client, application).await;
+    }
+    states
+}
+
 /// `table` with `ROWS` rows: every other one `DE`, the rest `FR`.
 async fn create_table(client: &tokio_postgres::Client, table: &str) {
     client
@@ -80,10 +109,15 @@ async fn drop_table(client: &tokio_postgres::Client, table: &str) {
 /// The server over `table`, the tenant filter on `country` — a column its
 /// callers cannot see — and at most 150 000 rows per export.
 fn app(table: &str, application: &str) -> axum::Router {
-    app_with_timeout(table, application, 10_000)
+    app_with(table, application, "timeout_ms = 10000")
 }
 
 fn app_with_timeout(table: &str, application: &str, timeout_ms: u64) -> axum::Router {
+    app_with(table, application, &format!("timeout_ms = {timeout_ms}"))
+}
+
+/// The server with `settings` added to `[server]`.
+fn app_with(table: &str, application: &str, settings: &str) -> axum::Router {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(Path::parent)
@@ -108,7 +142,7 @@ fn app_with_timeout(table: &str, application: &str, timeout_ms: u64) -> axum::Ro
             r#"
 [server]
 max_export_rows = 150000
-timeout_ms = {timeout_ms}
+{settings}
 
 [[tokens]]
 value = "{DE}"
@@ -218,13 +252,25 @@ async fn too_many_rows_are_refused_before_the_first_byte() {
         .batch_execute(&format!("UPDATE \"{table}\" SET country = 'DE';"))
         .await
         .unwrap();
-    let app = app(table, "opengrid_server_export_bound");
+    let application = "opengrid_server_export_bound";
+    let app = app(table, application);
 
-    let response = export(app, DE, BY_ID).await;
+    let response = export(app.clone(), DE, BY_ID).await;
     assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
     let bytes = response.into_body().collect().await.unwrap().to_bytes();
     let text = String::from_utf8(bytes.to_vec()).unwrap();
     assert!(text.contains("200000 rows"), "{text}");
+
+    // A refusal is a clean end: the connection goes back to the pool (`app`
+    // is still alive, and the pool with it), out of the transaction.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut states = states_of(&client, application).await;
+    while states != ["idle"] && Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        states = states_of(&client, application).await;
+    }
+    assert_eq!(states, ["idle"]);
+    drop(app);
 
     drop_table(&client, table).await;
 }
@@ -404,5 +450,107 @@ async fn an_export_that_does_not_start_in_time_is_cancelled_in_the_database() {
     );
 
     locker.batch_execute("ROLLBACK;").await.unwrap();
+    drop_table(&client, table).await;
+}
+
+/// **A client that stops reading is cut off.** It keeps the channel full, so
+/// the next piece waits; after `timeout_ms` the body is broken off and the
+/// export dropped — its connection and transaction gone while the client
+/// still holds the body, not whenever it lets go.
+#[tokio::test]
+async fn a_client_that_stops_reading_is_cut_off_within_the_deadline() {
+    let Some(client) = connect().await else {
+        return;
+    };
+    let table = "opengrid_server_export_stalled";
+    let application = "opengrid_server_export_stalled";
+    create_table(&client, table).await;
+    let app = app_with_timeout(table, application, 500);
+
+    let response = export(app.clone(), DE, BY_ID).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let mut body = response.into_body();
+    body.frame().await.expect("a frame").expect("data");
+    let stalled = Instant::now();
+
+    // The client reads nothing more, and holds on to the body.
+    assert_eq!(
+        settles_to(&client, application, &[]).await,
+        Vec::<String>::new()
+    );
+    assert!(
+        stalled.elapsed() < Duration::from_secs(3),
+        "{:?}",
+        stalled.elapsed()
+    );
+
+    // What it reads when it comes back: what was sent, then the break.
+    let error = loop {
+        match body.frame().await {
+            Some(Ok(_)) => continue,
+            Some(Err(error)) => break error.to_string(),
+            None => panic!("the body ended as if it were whole"),
+        }
+    };
+    assert!(error.contains("took no piece for 500 ms"), "{error}");
+
+    drop(app);
+    drop_table(&client, table).await;
+}
+
+/// **One export more than `max_concurrent_exports` is a 503**, before any
+/// database work — and the place is free again once an export ends.
+#[tokio::test]
+async fn one_export_too_many_is_turned_away_before_the_database() {
+    let Some(client) = connect().await else {
+        return;
+    };
+    let table = "opengrid_server_export_crowded";
+    let application = "opengrid_server_export_crowded";
+    create_table(&client, table).await;
+    let app = app_with(table, application, "max_concurrent_exports = 1");
+
+    // One export, held: its client reads a piece and waits.
+    let held = export(app.clone(), DE, BY_ID).await;
+    assert_eq!(held.status(), StatusCode::OK);
+    let mut held = held.into_body();
+    held.frame().await.expect("a frame").expect("data");
+
+    let turned = export(app.clone(), FR, BY_ID).await;
+    assert_eq!(turned.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(turned.headers()[header::CONTENT_TYPE], "application/json");
+    let bytes = turned.into_body().collect().await.unwrap().to_bytes();
+    let error =
+        opengrid_datasource::wire::WireError::from_json(std::str::from_utf8(&bytes).unwrap())
+            .expect("the error form");
+    assert_eq!(
+        error.code,
+        opengrid_datasource::wire::ErrorCode::LimitExceeded
+    );
+    assert!(
+        error.message.contains("max_concurrent_exports"),
+        "{}",
+        error.message
+    );
+    // Turned away before the database: still the one connection of the first,
+    // which settles waiting for its client.
+    assert_eq!(
+        settles_to(&client, application, &["idle in transaction"]).await,
+        ["idle in transaction"]
+    );
+
+    // The first ends; its place is free.
+    drop(held);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let status = loop {
+        let response = export(app.clone(), FR, BY_ID).await;
+        if response.status() != StatusCode::SERVICE_UNAVAILABLE || Instant::now() > deadline {
+            break response.status();
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    };
+    assert_eq!(status, StatusCode::OK);
+
+    drop(app);
     drop_table(&client, table).await;
 }

@@ -32,7 +32,9 @@ use tokio_postgres::types::ToSql;
 
 use opengrid_pivot::{PivotResult, ValidatedPivotQuery};
 
-use crate::compiler::{CompiledQuery, GROUPING_PREFIX, PostgresCompiler, QueryCompiler};
+use crate::compiler::{
+    CompileError, CompiledQuery, GROUPING_PREFIX, PostgresCompiler, QueryCompiler, quote_ident,
+};
 
 /// A table in a PostgreSQL database, behind the `DataSource` contract.
 pub struct PostgresDataSource {
@@ -62,6 +64,12 @@ impl PostgresDataSource {
         })
     }
 
+    /// How many connections the pool holds at most — what a server sizes its
+    /// concurrent exports against, since each holds one for its whole length.
+    pub fn pool_size(&self) -> usize {
+        self.pool.status().max_size
+    }
+
     /// The compiler this source uses — for tests and for inspecting the SQL.
     pub fn compiler(&self) -> &PostgresCompiler {
         &self.compiler
@@ -74,7 +82,7 @@ impl PostgresDataSource {
         output: &[(String, DataType)],
     ) -> Result<Vec<Vec<Option<String>>>, DataSourceError> {
         let client = self.pool.get().await.map_err(backend)?;
-        let sql = wrap_for_reading(&compiled.sql, output);
+        let sql = wrap_for_reading(&compiled.sql, output).map_err(compile)?;
         let params = text_params(&compiled.params);
         let refs: Vec<&(dyn ToSql + Sync)> = params
             .iter()
@@ -168,12 +176,18 @@ impl SendDataSource for PostgresDataSource {
 }
 
 /// Wraps a compiled statement so every column comes back as text or NULL.
-pub(crate) fn wrap_for_reading(sql: &str, output: &[(String, DataType)]) -> String {
-    let projection: Vec<String> = output
-        .iter()
-        .map(|(name, data_type)| {
-            let column = format!("\"{name}\"");
-            match data_type {
+///
+/// The names are quoted by the compiler's own `quote_ident`, so this is safe
+/// whatever reached it — not only because the compiler ran first and would
+/// have refused the same name.
+pub(crate) fn wrap_for_reading(
+    sql: &str,
+    output: &[(String, DataType)],
+) -> Result<String, CompileError> {
+    let mut projection = Vec::with_capacity(output.len());
+    for (name, data_type) in output {
+        let column = quote_ident(name)?;
+        projection.push(match data_type {
                 // PostgreSQL writes the value; the same parser the wire format
                 // uses reads it back, so there is one notation in the project.
                 DataType::Bool
@@ -181,19 +195,18 @@ pub(crate) fn wrap_for_reading(sql: &str, output: &[(String, DataType)]) -> Stri
                 | DataType::Float64
                 | DataType::Utf8
                 | DataType::Decimal { .. }
-                | DataType::Date => format!("{column}::text AS \"{name}\""),
+                | DataType::Date => format!("{column}::text AS {column}"),
                 // S9: ISO-8601 in UTC with microseconds, not PostgreSQL's default
                 // `2026-01-01 00:00:00+00`.
                 DataType::Timestamp => format!(
-                    "to_char({column} AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"') AS \"{name}\""
+                    "to_char({column} AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"') AS {column}"
                 ),
-            }
-        })
-        .collect();
-    format!(
+        });
+    }
+    Ok(format!(
         "SELECT {} FROM ({sql}) AS \"result\"",
         projection.join(", ")
-    )
+    ))
 }
 
 /// Every parameter as text or NULL — the cast in the statement gives it its type.

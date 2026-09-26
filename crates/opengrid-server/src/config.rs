@@ -76,6 +76,13 @@ pub struct ServerConfig {
     /// More is a `413` before the first byte, never a file cut short.
     #[serde(default = "default_max_export_rows")]
     pub max_export_rows: u64,
+    /// How many exports may run at once. Each holds a pooled connection and a
+    /// snapshot for as long as its client downloads, so one more is a `503`
+    /// before any database work. Unset: half the smallest PostgreSQL pool
+    /// (`Registry::default_concurrent_exports`), so exports never take the
+    /// connections queries need. At least 1.
+    #[serde(default)]
+    pub max_concurrent_exports: Option<usize>,
     /// Origins a browser may call this server from. Empty means **none**: no
     /// CORS headers are sent, and a page on another origin cannot read the
     /// answer. Opt in per origin, never `*` — a wildcard plus a bearer token is
@@ -95,6 +102,7 @@ impl Default for ServerConfig {
             max_pivot_columns: None,
             max_pivot_rows: None,
             max_export_rows: default_max_export_rows(),
+            max_concurrent_exports: None,
             allowed_origins: Vec::new(),
         }
     }
@@ -235,6 +243,13 @@ impl Config {
             }
             seen.push(source.name.clone());
         }
+        if self.server.max_concurrent_exports == Some(0) {
+            return Err(ConfigError::Invalid {
+                message: "max_concurrent_exports is 0, which would refuse every export; \
+                          leave it out for the default"
+                    .to_owned(),
+            });
+        }
         for token in &self.tokens {
             if token.value.trim().is_empty() {
                 return Err(ConfigError::Invalid {
@@ -304,6 +319,38 @@ mod tests {
         assert_eq!(
             interpolate("${ORDERS_API_TOKEN}", lookup).unwrap(),
             "s3cret"
+        );
+    }
+
+    fn parsed(toml: &str) -> Result<Config, ConfigError> {
+        let config: Config = toml::from_str(toml).expect("the TOML parses");
+        config.check().map(|()| config)
+    }
+
+    const SOURCE: &str = r#"
+[[datasources]]
+name = "orders"
+type = "local-csv"
+path = "orders.csv"
+schema = "orders.schema.json"
+"#;
+
+    /// Unset, the concurrent exports are the registry's to choose; set, they
+    /// are the configuration's — and 0 is a mistake, not "none".
+    #[test]
+    fn max_concurrent_exports_is_optional_and_never_zero() {
+        let unset = parsed(SOURCE).expect("a configuration");
+        assert_eq!(unset.server.max_concurrent_exports, None);
+        assert_eq!(unset.server.max_export_rows, 1_000_000);
+
+        let set = parsed(&format!("[server]\nmax_concurrent_exports = 3\n{SOURCE}"))
+            .expect("a configuration");
+        assert_eq!(set.server.max_concurrent_exports, Some(3));
+
+        let zero = parsed(&format!("[server]\nmax_concurrent_exports = 0\n{SOURCE}"));
+        assert!(
+            matches!(zero, Err(ConfigError::Invalid { ref message }) if message.contains("max_concurrent_exports")),
+            "{zero:?}"
         );
     }
 
