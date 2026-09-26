@@ -83,6 +83,12 @@ Everything below is built and tested; none of it has been listened to.
   [docs/api.md](docs/api.md), resolved through the package's `exports`. The
   event `detail`s are typed on the element and on the document; a view, a
   column configuration or a text key the API does not take is a compile error.
+- **`opengrid-export`** — a query result as CSV (RFC 4180, UTF-8 with a byte
+  order mark, a guard against formula injection in text cells) or JSON rows,
+  in the wire notation and piece by piece; the same code for the browser and
+  the server. With NULL spelled `\N` and the guard off, an export reads back
+  into opengrid unchanged — except a text that is `\N` itself, which comes
+  back as NULL.
 - **`get_query(host)`** hands out the query of the grid's current view —
   the filter row, the facets and the search and-ed together, the sort, the
   shown columns in their order — without a window: what a page exports is

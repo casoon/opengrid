@@ -22,7 +22,7 @@ check:
 
 # Build aller wasm-fähigen Crates für wasm32-unknown-unknown.
 wasm-check:
-    cargo build --target wasm32-unknown-unknown -p opengrid-types -p opengrid-query -p opengrid-arrow-engine -p opengrid-datasource -p opengrid-wasm -p opengrid-web-core -p opengrid-web-components -p opengrid-grid
+    cargo build --target wasm32-unknown-unknown -p opengrid-types -p opengrid-query -p opengrid-arrow-engine -p opengrid-datasource -p opengrid-wasm -p opengrid-web-core -p opengrid-web-components -p opengrid-grid -p opengrid-export
 
 # Quellcode formatieren.
 fmt:

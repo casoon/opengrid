@@ -1120,6 +1120,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "opengrid-export"
+version = "0.0.0"
+dependencies = [
+ "opengrid-arrow-engine",
+ "opengrid-conformance",
+ "opengrid-datasource",
+ "opengrid-query",
+ "opengrid-types",
+ "serde_json",
+ "xtask",
+]
+
+[[package]]
 name = "opengrid-grid"
 version = "0.0.0"
 dependencies = [
@@ -1212,6 +1225,7 @@ version = "0.0.0"
 dependencies = [
  "js-sys",
  "opengrid-datasource",
+ "opengrid-export",
  "opengrid-grid",
  "opengrid-query",
  "opengrid-types",

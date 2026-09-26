@@ -14,6 +14,7 @@ members = [
     "crates/opengrid-datasource-postgres",
     "crates/opengrid-planner",
     "crates/opengrid-pivot",
+    "crates/opengrid-export",
     "crates/xtask",
 ]
 

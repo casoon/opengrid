@@ -66,6 +66,8 @@ pub(crate) mod view;
 
 #[cfg(target_arch = "wasm32")]
 mod element;
+#[cfg(target_arch = "wasm32")]
+mod export;
 #[cfg(all(target_arch = "wasm32", feature = "grid"))]
 mod grid_element;
 #[cfg(all(target_arch = "wasm32", feature = "pivot"))]

@@ -1,0 +1,21 @@
+[package]
+name = "opengrid-export"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "CSV and JSON from an opengrid query result, piece by piece"
+
+[lints]
+workspace = true
+
+[dependencies]
+opengrid-types = { path = "../opengrid-types" }
+opengrid-datasource = { path = "../opengrid-datasource" }
+serde_json = "1"
+
+[dev-dependencies]
+# The round trip: an export read back by the engine's own CSV ingest.
+opengrid-arrow-engine = { path = "../opengrid-arrow-engine" }
+opengrid-conformance = { path = "../opengrid-conformance" }
+opengrid-query = { path = "../opengrid-query" }
+xtask = { path = "../xtask" }
