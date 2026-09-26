@@ -6,23 +6,25 @@ Components. Das Produkt ist die Engine, nicht ein JS-Grid.
 
 ## Arbeitsanleitung
 
-- Fahrplan und Arbeitsweise: **`plan/README.md`** und **`plan/status.md`**.
-- Pro Session den nächsten offenen Punkt aus `plan/status.md` abarbeiten: Punktdatei
-  lesen, dort unter „Kontext" genannte Spezifikations-Abschnitte lesen, umsetzen.
-- Spezifikation ist bindend: `plan/spezifikation/`. `plan/` ist gitignored und wird
-  nie committet.
+- Aufgaben stehen als **GitHub-Issues** (`casoon/opengrid`). Jede Issue ist in sich
+  vollständig: was entschieden ist, die Aufgaben, „Done when" und „Not part of this".
+  Was dort als entschieden steht, ist bindend.
+- Pro Issue ein Branch und ein PR mit `Closes #N`. Nicht selbst nach `main` mergen.
+- Lokal gibt es zusätzlich `plan/` (gitignored, nie committen) mit der ausführlichen
+  Spezifikation. Wo es fehlt, gelten die Issue, `docs/` und die Kommentare im Code.
 
 ## Befehle
 
 - `just check` — `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test`
 - `just wasm-check` — wasm32-Build aller wasm-fähigen Crates
+- `just e2e` — baut die Module und fährt die Playwright-Suite (Chromium)
 - `just fmt` — Quellcode formatieren
 
 ## Regeln
 
-- **DoD-Befehle vor jedem Abschluss ausführen** und das Ergebnis nennen
-  (plan/README.md → Definition of Done).
+- **„Done when"-Befehle vor jedem Abschluss ausführen** und das Ergebnis im PR nennen;
+  was sich in der Umgebung nicht ausführen ließ, ausdrücklich sagen (CI läuft auf PRs).
 - Keine stillen Annahmen bei Grundsatzfragen (Query-Semantik, öffentliche API,
-  neue Dependency, Sicherheit) — in der Punktdatei „Offene Fragen" notieren.
-- Nicht-Browser-Crates dürfen weder `web-sys` noch `js-sys` ziehen
-  (plan/spezifikation/11-crates.md §Portabilität).
+  neue Dependency, Sicherheit) — als Kommentar in der Issue notieren und dort stoppen.
+- Tests müssen beißen: eine neue Prüfung per Mutation gegenprüfen.
+- Nicht-Browser-Crates dürfen weder `web-sys` noch `js-sys` ziehen (Portabilität).
