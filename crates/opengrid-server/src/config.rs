@@ -77,8 +77,8 @@ pub struct ServerConfig {
     /// More is a `413` before the first byte, never a file cut short.
     #[serde(default = "default_max_export_rows")]
     pub max_export_rows: u64,
-    /// How many exports may run at once; one more is a `503` before any
-    /// database work. Unset: half the smallest PostgreSQL pool, or the number
+    /// How many exports may run at once; one more is a `503` (code `busy`)
+    /// before any database work. Unset: half the smallest PostgreSQL pool, or the number
     /// of CPUs without a PostgreSQL source, at least 1
     /// (`Registry::default_concurrent_exports`; why, in
     /// `docs/guides/where-queries-run.md`, "For operators").

@@ -523,10 +523,8 @@ async fn one_export_too_many_is_turned_away_before_the_database() {
     let error =
         opengrid_datasource::wire::WireError::from_json(std::str::from_utf8(&bytes).unwrap())
             .expect("the error form");
-    assert_eq!(
-        error.code,
-        opengrid_datasource::wire::ErrorCode::LimitExceeded
-    );
+    // `busy`, not `limit_exceeded`: the export is fine, the server is full.
+    assert_eq!(error.code, opengrid_datasource::wire::ErrorCode::Busy);
     assert!(
         error.message.contains("max_concurrent_exports"),
         "{}",

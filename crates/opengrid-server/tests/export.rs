@@ -396,3 +396,84 @@ schema = "crates/opengrid-conformance/data/orders.schema.json"
     let state = AppState::new(&config, registry);
     assert_eq!(state.max_concurrent_exports, exports);
 }
+
+/// **One export more than `max_concurrent_exports` is a `503` with the code
+/// `busy`** (issue #16) — not `limit_exceeded`, which says the request itself
+/// is too big: a page waits and retries on the one and narrows on the other.
+/// Over the local engine, so it runs without a database: 60 000 rows are six
+/// pieces, more than the body holds ahead, so an export whose client does not
+/// read keeps its place.
+#[tokio::test]
+async fn one_export_too_many_is_busy() {
+    let root = repo_root();
+    let dir = root.join("target/opengrid-server-export-busy");
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut csv = String::from("id\n");
+    for id in 0..60_000 {
+        csv.push_str(&format!("{id}\n"));
+    }
+    std::fs::write(dir.join("rows.csv"), csv).unwrap();
+    std::fs::write(
+        dir.join("rows.schema.json"),
+        r#"{"fields":[{"name":"id","type":"int64","nullable":false}]}"#,
+    )
+    .unwrap();
+    let path = dir.join("config.toml");
+    std::fs::write(
+        &path,
+        format!(
+            r#"
+[server]
+max_concurrent_exports = 1
+
+[[tokens]]
+value = "{ALL}"
+
+[[datasources]]
+name = "rows"
+type = "local-csv"
+path = "target/opengrid-server-export-busy/rows.csv"
+schema = "target/opengrid-server-export-busy/rows.schema.json"
+"#
+        ),
+    )
+    .unwrap();
+    let config = Config::load(&path).expect("configuration");
+    let registry = Registry::build(&config, &root).expect("registry");
+    let app = router(Arc::new(AppState::new(&config, registry)));
+    let body = r#"{"source":"rows","select":["id"],"sort":[{"field":"id","direction":"asc"}]}"#;
+
+    // One export, held: its body is never read.
+    let held = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/export/rows")
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::AUTHORIZATION, format!("Bearer {ALL}"))
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .expect("the router answers");
+    assert_eq!(held.status(), StatusCode::OK);
+
+    let turned = send(app.clone(), "/export/rows", Some(ALL), &[], body).await;
+    assert_eq!(
+        turned.status,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "{}",
+        turned.body
+    );
+    assert_eq!(turned.headers[header::CONTENT_TYPE], "application/json");
+    assert!(turned.body.contains(r#""code":"busy""#), "{}", turned.body);
+    let error = error_of(&turned);
+    assert_eq!(error.code, ErrorCode::Busy);
+    assert!(
+        error.message.contains("max_concurrent_exports"),
+        "{}",
+        error.message
+    );
+    drop(held);
+}
