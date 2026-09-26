@@ -178,7 +178,10 @@ test.describe("in the browser", () => {
     await expect.poll(status).toMatch(/matches$/);
   });
 
-  test("a grid taken out for good is collected; one put back asks once", async ({ page }) => {
+  test("a grid taken out for good is collected; one put back asks once", async ({
+    page,
+    browserName,
+  }) => {
     await page.evaluate(() => {
       window.__weak = new WeakRef(document.querySelector("opengrid-grid"));
     });
@@ -189,13 +192,17 @@ test.describe("in the browser", () => {
     // are installed. Not ours to hold; past that, the grid has to go.
     await page.waitForTimeout(3500);
 
-    let alive = true;
-    for (let round = 0; round < 20 && alive; round += 1) {
-      await page.evaluate(() => window.gc());
-      await page.waitForTimeout(50);
-      alive = await page.evaluate(() => window.__weak.deref() !== undefined);
+    // `window.gc` is Chromium's (`--expose-gc`); the other engines have no way
+    // to force a collection, so there only the second half runs.
+    if (browserName === "chromium") {
+      let alive = true;
+      for (let round = 0; round < 20 && alive; round += 1) {
+        await page.evaluate(() => window.gc());
+        await page.waitForTimeout(50);
+        alive = await page.evaluate(() => window.__weak.deref() !== undefined);
+      }
+      expect(alive).toBe(false);
     }
-    expect(alive).toBe(false);
 
     await page.evaluate(() => {
       window.__queries.length = 0;

@@ -165,20 +165,27 @@ for (const build of BUILDS) {
       await expect(page.locator("#selected")).toHaveText("1 rows selected");
     });
 
-    test("a grid taken out by React is collected; one put back asks once", async ({ page }) => {
+    test("a grid taken out by React is collected; one put back asks once", async ({
+      page,
+      browserName,
+    }) => {
       await page.evaluate(() => {
         window.__weak = new WeakRef(document.querySelector("opengrid-grid"));
       });
       await page.getByRole("button", { name: "Hide the grid" }).click();
       await expect(page.locator("opengrid-grid")).toHaveCount(0);
 
-      let alive = true;
-      for (let round = 0; round < 20 && alive; round += 1) {
-        await page.evaluate(() => window.gc());
-        await page.waitForTimeout(50);
-        alive = await page.evaluate(() => window.__weak.deref() !== undefined);
+      // `window.gc` is Chromium's (`--expose-gc`); the other engines have no way
+      // to force a collection, so there only the second half runs.
+      if (browserName === "chromium") {
+        let alive = true;
+        for (let round = 0; round < 20 && alive; round += 1) {
+          await page.evaluate(() => window.gc());
+          await page.waitForTimeout(50);
+          alive = await page.evaluate(() => window.__weak.deref() !== undefined);
+        }
+        expect(alive).toBe(false);
       }
-      expect(alive).toBe(false);
 
       await page.evaluate(() => {
         window.__queries.length = 0;

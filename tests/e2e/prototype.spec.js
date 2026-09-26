@@ -106,12 +106,20 @@ test("a colour changed in the studio changes the grid", async ({ page }) => {
   await expect(page.locator("#css")).toContainText("--og-surface: #ffe4c4;");
 });
 
-test("theme.css names only opengrid-grid, and copying it is announced", async ({ page, context }) => {
+test("theme.css names only opengrid-grid, and copying it is announced", async ({
+  page,
+  context,
+  browserName,
+}) => {
   // Contradiction 3 of point 56: table and pivot ship no stylesheet.
   const css = await page.locator("#css").textContent();
   expect(css.match(/^[^\s].*\{$/gm)).toEqual(["opengrid-grid {"]);
 
-  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  // Only Chromium has clipboard permissions to grant; Firefox and WebKit refuse
+  // the names and let the click's user activation stand for them.
+  if (browserName === "chromium") {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  }
   await page.getByRole("button", { name: "Ausprägung anpassen" }).click();
   await page.getByRole("button", { name: "Kopieren" }).click();
   await expect(page.locator("#page-status")).toHaveText(/^theme\.css: /);
@@ -175,7 +183,8 @@ for (const preset of PRESETS) {
 }
 
 for (const preset of ["base", "dark"]) {
-  test(`looks like the prototype in the ${preset} preset`, async ({ page }) => {
+  test(`looks like the prototype in the ${preset} preset`, async ({ page, browserName }) => {
+    test.skip(browserName !== "chromium", "Screenshot baselines are Chromium's (tests/e2e/playwright.config.js)");
     await page.locator(`label[for="preset-${preset}"]`).click();
     await page.getByRole("tab", { name: "Umsatz nach Land" }).click();
     await page.waitForFunction(() => !!document.querySelector("opengrid-grid").shadowRoot.querySelector('tr[data-kind="group"]'));

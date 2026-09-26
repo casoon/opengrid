@@ -53,6 +53,19 @@ export default defineConfig({
       // 100 000 rows twice would only cost time.
       testIgnore: "**/export.spec.js",
     },
+    // The other two engines, opt-in: `just e2e-browsers` sets OPENGRID_E2E_BROWSERS
+    // and picks these projects. The default run and CI stay Chromium-only. The
+    // screenshot baselines are Chromium's by design — another engine draws text
+    // and borders its own way, and a baseline per engine would be three sets to
+    // keep honest — so the baseline spec is left out, and the few screenshot
+    // assertions inside other specs are skipped there by `browserName`.
+    ...(process.env.OPENGRID_E2E_BROWSERS
+      ? ["firefox", "webkit"].map((name) => ({
+          name,
+          use: { ...devices[name === "firefox" ? "Desktop Firefox" : "Desktop Safari"] },
+          testIgnore: "**/phase-f-baselines.spec.js",
+        }))
+      : []),
   ],
   webServer: [
     {

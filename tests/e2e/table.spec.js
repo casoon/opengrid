@@ -47,7 +47,8 @@ test("has no axe violations", async ({ page }) => {
   expect(violations).toEqual([]);
 });
 
-test("matches the visual baseline", async ({ page }) => {
+test("matches the visual baseline", async ({ page, browserName }) => {
+  test.skip(browserName !== "chromium", "Screenshot baselines are Chromium's (tests/e2e/playwright.config.js)");
   await expect(page).toHaveScreenshot("table-fixture.png", {
     maxDiffPixelRatio: 0.02,
   });

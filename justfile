@@ -98,6 +98,16 @@ e2e: wasm-build-components wasm-build package
     just types
     pnpm exec playwright test --config tests/e2e/playwright.config.js
 
+# Dieselbe Suite in Firefox und WebKit (Release-Checkliste, docs/releasing.md).
+# Opt-in: `just e2e` und CI bleiben bei Chromium. Ohne Screenshot-Baselines —
+# die gehören Chromium. Die Browser einmal holen:
+# `pnpm exec playwright install firefox webkit`.
+e2e-browsers: wasm-build-components wasm-build package
+    cargo build -p opengrid-server
+    pnpm install --frozen-lockfile
+    pnpm --filter "./examples/*" build
+    OPENGRID_E2E_BROWSERS=1 pnpm exec playwright test --config tests/e2e/playwright.config.js --project firefox --project webkit
+
 # Setzt die Release-Version an allen drei Stellen, die eine drucken: Cargo-
 # Workspace, npm-Paket und der Kopf der Projektseite (Punkt 40). Sie sind
 # einmal auseinandergelaufen, und die Seite zeigt ihre Version öffentlich.

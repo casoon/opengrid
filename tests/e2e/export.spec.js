@@ -355,10 +355,17 @@ test.describe("over a real server", () => {
     });
   });
 
-  test("an abort stops the request in flight, and there is no Blob", async ({ page }) => {
+  test("an abort stops the request in flight, and there is no Blob", async ({
+    page,
+    browserName,
+  }) => {
     const failed = [];
     page.on("requestfailed", (request) => {
       if (request.url().includes("/query/export")) failed.push(request.failure()?.errorText);
+    });
+    let finished = 0;
+    page.on("requestfinished", (request) => {
+      if (request.url().includes("/query/export")) finished += 1;
     });
     const outcome = await page.evaluate(async () => {
       const controller = new AbortController();
@@ -400,7 +407,15 @@ test.describe("over a real server", () => {
     // The first piece was answered; the second was stopped, not left to finish;
     // no third was asked.
     expect(outcome.requests).toEqual(["answered", "AbortError"]);
-    expect(failed).toEqual(["net::ERR_ABORTED"]);
+    // On the wire: only the first piece finished. Each engine names the stopped
+    // one its own way — and Firefox, aborted this early, may drop the request
+    // before it is sent, so that there is no failure to see at all.
+    expect(finished).toBe(1);
+    if (browserName === "firefox") {
+      expect(failed).toEqual(failed.length === 0 ? [] : ["NS_BINDING_ABORTED"]);
+    } else {
+      expect(failed).toEqual([browserName === "webkit" ? "cancelled" : "net::ERR_ABORTED"]);
+    }
   });
 
   test("the REST, pivot and hybrid providers hand the signal to fetch", async ({ page }) => {

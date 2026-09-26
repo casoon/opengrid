@@ -18,6 +18,10 @@ import { test, expect } from "@playwright/test";
 
 test.use({ launchOptions: { args: ["--js-flags=--expose-gc"] } });
 
+// Firefox and WebKit ignore that flag and have no `window.gc`, so there the
+// collection tests are skipped; what they check besides collection still runs.
+const NO_GC = "window.gc is Chromium's (--expose-gc); no other engine can force a collection";
+
 test.beforeEach(async ({ page }) => {
   await page.goto("/tests/e2e/fixtures/grid-lifecycle.html");
   await page.waitForFunction(() => window.__opengridReady && window.__opengridModule);
@@ -150,7 +154,11 @@ async function worked(page) {
   return snapshot(page);
 }
 
-test("a removed grid is collected, and with it what only the grid held", async ({ page }) => {
+test("a removed grid is collected, and with it what only the grid held", async ({
+  page,
+  browserName,
+}) => {
+  test.skip(browserName !== "chromium", NO_GC);
   await page.evaluate(async () => {
     const grid = window.__grid();
     // Both close over the grid — the everyday case of a callback defined next
@@ -182,6 +190,7 @@ test("a removed grid is collected, and with it what only the grid held", async (
 
 test("a result that arrives after the grid left changes nothing and throws nothing", async ({
   page,
+  browserName,
 }) => {
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -204,10 +213,13 @@ test("a result that arrives after the grid left changes nothing and throws nothi
   });
 
   expect(errors).toEqual([]);
-  expect(await collect(page, ["grid"])).toEqual([]);
+  if (browserName === "chromium") {
+    expect(await collect(page, ["grid"])).toEqual([]);
+  }
 });
 
-test("a removed table is collected too", async ({ page }) => {
+test("a removed table is collected too", async ({ page, browserName }) => {
+  test.skip(browserName !== "chromium", NO_GC);
   await page.evaluate(async () => {
     const table = document.createElement("opengrid-table");
     table.setAttribute("datasource", "orders");
@@ -226,7 +238,8 @@ test("a removed table is collected too", async ({ page }) => {
   expect(await collect(page, ["table"])).toEqual([]);
 });
 
-test("a replaced provider is let go while the grid stays", async ({ page }) => {
+test("a replaced provider is let go while the grid stays", async ({ page, browserName }) => {
+  test.skip(browserName !== "chromium", NO_GC);
   await mounted(page);
   await page.evaluate(() => {
     const grid = document.querySelector("opengrid-grid");

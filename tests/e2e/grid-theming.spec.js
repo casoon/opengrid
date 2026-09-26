@@ -186,7 +186,7 @@ test("the focus ring is drawn inside the cell, in the themed width", async ({ pa
   expect(ring["outline-offset"]).toBe("-4px");
 });
 
-test("the focus ring stays visible and unclipped at 400% zoom", async ({ page }) => {
+test("the focus ring stays visible and unclipped at 400% zoom", async ({ page, browserName }) => {
   // 400% zoom of a 1280x1024 window is a 320x256 CSS-pixel viewport (WCAG 1.4.10).
   await page.setViewportSize({ width: 320, height: 256 });
   // At this size the fixture's heading alone fills the window, so bring the grid
@@ -226,7 +226,9 @@ test("the focus ring stays visible and unclipped at 400% zoom", async ({ page })
 
   // The baseline holds the rest of the reflow: the filter row scrolls instead of
   // pushing the grid wider, and the columns squeeze rather than overflow.
-  await expect(page.locator("opengrid-grid")).toHaveScreenshot("grid-zoom-400.png");
+  if (browserName === "chromium") {
+    await expect(page.locator("opengrid-grid")).toHaveScreenshot("grid-zoom-400.png");
+  }
 });
 
 test("prefers-reduced-motion beats a theme that animates a part", async ({ page }) => {
@@ -276,7 +278,8 @@ test("the filter controls meet the minimum target size", async ({ page }) => {
   }
 });
 
-test("matches the themed baseline", async ({ page }) => {
+test("matches the themed baseline", async ({ page, browserName }) => {
+  test.skip(browserName !== "chromium", "Screenshot baselines are Chromium's (tests/e2e/playwright.config.js)");
   await focusIn(page, 'td[data-row="0"][data-col="0"]');
   await expect(page.locator("opengrid-grid")).toHaveScreenshot("grid-theming.png");
 });
@@ -288,7 +291,11 @@ test("matches the themed baseline", async ({ page }) => {
 test.describe("forced colors", () => {
   test.use({ forcedColors: "active" });
 
-  test("a forced palette overrides the theme's colours", async ({ page }) => {
+  test("a forced palette overrides the theme's colours", async ({ page, browserName }) => {
+    test.skip(
+      browserName === "webkit",
+      "WebKit matches forced-colors under emulation but forces no colour, not even a plain div's",
+    );
     // The theme asks for blue rules; the user's palette wins, for the header as
     // well as the body — nothing of the grid is drawn in a colour of its own.
     for (const selector of ["thead th", "tbody td", '[part="filter"]']) {
@@ -311,7 +318,8 @@ test.describe("forced colors", () => {
     expect(mixed).toEqual([]);
   });
 
-  test("matches the forced-colors baseline", async ({ page }) => {
+  test("matches the forced-colors baseline", async ({ page, browserName }) => {
+    test.skip(browserName !== "chromium", "Screenshot baselines are Chromium's (tests/e2e/playwright.config.js)");
     await focusIn(page, 'td[data-row="0"][data-col="0"]');
     await expect(page.locator("opengrid-grid")).toHaveScreenshot("grid-forced-colors.png");
   });
