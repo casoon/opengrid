@@ -41,10 +41,12 @@ wasm-test:
 # Die Crate pinnt `wasm-bindgen` auf dieselbe Version wie diese CLI; eine
 # abweichende CLI bricht mit einem Versionsfehler ab (Risiko R7).
 # `${CARGO_TARGET_DIR:-target}` respektiert ein gesetztes Zielverzeichnis.
-wasm-build:
+# `out` ist das Zielverzeichnis; scripts/pack-npm.sh baut dasselbe Modul nach
+# packages/opengrid/engine/, das npm-Paket liefert es mit.
+wasm-build out="examples/engine-demo/pkg":
     RUSTFLAGS="$REMAP" cargo build --release --target wasm32-unknown-unknown -p opengrid-wasm
-    wasm-bindgen --target web --out-dir examples/engine-demo/pkg --out-name opengrid_wasm "${CARGO_TARGET_DIR:-target}/wasm32-unknown-unknown/release/opengrid_wasm.wasm"
-    wasm-opt -Oz -o examples/engine-demo/pkg/opengrid_wasm_bg.wasm examples/engine-demo/pkg/opengrid_wasm_bg.wasm
+    wasm-bindgen --target web --out-dir {{out}} --out-name opengrid_wasm "${CARGO_TARGET_DIR:-target}/wasm32-unknown-unknown/release/opengrid_wasm.wasm"
+    wasm-opt -Oz -o {{out}}/opengrid_wasm_bg.wasm {{out}}/opengrid_wasm_bg.wasm
 
 # Demo lokal ausliefern. Server-Wurzel ist das Repo, weil die Demo den
 # Conformance-Datensatz lädt (crates/opengrid-conformance/data/).
@@ -59,7 +61,8 @@ wasm-build-components:
     wasm-opt -Oz -o packages/opengrid/pkg/opengrid_web_components_bg.wasm packages/opengrid/pkg/opengrid_web_components_bg.wasm
 
 # Packt `@casoon/opengrid` wie ein Release und entpackt es nach
-# target/npm-package/package (Punkt 40, E25). Baut das Element-Modul mit.
+# target/npm-package/package (Punkt 40, E25). Baut das Element-Modul und das
+# Engine-Modul (unter engine/) mit.
 # tests/e2e/packaged.spec.js lädt genau daraus — nicht aus dem Repository.
 package:
     bash scripts/pack-npm.sh
@@ -79,7 +82,7 @@ types:
     bash scripts/check-adapter-package.sh vue
     bash scripts/check-adapter-package.sh svelte
 
-# Größen der Elementmodule: beide Elemente, nur Grid, nur Pivot — roh, gzip,
+# Größen der Elementmodule (beide Elemente, nur Grid, nur Pivot) und des Engine-Moduls — roh, gzip,
 # brotli (Punkt 40). Die Zahlen stehen in plan/spezifikation/12-qualitaet.md.
 measure-modules:
     bash scripts/measure-modules.sh

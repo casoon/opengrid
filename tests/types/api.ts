@@ -48,8 +48,9 @@ export async function page(): Promise<void> {
   worker.terminate();
   // @ts-expect-error — a URL object cannot cross postMessage; the href can
   createWorkerProvider({ moduleUrl: new URL("./pkg/opengrid_wasm.js", location.href) });
-  // @ts-expect-error — the package ships no engine module, so there is no default
-  createWorkerProvider({});
+  // Without a URL: the engine the package ships.
+  createWorkerProvider().terminate();
+  createWorkerProvider({}).terminate();
   // @ts-expect-error — the tab's provider reads a view other than bytes wrongly
   await local.load("orders", new DataView(new ArrayBuffer(0)), "{}");
   const rest = createRestProvider({ url: "https://example.test", source: "orders", token: "t" });

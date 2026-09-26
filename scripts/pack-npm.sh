@@ -15,8 +15,12 @@ root="$PWD"
 pkg="$root/packages/opengrid"
 dest="$root/target/npm-package"
 
-# The module the package ships. Built here so `files` has something to find.
+# The modules the package ships. Built here so `files` has something to find:
+# the element module into pkg/, the engine (`Engine`, `Planner`) into engine/ —
+# the default of `createWorkerProvider()`, and what a page imports to query in
+# the tab. Both directories are build output and gitignored.
 just wasm-build-components
+just wasm-build packages/opengrid/engine
 
 # Staged, not authored: the licences and the readme live at the repository root
 # and are copied in for the tarball. Removed again below so the working tree

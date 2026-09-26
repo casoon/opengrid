@@ -4,7 +4,8 @@
 # Builds `opengrid-web-components` three ways — both elements, grid only, pivot
 # only — through the same pipeline the shipped module uses (`cargo` release →
 # `wasm-bindgen --target web` → `wasm-opt -Oz`), then reports raw, gzip and
-# brotli for each. brotli comes from `node:zlib` at quality 11 because no
+# brotli for each — and the engine module (`opengrid-wasm`) the package ships
+# under engine/, through the same pipeline. brotli comes from `node:zlib` at quality 11 because no
 # `brotli` CLI is installed here; that is the same way the engine's numbers in
 # plan/spezifikation/12-qualitaet.md §WASM-Größe were taken, so they compare.
 #
@@ -17,12 +18,12 @@ out="$(mktemp -d)"
 trap 'rm -rf "$out"' EXIT
 
 build() {
-    local name="$1"
+    local name="$1" crate="${CRATE:-opengrid-web-components}"
     shift
     cargo build --release --target wasm32-unknown-unknown \
-        -p opengrid-web-components "$@" >/dev/null 2>&1
+        -p "$crate" "$@" >/dev/null 2>&1
     wasm-bindgen --target web --out-dir "$out/$name" --out-name m \
-        "$target/wasm32-unknown-unknown/release/opengrid_web_components.wasm" >/dev/null 2>&1
+        "$target/wasm32-unknown-unknown/release/${crate//-/_}.wasm" >/dev/null 2>&1
     wasm-opt -Oz -o "$out/$name/m_bg.wasm" "$out/$name/m_bg.wasm"
 }
 
@@ -45,11 +46,13 @@ report() {
 build both
 build grid-only --no-default-features --features grid
 build pivot-only --no-default-features --features pivot
+CRATE=opengrid-wasm build engine
 
 printf 'module\traw_B\traw\tgzip_B\tgzip\tbrotli_B\tbrotli\n'
 report "grid+pivot" "$out/both/m_bg.wasm"
 report "grid only" "$out/grid-only/m_bg.wasm"
 report "pivot only" "$out/pivot-only/m_bg.wasm"
+report "engine" "$out/engine/m_bg.wasm"
 
 # What the two would cost side by side, and what they share.
 node -e '

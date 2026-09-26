@@ -23,6 +23,8 @@ test("the packed package registers all three elements", async ({ page }) => {
   expect(defined).toEqual([true, true, true]);
 });
 
+// The engine comes from the package as well (`engine/`): this page queries in
+// the tab, on the main thread, with nothing from the repository but the data.
 test("a grid loaded from the package renders its rows", async ({ page }) => {
   const grid = page.locator("opengrid-grid");
   await expect(grid.locator("tbody td[data-row]").first()).toBeVisible();
@@ -43,6 +45,24 @@ test("a grid loaded from the package renders its rows", async ({ page }) => {
   expect(shape.pivotDefined).toBe(true);
 });
 
+test("createWorkerProvider() without options queries the packaged engine", async ({
+  page,
+}) => {
+  // Its own page; the beforeEach above has loaded the other one first.
+  await page.goto("/tests/e2e/fixtures/packaged-worker.html");
+  await page.waitForFunction(() => window.__opengridReady);
+  await page.evaluate(() => window.__opengridReady);
+
+  const grid = page.locator("opengrid-grid");
+  await expect(grid.locator("tbody td[data-row]").first()).toBeVisible();
+  const status = await page.evaluate(
+    () =>
+      document.querySelector("opengrid-grid").shadowRoot.querySelector('[part="status"]')
+        .textContent,
+  );
+  expect(status).toBe("5 matches");
+});
+
 test("the manifest promises what a consumer needs", async ({ page }) => {
   const manifest = await page.evaluate(() => window.__manifest);
   expect(manifest.name).toBe("@casoon/opengrid");
@@ -61,6 +81,9 @@ test("the manifest promises what a consumer needs", async ({ page }) => {
   });
   expect(manifest.types).toBe("./loader.d.ts");
   expect(manifest.exports["./pkg/*"]).toBe("./pkg/*");
+  // The engine module: `createWorkerProvider()` finds it next to the loader,
+  // and a page that queries in the tab imports it through this entry.
+  expect(manifest.exports["./engine/*"]).toBe("./engine/*");
   // `worker.js` installs an `onmessage` handler at import time; the rest of the
   // package is side-effect free and may be tree-shaken.
   expect(manifest.sideEffects).toEqual(["./worker.js"]);
@@ -84,10 +107,14 @@ test("every import path the docs promise resolves in the package", async ({
 
   const manifest = await page.evaluate(() => window.__manifest);
   // `toHaveProperty` would read the dots in "./loader.js" as a nested path, so
-  // the keys are compared directly.
+  // the keys are compared directly. A key ending in `/*` exports what is under
+  // it, as `./engine/*` does the engine module.
   const exported = Object.keys(manifest.exports);
   for (const path of documented) {
-    expect(exported, `${path} is exported`).toContain(path);
+    const covered = exported.some((key) =>
+      key.endsWith("/*") ? path.startsWith(key.slice(0, -1)) : key === path,
+    );
+    expect(covered, `${path} is exported (${exported.join(", ")})`).toBe(true);
   }
 });
 
@@ -103,6 +130,8 @@ test("the package leaks nothing about the machine that built it", async ({
   const files = [
     "pkg/opengrid_web_components_bg.wasm",
     "pkg/opengrid_web_components.js",
+    "engine/opengrid_wasm_bg.wasm",
+    "engine/opengrid_wasm.js",
     "loader.js",
     "worker.js",
   ];

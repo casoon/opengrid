@@ -218,13 +218,13 @@ export interface ServerOptions {
 export function createLocalProvider(engine: Engine): EngineProvider;
 
 /**
- * The engine in a module worker, started lazily and once. `moduleUrl` and
- * `wasmUrl` travel to the worker by `postMessage`, so they are strings — a
- * `URL` object cannot be copied there; pass `url.href`. The package ships no
- * engine module, so there is no default.
+ * The engine in a module worker, started lazily and once. Without `moduleUrl`
+ * it is the engine the package ships, `engine/opengrid_wasm.js` next to the
+ * loader. `moduleUrl` and `wasmUrl` travel to the worker by `postMessage`, so
+ * they are strings — a `URL` object cannot be copied there; pass `url.href`.
  */
-export function createWorkerProvider(options: {
-  moduleUrl: string;
+export function createWorkerProvider(options?: {
+  moduleUrl?: string;
   wasmUrl?: string;
   workerUrl?: URL | string;
 }): EngineProvider & { readonly worker: Worker | undefined };
