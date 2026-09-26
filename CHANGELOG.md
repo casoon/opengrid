@@ -139,6 +139,10 @@ Everything below is built and tested; none of it has been listened to.
 - The language of every leaf node and every accessible name is checked in the
   real DOM: the component's own words carry its language, the page's column
   names and values never do.
+- New texts or a new presentation rebuild the grid without taking the focus:
+  the active cell gets it back only if the grid had it, so `set_texts` while a
+  page loads — or from the page's own language switch — leaves the focus where
+  the reader put it.
 - **Not yet verified by a screen reader.** See `docs/releasing.md`.
 
 ### Known limitations
