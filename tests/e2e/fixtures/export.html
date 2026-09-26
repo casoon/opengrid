@@ -26,6 +26,11 @@
       import { exportCsv } from "/tests/e2e/fixtures/export-data.js";
 
       async function start() {
+        // `?fallback`: the element module cannot be loaded, the way a page
+        // without WebAssembly sees it. The first `loadOpengrid` call decides.
+        if (location.search.includes("fallback")) {
+          await loadOpengrid({ moduleUrl: "/nowhere/opengrid_web_components.js" });
+        }
         const loader = await loadOpengrid();
         await init();
         const engine = new Engine();
@@ -38,6 +43,8 @@
         window.__tab = createLocalProvider(engine);
         const server = { url: "http://127.0.0.1:8082", source: "export", token: "e2e-token" };
         window.__rest = createRestProvider(server);
+        // A token the server does not know, for its `401` (issue #16).
+        window.__stranger = createRestProvider({ ...server, token: "not-the-token" });
         // The other two that talk HTTP, for the signal: a pivot, and a hybrid
         // whose planner sends everything to the source.
         window.__pivot = createPivotProvider(server);

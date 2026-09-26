@@ -243,7 +243,10 @@ export function createLocalProvider(engine) {
  *
  * The server's error form (point 23) is unwrapped here: a failed request
  * rejects with the server's own sentence, so the grid's status line shows
- * "unknown source …" rather than "HTTP 404".
+ * "unknown source …" rather than "HTTP 404". The `Error` also carries the
+ * HTTP `status` and the form's `code` and `path` (issue #16), so a page can
+ * tell a `busy` server from a request that is too big without reading the
+ * sentence.
  *
  * No request follows a redirect (`redirect: "error"`): the bearer token goes
  * to the URL the page configured, and nowhere a response points to.
@@ -277,7 +280,7 @@ export function createRestProvider({ url, source, token } = {}) {
       });
       const text = await response.text();
       if (!response.ok) {
-        throw new Error(messageOf(text, response.status));
+        throw refusal(text, response.status);
       }
       return JSON.parse(text);
     },
@@ -294,7 +297,7 @@ export function createRestProvider({ url, source, token } = {}) {
       if (response.ok) {
         return text;
       }
-      throw new Error(messageOf(text, response.status));
+      throw refusal(text, response.status);
     },
 
     /**
@@ -339,7 +342,7 @@ export function createRestProvider({ url, source, token } = {}) {
         redirect: "error",
       });
       if (!response.ok) {
-        throw new Error(messageOf(await response.text(), response.status));
+        throw refusal(await response.text(), response.status);
       }
       // The count is the server's promise about the rows that follow; without
       // it there is nothing to hold `maxRows` or the progress against, and a
@@ -353,7 +356,10 @@ export function createRestProvider({ url, source, token } = {}) {
       if (maxRows !== undefined && total > maxRows) {
         // Not one row more than needed: the body is dropped unread.
         await response.body?.cancel();
-        throw new Error(`export: ${total} rows match, more than the ${maxRows} an export may have (maxRows)`);
+        throw coded(
+          "too_many_rows",
+          `export: ${total} rows match, more than the ${maxRows} an export may have (maxRows)`,
+        );
       }
       const blob = await response.blob();
       onProgress?.({ rows: total, total });
@@ -366,19 +372,45 @@ export function createRestProvider({ url, source, token } = {}) {
 }
 
 /**
- * The server's own sentence for a failed request, or the status when the body
- * is not the error form of point 23.
+ * A failed request as the `Error` it rejects with (issue #16). The message is
+ * the server's own sentence, or the status when the body is not the error
+ * form of point 23. The fields are what a page branches on without reading
+ * the sentence: `status` always, `code` and `path` when the error form has
+ * them.
  */
-function messageOf(body, status) {
+function refusal(body, status) {
+  let form;
   try {
-    const error = JSON.parse(body)?.error;
-    if (error?.message) {
-      return error.path ? `${error.message} (${error.path})` : error.message;
-    }
+    form = JSON.parse(body)?.error;
   } catch {
-    // A body that is not the error form: keep the status.
+    // A body that is not the error form: the status is all there is.
   }
-  return `HTTP ${status}`;
+  let message = `HTTP ${status}`;
+  if (form?.message) {
+    message = form.path ? `${form.message} (${form.path})` : form.message;
+  }
+  const error = new Error(message);
+  error.status = status;
+  if (typeof form?.code === "string") {
+    error.code = form.code;
+  }
+  if (typeof form?.path === "string") {
+    error.path = form.path;
+  }
+  return error;
+}
+
+/**
+ * An `Error` of the loader's own with a `code` a page can branch on (issue
+ * #16), in the style of the server's: the sentence is for the developer, the
+ * code for the page. The codes are frozen in
+ * crates/opengrid-web-components/src/api.rs, which reads them from the calls
+ * of this function.
+ */
+function coded(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
 }
 
 /**
@@ -415,7 +447,7 @@ export function createPivotProvider({ url, source, token } = {}) {
       if (response.ok) {
         return text;
       }
-      throw new Error(messageOf(text, response.status));
+      throw refusal(text, response.status);
     },
   };
 }
@@ -510,6 +542,11 @@ const NO_ROWS = '{"total_count":0,"columns":[]}';
  * `maxRows` is an error before anything else is fetched, never a truncated
  * file.
  *
+ * **Errors a page can tell apart** (issue #16): its own carry a `code` —
+ * `too_many_rows`, `source_changed`, `module_not_loaded` — and a provider's
+ * rejection passes through as it came, the server's `status` and `code`
+ * included. A wrong option is a `TypeError`, an abort an `AbortError`.
+ *
  * **Cancellable.** `signal` reaches the provider as `execute(json, mode,
  * { signal })`; an abort rejects with an `AbortError` at once, leaves no request
  * running where the provider can stop one, and produces no `Blob`.
@@ -579,7 +616,10 @@ export async function exportRows(provider, query, options = {}) {
 
   const loaded = await loadOpengrid();
   if (loaded.fallback) {
-    throw new Error("exportRows: the WebAssembly module did not load, and the export notation is in it");
+    throw coded(
+      "module_not_loaded",
+      "exportRows: the WebAssembly module did not load, and the export notation is in it",
+    );
   }
   const { module } = loaded;
   const csvOptions = { delimiter, bom, protectFormulas, null: nullText };
@@ -633,7 +673,8 @@ export async function exportRows(provider, query, options = {}) {
     if (first) {
       total = result.total_count;
       if (total > maxRows) {
-        throw new Error(
+        throw coded(
+          "too_many_rows",
           `exportRows: ${total} rows match, more than the ${maxRows} an export may have (maxRows)`,
         );
       }
@@ -697,7 +738,10 @@ function unlessAborted(promise, signal) {
  * saying so.
  */
 function changed(detail) {
-  return new Error(`exportRows: the source changed during the export (${detail}); export again`);
+  return coded(
+    "source_changed",
+    `exportRows: the source changed during the export (${detail}); export again`,
+  );
 }
 
 /** What an aborted export rejects with, whatever reason `abort()` was given. */

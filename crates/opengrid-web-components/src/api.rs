@@ -30,6 +30,27 @@ const LOADER_EXPORTS: [&str; 8] = [
 /// the server's export (issue #2), which `exportRows` uses when it is there.
 const REST_PROVIDER_METHODS: [&str; 3] = ["describe", "execute", "export"];
 
+/// The fields on the `Error` a server provider or `exportRows` rejects with
+/// (issue #16): a plain `Error`, no class of its own, the message unchanged.
+const ERROR_FIELDS: [&str; 3] = ["status", "code", "path"];
+
+/// The `code`s of the server's error form — `ErrorCode` in
+/// `opengrid_datasource::wire`, a closed list; a test below holds the two
+/// together. The REST and pivot providers hand them on as they came.
+const SERVER_ERROR_CODES: [&str; 7] = [
+    "validation",
+    "unknown_source",
+    "limit_exceeded",
+    "busy",
+    "unauthorized",
+    "backend",
+    "malformed",
+];
+
+/// The `code`s of `exportRows`' own errors, the `coded(…)` calls of
+/// loader.js; a test below reads them from there.
+const EXPORT_ERROR_CODES: [&str; 3] = ["too_many_rows", "source_changed", "module_not_loaded"];
+
 /// Every name a page can rely on, in one string.
 fn surface() -> String {
     let mut out = String::new();
@@ -87,6 +108,14 @@ fn surface() -> String {
         "  createRestProvider: {}\n",
         REST_PROVIDER_METHODS.join(" ")
     ));
+
+    // What a page branches on when a call fails (issue #16).
+    out.push_str("\nerror fields\n");
+    out.push_str(&format!("  {}\n", ERROR_FIELDS.join(" ")));
+    out.push_str("\nerror codes (server)\n");
+    out.push_str(&format!("  {}\n", SERVER_ERROR_CODES.join(" ")));
+    out.push_str("\nerror codes (exportRows)\n");
+    out.push_str(&format!("  {}\n", EXPORT_ERROR_CODES.join(" ")));
 
     // Two groups, because they are two promises: a page *sets* the first and
     // may override the second, which the grid otherwise computes for it.
@@ -252,6 +281,15 @@ loader exports
 provider methods
   createRestProvider: describe execute export
 
+error fields
+  status code path
+
+error codes (server)
+  validation unknown_source limit_exceeded busy unauthorized backend malformed
+
+error codes (exportRows)
+  too_many_rows source_changed module_not_loaded
+
 custom properties (set)
   --og-font --og-font-mono --og-font-size --og-surface --og-surface-2 --og-ink --og-ink-muted \
 --og-line --og-line-strong --og-accent --og-on-accent --og-radius --og-pad --og-focus-width \
@@ -377,6 +415,9 @@ typeText typeTime ungroupColumn valueLabel
             "functions",
             "loader exports",
             "provider methods",
+            "error fields",
+            "error codes (server)",
+            "error codes (exportRows)",
             "text keys",
         ])
         .into_iter()
@@ -544,5 +585,75 @@ typeText typeTime ungroupColumn valueLabel
             .collect();
         documented.sort_unstable();
         assert_eq!(documented, parts());
+    }
+
+    /// The server's codes in the freeze are the wire's `ErrorCode`, one for
+    /// one. The match is exhaustive, so a code added to the wire does not
+    /// compile here until it has a place in the list — the list is closed,
+    /// and growing it is a wire-format change (issue #16 added `busy`).
+    #[test]
+    fn the_server_codes_are_the_wire_codes() {
+        use opengrid_datasource::wire::ErrorCode;
+        fn place(code: ErrorCode) -> usize {
+            match code {
+                ErrorCode::Validation => 0,
+                ErrorCode::UnknownSource => 1,
+                ErrorCode::LimitExceeded => 2,
+                ErrorCode::Busy => 3,
+                ErrorCode::Unauthorized => 4,
+                ErrorCode::Backend => 5,
+                ErrorCode::Malformed => 6,
+            }
+        }
+        for (at, name) in SERVER_ERROR_CODES.iter().enumerate() {
+            let code: ErrorCode = serde_json::from_str(&format!("\"{name}\""))
+                .unwrap_or_else(|_| panic!("not a wire code: {name}"));
+            assert_eq!(place(code), at, "{name}");
+        }
+    }
+
+    /// `exportRows`' codes in the freeze are the ones loader.js gives — no
+    /// more, no fewer — and none of them is a server's, so a page can tell
+    /// where a failure came from by its code alone.
+    #[test]
+    fn the_export_codes_are_the_loaders() {
+        let loader = include_str!("../../../packages/opengrid/loader.js");
+        let mut given: Vec<&str> = loader
+            .split("coded(")
+            .skip(1)
+            .filter_map(|rest| {
+                // A call, `coded(\n      "too_many_rows",`, not the definition.
+                let rest = rest.trim_start().strip_prefix('"')?;
+                rest.split_once('"').map(|(code, _)| code)
+            })
+            .collect();
+        given.sort_unstable();
+        given.dedup();
+        let mut frozen = EXPORT_ERROR_CODES.to_vec();
+        frozen.sort_unstable();
+        assert_eq!(given, frozen);
+        for code in EXPORT_ERROR_CODES {
+            assert!(!SERVER_ERROR_CODES.contains(&code), "{code} is a server's");
+        }
+    }
+
+    /// `ErrorCode` in loader.d.ts is the whole list, both halves, in their
+    /// order: a page in TypeScript switches over that union, and a code
+    /// missing from it would be one its `switch` cannot name.
+    #[test]
+    fn the_typed_codes_are_the_frozen_codes() {
+        let types = include_str!("../../../packages/opengrid/loader.d.ts");
+        let union = types
+            .split("export type ErrorCode =")
+            .nth(1)
+            .and_then(|rest| rest.split(';').next())
+            .expect("loader.d.ts declares ErrorCode");
+        let typed: Vec<&str> = union.split('"').skip(1).step_by(2).collect();
+        let frozen: Vec<&str> = SERVER_ERROR_CODES
+            .iter()
+            .chain(EXPORT_ERROR_CODES.iter())
+            .copied()
+            .collect();
+        assert_eq!(typed, frozen);
     }
 }

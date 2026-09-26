@@ -726,3 +726,206 @@ test("a wrong option is refused before anything is asked", async ({ page }) => {
   expect(outcome.aggregated).toContain("groups or aggregates");
   expect(outcome.calls).toBe(0);
 });
+
+// Issue #16: a page tells the failures apart by the fields on the `Error` —
+// the server's `status` and `code` (and `path`), `exportRows`' own `code` —
+// without reading the sentence, and the sentence is what it always was.
+test.describe("a page tells the failures apart without reading the sentence", () => {
+  test("the server's refusals carry its status and code", async ({ page }) => {
+    const outcome = await page.evaluate(async () => {
+      // Every answer the page gets, so the sentence can be checked against the
+      // body it came from — the server's own, `(path)` appended as before.
+      const answers = [];
+      const fetchBefore = window.fetch;
+      window.fetch = async (...args) => {
+        const response = await fetchBefore(...args);
+        answers.push({ status: response.status, body: await response.clone().text() });
+        return response;
+      };
+      const refused = async (call) => {
+        try {
+          await call();
+          return "resolved";
+        } catch (error) {
+          const { status, body } = answers.at(-1);
+          let form = null;
+          try {
+            form = JSON.parse(body).error;
+          } catch {
+            // Not the error form.
+          }
+          let before = `HTTP ${status}`;
+          if (form) {
+            before = form.path ? `${form.message} (${form.path})` : form.message;
+          }
+          return {
+            name: error.name,
+            status: error.status ?? null,
+            code: error.code ?? null,
+            path: error.path ?? null,
+            // The sentence as the providers wrote it before the fields existed.
+            unchanged: error.message === before,
+            answered: status,
+          };
+        }
+      };
+      /** One answer of the page's choosing, in place of the server's. */
+      const answering = async (status, body, call) => {
+        window.fetch = async () => {
+          answers.push({ status, body });
+          return new Response(body, { status, headers: { "Content-Type": "application/json" } });
+        };
+        try {
+          return await refused(call);
+        } finally {
+          window.fetch = fetchBefore;
+        }
+      };
+
+      const query = { source: "export", select: ["id"], sort: [] };
+      const outcome = {
+        // 422: a field this token may not see is an unknown field.
+        validation: await refused(() =>
+          window.__exportRows(window.__rest, { ...query, select: ["id", "no_such_column"] }),
+        ),
+        pivot: await refused(() =>
+          window.__pivot.execute(
+            JSON.stringify({ source: "export", rows: ["no_such_column"], values: [{ fn: "count", as: "n" }] }),
+            "",
+          ),
+        ),
+        // 400: a parameter the server cannot read, a body that is not JSON.
+        malformed: await refused(() => window.__rest.export(query, { delimiter: "ab" })),
+        unreadable: await refused(() => window.__rest.execute("{ not json", "")),
+        // 401: a token the server does not know, on every method.
+        unauthorized: await refused(() => window.__exportRows(window.__stranger, query)),
+        described: await refused(() => window.__stranger.describe()),
+        // 413: a body over `max_payload_bytes` (64 KiB).
+        tooBig: await refused(() =>
+          window.__exportRows(window.__rest, {
+            ...query,
+            filter: { field: "note", op: "eq", value: "x".repeat(70_000) },
+          }),
+        ),
+      };
+      window.fetch = fetchBefore;
+      // 503: the server's answer while `max_concurrent_exports` run — its body
+      // is held by opengrid-server's own test (`one_export_too_many_is_busy`);
+      // here, what the page makes of it.
+      outcome.busy = await answering(
+        503,
+        JSON.stringify({
+          error: {
+            code: "busy",
+            message:
+              "4 exports are running, the most this server runs at once (max_concurrent_exports); try again later",
+          },
+        }),
+        () => window.__exportRows(window.__rest, query),
+      );
+      // A body that is not the error form — a proxy's page: the status, no code.
+      outcome.proxy = await answering(502, "<html>Bad Gateway</html>", () =>
+        window.__rest.execute(JSON.stringify(query), ""),
+      );
+      return outcome;
+    });
+
+    const refusal = (status, code, path = null) => ({
+      name: "Error",
+      status,
+      code,
+      path,
+      unchanged: true,
+      answered: status,
+    });
+    expect(outcome.validation).toEqual(refusal(422, "validation", "select[1]"));
+    expect(outcome.pivot).toMatchObject({ status: 422, code: "validation", unchanged: true });
+    expect(outcome.malformed).toEqual(refusal(400, "malformed"));
+    expect(outcome.unreadable).toEqual(refusal(400, "malformed"));
+    expect(outcome.unauthorized).toEqual(refusal(401, "unauthorized"));
+    expect(outcome.described).toEqual(refusal(401, "unauthorized"));
+    expect(outcome.tooBig).toEqual(refusal(413, "limit_exceeded"));
+    expect(outcome.busy).toEqual(refusal(503, "busy"));
+    expect(outcome.proxy).toEqual(refusal(502, null));
+  });
+
+  test("exportRows' own refusals carry a code, the sentence unchanged", async ({ page }) => {
+    const outcome = await page.evaluate(async () => {
+      const refused = async (call) => {
+        try {
+          await call();
+          return "resolved";
+        } catch (error) {
+          return {
+            name: error.name,
+            type: error.constructor.name,
+            status: error.status ?? null,
+            code: error.code ?? null,
+            message: error.message,
+          };
+        }
+      };
+      const query = { source: "export", select: ["id"], sort: [] };
+      /** The tab, its count moved from the second piece on. */
+      let calls = 0;
+      const moving = {
+        execute(json, mode, options) {
+          calls += 1;
+          const result = JSON.parse(window.__tab.execute(json, mode, options));
+          return JSON.stringify({ ...result, total_count: calls >= 2 ? 100_001 : result.total_count });
+        },
+      };
+      const controller = new AbortController();
+      controller.abort();
+      return {
+        // In pieces, and through the server's export: the same code.
+        pieces: await refused(() => window.__exportRows(window.__tab, query, { maxRows: 99_999 })),
+        server: await refused(() => window.__exportRows(window.__rest, query, { maxRows: 99_999 })),
+        direct: await refused(() => window.__rest.export(query, { maxRows: 99_999 })),
+        changed: await refused(() => window.__exportRows(moving, query)),
+        // Neither of these has one of the codes: an option is the page's bug, an abort
+        // is told apart by its name.
+        option: await refused(() => window.__exportRows(window.__tab, query, { filename: "x.csv" })),
+        aborted: await refused(() => window.__exportRows(window.__tab, query, { signal: controller.signal })),
+      };
+    });
+
+    const coded = (code, message) => ({ name: "Error", type: "Error", status: null, code, message });
+    expect(outcome.pieces).toEqual(
+      coded("too_many_rows", "exportRows: 100000 rows match, more than the 99999 an export may have (maxRows)"),
+    );
+    expect(outcome.server).toEqual(
+      coded("too_many_rows", "export: 100000 rows match, more than the 99999 an export may have (maxRows)"),
+    );
+    expect(outcome.direct).toEqual(outcome.server);
+    expect(outcome.changed).toEqual(
+      coded(
+        "source_changed",
+        "exportRows: the source changed during the export (100000 rows matched at first, 100001 at row 10001); export again",
+      ),
+    );
+    expect(outcome.option).toMatchObject({ type: "TypeError", code: null });
+    // A `DOMException` has a `code` of its own, the DOM's legacy number (20):
+    // never one of the strings a page switches on.
+    expect(outcome.aborted).toMatchObject({ name: "AbortError", code: 20 });
+  });
+
+  test("without the module, exportRows says so by its code", async ({ page }) => {
+    await page.goto("/tests/e2e/fixtures/export.html?fallback");
+    await page.waitForFunction(() => window.__ready);
+    await page.evaluate(() => window.__ready);
+    const outcome = await page.evaluate(async () => {
+      try {
+        await window.__exportRows(window.__tab, { source: "export", select: ["id"], sort: [] });
+        return "resolved";
+      } catch (error) {
+        return { name: error.name, code: error.code ?? null, message: error.message };
+      }
+    });
+    expect(outcome).toEqual({
+      name: "Error",
+      code: "module_not_loaded",
+      message: "exportRows: the WebAssembly module did not load, and the export notation is in it",
+    });
+  });
+});
