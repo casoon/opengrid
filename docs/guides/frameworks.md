@@ -17,7 +17,9 @@ function they are all built on ([The public API → Connecting](../../api/#conne
 | Angular 22 | a directive over `connect` (below) | `[(view)]` |
 | Lit, Astro, plain pages | `@casoon/opengrid` | `connect(host, { view, onViewChange })` |
 
-None of them is published yet; like the element package, they build from the repository.
+Each adapter installs next to the element package, which it names as a peer —
+`npm install @casoon/opengrid @casoon/opengrid-react react`, and the same with `-vue` and `vue`
+or `-svelte` and `svelte`. See [Installation](../../getting-started/installation/).
 
 ## What every adapter does the same way
 
