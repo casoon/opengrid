@@ -12,6 +12,7 @@ import {
   createPivotProvider,
   createRestProvider,
   createWorkerProvider,
+  exportRows,
   loadOpengrid,
   type CellChangeDetail,
   type Engine,
@@ -152,10 +153,32 @@ export async function page(): Promise<void> {
   const query = module.get_query(grid);
   if (query) {
     query.select satisfies string[];
-    query.sort?.[0]?.direction satisfies "asc" | "desc" | undefined;
+    query.sort[0]?.direction satisfies "asc" | "desc" | undefined;
+    query.sort[0]?.nulls satisfies "first" | "last" | undefined;
     // @ts-expect-error — the view's query has no window
     void query.limit;
+
+    // `exportRows`: any provider, a `Blob` back.
+    const controller = new AbortController();
+    const blob: Blob = await exportRows(rest, query, {
+      format: "csv",
+      delimiter: ";",
+      null: "\\N",
+      signal: controller.signal,
+      onProgress: ({ rows, total }) => rows satisfies number,
+    });
+    void blob;
+    await exportRows(local, query, { format: "json", chunkSize: 1_000, maxRows: 50_000 });
+    // @ts-expect-error — CSV or JSON, nothing else
+    await exportRows(local, query, { format: "xlsx" });
+    // @ts-expect-error — not an option
+    await exportRows(local, query, { filename: "orders.csv" });
   }
+  // A provider hears the signal as its third argument; one written for two still fits.
+  const cancellable: Provider = {
+    execute: async (json, _mode, options) => (options?.signal?.aborted ? "" : json),
+  };
+  module.set_provider(grid, cancellable);
 
   // The pivot as it is shown, as CSV.
   const csv = module.get_pivot(pivot, { delimiter: ";", bom: false, null: "\\N" });

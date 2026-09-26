@@ -15,7 +15,7 @@
 use crate::{grid, pivot, table};
 
 /// What `packages/opengrid/loader.js` exports.
-const LOADER_EXPORTS: [&str; 7] = [
+const LOADER_EXPORTS: [&str; 8] = [
     "loadOpengrid",
     "connect",
     "createLocalProvider",
@@ -23,6 +23,7 @@ const LOADER_EXPORTS: [&str; 7] = [
     "createRestProvider",
     "createPivotProvider",
     "createHybridProvider",
+    "exportRows",
 ];
 
 /// Every name a page can rely on, in one string.
@@ -236,6 +237,7 @@ loader exports
   createRestProvider
   createPivotProvider
   createHybridProvider
+  exportRows
 
 custom properties (set)
   --og-font --og-font-mono --og-font-size --og-surface --og-surface-2 --og-ink --og-ink-muted \
@@ -409,9 +411,14 @@ typeText typeTime ungroupColumn valueLabel
     #[test]
     fn the_loader_exports_are_the_frozen_ones() {
         let loader = include_str!("../../../packages/opengrid/loader.js");
+        // `exportRows` is `async`: a function all the same.
+        fn function(line: &str) -> Option<&str> {
+            line.strip_prefix("export function ")
+                .or_else(|| line.strip_prefix("export async function "))
+        }
         let mut exported: Vec<&str> = loader
             .lines()
-            .filter_map(|line| line.strip_prefix("export function "))
+            .filter_map(function)
             .filter_map(|rest| rest.split('(').next())
             .collect();
         exported.sort_unstable();
@@ -421,7 +428,7 @@ typeText typeTime ungroupColumn valueLabel
         assert!(
             !loader
                 .lines()
-                .any(|line| line.starts_with("export ") && !line.starts_with("export function ")),
+                .any(|line| line.starts_with("export ") && function(line).is_none()),
             "loader.js exports something other than a function"
         );
     }

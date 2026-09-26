@@ -125,6 +125,7 @@
             <div class="tab-actions" id="tab-actions">
               <button type="button" id="discard" hidden>Verwerfen</button>
               <button type="button" id="save">+ Ansicht</button>
+              <button type="button" id="export">Exportieren</button>
             </div>
           </div>
           <div role="tabpanel" id="panel" tabindex="-1">
@@ -167,11 +168,11 @@
         </div>
       </aside>
     </main>
-    <!-- The one live region of the page: what the copy button did. -->
+    <!-- The one live region of the page: what the copy and export buttons did. -->
     <p class="visually-hidden" role="status" id="page-status"></p>
 
     <script type="module">
-      import { loadOpengrid } from "/packages/opengrid/loader.js";
+      import { loadOpengrid, exportRows } from "/packages/opengrid/loader.js";
       import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
 
       // ---- The five looks of the prototype ------------------------------------
@@ -286,6 +287,39 @@
         document.getElementById("copy").textContent = said;
         document.getElementById("page-status").textContent = `theme.css: ${said}`;
         setTimeout(() => (document.getElementById("copy").textContent = "Kopieren"), 1500);
+      });
+
+      // ---- Export ----------------------------------------------------------------
+      // What the reader sees, every match of it (issue #1): `get_query` says
+      // what that is, `exportRows` fetches it in pieces through the grid's own
+      // provider. The file name and the sentence afterwards are the page's, and
+      // the sentence goes to the page's live region — the grid's status line
+      // speaks about the grid.
+      let provider;
+      document.getElementById("export").addEventListener("click", async () => {
+        const status = document.getElementById("page-status");
+        const query = window.__opengrid.get_query(grid);
+        if (!query) {
+          status.textContent = "Export nicht möglich: die Ansicht hat einen ungültigen Filter.";
+          return;
+        }
+        let rows = 0;
+        try {
+          // `;` because the page is German, and so is the Excel that opens it.
+          const blob = await exportRows(provider, query, {
+            delimiter: ";",
+            onProgress: (progress) => (rows = progress.rows),
+          });
+          const link = Object.assign(document.createElement("a"), {
+            href: URL.createObjectURL(blob),
+            download: "bestellungen.csv",
+          });
+          link.click();
+          URL.revokeObjectURL(link.href);
+          status.textContent = `${rows} ${rows === 1 ? "Zeile" : "Zeilen"} als bestellungen.csv exportiert`;
+        } catch (error) {
+          status.textContent = `Export fehlgeschlagen: ${error.message}`;
+        }
       });
 
       // ---- The views -------------------------------------------------------------
@@ -456,7 +490,8 @@
           qty: { width: 104, aggregate: "sum" },
           ordered_on: { width: 196, muted: true, facet: "period", aggregate: "range" },
         });
-        loader.module.set_provider(grid, { execute: (query) => engine.execute(query) });
+        provider = { execute: (query) => engine.execute(query) };
+        loader.module.set_provider(grid, provider);
 
         grid.addEventListener("opengrid-view-change", () => { drawTabs(); drawCode(); });
         applyLook();

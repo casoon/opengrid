@@ -33,7 +33,7 @@ instead.
 
 | Function | What it does |
 |---|---|
-| `set_provider(host, provider)` | Attaches the data source. `provider.execute(queryJson, mode)` answers the result JSON, or a Promise of it. Everything else is optional. |
+| `set_provider(host, provider)` | Attaches the data source. `provider.execute(queryJson, mode, { signal })` answers the result JSON, or a Promise of it; the third argument is optional, and so is everything else. |
 | `set_texts(host, texts)` | Overrides any subset of the [texts](#texts). Call it **before** `set_provider` and the component renders the right words from its first paint. |
 | `set_formats(host, formats)` | Per-column display formatting — see [`<opengrid-grid>`](#opengrid-grid). |
 | `set_choices(host, choices)` | Per-column editor choices: `{ customer: ["Alpha", "Beta"] }` turns that column's editor into a `<select>`. |
@@ -65,6 +65,12 @@ All from `loader.js`, all the same shape:
 | `createRestProvider({ url, source, token })` | `POST /query/{source}` of an `opengrid-server`. Also offers `describe()` → `{ name, schema, capabilities, pivot_limits }`. |
 | `createHybridProvider({ remote, planner, mode, onPlan })` | Splits each query between a remote source and the engine in the tab. `onPlan` receives the plan before anything is sent. |
 | `createPivotProvider({ url, source, token })` | `POST /pivot/{source}` — a whole pivot in one request. |
+
+**Cancelling.** `execute` takes an optional third argument, `{ signal }`. The
+REST, pivot and hybrid providers hand the `AbortSignal` to `fetch`, so an
+aborted request stops; the tab and the worker cannot stop a query that has
+started and ignore it — the caller drops their answer. A provider written for
+two arguments still fits. [`exportRows`](#exporting-the-view) is what passes one.
 
 ## Connecting
 
@@ -461,6 +467,49 @@ const query = loader.module.get_query(grid);
 
 The grid has no export button: what to export, in which format, under which name, is the
 page's (the same line as for saving an edit).
+
+### `exportRows(provider, query, options)`
+
+Fetches every match of a query through any provider, in pieces, and answers a `Blob`:
+
+```js
+import { exportRows } from "@casoon/opengrid";
+
+const controller = new AbortController();
+const blob = await exportRows(provider, loader.module.get_query(grid), {
+  format: "csv",                       // or "json"
+  signal: controller.signal,
+  onProgress: ({ rows, total }) => { /* rows written so far, of total */ },
+});
+// The file name is the page's:
+const link = Object.assign(document.createElement("a"), {
+  href: URL.createObjectURL(blob),
+  download: "orders.csv",
+});
+link.click();
+URL.revokeObjectURL(link.href);
+```
+
+| Option | |
+|---|---|
+| `format` | `"csv"` (default) or `"json"`. |
+| `chunkSize` | Rows per request; 10 000 by default — the server's `max_limit`. |
+| `maxRows` | 1 000 000 by default. More matches than that is an error with a sentence, before anything else is fetched — never a truncated file. |
+| `onProgress` | Called after each piece with `{ rows, total }`. |
+| `signal` | An `AbortSignal`. An abort rejects with an `AbortError` at once, hands the signal to the provider so an HTTP request stops, and gives no `Blob`. |
+| `delimiter`, `bom`, `protectFormulas`, `null` | CSV only: `,` (or `;`); a UTF-8 byte order mark, on; the guard against formula injection in text cells, on; how NULL is written, empty (`\N` reads back into opengrid). |
+
+Any other key is an error, and so is a CSV option on a JSON export.
+
+| | |
+|---|---|
+| Values | Raw, in the wire notation — not the display formats: a decimal exact, a date `YYYY-MM-DD`, a timestamp ISO in UTC with microseconds, `NaN`/`Infinity`/`-Infinity` spelled out. The CSV header and the JSON keys are the field names, in column order. |
+| CSV | RFC 4180, UTF-8 with a byte order mark, CRLF, `,` or `;`. NULL is an empty unquoted field, the empty string `""`. The formula guard applies to text columns only. `text/csv;charset=utf-8`. |
+| JSON | One array of row objects. `application/json`. |
+| Pieces | `offset`/`limit` windows of `chunkSize` under the query's sort. The total is the first piece's `total_count`; the pieces stop at it or after a short one. |
+| Order | A window is only stable under a total order, and the grid's sort may tie — against PostgreSQL a row could repeat or go missing between two pieces. So every selected column not yet in the sort is appended, ascending. The export is then deterministic, and rows equal in every selected column look the same whichever comes first. **Within a tie the export follows the columns, not the grid:** two rows the grid showed in one order may come in the other. |
+| `mode` | The provider is asked with the mode `""` — its own default. |
+| `query` | Without `offset` and `limit`, with a `select`. `get_query` gives exactly that; `null` from it is an error here. |
 
 ### Exporting a pivot
 

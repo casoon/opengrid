@@ -21,6 +21,12 @@
  *   createLocalProvider(engine)                   engine on the main thread
  *   createRestProvider({ url, source, token })    opengrid-server über HTTP (point 27)
  *
+ * Every provider's `execute(queryJson, mode, { signal })` may take an
+ * `AbortSignal` as its third argument (point 84). The providers that talk HTTP
+ * hand it to `fetch`, so an aborted export leaves no request running; the tab
+ * and the worker cannot stop a query that has started and ignore it — the
+ * caller drops their answer.
+ *
  * The Worker provider starts lazily on the first `load`/`execute` and stays the
  * single worker of V1 (no pool, no SharedArrayBuffer).
  */
@@ -272,11 +278,12 @@ export function createRestProvider({ url, source, token } = {}) {
       return JSON.parse(text);
     },
 
-    async execute(queryJson) {
+    async execute(queryJson, _mode, { signal } = {}) {
       const response = await fetch(endpoint, {
         method: "POST",
         headers,
         body: queryJson,
+        signal,
       });
       const text = await response.text();
       if (response.ok) {
@@ -325,11 +332,12 @@ export function createPivotProvider({ url, source, token } = {}) {
   }
 
   return {
-    async execute(pivotJson) {
+    async execute(pivotJson, _mode, { signal } = {}) {
       const response = await fetch(endpoint, {
         method: "POST",
         headers,
         body: pivotJson,
+        signal,
       });
       const text = await response.text();
       if (response.ok) {
@@ -370,20 +378,200 @@ export function createPivotProvider({ url, source, token } = {}) {
  */
 export function createHybridProvider({ remote, planner, mode = "auto", onPlan } = {}) {
   return {
-    async execute(queryJson, elementMode) {
+    async execute(queryJson, elementMode, { signal } = {}) {
       // The element's attribute wins when it has one: the page sets the default,
       // the markup can override it per grid.
       const plan = JSON.parse(planner.plan(queryJson, elementMode || mode));
       if (onPlan) {
         onPlan(plan);
       }
-      const partial = await remote.execute(JSON.stringify(plan.source));
+      // The remote half is the one that can be stopped; the engine's half runs
+      // after it and is synchronous. The source half has no element mode of
+      // its own: the plan already decided where it runs.
+      const partial = await remote.execute(JSON.stringify(plan.source), "", { signal });
       if (!plan.client) {
         return partial;
       }
       return planner.finish(JSON.stringify(plan.client), partial);
     },
   };
+}
+
+/** The options of `exportRows` that are its own. */
+const EXPORT_OPTIONS = ["format", "chunkSize", "maxRows", "onProgress", "signal"];
+/** The options handed to `export_csv` — only these, whatever else is passed. */
+const CSV_OPTIONS = ["delimiter", "bom", "protectFormulas", "null"];
+/** A result without rows or columns: enough for `export_csv` to read its options. */
+const NO_ROWS = '{"total_count":0,"columns":[]}';
+
+/**
+ * Every match of `query`, fetched through `provider` in pieces, as a `Blob` of
+ * CSV or JSON (plan point 84).
+ *
+ * The browser half of exporting the view: `get_query(host)` says what the
+ * reader sees, this fetches all of it and writes it in the notation the server
+ * uses too (`opengrid-export`, through the element module's `export_csv` and
+ * `export_json`). The grid has no export button; the button, the file name and
+ * what to say afterwards are the page's.
+ *
+ * **Stable pieces.** The pieces are `offset`/`limit` windows, and a window is
+ * only stable under a total order: the grid's sort has at least one key but may
+ * tie, and against PostgreSQL a row can then repeat or go missing across two
+ * `OFFSET`s. So every selected column not yet in the sort is appended to it,
+ * ascending. Rows equal in every selected column look the same whichever copy
+ * comes — and within a tie the export follows the columns, not the order the
+ * grid happened to show.
+ *
+ * **Bounded.** `total` is the first piece's `total_count`; a total above
+ * `maxRows` is an error before anything else is fetched, never a truncated
+ * file. The pieces stop at `total` or after a short one, whichever comes first.
+ *
+ * **Cancellable.** `signal` reaches the provider as `execute(json, mode,
+ * { signal })`; an abort rejects with an `AbortError` at once, leaves no request
+ * running where the provider can stop one, and produces no `Blob`.
+ *
+ * @param {{execute: Function}} provider any provider — the one the grid uses.
+ * @param {object} query a query without a window, as `get_query(host)` gives it.
+ * @param {object} [options] see `ExportOptions` in `loader.d.ts`.
+ * @returns {Promise<Blob>} `text/csv;charset=utf-8` or `application/json`.
+ */
+export async function exportRows(provider, query, options = {}) {
+  for (const key of Object.keys(options)) {
+    if (!EXPORT_OPTIONS.includes(key) && !CSV_OPTIONS.includes(key)) {
+      throw new TypeError(`exportRows: unknown option "${key}"`);
+    }
+  }
+  const {
+    format = "csv",
+    chunkSize = 10_000,
+    maxRows = 1_000_000,
+    onProgress,
+    signal,
+    delimiter,
+    bom,
+    protectFormulas,
+    null: nullText,
+  } = options;
+  if (format !== "csv" && format !== "json") {
+    throw new TypeError(`exportRows: format is "csv" or "json", not ${JSON.stringify(format)}`);
+  }
+  if (format === "json") {
+    // A CSV option on a JSON export would do nothing, and do it silently.
+    const stray = CSV_OPTIONS.find((key) => options[key] !== undefined);
+    if (stray) {
+      throw new TypeError(`exportRows: "${stray}" is a CSV option, and this export is JSON`);
+    }
+  }
+  if (!Number.isSafeInteger(chunkSize) || chunkSize < 1) {
+    throw new TypeError("exportRows: chunkSize is a whole number of rows, at least 1");
+  }
+  if (!Number.isSafeInteger(maxRows) || maxRows < 0) {
+    throw new TypeError("exportRows: maxRows is a whole number of rows");
+  }
+  if (!query || typeof query !== "object") {
+    throw new TypeError("exportRows: no query — get_query answers null when there is nothing to export");
+  }
+  if (!Array.isArray(query.select) || query.select.length === 0) {
+    // The tie-breaker sorts by the selected columns, so it has to know them.
+    throw new TypeError("exportRows: the query names no columns in `select`");
+  }
+  if ("offset" in query || "limit" in query) {
+    throw new TypeError("exportRows: the query has a window; exportRows fetches every match itself");
+  }
+  if (signal?.aborted) {
+    throw aborted();
+  }
+
+  const loaded = await loadOpengrid();
+  if (loaded.fallback) {
+    throw new Error("exportRows: the WebAssembly module did not load, and the export notation is in it");
+  }
+  const { module } = loaded;
+  const csvOptions = { delimiter, bom, protectFormulas, null: nullText };
+  if (format === "csv") {
+    // Read the options now: a wrong one should cost no request.
+    module.export_csv(NO_ROWS, csvOptions, false);
+  }
+
+  const sort = [...(query.sort ?? [])];
+  for (const field of query.select) {
+    if (!sort.some((key) => key.field === field)) {
+      sort.push({ field, direction: "asc" });
+    }
+  }
+
+  const parts = format === "json" ? ["["] : [];
+  let rows = 0;
+  let total;
+  for (;;) {
+    if (signal?.aborted) {
+      throw aborted();
+    }
+    // After the first piece nothing past `total` is asked for, so rows added
+    // while the export runs cannot carry it over `maxRows`.
+    const limit = total === undefined ? chunkSize : Math.min(chunkSize, total - rows);
+    const piece = JSON.stringify({ ...query, sort, offset: rows, limit });
+    const answer = await unlessAborted(ask(provider, piece, signal), signal);
+    const result = JSON.parse(answer);
+    const count = result.columns[0]?.values.length ?? 0;
+    const first = total === undefined;
+    if (first) {
+      total = result.total_count;
+      if (total > maxRows) {
+        throw new Error(
+          `exportRows: ${total} rows match, more than the ${maxRows} an export may have (maxRows)`,
+        );
+      }
+    }
+    parts.push(
+      format === "csv"
+        ? module.export_csv(answer, csvOptions, first)
+        : // `first` here is "no row written yet", not "first piece": after an
+          // empty first piece the next one still leads without a comma.
+          module.export_json(answer, rows === 0),
+    );
+    rows += count;
+    onProgress?.({ rows, total });
+    if (count < limit || rows >= total) {
+      break;
+    }
+  }
+  // An abort during the last `onProgress` still means no file.
+  if (signal?.aborted) {
+    throw aborted();
+  }
+  if (format === "json") {
+    parts.push("]");
+  }
+  return new Blob(parts, {
+    type: format === "csv" ? "text/csv;charset=utf-8" : "application/json",
+  });
+}
+
+/** One piece from the provider; a synchronous throw becomes a rejection. */
+async function ask(provider, queryJson, signal) {
+  return provider.execute(queryJson, "", { signal });
+}
+
+/**
+ * `promise`, unless `signal` aborts first — then an `AbortError` at once. The
+ * tab and the worker cannot stop a query that has started; their answer is not
+ * waited for.
+ */
+function unlessAborted(promise, signal) {
+  if (!signal) {
+    return promise;
+  }
+  return new Promise((resolve, reject) => {
+    const onAbort = () => reject(aborted());
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+  });
+}
+
+/** What an aborted export rejects with, whatever reason `abort()` was given. */
+function aborted() {
+  return new DOMException("The export was aborted.", "AbortError");
 }
 
 /**

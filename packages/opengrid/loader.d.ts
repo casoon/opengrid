@@ -130,10 +130,20 @@ export function connect(host: HTMLElement, options?: ConnectOptions): Connection
  * Where the data comes from. A seam, not a class: anything with an `execute`
  * method fits. `queryJson` is the query as JSON; the answer is the result as
  * JSON, or a Promise of it. `mode` is the element's `mode` attribute, `""`
- * without one.
+ * without one. `options` is optional and new: a provider written for two
+ * arguments still fits.
  */
 export interface Provider {
-  execute(queryJson: string, mode: string): string | Promise<string>;
+  execute(queryJson: string, mode: string, options?: ExecuteOptions): string | Promise<string>;
+}
+
+/**
+ * The third argument of `execute`. `signal` aborts the request: the REST,
+ * pivot and hybrid providers hand it to `fetch`; the tab and the worker cannot
+ * stop a query that has started and ignore it — their answer is dropped.
+ */
+export interface ExecuteOptions {
+  signal?: AbortSignal;
 }
 
 /** A provider over an engine that holds data: the tab or a worker. */
@@ -221,6 +231,52 @@ export function createHybridProvider(options: {
 }): Provider;
 
 // ---------------------------------------------------------------------------
+// Exporting
+// ---------------------------------------------------------------------------
+
+/** What `onProgress` hears after each piece. */
+export interface ExportProgress {
+  /** Rows written so far. */
+  rows: number;
+  /** Every match, from the first piece's `total_count`. */
+  total: number;
+}
+
+/**
+ * How `exportRows` fetches and writes. A key not listed here is an error, and
+ * so is a CSV option on a JSON export.
+ */
+export interface ExportOptions {
+  /** `"csv"` (the default) or `"json"` — an array of row objects. */
+  format?: "csv" | "json";
+  /** Rows per request; 10 000 by default, the server's `max_limit`. */
+  chunkSize?: number;
+  /** More matches than this is an error, never a truncated file; 1 000 000 by default. */
+  maxRows?: number;
+  /** Called after each piece. */
+  onProgress?: (progress: ExportProgress) => void;
+  /** Aborts the export: it rejects with an `AbortError` and gives no `Blob`. */
+  signal?: AbortSignal;
+  /** CSV: the field delimiter, `","` by default; `";"` for a German Excel. */
+  delimiter?: string;
+  /** CSV: start with a UTF-8 byte order mark; on by default. */
+  bom?: boolean;
+  /** CSV: prefix text cells a spreadsheet would run as a formula; on by default. */
+  protectFormulas?: boolean;
+  /** CSV: how NULL is written; empty by default, `"\\N"` reads back into opengrid. */
+  null?: string;
+}
+
+/**
+ * Every match of `query` — as `get_query(host)` gives it — through `provider`,
+ * in pieces, as a `Blob` of `text/csv;charset=utf-8` or `application/json`.
+ * Raw values in the wire notation, a header of field names. The sort is made
+ * total by appending every selected column not yet in it, ascending; within a
+ * tie the export follows the columns, not the grid.
+ */
+export function exportRows(provider: Provider, query: ViewQuery, options?: ExportOptions): Promise<Blob>;
+
+// ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
 
@@ -282,6 +338,12 @@ export type Choices = Record<string, string[]>;
 export interface SortKey {
   field: string;
   direction: "asc" | "desc";
+  /**
+   * Where NULLs land in a query; `"last"` when left out, whatever the
+   * direction. `get_query` writes it for the group keys; a view's sort never
+   * has it.
+   */
+  nulls?: "first" | "last";
 }
 
 export interface FilterEntry {
@@ -326,7 +388,8 @@ export interface ViewQuery {
   select: string[];
   /** The filter expression of the query model, when anything restricts. */
   filter?: unknown;
-  sort?: SortKey[];
+  /** Never empty: a grid without a sort pages under its first column. */
+  sort: SortKey[];
 }
 
 /** How a CSV is written. Every key is optional; no other key is accepted. */
