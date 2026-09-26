@@ -31,10 +31,16 @@
 //! # A subtotal row
 //!
 //! Its label goes into the first dimension column, where the element's row
-//! header starts; the dimension columns it spans are **empty** fields. There is
-//! no ambiguity in that: a dimension cell of a data row is never empty — NULL
-//! and the empty string have labels of their own — so an empty field in a
-//! dimension column means "spanned", whatever [`CsvOptions::null`] says.
+//! header starts; the dimension columns it spans are **empty** fields. With
+//! non-empty texts that reads one way only: a dimension cell of a data row is
+//! then never empty — NULL and the empty string have labels of their own — so
+//! an empty field in a dimension column means "spanned", whatever
+//! [`CsvOptions::null`] says. A page that sets a label to `""` gives that up.
+//!
+//! **The CSV has no level column**, as the table has none: a subtotal is known
+//! by its label alone. A group that is literally named `Total` looks like the
+//! grand total — in the file as on the screen, where `data-level` tells them
+//! apart for a script but not for a reader.
 //!
 //! # Whole, not in pieces
 //!
@@ -74,10 +80,20 @@ pub trait PivotLabels {
 
 /// The whole pivot as CSV: the byte order mark (when asked for), one header
 /// line, then every row, each line ending in CRLF.
+///
+/// **Precondition**: `pivot` has the shape the engine gives it — the row
+/// dimensions' columns first, then exactly one column per [`PivotColumn`],
+/// and one level per row, none deeper than the row dimensions. It returns a
+/// string, not a `Result`, because the shape is checked where a pivot comes in
+/// from outside: [`pivot_from_json`] refuses any other with a sentence. A pivot
+/// built by hand that breaks it panics here.
+///
+/// [`PivotColumn`]: opengrid_pivot::PivotColumn
+/// [`pivot_from_json`]: opengrid_pivot::pivot_from_json
 pub fn pivot_csv(pivot: &PivotResult, labels: &impl PivotLabels, options: &CsvOptions) -> String {
     let fields = pivot.data.schema.fields();
     // The row-dimension columns come first, one generated column per
-    // `PivotColumn` after them (`PivotResult::data`).
+    // `PivotColumn` after them (`PivotResult::data`, the precondition).
     let dimensions = fields.len() - pivot.columns.len();
     let delimiter = options.delimiter.to_string();
 

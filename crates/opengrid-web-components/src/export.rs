@@ -13,14 +13,15 @@ use opengrid_datasource::wire::result_from_json;
 #[cfg(feature = "pivot")]
 use opengrid_export::PivotLabels;
 use opengrid_export::{CsvOptions, csv_header, csv_rows, json_rows};
-#[cfg(feature = "pivot")]
-use opengrid_pivot::{PivotColumn, PivotResult};
-#[cfg(feature = "pivot")]
-use opengrid_types::{FieldName, Value};
 use wasm_bindgen::prelude::*;
 
 #[cfg(feature = "pivot")]
 use crate::texts::GridTexts;
+
+/// The keys of the CSV options object, in the order [`csv_options`] reads
+/// them. One list, so the reader and the key check of `get_pivot` cannot
+/// disagree about what an option is.
+const CSV_OPTION_KEYS: [&str; 4] = ["delimiter", "bom", "protectFormulas", "null"];
 
 /// One piece of a CSV: with `header`, the header line (and the byte order
 /// mark) first. `options`: `{ delimiter, bom, protectFormulas, null }`, each
@@ -53,12 +54,12 @@ pub fn export_json(result_json: &str, first: bool) -> Result<String, JsError> {
 #[cfg(feature = "pivot")]
 pub(crate) fn pivot_options(value: &JsValue) -> Result<CsvOptions, JsError> {
     if value.is_object() {
-        let known = ["delimiter", "bom", "protectFormulas", "null"];
         for key in js_sys::Object::keys(value.unchecked_ref::<js_sys::Object>()).iter() {
             let key = key.as_string().unwrap_or_default();
-            if !known.contains(&key.as_str()) {
+            if !CSV_OPTION_KEYS.contains(&key.as_str()) {
                 return Err(JsError::new(&format!(
-                    "{key}: not an option (delimiter, bom, protectFormulas, null)"
+                    "{key}: not an option ({})",
+                    CSV_OPTION_KEYS.join(", ")
                 )));
             }
         }
@@ -69,15 +70,17 @@ pub(crate) fn pivot_options(value: &JsValue) -> Result<CsvOptions, JsError> {
 /// The pivot answer an element shows, as CSV with that element's `texts`.
 ///
 /// `answer` is the pivot wire form (plan point 53) exactly as the element
-/// rendered it; it is read into a [`PivotResult`] so that the values go through
-/// the same notation as every other export.
+/// rendered it. It is read back strictly (`pivot_from_json`), because a page's
+/// own provider may have sent it: an answer of the wrong shape is an error with
+/// a sentence, not a trap in the writer.
 #[cfg(feature = "pivot")]
 pub(crate) fn pivot_csv(
     answer: &str,
     texts: &GridTexts,
     options: &CsvOptions,
 ) -> Result<String, JsError> {
-    let pivot = pivot_from_json(answer).map_err(|error| JsError::new(&error))?;
+    let (pivot, _) = opengrid_pivot::pivot_from_json(answer)
+        .map_err(|error| JsError::new(&format!("the shown pivot: {error}")))?;
     Ok(opengrid_export::pivot_csv(&pivot, texts, options))
 }
 
@@ -96,71 +99,10 @@ impl PivotLabels for GridTexts {
     }
 }
 
-/// Reads the pivot wire form back into a [`PivotResult`].
-///
-/// The cells are the ordinary typed result form. A column's **path** travels
-/// as bare JSON scalars, without the column dimension's type, so a date comes
-/// back as its text; that is enough here, where a path value is only ever read
-/// as the text of a header, and that text is the same whichever type it had —
-/// the one the element shows.
-#[cfg(feature = "pivot")]
-fn pivot_from_json(answer: &str) -> Result<PivotResult, String> {
-    use serde_json::Value as Json;
-
-    let body: Json = serde_json::from_str(answer).map_err(|error| error.to_string())?;
-    let data = result_from_json(&body["result"].to_string()).map_err(|error| error.to_string())?;
-    let row_levels = body["levels"]
-        .as_array()
-        .ok_or("result has no levels")?
-        .iter()
-        .map(|level| {
-            level
-                .as_u64()
-                .and_then(|level| u16::try_from(level).ok())
-                .ok_or("a level is a small number")
-        })
-        .collect::<Result<Vec<u16>, _>>()?;
-    let columns = body["columns"]
-        .as_array()
-        .ok_or("result has no columns")?
-        .iter()
-        .map(|column| {
-            let measure = column["measure"]
-                .as_str()
-                .ok_or("a column has no measure")?;
-            let path = column["path"]
-                .as_array()
-                .ok_or("a column has no path")?
-                .iter()
-                .map(|value| match value {
-                    Json::Bool(flag) => Value::Bool(*flag),
-                    Json::Number(number) => match number.as_i64() {
-                        Some(integer) => Value::Int64(integer),
-                        None => number.as_f64().map_or(Value::Null, Value::Float64),
-                    },
-                    Json::String(text) => Value::Utf8(text.clone()),
-                    _ => Value::Null,
-                })
-                .collect();
-            Ok(PivotColumn {
-                path,
-                measure: FieldName::new(measure).map_err(|error| error.to_string())?,
-            })
-        })
-        .collect::<Result<Vec<PivotColumn>, String>>()?;
-    if row_levels.len() != data.row_count() {
-        return Err("result has a level for each row".to_owned());
-    }
-    Ok(PivotResult {
-        data,
-        row_levels,
-        columns,
-    })
-}
-
 /// The options object: each key optional, a key that is there of its type —
 /// `bom: "false"` is refused rather than read as the default.
 fn csv_options(value: &JsValue) -> Result<CsvOptions, JsError> {
+    let [delimiter_key, bom_key, protect_key, null_key] = CSV_OPTION_KEYS;
     let mut options = CsvOptions::default();
     if value.is_undefined() || value.is_null() {
         return Ok(options);
@@ -174,26 +116,28 @@ fn csv_options(value: &JsValue) -> Result<CsvOptions, JsError> {
             .filter(|v| !v.is_undefined())
     };
     let wrong = |key: &str, kind: &str| JsError::new(&format!("{key}: {kind}"));
-    if let Some(delimiter) = get("delimiter") {
+    if let Some(delimiter) = get(delimiter_key) {
         let delimiter = delimiter
             .as_string()
-            .ok_or_else(|| wrong("delimiter", "a string"))?;
+            .ok_or_else(|| wrong(delimiter_key, "a string"))?;
         let mut chars = delimiter.chars();
         match (chars.next(), chars.next()) {
             (Some(one), None) => options.delimiter = one,
-            _ => return Err(wrong("delimiter", "one character")),
+            _ => return Err(wrong(delimiter_key, "one character")),
         }
     }
-    if let Some(bom) = get("bom") {
-        options.bom = bom.as_bool().ok_or_else(|| wrong("bom", "a boolean"))?;
+    if let Some(bom) = get(bom_key) {
+        options.bom = bom.as_bool().ok_or_else(|| wrong(bom_key, "a boolean"))?;
     }
-    if let Some(protect) = get("protectFormulas") {
+    if let Some(protect) = get(protect_key) {
         options.protect_formulas = protect
             .as_bool()
-            .ok_or_else(|| wrong("protectFormulas", "a boolean"))?;
+            .ok_or_else(|| wrong(protect_key, "a boolean"))?;
     }
-    if let Some(null) = get("null") {
-        options.null = null.as_string().ok_or_else(|| wrong("null", "a string"))?;
+    if let Some(null) = get(null_key) {
+        options.null = null
+            .as_string()
+            .ok_or_else(|| wrong(null_key, "a string"))?;
     }
     options.check().map_err(JsError::new)?;
     Ok(options)
