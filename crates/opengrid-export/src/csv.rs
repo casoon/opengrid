@@ -135,14 +135,25 @@ impl CsvWriter {
     }
 }
 
-fn cell(value: &opengrid_types::Value, text_column: bool, options: &CsvOptions) -> String {
-    let Some(text) = plain(value) else {
-        return options.null.clone();
-    };
+pub(crate) fn cell(
+    value: &opengrid_types::Value,
+    text_column: bool,
+    options: &CsvOptions,
+) -> String {
+    match plain(value) {
+        Some(text) => text_cell(text, text_column, options),
+        None => options.null.clone(),
+    }
+}
+
+/// A cell that holds text: a value's, or a label a pivot writes in place of
+/// one. `guard`: whether the formula guard applies — a text column's value, or
+/// any label.
+pub(crate) fn text_cell(text: String, guard: bool, options: &CsvOptions) -> String {
     if text.is_empty() {
         return "\"\"".to_owned();
     }
-    let text = if text_column && options.protect_formulas && is_formula(&text) {
+    let text = if guard && options.protect_formulas && is_formula(&text) {
         format!("'{text}")
     } else {
         text

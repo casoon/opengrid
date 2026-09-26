@@ -40,6 +40,7 @@ instead.
 | `get_view(host)` / `set_view(host, view)` | Reads and applies the whole [view](#the-view) in one step. |
 | `set_columns(host, columns)` | Per-column presentation — see [`<opengrid-grid>`](#opengrid-grid). |
 | `get_query(host)` | The query of the current view, without a window — what an [export](#exporting-the-view) sends. |
+| `get_pivot(host, options)` | The pivot as it is shown, as CSV — see [exporting a pivot](#exporting-a-pivot). |
 | `register()` | Defines the three elements. `loadOpengrid()` calls it; a page that loads the module itself calls it once. |
 
 **Types.** The package ships `loader.d.ts`: every name on this page is typed —
@@ -401,6 +402,9 @@ in words. A group whose dimension value is NULL is named `(no value)`, and one
 whose value is the empty string `(empty)` — they are different groups, and an
 empty header cell is silence to a screen reader.
 
+`get_pivot(host)` exports the table as it is shown, as CSV — see
+[exporting a pivot](#exporting-a-pivot).
+
 ## The view
 
 Sort, filters, column layout and density are one value:
@@ -457,6 +461,41 @@ const query = loader.module.get_query(grid);
 
 The grid has no export button: what to export, in which format, under which name, is the
 page's (the same line as for saving an edit).
+
+### Exporting a pivot
+
+A pivot is exported by the element, as it is shown: `get_pivot(host, options)` answers the
+table as CSV text, or `null` while nothing is shown.
+
+```js
+const csv = loader.module.get_pivot(pivot, { delimiter: ";" });
+// "﻿country;2025 · total;2026 · total;(no value) · total\r\n(empty);;114;\r\n…"
+const blob = csv && new Blob([csv], { type: "text/csv;charset=utf-8" }); // the file name is the page's
+```
+
+| | |
+|---|---|
+| Columns | The row dimensions, then one column per generated column, in the table's order. |
+| Header | **One line.** A generated column is named by its value and its measure, `2025 · total`; without a column dimension, by its measure. |
+| Rows | Every row the table shows, in its order: data rows, subtotals, the grand total. |
+| Subtotals | Their label — `Total DE`, `Total` — in the first dimension column; the dimension columns it spans are empty fields. |
+| Labels | The element's own [texts](#texts): NULL is `(no value)`, the empty string `(empty)`, as in the table, and a page's `set_texts` changes both. |
+| Values | As every export writes them: the wire notation, NULL as the `null` option, the formula guard — which covers every header and label, since a dimension value is data. |
+| `options` | `{ delimiter, bom, protectFormulas, null }`, each optional, as for a query's export. Any other key is an error. |
+| `null` | Before the first answer, while one loads, after an error, and for the grid and the table. |
+
+**Why the element, not a query.** A pivot is bounded — 256 columns, 2 000 rows — and the
+element holds all of it, so there is no window and nothing a second request could add. It could
+only answer differently, if the data moved since the table was drawn, and it would need the
+element's texts handed to it. So `get_query` stays `null` for a pivot, and `get_pivot` is
+synchronous and needs no provider.
+
+**Why one header line.** Every CSV reader — a spreadsheet's filter, pandas, a database's
+`COPY` — takes the first line as the names and the second as data; a second header line would
+arrive as a row of text in number columns. A CSV has no merged cells either, so a two-line header
+would repeat each value over its measures anyway, or leave header cells empty — the silence the
+element refuses. `2025 · total` is also what a screen reader announces for such a cell: the
+group's header, then the column's.
 
 ## Events
 

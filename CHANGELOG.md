@@ -93,6 +93,13 @@ Everything below is built and tested; none of it has been listened to.
   the filter row, the facets and the search and-ed together, the sort, the
   shown columns in their order — without a window: what a page exports is
   then what the reader sees, every match of it.
+- **`get_pivot(host, options)`** exports an `<opengrid-pivot>` as it is shown,
+  as CSV: the row dimensions as columns, one header line naming each generated
+  column by its value and measure (`2025 · total`), the subtotals and the grand
+  total as rows with their labels, NULL and the empty group named as in the
+  table — in the element's own texts. The element exports the answer it holds
+  rather than asking again, so the file is the table on screen. In the crate:
+  `opengrid_export::pivot_csv`.
 - **`connect(host, options)`** supplies an element from one object — provider,
   texts, formats, presentation, choices, a controlled view and the three event
   callbacks — in the one order that asks the source once, after the module has

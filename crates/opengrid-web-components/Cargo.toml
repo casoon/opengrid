@@ -43,6 +43,9 @@ js-sys = "0.3"
 # CSV and JSON of a result for an export (point 83): one notation for the
 # browser and the server.
 opengrid-export = { path = "../opengrid-export" }
+# `get_pivot` reads the shown answer back into a `PivotResult` for the export
+# (issue #3); already built as a dependency of `opengrid-export`.
+opengrid-pivot = { path = "../opengrid-pivot" }
 web-sys = { version = "0.3", features = [
     "CustomElementRegistry",
     # The event seam of point 35.

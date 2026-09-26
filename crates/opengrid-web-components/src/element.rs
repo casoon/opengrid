@@ -198,6 +198,30 @@ pub fn get_query(host: &HtmlElement) -> JsValue {
     crate::grid_element::read_query(host)
 }
 
+/// The pivot as it is shown, as CSV (issue #3).
+///
+/// **The element exports what it shows, rather than handing out a query to
+/// run again.** A pivot is bounded (256 columns, 2 000 rows in V1) and the
+/// element holds all of it — there is no window to page past, so nothing is
+/// missing that a second request could fetch. A second request would only cost
+/// another `n+1` grouping sets and could answer differently from the table on
+/// screen if the data moved in between; and the labels are this element's
+/// texts, which an export away from the element would have to be handed. So:
+/// synchronous, no provider, and exactly the table the reader sees.
+///
+/// One header line, each generated column named `2025 · total` — the reasons
+/// are at `opengrid_export::pivot_csv`. Subtotals and the grand total are rows
+/// with their labels, NULL and the empty group are named as in the table.
+///
+/// `options`: `{ delimiter, bom, protectFormulas, null }`, each optional; any
+/// other key is an error. `null` while nothing is shown — before the first
+/// answer, while one loads, after an error — and for the table and the grid.
+#[cfg(feature = "pivot")]
+#[wasm_bindgen(js_name = get_pivot)]
+pub fn get_pivot(host: &HtmlElement, options: JsValue) -> Result<JsValue, JsError> {
+    crate::pivot_element::read_pivot(host, &options)
+}
+
 /// Applies a whole view at once (plan point 59).
 ///
 /// **One query, not one per field.** Restoring a view field by field would flash

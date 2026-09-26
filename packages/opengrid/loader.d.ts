@@ -56,6 +56,13 @@ export interface OpengridModule {
    * table and the pivot.
    */
   get_query(host: HTMLElement): ViewQuery | null;
+  /**
+   * The pivot as it is shown, as CSV text: one header line (`2025 · total`),
+   * every row including subtotals and the grand total, the element's labels.
+   * `null` while nothing is shown, and for the grid and the table. Throws on an
+   * unknown or mistyped option.
+   */
+  get_pivot(host: HTMLElement, options?: CsvOptions): string | null;
   /** Defines the three elements. `loadOpengrid()` calls it. */
   register(): void;
 }
@@ -318,6 +325,18 @@ export interface ViewQuery {
   /** The filter expression of the query model, when anything restricts. */
   filter?: unknown;
   sort?: SortKey[];
+}
+
+/** How a CSV is written. Every key is optional; no other key is accepted. */
+export interface CsvOptions {
+  /** One character: `,` by default, `;` for a German Excel. */
+  delimiter?: string;
+  /** Start with a UTF-8 byte order mark. `true` by default (Excel). */
+  bom?: boolean;
+  /** Prefix a text cell that a spreadsheet would run as a formula. `true` by default. */
+  protectFormulas?: boolean;
+  /** How NULL is written. Empty by default; `"\\N"` reads back into opengrid. */
+  null?: string;
 }
 
 /**

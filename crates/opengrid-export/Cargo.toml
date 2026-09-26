@@ -11,6 +11,8 @@ workspace = true
 [dependencies]
 opengrid-types = { path = "../opengrid-types" }
 opengrid-datasource = { path = "../opengrid-datasource" }
+# The pivot's answer (`PivotResult`), exported as it is shown (issue #3).
+opengrid-pivot = { path = "../opengrid-pivot" }
 serde_json = "1"
 
 [dev-dependencies]
