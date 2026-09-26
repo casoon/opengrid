@@ -114,6 +114,8 @@ One module ships, with all three elements in it: 193 KiB brotli; the pivot costs
 8.3 KiB of that next to the grid, while splitting them would duplicate 69.1 KiB
 (`just measure-modules`). The Cargo
 features `grid` and `pivot` are there for anyone who wants only one.
+The engine ships beside it under `engine/`, 335 KiB brotli, loaded only by a
+page that queries in the tab or in a worker.
 
 ## Licence
 

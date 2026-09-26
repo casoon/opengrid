@@ -30,6 +30,7 @@
     },
     "./worker.js": "./worker.js",
     "./pkg/*": "./pkg/*",
+    "./engine/*": "./engine/*",
     "./package.json": "./package.json"
   },
   "main": "./loader.js",
@@ -42,6 +43,7 @@
     "loader.d.ts",
     "worker.js",
     "pkg/",
+    "engine/",
     "LICENSE-MIT",
     "LICENSE-APACHE",
     "README.md",

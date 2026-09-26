@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>opengrid packaged worker fixture</title>
+    <style>
+      opengrid-grid {
+        display: block;
+        height: 224px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid packaged worker fixture</h1>
+      <opengrid-grid
+        label="Bestellungen"
+        datasource="orders"
+        columns="id,customer,amount,qty"
+        window-size="10"
+      ></opengrid-grid>
+    </main>
+    <script type="module">
+      // The packed package only (plan point 40), and `createWorkerProvider()`
+      // without options: the worker finds the engine the package ships under
+      // `engine/`, next to loader.js. The page names no engine URL at all.
+      import {
+        loadOpengrid,
+        createWorkerProvider,
+      } from "/target/npm-package/package/loader.js";
+
+      async function start() {
+        const loader = await loadOpengrid();
+        if (loader.fallback) {
+          throw new Error("the packaged module did not load — DOM fallback ran");
+        }
+
+        const provider = createWorkerProvider();
+        const schema = await (
+          await fetch("/tests/e2e/fixtures/grid-orders.schema.json")
+        ).text();
+        const csv = await (
+          await fetch("/tests/e2e/fixtures/grid-orders.csv")
+        ).arrayBuffer();
+        await provider.load("orders", csv, schema);
+        loader.module.set_provider(document.querySelector("opengrid-grid"), provider);
+        return { fallback: loader.fallback };
+      }
+
+      window.__opengridReady = start();
+    </script>
+  </body>
+</html>

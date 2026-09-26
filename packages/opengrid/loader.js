@@ -17,7 +17,7 @@
  * consume (`load`, `execute`, `terminate`), so a page switches between the
  * Worker and the main thread without touching the grid:
  *
- *   createWorkerProvider({ moduleUrl, wasmUrl })  engine in a module worker
+ *   createWorkerProvider()                        engine in a module worker
  *   createLocalProvider(engine)                   engine on the main thread
  *   createRestProvider({ url, source, token })    opengrid-server über HTTP (point 27)
  *
@@ -33,6 +33,12 @@
 
 /** Default location of the wasm-bindgen glue; point 40 pins the packaged path. */
 const DEFAULT_MODULE_URL = new URL("./pkg/opengrid_web_components.js", import.meta.url);
+
+/**
+ * Default location of the engine module's glue, shipped under `engine/`. A
+ * string, not a `URL`: it travels to the worker by `postMessage`.
+ */
+const DEFAULT_ENGINE_URL = new URL("./engine/opengrid_wasm.js", import.meta.url).href;
 
 /** Set once the first `loadOpengrid` call has run. */
 let loading;
@@ -130,14 +136,19 @@ function installFallback(name = "opengrid-table") {
  * started lazily and only once. The returned object matches the local provider
  * shape, so the page code is the same for both paths.
  *
- * @param {object} options
- * @param {string} options.moduleUrl wasm-bindgen glue of the engine module. A
- *   string, not a `URL`: it travels to the worker by `postMessage`.
+ * @param {object} [options]
+ * @param {string} [options.moduleUrl] wasm-bindgen glue of the engine module;
+ *   defaults to the packaged one under `engine/`. A string, not a `URL`: it
+ *   travels to the worker by `postMessage`.
  * @param {string} [options.wasmUrl] explicit `.wasm` URL, if it is not next to the glue.
  * @param {URL|string} [options.workerUrl] the worker entry; defaults to `worker.js` next to this file.
  * @returns {{load: Function, execute: Function, terminate: Function, worker?: Worker}}
  */
-export function createWorkerProvider({ moduleUrl, wasmUrl, workerUrl } = {}) {
+export function createWorkerProvider({
+  moduleUrl = DEFAULT_ENGINE_URL,
+  wasmUrl,
+  workerUrl,
+} = {}) {
   const workerScript = workerUrl ?? new URL("./worker.js", import.meta.url);
   let worker;
   let ready;

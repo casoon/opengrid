@@ -85,6 +85,10 @@ tested.
 - **A toolbar** with the active filters as chips, a **column menu** as a second
   way to sort, filter, aggregate, group and hide, a **selection column**, and an
   **empty state** that says why and offers a way out only where one exists.
+- **The engine ships in `@casoon/opengrid`**, under `engine/` — `Engine` and
+  `Planner`, imported as `@casoon/opengrid/engine/opengrid_wasm.js` to query
+  in the tab. `createWorkerProvider()` defaults to it; `moduleUrl` and
+  `wasmUrl` still pick another.
 - **A frozen public API**, written down in `docs/api.md` and held by a test.
 - **TypeScript declarations** (`loader.d.ts`) for everything in
   [docs/api.md](docs/api.md), resolved through the package's `exports`. The

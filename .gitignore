@@ -5,6 +5,8 @@ dist/
 dist-18/
 .angular/
 pkg/
+# The engine module the npm package ships; scripts/pack-npm.sh builds it.
+packages/opengrid/engine/
 .DS_Store
 
 # Playwright-Artefakte (Baselines unter tests/e2e/__screenshots__ gehören ins Repo).

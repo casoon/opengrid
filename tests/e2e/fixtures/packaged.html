@@ -30,13 +30,13 @@
       // or into crates/ — if `package.json#files` forgets a file, this page
       // fails to load and tests/e2e/packaged.spec.js says so.
       //
-      // The engine still comes from the repository: it is a separate module
-      // (E25) and not part of this package.
+      // The engine comes from the package too: it ships under `engine/`, and
+      // this page queries in the tab with it, on the main thread.
       import {
         loadOpengrid,
         createLocalProvider,
       } from "/target/npm-package/package/loader.js";
-      import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+      import init, { Engine } from "/target/npm-package/package/engine/opengrid_wasm.js";
 
       async function start() {
         const loader = await loadOpengrid();
