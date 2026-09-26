@@ -25,7 +25,7 @@ use opengrid_web_core::host::{existing_id, id as host_id, on_release};
 use opengrid_web_core::patch::{NodeAllocator, PatchBuffer};
 use opengrid_web_core::provider::provider;
 
-use crate::element::{apply, clear_root, describe};
+use crate::element::{apply, clear_root, describe, is_latest, next_request};
 use crate::pivot::{
     self, COLUMNS_ATTRIBUTE, DATASOURCE_ATTRIBUTE, PIVOT_TAG, PivotModel, ROWS_ATTRIBUTE,
     VALUES_ATTRIBUTE,
@@ -82,28 +82,39 @@ pub(crate) fn run(host: &HtmlElement) {
     let rows = pivot::parse_dimensions(host.get_attribute(ROWS_ATTRIBUTE).as_deref());
     let columns = pivot::parse_dimensions(host.get_attribute(COLUMNS_ATTRIBUTE).as_deref());
 
-    let request = match pivot::pivot_json(
+    let request_json = match pivot::pivot_json(
         &source,
         &rows,
         &columns,
         host.get_attribute(VALUES_ATTRIBUTE).as_deref(),
     ) {
-        Ok(request) => request,
+        Ok(request_json) => request_json,
         Err(message) => {
+            // A request that cannot be built supersedes an earlier one as
+            // well: its error is what the element shows, not an answer that
+            // arrives after it.
+            next_request(host);
             let texts = texts::texts(host);
             render(host, None, &texts.error(&message), "error");
             return;
         }
     };
 
+    let request = next_request(host);
     let texts = texts::texts(host);
     render(host, None, &texts.loading, "loading");
 
-    let promise = provider.execute(&request, "");
+    let promise = provider.execute(&request_json, "");
     let host = host.clone();
     spawn_local(async move {
+        let outcome = JsFuture::from(promise).await;
+        // A newer request was made since (an attribute changed again): its
+        // answer is the one to draw, whenever it comes.
+        if !is_latest(&host, request) {
+            return;
+        }
         let texts = texts::texts(&host);
-        match JsFuture::from(promise).await {
+        match outcome {
             Ok(value) => match value.as_string() {
                 Some(json) => match pivot::parse_result(&json) {
                     Ok(model) => {

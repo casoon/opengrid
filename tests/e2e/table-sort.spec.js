@@ -169,6 +169,41 @@ test("the sort mark stays out of the button's accessible name", async ({
   ).toBe("true");
 });
 
+test("a late answer to an earlier query is not drawn over the newest", async ({ page }) => {
+  // Two queries in a row, and the answer to the first comes last. The table has
+  // to show the second one's columns, not the ones it was asked for before.
+  const settled = await page.evaluate(async () => {
+    const { loadOpengrid } = await import("/packages/opengrid/loader.js");
+    const { module } = await loadOpengrid();
+    const table = document.querySelector("opengrid-table");
+    let calls = 0;
+    const settled = [];
+    module.set_provider(table, {
+      async execute(json) {
+        const call = ++calls;
+        const { select } = JSON.parse(json);
+        if (call === 1) await new Promise((resolve) => setTimeout(resolve, 500));
+        settled.push(call);
+        return JSON.stringify({
+          total_count: 1,
+          row_count: 1,
+          columns: select.map((name) => ({ name, type: "utf8", nullable: true, values: [name] })),
+        });
+      },
+    });
+    table.setAttribute("columns", "customer");
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    return settled;
+  });
+  expect(settled).toEqual([2, 1]);
+  const cells = await page.evaluate(() =>
+    [...document.querySelector("opengrid-table").shadowRoot.querySelectorAll("tbody tr:first-child > *")].map(
+      (cell) => cell.textContent,
+    ),
+  );
+  expect(cells).toEqual(["customer"]);
+});
+
 test("has no axe violations", async ({ page }) => {
   const { violations } = await new AxeBuilder({ page }).analyze();
   expect(violations).toEqual([]);
