@@ -195,6 +195,52 @@ test("the edited row survives and the marks go when the source speaks", async ({
     .toBe(0);
 });
 
+test("keys on the blank space under the rows are the browser's, not the grid's", async ({
+  page,
+}) => {
+  // The viewport is focusable by mouse (`tabindex="-1"`, so that Firefox does
+  // not make it a tab stop). A click under the last row focuses it — and the
+  // grid's keys, which act on the remembered active cell, must not follow.
+  await open(page);
+  // Five rows fill the fixture's 260px exactly; a taller grid leaves the blank.
+  await page.evaluate(() => {
+    document.querySelector("opengrid-grid").style.height = "420px";
+  });
+  const grid = page.locator("opengrid-grid");
+  await grid.locator('td[data-row="1"][data-col="1"]').click();
+
+  const blank = await page.evaluate(() => {
+    const root = document.querySelector("opengrid-grid").shadowRoot;
+    const viewport = root.querySelector('[part="viewport"]').getBoundingClientRect();
+    const table = root.querySelector("table").getBoundingClientRect();
+    return { x: viewport.left + 20, y: (table.bottom + viewport.bottom) / 2, room: viewport.bottom - table.bottom };
+  });
+  expect(blank.room, "the fixture leaves blank space under the rows").toBeGreaterThan(20);
+  await page.mouse.click(blank.x, blank.y);
+  const focused = () =>
+    page.evaluate(() => document.querySelector("opengrid-grid").shadowRoot.activeElement?.getAttribute("part"));
+  expect(await focused()).toBe("viewport");
+
+  const state = () =>
+    page.evaluate(() => {
+      const root = document.querySelector("opengrid-grid").shadowRoot;
+      return {
+        selected: root.querySelectorAll('tbody tr[aria-selected="true"]').length,
+        editor: !!root.querySelector('[part="editor"]'),
+        sort: [...root.querySelectorAll("thead th")].map((th) => th.getAttribute("aria-sort")),
+      };
+    });
+  const before = await state();
+  expect(before).toMatchObject({ selected: 0, editor: false });
+
+  for (const key of [" ", "Enter", "ControlOrMeta+a", "ArrowDown"]) await page.keyboard.press(key);
+
+  expect(await state()).toEqual(before);
+  // An arrow scrolls; it does not pull the focus back into the table.
+  expect(await focused()).toBe("viewport");
+  expect(await page.evaluate(() => window.__changes.length)).toBe(0);
+});
+
 test("has no axe violations with an editor open", async ({ page }) => {
   await open(page);
   await focusCell(page, 0, 1);

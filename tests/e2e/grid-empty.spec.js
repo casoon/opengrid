@@ -77,6 +77,37 @@ test.describe("with rows in the source", () => {
     ).toBe("TH");
   });
 
+  test("keys after a click on the panel's text are not the grid's", async ({ page }) => {
+    // The text is no control, so a click on it focuses the viewport around it
+    // (focusable by mouse since Firefox's tab stop was removed). The grid's
+    // keys act on the remembered active cell — a header here — and `Space`
+    // sorted by it.
+    await filterToNothing(page);
+    await expect.poll(() => status(page)).toBe("No matches");
+    const sort = () =>
+      page.evaluate(() =>
+        [...document.querySelector("opengrid-grid").shadowRoot.querySelectorAll("thead th")].map((th) =>
+          th.getAttribute("aria-sort"),
+        ),
+      );
+    const before = await sort();
+    // A header is the active cell — the one the grid's `Space` would sort by.
+    await page.evaluate(() =>
+      document.querySelector("opengrid-grid").shadowRoot.querySelector('th[data-col="1"]').focus(),
+    );
+    await page.locator("opengrid-grid").locator('[part="empty-text"]').click();
+    expect(
+      await page.evaluate(() =>
+        document.querySelector("opengrid-grid").shadowRoot.activeElement?.getAttribute("part"),
+      ),
+    ).toBe("viewport");
+
+    for (const key of [" ", "Enter"]) await page.keyboard.press(key);
+    await page.waitForTimeout(200);
+    expect(await sort()).toEqual(before);
+    expect(await status(page)).toBe("No matches");
+  });
+
   test("'No matches' is said once — the panel adds no second voice", async ({ page }) => {
     await page.evaluate(() => {
       const line = document.querySelector("opengrid-grid").shadowRoot.querySelector('[part="status"]');

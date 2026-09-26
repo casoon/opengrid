@@ -1316,6 +1316,20 @@ fn on_key_down(event: KeyboardEvent) {
         return;
     }
 
+    // Everything below is the grid's matrix, and it acts on the *remembered*
+    // active cell — so it may only run for a key pressed inside the table. The
+    // viewport is focusable by mouse (`tabindex="-1"`, so that Firefox does not
+    // make it a tab stop): a click on the blank space under the rows, or on the
+    // empty state's text, focuses it, and `Space` there selected a row, `Enter`
+    // sorted. A key on the viewport itself does what the browser does: scroll.
+    if !event
+        .target()
+        .and_then(|node| node.dyn_into::<Element>().ok())
+        .is_some_and(|target| target.closest("table").ok().flatten().is_some())
+    {
+        return;
+    }
+
     // The column menu opens from its header cell (point 64): `Alt`+`↓`, the
     // way a menu button or a combobox opens, and the two context-menu keys.
     let opens_menu = (event.alt_key() && event.key() == "ArrowDown")
@@ -2748,6 +2762,23 @@ fn on_focus_in(event: Event) {
     let Ok(target) = target.dyn_into::<Element>() else {
         return;
     };
+    // The filter row scrolls sideways when narrow and the facets scroll down,
+    // and a browser does not reliably bring a control that takes the focus into
+    // view inside them. Tabbing to one hidden past the edge is losing sight of
+    // the focus (WCAG 2.4.11). The scrollers themselves are only focused by a
+    // click, and a click needs no scrolling.
+    if target
+        .closest("[part=\"filter\"], [part=\"facets\"]")
+        .ok()
+        .flatten()
+        .is_some_and(|scroller| scroller != target)
+    {
+        let options = ScrollIntoViewOptions::new();
+        options.set_block(ScrollLogicalPosition::Nearest);
+        options.set_inline(ScrollLogicalPosition::Nearest);
+        target.scroll_into_view_with_scroll_into_view_options(&options);
+        return;
+    }
     let Some(active) = active_from_element(&target) else {
         return;
     };

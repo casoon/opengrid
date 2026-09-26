@@ -1834,6 +1834,11 @@ pub fn build_grid(
                     {ACCENT_PROPERTY}: Highlight; {ON_ACCENT_PROPERTY}: HighlightText;
                     {ACCENT_SOFT_PROPERTY}: Canvas; {ACCENT_INK_PROPERTY}: CanvasText;
                     {SELECTED_PROPERTY}: Canvas; {HOVER_PROPERTY}: Canvas; }}
+           /* A forced palette drops background images, and with them WebKit's
+              drawn select arrow (above): the native select comes back, so it
+              keeps its sign. Elsewhere the select is native already. */
+           [part=\"filter\"] select, select[part=\"editor\"] {{ appearance: auto;
+                             background-image: none; }}
          }}
          @media (prefers-reduced-motion: reduce) {{
            * {{ animation-duration: 0.01ms !important; animation-iteration-count: 1 !important;
