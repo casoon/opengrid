@@ -21,9 +21,10 @@ Two things belong in every release entry and are easy to leave out:
 Nothing is published yet — no npm package, no crates, no tag. The version reads
 `0.0.0` everywhere until the first release turns this section into `[0.1.0]`.
 
-The remaining blocker is the screen-reader run — over the finished V1 and over
-the configurable views that followed it (`docs/releasing.md` → *For any `0.x`*).
-Everything below is built and tested; none of it has been listened to.
+Everything below is built and tested; none of it has been listened to with a
+screen reader yet. The screen-reader passes follow the first release
+([issue #5](https://github.com/casoon/opengrid/issues/5)); until then the
+release notes say so.
 
 ### Added
 
@@ -198,7 +199,7 @@ Everything below is built and tested; none of it has been listened to.
   and targets meet 2.5.8.
 - One polite live region carries every state: loading, N matches, no matches,
   and an error that does **not** replace the grid.
-- 319 end-to-end tests, each run on a desktop and a narrow viewport, with
+- 872 end-to-end test runs — most specs on both a desktop and a narrow viewport — with
   axe-core in every state the components can be in — open menus, the facet
   sidebar and all five looks of the design prototype included — and a spec that
   records the status line's *successive* states, so an announcement made twice,
@@ -210,7 +211,8 @@ Everything below is built and tested; none of it has been listened to.
   the active cell gets it back only if the grid had it, so `set_texts` while a
   page loads — or from the page's own language switch — leaves the focus where
   the reader put it.
-- **Not yet verified by a screen reader.** See `docs/releasing.md`.
+- **Not yet verified by a screen reader.** The passes follow the first release
+  ([issue #5](https://github.com/casoon/opengrid/issues/5)); see `docs/releasing.md`.
 
 ### Known limitations
 
