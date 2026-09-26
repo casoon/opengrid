@@ -252,11 +252,6 @@ impl Grouping {
         self.total = Some(total);
     }
 
-    /// Whether the grand total has been asked for.
-    pub fn has_total(&self) -> bool {
-        self.total.is_some()
-    }
-
     /// Sets the level-2 groups of the level-1 group `key`.
     pub fn set_children(&mut self, key: &Json, children: Vec<Group>) {
         if let Some(group) = self
@@ -379,6 +374,7 @@ impl Grouping {
     }
 
     /// Whether the display list is empty (no groups, or not loaded).
+    #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }

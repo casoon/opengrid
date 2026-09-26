@@ -411,6 +411,7 @@ pub const SELECTED_PROPERTY: &str = "--og-selected";
 pub const HOVER_PROPERTY: &str = "--og-hover";
 
 /// Every token the page sets, in the order the documentation lists them.
+#[cfg(test)]
 pub const SET_TOKENS: &[&str] = &[
     FONT_PROPERTY,
     FONT_MONO_PROPERTY,
@@ -436,6 +437,7 @@ pub const SET_TOKENS: &[&str] = &[
 ///
 /// A page may override one, but it does not have to — and under a forced palette
 /// every one of them is reset to a system colour.
+#[cfg(test)]
 pub const COMPUTED_TOKENS: &[&str] = &[
     ACCENT_SOFT_PROPERTY,
     ACCENT_INK_PROPERTY,
@@ -838,6 +840,7 @@ pub fn parse_row_height(raw: &str) -> u64 {
 /// All fields are [`DataType::Utf8`] — the display schema decision documented on
 /// the module. Names that are not valid identifiers are skipped; the result
 /// schema replaces this one on the first [`GridState::apply_result`].
+#[cfg(test)]
 pub fn initial_schema(columns: &[String]) -> Schema {
     known_schema(columns, &std::collections::BTreeMap::new())
 }

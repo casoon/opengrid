@@ -222,6 +222,7 @@ pub struct GridTexts {
 ///
 /// Written down once so the API freeze can check it: a key added to the struct
 /// without one here is a key nobody outside this repository can discover.
+#[cfg(test)]
 pub(crate) const KEYS: &[&str] = &[
     "lang",
     "loading",

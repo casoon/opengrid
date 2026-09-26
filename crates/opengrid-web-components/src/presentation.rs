@@ -103,15 +103,6 @@ impl FacetKind {
         })
     }
 
-    /// The facet a type offers by itself.
-    pub fn of(data_type: DataType) -> Option<Self> {
-        Some(match data_type {
-            DataType::Utf8 | DataType::Bool => FacetKind::List,
-            DataType::Int64 | DataType::Float64 | DataType::Decimal { .. } => FacetKind::Range,
-            DataType::Date | DataType::Timestamp => FacetKind::Period,
-        })
-    }
-
     /// Whether this facet makes sense for this type.
     fn fits(&self, data_type: DataType) -> bool {
         match self {
