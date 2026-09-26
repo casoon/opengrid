@@ -71,6 +71,7 @@
       .tab-actions button { font: inherit; height: 28px; padding: 0 10px; border: 0;
         border-radius: 6px; background: transparent; color: var(--page-accent); cursor: pointer;
         font-size: 13px; font-weight: 500; }
+      .tab-actions button[aria-disabled="true"] { opacity: 0.6; cursor: progress; }
       opengrid-grid { display: block; height: 640px; }
       .code { margin: 0; font-family: "Geist Mono", ui-monospace, monospace; font-size: 12px; line-height: 1.6;
         color: var(--page-muted); overflow-wrap: anywhere; }
@@ -296,13 +297,23 @@
       // the sentence goes to the page's live region — the grid's status line
       // speaks about the grid.
       let provider;
-      document.getElementById("export").addEventListener("click", async () => {
+      const exportButton = document.getElementById("export");
+      // Emptied first, then set in the next task: the same sentence twice in a
+      // row is a change a screen reader hears, not one it skips.
+      function announce(text) {
         const status = document.getElementById("page-status");
+        status.textContent = "";
+        setTimeout(() => (status.textContent = text), 50);
+      }
+      exportButton.addEventListener("click", async () => {
+        // Busy, not disabled: a disabled button would drop the focus.
+        if (exportButton.getAttribute("aria-disabled") === "true") return;
         const query = window.__opengrid.get_query(grid);
         if (!query) {
-          status.textContent = "Export nicht möglich: die Ansicht hat einen ungültigen Filter.";
+          announce("Export nicht möglich: ein Filter der Ansicht gilt nicht.");
           return;
         }
+        exportButton.setAttribute("aria-disabled", "true");
         let rows = 0;
         try {
           // `;` because the page is German, and so is the Excel that opens it.
@@ -315,10 +326,15 @@
             download: "bestellungen.csv",
           });
           link.click();
-          URL.revokeObjectURL(link.href);
-          status.textContent = `${rows} ${rows === 1 ? "Zeile" : "Zeilen"} als bestellungen.csv exportiert`;
+          // Revoked once the download has taken the URL, not in the same task.
+          setTimeout(() => URL.revokeObjectURL(link.href), 0);
+          announce(`${rows} ${rows === 1 ? "Zeile" : "Zeilen"} als bestellungen.csv exportiert`);
         } catch (error) {
-          status.textContent = `Export fehlgeschlagen: ${error.message}`;
+          // The reason is for the developer; the reader gets a German sentence.
+          console.error("[prototype] export", error);
+          announce("Der Export ist fehlgeschlagen. Bitte noch einmal versuchen.");
+        } finally {
+          exportButton.removeAttribute("aria-disabled");
         }
       });
 

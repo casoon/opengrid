@@ -422,9 +422,16 @@ const NO_ROWS = '{"total_count":0,"columns":[]}';
  * comes — and within a tie the export follows the columns, not the order the
  * grid happened to show.
  *
+ * **A source that changes is refused, not exported.** The tie-breaker fixes
+ * ties; it cannot fix rows that come or go between two pieces — they would
+ * shift the windows, and a row would repeat or go missing. So every piece has
+ * to report the first piece's `total_count`, and a piece that ends before
+ * `total` is an error too. A change that keeps the count and moves a row is not
+ * visible from here.
+ *
  * **Bounded.** `total` is the first piece's `total_count`; a total above
  * `maxRows` is an error before anything else is fetched, never a truncated
- * file. The pieces stop at `total` or after a short one, whichever comes first.
+ * file.
  *
  * **Cancellable.** `signal` reaches the provider as `execute(json, mode,
  * { signal })`; an abort rejects with an `AbortError` at once, leaves no request
@@ -478,6 +485,11 @@ export async function exportRows(provider, query, options = {}) {
   if ("offset" in query || "limit" in query) {
     throw new TypeError("exportRows: the query has a window; exportRows fetches every match itself");
   }
+  if ("group" in query || "aggregate" in query) {
+    // Its output columns are aliases `select` does not name, so the
+    // tie-breaker could not make its order total. A view's query has neither.
+    throw new TypeError("exportRows: the query groups or aggregates; an export is of a view's rows");
+  }
   if (signal?.aborted) {
     throw aborted();
   }
@@ -500,15 +512,16 @@ export async function exportRows(provider, query, options = {}) {
     }
   }
 
-  const parts = format === "json" ? ["["] : [];
+  // Each piece becomes a Blob of its own as soon as it is written, so its text
+  // can leave the JS heap; the browser may keep a Blob's bytes elsewhere.
+  const parts = format === "json" ? [new Blob(["["])] : [];
   let rows = 0;
   let total;
   for (;;) {
     if (signal?.aborted) {
       throw aborted();
     }
-    // After the first piece nothing past `total` is asked for, so rows added
-    // while the export runs cannot carry it over `maxRows`.
+    // After the first piece nothing past `total` is asked for.
     const limit = total === undefined ? chunkSize : Math.min(chunkSize, total - rows);
     const piece = JSON.stringify({ ...query, sort, offset: rows, limit });
     const answer = await unlessAborted(ask(provider, piece, signal), signal);
@@ -522,17 +535,24 @@ export async function exportRows(provider, query, options = {}) {
           `exportRows: ${total} rows match, more than the ${maxRows} an export may have (maxRows)`,
         );
       }
+    } else if (result.total_count !== total) {
+      throw changed(`${total} rows matched at first, ${result.total_count} at row ${rows + 1}`);
+    }
+    if (count < limit && rows + count < total) {
+      throw changed(`the rows ended at ${rows + count} of ${total}`);
     }
     parts.push(
-      format === "csv"
-        ? module.export_csv(answer, csvOptions, first)
-        : // `first` here is "no row written yet", not "first piece": after an
-          // empty first piece the next one still leads without a comma.
-          module.export_json(answer, rows === 0),
+      new Blob([
+        format === "csv"
+          ? module.export_csv(answer, csvOptions, first)
+          : // `first` here is "no row written yet", not "first piece": after an
+            // empty first piece the next one still leads without a comma.
+            module.export_json(answer, rows === 0),
+      ]),
     );
     rows += count;
     onProgress?.({ rows, total });
-    if (count < limit || rows >= total) {
+    if (rows >= total) {
       break;
     }
   }
@@ -541,7 +561,7 @@ export async function exportRows(provider, query, options = {}) {
     throw aborted();
   }
   if (format === "json") {
-    parts.push("]");
+    parts.push(new Blob(["]"]));
   }
   return new Blob(parts, {
     type: format === "csv" ? "text/csv;charset=utf-8" : "application/json",
@@ -567,6 +587,15 @@ function unlessAborted(promise, signal) {
     signal.addEventListener("abort", onAbort, { once: true });
     promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
   });
+}
+
+/**
+ * What an export rejects with when the source changed under it: the pieces no
+ * longer add up to one result, and a file of them would be wrong without
+ * saying so.
+ */
+function changed(detail) {
+  return new Error(`exportRows: the source changed during the export (${detail}); export again`);
 }
 
 /** What an aborted export rejects with, whatever reason `abort()` was given. */

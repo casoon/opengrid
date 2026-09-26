@@ -272,7 +272,8 @@ export interface ExportOptions {
  * in pieces, as a `Blob` of `text/csv;charset=utf-8` or `application/json`.
  * Raw values in the wire notation, a header of field names. The sort is made
  * total by appending every selected column not yet in it, ascending; within a
- * tie the export follows the columns, not the grid.
+ * tie the export follows the columns, not the grid. A source whose count
+ * changes between two pieces is refused with an error, not exported.
  */
 export function exportRows(provider: Provider, query: ViewQuery, options?: ExportOptions): Promise<Blob>;
 
@@ -338,10 +339,13 @@ export type Choices = Record<string, string[]>;
 export interface SortKey {
   field: string;
   direction: "asc" | "desc";
+}
+
+/** A sort key of a query, which may also say where NULLs land. */
+export interface QuerySortKey extends SortKey {
   /**
-   * Where NULLs land in a query; `"last"` when left out, whatever the
-   * direction. `get_query` writes it for the group keys; a view's sort never
-   * has it.
+   * `"last"` when left out, whatever the direction. `get_query` writes it for
+   * the group keys.
    */
   nulls?: "first" | "last";
 }
@@ -389,7 +393,7 @@ export interface ViewQuery {
   /** The filter expression of the query model, when anything restricts. */
   filter?: unknown;
   /** Never empty: a grid without a sort pages under its first column. */
-  sort: SortKey[];
+  sort: QuerySortKey[];
 }
 
 /** How a CSV is written. Every key is optional; no other key is accepted. */

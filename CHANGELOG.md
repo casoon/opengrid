@@ -99,9 +99,11 @@ Everything below is built and tested; none of it has been listened to.
 - **`exportRows(provider, query, options)`** — every match of a query, through
   any provider, fetched in pieces of `chunkSize` (10 000) and handed back as a
   `Blob` of CSV or JSON in the `opengrid-export` notation. The sort is made
-  total by appending every selected column not yet in it, so no row repeats or
-  goes missing between two pieces, even over PostgreSQL; within a tie the
-  export follows the columns, not the grid. Progress after each piece, an
+  total by appending every selected column not yet in it, so a tie cannot
+  repeat or drop a row between two pieces, even over PostgreSQL; within a tie
+  the export follows the columns, not the grid. A source whose count changes
+  during the export is detected and refused with an error, not exported.
+  Progress after each piece, an
   `AbortSignal` that stops the request in flight, and `maxRows` (1 000 000) as
   an error with a sentence, never a truncated file. Providers take the signal
   as an optional third argument, `execute(query, mode, { signal })`; the REST,

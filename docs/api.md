@@ -487,7 +487,8 @@ const link = Object.assign(document.createElement("a"), {
   download: "orders.csv",
 });
 link.click();
-URL.revokeObjectURL(link.href);
+// Revoked once the download has taken the URL, not in the same task.
+setTimeout(() => URL.revokeObjectURL(link.href), 0);
 ```
 
 | Option | |
@@ -506,10 +507,11 @@ Any other key is an error, and so is a CSV option on a JSON export.
 | Values | Raw, in the wire notation — not the display formats: a decimal exact, a date `YYYY-MM-DD`, a timestamp ISO in UTC with microseconds, `NaN`/`Infinity`/`-Infinity` spelled out. The CSV header and the JSON keys are the field names, in column order. |
 | CSV | RFC 4180, UTF-8 with a byte order mark, CRLF, `,` or `;`. NULL is an empty unquoted field, the empty string `""`. The formula guard applies to text columns only. `text/csv;charset=utf-8`. |
 | JSON | One array of row objects. `application/json`. |
-| Pieces | `offset`/`limit` windows of `chunkSize` under the query's sort. The total is the first piece's `total_count`; the pieces stop at it or after a short one. |
-| Order | A window is only stable under a total order, and the grid's sort may tie — against PostgreSQL a row could repeat or go missing between two pieces. So every selected column not yet in the sort is appended, ascending. The export is then deterministic, and rows equal in every selected column look the same whichever comes first. **Within a tie the export follows the columns, not the grid:** two rows the grid showed in one order may come in the other. |
+| Pieces | `offset`/`limit` windows of `chunkSize` under the query's sort. The total is the first piece's `total_count`; the pieces stop at it. |
+| Order | A window is only stable under a total order, and the grid's sort may tie — against PostgreSQL a row could repeat or go missing between two pieces. So every selected column not yet in the sort is appended, ascending. The export is then deterministic, and rows equal in every selected column look the same whichever comes first. **Within a tie the export follows the columns, not the grid:** two rows the grid showed in one order may come in the other. One tie is left: `-0.0` and `0.0` compare equal, so a source that does not order them may swap them between two pieces. |
+| A changing source | The tie-breaker fixes ties, not rows that come or go while the export runs — they shift the windows. So it is **detected and refused**: a piece whose `total_count` differs from the first one's, or that ends before the total, rejects the export with an error, and there is no `Blob`. A change that keeps the count and only moves a row is not visible to the export; for such a source, export from a snapshot. |
 | `mode` | The provider is asked with the mode `""` — its own default. |
-| `query` | Without `offset` and `limit`, with a `select`. `get_query` gives exactly that; `null` from it is an error here. |
+| `query` | Without `offset` and `limit`, with a `select`, without `group` and `aggregate` — the rows of a view. `get_query` gives exactly that; `null` from it is an error here. |
 
 ### Exporting a pivot
 
