@@ -213,6 +213,43 @@ test("the facet switch hides the sidebar and gives its width back", async ({ pag
   await expect.poll(width).toBeGreaterThan(before);
 });
 
+test("Tab meets the controls and the grid, never a scroller", async ({ page }) => {
+  // Firefox makes every scroll container a tab stop of its own, focusable
+  // children or not — an unnamed stop that says nothing. Here the filter row,
+  // the facets and the viewport all scroll, so each would be one.
+  const scrolling = await page.evaluate(() => {
+    const root = document.querySelector("opengrid-grid").shadowRoot;
+    return ["filter", "facets", "viewport"].filter((part) => {
+      const box = root.querySelector(`[part="${part}"]`);
+      return box.scrollWidth > box.clientWidth || box.scrollHeight > box.clientHeight;
+    });
+  });
+  expect(scrolling).toEqual(["filter", "facets", "viewport"]);
+
+  await page.evaluate(() =>
+    document.querySelector("opengrid-grid").shadowRoot.querySelector("button, select, input").focus(),
+  );
+  const stops = [];
+  for (let step = 0; step < 200; step += 1) {
+    const stop = await page.evaluate(() => {
+      if (document.activeElement !== document.querySelector("opengrid-grid")) return null;
+      const inner = document.activeElement.shadowRoot.activeElement;
+      const part = inner.getAttribute("part");
+      const facet = inner.hasAttribute("data-facet") ? "[facet]" : "";
+      return `${inner.tagName.toLowerCase()}${part ? `[part=${part}]` : ""}${facet}`;
+    });
+    if (stop === null) break;
+    stops.push(stop);
+    await page.keyboard.press("Tab");
+  }
+  // The walk went through the filter row, the facets and into the grid …
+  expect(stops).toContain("input[part=filter-value]");
+  expect(stops.some((stop) => stop.endsWith("[facet]"))).toBe(true);
+  expect(stops.some((stop) => stop.startsWith("th") || stop.startsWith("td"))).toBe(true);
+  // … and met not one container.
+  expect(stops.filter((stop) => stop.startsWith("div"))).toEqual([]);
+});
+
 test("has no axe violations with all four kinds of facet", async ({ page }) => {
   await tick(page, "customer", '"Alpha"');
   await expect.poll(() => status(page)).toBe("21 matches");

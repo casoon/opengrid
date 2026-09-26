@@ -1552,6 +1552,21 @@ pub fn build_grid(
                              min-height: {MIN_TARGET_SIZE}px;
                              color: var({INK_PROPERTY});
                              border-radius: min(var({RADIUS_PROPERTY}), 8px); }}
+         /* WebKit draws a native `select` at a height of its own — 20px in the
+            compact density — and with a corner of its own, whatever `min-height`
+            and the radius token say: under the 24px target and off the theme, in
+            Safari alone. Only `appearance: none` hands the box to this sheet, and
+            then the arrow is drawn here, as two gradient halves in the ink. The
+            query is true in WebKit only; the other engines size their native
+            select as asked, so they keep it. */
+         @supports (font: -apple-system-body) {{
+           [part=\"filter\"] select, select[part=\"editor\"] {{ appearance: none;
+                             padding: 0 1.5em 0 0.3em; background-repeat: no-repeat;
+                             background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+                                               linear-gradient(135deg, currentColor 50%, transparent 50%);
+                             background-position: calc(100% - 0.9em) 55%, calc(100% - 0.55em) 55%;
+                             background-size: 0.35em 0.35em; }}
+         }}
          [part=\"columns\"] {{ display: flex; gap: 0.5rem; align-items: center; }}
          [part=\"columns\"][hidden] {{ display: none; }}
          [part=\"column-toggle\"] {{ display: inline-flex; gap: 0.25rem; align-items: center;
@@ -1880,7 +1895,8 @@ pub fn build_grid(
             value: "body".to_owned(),
         });
         let sidebar = element(buffer, nodes, Some(body), "div");
-        for (name, value) in [("part", "facets"), ("role", "group")] {
+        // A scroller: out of the tab sequence, like the viewport below.
+        for (name, value) in [("part", "facets"), ("role", "group"), ("tabindex", "-1")] {
             buffer.push(Patch::SetAttribute {
                 node: sidebar,
                 name: name.to_owned(),
@@ -1905,6 +1921,16 @@ pub fn build_grid(
         node: viewport,
         name: "part".to_owned(),
         value: "viewport".to_owned(),
+    });
+    // Firefox makes every scroll container a tab stop of its own, focusable
+    // children or not: Shift+Tab from the header landed on this unnamed div
+    // before reaching the filter row. The grid is one tab stop, and its keys
+    // do the scrolling; `-1` takes the div out of the sequence and nothing else.
+    // The filter row and the facets scroll too, and get the same.
+    buffer.push(Patch::SetAttribute {
+        node: viewport,
+        name: "tabindex".to_owned(),
+        value: "-1".to_owned(),
     });
 
     let table = element(buffer, nodes, Some(viewport), "table");
@@ -2590,6 +2616,13 @@ fn build_filter(
         node: container,
         name: "data-filter".to_owned(),
         value: String::new(),
+    });
+    // It scrolls sideways when narrow, so Firefox would make it a tab stop of
+    // its own — out of the sequence, like the viewport (`build_grid`).
+    buffer.push(Patch::SetAttribute {
+        node: container,
+        name: "tabindex".to_owned(),
+        value: "-1".to_owned(),
     });
     buffer.push(Patch::SetAttribute {
         node: container,
@@ -4588,6 +4621,58 @@ mod tests {
             ),
             "3"
         );
+    }
+
+    /// Every scroller is out of the tab sequence. Firefox makes a scroll
+    /// container a tab stop of its own even with focusable children, and CI
+    /// runs Chromium, which does not — so this is where it has to hold.
+    #[test]
+    fn no_scroller_is_a_tab_stop() {
+        let schema = initial_schema(&["customer".to_owned()]);
+        let mut nodes = NodeAllocator::new();
+        let mut buffer = PatchBuffer::new();
+        build_grid(
+            &mut buffer,
+            &mut nodes,
+            &GridSkeleton {
+                label: None,
+                schema: &schema,
+                pool: 1,
+                texts: &GridTexts::default(),
+                declared: &[],
+                presentation: &Default::default(),
+                selection: false,
+                column_menu: false,
+                toolbar: false,
+                facets: true,
+                search: false,
+            },
+        );
+        let attribute = |node: NodeId, wanted: &str| {
+            buffer.patches().iter().find_map(|patch| match patch {
+                Patch::SetAttribute {
+                    node: at,
+                    name,
+                    value,
+                } if *at == node && name == wanted => Some(value.clone()),
+                _ => None,
+            })
+        };
+        for part in ["filter", "facets", "viewport"] {
+            let node = buffer
+                .patches()
+                .iter()
+                .find_map(|patch| match patch {
+                    Patch::SetAttribute { node, name, value }
+                        if name == "part" && value == part =>
+                    {
+                        Some(*node)
+                    }
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("the skeleton has part={part}"));
+            assert_eq!(attribute(node, "tabindex").as_deref(), Some("-1"), "{part}");
+        }
     }
 
     /// A control that takes its text colour from the theme takes its background
