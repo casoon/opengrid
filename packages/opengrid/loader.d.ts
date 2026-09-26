@@ -50,6 +50,12 @@ export interface OpengridModule {
   set_view(host: HTMLElement, view: ViewInput): void;
   /** Per-column presentation; narrows what the schema allows, never widens it. */
   set_columns(host: HTMLElement, columns: Columns): void;
+  /**
+   * The query of the current view without a window — what an export sends.
+   * `null` without a query, with a filter that does not hold, and for the
+   * table and the pivot.
+   */
+  get_query(host: HTMLElement): ViewQuery | null;
   /** Defines the three elements. `loadOpengrid()` calls it. */
   register(): void;
 }
@@ -303,6 +309,15 @@ export interface View {
   /** Whether the filter row shows. */
   filterRow: boolean;
   facets: Record<string, FacetSelection>;
+}
+
+/** The query of a view, as `get_query` gives it: every match, no window. */
+export interface ViewQuery {
+  source: string;
+  select: string[];
+  /** The filter expression of the query model, when anything restricts. */
+  filter?: unknown;
+  sort?: SortKey[];
 }
 
 /**

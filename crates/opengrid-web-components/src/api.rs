@@ -3,7 +3,7 @@
 //! The API of this crate is not its Rust items — every module is `pub(crate)`.
 //! It is the **DOM**: three custom elements, their attributes, the events they
 //! fire, the parts a page may style, the custom properties it may set, and the
-//! keys it may translate. Plus the eight exported functions.
+//! keys it may translate. Plus the nine module functions and the loader's exports.
 //!
 //! This module writes that surface down as data and a test compares it against
 //! a list that a human maintains. A name that changes shows up in the diff of
@@ -64,6 +64,7 @@ fn surface() -> String {
         "get_view",
         "set_view",
         "set_columns",
+        "get_query",
     ] {
         out.push_str(&format!("  {name}\n"));
     }
@@ -223,6 +224,7 @@ functions
   get_view
   set_view
   set_columns
+  get_query
 
 loader exports
   loadOpengrid

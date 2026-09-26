@@ -11,7 +11,7 @@ A release that skips them is not a release; it is a publish.
 ## What 0.x promises
 
 The public API is frozen (the element names, their attributes, their events, their
-`::part` names, their custom properties, their text keys, the eight module functions and
+`::part` names, their custom properties, their text keys, the nine module functions and
 the seven exports of `loader.js`) and `docs/api.md` is its written form. Tests keep the
 two honest with each other, and with `loader.d.ts`: a frozen name missing from the
 documentation or the declarations fails, and so does a documented

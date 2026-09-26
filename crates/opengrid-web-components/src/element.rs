@@ -180,6 +180,24 @@ pub fn get_view(host: &HtmlElement) -> JsValue {
     crate::grid_element::read_view(host)
 }
 
+/// The query of the current view, without a window (plan point 82).
+///
+/// Exactly what the grid asks its provider for — the filter row, the facets and
+/// the free-text search and-ed together, the sort, the shown columns in their
+/// order — but with no `offset` and no `limit`: every match, not the loaded
+/// window. It is what a page exports, so that the export is what the reader
+/// sees rather than what the page believes the view to be. A grouped grid
+/// gives the rows, ordered by its groups first, the way it shows them.
+///
+/// `null` for a grid that has no query yet (not connected, no `datasource`, no
+/// columns) or whose filter does not hold (the status line already says why),
+/// and for the table and the pivot.
+#[cfg(feature = "grid")]
+#[wasm_bindgen(js_name = get_query)]
+pub fn get_query(host: &HtmlElement) -> JsValue {
+    crate::grid_element::read_query(host)
+}
+
 /// Applies a whole view at once (plan point 59).
 ///
 /// **One query, not one per field.** Restoring a view field by field would flash

@@ -83,6 +83,10 @@ Everything below is built and tested; none of it has been listened to.
   [docs/api.md](docs/api.md), resolved through the package's `exports`. The
   event `detail`s are typed on the element and on the document; a view, a
   column configuration or a text key the API does not take is a compile error.
+- **`get_query(host)`** hands out the query of the grid's current view —
+  the filter row, the facets and the search and-ed together, the sort, the
+  shown columns in their order — without a window: what a page exports is
+  then what the reader sees, every match of it.
 - **`connect(host, options)`** supplies an element from one object — provider,
   texts, formats, presentation, choices, a controlled view and the three event
   callbacks — in the one order that asks the source once, after the module has

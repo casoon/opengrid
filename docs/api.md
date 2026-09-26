@@ -39,6 +39,7 @@ instead.
 | `set_choices(host, choices)` | Per-column editor choices: `{ customer: ["Alpha", "Beta"] }` turns that column's editor into a `<select>`. |
 | `get_view(host)` / `set_view(host, view)` | Reads and applies the whole [view](#the-view) in one step. |
 | `set_columns(host, columns)` | Per-column presentation — see [`<opengrid-grid>`](#opengrid-grid). |
+| `get_query(host)` | The query of the current view, without a window — what an [export](#exporting-the-view) sends. |
 | `register()` | Defines the three elements. `loadOpengrid()` calls it; a page that loads the module itself calls it once. |
 
 **Types.** The package ships `loader.d.ts`: every name on this page is typed —
@@ -434,6 +435,28 @@ has no key column, and sorting or filtering drops it precisely because after a
 different sort those positions hold different records. A restored view carrying
 a selection would not be incomplete — it would be wrong. Applying a view drops
 the selection, and says so.
+
+## Exporting the view
+
+What a page exports is what the reader sees — and the grid knows that better than the page:
+the filter row, the facets and the free-text search and-ed together, the sort, the shown
+columns in their order. `get_query(host)` hands it out, exactly as the grid asks its provider,
+but **without a window**: no `offset`, no `limit`, every match.
+
+```js
+const query = loader.module.get_query(grid);
+// { source, select: ["id", "customer", …], filter: {…}, sort: [{ field, direction }, …] }
+```
+
+| | |
+|---|---|
+| Hidden columns | are not in `select`; moved ones are in their new place. |
+| Grouped | The rows, not the group or total rows, ordered by their groups first (ascending, NULL last) and then by the sort — the order the reader sees. |
+| The selection | is not in it. It names positions under exactly this query's sort, so an export of the selection is this query plus the positions from `opengrid-selection-change`. |
+| `null` | A grid without a query yet (not connected, no `datasource`, no columns), one whose filter does not hold — its status line says why — and `<opengrid-table>` and `<opengrid-pivot>`. |
+
+The grid has no export button: what to export, in which format, under which name, is the
+page's (the same line as for saving an edit).
 
 ## Events
 

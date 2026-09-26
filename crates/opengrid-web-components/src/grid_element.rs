@@ -2728,6 +2728,60 @@ pub(crate) fn current_view(host: &HtmlElement) -> Option<GridView> {
     })
 }
 
+/// [`crate::element::get_query`] — the query of the view, as a JS object.
+pub(crate) fn read_query(host: &HtmlElement) -> JsValue {
+    match current_query(host) {
+        Some(json) => js_sys::JSON::parse(&json).unwrap_or(JsValue::NULL),
+        None => JsValue::NULL,
+    }
+}
+
+/// The query of the current view without a window (plan point 82).
+///
+/// Built from the same parts as [`run_query`] — so it cannot say something the
+/// grid does not ask — with one addition for a grouped grid: the rows come in
+/// the order the reader sees them, by their groups first (ascending, NULL last,
+/// as [`grouping::group_query_json`] orders the groups), then by the sort.
+fn current_query(host: &HtmlElement) -> Option<String> {
+    if host.tag_name().to_ascii_lowercase() != GRID_TAG {
+        return None;
+    }
+    let runtime = runtime(host)?;
+    let source = host.get_attribute(DATASOURCE_ATTRIBUTE)?;
+    let columns = columns_of(host);
+    if columns.is_empty() {
+        return None;
+    }
+    let borrowed = runtime.borrow();
+    let filter = effective_filter(host, &borrowed, None).ok()?;
+    let mut sorts: Vec<(String, &str)> = borrowed
+        .grouping
+        .as_ref()
+        .map(|grouping| {
+            grouping
+                .by()
+                .iter()
+                .map(|column| (column.clone(), "asc"))
+                .collect()
+        })
+        .unwrap_or_default();
+    for (field, direction) in borrowed.state.sort_keys() {
+        if !sorts.iter().any(|(known, _)| *known == field) {
+            sorts.push((field, direction));
+        }
+    }
+    // A total order (S6), as the grid itself pages under one.
+    if sorts.is_empty() {
+        sorts.push((columns[0].clone(), "asc"));
+    }
+    Some(grid::view_query_json(
+        &source,
+        &columns,
+        &sorts,
+        filter.as_ref(),
+    ))
+}
+
 /// [`crate::element::get_view`] — the view as a JS object.
 pub(crate) fn read_view(host: &HtmlElement) -> JsValue {
     let Some(view) = current_view(host) else {

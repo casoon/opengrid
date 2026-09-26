@@ -148,6 +148,15 @@ export async function page(): Promise<void> {
 
   module.register();
 
+  // The query of the view, for an export.
+  const query = module.get_query(grid);
+  if (query) {
+    query.select satisfies string[];
+    query.sort?.[0]?.direction satisfies "asc" | "desc" | undefined;
+    // @ts-expect-error — the view's query has no window
+    void query.limit;
+  }
+
   // `connect`: the same shapes, from one object.
   const connection = connect(grid, {
     provider: local,

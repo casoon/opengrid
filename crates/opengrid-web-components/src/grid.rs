@@ -1091,6 +1091,31 @@ pub fn query_json(
     limit: u64,
 ) -> String {
     use serde_json::{Value as Json, json};
+    let mut query = query_object(source, columns, sorts, filter);
+    query.insert("limit".to_owned(), json!(limit));
+    query.insert("offset".to_owned(), json!(offset));
+    Json::Object(query).to_string()
+}
+
+/// The query of a whole view — the same as the grid asks, without a window
+/// (plan point 82): what a page exports.
+pub fn view_query_json(
+    source: &str,
+    columns: &[String],
+    sorts: &[(String, &str)],
+    filter: Option<&FilterExpr>,
+) -> String {
+    serde_json::Value::Object(query_object(source, columns, sorts, filter)).to_string()
+}
+
+/// Source, projection, filter and sort — everything but the window.
+fn query_object(
+    source: &str,
+    columns: &[String],
+    sorts: &[(String, &str)],
+    filter: Option<&FilterExpr>,
+) -> serde_json::Map<String, serde_json::Value> {
+    use serde_json::{Value as Json, json};
     let mut query = serde_json::Map::new();
     query.insert("source".to_owned(), Json::String(source.to_owned()));
     query.insert(
@@ -1108,9 +1133,7 @@ pub fn query_json(
             .collect();
         query.insert("sort".to_owned(), Json::Array(sorts));
     }
-    query.insert("limit".to_owned(), json!(limit));
-    query.insert("offset".to_owned(), json!(offset));
-    Json::Object(query).to_string()
+    query
 }
 
 /// Parses a result in the wire form of point 23 into a [`QueryResult`].
