@@ -54,19 +54,15 @@ const page = `<opengrid-table label="Orders" datasource="orders"
     lead="opengrid is a portable Rust data and query engine. On top of it sit an accessible data grid, table and pivot, delivered as Web Components. The product is the engine, not a JavaScript grid."
   >
     <Install
-      label="Source"
       commands={[
-        {
-          label: 'git',
-          command:
-            'git clone https://github.com/casoon/opengrid.git && cd opengrid && just wasm-build-components wasm-build',
-        },
+        { label: 'npm', command: 'npm install @casoon/opengrid' },
+        { label: 'pnpm', command: 'pnpm add @casoon/opengrid' },
       ]}
     />
     <Badges>
       <Badge>MIT OR Apache-2.0</Badge>
-      <Badge>0.0.0 · unreleased</Badge>
-      <Badge>not on npm or crates.io yet</Badge>
+      <Badge>on npm</Badge>
+      <Badge>not on crates.io yet</Badge>
     </Badges>
     <CodeBlock
       slot="output"
@@ -108,9 +104,9 @@ const page = `<opengrid-table label="Orders" datasource="orders"
   />
 
   <Quickstart
-    lead="No package is published yet, so the modules are built from the repository. The documentation has the requirements and the full walkthrough."
+    lead="One package holds the elements and the engine that answers queries in the tab. The documentation has the full walkthrough, with bundlers and the React, Vue and Svelte adapters."
     steps={[
-      'Clone the repository and build the element module and the engine module: <code>just wasm-build-components wasm-build</code>.',
+      '<code>npm install @casoon/opengrid</code>, and serve its <code>loader.js</code>, <code>worker.js</code>, <code>pkg/</code> and <code>engine/</code> next to the page as <code>opengrid/</code>.',
       'Put an <code>&lt;opengrid-table&gt;</code>, <code>&lt;opengrid-grid&gt;</code> or <code>&lt;opengrid-pivot&gt;</code> on the page.',
       'Load the engine, register a source, and attach it to the element with <code>set_provider</code>.',
     ]}

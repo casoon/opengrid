@@ -122,11 +122,11 @@ inventory.
 
 ## The release
 
-- [ ] `just set-version 0.1.0` — sets the version in every place that prints
+- [ ] `just set-version <version>` — sets the version in every place that prints
       one: the Cargo workspace, the four npm packages (the element package and the
       three adapters) and the project page's header badge. They drifted once, and
       the page shows its version publicly, so this is one command rather than six
-      files to remember. All of them read `0.0.0` while nothing is released.
+      files to remember. Between releases all of them keep the last released version.
 - [ ] Move the `Unreleased` section of [CHANGELOG.md](../CHANGELOG.md) under the new
       version with today's date, and say plainly what breaks if this is a minor
       bump — plus which screen-reader pairings were tested and which were not, or,
@@ -150,8 +150,8 @@ inventory.
       adapter's peer range points at its version, and an install in the minutes between
       would find nothing to satisfy it.
 - [ ] Tag the commit, and push the tag. The remote is
-      `https://github.com/casoon/opengrid.git`; the repository has to exist there
-      first, and `package.json` already points `repository`/`homepage`/`bugs` at it.
+      `https://github.com/casoon/opengrid.git`, where `package.json` points
+      `repository`/`homepage`/`bugs`.
 
 ## After
 

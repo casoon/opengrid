@@ -5,7 +5,7 @@ order: 2
 ---
 
 This page puts an `<opengrid-table>` on a page and answers its queries with the engine in the
-tab. It assumes the modules were built and copied as in [Installation](../installation/).
+tab. It assumes the elements and the engine are in place as in [Installation](../installation/).
 
 ## 1. The element
 
@@ -58,7 +58,9 @@ conformance dataset is a working pair to start from —
 loaded, it installs a plain-DOM stand-in and answers `{ fallback: true }`, so the page does not
 break.
 
-Serve the files over HTTP — a module script does not load from `file://`.
+Serve the files over HTTP — a module script does not load from `file://`. With a bundler,
+import from `@casoon/opengrid` and `@casoon/opengrid/engine/opengrid_wasm.js` instead of the
+relative paths.
 
 ## Next
 
