@@ -363,3 +363,36 @@ async fn a_browser_on_an_allowed_origin_may_read_the_name_and_the_count() {
     assert!(exposed.contains("content-disposition"), "{exposed}");
     assert!(exposed.contains("x-total-count"), "{exposed}");
 }
+
+/// Unset, `max_concurrent_exports` is half the smallest PostgreSQL pool — below
+/// it, so exports never take every connection `/query` needs. The pool
+/// connects lazily, so this needs no database.
+#[test]
+fn the_default_leaves_half_of_every_pool_to_queries() {
+    let root = repo_root();
+    let path = root.join("target/opengrid-server-export-default.toml");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(
+        &path,
+        r#"
+[[datasources]]
+name = "orders"
+type = "postgres"
+connection = "host=localhost dbname=opengrid_never_connected"
+schema = "crates/opengrid-conformance/data/orders.schema.json"
+"#,
+    )
+    .unwrap();
+    let config = Config::load(&path).expect("configuration");
+    let registry = Registry::build(&config, &root).expect("registry");
+    let pool = match &registry.get("orders").expect("the source").data {
+        opengrid_server::registry::Backend::Postgres(source) => source.pool_size(),
+        opengrid_server::registry::Backend::LocalCsv(_) => unreachable!("a postgres source"),
+    };
+    let exports = registry.default_concurrent_exports();
+    assert!(exports >= 1);
+    assert!(exports < pool, "{exports} exports for a pool of {pool}");
+    assert_eq!(exports, (pool / 2).max(1));
+    let state = AppState::new(&config, registry);
+    assert_eq!(state.max_concurrent_exports, exports);
+}

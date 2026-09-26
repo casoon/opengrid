@@ -232,3 +232,24 @@ fn the_pieces_add_up_to_the_answer() {
     // After the last piece there is nothing left, not the rows again.
     assert_eq!(pieces.next_piece(15).expect("a piece").row_count(), 0);
 }
+
+/// Aggregates without a grouping are one row — counted as one by `execute`
+/// and by the pieces, the way PostgreSQL's count must count them too.
+#[test]
+fn an_aggregate_without_a_grouping_is_one_row() {
+    let source = LocalDataSource::new(common::csv_batches()).expect("the dataset has batches");
+    let schema = common::schema().materialized();
+    for json in [
+        r#"{"source":"orders","select":["rows"],"aggregate":[{"fn":"count","as":"rows"}]}"#,
+        r#"{"source":"orders","select":["rows"],"filter":{"field":"id","op":"lt","value":0},"aggregate":[{"fn":"count","as":"rows"}]}"#,
+    ] {
+        let query = validate(json, &schema);
+        let answer = block_on(source.execute(query.clone())).expect("the answer");
+        assert_eq!((answer.row_count(), answer.total_count), (1, 1), "{json}");
+        assert_eq!(
+            source.pieces(&query).expect("the pieces").rows(),
+            1,
+            "{json}"
+        );
+    }
+}

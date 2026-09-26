@@ -269,6 +269,56 @@ test.describe("over a real server", () => {
       expect(outcome).toEqual({ name: "AbortError", started: true, progress: [] });
     });
 
+    test("a missing or unreadable row count is an error, not zero", async ({ page }) => {
+      const outcome = await page.evaluate(async () => {
+        const fetchBefore = window.fetch;
+        const answer = async (count) => {
+          window.fetch = async () =>
+            new Response("id\r\n1\r\n2\r\n", {
+              status: 200,
+              headers: count === undefined ? {} : { "X-Total-Count": count },
+            });
+          try {
+            await window.__rest.export({ source: "export", select: ["id"] }, { maxRows: 1 });
+            return "a Blob";
+          } catch (error) {
+            return error.message;
+          } finally {
+            window.fetch = fetchBefore;
+          }
+        };
+        return { missing: await answer(undefined), empty: await answer(""), text: await answer("many") };
+      });
+      for (const message of Object.values(outcome)) {
+        expect(message).toContain("X-Total-Count");
+      }
+    });
+
+    test("no request follows a redirect, so the token stays where it was sent", async ({ page }) => {
+      const redirects = await page.evaluate(async () => {
+        const fetchBefore = window.fetch;
+        const seen = {};
+        window.fetch = async (url, init) => {
+          seen[new URL(url).pathname.split("/")[1]] = init?.redirect;
+          return fetchBefore(url, init);
+        };
+        try {
+          const query = { source: "export", select: ["id"], filter: { field: "id", op: "lte", value: 1 } };
+          await window.__rest.describe();
+          await window.__rest.execute(JSON.stringify(query), "");
+          await window.__rest.export(query);
+          await window.__pivot.execute(
+            JSON.stringify({ source: "export", rows: ["region"], values: [{ fn: "count", as: "n" }] }),
+            "",
+          );
+        } finally {
+          window.fetch = fetchBefore;
+        }
+        return seen;
+      });
+      expect(redirects).toEqual({ source: "error", query: "error", export: "error", pivot: "error" });
+    });
+
     test("maxRows refuses before the rows, and the server's sentences arrive", async ({ page }) => {
       const paths = watch(page);
       const outcome = await page.evaluate(async () => {

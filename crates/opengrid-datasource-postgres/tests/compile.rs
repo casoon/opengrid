@@ -232,6 +232,14 @@ fn the_count_statement_drops_paging_and_counts_groups() {
     assert!(count.sql.contains("GROUP BY"), "{}", count.sql);
     assert!(count.sql.contains("AS \"grouped\""), "{}", count.sql);
     assert!(count.sql.starts_with("SELECT count(*)"), "{}", count.sql);
+
+    // Aggregates without a grouping answer one row, as the local engine
+    // counts it — not the rows the aggregate read.
+    let mut aggregated = grouped.query.clone();
+    aggregated.group = Vec::new();
+    let count = CompiledQuery::count_of(&aggregated, &compiler).expect("compiles");
+    assert_eq!(count.sql, "SELECT 1::bigint AS \"total_count\"");
+    assert!(count.params.is_empty());
 }
 
 /// An empty `and` keeps every row, an empty `or` keeps none — the identity of

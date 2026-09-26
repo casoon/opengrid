@@ -21,6 +21,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
 use opengrid_arrow_engine::datasource::{LocalDataSource, LocalPieces};
 use opengrid_arrow_engine::ingest::{CsvOptions, load_csv};
@@ -91,15 +92,19 @@ impl Backend {
     /// handed out a piece at a time. Nothing heavy has run when this returns —
     /// [`ExportRows::count`] is the first step that can take long, so a caller
     /// holds the [`ExportRows::canceller`] before it.
-    pub async fn export(
+    ///
+    /// `idle_backstop` bounds how long PostgreSQL lets the export's transaction
+    /// sit idle; the local engine has no transaction.
+    pub(crate) async fn export(
         &self,
         query: &ValidatedQuery,
+        idle_backstop: Duration,
     ) -> Result<ExportRows, opengrid_datasource::DataSourceError> {
         match self {
             Backend::LocalCsv(source) => Ok(ExportRows::Local(source.pieces(query)?)),
-            Backend::Postgres(source) => {
-                Ok(ExportRows::Postgres(Box::new(source.export(query).await?)))
-            }
+            Backend::Postgres(source) => Ok(ExportRows::Postgres(Box::new(
+                source.export(query, idle_backstop).await?,
+            ))),
         }
     }
 
@@ -121,7 +126,7 @@ impl Backend {
 /// memory, and one run beats paging it — and hands out slices of that answer.
 /// PostgreSQL counts and then reads through a cursor in one snapshot
 /// ([`PostgresExport`]).
-pub enum ExportRows {
+pub(crate) enum ExportRows {
     Local(LocalPieces),
     /// Boxed: a connection and two compiled statements, once per export.
     Postgres(Box<PostgresExport>),
@@ -129,7 +134,7 @@ pub enum ExportRows {
 
 impl ExportRows {
     /// The rows the export will have, before the first of them is read.
-    pub async fn count(&mut self) -> Result<u64, opengrid_datasource::DataSourceError> {
+    pub(crate) async fn count(&mut self) -> Result<u64, opengrid_datasource::DataSourceError> {
         match self {
             ExportRows::Local(pieces) => Ok(pieces.rows()),
             ExportRows::Postgres(export) => export.count().await,
@@ -137,7 +142,7 @@ impl ExportRows {
     }
 
     /// The next piece of at most `rows` rows; a shorter one is the last.
-    pub async fn next_piece(
+    pub(crate) async fn next_piece(
         &mut self,
         rows: usize,
     ) -> Result<opengrid_datasource::QueryResult, opengrid_datasource::DataSourceError> {
@@ -149,10 +154,19 @@ impl ExportRows {
 
     /// What stops a statement that is still running, where there is one to
     /// stop: the local engine answers synchronously and has none.
-    pub fn canceller(&self) -> Option<ExportCanceller> {
+    pub(crate) fn canceller(&self) -> Option<ExportCanceller> {
         match self {
             ExportRows::Local(_) => None,
             ExportRows::Postgres(export) => Some(export.canceller()),
+        }
+    }
+
+    /// Ends an export cleanly before its last piece — refused, or failed with
+    /// a status — so a PostgreSQL connection goes back to the pool.
+    pub(crate) async fn close(self) {
+        match self {
+            ExportRows::Local(_) => {}
+            ExportRows::Postgres(export) => export.close().await,
         }
     }
 }
@@ -215,6 +229,27 @@ impl Registry {
             limits,
             pivot_limits,
         })
+    }
+
+    /// `max_concurrent_exports` when the configuration leaves it out: half the
+    /// smallest PostgreSQL pool, at least 1. Every export holds one pooled
+    /// connection for as long as its client downloads, and the bound is
+    /// server-wide, so even if all of them hit the same source, half of its
+    /// pool stays for `/query` and `/pivot`. Without a PostgreSQL source, the
+    /// same number the default pool would give — the machine's parallelism —
+    /// since the local engine holds a whole answer per export instead.
+    pub fn default_concurrent_exports(&self) -> usize {
+        self.sources
+            .values()
+            .filter_map(|source| match &source.data {
+                Backend::Postgres(postgres) => Some(postgres.pool_size() / 2),
+                Backend::LocalCsv(_) => None,
+            })
+            .min()
+            .unwrap_or_else(|| {
+                std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get)
+            })
+            .max(1)
     }
 
     /// The source of that name, if it is configured.

@@ -44,6 +44,7 @@ use opengrid_datasource::DataSourceError;
 use opengrid_datasource::wire::{ErrorCode, WireError, result_to_json};
 use opengrid_pivot::PivotQuery;
 use opengrid_query::{Limits, Query, ValidatedQuery};
+use tokio::sync::Semaphore;
 use tower_http::cors::CorsLayer;
 
 use crate::config::Config;
@@ -60,11 +61,18 @@ pub struct AppState {
     pub allowed_origins: Vec<String>,
     /// The most rows one export may have (issue #2).
     pub max_export_rows: u64,
+    /// The exports that may run at once, and the places they take.
+    pub max_concurrent_exports: usize,
+    pub exports: Arc<Semaphore>,
 }
 
 impl AppState {
     /// Builds the shared state from a checked configuration and registry.
     pub fn new(config: &Config, registry: Registry) -> Self {
+        let concurrent = config
+            .server
+            .max_concurrent_exports
+            .unwrap_or_else(|| registry.default_concurrent_exports());
         let tokens = config
             .tokens
             .iter()
@@ -77,6 +85,8 @@ impl AppState {
             timeout: Duration::from_millis(config.server.timeout_ms),
             allowed_origins: config.server.allowed_origins.clone(),
             max_export_rows: config.server.max_export_rows,
+            max_concurrent_exports: concurrent,
+            exports: Arc::new(Semaphore::new(concurrent)),
         }
     }
 }
@@ -137,13 +147,20 @@ impl IntoResponse for Failure {
             // The gateway is fine; the source behind it is not.
             ErrorCode::Backend => StatusCode::BAD_GATEWAY,
         };
-        (
-            status,
-            [(header::CONTENT_TYPE, "application/json")],
-            self.0.to_json(),
-        )
-            .into_response()
+        error_response(status, &self.0)
     }
+}
+
+/// The error form with a status of the caller's choosing — for the one case
+/// where the code alone does not say it: an export turned away while others
+/// run is `limit_exceeded`, but a `503`, since trying again later helps.
+pub(crate) fn error_response(status: StatusCode, error: &WireError) -> Response {
+    (
+        status,
+        [(header::CONTENT_TYPE, "application/json")],
+        error.to_json(),
+    )
+        .into_response()
 }
 
 async fn query(

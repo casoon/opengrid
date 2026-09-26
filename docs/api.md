@@ -498,7 +498,7 @@ setTimeout(() => URL.revokeObjectURL(link.href), 0);
 | `maxRows` | 1 000 000 by default. More matches than that is an error with a sentence, before anything else is fetched — never a truncated file. |
 | `onProgress` | Called after each piece with `{ rows, total }`. |
 | `signal` | An `AbortSignal`. An abort rejects with an `AbortError` at once, hands the signal to the provider so an HTTP request stops, and gives no `Blob`. |
-| `delimiter`, `bom`, `protectFormulas`, `null` | **The CSV options**, each optional, for a CSV only — `get_pivot` takes the same: `delimiter`, one character, `,` by default (`;` for a German Excel); `bom`, a UTF-8 byte order mark, on; `protectFormulas`, the guard against formula injection, on; `null`, how NULL is written, empty (`\N` reads back into opengrid). |
+| `delimiter`, `bom`, `protectFormulas`, `null` | **The CSV options**, each optional, for a CSV only — `get_pivot` takes the same: `delimiter`, one character, `,` by default (`;` for a German Excel); `bom`, a UTF-8 byte order mark, on; `protectFormulas`, the guard against formula injection, on; `null`, how NULL is written, empty (`\N` reads back into opengrid) — under the guard not starting with `=`, `+`, `-`, `@` or a tab, since it is written into every empty cell unguarded. |
 
 Any other key is an error, and so is a CSV option on a JSON export.
 
@@ -531,11 +531,12 @@ const same = await rest.export(query, { format: "csv", delimiter: ";" });
 |---|---|
 | The file | The same bytes the pieces would have made: `exportRows` checks the options the same way and sends the same query, tie-breaker included; the server writes it with the same `opengrid-export`. |
 | Options | `format`, `signal`, `maxRows`, `onProgress` and the CSV options — `exportRows`' own, without `chunkSize`. Any other key is an error. |
-| `maxRows` | The server sends the row count before the rows (`X-Total-Count`); more than `maxRows` is an error before the body is read. The server has its own bound, `max_export_rows` — more is its `413`, with a sentence, before the first byte. |
+| `maxRows` | The server sends the row count before the rows (`X-Total-Count`); more than `maxRows` is an error before the body is read, and so is an answer without a readable count. The server has its own bound, `max_export_rows` — more is its `413`, with a sentence, before the first byte; too many exports at once are its `503`. |
 | `onProgress` | Called once, at the end, with `{ rows, total }`. |
 | `signal` | Aborts the request, the download included: an `AbortError`, no `Blob`. The server notices at its next piece and ends the database query. |
 | Rules | The server's for `/query`, unchanged: the token, `allowed_fields`, the tenant's `row_filter`. |
-| A break | A failure after the first byte cannot be a status any more; the server breaks the connection off, and the export rejects — never a shorter file. |
+| A break | A failure after the first byte cannot be a status any more; the server breaks the connection off, and the export rejects — never a shorter file. A client that takes no piece for the server's `timeout_ms` is broken off too. |
+| Redirects | Not followed, by any request of `createRestProvider` or `createPivotProvider`: the token goes to the configured URL and nowhere else. |
 
 ### Exporting a pivot
 

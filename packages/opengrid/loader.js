@@ -245,6 +245,9 @@ export function createLocalProvider(engine) {
  * rejects with the server's own sentence, so the grid's status line shows
  * "unknown source …" rather than "HTTP 404".
  *
+ * No request follows a redirect (`redirect: "error"`): the bearer token goes
+ * to the URL the page configured, and nowhere a response points to.
+ *
  * @param {object} options
  * @param {string} options.url base URL of the server, e.g. `http://127.0.0.1:8081`.
  * @param {string} options.source the configured data source name.
@@ -270,6 +273,7 @@ export function createRestProvider({ url, source, token } = {}) {
     async describe() {
       const response = await fetch(`${base}/source/${encodeURIComponent(source)}`, {
         headers: token ? { Authorization: headers.Authorization } : {},
+        redirect: "error",
       });
       const text = await response.text();
       if (!response.ok) {
@@ -284,6 +288,7 @@ export function createRestProvider({ url, source, token } = {}) {
         headers,
         body: queryJson,
         signal,
+        redirect: "error",
       });
       const text = await response.text();
       if (response.ok) {
@@ -331,11 +336,20 @@ export function createRestProvider({ url, source, token } = {}) {
         headers,
         body: JSON.stringify(query),
         signal,
+        redirect: "error",
       });
       if (!response.ok) {
         throw new Error(messageOf(await response.text(), response.status));
       }
-      const total = Number(response.headers.get("X-Total-Count"));
+      // The count is the server's promise about the rows that follow; without
+      // it there is nothing to hold `maxRows` or the progress against, and a
+      // missing one read as 0 would pass any bound.
+      const counted = response.headers.get("X-Total-Count");
+      if (counted === null || !/^\d+$/.test(counted.trim())) {
+        await response.body?.cancel();
+        throw new Error("export: the server did not say how many rows follow (X-Total-Count)");
+      }
+      const total = Number(counted);
       if (maxRows !== undefined && total > maxRows) {
         // Not one row more than needed: the body is dropped unread.
         await response.body?.cancel();
@@ -395,6 +409,7 @@ export function createPivotProvider({ url, source, token } = {}) {
         headers,
         body: pivotJson,
         signal,
+        redirect: "error",
       });
       const text = await response.text();
       if (response.ok) {

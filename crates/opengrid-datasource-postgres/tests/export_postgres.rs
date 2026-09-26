@@ -13,6 +13,9 @@ use opengrid_datasource_postgres::PostgresDataSource;
 use opengrid_query::{Limits, Query, ValidatedQuery};
 use opengrid_types::{Schema, Value};
 
+/// A backstop no test reaches, where the backstop is not the point.
+const LONG: Duration = Duration::from_secs(60);
+
 fn validate(json: &str, schema: &Schema) -> ValidatedQuery {
     let query: Query = serde_json::from_str(json).expect("the query parses");
     query
@@ -90,15 +93,22 @@ async fn the_pieces_are_the_rows_the_query_answers() {
         r#"{"source":"orders","select":["id"],"sort":[{"field":"id","direction":"asc"}],"offset":80}"#,
         // Grouped: the rows are the groups.
         r#"{"source":"orders","select":["country","rows"],"group":["country"],"aggregate":[{"fn":"count","as":"rows"}],"sort":[{"field":"country","direction":"asc"}]}"#,
+        // Aggregates without a grouping: one row, whatever the filter keeps.
+        r#"{"source":"orders","select":["rows","total"],"aggregate":[{"fn":"count","as":"rows"},{"fn":"sum","field":"qty","as":"total"}]}"#,
+        r#"{"source":"orders","select":["rows"],"filter":{"field":"id","op":"lt","value":0},"aggregate":[{"fn":"count","as":"rows"}]}"#,
     ] {
         let query = validate(json, &schema);
         let answer: QueryResult = SendDataSource::execute(&source, query.clone())
             .await
             .expect("the query answers");
 
-        let mut export = source.export(&query).await.expect("an export");
+        let mut export = source.export(&query, LONG).await.expect("an export");
         let rows = export.count().await.expect("a count");
         assert_eq!(rows, answer.row_count() as u64, "{json}");
+        // `/query`'s total is the same count, before its window.
+        if !json.contains("offset") {
+            assert_eq!(answer.total_count, rows, "{json}");
+        }
         let (sizes, columns) = drain(&mut export, 8).await;
         // Compared as text: `NaN` is in the data, and it is not equal to itself.
         assert!(
@@ -138,7 +148,7 @@ async fn an_export_dropped_half_way_leaves_nothing_open() {
 
     // To the end: the connection is back in the pool, idle and not in a
     // transaction, and it answers an ordinary query.
-    let mut export = source.export(&query).await.expect("an export");
+    let mut export = source.export(&query, LONG).await.expect("an export");
     export.count().await.expect("a count");
     let (sizes, _) = drain(&mut export, 20).await;
     assert_eq!(sizes, vec![20, 20, 10]);
@@ -150,7 +160,7 @@ async fn an_export_dropped_half_way_leaves_nothing_open() {
     assert_eq!(answer.row_count(), 50);
 
     // Half-way: while the export is held, its transaction is open …
-    let mut export = source.export(&query).await.expect("an export");
+    let mut export = source.export(&query, LONG).await.expect("an export");
     export.count().await.expect("a count");
     assert_eq!(
         export.next_piece(20).await.expect("a piece").row_count(),
@@ -169,6 +179,75 @@ async fn an_export_dropped_half_way_leaves_nothing_open() {
         left = backends(&client, name).await;
     }
     assert_eq!(left, Vec::<String>::new());
+
+    client
+        .batch_execute(&format!("DROP TABLE \"{table}\";"))
+        .await
+        .expect("drop table");
+}
+
+/// An export refused before its first piece — too long, say — ends cleanly:
+/// its connection goes back to the pool, out of the transaction, instead of
+/// being closed.
+#[tokio::test]
+async fn a_closed_export_gives_its_connection_back() {
+    let Some((client, url)) = pg::connect().await else {
+        return;
+    };
+    let schema = pg::schema();
+    let table = pg::create_fixture(&client, &schema, "opengrid_export_closed").await;
+    let name = "opengrid_export_closed_test";
+    let source =
+        PostgresDataSource::connect(&named(&url, name), &table, schema.clone()).expect("a source");
+    let query = validate(
+        r#"{"source":"orders","select":["id"],"sort":[{"field":"id","direction":"asc"}]}"#,
+        &schema,
+    );
+
+    let mut export = source.export(&query, LONG).await.expect("an export");
+    assert_eq!(export.count().await.expect("a count"), 50);
+    export.close().await;
+    assert_eq!(backends(&client, name).await, vec!["idle".to_owned()]);
+
+    client
+        .batch_execute(&format!("DROP TABLE \"{table}\";"))
+        .await
+        .expect("drop table");
+}
+
+/// The database's own backstop: an export whose transaction sits idle longer
+/// than it may is ended by PostgreSQL, whatever the server does or fails to.
+#[tokio::test]
+async fn an_export_left_idle_is_ended_by_the_database() {
+    let Some((client, url)) = pg::connect().await else {
+        return;
+    };
+    let schema = pg::schema();
+    let table = pg::create_fixture(&client, &schema, "opengrid_export_idle").await;
+    let name = "opengrid_export_idle_test";
+    let source =
+        PostgresDataSource::connect(&named(&url, name), &table, schema.clone()).expect("a source");
+    let query = validate(
+        r#"{"source":"orders","select":["id"],"sort":[{"field":"id","direction":"asc"}]}"#,
+        &schema,
+    );
+
+    let mut export = source
+        .export(&query, Duration::from_millis(300))
+        .await
+        .expect("an export");
+    export.count().await.expect("a count");
+    assert_eq!(
+        export.next_piece(20).await.expect("a piece").row_count(),
+        20
+    );
+    tokio::time::sleep(Duration::from_millis(1_500)).await;
+    assert!(
+        export.next_piece(20).await.is_err(),
+        "the transaction outlived its backstop"
+    );
+    assert_eq!(backends(&client, name).await, Vec::<String>::new());
+    drop(export);
 
     client
         .batch_execute(&format!("DROP TABLE \"{table}\";"))

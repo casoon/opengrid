@@ -39,8 +39,11 @@ pub struct CsvOptions {
 
 impl CsvOptions {
     /// Whether these options write a readable file: the delimiter is not a
-    /// quote or a line break, and the NULL spelling needs no quoting. The
-    /// writers trust options that passed this; check at the boundary.
+    /// quote or a line break, and the NULL spelling needs no quoting. With the
+    /// formula guard on, the NULL spelling must not read as a formula either —
+    /// it is written unguarded into every empty cell, so `=1+1` there would be
+    /// the very thing the guard keeps out of the file. The writers trust
+    /// options that passed this; check at the boundary.
     pub fn check(&self) -> Result<(), &'static str> {
         if matches!(self.delimiter, '"' | '\n' | '\r') {
             return Err("delimiter: one character, not a quote or a line break");
@@ -51,6 +54,11 @@ impl CsvOptions {
             .any(|c| c == self.delimiter || matches!(c, '"' | '\n' | '\r'))
         {
             return Err("null: without the delimiter, a quote or a line break");
+        }
+        if self.protect_formulas && is_formula(&self.null) {
+            return Err(
+                "null: not starting with =, +, -, @ or a tab while the formula guard (protectFormulas) is on",
+            );
         }
         Ok(())
     }
@@ -351,6 +359,34 @@ mod tests {
             ..CsvOptions::default()
         };
         assert!(semicolon_null.check().is_ok());
+    }
+
+    /// NULL is written unguarded into every empty cell, so under the guard
+    /// its spelling must not be a formula — and without the guard it may be.
+    #[test]
+    fn a_null_spelled_as_a_formula_is_refused_under_the_guard() {
+        for null in ["=1+1", "+1", "-", "@SUM(A1)", "\tx"] {
+            let guarded = CsvOptions {
+                null: null.to_owned(),
+                ..CsvOptions::default()
+            };
+            let message = guarded.check().expect_err(null);
+            assert!(message.starts_with("null:"), "{message}");
+            assert!(message.contains("protectFormulas"), "{message}");
+            let raw = CsvOptions {
+                protect_formulas: false,
+                ..guarded
+            };
+            assert!(raw.check().is_ok(), "{null:?} without the guard");
+        }
+        // Not a formula: `\N`, `NULL`, an empty spelling, a `-` inside.
+        for null in ["\\N", "NULL", "", "n-a"] {
+            let options = CsvOptions {
+                null: null.to_owned(),
+                ..CsvOptions::default()
+            };
+            assert!(options.check().is_ok(), "{null:?}");
+        }
     }
 
     #[test]

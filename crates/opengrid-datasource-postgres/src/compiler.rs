@@ -74,6 +74,17 @@ impl CompiledQuery {
         counting.offset = None;
         counting.limit = None;
 
+        // Aggregates without a grouping are **one** row — over no rows too,
+        // the way SQL answers `SELECT count(*)` over an empty table — and the
+        // local engine counts it so. Counting the filtered rows would be the
+        // number of rows the aggregate read, not the rows it answers.
+        if counting.group.is_empty() && !counting.aggregate.is_empty() {
+            return Ok(CompiledQuery {
+                sql: "SELECT 1::bigint AS \"total_count\"".to_owned(),
+                params: Vec::new(),
+            });
+        }
+
         if counting.group.is_empty() {
             let mut sql = Sql::default();
             sql.push("SELECT count(*) AS \"total_count\" FROM ");
@@ -464,7 +475,7 @@ fn sql_operator(op: CmpOp) -> &'static str {
 /// Identifiers only ever come from the schema or the configuration, so this can
 /// never be reached by a request — it is the second lock on a door that should
 /// already be closed.
-fn quote_ident(name: &str) -> Result<String, CompileError> {
+pub(crate) fn quote_ident(name: &str) -> Result<String, CompileError> {
     if name.is_empty() || name.contains('"') || name.contains('\0') {
         return Err(CompileError::Identifier {
             name: name.to_owned(),

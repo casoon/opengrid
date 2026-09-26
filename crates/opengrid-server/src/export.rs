@@ -38,10 +38,40 @@
 //! waits, so the server holds a few pieces whatever the export's length.
 //!
 //! A client that goes away is noticed at the next piece: the send fails, the
-//! export is dropped, and PostgreSQL's transaction and cursor end with it. A
-//! failure **after** the first byte cannot be a status any more; the body is
+//! export is dropped, and PostgreSQL's transaction and cursor end with it.
+//!
+//! # Three bounds on what an export holds
+//!
+//! An export holds a pooled connection and a snapshot (its `xmin`, which keeps
+//! `VACUUM` from removing rows that are dead since it began) for as long as it
+//! runs, and a client decides how long that is. So:
+//!
+//! 1. **Each piece must be taken within `timeout_ms`.** A client that stops
+//!    reading keeps the channel full; when a piece waits longer than that, the
+//!    body is broken off and the export dropped — connection out of the pool,
+//!    transaction and cursor gone.
+//! 2. **At most `max_concurrent_exports` at once** (by default half the
+//!    smallest PostgreSQL pool, see `Registry::default_concurrent_exports`).
+//!    One more is a `503` before any database work, so exports never take the
+//!    connections `/query` needs.
+//! 3. **PostgreSQL's own backstop**: the transaction sets
+//!    `idle_in_transaction_session_timeout` to [`BACKSTOP_FACTOR`] times
+//!    `timeout_ms`, and the database ends it if the server's own bound ever
+//!    fails.
+//!
+//! The local engine holds its whole answer (Arrow, not values) for the length
+//! of the download instead of a cursor; the same bounds apply to it.
+//!
+//! # Never a short file that looks whole
+//!
+//! A failure **after** the first byte cannot be a status any more; the body is
 //! broken off instead, so the connection ends without the end of a chunked
-//! body and a client can never mistake half a file for a whole one.
+//! body and a client can never mistake half a file for a whole one. The body's
+//! sender lives in an [`Outlet`] that breaks the body off when it is dropped
+//! without having reached the end — a panic after the first byte included.
+//! That holds end to end only over HTTP/1.1 chunked or HTTP/2: a proxy that
+//! speaks HTTP/1.0 to the client turns the break into an ordinary end of file
+//! (for nginx: `proxy_http_version 1.1`).
 
 use std::fmt;
 use std::sync::Arc;
@@ -49,7 +79,7 @@ use std::time::Duration;
 
 use axum::body::{Body, Bytes};
 use axum::extract::{Path, Query as Parameters, State};
-use axum::http::{HeaderMap, HeaderValue, Uri, header};
+use axum::http::{HeaderMap, HeaderValue, StatusCode, Uri, header};
 use axum::response::Response;
 use http_body_util::channel::{Channel, Sender};
 use opengrid_datasource::wire::{ErrorCode, WireError};
@@ -57,9 +87,9 @@ use opengrid_datasource::{DataSourceError, QueryResult};
 use opengrid_datasource_postgres::ExportCanceller;
 use opengrid_export::{CsvOptions, CsvWriter, JsonWriter};
 use opengrid_query::{Limits, ValidatedQuery};
-use tokio::sync::oneshot;
+use tokio::sync::{OwnedSemaphorePermit, oneshot};
 
-use crate::api::{AppState, Failure, admit, source_failed};
+use crate::api::{AppState, Failure, admit, error_response, source_failed};
 use crate::registry::Source;
 
 /// Rows read from the source at a time — the `max_limit` a page has by default,
@@ -69,6 +99,12 @@ const PIECE_ROWS: usize = 10_000;
 /// Pieces the body holds ahead of the client. With the one being written and
 /// the one being read, this is all an export keeps in memory.
 const BUFFERED_PIECES: usize = 2;
+
+/// PostgreSQL's backstop, in multiples of `timeout_ms`. The server bounds each
+/// pause in the transaction itself — a piece taken within `timeout_ms`, then a
+/// piece written, which takes milliseconds — so twice that is only reached
+/// when the server's own bound has failed.
+const BACKSTOP_FACTOR: u32 = 2;
 
 /// The response header that carries the number of rows, known before the
 /// first byte — a client's progress and its own bound read it.
@@ -112,7 +148,22 @@ pub(crate) async fn export(
 ) -> Result<Response, Failure> {
     let limits = Limits::new(state.max_export_rows, state.registry.limits.max_depth);
     let (source, query) = admit(&state, &source_name, &headers, &body, &limits)?;
-    let format = format_of(uri.query(), headers.get(header::ACCEPT))?;
+    let format = format_of(&uri, headers.get(header::ACCEPT))?;
+
+    // Before any database work: an export over the bound costs nothing.
+    let Ok(permit) = Arc::clone(&state.exports).try_acquire_owned() else {
+        return Ok(error_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            &WireError::new(
+                ErrorCode::LimitExceeded,
+                format!(
+                    "{} exports are running, the most this server runs at once \
+                     (max_concurrent_exports); try again later",
+                    state.max_concurrent_exports
+                ),
+            ),
+        ));
+    };
 
     let (ready, started) = oneshot::channel();
     let (sender, channel) = Channel::<Bytes, Broken>::new(BUFFERED_PIECES);
@@ -123,7 +174,8 @@ pub(crate) async fn export(
         state.max_export_rows,
         state.timeout,
         ready,
-        sender,
+        Outlet::new(sender),
+        permit,
     ));
 
     // Dropping `started` — on the timeout, or when the client leaves before
@@ -161,7 +213,9 @@ pub(crate) async fn export(
 }
 
 /// The export itself, in its own task: the handler waits for its first piece
-/// (or its failure) through `ready`, and the rest goes to the body.
+/// (or its failure) through `ready`, and the rest goes to the body. `_permit`
+/// is its place among `max_concurrent_exports`, given back when the task ends.
+#[allow(clippy::too_many_arguments)]
 async fn stream(
     source: Arc<Source>,
     query: ValidatedQuery,
@@ -169,11 +223,15 @@ async fn stream(
     max_rows: u64,
     timeout: Duration,
     mut ready: oneshot::Sender<Result<u64, Failure>>,
-    mut body: Sender<Bytes, Broken>,
+    mut outlet: Outlet,
+    _permit: OwnedSemaphorePermit,
 ) {
     // Before the first byte: every step races the handler, which gives up on
     // the timeout or when the client leaves — `ready.closed()` resolves then.
-    let mut rows = match step(source.data.export(&query), ready.closed(), None).await {
+    // A failure is still a status then, and a clean one hands the connection
+    // back (`close`); a step given up on drops it.
+    let backstop = timeout * BACKSTOP_FACTOR;
+    let mut rows = match step(source.data.export(&query, backstop), ready.closed(), None).await {
         None => return,
         Some(Err(error)) => {
             let _ = ready.send(Err(source_failed(error).into()));
@@ -187,6 +245,7 @@ async fn stream(
         None => return,
         Some(Err(error)) => {
             let _ = ready.send(Err(source_failed(error).into()));
+            rows.close().await;
             return;
         }
         Some(Ok(count)) => count,
@@ -199,6 +258,7 @@ async fn stream(
             ),
         )
         .into()));
+        rows.close().await;
         return;
     }
 
@@ -212,6 +272,7 @@ async fn stream(
         None => return,
         Some(Err(error)) => {
             let _ = ready.send(Err(source_failed(error).into()));
+            rows.close().await;
             return;
         }
         Some(Ok(first)) => first,
@@ -220,7 +281,7 @@ async fn stream(
     let mut writer = Writer::new(format);
     let mut last = first.row_count() < PIECE_ROWS;
     // The channel is empty, so this does not wait for the client.
-    if body.send_data(writer.write(&first)).await.is_err() {
+    if outlet.send(writer.write(&first), timeout).await.is_err() {
         return;
     }
     drop(first);
@@ -229,7 +290,9 @@ async fn stream(
         return;
     }
 
-    // After the first byte: each fetch has the timeout to itself.
+    // After the first byte: each fetch has the timeout to itself, and so has
+    // the client to take each piece. Any return from here on without
+    // `finish` breaks the body off (`Outlet`).
     while !last {
         let piece = match step(
             rows.next_piece(PIECE_ROWS),
@@ -240,25 +303,85 @@ async fn stream(
         {
             Some(Ok(piece)) => piece,
             Some(Err(error)) => {
-                body.abort(Broken(source_failed(error).message));
+                outlet.abort(source_failed(error).message);
                 return;
             }
             None => {
-                body.abort(Broken(format!(
+                outlet.abort(format!(
                     "a fetch took longer than {} ms",
                     timeout.as_millis()
-                )));
+                ));
                 return;
             }
         };
         last = piece.row_count() < PIECE_ROWS;
-        if body.send_data(writer.write(&piece)).await.is_err() {
-            // The client is gone. Dropping `rows` ends the transaction.
+        if outlet.send(writer.write(&piece), timeout).await.is_err() {
+            // The client is gone, or took too long. Dropping `rows` ends the
+            // transaction.
             return;
         }
     }
-    if let Some(end) = writer.finish() {
-        let _ = body.send_data(end).await;
+    if let Some(end) = writer.finish()
+        && outlet.send(end, timeout).await.is_err()
+    {
+        return;
+    }
+    outlet.finish();
+}
+
+/// The body's sender, which breaks the body off when it is dropped before the
+/// end — on every early return, and on a panic, since unwinding drops it too.
+/// Only [`Outlet::finish`] ends the body as a whole file.
+struct Outlet {
+    /// `Some` until the body is ended, one way or the other.
+    sender: Option<Sender<Bytes, Broken>>,
+}
+
+impl Outlet {
+    fn new(sender: Sender<Bytes, Broken>) -> Self {
+        Self {
+            sender: Some(sender),
+        }
+    }
+
+    /// Hands a piece to the client, which has `deadline` to take it — a
+    /// client that stops reading keeps the channel full, and would otherwise
+    /// keep the export, its connection and its snapshot as long as it liked.
+    /// `Err` means the export is over: the client left, or was too slow and
+    /// the body is broken off.
+    async fn send(&mut self, piece: Bytes, deadline: Duration) -> Result<(), ()> {
+        let sender = self.sender.as_mut().expect("sending before the end");
+        match tokio::time::timeout(deadline, sender.send_data(piece)).await {
+            Ok(Ok(())) => Ok(()),
+            // Nobody is reading any more.
+            Ok(Err(_)) => Err(()),
+            Err(_) => {
+                self.abort(format!(
+                    "the client took no piece for {} ms",
+                    deadline.as_millis()
+                ));
+                Err(())
+            }
+        }
+    }
+
+    /// Breaks the body off: the client gets an error after what it has, never
+    /// the end of a file.
+    fn abort(&mut self, reason: String) {
+        if let Some(sender) = self.sender.take() {
+            sender.abort(Broken(reason));
+        }
+    }
+
+    /// The end of the file: the body ends as a whole.
+    fn finish(mut self) {
+        self.sender.take();
+    }
+}
+
+impl Drop for Outlet {
+    fn drop(&mut self) {
+        self.abort("the export ended before its last row".to_owned());
     }
 }
 
@@ -325,14 +448,11 @@ impl Writer {
     }
 }
 
-/// The format and its options, from the query string and `Accept`.
-fn format_of(query: Option<&str>, accept: Option<&HeaderValue>) -> Result<Format, WireError> {
+/// The format and its options, from the request's query string and `Accept`.
+fn format_of(uri: &Uri, accept: Option<&HeaderValue>) -> Result<Format, WireError> {
     let malformed = |message: String| WireError::new(ErrorCode::Malformed, message);
 
-    let uri: Uri = format!("/?{}", query.unwrap_or(""))
-        .parse()
-        .map_err(|_| malformed("the query string is not readable".to_owned()))?;
-    let Parameters(pairs) = Parameters::<Vec<(String, String)>>::try_from_uri(&uri)
+    let Parameters(pairs) = Parameters::<Vec<(String, String)>>::try_from_uri(uri)
         .map_err(|error| malformed(format!("the query string: {error}")))?;
 
     let mut seen: Vec<&str> = Vec::new();
@@ -469,36 +589,125 @@ mod tests {
         Ok(Format::Csv(options))
     }
 
+    /// `format_of` for a request with this query string, if any.
+    fn format(query: Option<&str>, accept: Option<&HeaderValue>) -> Result<Format, WireError> {
+        let uri: Uri = match query {
+            Some(query) => format!("/export/orders?{query}"),
+            None => "/export/orders".to_owned(),
+        }
+        .parse()
+        .expect("a request URI");
+        format_of(&uri, accept)
+    }
+
+    use http_body_util::BodyExt;
+
+    /// The body a client reads: the pieces, then its end — or an error.
+    async fn read(channel: Channel<Bytes, Broken>) -> (String, Option<String>) {
+        let mut body = Body::new(channel);
+        let mut text = String::new();
+        loop {
+            match body.frame().await {
+                None => return (text, None),
+                Some(Ok(frame)) => {
+                    text.push_str(std::str::from_utf8(frame.data_ref().unwrap()).unwrap());
+                }
+                Some(Err(error)) => return (text, Some(error.to_string())),
+            }
+        }
+    }
+
+    /// Only `finish` ends the body as a whole file.
+    #[tokio::test]
+    async fn only_the_end_ends_the_body() {
+        let (sender, channel) = Channel::new(4);
+        let mut outlet = Outlet::new(sender);
+        outlet
+            .send(Bytes::from("a\r\n"), Duration::from_secs(1))
+            .await
+            .unwrap();
+        outlet.finish();
+        assert_eq!(read(channel).await, ("a\r\n".to_owned(), None));
+
+        let (sender, channel) = Channel::new(4);
+        let mut outlet = Outlet::new(sender);
+        outlet
+            .send(Bytes::from("a\r\n"), Duration::from_secs(1))
+            .await
+            .unwrap();
+        drop(outlet);
+        let (text, error) = read(channel).await;
+        assert_eq!(text, "a\r\n");
+        assert!(error.is_some_and(|error| error.contains("before its last row")));
+    }
+
+    /// **A panic after the first byte breaks the body off**, it does not end
+    /// it: unwinding drops the outlet, and the client gets an error after the
+    /// rows it has — never a shorter file that looks whole.
+    #[tokio::test]
+    async fn a_panic_after_the_first_byte_breaks_the_body_off() {
+        let (sender, channel) = Channel::new(4);
+        let task = tokio::spawn(async move {
+            let mut outlet = Outlet::new(sender);
+            outlet
+                .send(Bytes::from("id\r\n1\r\n"), Duration::from_secs(1))
+                .await
+                .unwrap();
+            panic!("a bug after the first piece");
+        });
+        assert!(task.await.unwrap_err().is_panic());
+        let (text, error) = read(channel).await;
+        assert_eq!(text, "id\r\n1\r\n");
+        assert!(error.is_some(), "the body ended as if it were whole");
+    }
+
+    /// A client that takes no piece within the deadline is cut off: the send
+    /// fails, and what the client reads afterwards ends in an error.
+    #[tokio::test]
+    async fn a_client_that_stops_reading_is_cut_off() {
+        let (sender, channel) = Channel::new(1);
+        let mut outlet = Outlet::new(sender);
+        let deadline = Duration::from_millis(100);
+        outlet.send(Bytes::from("one"), deadline).await.unwrap();
+        // The channel holds one piece and nobody reads it.
+        let started = std::time::Instant::now();
+        assert!(outlet.send(Bytes::from("two"), deadline).await.is_err());
+        assert!(started.elapsed() < Duration::from_secs(1));
+        let (text, error) = read(channel).await;
+        assert_eq!(text, "one");
+        assert!(error.is_some_and(|error| error.contains("took no piece for 100 ms")));
+    }
+
     #[test]
     fn the_format_comes_from_the_parameter_then_accept_then_the_default() {
         let accept = |value: &'static str| HeaderValue::from_static(value);
-        assert_eq!(format_of(None, None), csv(CsvOptions::default()));
-        assert_eq!(format_of(Some("format=json"), None), Ok(Format::Json));
+        assert_eq!(format(None, None), csv(CsvOptions::default()));
+        assert_eq!(format(Some("format=json"), None), Ok(Format::Json));
         assert_eq!(
-            format_of(Some("format=csv"), Some(&accept("application/json"))),
+            format(Some("format=csv"), Some(&accept("application/json"))),
             csv(CsvOptions::default()),
             "the parameter wins"
         );
         assert_eq!(
-            format_of(None, Some(&accept("application/json"))),
+            format(None, Some(&accept("application/json"))),
             Ok(Format::Json)
         );
         assert_eq!(
-            format_of(None, Some(&accept("text/csv, application/json"))),
+            format(None, Some(&accept("text/csv, application/json"))),
             csv(CsvOptions::default()),
             "the earlier one on a tie"
         );
         assert_eq!(
-            format_of(None, Some(&accept("text/csv;q=0.5, application/json"))),
+            format(None, Some(&accept("text/csv;q=0.5, application/json"))),
             Ok(Format::Json),
             "the higher q"
         );
         assert_eq!(
-            format_of(None, Some(&accept("*/*"))),
+            format(None, Some(&accept("*/*"))),
             csv(CsvOptions::default())
         );
         assert_eq!(
-            format_of(None, Some(&accept("application/json;q=0"))),
+            format(None, Some(&accept("application/json;q=0"))),
             csv(CsvOptions::default()),
             "q=0 means not this one"
         );
@@ -507,7 +716,7 @@ mod tests {
     #[test]
     fn the_csv_options_are_read_and_checked() {
         assert_eq!(
-            format_of(
+            format(
                 Some("delimiter=%3B&bom=false&protectFormulas=false&null=%5CN"),
                 None
             ),
@@ -519,7 +728,7 @@ mod tests {
             })
         );
         let refused = |query: &str| {
-            format_of(Some(query), None)
+            format(Some(query), None)
                 .map(|_| ())
                 .expect_err(query)
                 .message
