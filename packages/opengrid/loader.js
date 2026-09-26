@@ -399,7 +399,12 @@ export function createHybridProvider({ remote, planner, mode = "auto", onPlan } 
 
 /** The options of `exportRows` that are its own. */
 const EXPORT_OPTIONS = ["format", "chunkSize", "maxRows", "onProgress", "signal"];
-/** The options handed to `export_csv` — only these, whatever else is passed. */
+/**
+ * The options handed to `export_csv` — only these, whatever else is passed.
+ * The same list as `CSV_OPTION_KEYS` in
+ * crates/opengrid-web-components/src/export.rs, which reads them; the two
+ * must stay in step (a test in that crate's api.rs compares them).
+ */
 const CSV_OPTIONS = ["delimiter", "bom", "protectFormulas", "null"];
 /** A result without rows or columns: enough for `export_csv` to read its options. */
 const NO_ROWS = '{"total_count":0,"columns":[]}';

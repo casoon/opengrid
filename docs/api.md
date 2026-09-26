@@ -498,7 +498,7 @@ setTimeout(() => URL.revokeObjectURL(link.href), 0);
 | `maxRows` | 1 000 000 by default. More matches than that is an error with a sentence, before anything else is fetched — never a truncated file. |
 | `onProgress` | Called after each piece with `{ rows, total }`. |
 | `signal` | An `AbortSignal`. An abort rejects with an `AbortError` at once, hands the signal to the provider so an HTTP request stops, and gives no `Blob`. |
-| `delimiter`, `bom`, `protectFormulas`, `null` | CSV only: `,` (or `;`); a UTF-8 byte order mark, on; the guard against formula injection in text cells, on; how NULL is written, empty (`\N` reads back into opengrid). |
+| `delimiter`, `bom`, `protectFormulas`, `null` | **The CSV options**, each optional, for a CSV only — `get_pivot` takes the same: `delimiter`, one character, `,` by default (`;` for a German Excel); `bom`, a UTF-8 byte order mark, on; `protectFormulas`, the guard against formula injection, on; `null`, how NULL is written, empty (`\N` reads back into opengrid). |
 
 Any other key is an error, and so is a CSV option on a JSON export.
 
@@ -532,7 +532,7 @@ const blob = csv && new Blob([csv], { type: "text/csv;charset=utf-8" }); // the 
 | Subtotals | Their label — `Total DE`, `Total` — in the first dimension column; the dimension columns it spans are empty fields. There is no level column, as the table has none: a subtotal is known by its label alone, so a group literally named `Total` looks like the grand total. |
 | Labels | The element's own [texts](#texts): NULL is `(no value)`, the empty string `(empty)`, as in the table, and a page's `set_texts` changes both. With non-empty texts a data row's dimension cell is never empty, so an empty one means "spanned by the total"; a text set to `""` gives that up. |
 | Values | As every export writes them: the wire notation, NULL as the `null` option, the formula guard — which covers every header and label, since a dimension value is data. The notation is the canonical one, whatever the provider sent: a custom provider's float `2` reads `2.0`, a decimal `12.5` at scale 2 reads `12.50`, where the table shows the text as it came. |
-| `options` | `{ delimiter, bom, protectFormulas, null }`, each optional, as for a query's export. Any other key is an error. |
+| `options` | The CSV options — `delimiter`, `bom`, `protectFormulas`, `null` — as [`exportRows`](#exporting-the-view) takes them. Any other key is an error. |
 | Errors | A wrong option, and an answer the export cannot read — one whose cells do not match its row dimensions and columns, as a page's own provider could send. Both throw with a sentence. |
 | `null` | Before the first answer, while one loads, after an error, and for the grid and the table. |
 
