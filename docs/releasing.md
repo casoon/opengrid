@@ -62,7 +62,10 @@ staged, and what was **not** tested is named in the release notes either way.
       sentence. Silence is not.
 - [ ] **Two engines beyond Chromium**: `just e2e-browsers` runs the whole e2e suite in
       Playwright's Firefox and WebKit (once: `pnpm exec playwright install firefox
-      webkit`). `just e2e` and CI stay Chromium-only. What it does not cover:
+      webkit`), one desktop-sized project per engine. `just e2e` and CI stay
+      Chromium-only. What it does not cover:
+      - **No narrow viewport.** The 480px project stays Chromium-only; tests that
+        set their own size (400% zoom, the narrow filter row) still run everywhere.
       - **No screenshots.** The baselines are Chromium's; the other engines skip
         `phase-f-baselines.spec.js` and every `toHaveScreenshot`, so how the grid
         *looks* there is only checked by the layout assertions (sizes, overlap,

@@ -34,7 +34,8 @@ the same on every page, so the live region repeated itself while the content cha
 ## Not yet verified
 
 **A screen reader has not been through the finished V1.** The protocol exists and is the last
-open item before a release. The e2e suite runs Chromium only.
+open item before a release. CI runs the e2e suite in Chromium; before a release,
+`just e2e-browsers` runs it in Firefox and WebKit too, at a desktop viewport.
 
 So: the structure is tested hard, the experience is not signed off. Until it is, treat the
 accessibility of this library as well-built and unaudited.
