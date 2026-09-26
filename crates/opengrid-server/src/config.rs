@@ -54,9 +54,10 @@ pub struct ServerConfig {
     #[serde(default = "default_max_payload")]
     pub max_payload_bytes: usize,
     /// How long a single query may take before it is cut off. For an export:
-    /// how long it may take to the first byte, and then each single fetch from
-    /// the source — its whole length is bounded by `max_export_rows`, not by a
-    /// clock.
+    /// how long it may take to the first byte, then each single fetch from the
+    /// source, and how long the client may take to accept each piece before the
+    /// export is broken off — its whole length is bounded by `max_export_rows`,
+    /// not by a clock (`docs/guides/where-queries-run.md`, "For operators").
     #[serde(default = "default_timeout_ms")]
     pub timeout_ms: u64,
     /// `Limits::max_limit` for every source (02-query-modell.md).
@@ -76,11 +77,11 @@ pub struct ServerConfig {
     /// More is a `413` before the first byte, never a file cut short.
     #[serde(default = "default_max_export_rows")]
     pub max_export_rows: u64,
-    /// How many exports may run at once. Each holds a pooled connection and a
-    /// snapshot for as long as its client downloads, so one more is a `503`
-    /// before any database work. Unset: half the smallest PostgreSQL pool
-    /// (`Registry::default_concurrent_exports`), so exports never take the
-    /// connections queries need. At least 1.
+    /// How many exports may run at once; one more is a `503` before any
+    /// database work. Unset: half the smallest PostgreSQL pool, or the number
+    /// of CPUs without a PostgreSQL source, at least 1
+    /// (`Registry::default_concurrent_exports`; why, in
+    /// `docs/guides/where-queries-run.md`, "For operators").
     #[serde(default)]
     pub max_concurrent_exports: Option<usize>,
     /// Origins a browser may call this server from. Empty means **none**: no
