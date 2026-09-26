@@ -168,6 +168,13 @@ struct GridRuntime {
     facet_generation: u64,
     /// The free text the search field applied (point 67), or empty.
     search_text: String,
+    /// Every column a result has typed, by name (plan point 88). Kept across
+    /// rebuilds — a view, a shown column — so a filter meets its real type;
+    /// forgotten when the `datasource` changes.
+    known: std::collections::BTreeMap<String, opengrid_types::Field>,
+    /// A view's filter was typed before its columns' types were known; the
+    /// next data query asks for the schema first (plan point 88).
+    retype_filter: bool,
     /// The viewport's scroll offset, as the reader left it. A browser forgets
     /// the offset of an element that leaves the document, even for a move;
     /// this is what puts it back (point 74).
@@ -210,18 +217,21 @@ fn runtime_or_init(host: &HtmlElement) -> Rc<RefCell<GridRuntime>> {
     if let Some(runtime) = runtime(host) {
         return runtime;
     }
-    let runtime = Rc::new(RefCell::new(fresh_runtime(host)));
+    let runtime = Rc::new(RefCell::new(fresh_runtime(host, &Default::default())));
     attach_runtime(host, &runtime);
     runtime
 }
 
 /// A fresh runtime: display schema from `columns`, window at offset 0 and the
 /// top-left header cell active.
-fn fresh_runtime(host: &HtmlElement) -> GridRuntime {
+fn fresh_runtime(
+    host: &HtmlElement,
+    known: &std::collections::BTreeMap<String, opengrid_types::Field>,
+) -> GridRuntime {
     let columns = columns_of(host);
     let pool = pool_of(host);
     let row_height = resolve_row_height(host);
-    let mut state = GridState::new(grid::initial_schema(&columns));
+    let mut state = GridState::new(grid::known_schema(&columns, known));
     state.set_window(Window::new(0, pool));
     // Paging needs a total order (rule S6), so the grid starts sorted by its
     // first column; the header shows it as `aria-sort="ascending"`.
@@ -248,6 +258,8 @@ fn fresh_runtime(host: &HtmlElement) -> GridRuntime {
         facet_queries: 0,
         facet_generation: 0,
         search_text: String::new(),
+        known: known.clone(),
+        retype_filter: false,
         scroll_top: 0,
     }
 }
@@ -277,7 +289,8 @@ fn resolve_row_height(host: &HtmlElement) -> u64 {
 /// Resets the runtime after a data attribute changed and drops the skeleton.
 fn reset_runtime(host: &HtmlElement) {
     if let Some(runtime) = runtime(host) {
-        let fresh = fresh_runtime(host);
+        let known = runtime.borrow().known.clone();
+        let fresh = fresh_runtime(host, &known);
         let mut runtime = runtime.borrow_mut();
         runtime.state = fresh.state;
         runtime.active = fresh.active;
@@ -572,6 +585,12 @@ fn on_attribute_changed(
             let Some(root) = host.shadow_root() else {
                 return;
             };
+            // Another source: the types this grid learned belong to the old one.
+            if name == DATASOURCE_ATTRIBUTE
+                && let Some(runtime) = runtime(&host)
+            {
+                runtime.borrow_mut().known.clear();
+            }
             clear_root(&root);
             reset_runtime(&host);
             ensure_skeleton(&host);
@@ -815,6 +834,10 @@ pub(crate) fn run_query(host: &HtmlElement, kind: QueryKind, focus: bool) {
     let Some(grid_runtime) = runtime(host) else {
         return;
     };
+    if grid_runtime.borrow().retype_filter {
+        probe_then_query(host, &grid_runtime, kind, focus);
+        return;
+    }
     if grid_runtime.borrow().grouping.is_some() {
         run_grouped(host, &grid_runtime, kind, focus);
         return;
@@ -878,6 +901,72 @@ pub(crate) fn run_query(host: &HtmlElement, kind: QueryKind, focus: bool) {
     });
 }
 
+/// Remembers the types a result brought (plan point 88).
+fn learn_types(runtime: &mut GridRuntime, schema: &opengrid_types::Schema) {
+    for field in schema.fields() {
+        runtime
+            .known
+            .insert(field.name.as_str().to_owned(), field.clone());
+    }
+}
+
+/// Asks for the schema, then types the filter row against it, then runs the
+/// data query (plan point 88).
+///
+/// Only when a view put a filter on a column whose type no result has told yet
+/// — a view applied before the first result, which is what `connect` does on
+/// mount. The probe is the query with `limit 0` and no filter: it cannot fail
+/// on a literal, and it answers nothing but the schema. It is not drawn and not
+/// announced; the status line is already "loading".
+fn probe_then_query(
+    host: &HtmlElement,
+    grid_runtime: &Rc<RefCell<GridRuntime>>,
+    kind: QueryKind,
+    focus: bool,
+) {
+    let Some(provider) = provider(host) else {
+        return;
+    };
+    let Some(source) = host.get_attribute(DATASOURCE_ATTRIBUTE) else {
+        return;
+    };
+    let columns = columns_of(host);
+    let mode = host.get_attribute(MODE_ATTRIBUTE).unwrap_or_default();
+    let (generation, sorts) = {
+        let mut runtime = grid_runtime.borrow_mut();
+        runtime.retype_filter = false;
+        runtime.generation += 1;
+        runtime.state.set_status(GridStatus::Loading);
+        (runtime.generation, runtime.state.sort_keys())
+    };
+    render(host, false);
+    // With the grid's sort: an `offset` needs a total order (S6), even at 0.
+    let probe = grid::query_json(&source, &columns, &sorts, None, 0, 0);
+    let host = host.clone();
+    let grid_runtime = grid_runtime.clone();
+    spawn_local(async move {
+        let schema = match ask(&provider, &probe, &mode).await {
+            Ok(result) => result.schema,
+            Err(message) => return settle(&host, generation, Err(message), focus),
+        };
+        if grid_runtime.borrow().generation != generation {
+            return;
+        }
+        let Some(root) = host.shadow_root() else {
+            return;
+        };
+        let entries = read_filter_entries(&root, &columns_of(&host));
+        {
+            let mut runtime = grid_runtime.borrow_mut();
+            learn_types(&mut runtime, &schema);
+            runtime.state.adopt_schema(schema.clone());
+            let filter = grid::filter_expr(&entries, &schema).ok().flatten();
+            runtime.state.set_filter(filter);
+        }
+        run_query(&host, kind, focus);
+    });
+}
+
 /// Applies a finished query to the runtime and renders one frame.
 ///
 /// Success and failure take the same path on purpose: both are a status the
@@ -902,6 +991,7 @@ fn settle(
         }
         match outcome {
             Ok(result) => {
+                learn_types(&mut runtime, &result.schema);
                 runtime.state.apply_result(result);
             }
             Err(cause) => {
@@ -2951,6 +3041,11 @@ pub(crate) fn write_view(host: &HtmlElement, value: &JsValue) {
         let entries: Vec<FilterEntry> = view.filters.clone();
         let filter = grid::filter_expr(&entries, &schema).ok().flatten();
         let mut borrowed = runtime.borrow_mut();
+        // A filter on a column no result has typed yet is text for now; the
+        // query that follows asks for the types first (point 88).
+        borrowed.retype_filter = entries
+            .iter()
+            .any(|entry| !borrowed.known.contains_key(&entry.column));
         borrowed.state.set_filter(filter);
         borrowed.state.set_sort(
             view.sort

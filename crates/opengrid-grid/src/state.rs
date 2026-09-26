@@ -423,6 +423,19 @@ impl GridState {
         patches
     }
 
+    /// Takes the typed schema of the columns without a result (plan point 88).
+    ///
+    /// A probe — the query with `limit 0` — tells the types before the first
+    /// rows arrive; a filter written as text has to meet them before it is sent.
+    /// Only the schema changes: rows, count and status wait for the result.
+    pub fn adopt_schema(&mut self, schema: Schema) -> Vec<Patch> {
+        if schema == self.schema {
+            return Vec::new();
+        }
+        self.schema = schema.clone();
+        vec![Patch::Columns(schema)]
+    }
+
     /// Replaces the sort keys. Emits one [`Patch::Sort`] per column whose
     /// indicator changed, in schema order.
     pub fn set_sort(&mut self, sort: Vec<Sort>) -> Vec<Patch> {
@@ -620,6 +633,33 @@ fn sort_key<'a>(sort: &'a [Sort], field: &Field) -> Option<&'a Sort> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A probe's schema is taken without touching rows or status (point 88).
+    #[test]
+    fn a_probe_schema_is_adopted_alone() {
+        use opengrid_types::{DataType, Field, FieldName};
+        let text = Schema::new(vec![Field::new(
+            FieldName::new("qty").unwrap(),
+            DataType::Utf8,
+        )]);
+        let typed = Schema::new(vec![Field::new(
+            FieldName::new("qty").unwrap(),
+            DataType::Int64,
+        )]);
+        let mut state = GridState::new(text);
+        let status = state.status().clone();
+        assert_eq!(
+            state.adopt_schema(typed.clone()),
+            vec![Patch::Columns(typed.clone())]
+        );
+        assert_eq!(state.schema(), &typed);
+        assert_eq!(state.status(), &status);
+        assert_eq!(state.total_count(), 0);
+        assert!(
+            state.adopt_schema(typed).is_empty(),
+            "the same schema is no change"
+        );
+    }
     use opengrid_query::{Collation, NullsOrder, SortDirection};
     use opengrid_types::{DataType, FieldName};
 

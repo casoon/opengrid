@@ -839,12 +839,26 @@ pub fn parse_row_height(raw: &str) -> u64 {
 /// the module. Names that are not valid identifiers are skipped; the result
 /// schema replaces this one on the first [`GridState::apply_result`].
 pub fn initial_schema(columns: &[String]) -> Schema {
+    known_schema(columns, &std::collections::BTreeMap::new())
+}
+
+/// The schema of `columns` as far as it is known (plan point 88): a column a
+/// result has already typed keeps that type across a rebuild, the rest are
+/// display text until a result says otherwise.
+///
+/// Without this a rebuild — applying a view, showing a column — fell back to
+/// all text, and a view's `qty ≥ 2` went out as the string `"2"`.
+pub fn known_schema(
+    columns: &[String],
+    known: &std::collections::BTreeMap<String, Field>,
+) -> Schema {
     let fields = columns
         .iter()
-        .filter_map(|name| {
-            FieldName::new(name.as_str())
+        .filter_map(|name| match known.get(name) {
+            Some(field) => Some(field.clone()),
+            None => FieldName::new(name.as_str())
                 .ok()
-                .map(|name| Field::new(name, DataType::Utf8))
+                .map(|name| Field::new(name, DataType::Utf8)),
         })
         .collect();
     Schema::new(fields)
