@@ -13,9 +13,10 @@ A conformance suite of JSON cases pins what "the same" means.
 
 ## Status
 
-Pre-1.0 and **not published**: the workspace version is `0.0.0`, there is no package on npm or
-crates.io yet, and `CHANGELOG.md` has no release entry. To use it today, build it from the
-repository — see [Installation](getting-started/installation/).
+Pre-1.0. On npm are `@casoon/opengrid`, with the elements and the engine, and the adapters for
+React, Vue and Svelte — see [Installation](getting-started/installation/). The Rust crates are
+not on crates.io yet. What each release changed is in
+[`CHANGELOG.md`](https://github.com/casoon/opengrid/blob/main/CHANGELOG.md).
 
 The public API is written down in [The public API](api/), and a test fails when it changes.
 That freezes the list, not the design: it may still change before 1.0.

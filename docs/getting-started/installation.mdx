@@ -1,15 +1,79 @@
 ---
 title: Installation
-description: No package is published yet. Build the two WebAssembly modules from the repository.
+description: Install the elements and the engine from npm, and add an adapter for React, Vue or Svelte.
 order: 1
 ---
 
-<Callout type="note" title="Not published yet">
-There is no `@casoon/opengrid` on npm and no `opengrid-*` crate on crates.io yet. Everything
-below builds from the Git repository.
+## From npm
+
+```sh
+npm install @casoon/opengrid
+```
+
+One package, two WebAssembly modules:
+
+| In the package | Contains | Imported as |
+|---|---|---|
+| `loader.js`, `pkg/` | `<opengrid-table>`, `<opengrid-grid>`, `<opengrid-pivot>`; the providers and `connect` | `@casoon/opengrid` |
+| `engine/`, `worker.js` | `Engine` (in-memory sources over Apache Arrow) and `Planner`; the worker that runs the engine | `@casoon/opengrid/engine/opengrid_wasm.js` |
+
+A page that only talks to an `opengrid-server` never loads the engine. One that queries in the
+tab imports it, and `createWorkerProvider()` finds it on its own ([The public API →
+Providers](../../api/#providers)).
+
+In React, Vue or Svelte, install the adapter next to it. It names `@casoon/opengrid` as a peer
+and is released with the same version:
+
+```sh
+npm install @casoon/opengrid @casoon/opengrid-react react     # React 18 or 19
+npm install @casoon/opengrid @casoon/opengrid-vue vue         # Vue 3.3 and later
+npm install @casoon/opengrid @casoon/opengrid-svelte svelte   # Svelte 5
+```
+
+What the adapters take and how they bind the view is in [Frameworks](../../guides/frameworks/).
+
+<Callout type="note" title="Not on crates.io">
+No `opengrid-*` crate is published, so `opengrid-server` runs from the repository
+([Where queries run](../../guides/where-queries-run/)).
 </Callout>
 
-## Requirements
+## Where the modules are found
+
+`loadOpengrid()` loads the element module from `pkg/` next to `loader.js`, and
+`createWorkerProvider()` loads `worker.js` and the engine from `engine/` next to it — after an
+install, all under `node_modules/@casoon/opengrid/`. Wherever `loader.js` goes, those go with
+it, whole directories.
+
+A bundler does not always keep them together. Vite's development server does; a production
+build does not, and the element falls back to the plain table. Serve the directories yourself
+and pass their URLs — `loadOpengrid({ moduleUrl })`, `createWorkerProvider({ moduleUrl, workerUrl })`.
+[Frameworks → Bundlers and the WebAssembly module](../../guides/frameworks/#what-every-adapter-does-the-same-way)
+has the details. The engine imported on the main thread is bundled like any module.
+
+A page without a bundler takes the files from `node_modules` and serves them as they are:
+
+```sh
+mkdir -p opengrid
+cp -R node_modules/@casoon/opengrid/{loader.js,worker.js,pkg,engine} opengrid/
+```
+
+```text
+opengrid/
+├── loader.js
+├── worker.js
+├── pkg/                      # the elements
+└── engine/
+    ├── opengrid_wasm.js      # the engine
+    └── opengrid_wasm_bg.wasm
+```
+
+The [Quickstart](../quickstart/) assumes this layout.
+
+## Building from the repository
+
+For working on opengrid itself, or for a version that is not released yet.
+
+### Requirements
 
 - a recent stable Rust with the `wasm32-unknown-unknown` target (`rust-toolchain.toml` in the
   repository asks for it)
@@ -17,9 +81,9 @@ below builds from the Git repository.
 - `wasm-bindgen` CLI **0.2.126** — the crate pins the same version, and a different CLI stops
   with a version error
 - `wasm-opt` from binaryen **132**
-- Node 22 with pnpm, only for the end-to-end tests
+- Node 22 with pnpm, for the adapters and the end-to-end tests
 
-## Build the modules
+### Build the modules
 
 ```sh
 git clone https://github.com/casoon/opengrid.git
@@ -28,37 +92,14 @@ just wasm-build-components   # the elements -> packages/opengrid/pkg/
 just wasm-build              # the engine   -> examples/engine-demo/pkg/
 ```
 
-Two modules come out of this:
+The examples and the demo on this site load the engine from `examples/engine-demo/pkg/`.
+`just package` builds both modules again into the element package — the engine into
+`packages/opengrid/engine/` — and packs all four packages the way a release does, into
+`target/npm-package*/`. The React, Vue and Svelte adapters are in `packages/opengrid-react`,
+`packages/opengrid-vue` and `packages/opengrid-svelte`, one pnpm workspace with the element
+package.
 
-| Module | Built into | Contains |
-|---|---|---|
-| Elements | `packages/opengrid/pkg/` | `<opengrid-table>`, `<opengrid-grid>`, `<opengrid-pivot>`; loaded by `packages/opengrid/loader.js` |
-| Engine | `examples/engine-demo/pkg/` | `Engine` (in-memory sources over Apache Arrow) and `Planner` |
-
-A page that only talks to an `opengrid-server` needs the elements alone. A page that runs
-queries in the tab needs the engine as well.
-
-The React, Vue and Svelte components are in `packages/opengrid-react`, `packages/opengrid-vue`
-and `packages/opengrid-svelte`, one pnpm workspace with the element package — see
-[Frameworks](../../guides/frameworks/).
-
-## Put them next to your page
-
-`loader.js` finds its module in `pkg/` next to itself, so copy both together. The
-[Quickstart](../quickstart/) assumes this layout:
-
-```text
-opengrid/
-├── loader.js                 # packages/opengrid/loader.js
-├── pkg/                      # packages/opengrid/pkg/
-└── engine/
-    ├── opengrid_wasm.js      # examples/engine-demo/pkg/
-    └── opengrid_wasm_bg.wasm
-```
-
-The demo on this site is built exactly this way.
-
-## Check the build
+### Check the build
 
 ```sh
 just check         # fmt, clippy -D warnings, the whole test suite
