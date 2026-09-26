@@ -1,15 +1,36 @@
 # @casoon/opengrid-react
 
-The accessible grid, table and pivot of [`@casoon/opengrid`](https://github.com/casoon/opengrid)
+The accessible grid, table and pivot of [`@casoon/opengrid`](https://www.npmjs.com/package/@casoon/opengrid)
 as components for React 18 and 19: `OpengridGrid`, `OpengridTable` and `OpengridPivot`.
 
-The element's attributes are props in camelCase; the provider, the texts, the formats, the
-presentation, the choices and the view go to `connect` — with the view bound as the framework
-binds anything (`view={view} onViewChange={setView}`).
+```sh
+npm install @casoon/opengrid @casoon/opengrid-react
+```
 
-Install it next to `@casoon/opengrid`, which it names as a peer and releases with.
+```jsx
+import { useMemo, useState } from "react";
+import { createRestProvider } from "@casoon/opengrid";
+import { OpengridGrid } from "@casoon/opengrid-react";
 
-Everything — the rules the adapters share, an example for each framework, and what is and is not
-tested — is in [docs/guides/frameworks.md](https://github.com/casoon/opengrid/blob/main/docs/guides/frameworks.md).
+export function Orders() {
+  const provider = useMemo(
+    () => createRestProvider({ url: "https://example.org", source: "orders", token: "…" }),
+    [],
+  );
+  const [view, setView] = useState(null);
+  return (
+    <OpengridGrid label="Orders" datasource="orders" columns="id,customer,amount"
+                  provider={provider} view={view} onViewChange={setView} />
+  );
+}
+```
+
+The element's attributes are props; the provider, texts, formats, presentation and the view
+are options — the view bound the way React binds anything. Create the provider once (`useMemo`, or outside the component): a new provider on every render asks the source again. `ref` is the element; the component is marked `"use client"`.
+
+For data in the browser instead of a server, pass `createLocalProvider(engine)` — see the
+[`@casoon/opengrid` README](https://github.com/casoon/opengrid#data-in-the-browser). Everything
+the adapters share, and what is tested, is in
+[Frameworks](https://github.com/casoon/opengrid/blob/main/docs/guides/frameworks.md).
 
 Licensed under MIT or Apache-2.0, at your option.
