@@ -478,7 +478,7 @@ fn park_later(host: &HtmlElement) {
 /// lets go of its skeleton the way a parked grid does, [`ensure_skeleton`]
 /// carries the filter row and the search into the new one, the scroll offset is
 /// restored once the frame gave the viewport its height, and the active cell
-/// takes the focus back.
+/// takes the focus back — if the grid had it.
 pub(crate) fn retext(host: &HtmlElement) {
     if host.shadow_root().is_none() {
         return;
@@ -486,9 +486,8 @@ pub(crate) fn retext(host: &HtmlElement) {
     let Some(runtime) = runtime(host) else {
         return;
     };
-    reskeleton(host, &runtime);
-    focus_active(host);
-    run_query(host, QueryKind::Data, true);
+    let had_focus = reskeleton(host, &runtime);
+    run_query(host, QueryKind::Data, had_focus);
 }
 
 /// A new skeleton around the **same** state: the words or the markers of the
@@ -496,19 +495,30 @@ pub(crate) fn retext(host: &HtmlElement) {
 ///
 /// The grid lets go of its skeleton the way a parked grid does, and
 /// [`ensure_skeleton`] carries the filter row and the search into the new one;
-/// sort, filter, selection and the window stay in the state. Answers whether
-/// the window had to move to the active row — then its rows are one query away.
+/// sort, filter, selection and the window stay in the state.
+///
+/// The focus comes back to the active cell only if it was in the grid, and the
+/// answer says whether it was. Texts and a presentation arrive while a page
+/// loads — a grid that took the focus then would take it from the page, and
+/// a control of the page that sets them keeps the focus (the rule of
+/// `set_view`).
 fn reskeleton(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>) -> bool {
+    let had_focus = host
+        .shadow_root()
+        .is_some_and(|root| root.active_element().is_some());
     {
         let mut runtime = runtime.borrow_mut();
         runtime.view = None;
         runtime.dom = None;
         runtime.viewport = None;
     }
-    let moved = follow_active_row(host, runtime);
+    follow_active_row(host, runtime);
     render(host, false);
     restore_scroll(runtime);
-    moved
+    if had_focus {
+        focus_active(host);
+    }
+    had_focus
 }
 
 /// Writes `entries` back into the filter row after a rebuild.
@@ -3212,8 +3222,8 @@ pub(crate) fn recolumn(host: &HtmlElement) {
                 }
                 borrowed.groups_filter = None;
             }
-            reskeleton(host, &runtime);
-            run_query(host, QueryKind::Data, false);
+            let had_focus = reskeleton(host, &runtime);
+            run_query(host, QueryKind::Data, had_focus);
         }
         Err(problems) => {
             let message = problems

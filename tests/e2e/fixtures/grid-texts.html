@@ -48,6 +48,7 @@
 
         const host = document.querySelector("opengrid-grid");
         window.__setTexts = (texts) => loader.module.set_texts(host, texts);
+        window.__setColumns = (columns) => loader.module.set_columns(host, columns);
 
         // The documented order: texts first, then the provider. This one is
         // built detached, so `set_texts` runs before the element ever connects.

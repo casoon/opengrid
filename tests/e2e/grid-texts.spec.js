@@ -273,6 +273,36 @@ test("a rebuild keeps the filter row, the scroll position and the focus", async 
   expect(after).toEqual({ operator: "eq", value: "Beta", focused: "1", status: "2 matches" });
 });
 
+test("a rebuild takes no focus the grid did not have", async ({ page }) => {
+  // Texts and a presentation arrive while a page loads, and from the page's own
+  // controls later. The grid gives the focus back to its active cell only if
+  // it had it — otherwise it would take it from the page.
+  await page.evaluate(() => {
+    const button = document.createElement("button");
+    button.id = "page-control";
+    button.textContent = "Deutsch";
+    document.body.prepend(button);
+    button.focus();
+  });
+  await page.evaluate(() => window.__setTexts({ lang: "de", clear: "Leeren" }));
+  await expect.poll(() => texts(page).then((t) => t.clear)).toBe("Leeren");
+  await page.evaluate(() => window.__setColumns({ customer: { align: "end" } }));
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          document.querySelector("opengrid-grid").shadowRoot.querySelector('td[data-col="1"]').dataset.align,
+      ),
+    )
+    .toBe("end");
+  await page.waitForTimeout(200);
+  const focus = await page.evaluate(() => ({
+    page: document.activeElement?.id ?? null,
+    grid: document.querySelector("opengrid-grid").shadowRoot.activeElement?.tagName ?? null,
+  }));
+  expect(focus).toEqual({ page: "page-control", grid: null });
+});
+
 test("has no axe violations with overridden texts", async ({ page }) => {
   await page.evaluate(() => window.__setTexts({ lang: "de", clear: "Leeren" }));
   await expect.poll(() => texts(page).then((t) => t.clear)).toBe("Leeren");
