@@ -88,7 +88,8 @@ tested.
 - **The engine ships in `@casoon/opengrid`**, under `engine/` — `Engine` and
   `Planner`, imported as `@casoon/opengrid/engine/opengrid_wasm.js` to query
   in the tab. `createWorkerProvider()` defaults to it; `moduleUrl` and
-  `wasmUrl` still pick another.
+  `wasmUrl` still pick another, and a production bundler needs `moduleUrl`
+  and `workerUrl` passed (docs/guides/frameworks.md).
 - **A frozen public API**, written down in `docs/api.md` and held by a test.
 - **TypeScript declarations** (`loader.d.ts`) for everything in
   [docs/api.md](docs/api.md), resolved through the package's `exports`. The

@@ -61,7 +61,7 @@ All from `loader.js`, all the same shape:
 | | |
 |---|---|
 | `createLocalProvider(engine)` | The engine on the main thread. |
-| `createWorkerProvider({ moduleUrl, wasmUrl })` | The engine in a module worker; started lazily, once. Without `moduleUrl` it is the engine the package ships under `engine/`; the URLs are strings, since they travel to the worker by `postMessage`. |
+| `createWorkerProvider({ moduleUrl, wasmUrl })` | The engine in a module worker; started lazily, once. Without `moduleUrl` it is the engine the package ships under `engine/`; the URLs are strings, since they travel to the worker by `postMessage`. Under a production bundler, pass `moduleUrl` and `workerUrl` — see [Frameworks → Bundlers](../guides/frameworks/#what-every-adapter-does-the-same-way). |
 | `createRestProvider({ url, source, token })` | `POST /query/{source}` of an `opengrid-server`. Also offers `describe()` → `{ name, schema, capabilities, pivot_limits }`, and `export(query, options)` → a `Blob` from `POST /export/{source}` ([below](#over-a-server-one-request)). |
 | `createHybridProvider({ remote, planner, mode, onPlan })` | Splits each query between a remote source and the engine in the tab. `onPlan` receives the plan before anything is sent. |
 | `createPivotProvider({ url, source, token })` | `POST /pivot/{source}` — a whole pivot in one request. |

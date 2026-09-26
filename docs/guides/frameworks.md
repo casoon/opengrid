@@ -55,6 +55,16 @@ Four rules to know, because they come from the grid and not from the framework:
    before the first component mounts — every later load reuses that call. The examples do
    exactly that.
 
+   The engine's worker follows the same rule. `createWorkerProvider()` finds `worker.js` and
+   the engine under `engine/` next to `loader.js`, and without a bundler and under Vite's
+   development server those defaults work. A production build breaks both: Vite inlines
+   `worker.js` as a `data:` worker, which cannot import the engine, and copies the engine's glue
+   without its `.wasm` (checked with Vite 8.3 and the packed package; an explicit `moduleUrl`
+   alone does not help). Serve `engine/` and `worker.js` yourself and pass both:
+   `createWorkerProvider({ moduleUrl, workerUrl })`, `moduleUrl` as a string. The engine on
+   the main thread, imported from `@casoon/opengrid/engine/opengrid_wasm.js`, is bundled like
+   any module and needs nothing.
+
 ## React
 
 ```jsx
