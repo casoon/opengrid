@@ -3,6 +3,7 @@ target/
 node_modules/
 dist/
 dist-18/
+.angular/
 pkg/
 .DS_Store
 

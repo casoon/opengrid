@@ -19,18 +19,8 @@ const server = await createServer({
 try {
   const { render } = await server.ssrLoadModule("svelte/server");
   const { OpengridGrid } = await server.ssrLoadModule("@casoon/opengrid-svelte");
-  const { body } = render(OpengridGrid, {
-    props: {
-      label: "Orders",
-      datasource: "orders",
-      columns: "id,customer",
-      windowSize: 40,
-      selection: true,
-      toolbar: false,
-      class: "orders",
-      texts: { lang: "de" },
-    },
-  });
+  const { SSR_PROPS } = await server.ssrLoadModule("/src/ssr-props.js");
+  const { body } = render(OpengridGrid, { props: SSR_PROPS });
   process.stdout.write(body);
 } finally {
   await server.close();

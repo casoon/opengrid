@@ -63,6 +63,8 @@ echo '{ "type": "module" }' > "$work/package.json"
 
 # On the server: the same HTML as in the workspace.
 cp "$example/ssr.mjs" "$work/ssr.mjs"
+mkdir -p "$work/src"
+cp "$example/src/ssr-props.js" "$work/src/ssr-props.js"
 expected="$(cd "$example" && node ssr.mjs)"
 html="$(cd "$work" && node ssr.mjs)"
 if [[ "$html" != "$expected" ]]; then

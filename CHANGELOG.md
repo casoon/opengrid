@@ -143,7 +143,9 @@ Everything below is built and tested; none of it has been listened to.
 - `<opengrid-pivot>` requires a server: the browser engine has no pivot export,
   so the element cannot run client-side.
 - No CDN build, no documentation site beyond the project page. Adapters exist for
-  React, Vue and Svelte; Angular and the rest use `connect`
-  ([docs/guides/frameworks.md](docs/guides/frameworks.md)). Not tested in them:
-  hydration of server-rendered HTML, React 18 on the server, SvelteKit and Astro
-  as real applications, Vite's development-server pre-bundling.
+  React, Vue and Svelte; Angular uses a directive over `connect`, run in an
+  Angular 22 example; the rest use `connect` directly
+  ([docs/guides/frameworks.md](docs/guides/frameworks.md)). Hydration is tested
+  in all three adapters; Vite's development server only checked by hand; not
+  tested: React 18 rendering on the server, SvelteKit, Nuxt, Next.js and Astro
+  as real applications. A Vite production build needs `loadOpengrid({ moduleUrl })`.

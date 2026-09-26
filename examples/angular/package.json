@@ -1,0 +1,24 @@
+{
+  "name": "opengrid-example-angular",
+  "private": true,
+  "type": "module",
+  "description": "An opengrid grid in Angular 22 through the directive recipe of docs/guides/frameworks.md (plan point 81).",
+  "scripts": {
+    "build": "ng build --configuration development"
+  },
+  "dependencies": {
+    "@angular/common": "22.2.0",
+    "@angular/compiler": "22.2.0",
+    "@angular/core": "22.2.0",
+    "@angular/platform-browser": "22.2.0",
+    "@casoon/opengrid": "workspace:*",
+    "rxjs": "7.8.2",
+    "tslib": "2.8.1"
+  },
+  "devDependencies": {
+    "@angular/build": "22.2.0",
+    "@angular/cli": "22.2.0",
+    "@angular/compiler-cli": "22.2.0",
+    "typescript": "6.0.3"
+  }
+}

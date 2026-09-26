@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 
 // The Svelte version for the heading — read here, so the page does not bundle
@@ -14,5 +15,15 @@ export default defineConfig({
   base: "./",
   plugins: [svelte({ compilerOptions: { dev: true } })],
   define: { __SVELTE_VERSION__: JSON.stringify(version) },
-  build: { emptyOutDir: true, minify: false },
+  build: {
+    emptyOutDir: true,
+    minify: false,
+    // Two pages: the example, and the hydration check (plan point 81).
+    rollupOptions: {
+      input: {
+        index: fileURLToPath(new URL("./index.html", import.meta.url)),
+        hydrate: fileURLToPath(new URL("./hydrate.html", import.meta.url)),
+      },
+    },
+  },
 });

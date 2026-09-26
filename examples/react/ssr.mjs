@@ -4,18 +4,6 @@
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
 import { OpengridGrid } from "@casoon/opengrid-react";
+import { SSR_PROPS } from "./src/ssr-props.js";
 
-process.stdout.write(
-  renderToString(
-    createElement(OpengridGrid, {
-      label: "Orders",
-      datasource: "orders",
-      columns: "id,customer",
-      windowSize: 40,
-      selection: true,
-      toolbar: false,
-      className: "orders",
-      texts: { lang: "de" },
-    }),
-  ),
-);
+process.stdout.write(renderToString(createElement(OpengridGrid, SSR_PROPS)));

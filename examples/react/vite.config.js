@@ -33,6 +33,8 @@ export default defineConfig(({ mode }) => {
       emptyOutDir: true,
       minify: false,
       rollupOptions: {
+        // Two pages: the example, and the hydration check (plan point 81).
+        input: { index: resolve(here, "index.html"), hydrate: resolve(here, "hydrate.html") },
         // The adapter says "use client" for React Server Components; a
         // client bundle has no use for it, and the bundler says so — for the
         // adapter only, so a stray directive anywhere else still warns.

@@ -4,18 +4,7 @@
 import { createSSRApp, h } from "vue";
 import { renderToString } from "vue/server-renderer";
 import { OpengridGrid } from "@casoon/opengrid-vue";
+import { SSR_PROPS } from "./src/ssr-props.js";
 
-const app = createSSRApp({
-  render: () =>
-    h(OpengridGrid, {
-      label: "Orders",
-      datasource: "orders",
-      columns: "id,customer",
-      windowSize: 40,
-      selection: true,
-      toolbar: false,
-      class: "orders",
-      texts: { lang: "de" },
-    }),
-});
+const app = createSSRApp({ render: () => h(OpengridGrid, SSR_PROPS) });
 process.stdout.write(await renderToString(app));

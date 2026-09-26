@@ -85,7 +85,9 @@ jobs:
           version: 10.26.0
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # The Angular example's CLI asks for 22.22.3 or later (plan point
+          # 81); a pinned minor is that, reproducibly, whatever the runner has.
+          node-version: "22.23"
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
@@ -168,7 +170,9 @@ jobs:
           version: 10.26.0
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # The Angular example's CLI asks for 22.22.3 or later (plan point
+          # 81); a pinned minor is that, reproducibly, whatever the runner has.
+          node-version: "22.23"
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium

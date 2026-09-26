@@ -14,7 +14,8 @@ function they are all built on ([The public API → Connecting](../../api/#conne
 | React 18 and 19 | `@casoon/opengrid-react` | `view` + `onViewChange`, or `defaultView` |
 | Vue 3.3 and later | `@casoon/opengrid-vue` | `v-model:view`, or `defaultView` |
 | Svelte 5 | `@casoon/opengrid-svelte` | `bind:view`, or `defaultView` |
-| Angular, Lit, Astro, plain pages | `@casoon/opengrid` | `connect(host, { view, onViewChange })` |
+| Angular 22 | a directive over `connect` (below) | `[(view)]` |
+| Lit, Astro, plain pages | `@casoon/opengrid` | `connect(host, { view, onViewChange })` |
 
 None of them is published yet; like the element package, they build from the repository.
 
@@ -45,9 +46,14 @@ Four rules to know, because they come from the grid and not from the framework:
    toolbar and the column menu, so as props they set the start. With a controlled `view`, leave
    them out and let the view carry them.
 4. **Bundlers and the WebAssembly module.** The element module is loaded from `pkg/` next to
-   `loader.js`, and a bundler may copy it under a hashed name. If that breaks loading, serve the
-   `pkg/` directory yourself and call `loadOpengrid({ moduleUrl })` once before the first
-   component mounts — every later load reuses that call.
+   `loader.js` through `new URL("./pkg/…", import.meta.url)`. Vite's development server handles
+   that without a setting: it pre-bundles `@casoon/opengrid` and rewrites the URL to the
+   installed `pkg/` (checked by hand with Vite 8.3 and the packed package). A production build
+   is another matter — Vite copies the glue module into its assets but not the `.wasm` beside
+   it, so the element would fall back to the plain table. For a production build, and for any
+   bundler: serve the `pkg/` directory yourself and call `loadOpengrid({ moduleUrl })` once
+   before the first component mounts — every later load reuses that call. The examples do
+   exactly that.
 
 ## React
 
@@ -156,37 +162,58 @@ const view = ref(null);
 ### Angular
 
 Angular binds custom elements natively once the component declares `CUSTOM_ELEMENTS_SCHEMA`.
-What it cannot do by itself is call `connect`; a directive does that. This is a sketch — the
-repository does not build an Angular app, so it is not tested here:
+What it cannot do by itself is call `connect`; a directive does that. This one runs in
+`examples/angular` — Angular 22, AOT, zoneless — and the tests check that the file there is
+this text. It needs Angular 19 or later (standalone by default):
 
 ```ts
-import { AfterViewInit, Directive, ElementRef, EventEmitter, Input, OnChanges, OnDestroy, Output } from "@angular/core";
+import {
+  Directive,
+  ElementRef,
+  EventEmitter,
+  Input,
+  OnChanges,
+  OnDestroy,
+  Output,
+  SimpleChanges,
+  afterNextRender,
+  inject,
+} from "@angular/core";
 import { connect, type Connection, type ConnectOptions, type View } from "@casoon/opengrid";
 
-@Directive({ selector: "[opengrid]", standalone: true })
-export class OpengridDirective implements AfterViewInit, OnChanges, OnDestroy {
+@Directive({ selector: "[opengrid]" })
+export class OpengridDirective implements OnChanges, OnDestroy {
   @Input() provider?: ConnectOptions["provider"];
   @Input() texts?: ConnectOptions["texts"];
   @Input() view?: ConnectOptions["view"];
   @Output() viewChange = new EventEmitter<View>();
+
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private connection?: Connection;
 
-  constructor(private host: ElementRef<HTMLElement>) {}
-
-  ngAfterViewInit() {
-    this.connection = connect(this.host.nativeElement, {
-      provider: this.provider,
-      texts: this.texts,
-      view: this.view,
-      onViewChange: (view) => this.viewChange.emit(view),
+  constructor() {
+    // In the browser only, once rendered — never during server rendering.
+    afterNextRender(() => {
+      this.connection = connect(this.host.nativeElement, {
+        provider: this.provider,
+        texts: this.texts,
+        view: this.view,
+        onViewChange: (view) => this.viewChange.emit(view),
+      });
     });
   }
 
-  ngOnChanges() {
-    this.connection?.update({ provider: this.provider, texts: this.texts, view: this.view });
+  // Only the inputs that changed: an unchanged `view` passed along with new
+  // texts would put back a view the reader has changed since.
+  ngOnChanges(changes: SimpleChanges): void {
+    const changed: ConnectOptions = {};
+    if ("provider" in changes) changed.provider = this.provider;
+    if ("texts" in changes) changed.texts = this.texts;
+    if ("view" in changes) changed.view = this.view;
+    this.connection?.update(changed);
   }
 
-  ngOnDestroy() {
+  ngOnDestroy(): void {
     this.connection?.disconnect();
   }
 }
@@ -194,8 +221,22 @@ export class OpengridDirective implements AfterViewInit, OnChanges, OnDestroy {
 
 ```html
 <opengrid-grid opengrid label="Orders" datasource="orders" columns="id,customer,amount"
-               [provider]="provider" [(view)]="view"></opengrid-grid>
+               [provider]="provider" [(view)]="view"
+               (opengrid-selection-change)="onSelection($event)"></opengrid-grid>
 ```
+
+- The element's own events are bound in the template as they are:
+  `(opengrid-selection-change)`, `(opengrid-cell-change)`. With `strictTemplates` the handler
+  takes an `Event` and reads `(event as CustomEvent<SelectionChangeDetail>).detail`.
+- `ngOnChanges` passes on only the inputs that changed. Passing `view` along with every other
+  change would put back a view the reader had changed since.
+- `afterNextRender` connects in the browser only, after the first render — `ngAfterViewInit`
+  would also run during Angular's server rendering, where there is no element to supply.
+- The view is controlled through `[(view)]`. With `[view]` alone the page sets the view when
+  its value changes, and in between the reader's change stays — the directive does not write
+  the page's view back.
+- Add inputs for `formats`, `presentation`, `choices` and `defaultView` the same way when a page
+  needs them.
 
 ### Astro
 
@@ -239,11 +280,20 @@ and one module script supplies it.
 
 Each adapter has an example in `examples/` that the end-to-end suite runs in Chromium — React
 in both 18 and 19 — with StrictMode or a development build, axe-core, and a check that the grid
-is collected once the framework takes it out. Each also renders on the server, and its packed
-tarball is put into a scratch project's `node_modules` — beside the framework and nothing else
-from the repository — and rendered and type-checked there.
+is collected once the framework takes it out. Each adapter also renders on the server, and its
+packed tarball is put into a scratch project's `node_modules` — beside the framework and
+nothing else from the repository — and rendered and type-checked there. The Angular directive
+runs the same browser checks in an Angular 22 app built by the Angular CLI, plus a one-way
+`[view]` that keeps the reader's change.
 
-Not tested: hydration of server-rendered HTML in any of the three, React 18 on the server, React
-19.2's `<Activity>`, the types against `@types/react` 18, SvelteKit and Astro as real
-applications, the Angular sketch above, and Vite's development server pre-bundling
-`@casoon/opengrid` — the examples are production builds.
+**Hydration** is tested in all three (`tests/e2e/hydration.spec.js`): the HTML the example's
+`ssr.mjs` renders is put into a page before the element module has loaded, and the framework
+hydrates it with the same props. React 18 and 19 and Vue say nothing, keep the server's element,
+and the grid fills with one query and answers the reader; a changed attribute makes React and
+Vue warn, and the test fail. Svelte 5 does not compare attributes when it hydrates — by design —
+so there the test holds only that the element is kept and connected.
+
+Not tested: React 18 rendering on the server (in the repository's Node, `react-dom@18` resolves
+React 19; the React 18 test hydrates React 19's HTML, which is the same markup), React 19.2's
+`<Activity>`, the types against `@types/react` 18, SvelteKit, Nuxt, Next.js and Astro as real
+applications.
