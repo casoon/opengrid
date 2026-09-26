@@ -246,20 +246,23 @@ test("Escape returns focus to the first cell", async ({ page }) => {
   expect(await activeCell(page)).toMatchObject({ tag: "th", col: "0" });
 });
 
-test("Tab leaves the grid forwards and Shift+Tab backwards", async ({ page }) => {
+test("Tab leaves the grid forwards and Shift+Tab backwards", async ({ page, browserName }) => {
+  // WebKit on macOS keeps Safari's default: Tab skips buttons, Option+Tab
+  // reaches every control. The neighbours here are buttons.
+  const tab = browserName === "webkit" ? "Alt+Tab" : "Tab";
   await focusCell(page, 'th[data-col="0"]');
-  await page.keyboard.press("Tab");
+  await page.keyboard.press(tab);
   expect(await page.evaluate(() => document.activeElement?.id)).toBe("after");
 
   // The filter row is a focusable sibling before the table (point 18), so
   // Shift+Tab from the header reaches its last control instead of the light-DOM
   // neighbour; from the first control the grid releases focus backwards.
   await focusCell(page, 'th[data-col="0"]');
-  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.press(`Shift+${tab}`);
   expect(await innerActive(page)).toMatchObject({ tag: "button" });
 
   await focusCell(page, 'select[data-col="0"]');
-  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.press(`Shift+${tab}`);
   expect(await page.evaluate(() => document.activeElement?.id)).toBe("before");
 });
 

@@ -259,6 +259,7 @@ test("the last row unfolds too", async ({ page }) => {
 
 test("an over-tall value starts at its first line, below the sticky header", async ({
   page,
+  browserName,
 }) => {
   // 400% zoom of a 1280x1024 window is a 320x256 CSS-pixel viewport (WCAG 1.4.10).
   await page.setViewportSize({ width: 320, height: 256 });
@@ -287,10 +288,13 @@ test("an over-tall value starts at its first line, below the sticky header", asy
     startsBelowHeader: true,
     documentFits: true,
   });
-  await expect(page.locator("opengrid-grid")).toHaveScreenshot("grid-unfolded-zoom.png");
+  if (browserName === "chromium") {
+    await expect(page.locator("opengrid-grid")).toHaveScreenshot("grid-unfolded-zoom.png");
+  }
 });
 
-test("matches the unfolded baseline", async ({ page }) => {
+test("matches the unfolded baseline", async ({ page, browserName }) => {
+  test.skip(browserName !== "chromium", "Screenshot baselines are Chromium's (tests/e2e/playwright.config.js)");
   await focusByKeyboard(page, 0, 1);
   await expect(page.locator("opengrid-grid")).toHaveScreenshot("grid-unfolded.png");
 });
