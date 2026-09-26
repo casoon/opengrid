@@ -16,6 +16,8 @@
 //! The engine itself is never named here: only
 //! [`opengrid_web_core::provider`]'s JSON-in/JSON-out Promise is.
 
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use wasm_bindgen::closure::Closure;
@@ -27,6 +29,7 @@ use web_sys::{Document, Element, Event, HtmlElement, Node, ShadowRoot};
 use opengrid_web_core::element::{
     ARIA_LABEL_ATTRIBUTE, LABEL_ATTRIBUTE, attach_open_shadow_root, define, mirror_label,
 };
+use opengrid_web_core::host::{existing_id, id as host_id, on_release};
 use opengrid_web_core::patch::{NodeAllocator, PatchBuffer};
 use opengrid_web_core::provider::provider;
 use opengrid_web_core::provider::set_provider as attach_provider;
@@ -341,10 +344,16 @@ fn run_query(
     // The table has no `mode`: it is the simple element, and point 28's split
     // belongs to the grid.
     let promise = provider.execute(&query, "");
+    let request = next_request(host);
 
     let host = host.clone();
     spawn_local(async move {
-        match JsFuture::from(promise).await {
+        let outcome = JsFuture::from(promise).await;
+        // A newer query was asked since: its answer is the one to draw.
+        if !is_latest(&host, request) {
+            return;
+        }
+        match outcome {
             Ok(value) => match value.as_string() {
                 Some(json) => match table::parse_result(&json) {
                     Ok(model) => {
@@ -524,6 +533,39 @@ pub(crate) fn describe(value: &JsValue) -> String {
         .and_then(|message| message.as_string())
         .filter(|message| !message.trim().is_empty());
     message.unwrap_or_else(|| "the provider rejected the query".to_owned())
+}
+
+thread_local! {
+    /// The newest request of each table and pivot, by host id.
+    static LATEST: RefCell<HashMap<u32, u64>> = RefCell::new(HashMap::new());
+}
+
+/// Numbers a new request of `host`; every earlier one is superseded by it.
+///
+/// Answers do not arrive in the order they were asked for — a server may answer
+/// the second request first. An element that drew every answer as it came
+/// would, after two quick attribute changes, show the answer to the first and
+/// stay there. So an answer is drawn only while it is still the newest
+/// ([`is_latest`]), the rule the grid follows with its generation.
+pub(crate) fn next_request(host: &HtmlElement) -> u64 {
+    on_release(forget_requests);
+    let id = host_id(host);
+    LATEST.with(|latest| {
+        let mut latest = latest.borrow_mut();
+        let request = latest.entry(id).or_insert(0);
+        *request += 1;
+        *request
+    })
+}
+
+/// Whether `request` is still the newest request of `host`.
+pub(crate) fn is_latest(host: &HtmlElement, request: u64) -> bool {
+    existing_id(host)
+        .is_some_and(|id| LATEST.with(|latest| latest.borrow().get(&id) == Some(&request)))
+}
+
+fn forget_requests(id: u32) {
+    LATEST.with(|latest| latest.borrow_mut().remove(&id));
 }
 
 /// Updates the existing caption and `aria-label` after a label change.

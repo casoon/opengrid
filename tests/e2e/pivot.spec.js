@@ -42,6 +42,43 @@ async function open(page) {
 }
 
 test.describe("pivot", () => {
+  test("a late answer to an earlier request is not drawn over the newest", async ({ page }) => {
+    await open(page);
+    // Two requests in a row, and the server's answer to the first comes last —
+    // as it can when the first pivot is the more expensive one.
+    const settled = await page.evaluate(async () => {
+      const { createPivotProvider } = await import("/packages/opengrid/loader.js");
+      const real = createPivotProvider({
+        url: "http://127.0.0.1:8082",
+        source: "orders",
+        token: "e2e-token",
+      });
+      const pivot = document.querySelector("opengrid-pivot");
+      let calls = 0;
+      const settled = [];
+      window.__opengridModule.set_provider(pivot, {
+        async execute(json, mode) {
+          const call = ++calls;
+          const answer = await real.execute(json, mode);
+          if (call === 1) await new Promise((resolve) => setTimeout(resolve, 500));
+          settled.push(call);
+          return answer;
+        },
+      });
+      pivot.setAttribute("rows", "customer");
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      return settled;
+    });
+    expect(settled).toEqual([2, 1]);
+    const shown = await page.evaluate(() =>
+      [...document.querySelector("opengrid-pivot").shadowRoot.querySelectorAll("thead th")].map(
+        (th) => th.textContent,
+      ),
+    );
+    expect(shown).toContain("customer");
+    expect(shown).not.toContain("country");
+  });
+
   test("renders a native table with a two-level column header", async ({ page }) => {
     await open(page);
     const seen = await facts(page);
