@@ -32,7 +32,7 @@
  */
 
 import { defineComponent, h, nextTick, onActivated, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { connect } from "@casoon/opengrid";
+import { connect } from "../loader.js";
 
 /** The options of `connect` that are props; deep ones compare by value. */
 const SHALLOW = ["provider"];

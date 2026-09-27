@@ -4,7 +4,7 @@
 // the project does not carry.
 
 import type { ComponentProps } from "svelte";
-import { OpengridGrid, OpengridPivot, OpengridTable } from "@casoon/opengrid-svelte";
+import { OpengridGrid, OpengridPivot, OpengridTable } from "@casoon/opengrid/svelte";
 import type { View } from "@casoon/opengrid";
 
 type GridProps = ComponentProps<typeof OpengridGrid>;

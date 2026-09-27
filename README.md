@@ -73,12 +73,14 @@ See [Where queries run](https://github.com/casoon/opengrid/blob/main/docs/guides
 
 ## React, Vue, Svelte
 
+One package: the components are its subpaths, and the framework is an optional peer.
+
 ```sh
-npm install @casoon/opengrid @casoon/opengrid-react   # or -vue, -svelte
+npm install @casoon/opengrid react   # or vue, svelte
 ```
 
 ```jsx
-import { OpengridGrid } from "@casoon/opengrid-react";
+import { OpengridGrid } from "@casoon/opengrid/react";   // or /vue, /svelte
 
 <OpengridGrid label="Orders" datasource="orders" columns="id,customer,amount"
               provider={provider} view={view} onViewChange={setView} />

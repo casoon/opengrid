@@ -3,7 +3,7 @@
 // customElements — from here, where `react` and the adapter resolve.
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
-import { OpengridGrid } from "@casoon/opengrid-react";
+import { OpengridGrid } from "@casoon/opengrid/react";
 import { SSR_PROPS } from "./src/ssr-props.js";
 
 process.stdout.write(renderToString(createElement(OpengridGrid, SSR_PROPS)));

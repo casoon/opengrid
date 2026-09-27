@@ -7,7 +7,7 @@
 // loads the module afterwards.
 import { createSSRApp, h } from "vue";
 import { loadOpengrid } from "@casoon/opengrid";
-import { OpengridGrid } from "@casoon/opengrid-vue";
+import { OpengridGrid } from "@casoon/opengrid/vue";
 import { MODULE_URL, ordersProvider } from "./provider.js";
 import { SSR_PROPS } from "./ssr-props.js";
 
