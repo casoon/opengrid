@@ -247,6 +247,8 @@ and the density as a segmented control.
 | Filter row | A switch (`aria-pressed`). Hiding the row gives its height to the viewport, and `PageUp`/`PageDown` step by what is really there. Whether the row shows is part of the [view](#the-view) as `filterRow`, **on** by default — there is no attribute for it, because a boolean attribute is off by default and the row has always been there. |
 | Columns | The column list moves here from the filter row, so it stays reachable when the row is hidden. |
 | Density | Three buttons, the pressed one is the grid's `density`. |
+| + Filter | Opens *Add filter*, a non-modal `role="dialog"`: *Column*, *Condition* (the operators the column's type allows), *Value*, *Cancel*, *Apply*. The focus moves to *Column*; `Tab` cycles inside; *Apply* or `Enter` in *Value* writes the column's entry in the filter row — the one place a filter lives — and closes; `Escape`, *Cancel* or a click outside close without a change. A value the column cannot take is named in the dialog, which stays open. The focus returns to the button. |
+| + Group | Opens a `role="menu"` of the groupable columns not grouped yet, with the column menu's keys (`↓`/`↑`, `Home`/`End`, `Enter`/`Space`, `Escape`, `Tab`). A pick adds the next grouping level, as `group-by` does. With two levels the button is `aria-disabled` and says why. |
 | Chips | One per active filter, in words (`country is DE`), and one for the grouping. Each has a remove button **named for its filter** — `Remove country is DE` — and "Remove all" clears filters and grouping. A removal is said once, with the result that follows; the focus moves to the next chip, never to the document. |
 
 The chips are a display of the view, not a second truth about the filters: they
@@ -769,8 +771,8 @@ would make it invisible), a **selected row** carries an inset accent bar as well
 as the tint (colour alone would be 1.4.1), and `prefers-reduced-motion` beats a
 theme that animates a part.
 
-**Parts:** `body`, `cell`, `chip`, `chip-remove`, `chips`, `chips-clear`, `column-menu`, `column-menu-button`, `column-toggle`, `columns`, `columns-toggle`, `editor`,
-`filter`, `filter-clear`, `filter-operator`, `filter-value`, `footer`, `header`,
+**Parts:** `add-filter`, `add-grouping`, `body`, `cell`, `chip`, `chip-remove`, `chips`, `chips-clear`, `column-menu`, `column-menu-button`, `column-toggle`, `columns`, `columns-toggle`, `editor`,
+`filter`, `filter-clear`, `filter-dialog`, `filter-operator`, `filter-value`, `footer`, `grouping-menu`, `header`,
 `density`, `empty`, `empty-reset`, `empty-text`, `facet`, `facet-bounds`, `facet-cost`, `facet-count`, `facet-pill`,
 `facet-pills`, `facet-value`, `facets`, `facets-head`, `facets-toggle`, `filter-row-toggle`, `layout`, `menu-label`, `page-first`, `page-label`, `page-last`, `page-next`,
 `page-previous`, `pager`, `row`, `search`, `search-hint`, `search-input`, `search-list`, `select`, `select-all`, `select-mark`,
@@ -830,6 +832,10 @@ loader.module.set_texts(host, { lang: "de", loading: "Wird geladen …" });
 | `facetFrom` / `facetTo` | `From` / `To` | |
 | `facetQueries` | `Counted with {count} queries` | `{count}` |
 | `facetChipValues` | `{column} is one of {values}` | `{column}`, `{values}` |
+| `addFilter` / `addFilterTitle` | `+ Filter` / `Add filter` — the toolbar's button and the dialog's title | |
+| `filterColumnLabel` / `filterConditionLabel` / `filterValueLabel` | `Column` / `Condition` / `Value` | |
+| `cancel` / `apply` | `Cancel` / `Apply` | |
+| `addGrouping` / `groupingFull` | `+ Group` / `Grouped by two columns already` — the button, and its name when no level can be added | |
 | `sourceLocal` / `sourceWorker` / `sourceRemote` / `sourceHybrid` | `local · wasm` / `worker · wasm` / `server` / `hybrid` — the footer's source, by the provider's `kind` | |
 | `queriesOne` / `queriesOther` | `{count} query` / `{count} queries` — the footer's count | `{count}` |
 | `searchLabel` / `searchPlaceholder` | `Search or filter` / `Search, or filter: country = DE and amount ≥ 10` | |
