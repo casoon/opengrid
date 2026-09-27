@@ -53,6 +53,25 @@ impl Bitmap {
         self.len == 0
     }
 
+    /// The packed words, bit `i` of the bitmap at bit `i % 64` of word `i / 64`;
+    /// the bits past `len` are zero.
+    pub fn words(&self) -> &[u64] {
+        &self.words
+    }
+
+    /// A bitmap of `len` bits from packed words, or `None` when the words do not
+    /// fit `len` — too few, too many, or a set bit past the end.
+    pub fn from_words(words: Vec<u64>, len: usize) -> Option<Self> {
+        if words.len() != len.div_ceil(64) {
+            return None;
+        }
+        let tail = len % 64;
+        if tail != 0 && words.last().is_some_and(|word| word >> tail != 0) {
+            return None;
+        }
+        Some(Self { words, len })
+    }
+
     /// Number of cleared bits — the NULLs of a validity bitmap.
     pub fn count_cleared(&self) -> usize {
         let set: usize = self

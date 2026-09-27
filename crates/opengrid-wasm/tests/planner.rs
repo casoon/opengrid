@@ -164,3 +164,42 @@ fn a_grouped_query_splits_and_still_adds_up() {
     assert_eq!(describe, "source: scan | client: group · aggregate · sort");
     assert_eq!(answer, alone);
 }
+
+/// The same loop in the binary form (E35): the remote answers bytes, the
+/// planner finishes over bytes — and the answer is the one engine alone gives.
+#[test]
+fn every_split_gives_the_same_answer_in_the_binary_form() {
+    let remote = engine();
+    let alone = opengrid_datasource::wire::result_to_json(
+        &remote.execute_result(QUERY).expect("one engine answers"),
+    );
+    let as_json = |bytes: &[u8]| {
+        let (table, total_count) = opengrid_columns::wire::decode_result(bytes).expect("bytes");
+        opengrid_datasource::wire::result_to_json(&opengrid_datasource::QueryResult::new(
+            table.schema().clone(),
+            table.to_values(),
+            total_count,
+        ))
+    };
+
+    for caps in [
+        capabilities(&["filter", "sort", "paging"]),
+        capabilities(&["filter"]),
+        capabilities(&[]),
+    ] {
+        let planner = Planner::build(ORDERS_SCHEMA, &caps, "auto").expect("a planner");
+        let plan: serde_json::Value =
+            serde_json::from_str(&planner.plan_json(QUERY, "").unwrap()).unwrap();
+        let partial = remote
+            .execute_columns(&plan["source"].to_string())
+            .expect("the remote answers its half");
+        let answer = if plan["client"].is_null() {
+            partial
+        } else {
+            planner
+                .finish_columns(&plan["client"].to_string(), &partial)
+                .expect("the client half runs")
+        };
+        assert_eq!(as_json(&answer), alone, "{caps}");
+    }
+}

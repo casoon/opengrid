@@ -1,6 +1,6 @@
 //! The export notation in the browser (plan point 83).
 //!
-//! Two functions over one result JSON, so `exportRows` in `loader.js` (point
+//! Two functions over one result — its JSON or its binary form — so `exportRows` in `loader.js` (point
 //! 84) can write an export piece by piece with the same code the server uses
 //! (`opengrid-export`). They are exported from the module for `loader.js` and
 //! are not part of the documented API (`docs/api.md`): a page exports through
@@ -30,8 +30,8 @@ const CSV_OPTION_KEYS: [&str; 4] = ["delimiter", "bom", "protectFormulas", "null
 /// mark) first. `options`: `{ delimiter, bom, protectFormulas, null }`, each
 /// optional (docs/guides/export.md, point 87).
 #[wasm_bindgen(js_name = export_csv)]
-pub fn export_csv(result_json: &str, options: JsValue, header: bool) -> Result<String, JsError> {
-    let result = result_from_json(result_json).map_err(|error| JsError::new(&error.to_string()))?;
+pub fn export_csv(answer: JsValue, options: JsValue, header: bool) -> Result<String, JsError> {
+    let result = read(&answer)?;
     let options = csv_options(&options)?;
     let mut out = String::new();
     if header {
@@ -45,9 +45,28 @@ pub fn export_csv(result_json: &str, options: JsValue, header: bool) -> Result<S
 /// no row has been written yet (not "the first piece" — after an empty first
 /// piece it is still true), so no comma leads. `loader.js` writes the brackets.
 #[wasm_bindgen(js_name = export_json)]
-pub fn export_json(result_json: &str, first: bool) -> Result<String, JsError> {
-    let result = result_from_json(result_json).map_err(|error| JsError::new(&error.to_string()))?;
+pub fn export_json(answer: JsValue, first: bool) -> Result<String, JsError> {
+    let result = read(&answer)?;
     Ok(json_rows(&result, first))
+}
+
+/// A provider's answer as a result: the result JSON, or the binary form (E35).
+fn read(answer: &JsValue) -> Result<opengrid_datasource::QueryResult, JsError> {
+    match crate::element::answer(answer) {
+        Some(crate::element::Answer::Json(json)) => {
+            result_from_json(&json).map_err(|error| JsError::new(&error.to_string()))
+        }
+        Some(crate::element::Answer::Binary(bytes)) => {
+            let (table, total_count) = opengrid_columns::wire::decode_result(&bytes)
+                .map_err(|error| JsError::new(&error.to_string()))?;
+            Ok(opengrid_datasource::QueryResult::new(
+                table.schema().clone(),
+                table.to_values(),
+                total_count,
+            ))
+        }
+        None => Err(JsError::new(crate::element::NOT_AN_ANSWER)),
+    }
 }
 
 /// The options of `get_pivot` (issue #3): the CSV options of [`export_csv`],

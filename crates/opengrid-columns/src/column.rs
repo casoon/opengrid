@@ -107,10 +107,10 @@ impl Values {
 /// One column of a [`Table`](crate::Table).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Column {
-    data_type: DataType,
+    pub(crate) data_type: DataType,
     /// `None` when no cell is NULL.
-    validity: Option<Bitmap>,
-    values: Values,
+    pub(crate) validity: Option<Bitmap>,
+    pub(crate) values: Values,
 }
 
 impl Column {
