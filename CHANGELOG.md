@@ -31,6 +31,13 @@ Two things belong in every release entry and are easy to leave out:
   the search field, the switches, the column list and the density (a segmented control) in
   one toolbar row; pill chips, the grouping chip inverted; small uppercase column headers;
   32px filter and facet fields.
+- **"+ Filter" and "+ Group"** in the toolbar ([#34](https://github.com/casoon/opengrid/issues/34)),
+  the prototype's two quick doors. *+ Filter* opens a non-modal dialog (column, condition,
+  value) that writes the filter row's own entry; *+ Group* opens a menu of the groupable
+  columns with the column menu's keys and adds a grouping level. New parts `add-filter`,
+  `add-grouping`, `filter-dialog`, `grouping-menu`; nine text keys (`addFilter`,
+  `addFilterTitle`, `filterColumnLabel`, `filterConditionLabel`, `filterValueLabel`,
+  `cancel`, `apply`, `addGrouping`, `groupingFull`).
 - **A footer**: the status line moved below the rows — the same live region, so the
   announcements are unchanged, but a screen reader reading through meets the count after the
   table. Beside it, where the queries ran and how many were asked for what is shown

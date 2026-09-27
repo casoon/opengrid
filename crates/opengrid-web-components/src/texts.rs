@@ -139,6 +139,21 @@ pub struct GridTexts {
     pub facet_queries: String,
     /// A facet chip with more than one value. May use `{column}` and `{values}`.
     pub facet_chip_values: String,
+    /// The toolbar's button that opens the *Add filter* dialog (issue #34).
+    pub add_filter: String,
+    /// The dialog's title and name.
+    pub add_filter_title: String,
+    /// The dialog's field labels.
+    pub filter_column_label: String,
+    pub filter_condition_label: String,
+    pub filter_value_label: String,
+    /// The dialog's two buttons.
+    pub cancel: String,
+    pub apply: String,
+    /// The toolbar's button that opens the grouping menu (issue #34).
+    pub add_grouping: String,
+    /// Its name while no further level can be added.
+    pub grouping_full: String,
     /// The footer's source (issue #33): where the provider runs the queries,
     /// by its `kind`.
     pub source_local: String,
@@ -289,6 +304,15 @@ pub(crate) const KEYS: &[&str] = &[
     "facetTo",
     "facetQueries",
     "facetChipValues",
+    "addFilter",
+    "addFilterTitle",
+    "filterColumnLabel",
+    "filterConditionLabel",
+    "filterValueLabel",
+    "cancel",
+    "apply",
+    "addGrouping",
+    "groupingFull",
     "sourceLocal",
     "sourceWorker",
     "sourceRemote",
@@ -418,6 +442,15 @@ impl Default for GridTexts {
             facet_to: "To".to_owned(),
             facet_queries: "Counted with {count} queries".to_owned(),
             facet_chip_values: "{column} is one of {values}".to_owned(),
+            add_filter: "+ Filter".to_owned(),
+            add_filter_title: "Add filter".to_owned(),
+            filter_column_label: "Column".to_owned(),
+            filter_condition_label: "Condition".to_owned(),
+            filter_value_label: "Value".to_owned(),
+            cancel: "Cancel".to_owned(),
+            apply: "Apply".to_owned(),
+            add_grouping: "+ Group".to_owned(),
+            grouping_full: "Grouped by two columns already".to_owned(),
             source_local: "local \u{b7} wasm".to_owned(),
             source_worker: "worker \u{b7} wasm".to_owned(),
             source_remote: "server".to_owned(),
@@ -895,6 +928,18 @@ mod host {
         overwrite(&mut texts.facet_to, string("facetTo"));
         overwrite(&mut texts.facet_queries, string("facetQueries"));
         overwrite(&mut texts.facet_chip_values, string("facetChipValues"));
+        overwrite(&mut texts.add_filter, string("addFilter"));
+        overwrite(&mut texts.add_filter_title, string("addFilterTitle"));
+        overwrite(&mut texts.filter_column_label, string("filterColumnLabel"));
+        overwrite(
+            &mut texts.filter_condition_label,
+            string("filterConditionLabel"),
+        );
+        overwrite(&mut texts.filter_value_label, string("filterValueLabel"));
+        overwrite(&mut texts.cancel, string("cancel"));
+        overwrite(&mut texts.apply, string("apply"));
+        overwrite(&mut texts.add_grouping, string("addGrouping"));
+        overwrite(&mut texts.grouping_full, string("groupingFull"));
         overwrite(&mut texts.source_local, string("sourceLocal"));
         overwrite(&mut texts.source_worker, string("sourceWorker"));
         overwrite(&mut texts.source_remote, string("sourceRemote"));
