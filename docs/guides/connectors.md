@@ -65,6 +65,23 @@ let server = Server::builder()
   300 MiB for ten columns) bounds that; more is a `413` (`limit_exceeded`) that says so.
   A source that has to answer bigger queries implements `execute` itself.
 
+## Proving a connector
+
+`opengrid-conformance` runs the whole suite — every rule of the query semantics, one case each —
+against any source. Load the fixture into yours, then in a test:
+
+```rust
+use opengrid_conformance::{check_source, fixture_csv, fixture_schema};
+use opengrid_connector::AsSource;
+
+// load fixture_csv() into your database under fixture_schema() first
+let report = check_source(&AsSource(&my_connector)).await;
+report.assert_ok(); // panics with one line per case that differs
+```
+
+All cases agree means the browser gets the same answers from your source as from the engine in
+the tab. The PostgreSQL, local-engine and rows-tier references run exactly this in their tests.
+
 ## What a connector never has to do
 
 Security. Before a query reaches the connector, the server has checked the token, validated the
