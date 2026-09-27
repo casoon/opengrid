@@ -80,7 +80,7 @@ pub trait Connector: Send + Sync {
         pivot: &'a ValidatedPivotQuery,
     ) -> BoxFuture<'a, Result<PivotResult, DataSourceError>> {
         Box::pin(async move {
-            opengrid_pivot::execute(&Levels(self), pivot)
+            opengrid_pivot::execute(&AsSource(self), pivot)
                 .await
                 .map_err(|error| DataSourceError::Backend {
                     message: error.to_string(),
@@ -176,11 +176,12 @@ impl<S: SendDataSource + Send + Sync> Connector for FromSource<S> {
     }
 }
 
-/// A connector seen as a `DataSource`, so `opengrid-pivot` can ask it one
-/// query per level.
-struct Levels<'a, C: ?Sized>(&'a C);
+/// A connector seen as a `DataSource`: how `opengrid-pivot` asks it one query
+/// per level, and how `opengrid_conformance::check_source` runs the suite
+/// against it (issue #47).
+pub struct AsSource<'a, C: ?Sized>(pub &'a C);
 
-impl<C: Connector + ?Sized> SendDataSource for Levels<'_, C> {
+impl<C: Connector + ?Sized> SendDataSource for AsSource<'_, C> {
     fn schema(&self) -> impl Future<Output = Result<Schema, DataSourceError>> + Send {
         self.0.schema()
     }

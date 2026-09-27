@@ -16,10 +16,11 @@
 //! validated, without an engine to compare against.
 
 use std::future::Future;
+use std::path::PathBuf;
 use std::task::{Context, Poll, Waker};
 
-use opengrid_datasource::QueryResult;
-use opengrid_types::{FieldName, Value};
+use opengrid_datasource::{DataSource, QueryResult};
+use opengrid_types::{FieldName, Schema, Value};
 
 mod case;
 
@@ -278,5 +279,101 @@ mod tests {
             &Value::Timestamp(Timestamp::from_micros(1)),
             &Value::Timestamp(Timestamp::from_micros(2))
         ));
+    }
+}
+
+/// Where the suite lives: `cases/` and `data/` (issue #47).
+pub fn suite_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+}
+
+/// The schema of the fixture every case runs against — derived columns
+/// included, which a source computes or leaves to the engine.
+pub fn fixture_schema() -> Schema {
+    load_schema(&suite_dir().join("data/orders.schema.json")).expect("the suite's own schema")
+}
+
+/// The fixture's rows, as CSV with a header and `\N` for NULL. A source under
+/// test loads this before [`check_source`] runs.
+pub fn fixture_csv() -> PathBuf {
+    suite_dir().join("data/orders.csv")
+}
+
+/// What [`check_source`] found.
+#[derive(Clone, Debug)]
+pub struct Report {
+    /// The cases run.
+    pub cases: usize,
+    /// One line per case that differed: its id and the first difference.
+    pub failures: Vec<String>,
+}
+
+impl Report {
+    pub fn is_ok(&self) -> bool {
+        self.failures.is_empty()
+    }
+
+    /// Panics with every difference, one per line — for a test.
+    pub fn assert_ok(&self) {
+        assert!(self.is_ok(), "{self}");
+    }
+}
+
+impl std::fmt::Display for Report {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.failures.is_empty() {
+            return write!(f, "all {} conformance cases agree", self.cases);
+        }
+        writeln!(
+            f,
+            "{} of {} conformance cases differ:",
+            self.failures.len(),
+            self.cases
+        )?;
+        for failure in &self.failures {
+            writeln!(f, "  {failure}")?;
+        }
+        Ok(())
+    }
+}
+
+/// Runs **every case of the suite** against `source` and compares each answer
+/// with the expectation (issue #47).
+///
+/// For anyone writing a source — a connector for their own database, say:
+/// load [`fixture_csv`] into it under [`fixture_schema`], then
+///
+/// ```ignore
+/// let report = opengrid_conformance::check_source(&source).await;
+/// report.assert_ok();
+/// ```
+///
+/// All cases agree means the source answers like the engine in the browser:
+/// NULL ordering, binary string comparison, exact decimals, NaN, derived
+/// columns. A `Connector` runs through `opengrid_connector::AsSource`.
+pub async fn check_source<S: DataSource>(source: &S) -> Report {
+    let schema = fixture_schema();
+    let mut checked =
+        check_dir(&suite_dir().join("cases"), &schema).expect("the suite's own cases");
+    checked.sort_by(|a, b| a.case.id.cmp(&b.case.id));
+    let mut failures = Vec::new();
+    for case in &checked {
+        let order = if case.case.ordered {
+            RowOrder::Ordered
+        } else {
+            RowOrder::Unordered
+        };
+        match source.execute(case.query.clone()).await {
+            Ok(result) => {
+                if let Err(difference) = compare(&case.expected, &Table::from(&result), order) {
+                    failures.push(format!("{}: {difference}", case.case.id));
+                }
+            }
+            Err(error) => failures.push(format!("{}: {error}", case.case.id)),
+        }
+    }
+    Report {
+        cases: checked.len(),
+        failures,
     }
 }

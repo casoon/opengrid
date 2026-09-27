@@ -17,17 +17,10 @@
 
 mod pg;
 
-use opengrid_conformance::{Checked, RowOrder, Table, block_on, compare};
+use opengrid_conformance::{RowOrder, Table, block_on, compare};
+use opengrid_connector::AsSource;
 use opengrid_datasource::{QueryResult, SendDataSource};
 use opengrid_datasource_postgres::PostgresDataSource;
-
-fn cases() -> Vec<Checked> {
-    let schema = pg::schema();
-    let mut checked = opengrid_conformance::check_dir(&pg::suite_dir().join("cases"), &schema)
-        .expect("the conformance cases");
-    checked.sort_by(|a, b| a.case.id.cmp(&b.case.id));
-    checked
-}
 
 /// A result as the suite's comparison sees it.
 fn as_table(result: &QueryResult) -> Table {
@@ -52,27 +45,11 @@ async fn postgresql_answers_every_conformance_case() {
     let schema = pg::schema();
     let table = pg::create_fixture(&client, &schema, "opengrid_conformance_cases").await;
 
+    // Through the contract the server uses (issue #45) and the suite's own
+    // runner for connector authors (issue #47).
     let source = PostgresDataSource::connect(&url, &table, schema).expect("a source");
-    let mut failures = Vec::new();
-    let mut ran = 0;
-
-    for checked in cases() {
-        let result = SendDataSource::execute(&source, checked.query.clone()).await;
-        match result {
-            Ok(result) => {
-                let order = if checked.case.ordered {
-                    RowOrder::Ordered
-                } else {
-                    RowOrder::Unordered
-                };
-                if let Err(difference) = compare(&checked.expected, &as_table(&result), order) {
-                    failures.push(format!("{}: {difference}", checked.case.id));
-                }
-            }
-            Err(error) => failures.push(format!("{}: {error}", checked.case.id)),
-        }
-        ran += 1;
-    }
+    let report = opengrid_conformance::check_source(&AsSource(&source)).await;
+    let (ran, failures) = (report.cases, report.failures);
 
     client
         .batch_execute(&format!("DROP TABLE \"{table}\";"))

@@ -7,9 +7,10 @@
 
 use std::path::PathBuf;
 
-use opengrid_conformance::{RowOrder, Table, block_on, check_dir, compare, load_schema};
+use opengrid_conformance::{block_on, check_dir, load_schema};
 use opengrid_connector::{
-    BoxFuture, Connector, DataSourceError, QueryResult, RowSource, RowStream, Rows, Schema, Value,
+    AsSource, BoxFuture, Connector, DataSourceError, QueryResult, RowSource, RowStream, Rows,
+    Schema, Value,
 };
 use opengrid_engine::ingest::{CsvOptions, load_csv};
 use opengrid_query::ValidatedFilter;
@@ -93,34 +94,11 @@ impl RowStream for Sevens<'_> {
 
 #[test]
 fn a_rows_only_source_answers_the_whole_suite() {
-    let fixture = Fixture::new();
-    let schema = fixture.schema.clone();
-    let connector = Rows::new(fixture);
-    let checked = check_dir(&data().join("cases"), &schema).expect("the cases load");
-
-    let mut failed = Vec::new();
-    for case in &checked {
-        let order = if case.case.ordered {
-            RowOrder::Ordered
-        } else {
-            RowOrder::Unordered
-        };
-        match block_on(connector.execute(case.query.clone())) {
-            Ok(result) => {
-                if let Err(mismatch) = compare(&case.expected, &Table::from(&result), order) {
-                    failed.push(format!("{}: {mismatch}", case.case.id));
-                }
-            }
-            Err(error) => failed.push(format!("{}: {error}", case.case.id)),
-        }
-    }
-    println!(
-        "conformance (rows tier): {} cases, {} failed",
-        checked.len(),
-        failed.len()
-    );
-    assert!(failed.is_empty(), "{}", failed.join("\n"));
-    assert!(checked.len() >= 40);
+    let connector = Rows::new(Fixture::new());
+    let report = block_on(opengrid_conformance::check_source(&AsSource(&connector)));
+    println!("conformance (rows tier): {report}");
+    report.assert_ok();
+    assert!(report.cases >= 40);
 }
 
 /// More rows than the bound is an error that says so, not a server out of
