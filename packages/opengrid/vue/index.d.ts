@@ -12,6 +12,7 @@ import type {
   CellChangeDetail,
   ConnectOptions,
   Density,
+  Theme,
   Mode,
   SelectionChangeDetail,
   View,
@@ -48,12 +49,15 @@ export interface OpengridGridProps extends Options {
   columnMenu?: boolean;
   selection?: boolean;
   density?: Density;
+  /** One of the built-in looks; Base when absent. */
+  theme?: Theme;
 }
 
 export interface OpengridTableProps extends Options {
   label?: string;
   datasource?: string;
   columns?: string;
+  theme?: Theme;
 }
 
 export interface OpengridPivotProps extends Options {
@@ -65,6 +69,7 @@ export interface OpengridPivotProps extends Options {
   columns?: string;
   /** The measures as the contract's JSON. */
   values?: string;
+  theme?: Theme;
 }
 
 export const OpengridGrid: DefineSetupFnComponent<OpengridGridProps, OpengridEmits>;

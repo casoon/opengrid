@@ -108,32 +108,26 @@ test("has no axe violations", async ({ page }) => {
   const { violations } = await new AxeBuilder({ page }).analyze();
   expect(violations).toEqual([]);
 });
-test("a grid nobody has themed wears the system colours", async ({ page }) => {
-  // The defaults are `Canvas`, `CanvasText` and `Highlight` — not a palette of
-  // our own. Two reasons, and both are accessibility rather than taste: a grid
-  // with no page CSS stays legible and in the right light or dark, and
-  // `forced-colors` keeps winning. The fixture sets only --og-row-height, so
-  // every colour below is a default.
-  const system = await page.evaluate(() => {
-    const probe = document.createElement("div");
-    probe.style.cssText = "background: Canvas; color: CanvasText";
-    document.body.append(probe);
-    const wanted = getComputedStyle(probe);
-    const canvas = wanted.backgroundColor;
-    const canvasText = wanted.color;
-    probe.remove();
+test("a grid nobody has themed wears Base, and theme picks another look", async ({ page }) => {
+  // The default is the design prototype's Base (issue #32), not the system
+  // colours. The fixture sets only --og-row-height, so every colour below is a
+  // default — or the look `theme` names.
+  const look = () =>
+    page.evaluate(() => {
+      const root = document.querySelector("opengrid-grid").shadowRoot;
+      const row = getComputedStyle(root.querySelector("tbody tr"));
+      const layout = getComputedStyle(root.querySelector('[part="layout"]'));
+      return { surface: row.backgroundColor, ink: layout.color };
+    });
 
-    const root = document.querySelector("opengrid-grid").shadowRoot;
-    const row = getComputedStyle(root.querySelector("tbody tr"));
-    const layout = getComputedStyle(root.querySelector('[part="layout"]'));
-    return {
-      rowBackground: row.backgroundColor,
-      canvas,
-      ink: layout.color,
-      canvasText,
-    };
-  });
+  expect(await look()).toEqual({ surface: "rgb(255, 255, 255)", ink: "rgb(20, 22, 26)" });
 
-  expect(system.rowBackground).toBe(system.canvas);
-  expect(system.ink).toBe(system.canvasText);
+  await page.evaluate(() => document.querySelector("opengrid-grid").setAttribute("theme", "dark"));
+  expect(await look()).toEqual({ surface: "rgb(21, 24, 28)", ink: "rgb(230, 232, 235)" });
+
+  // A page's property on the element wins over the look.
+  await page.evaluate(() =>
+    document.querySelector("opengrid-grid").style.setProperty("--og-ink", "rgb(1, 2, 3)"),
+  );
+  expect((await look()).ink).toBe("rgb(1, 2, 3)");
 });
