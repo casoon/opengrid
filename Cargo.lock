@@ -851,6 +851,7 @@ dependencies = [
 name = "opengrid-connector"
 version = "0.3.0"
 dependencies = [
+ "opengrid-columns",
  "opengrid-conformance",
  "opengrid-datasource",
  "opengrid-engine",

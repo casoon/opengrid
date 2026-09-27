@@ -288,3 +288,59 @@ async fn a_rows_source_over_its_bound_is_a_413() {
     assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE, "{body}");
     assert!(body.contains("max_scan_rows"), "{body}");
 }
+
+/// A rows source whose pieces are always ready — endless here — still meets
+/// the server's timeout (issue #50): the scan gives the runtime its turn
+/// between pieces, so the timeout can fire instead of the request running on.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_endless_ready_source_meets_the_timeout() {
+    use opengrid_connector::{RowSource, RowStream, Rows};
+    use opengrid_query::ValidatedFilter;
+
+    fn schema() -> Schema {
+        serde_json::from_str(r#"{"fields":[{"name":"n","type":"int64","nullable":false}]}"#)
+            .unwrap()
+    }
+    struct Endless;
+    impl RowSource for Endless {
+        fn schema(&self) -> BoxFuture<'_, Result<Schema, DataSourceError>> {
+            Box::pin(async { Ok(schema()) })
+        }
+        fn scan<'a>(
+            &'a self,
+            _filter: Option<&'a ValidatedFilter>,
+        ) -> BoxFuture<'a, Result<Box<dyn RowStream + 'a>, DataSourceError>> {
+            Box::pin(async {
+                let stream: Box<dyn RowStream + 'a> = Box::new(Forever);
+                Ok(stream)
+            })
+        }
+    }
+    struct Forever;
+    impl RowStream for Forever {
+        fn next_piece(&mut self) -> BoxFuture<'_, Result<Option<QueryResult>, DataSourceError>> {
+            Box::pin(async {
+                let values = (0..10_000).map(opengrid_types::Value::Int64).collect();
+                Ok(Some(QueryResult::new(schema(), vec![values], 0)))
+            })
+        }
+    }
+
+    let server = Server::builder()
+        .timeout(std::time::Duration::from_millis(200))
+        .source("endless", Rows::new(Endless), SourcePolicy::default())
+        .token(TOKEN, [("unused", "")])
+        .build()
+        .await
+        .expect("a server");
+    let asked = post(
+        server.router(),
+        "/query/endless",
+        r#"{"source":"endless","aggregate":[{"fn":"count","as":"n_rows"}]}"#,
+    );
+    let (status, body) = tokio::time::timeout(std::time::Duration::from_secs(10), asked)
+        .await
+        .expect("the server answers instead of scanning on");
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE, "{body}");
+    assert!(body.contains("took longer"), "{body}");
+}

@@ -16,6 +16,8 @@ opengrid-pivot = { path = "../opengrid-pivot" }
 # The rows tier (issue #46): a source that only hands out rows is answered by
 # the engine, natively, on the server.
 opengrid-engine = { path = "../opengrid-engine" }
+# Tables of pieces, held together while streaming (issue #50).
+opengrid-columns = { path = "../opengrid-columns" }
 # `LocalConnector::from_csv` reads the schema file.
 serde_json = "1"
 
