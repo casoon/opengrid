@@ -38,6 +38,12 @@ Two things belong in every release entry and are easy to leave out:
   `opengrid_conformance::check_source(&source)` runs every case against any source and returns
   a `Report` (`assert_ok()` for tests); `suite_dir`, `fixture_schema`, `fixture_csv` say where
   the fixture is. A `Connector` runs through `opengrid_connector::AsSource`.
+- **The server protocol, and a runner that proves a server** ([#48](https://github.com/casoon/opengrid/issues/48)).
+  [`docs/protocol.md`](docs/protocol.md) describes what an opengrid server speaks — endpoints,
+  the query object, both result forms, errors, export — and the four duties of a server:
+  token, row filter, field allowlist, bounds. `opengrid-conformance --endpoint <url> --token <t>`
+  runs the whole suite over HTTP in both result forms against any server, in any language
+  (`check_endpoint` in the library).
 - **Results travel in a binary form** ([#38](https://github.com/casoon/opengrid/issues/38)),
   `application/vnd.opengrid.columns`: the engine's columns written out, decimals exact, no
   text per cell. `Engine.execute_columns` and `Planner.finish_columns` answer it next to
