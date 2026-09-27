@@ -1,8 +1,7 @@
 # Releasing opengrid
 
-What a release of `@casoon/opengrid` — and of its framework adapters
-`@casoon/opengrid-react`, `@casoon/opengrid-vue` and `@casoon/opengrid-svelte` — consists of,
-in the order it happens.
+What a release of `@casoon/opengrid` — one npm package, with the framework adapters as its
+subpaths `/react`, `/vue` and `/svelte` — consists of, in the order it happens.
 
 Most of this is one command. The steps that are **not** a command are marked 👤 — they
 need a person, a real browser and, for the accessibility run, real assistive technology.
@@ -22,11 +21,9 @@ While the version is **0.x**:
 
 - **A minor bump (`0.1` → `0.2`) may break the API.** Read the changelog before upgrading.
 - **A patch bump (`0.1.0` → `0.1.1`) may not.** It fixes behaviour, never renames anything.
-- The npm packages and the Rust crates carry the **same version** and are bumped together,
-  even when only one of them changed. One number, one release. That includes the three
-  adapters: each names `@casoon/opengrid` as a peer with `^` and the version of the release
-  (pnpm writes it when it packs; the repository says `workspace:^`), so an adapter and the
-  element package it was tested with always come out together.
+- The npm package and the Rust crates carry the **same version** and are bumped together,
+  even when only one of them changed. One number, one release. The adapters are part of the
+  package, so an adapter and the element module it was tested with always come out together.
 
 1.0 is the point at which a minor bump stops being allowed to break anything. It is not
 scheduled, and nothing below it should be read as a promise that it will be.
@@ -37,8 +34,9 @@ scheduled, and nothing below it should be read as a promise that it will be.
 - [ ] `just wasm-check` — every wasm-capable crate builds for `wasm32-unknown-unknown`
 - [ ] `just e2e` — Playwright and axe-core, including `packaged.spec.js`, which loads the
       **packed** package rather than the repository; it also builds the React, Vue and Svelte
-      examples, runs their specs, and runs `just types`, which checks the declarations and
-      puts each packed adapter into a scratch project to render and type-check it there
+      examples, runs their specs, and runs `just types`, which checks the declarations, puts
+      each packed adapter subpath into a scratch project to render and type-check it there,
+      and installs the tarball into a project without any framework
 - [ ] `cargo check -p opengrid-web-components --no-default-features --features grid`, and
       the same with `--features pivot` — E25 keeps both as a way out, so both must build
 - [ ] `just measure-modules` — if a number moved noticeably against the last release, say
@@ -123,18 +121,17 @@ inventory.
 ## The release
 
 - [ ] `just set-version <version>` — sets the version in every place that prints
-      one: the Cargo workspace, the four npm packages (the element package and the
-      three adapters) and the project page's header badge. They drifted once, and
-      the page shows its version publicly, so this is one command rather than six
-      files to remember. Between releases all of them keep the last released version.
+      one: the Cargo workspace, the npm package and the project page's header badge.
+      They drifted once, and the page shows its version publicly, so this is one
+      command rather than three files to remember. Between releases all of them keep the last released version.
 - [ ] Move the `Unreleased` section of [CHANGELOG.md](../CHANGELOG.md) under the new
       version with today's date, and say plainly what breaks if this is a minor
       bump — plus which screen-reader pairings were tested and which were not, or,
       before the passes, that none was.
-- [ ] `just package` — builds the modules, stages the licences and the readmes, packs and
-      unpacks four tarballs: `target/npm-package/` and `target/npm-package-{react,vue,svelte}/`
-- [ ] Read each `package/` directory there and check that it holds what it should, and
-      nothing more — and that no adapter's `package.json` still says `workspace:`. CI does
+- [ ] `just package` — builds the modules, stages the licences and the readme, packs and
+      unpacks the tarball into `target/npm-package/`
+- [ ] Read the `package/` directory there and check that it holds what it should, and
+      nothing more — the adapters under `react/`, `vue/` and `svelte/` included. CI does
       this on every push (`publish-dry-run`), but read it anyway before the one push that is
       real. This local pack is for **reading**, not for publishing: it was built with this
       machine's `wasm-opt`, and `just package` warns when that is not the binaryen CI pins.
@@ -143,10 +140,8 @@ inventory.
       (the `npm-packages` artifact of its `publish-dry-run` job, built with the pinned
       toolchain and checked by that very job), never a local build. It refuses unless
       `main` is clean and at `origin/main`, that commit has a successful CI run, the tag
-      does not exist yet and every tarball carries the version; then it shows what it
-      will do and asks you to type the version. It publishes the element package first —
-      an adapter's peer range points at its version, and an install in the minutes
-      between would find nothing to satisfy it — then the adapters, then tags the commit
+      does not exist yet and the tarball carries the version; then it shows what it will
+      do and asks you to type the version. It publishes the package, then tags the commit
       and pushes the tag. Interrupted halfway, run it again: what is on npm is skipped.
       `pnpm release --dry-run` does every check and `npm publish --dry-run`, and publishes
       nothing.
@@ -154,7 +149,7 @@ inventory.
 ## After
 
 - [ ] Install the published package into an empty project and load a page from it — and
-      one adapter into a project of its framework. The packaged tests prove the tarballs
+      into a project of one framework, importing its subpath. The packaged tests prove the tarballs
       are complete; only an install proves the registry has them.
 
 ## Not part of a release

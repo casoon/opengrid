@@ -33,7 +33,7 @@
  */
 
 import { createElement, forwardRef, useEffect, useImperativeHandle, useRef } from "react";
-import { connect } from "@casoon/opengrid";
+import { connect } from "../loader.js";
 
 /** The HTML boolean attributes a page may pass through, by prop name. */
 const HTML_BOOLEANS = { hidden: "hidden", inert: "inert", autoFocus: "autofocus" };

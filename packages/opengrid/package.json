@@ -2,13 +2,16 @@
   "name": "@casoon/opengrid",
   "version": "0.1.0",
   "type": "module",
-  "description": "Accessible data grid, table and pivot as web components, driven by a portable Rust/WASM query engine.",
+  "description": "Accessible data grid, table and pivot as web components, driven by a portable Rust/WASM query engine — with React, Vue and Svelte components.",
   "keywords": [
     "datagrid",
     "pivot",
     "web-components",
     "accessibility",
-    "wasm"
+    "wasm",
+    "react",
+    "vue",
+    "svelte"
   ],
   "license": "MIT OR Apache-2.0",
   "repository": {
@@ -28,6 +31,19 @@
       "types": "./loader.d.ts",
       "default": "./loader.js"
     },
+    "./react": {
+      "types": "./react/index.d.ts",
+      "default": "./react/index.js"
+    },
+    "./vue": {
+      "types": "./vue/index.d.ts",
+      "default": "./vue/index.js"
+    },
+    "./svelte": {
+      "types": "./svelte/index.d.ts",
+      "svelte": "./svelte/index.js",
+      "default": "./svelte/index.js"
+    },
     "./worker.js": "./worker.js",
     "./pkg/*": "./pkg/*",
     "./engine/*": "./engine/*",
@@ -42,6 +58,9 @@
     "loader.js",
     "loader.d.ts",
     "worker.js",
+    "react/",
+    "vue/",
+    "svelte/",
     "pkg/",
     "engine/",
     "LICENSE-MIT",
@@ -49,6 +68,31 @@
     "README.md",
     "CHANGELOG.md"
   ],
+  "peerDependencies": {
+    "@types/react": ">=18",
+    "react": ">=18",
+    "svelte": "^5.0.0",
+    "vue": ">=3.3"
+  },
+  "peerDependenciesMeta": {
+    "@types/react": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    },
+    "svelte": {
+      "optional": true
+    },
+    "vue": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "svelte": "5.57.1",
+    "vue": "3.5.43"
+  },
   "engines": {
     "node": ">=18"
   },

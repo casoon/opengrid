@@ -3,7 +3,7 @@
 // checking templates would take vue-tsc, which the project does not carry.
 
 import { h } from "vue";
-import { OpengridGrid, OpengridPivot, OpengridTable } from "@casoon/opengrid-vue";
+import { OpengridGrid, OpengridPivot, OpengridTable } from "@casoon/opengrid/vue";
 import type { View } from "@casoon/opengrid";
 
 let view: View | null = null;

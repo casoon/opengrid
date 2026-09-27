@@ -2,7 +2,7 @@
   // The view bound to Svelte state, a saved view to restore, a lock that
   // refuses the reader's changes, texts switched and changed in place, and a
   // grid that is taken out and put back, the way a route change does.
-  import { OpengridGrid } from "@casoon/opengrid-svelte";
+  import { OpengridGrid } from "@casoon/opengrid/svelte";
 
   // eslint-disable-next-line no-undef -- defined by vite.config.js
   const VERSION = __SVELTE_VERSION__;

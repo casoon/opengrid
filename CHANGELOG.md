@@ -18,6 +18,20 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+### Changed
+
+- **One package instead of four** ([#27](https://github.com/casoon/opengrid/issues/27)).
+  The React, Vue and Svelte components are subpaths of `@casoon/opengrid`:
+  `@casoon/opengrid/react`, `@casoon/opengrid/vue`, `@casoon/opengrid/svelte`. `react`,
+  `vue` and `svelte` are optional peer dependencies — a page without a framework installs
+  none of them.
+
+**What breaks:** `@casoon/opengrid-react`, `@casoon/opengrid-vue` and
+`@casoon/opengrid-svelte` are gone (unpublished from npm within 72 hours of 0.1.0).
+Replace the import — `from "@casoon/opengrid-react"` becomes
+`from "@casoon/opengrid/react"` — and drop the package from `dependencies`. The
+components, their props and their events are unchanged.
+
 ## [0.1.0] — 2026-09-26
 
 The first release: `@casoon/opengrid`, `@casoon/opengrid-react`,
