@@ -60,7 +60,7 @@
 //!    `timeout_ms`, and the database ends it if the server's own bound ever
 //!    fails.
 //!
-//! The local engine holds its whole answer (Arrow, not values) for the length
+//! The local engine holds its whole answer (columns, not values) for the length
 //! of the download instead of a cursor; the same bounds apply to it.
 //!
 //! # Never a short file that looks whole

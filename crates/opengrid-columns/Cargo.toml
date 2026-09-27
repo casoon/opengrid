@@ -1,0 +1,15 @@
+[package]
+name = "opengrid-columns"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Column storage and kernels for the opengrid engine: typed columns, NULL bitmaps, gather and sort"
+
+[lints]
+workspace = true
+
+[dependencies]
+opengrid-types = { path = "../opengrid-types" }
+
+[dev-dependencies]
+proptest = "1"

@@ -1,7 +1,7 @@
 #![cfg(target_arch = "wasm32")]
 //! Browser benchmarks for the local engine (plan point 11, step 3).
 //!
-//! Same deterministic rows as the native benches (`crates/opengrid-arrow-engine/benches/engine.rs`):
+//! Same deterministic rows as the native benches (`crates/opengrid-engine/benches/engine.rs`):
 //! both call [`xtask::orders_csv`], so a number here is comparable to the native
 //! one. Run headless Chrome via `just bench-wasm`.
 //!
@@ -19,8 +19,8 @@
 
 use std::time::Duration;
 
-use opengrid_arrow_engine::execute::execute;
-use opengrid_arrow_engine::ingest::{CsvOptions, load_csv};
+use opengrid_engine::execute::execute;
+use opengrid_engine::ingest::{CsvOptions, load_csv};
 use opengrid_query::{Limits, Query, ValidatedQuery};
 use opengrid_types::Schema;
 use wasm_bindgen_test::*;
@@ -115,7 +115,7 @@ fn filter_bench(_: &mut Criterion) {
     let mut c = configured();
     for size in SIZES {
         let schema = schema();
-        let batches = load_csv(
+        let table = load_csv(
             xtask::orders_csv(size, SEED).as_bytes(),
             &schema,
             CsvOptions::default(),
@@ -123,7 +123,7 @@ fn filter_bench(_: &mut Criterion) {
         .expect("ingest");
         let query = filter_query(&schema);
         c.bench_function(&format!("filter/{size}"), |b| {
-            b.iter(|| execute(&batches, &query).expect("the engine answers"));
+            b.iter(|| execute(&table, &query).expect("the engine answers"));
         });
     }
 }
@@ -133,7 +133,7 @@ fn sort_bench(_: &mut Criterion) {
     let mut c = configured();
     for size in SIZES {
         let schema = schema();
-        let batches = load_csv(
+        let table = load_csv(
             xtask::orders_csv(size, SEED).as_bytes(),
             &schema,
             CsvOptions::default(),
@@ -141,7 +141,7 @@ fn sort_bench(_: &mut Criterion) {
         .expect("ingest");
         let query = sort_query(&schema);
         c.bench_function(&format!("sort/{size}"), |b| {
-            b.iter(|| execute(&batches, &query).expect("the engine answers"));
+            b.iter(|| execute(&table, &query).expect("the engine answers"));
         });
     }
 }
@@ -151,7 +151,7 @@ fn multi_sort_bench(_: &mut Criterion) {
     let mut c = configured();
     for size in SIZES {
         let schema = schema();
-        let batches = load_csv(
+        let table = load_csv(
             xtask::orders_csv(size, SEED).as_bytes(),
             &schema,
             CsvOptions::default(),
@@ -159,7 +159,7 @@ fn multi_sort_bench(_: &mut Criterion) {
         .expect("ingest");
         let query = multi_sort_query(&schema);
         c.bench_function(&format!("multi-sort/{size}"), |b| {
-            b.iter(|| execute(&batches, &query).expect("the engine answers"));
+            b.iter(|| execute(&table, &query).expect("the engine answers"));
         });
     }
 }
@@ -181,7 +181,7 @@ fn window_bench(_: &mut Criterion) {
     let mut c = configured();
     for size in SIZES {
         let schema = schema();
-        let batches = load_csv(
+        let table = load_csv(
             xtask::orders_csv(size, SEED).as_bytes(),
             &schema,
             CsvOptions::default(),
@@ -196,7 +196,7 @@ fn window_bench(_: &mut Criterion) {
         ] {
             let query = window_query(&schema, sort, size / 2);
             c.bench_function(&format!("{name}/{size}"), |b| {
-                b.iter(|| execute(&batches, &query).expect("the engine answers"));
+                b.iter(|| execute(&table, &query).expect("the engine answers"));
             });
         }
     }
@@ -207,7 +207,7 @@ fn group_sum_bench(_: &mut Criterion) {
     let mut c = configured();
     for size in SIZES {
         let schema = schema();
-        let batches = load_csv(
+        let table = load_csv(
             xtask::orders_csv(size, SEED).as_bytes(),
             &schema,
             CsvOptions::default(),
@@ -215,7 +215,7 @@ fn group_sum_bench(_: &mut Criterion) {
         .expect("ingest");
         let query = group_sum_query(&schema);
         c.bench_function(&format!("group + sum/{size}"), |b| {
-            b.iter(|| execute(&batches, &query).expect("the engine answers"));
+            b.iter(|| execute(&table, &query).expect("the engine answers"));
         });
     }
 }
@@ -225,7 +225,7 @@ fn aggregate_bench(_: &mut Criterion) {
     let mut c = configured();
     for size in SIZES {
         let schema = schema();
-        let batches = load_csv(
+        let table = load_csv(
             xtask::orders_csv(size, SEED).as_bytes(),
             &schema,
             CsvOptions::default(),
@@ -233,7 +233,7 @@ fn aggregate_bench(_: &mut Criterion) {
         .expect("ingest");
         let query = aggregate_query(&schema);
         c.bench_function(&format!("aggregate/{size}"), |b| {
-            b.iter(|| execute(&batches, &query).expect("the engine answers"));
+            b.iter(|| execute(&table, &query).expect("the engine answers"));
         });
     }
 }
@@ -248,7 +248,7 @@ fn aggregate_bench(_: &mut Criterion) {
 fn memory_footprint(_: &mut Criterion) {
     let mut c = configured();
     let schema = schema();
-    let batches = load_csv(
+    let table = load_csv(
         xtask::orders_csv(1_000_000, SEED).as_bytes(),
         &schema,
         CsvOptions::default(),
@@ -260,6 +260,6 @@ fn memory_footprint(_: &mut Criterion) {
         (pages * 65_536) / (1024 * 1024)
     );
     c.bench_function("memory/noop", |b| {
-        b.iter(|| std::hint::black_box(batches.len()))
+        b.iter(|| std::hint::black_box(table.num_rows()))
     });
 }

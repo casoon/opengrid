@@ -1,23 +1,23 @@
 //! The `DataSource` contract: what the UI and the planner talk to.
 //!
-//! From point 09 on, no component above the engine knows about Arrow. The local
+//! From point 09 on, no component above the engine knows how it stores data. The local
 //! engine, the REST client and the PostgreSQL server are all reached through
 //! [`DataSource`] (plan/spezifikation/03-datasource.md), and they all answer with
-//! the same Arrow-free [`QueryResult`].
+//! the same storage-free [`QueryResult`].
 //!
 //! * **The trait is async** (decision E5): `async fn` in the trait, no
 //!   `async-trait` boxing. [`DataSource`] itself is the browser variant and
 //!   carries no `Send` bound; `SendDataSource` is the server variant and is
 //!   generated from the same definition by `trait-variant`.
-//! * **The result is Arrow-free** (decision E14): `schema`, one `Vec<Value>` per
+//! * **The result is storage-free** (decision E14): `schema`, one `Vec<Value>` per
 //!   output column and `total_count` — the column-oriented shape of the wire
-//!   format (E6). Arrow stays inside `opengrid-arrow-engine`.
+//!   format (E6). The engine's columns stay inside `opengrid-engine`.
 //! * **The wire form lives here too** (plan point 23): [`wire`] writes and reads
 //!   the JSON a server answers with and a client consumes — the same
 //!   column-oriented shape, now carrying each column's *type*, plus the error
 //!   envelope both sides branch on.
 //! * **The crate is portable** (plan/spezifikation/11-crates.md §Portabilität):
-//!   neither Arrow nor `web-sys`/`js-sys` are dependencies, so it builds for
+//!   neither an engine nor `web-sys`/`js-sys` are dependencies, so it builds for
 //!   `wasm32-unknown-unknown`, natively and on the server.
 
 mod capabilities;
