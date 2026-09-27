@@ -302,9 +302,9 @@ parts
   body cell chip chip-remove chips chips-clear column-menu column-menu-button column-toggle \
 columns columns-toggle density editor empty empty-reset empty-text facet facet-bounds \
 facet-cost facet-count facet-pill facet-pills facet-value facets facets-head facets-toggle \
-filter filter-clear filter-operator filter-row-toggle filter-value header layout menu-label \
+filter filter-clear filter-operator filter-row-toggle filter-value footer header layout menu-label \
 page-first page-label page-last page-next page-previous pager row search search-hint \
-search-input search-list select select-all select-mark sort-direction sort-index status toolbar \
+search-input search-list select select-all select-mark sort-direction sort-index source status toolbar \
 total-row viewport
 
 text keys
@@ -316,11 +316,11 @@ error errorUnknown facetChipValues facetFrom facetQueries facetTo facetsGroup fa
 facetsToggle filterColumn filterGroup filterInvalid filterRemoved filterRowToggle \
 filtersCleared groupByColumn groupChip groupCollapsed groupExpanded groupInvalid groupRow \
 groupSecondLevel hideColumn lang loading matchesOne matchesOther noValue operatorLabel \
-operators pageFirst pageLast pageNext pageOf pagePrevious queryAnd queryMissingValue \
-queryUnknownColumn queryWrongOperator rowsOne rowsOther searchChip searchHint searchLabel \
-searchPlaceholder searchSuggestions selectAll selectedAll selectionCleared sortAscending \
-sortDescending subtotal toolbarGroup total totalRow typeBool typeDate typeInteger typeNumber \
-typeText typeTime ungroupColumn valueLabel
+operators pageFirst pageLast pageNext pageOf pagePrevious queriesOne queriesOther queryAnd \
+queryMissingValue queryUnknownColumn queryWrongOperator rowsOne rowsOther searchChip searchHint \
+searchLabel searchPlaceholder searchSuggestions selectAll selectedAll selectionCleared sortAscending \
+sortDescending sourceHybrid sourceLocal sourceRemote sourceWorker subtotal toolbarGroup total \
+totalRow typeBool typeDate typeInteger typeNumber typeText typeTime ungroupColumn valueLabel
 ";
         assert_eq!(surface(), expected);
     }

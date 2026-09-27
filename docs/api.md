@@ -66,6 +66,12 @@ All from `loader.js`, all the same shape:
 | `createHybridProvider({ remote, planner, mode, onPlan })` | Splits each query between a remote source and the engine in the tab. `onPlan` receives the plan before anything is sent. |
 | `createPivotProvider({ url, source, token })` | `POST /pivot/{source}` — a whole pivot in one request. |
 
+Each of them carries a **`kind`** — `"local"`, `"worker"`, `"remote"` (REST and pivot) or
+`"hybrid"` — and a provider of a page's own may too. The grid names it in its footer,
+beside the number of queries asked for what is shown (`worker · wasm · 2 queries`); a
+provider without a `kind` is shown with the count alone. The words are
+[texts](#texts).
+
 **The engine** — `Engine` for the tab, `Planner` for the hybrid provider —
 ships in the package under `engine/`, a module of its own next to the
 elements'. A worker needs no URL; a page that queries on the main thread
@@ -232,7 +238,9 @@ its configuration — its type-dependent checks run again when it is shown.
 ### Toolbar
 
 With `toolbar`, a labelled group of ordinary buttons sits above the filter row —
-outside `role="grid"`, like the filter row, so the grid's keys never reach it.
+outside `role="grid"`, like the filter row, so the grid's keys never reach it. It is
+one row: the search field first (with `search`), then the switches, the column list
+and the density as a segmented control.
 
 | | |
 |---|---|
@@ -689,7 +697,7 @@ declaration on the element wins over an inherited value.
 | `--og-font` / `--og-font-size` | `"Geist", system-ui, sans-serif` / `0.875rem` | everything the grid writes |
 | `--og-font-mono` | `"Geist Mono", ui-monospace, …` | the values of a column marked `mono` |
 | `--og-surface` | `#ffffff` | rows, the body of the grid |
-| `--og-surface-2` | `#fafbfc` | header, filter row, status line, pager |
+| `--og-surface-2` | `#fafbfc` | header, filter row, pager, the facet sidebar, the search field |
 | `--og-ink` | `#14161a` | the text |
 | `--og-ink-muted` | `#646b78` | text that is there but not the point |
 | `--og-line` | `#eceef2` | the rules between rows |
@@ -702,7 +710,7 @@ declaration on the element wins over an inherited value.
 | `--og-row-height` | `42px` | a data row; **goes into the window math** |
 | `--og-header-height` | `--og-row-height` | the header row |
 | `--og-filter-height` | `40px` | the filter row |
-| `--og-status-height` | `24px` | the status line, as a minimum |
+| `--og-status-height` | `24px` | the footer with the status line, as a minimum |
 
 | Computed | From |
 |---|---|
@@ -762,11 +770,11 @@ as the tint (colour alone would be 1.4.1), and `prefers-reduced-motion` beats a
 theme that animates a part.
 
 **Parts:** `body`, `cell`, `chip`, `chip-remove`, `chips`, `chips-clear`, `column-menu`, `column-menu-button`, `column-toggle`, `columns`, `columns-toggle`, `editor`,
-`filter`, `filter-clear`, `filter-operator`, `filter-value`, `header`,
+`filter`, `filter-clear`, `filter-operator`, `filter-value`, `footer`, `header`,
 `density`, `empty`, `empty-reset`, `empty-text`, `facet`, `facet-bounds`, `facet-cost`, `facet-count`, `facet-pill`,
 `facet-pills`, `facet-value`, `facets`, `facets-head`, `facets-toggle`, `filter-row-toggle`, `layout`, `menu-label`, `page-first`, `page-label`, `page-last`, `page-next`,
 `page-previous`, `pager`, `row`, `search`, `search-hint`, `search-input`, `search-list`, `select`, `select-all`, `select-mark`,
-`sort-direction`, `sort-index`, `status`, `toolbar`,
+`sort-direction`, `sort-index`, `source`, `status`, `toolbar`,
 `total-row`, `viewport`.
 
 `<opengrid-table>` and `<opengrid-pivot>` ship no stylesheet beyond the look's
@@ -822,6 +830,8 @@ loader.module.set_texts(host, { lang: "de", loading: "Wird geladen …" });
 | `facetFrom` / `facetTo` | `From` / `To` | |
 | `facetQueries` | `Counted with {count} queries` | `{count}` |
 | `facetChipValues` | `{column} is one of {values}` | `{column}`, `{values}` |
+| `sourceLocal` / `sourceWorker` / `sourceRemote` / `sourceHybrid` | `local · wasm` / `worker · wasm` / `server` / `hybrid` — the footer's source, by the provider's `kind` | |
+| `queriesOne` / `queriesOther` | `{count} query` / `{count} queries` — the footer's count | `{count}` |
 | `searchLabel` / `searchPlaceholder` | `Search or filter` / `Search, or filter: country = DE and amount ≥ 10` | |
 | `queryAnd` | `and` | |
 | `searchHint` / `searchSuggestions` | `Query · Enter` / `Columns` | |

@@ -139,6 +139,15 @@ pub struct GridTexts {
     pub facet_queries: String,
     /// A facet chip with more than one value. May use `{column}` and `{values}`.
     pub facet_chip_values: String,
+    /// The footer's source (issue #33): where the provider runs the queries,
+    /// by its `kind`.
+    pub source_local: String,
+    pub source_worker: String,
+    pub source_remote: String,
+    pub source_hybrid: String,
+    /// The footer's query count for what is shown. May use `{count}`.
+    pub queries_one: String,
+    pub queries_other: String,
     /// The search field (point 67).
     pub search_label: String,
     pub search_placeholder: String,
@@ -280,6 +289,12 @@ pub(crate) const KEYS: &[&str] = &[
     "facetTo",
     "facetQueries",
     "facetChipValues",
+    "sourceLocal",
+    "sourceWorker",
+    "sourceRemote",
+    "sourceHybrid",
+    "queriesOne",
+    "queriesOther",
     "searchLabel",
     "searchPlaceholder",
     "queryAnd",
@@ -403,6 +418,12 @@ impl Default for GridTexts {
             facet_to: "To".to_owned(),
             facet_queries: "Counted with {count} queries".to_owned(),
             facet_chip_values: "{column} is one of {values}".to_owned(),
+            source_local: "local \u{b7} wasm".to_owned(),
+            source_worker: "worker \u{b7} wasm".to_owned(),
+            source_remote: "server".to_owned(),
+            source_hybrid: "hybrid".to_owned(),
+            queries_one: "{count} query".to_owned(),
+            queries_other: "{count} queries".to_owned(),
             search_label: "Search or filter".to_owned(),
             search_placeholder: "Search, or filter: country = DE and amount \u{2265} 10".to_owned(),
             query_and: "and".to_owned(),
@@ -563,6 +584,25 @@ impl GridTexts {
     /// What the facet counts cost (point 66).
     pub fn facet_queries(&self, count: usize) -> String {
         fill(&self.facet_queries, "count", &count.to_string())
+    }
+
+    /// The footer's source line (issue #33): the provider's `kind` in words, if
+    /// it has a known one, and the queries asked for what is shown.
+    pub fn source(&self, kind: Option<&str>, queries: usize) -> String {
+        let count = if queries == 1 {
+            &self.queries_one
+        } else {
+            &self.queries_other
+        };
+        let count = fill(count, "count", &queries.to_string());
+        let place = match kind {
+            Some("local") => &self.source_local,
+            Some("worker") => &self.source_worker,
+            Some("remote") => &self.source_remote,
+            Some("hybrid") => &self.source_hybrid,
+            _ => return count,
+        };
+        format!("{place} \u{b7} {count}")
     }
 
     /// A chip for a facet with several values (point 66).
@@ -855,6 +895,12 @@ mod host {
         overwrite(&mut texts.facet_to, string("facetTo"));
         overwrite(&mut texts.facet_queries, string("facetQueries"));
         overwrite(&mut texts.facet_chip_values, string("facetChipValues"));
+        overwrite(&mut texts.source_local, string("sourceLocal"));
+        overwrite(&mut texts.source_worker, string("sourceWorker"));
+        overwrite(&mut texts.source_remote, string("sourceRemote"));
+        overwrite(&mut texts.source_hybrid, string("sourceHybrid"));
+        overwrite(&mut texts.queries_one, string("queriesOne"));
+        overwrite(&mut texts.queries_other, string("queriesOther"));
         overwrite(&mut texts.search_label, string("searchLabel"));
         overwrite(&mut texts.search_placeholder, string("searchPlaceholder"));
         overwrite(&mut texts.query_and, string("queryAnd"));

@@ -465,6 +465,8 @@
         // before the provider so the first paint already speaks it.
         loader.module.set_texts(grid, {
           lang: "de", loading: "Wird geladen …", matchesOne: "{count} Treffer", matchesOther: "{count} Treffer",
+          sourceLocal: "lokal · wasm", sourceWorker: "Worker · wasm", sourceRemote: "Server", sourceHybrid: "hybrid",
+          queriesOne: "{count} Abfrage", queriesOther: "{count} Abfragen",
           empty: "Keine Treffer", error: "Die Daten konnten nicht geladen werden: {cause}",
           errorUnknown: "Die Daten konnten nicht geladen werden.",
           filterGroup: "Filter", operatorLabel: "{column} Bedingung", valueLabel: "{column} Wert", clear: "Leeren",
@@ -515,7 +517,8 @@
           qty: { width: 104, aggregate: "sum" },
           ordered_on: { width: 196, muted: true, facet: "period", aggregate: "range" },
         });
-        provider = { execute: (query) => engine.execute(query) };
+        // `kind` names where the queries run, for the grid's footer (issue #33).
+        provider = { kind: "local", execute: (query) => engine.execute(query) };
         loader.module.set_provider(grid, provider);
 
         grid.addEventListener("opengrid-view-change", () => { drawTabs(); drawCode(); });

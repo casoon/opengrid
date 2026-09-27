@@ -27,10 +27,23 @@ Two things belong in every release entry and are easy to leave out:
   `violet`, `orange`, `dark`. `--og-*` properties set by the page still win. The adapters
   take `theme` as a prop. The fonts are named, not loaded.
 
+- **The grid's parts look like the design prototype** ([#33](https://github.com/casoon/opengrid/issues/33)):
+  the search field, the switches, the column list and the density (a segmented control) in
+  one toolbar row; pill chips, the grouping chip inverted; small uppercase column headers;
+  32px filter and facet fields.
+- **A footer**: the status line moved below the rows — the same live region, so the
+  announcements are unchanged, but a screen reader reading through meets the count after the
+  table. Beside it, where the queries ran and how many were asked for what is shown
+  (`local · wasm · 2 queries`): providers carry an optional **`kind`** (`local`, `worker`,
+  `remote`, `hybrid`; the built-in ones set it), and six new text keys (`sourceLocal`,
+  `sourceWorker`, `sourceRemote`, `sourceHybrid`, `queriesOne`, `queriesOther`). New parts
+  `footer` and `source`.
+
 **What breaks:** the defaults were the system colours (`Canvas`, `CanvasText`,
 `LinkText`) and followed the reader's light or dark mode. A page that relied on that sets
 `theme="dark"` itself, or its own `--og-*` properties. Under `forced-colors` nothing
-changes.
+changes. A page that styled `::part(status)` as a line above the rows finds it in the
+footer now.
 
 ## [0.2.0] — 2026-09-27
 

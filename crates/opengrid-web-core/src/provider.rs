@@ -74,6 +74,13 @@ pub trait DataProvider {
     /// that splits the work between a source and the engine (plan point 28)
     /// reads it, and that is the only reason it travels this far.
     fn execute(&self, query_json: &str, mode: &str) -> js_sys::Promise;
+
+    /// Where the queries run — `local`, `worker`, `remote` or `hybrid` — if the
+    /// provider says (issue #33). The grid names it in its footer; a provider
+    /// that does not say is shown without it.
+    fn kind(&self) -> Option<String> {
+        None
+    }
 }
 
 /// A [`DataProvider`] over a [`QueryExecutor`] that is ready on the spot.
@@ -134,6 +141,13 @@ impl JsProvider {
 
 #[cfg(target_arch = "wasm32")]
 impl DataProvider for JsProvider {
+    /// The provider object's `kind` property, when it is a string.
+    fn kind(&self) -> Option<String> {
+        js_sys::Reflect::get(&self.object, &JsValue::from_str("kind"))
+            .ok()
+            .and_then(|value| value.as_string())
+    }
+
     /// The mode goes along as a second argument. A provider that does not take
     /// one simply ignores it — that is how JavaScript calls work, and it is why
     /// the seam did not have to change shape for point 28.
