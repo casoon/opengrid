@@ -32,8 +32,14 @@ fn repo_root() -> PathBuf {
 /// The fixture with every column open and no row filter: the suite's queries
 /// name all of them.
 fn app() -> axum::Router {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    static NEXT: AtomicU32 = AtomicU32::new(0);
+
     let root = repo_root();
-    let path = root.join("target/opengrid-server-binary-test.toml");
+    // A file per call: the tests run in parallel, and a shared path means one
+    // test reads the configuration while another is still writing it.
+    let id = NEXT.fetch_add(1, Ordering::Relaxed);
+    let path = root.join(format!("target/opengrid-server-binary-test-{id}.toml"));
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(
         &path,
