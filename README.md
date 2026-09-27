@@ -79,9 +79,11 @@ The engine reads a CSV against a schema — it never guesses types.
 
 ## Data from a server
 
-`opengrid-server` answers the same queries against PostgreSQL — the browser sends a query
-object, never SQL, and the server enforces tokens, a per-tenant row filter and a field
-allowlist.
+`opengrid-server` answers the same queries on a server — the browser sends a query object,
+never SQL, and the server enforces tokens, a per-tenant row filter and a field allowlist. It
+knows no database: your program hands it its sources as
+[connectors](https://github.com/casoon/opengrid/blob/main/docs/guides/connectors.md), and
+PostgreSQL is one reference among them.
 
 ```js
 import { connect, createRestProvider } from "@casoon/opengrid";

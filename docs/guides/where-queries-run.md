@@ -19,45 +19,42 @@ HTTP, or be split across two of them without the elements knowing.
 ## On a server
 
 `opengrid-server` answers the same query AST over HTTP. The browser sends the AST, never SQL.
-A configuration names the sources, the bearer tokens and what each client may see:
+It is a **library**: your program builds it and hands it its sources as connectors — the
+server knows no database ([Connectors](../connectors/)). Configuration is code:
 
-```toml
-[server]
-address = "127.0.0.1:8081"
-allowed_origins = ["http://127.0.0.1:8080"]
-
-[[tokens]]
-value = "demo-token-de"
-context = { country = "DE" }
-
-[[datasources]]
-name = "orders"
-type = "local-csv"   # or "postgres", with `connection` and `table`
-path = "orders.csv"
-schema = "orders.schema.json"
-allowed_fields = ["id", "customer", "country", "amount", "qty", "ordered_on"]
-row_filter = { field = "country", op = "eq", value = ":country" }
+```rust
+let server = Server::builder()
+    .allow_origin("http://127.0.0.1:8080")
+    .token(std::env::var("DEMO_TOKEN_DE")?, [("country", "DE")])
+    .source("orders", LocalConnector::from_csv(csv, schema)?, SourcePolicy {
+        allowed_fields: vec!["id".into(), "customer".into(), "country".into(), "amount".into()],
+        row_filter: Some(RowFilter::new("country", "eq", ":country")),
+    })
+    .build()
+    .await?;
+axum::serve(listener, server.router()).await?;
 ```
 
 - A field outside `allowed_fields` does not exist for a client: the answer is the same
   `422 unknown field` as a typo.
-- `row_filter` is attached to every query from the token's context and cannot be switched off.
-- CORS is off by default. `allowed_origins` lists origins one by one; there is no `*`.
+- The row filter is attached to every query from the token's context and cannot be switched off.
+- CORS is off by default. `allow_origin` adds origins one by one; there is no `*`.
 - `POST /query` and `POST /pivot` answer JSON, or the binary result form when `Accept`
   names `application/vnd.opengrid.columns` — what `createRestProvider` and
   `createPivotProvider` send. Errors are always JSON; every answer carries `Vary: Accept`.
 
-`[server]` also takes `max_payload_bytes` (64 KiB), `timeout_ms` (10 000), `max_limit`
-(10 000 rows a page), `max_depth`, the pivot bounds, and for exports `max_export_rows`
-(1 000 000) and `max_concurrent_exports` (half the smallest PostgreSQL pool) — both below.
-What a page does with an export is in [Exporting](../export/).
+The builder also takes `max_payload_bytes` (64 KiB), `timeout` (10 s), `limits` (10 000 rows a
+page, the nesting depth), `pivot_limits`, and for exports `max_export_rows` (1 000 000) and
+`max_concurrent_exports` (half the smallest PostgreSQL pool) — both below. What a page does
+with an export is in [Exporting](../export/).
 
-The full example, including a PostgreSQL variant, is in `examples/remote-demo/`:
+`examples/server` is a small program around the library with the demo's sources, a PostgreSQL
+variant and the one the end-to-end suite runs against:
 
 ```sh
 just wasm-build-components
-cargo run -p opengrid-server -- examples/remote-demo/opengrid.toml   # :8081
-just serve-demo                                                      # :8080
+cargo run -p opengrid-example-server -- demo   # :8081 (demo-postgres: the same over PostgreSQL)
+just serve-demo                                # :8080
 ```
 
 ## Exporting from a server
@@ -80,7 +77,7 @@ curl -X POST 'http://127.0.0.1:8081/export/orders?format=csv&delimiter=%3B' \
 | CSV options | `delimiter`, `bom`, `protectFormulas`, `null` as parameters — the names `exportRows` takes, the rules of `opengrid-export`. A wrong one, an unknown parameter, and a CSV option on a JSON export are a `400` before anything runs. Under the formula guard, `null` may not start with `=`, `+`, `-`, `@` or a tab: it is written into every empty cell as it is. |
 | Headers | `Content-Type`; `Content-Disposition: attachment` with the source's name (`orders.csv`, an ASCII `filename` and the exact name as `filename*`); `X-Total-Count`, the rows that follow. With `allowed_origins`, a page may read the last two. |
 | Too many rows | More than `max_export_rows` (1 000 000 by default) is a `413` with a sentence **before the first byte** — never a file cut short. The rows are counted first, in the same `REPEATABLE READ` snapshot the cursor then reads, so the count is the number of rows that come. A limit inside the cursor would only notice after that many rows had been sent. |
-| `timeout_ms` | Bounds the time to the first byte, each single fetch from the source, and the time the client may take to accept each piece. The whole export is bounded by `max_export_rows`, not by a clock: a million rows to a slow client take longer than any one query. A statement still running when a timeout hits is cancelled in the database. |
+| Timeout | Bounds the time to the first byte, each single fetch from the source, and the time the client may take to accept each piece. The whole export is bounded by `max_export_rows`, not by a clock: a million rows to a slow client take longer than any one query. A statement still running when a timeout hits is cancelled in the database. |
 | Too many at once | More than `max_concurrent_exports` running is a `503` (code `busy`) before any database work. |
 | Streaming | PostgreSQL is read through a cursor, 10 000 rows at a time, into a bounded response body that holds two pieces. A slow client slows the reading down instead of filling memory; a client that goes away is noticed at the next piece, and the transaction and its cursor end. The local engine runs the query once and holds its answer — as columns, not as values — for the length of the download, handing out slices of it. |
 | A failure midway | After the first byte there is no status left to send, so the connection is broken off without the end of the body: a client sees an error, never a shorter file that looks whole — a failure of the source, a client too slow, a bug in the server alike. That needs HTTP/1.1 chunked or HTTP/2 on every hop: a proxy that answers the client in HTTP/1.0 turns the break into an ordinary end of file. Behind nginx, set `proxy_http_version 1.1;`. |
@@ -92,8 +89,8 @@ holds **one pooled connection** and **one snapshot**: a `REPEATABLE READ` transa
 `xmin` keeps `VACUUM` from removing rows that died after it began. A client decides how long
 that is, so three bounds keep it from being forever:
 
-1. **`timeout_ms` per piece.** A client that stops reading fills the two-piece buffer; when the
-   next piece waits longer than `timeout_ms`, the body is broken off, the connection closed
+1. **The timeout per piece.** A client that stops reading fills the two-piece buffer; when the
+   next piece waits longer than the timeout, the body is broken off, the connection closed
    (not returned to the pool) and the transaction with its cursor gone.
 2. **`max_concurrent_exports`.** One more is a `503` before any database work. Unset, it is half
    the smallest PostgreSQL pool — the pool is two connections per CPU — so even if every export
@@ -101,9 +98,9 @@ that is, so three bounds keep it from being forever:
    without a PostgreSQL source it is the number of CPUs. Set it lower on a database that serves
    others, or higher only with a pool that has room.
 3. **PostgreSQL's backstop.** The export's transaction sets
-   `idle_in_transaction_session_timeout` to twice `timeout_ms`, so the database ends it on its
+   `idle_in_transaction_session_timeout` to twice the timeout, so the database ends it on its
    own if the server's bound ever fails. The server's own pauses are shorter: a piece is
-   accepted within `timeout_ms`, and writing the next takes milliseconds.
+   accepted within the timeout, and writing the next takes milliseconds.
 
 It also sets `cursor_tuple_fraction = 1.0` — the cursor is read to the end, so it is planned for
 all rows, not the first tenth. An export refused before its first byte (`413`, a failed count)

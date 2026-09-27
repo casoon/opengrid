@@ -19,19 +19,12 @@
 //! schema after the filter has been added, to produce what actually runs.
 
 use std::collections::BTreeMap;
-use std::path::Path;
 use std::sync::Arc;
 
 use opengrid_connector::Connector;
-use opengrid_datasource_postgres::PostgresDataSource;
-use opengrid_engine::datasource::LocalDataSource;
-use opengrid_engine::ingest::{CsvOptions, load_csv};
 use opengrid_pivot::{PivotError, PivotLimits, PivotQuery, ValidatedPivotQuery};
 use opengrid_query::{CmpOp, FilterExpr, Limits, Query, ValidatedQuery};
 use opengrid_types::{FieldName, Schema};
-
-use crate::config::{Config, SourceConfig};
-use crate::local::LocalConnector;
 
 /// One source the server will answer for.
 pub struct Source {
@@ -118,38 +111,6 @@ impl Registry {
         }
     }
 
-    /// Loads every configured source. Any problem stops the server.
-    pub fn build(config: &Config, base: &Path) -> Result<Self, RegistryError> {
-        let mut sources = Vec::new();
-        for source in &config.datasources {
-            let (data, full_schema) = load_source(source, base)?;
-            let policy = SourcePolicy {
-                allowed_fields: source.allowed_fields.clone(),
-                row_filter: source
-                    .row_filter
-                    .as_ref()
-                    .map(|filter| RowFilter::new(&filter.field, &filter.op, &filter.value)),
-            };
-            sources.push(Source::new(&source.name, data, full_schema, policy)?);
-        }
-
-        let mut limits = Limits::default();
-        if let Some(max_limit) = config.server.max_limit {
-            limits.max_limit = max_limit;
-        }
-        if let Some(max_depth) = config.server.max_depth {
-            limits.max_depth = max_depth;
-        }
-        let mut pivot_limits = PivotLimits::default();
-        if let Some(max_columns) = config.server.max_pivot_columns {
-            pivot_limits.max_columns = max_columns;
-        }
-        if let Some(max_rows) = config.server.max_pivot_rows {
-            pivot_limits.max_rows = max_rows;
-        }
-        Ok(Self::new(sources, limits, pivot_limits))
-    }
-
     /// `max_concurrent_exports` when nobody set it: the smallest bound a
     /// connector names ([`Connector::concurrent_exports`] — PostgreSQL says half
     /// its pool), at least 1. Every export holds its source's resources for as
@@ -206,74 +167,6 @@ impl Source {
             data,
         })
     }
-}
-
-/// The connector a configured source stands for, and its full schema.
-fn load_source(
-    config: &SourceConfig,
-    base: &Path,
-) -> Result<(Arc<dyn Connector>, Schema), RegistryError> {
-    if !matches!(config.kind.as_str(), "local-csv" | "postgres") {
-        return Err(RegistryError::new(format!(
-            "datasource {:?}: type {:?} is not supported (\"local-csv\" or \"postgres\")",
-            config.name, config.kind
-        )));
-    }
-
-    let schema_path = base.join(&config.schema);
-    let schema_json = std::fs::read_to_string(&schema_path).map_err(|error| {
-        RegistryError::new(format!(
-            "datasource {:?}: {}: {error}",
-            config.name,
-            schema_path.display()
-        ))
-    })?;
-    let full_schema: Schema = serde_json::from_str(&schema_json).map_err(|error| {
-        RegistryError::new(format!(
-            "datasource {:?}: {}: {error}",
-            config.name,
-            schema_path.display()
-        ))
-    })?;
-    let data: Arc<dyn Connector> = match config.kind.as_str() {
-        "postgres" => {
-            let url = config.connection.as_deref().ok_or_else(|| {
-                RegistryError::new(format!(
-                    "datasource {:?}: a postgres source needs a `connection`",
-                    config.name
-                ))
-            })?;
-            let url = crate::config::interpolate_public(url).map_err(|error| {
-                RegistryError::new(format!("datasource {:?}: {error}", config.name))
-            })?;
-            let table = config.table.as_deref().unwrap_or(&config.name);
-            let source =
-                PostgresDataSource::connect(&url, table, full_schema.clone()).map_err(|error| {
-                    RegistryError::new(format!("datasource {:?}: {error}", config.name))
-                })?;
-            Arc::new(source)
-        }
-        _ => {
-            let data_path = base.join(config.path.as_deref().ok_or_else(|| {
-                RegistryError::new(format!(
-                    "datasource {:?}: a local-csv source needs a `path`",
-                    config.name
-                ))
-            })?);
-            let bytes = std::fs::read(&data_path).map_err(|error| {
-                RegistryError::new(format!(
-                    "datasource {:?}: {}: {error}",
-                    config.name,
-                    data_path.display()
-                ))
-            })?;
-            let table = load_csv(&bytes, &full_schema, CsvOptions::default()).map_err(|error| {
-                RegistryError::new(format!("datasource {:?}: {error}", config.name))
-            })?;
-            Arc::new(LocalConnector::new(LocalDataSource::new(table)))
-        }
-    };
-    Ok((data, full_schema))
 }
 
 /// The schema reduced to `allowed_fields`, in the schema's own order.

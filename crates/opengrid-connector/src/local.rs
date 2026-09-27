@@ -1,19 +1,22 @@
 //! The local engine over an in-memory table, as a [`Connector`] (issue #45).
 //!
-//! What a `local-csv` source in the configuration becomes, and a reference for
-//! a connector that holds its data itself: the engine answers every query, the
+//! A reference for a connector that holds its data itself (a file read at
+//! startup, say): the engine answers every query, the
 //! pivot takes the generic path, and an export runs the query **once** and
 //! hands out slices of the answer — paging it instead would sort the whole
 //! table again for every piece.
 
 use std::time::Duration;
 
-use opengrid_connector::{
-    BoxFuture, Connector, DataSourceCapabilities, DataSourceError, ExportRows, QueryResult, Schema,
-    ValidatedQuery,
-};
-use opengrid_datasource::SendDataSource;
+use std::path::Path;
+
 use opengrid_engine::datasource::{LocalDataSource, LocalPieces};
+use opengrid_engine::ingest::{CsvOptions, load_csv};
+
+use crate::{
+    BoxFuture, Connector, DataSourceCapabilities, DataSourceError, ExportRows, QueryResult, Schema,
+    SendDataSource, ValidatedQuery,
+};
 
 /// A table in memory, answered by `opengrid-engine`.
 pub struct LocalConnector(LocalDataSource);
@@ -21,6 +24,22 @@ pub struct LocalConnector(LocalDataSource);
 impl LocalConnector {
     pub fn new(source: LocalDataSource) -> Self {
         Self(source)
+    }
+
+    /// A CSV file with a header row (`\N` for NULL) read against the schema in
+    /// a JSON file — the stored columns in the CSV, derived ones computed.
+    pub fn from_csv(csv: &Path, schema: &Path) -> Result<Self, DataSourceError> {
+        let failed = |path: &Path, error: &dyn std::fmt::Display| DataSourceError::Backend {
+            message: format!("{}: {error}", path.display()),
+        };
+        let schema_text =
+            std::fs::read_to_string(schema).map_err(|error| failed(schema, &error))?;
+        let schema_value: Schema =
+            serde_json::from_str(&schema_text).map_err(|error| failed(schema, &error))?;
+        let bytes = std::fs::read(csv).map_err(|error| failed(csv, &error))?;
+        let table = load_csv(&bytes, &schema_value, CsvOptions::default())
+            .map_err(|error| failed(csv, &error))?;
+        Ok(Self::new(LocalDataSource::new(table)))
     }
 }
 

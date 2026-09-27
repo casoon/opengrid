@@ -49,6 +49,18 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Changed
 
+- **No configuration file and no binary in `opengrid-server`** ([#49](https://github.com/casoon/opengrid/issues/49)).
+  Configuration is code: the builder (#45). `opengrid-server` no longer depends on a database
+  driver, the local engine or `toml`. `LocalConnector` (with `from_csv`) moved to
+  `opengrid-connector`; PostgreSQL stays a reference connector in
+  `opengrid-datasource-postgres`. `examples/server` is a program around the library with the
+  demo's sources (`demo`, `demo-postgres`) and the end-to-end suite's (`e2e`).
+
+  **What breaks:** `opengrid-server <config.toml>` is gone, and with it `Config`,
+  `Registry::build` and `opengrid_server::build`. Write the sources as code —
+  [Connectors](docs/guides/connectors.md) shows how; `examples/server/src/main.rs` has the
+  former demo configurations as functions.
+
 - **The built-in providers answer bytes.** `createLocalProvider` and `createWorkerProvider`
   answer the binary form; `createRestProvider` and `createPivotProvider` ask the server
   for it and still take JSON from a server that answers JSON. A provider of your own may

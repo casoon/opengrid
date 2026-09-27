@@ -93,7 +93,7 @@ sees a `ValidatedQuery` that already carries every rule — it cannot forget one
 
 PostgreSQL (`opengrid-datasource-postgres`: the pivot as one `GROUPING SETS` statement, the
 export through a cursor) and the local engine over a table in memory
-(`opengrid_server::local::LocalConnector`). They are examples, not a list of supported
+(`opengrid_connector::LocalConnector`, `from_csv` for a file). They are examples, not a list of supported
 databases: anything that can answer the contract is one.
 
 The contract is frozen with its first release and grows only by methods with a default.
