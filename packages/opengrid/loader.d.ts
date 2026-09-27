@@ -143,6 +143,12 @@ export type Answer = string | Uint8Array | ArrayBuffer;
 export interface Provider {
   execute(queryJson: string, mode: string, options?: ExecuteOptions): Answer | Promise<Answer>;
   /**
+   * Optional: where the queries run. The grid names it in its footer, beside
+   * the number of queries asked for what is shown; the built-in providers set
+   * it. A provider without it is shown with the count alone.
+   */
+  kind?: ProviderKind;
+  /**
    * Optional: the whole export of `query` in one go. `exportRows` uses it when
    * it is there instead of fetching pieces over `execute` —
    * `createRestProvider` has it, as `POST /export/{source}`.
@@ -362,7 +368,16 @@ export interface CodedError extends Error {
 /** Where a query may run; handed to the provider unchanged. */
 export type Mode = "local" | "remote" | "hybrid" | "auto";
 
+/** What a provider's `kind` says: where its queries run. */
+export type ProviderKind = "local" | "worker" | "remote" | "hybrid";
+
 export type Density = "compact" | "normal" | "comfortable";
+
+/**
+ * The built-in looks of the `theme` attribute; `base` is the default. The
+ * `--og-*` custom properties a page sets on the element win over them.
+ */
+export type Theme = "base" | "paper" | "violet" | "orange" | "dark";
 
 /** The filter operators, by wire token. */
 export type FilterOperator =
@@ -555,6 +570,21 @@ export type TextKey =
   | "facetTo"
   | "facetQueries"
   | "facetChipValues"
+  | "addFilter"
+  | "addFilterTitle"
+  | "filterColumnLabel"
+  | "filterConditionLabel"
+  | "filterValueLabel"
+  | "cancel"
+  | "apply"
+  | "addGrouping"
+  | "groupingFull"
+  | "sourceLocal"
+  | "sourceWorker"
+  | "sourceRemote"
+  | "sourceHybrid"
+  | "queriesOne"
+  | "queriesOther"
   | "searchLabel"
   | "searchPlaceholder"
   | "queryAnd"
@@ -655,12 +685,15 @@ export interface OpengridGridAttributes {
   "column-menu"?: string;
   selection?: string;
   density?: Density;
+  /** One of the built-in looks; Base when absent. */
+  theme?: Theme;
 }
 
 export interface OpengridTableAttributes {
   label?: string;
   datasource?: string;
   columns?: string;
+  theme?: Theme;
 }
 
 export interface OpengridPivotAttributes {
@@ -672,6 +705,7 @@ export interface OpengridPivotAttributes {
   columns?: string;
   /** The measures as the contract's JSON: `[{"field":"qty","fn":"sum","as":"total"}]`. */
   values?: string;
+  theme?: Theme;
 }
 
 /** `<opengrid-grid>`; it fires the three events. */

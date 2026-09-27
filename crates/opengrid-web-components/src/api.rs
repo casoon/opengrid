@@ -209,6 +209,9 @@ fn parts() -> Vec<String> {
     parts.push("chip".to_owned());
     parts.push("chip-remove".to_owned());
     parts.push("chips-clear".to_owned());
+    // The quick doors of issue #34 open popups built when they open.
+    parts.push("filter-dialog".to_owned());
+    parts.push("grouping-menu".to_owned());
     // The facet sidebar's contents are drawn from the configuration (point 66),
     // and the toolbar's facet switch exists only once facets are configured.
     for part in [
@@ -246,10 +249,10 @@ elements
   opengrid-pivot
 
 attributes
-  opengrid-table: columns datasource label
+  opengrid-table: columns datasource label theme
   opengrid-grid: column-menu columns datasource density facets group-by label mode page-size \
-search selection toolbar window-size
-  opengrid-pivot: columns datasource label rows values
+search selection theme toolbar window-size
+  opengrid-pivot: columns datasource label rows theme values
 
 events
   opengrid-selection-change
@@ -299,28 +302,30 @@ custom properties (computed)
   --og-accent-soft --og-accent-ink --og-selected --og-hover
 
 parts
-  body cell chip chip-remove chips chips-clear column-menu column-menu-button column-toggle \
-columns columns-toggle density editor empty empty-reset empty-text facet facet-bounds \
-facet-cost facet-count facet-pill facet-pills facet-value facets facets-head facets-toggle \
-filter filter-clear filter-operator filter-row-toggle filter-value header layout menu-label \
+  add-filter add-grouping body cell chip chip-remove chips chips-clear column-menu \
+column-menu-button column-toggle columns columns-toggle density editor empty empty-reset \
+empty-text facet facet-bounds facet-cost facet-count facet-pill facet-pills facet-value facets \
+facets-head facets-toggle filter filter-clear filter-dialog filter-operator filter-row-toggle \
+filter-value footer grouping-menu header layout menu-label \
 page-first page-label page-last page-next page-previous pager row search search-hint \
-search-input search-list select select-all select-mark sort-direction sort-index status toolbar \
+search-input search-list select select-all select-mark sort-direction sort-index source status toolbar \
 total-row viewport
 
 text keys
-  aggregateAvg aggregateCell aggregateCount aggregateGroup aggregateMax aggregateMin \
-aggregateNone aggregateRange aggregateSum cellRequired chipRemove chipsClear chipsGroup clear columnAtEdge \
+  addFilter addFilterTitle addGrouping aggregateAvg aggregateCell aggregateCount aggregateGroup aggregateMax aggregateMin \
+aggregateNone aggregateRange aggregateSum apply cancel cellRequired chipRemove chipsClear chipsGroup clear columnAtEdge \
 columnHidden columnMenu columnMoved columnShown columnWidth columnsGroup densityComfortable \
 densityCompact densityGroup densityNormal empty emptyFiltered emptyReset emptySource emptyValue \
 error errorUnknown facetChipValues facetFrom facetQueries facetTo facetsGroup facetsReset \
-facetsToggle filterColumn filterGroup filterInvalid filterRemoved filterRowToggle \
-filtersCleared groupByColumn groupChip groupCollapsed groupExpanded groupInvalid groupRow \
-groupSecondLevel hideColumn lang loading matchesOne matchesOther noValue operatorLabel \
-operators pageFirst pageLast pageNext pageOf pagePrevious queryAnd queryMissingValue \
-queryUnknownColumn queryWrongOperator rowsOne rowsOther searchChip searchHint searchLabel \
-searchPlaceholder searchSuggestions selectAll selectedAll selectionCleared sortAscending \
-sortDescending subtotal toolbarGroup total totalRow typeBool typeDate typeInteger typeNumber \
-typeText typeTime ungroupColumn valueLabel
+facetsToggle filterColumn filterColumnLabel filterConditionLabel filterGroup filterInvalid \
+filterRemoved filterRowToggle filterValueLabel filtersCleared groupByColumn groupChip \
+groupCollapsed groupExpanded groupInvalid groupRow groupSecondLevel \
+groupingFull hideColumn lang loading matchesOne matchesOther noValue operatorLabel \
+operators pageFirst pageLast pageNext pageOf pagePrevious queriesOne queriesOther queryAnd \
+queryMissingValue queryUnknownColumn queryWrongOperator rowsOne rowsOther searchChip searchHint \
+searchLabel searchPlaceholder searchSuggestions selectAll selectedAll selectionCleared sortAscending \
+sortDescending sourceHybrid sourceLocal sourceRemote sourceWorker subtotal toolbarGroup total \
+totalRow typeBool typeDate typeInteger typeNumber typeText typeTime ungroupColumn valueLabel
 ";
         assert_eq!(surface(), expected);
     }
