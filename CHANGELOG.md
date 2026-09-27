@@ -51,6 +51,12 @@ Two things belong in every release entry and are easy to leave out:
   first would take about 4.5 GiB). `max_scan_rows` now bounds the rows or groups an answer
   holds, not the rows read; `Rows::compact_at` tunes how often held rows are cut back.
   `Table::concat` in `opengrid-columns`.
+- **SQLite as a reference connector** ([#51](https://github.com/casoon/opengrid/issues/51)).
+  `opengrid-connector-sqlite`: filter, sort, group, aggregate and paging answered by SQLite
+  itself; a file, no installation (`rusqlite`, SQLite compiled in). All conformance cases
+  pass, plus a differential test against the engine where SQLite's habits differ most (NaN in
+  sums and extremes, NaN and -0.0 as groups, decimal averages). `examples/server` has a
+  `demo-sqlite` preset.
 - **Results travel in a binary form** ([#38](https://github.com/casoon/opengrid/issues/38)),
   `application/vnd.opengrid.columns`: the engine's columns written out, decimals exact, no
   text per cell. `Engine.execute_columns` and `Planner.finish_columns` answer it next to

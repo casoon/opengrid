@@ -8,6 +8,7 @@ members = [
     "crates/opengrid-conformance",
     "crates/opengrid-datasource",
     "crates/opengrid-connector",
+    "crates/opengrid-connector-sqlite",
     "crates/opengrid-wasm",
     "crates/opengrid-web-core",
     "crates/opengrid-web-components",

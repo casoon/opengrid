@@ -13,6 +13,8 @@ workspace = true
 opengrid-server = { path = "../../crates/opengrid-server" }
 opengrid-connector = { path = "../../crates/opengrid-connector" }
 opengrid-datasource-postgres = { path = "../../crates/opengrid-datasource-postgres" }
+opengrid-connector-sqlite = { path = "../../crates/opengrid-connector-sqlite" }
+opengrid-engine = { path = "../../crates/opengrid-engine" }
 opengrid-types = { path = "../../crates/opengrid-types" }
 axum = "0.8"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }

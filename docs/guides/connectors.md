@@ -113,9 +113,16 @@ HTTP [protocol](../../protocol/) instead, and proves it with the same suite over
 
 ## Reference connectors
 
-PostgreSQL (`opengrid-datasource-postgres`: the pivot as one `GROUPING SETS` statement, the
-export through a cursor) and the local engine over a table in memory
-(`opengrid_connector::LocalConnector`, `from_csv` for a file). They are examples, not a list of supported
-databases: anything that can answer the contract is one.
+- **PostgreSQL** (`opengrid-datasource-postgres`): the pivot as one `GROUPING SETS` statement,
+  the export through a cursor.
+- **SQLite** (`opengrid-connector-sqlite`): a file, no installation — SQLite is compiled in.
+  `create_table` and `insert` write a table in the layout it reads: decimals as scaled
+  integers, dates as days, timestamps as microseconds, NaN as the text `'NaN'`. It answers
+  every conformance case.
+- **A table in memory** (`opengrid_connector::LocalConnector`, `from_csv` for a file).
+
+They are examples, not a list of supported databases: anything that can answer the contract
+is one. `cargo run -p opengrid-example-server -- demo-sqlite` serves the demo from a SQLite
+file.
 
 The contract is frozen with its first release and grows only by methods with a default.
