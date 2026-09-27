@@ -21,17 +21,17 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::Duration;
 
-use opengrid_datasource::SendDataSource;
-use opengrid_datasource_postgres::{ExportCanceller, PostgresDataSource, PostgresExport};
-use opengrid_engine::datasource::{LocalDataSource, LocalPieces};
+use opengrid_connector::Connector;
+use opengrid_datasource_postgres::PostgresDataSource;
+use opengrid_engine::datasource::LocalDataSource;
 use opengrid_engine::ingest::{CsvOptions, load_csv};
-use opengrid_pivot::{PivotError, PivotLimits, PivotQuery, PivotResult, ValidatedPivotQuery};
+use opengrid_pivot::{PivotError, PivotLimits, PivotQuery, ValidatedPivotQuery};
 use opengrid_query::{CmpOp, FilterExpr, Limits, Query, ValidatedQuery};
 use opengrid_types::{FieldName, Schema};
 
-use crate::config::{Config, RowFilterConfig, SourceConfig};
+use crate::config::{Config, SourceConfig};
+use crate::local::LocalConnector;
 
 /// One source the server will answer for.
 pub struct Source {
@@ -40,133 +40,37 @@ pub struct Source {
     pub client_schema: Schema,
     /// Every column, including the ones only the row filter may name.
     pub full_schema: Schema,
-    pub row_filter: Option<RowFilterConfig>,
-    pub data: Backend,
+    pub row_filter: Option<RowFilter>,
+    /// What actually answers (issue #45): any [`Connector`]. The endpoint does
+    /// not know which one it has, and does not need to.
+    pub data: Arc<dyn Connector>,
 }
 
-/// What actually answers a query.
-///
-/// Both are `SendDataSource`; the endpoint does not care which one it has, which
-/// is the point of the trait. A third one (MySQL, Mongo) would be another
-/// variant and nothing else would change.
-pub enum Backend {
-    /// The local engine over a CSV file (point 24) — the gateway is testable
-    /// without a database.
-    LocalCsv(LocalDataSource),
-    /// A PostgreSQL table (point 26).
-    Postgres(PostgresDataSource),
+/// What the server enforces for a source, whatever connector answers it.
+#[derive(Clone, Debug, Default)]
+pub struct SourcePolicy {
+    /// The columns a client may name. Empty means every column.
+    pub allowed_fields: Vec<String>,
+    /// The filter the server adds to every query (E16).
+    pub row_filter: Option<RowFilter>,
 }
 
-impl Backend {
-    /// What this backend can answer by itself — the planner's input.
-    pub fn capabilities(&self) -> opengrid_datasource::DataSourceCapabilities {
-        match self {
-            Backend::LocalCsv(source) => SendDataSource::capabilities(source),
-            Backend::Postgres(source) => SendDataSource::capabilities(source),
-        }
-    }
-
-    /// Runs a whole pivot, pushed down where the backend can do it.
-    ///
-    /// PostgreSQL answers one `GROUPING SETS` statement (point 31); anything
-    /// else gets the generic path, which is `n+1` ordinary queries against the
-    /// very same trait. Same answer either way — that is what the differential
-    /// test in `opengrid-datasource-postgres` is for.
-    pub async fn execute_pivot(
-        &self,
-        pivot: &ValidatedPivotQuery,
-    ) -> Result<PivotResult, opengrid_datasource::DataSourceError> {
-        match self {
-            Backend::LocalCsv(source) => {
-                opengrid_pivot::execute(source, pivot)
-                    .await
-                    .map_err(|error| opengrid_datasource::DataSourceError::Backend {
-                        message: error.to_string(),
-                    })
-            }
-            Backend::Postgres(source) => source.execute_pivot(pivot).await,
-        }
-    }
-
-    /// Starts an export of `query` (issue #2): the rows of the whole answer,
-    /// handed out a piece at a time. Nothing heavy has run when this returns —
-    /// [`ExportRows::count`] is the first step that can take long, so a caller
-    /// holds the [`ExportRows::canceller`] before it.
-    ///
-    /// `idle_backstop` bounds how long PostgreSQL lets the export's transaction
-    /// sit idle; the local engine has no transaction.
-    pub(crate) async fn export(
-        &self,
-        query: &ValidatedQuery,
-        idle_backstop: Duration,
-    ) -> Result<ExportRows, opengrid_datasource::DataSourceError> {
-        match self {
-            Backend::LocalCsv(source) => Ok(ExportRows::Local(source.pieces(query)?)),
-            Backend::Postgres(source) => Ok(ExportRows::Postgres(Box::new(
-                source.export(query, idle_backstop).await?,
-            ))),
-        }
-    }
-
-    /// Runs a query against whichever backend this is.
-    pub async fn execute(
-        &self,
-        query: ValidatedQuery,
-    ) -> Result<opengrid_datasource::QueryResult, opengrid_datasource::DataSourceError> {
-        match self {
-            Backend::LocalCsv(source) => SendDataSource::execute(source, query).await,
-            Backend::Postgres(source) => SendDataSource::execute(source, query).await,
-        }
-    }
+/// A mandatory row filter: `field op value`, where `value` may be `:key` to
+/// take the caller's context value — the tenant a token stands for.
+#[derive(Clone, Debug)]
+pub struct RowFilter {
+    pub field: String,
+    pub op: String,
+    pub value: String,
 }
 
-/// An export in progress, whichever backend runs it.
-///
-/// The local engine has answered by the time this exists — its data is in
-/// memory, and one run beats paging it — and hands out slices of that answer.
-/// PostgreSQL counts and then reads through a cursor in one snapshot
-/// ([`PostgresExport`]).
-pub(crate) enum ExportRows {
-    Local(LocalPieces),
-    /// Boxed: a connection and two compiled statements, once per export.
-    Postgres(Box<PostgresExport>),
-}
-
-impl ExportRows {
-    /// The rows the export will have, before the first of them is read.
-    pub(crate) async fn count(&mut self) -> Result<u64, opengrid_datasource::DataSourceError> {
-        match self {
-            ExportRows::Local(pieces) => Ok(pieces.rows()),
-            ExportRows::Postgres(export) => export.count().await,
-        }
-    }
-
-    /// The next piece of at most `rows` rows; a shorter one is the last.
-    pub(crate) async fn next_piece(
-        &mut self,
-        rows: usize,
-    ) -> Result<opengrid_datasource::QueryResult, opengrid_datasource::DataSourceError> {
-        match self {
-            ExportRows::Local(pieces) => pieces.next_piece(rows),
-            ExportRows::Postgres(export) => export.next_piece(rows).await,
-        }
-    }
-
-    /// What stops a statement that is still running, where there is one to
-    /// stop: the local engine answers synchronously and has none.
-    pub(crate) fn canceller(&self) -> Option<ExportCanceller> {
-        match self {
-            ExportRows::Local(_) => None,
-            ExportRows::Postgres(export) => Some(export.canceller()),
-        }
-    }
-
-    /// Ends an export cleanly before its last piece — refused, or failed with
-    /// a status — so a PostgreSQL connection goes back to the pool.
-    pub(crate) async fn close(self) {
-        match self {
-            ExportRows::Local(_) => {}
-            ExportRows::Postgres(export) => export.close().await,
+impl RowFilter {
+    /// `field op value`, e.g. `RowFilter::new("tenant_id", "eq", ":tenant")`.
+    pub fn new(field: impl Into<String>, op: impl Into<String>, value: impl Into<String>) -> Self {
+        Self {
+            field: field.into(),
+            op: op.into(),
+            value: value.into(),
         }
     }
 }
@@ -186,7 +90,7 @@ pub struct RegistryError {
 }
 
 impl RegistryError {
-    fn new(message: impl Into<String>) -> Self {
+    pub(crate) fn new(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
         }
@@ -202,12 +106,31 @@ impl std::fmt::Display for RegistryError {
 impl std::error::Error for RegistryError {}
 
 impl Registry {
+    /// A registry over sources that are already checked ([`Source::new`]).
+    pub fn new(sources: Vec<Source>, limits: Limits, pivot_limits: PivotLimits) -> Self {
+        Self {
+            sources: sources
+                .into_iter()
+                .map(|source| (source.name.clone(), Arc::new(source)))
+                .collect(),
+            limits,
+            pivot_limits,
+        }
+    }
+
     /// Loads every configured source. Any problem stops the server.
     pub fn build(config: &Config, base: &Path) -> Result<Self, RegistryError> {
-        let mut sources = BTreeMap::new();
+        let mut sources = Vec::new();
         for source in &config.datasources {
-            let loaded = load_source(source, base)?;
-            sources.insert(source.name.clone(), Arc::new(loaded));
+            let (data, full_schema) = load_source(source, base)?;
+            let policy = SourcePolicy {
+                allowed_fields: source.allowed_fields.clone(),
+                row_filter: source
+                    .row_filter
+                    .as_ref()
+                    .map(|filter| RowFilter::new(&filter.field, &filter.op, &filter.value)),
+            };
+            sources.push(Source::new(&source.name, data, full_schema, policy)?);
         }
 
         let mut limits = Limits::default();
@@ -224,27 +147,19 @@ impl Registry {
         if let Some(max_rows) = config.server.max_pivot_rows {
             pivot_limits.max_rows = max_rows;
         }
-        Ok(Self {
-            sources,
-            limits,
-            pivot_limits,
-        })
+        Ok(Self::new(sources, limits, pivot_limits))
     }
 
-    /// `max_concurrent_exports` when the configuration leaves it out: half the
-    /// smallest PostgreSQL pool, at least 1. Every export holds one pooled
-    /// connection for as long as its client downloads, and the bound is
-    /// server-wide, so even if all of them hit the same source, half of its
-    /// pool stays for `/query` and `/pivot`. Without a PostgreSQL source, the
-    /// same number the default pool would give — the machine's parallelism —
-    /// since the local engine holds a whole answer per export instead.
+    /// `max_concurrent_exports` when nobody set it: the smallest bound a
+    /// connector names ([`Connector::concurrent_exports`] — PostgreSQL says half
+    /// its pool), at least 1. Every export holds its source's resources for as
+    /// long as its client downloads, and the bound is server-wide, so the
+    /// smallest one is the one that holds. Without any, the machine's
+    /// parallelism: an in-memory source holds a whole answer per export instead.
     pub fn default_concurrent_exports(&self) -> usize {
         self.sources
             .values()
-            .filter_map(|source| match &source.data {
-                Backend::Postgres(postgres) => Some(postgres.pool_size() / 2),
-                Backend::LocalCsv(_) => None,
-            })
+            .filter_map(|source| source.data.concurrent_exports())
             .min()
             .unwrap_or_else(|| {
                 std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get)
@@ -263,7 +178,41 @@ impl Registry {
     }
 }
 
-fn load_source(config: &SourceConfig, base: &Path) -> Result<Source, RegistryError> {
+impl Source {
+    /// A source the server may answer for: the connector, its full schema and
+    /// the policy. Everything that can be wrong with them is a startup error
+    /// here, never a surprise on the first request.
+    pub fn new(
+        name: &str,
+        data: Arc<dyn Connector>,
+        full_schema: Schema,
+        policy: SourcePolicy,
+    ) -> Result<Self, RegistryError> {
+        // A broken derivation is a startup failure like every other
+        // configuration mistake (plan point 54): a gateway that came up with
+        // one would serve a column full of NULL and nobody would notice.
+        full_schema
+            .check()
+            .map_err(|error| RegistryError::new(format!("datasource {name:?}: {error}")))?;
+        let client_schema = narrow(&full_schema, &policy.allowed_fields, name)?;
+        if let Some(filter) = &policy.row_filter {
+            check_row_filter(filter, &full_schema, name)?;
+        }
+        Ok(Self {
+            name: name.to_owned(),
+            client_schema,
+            full_schema,
+            row_filter: policy.row_filter,
+            data,
+        })
+    }
+}
+
+/// The connector a configured source stands for, and its full schema.
+fn load_source(
+    config: &SourceConfig,
+    base: &Path,
+) -> Result<(Arc<dyn Connector>, Schema), RegistryError> {
     if !matches!(config.kind.as_str(), "local-csv" | "postgres") {
         return Err(RegistryError::new(format!(
             "datasource {:?}: type {:?} is not supported (\"local-csv\" or \"postgres\")",
@@ -286,14 +235,7 @@ fn load_source(config: &SourceConfig, base: &Path) -> Result<Source, RegistryErr
             schema_path.display()
         ))
     })?;
-    // A broken derivation is a startup failure like every other configuration
-    // mistake (plan point 54): a gateway that came up with one would serve a
-    // column full of NULL and nobody would notice.
-    full_schema
-        .check()
-        .map_err(|error| RegistryError::new(format!("datasource {:?}: {error}", config.name)))?;
-
-    let data = match config.kind.as_str() {
+    let data: Arc<dyn Connector> = match config.kind.as_str() {
         "postgres" => {
             let url = config.connection.as_deref().ok_or_else(|| {
                 RegistryError::new(format!(
@@ -309,7 +251,7 @@ fn load_source(config: &SourceConfig, base: &Path) -> Result<Source, RegistryErr
                 PostgresDataSource::connect(&url, table, full_schema.clone()).map_err(|error| {
                     RegistryError::new(format!("datasource {:?}: {error}", config.name))
                 })?;
-            Backend::Postgres(source)
+            Arc::new(source)
         }
         _ => {
             let data_path = base.join(config.path.as_deref().ok_or_else(|| {
@@ -328,22 +270,10 @@ fn load_source(config: &SourceConfig, base: &Path) -> Result<Source, RegistryErr
             let table = load_csv(&bytes, &full_schema, CsvOptions::default()).map_err(|error| {
                 RegistryError::new(format!("datasource {:?}: {error}", config.name))
             })?;
-            Backend::LocalCsv(LocalDataSource::new(table))
+            Arc::new(LocalConnector::new(LocalDataSource::new(table)))
         }
     };
-
-    let client_schema = narrow(&full_schema, &config.allowed_fields, &config.name)?;
-    if let Some(filter) = &config.row_filter {
-        check_row_filter(filter, &full_schema, &config.name)?;
-    }
-
-    Ok(Source {
-        name: config.name.clone(),
-        client_schema,
-        full_schema,
-        row_filter: config.row_filter.clone(),
-        data,
-    })
+    Ok((data, full_schema))
 }
 
 /// The schema reduced to `allowed_fields`, in the schema's own order.
@@ -374,11 +304,7 @@ fn narrow(schema: &Schema, allowed: &[String], name: &str) -> Result<Schema, Reg
     Ok(Schema::new(fields).materialized())
 }
 
-fn check_row_filter(
-    filter: &RowFilterConfig,
-    schema: &Schema,
-    name: &str,
-) -> Result<(), RegistryError> {
+fn check_row_filter(filter: &RowFilter, schema: &Schema, name: &str) -> Result<(), RegistryError> {
     if schema.field(&filter.field).is_none() {
         return Err(RegistryError::new(format!(
             "datasource {name:?}: row_filter names {:?}, which the schema does not have",
@@ -492,7 +418,7 @@ fn pivot_validation(error: PivotError) -> PrepareError {
 /// Builds the mandatory clause, resolving a `:key` value from the caller's
 /// context.
 fn build_row_filter(
-    filter: &RowFilterConfig,
+    filter: &RowFilter,
     context: &BTreeMap<String, String>,
 ) -> Result<FilterExpr, PrepareError> {
     let field = FieldName::new(&filter.field)

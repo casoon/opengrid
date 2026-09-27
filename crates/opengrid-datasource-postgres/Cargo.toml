@@ -13,6 +13,8 @@ opengrid-types = { path = "../opengrid-types" }
 opengrid-query = { path = "../opengrid-query" }
 opengrid-pivot = { path = "../opengrid-pivot" }
 opengrid-datasource = { path = "../opengrid-datasource" }
+# The contract the server takes its sources through (issue #45, E36).
+opengrid-connector = { path = "../opengrid-connector" }
 
 # Execution (decision E12). No decimal or date crate: every value travels as
 # text with the cast the compiler wrote, which is also what keeps an exact
