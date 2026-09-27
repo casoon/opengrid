@@ -168,6 +168,9 @@ struct GridRuntime {
     facet_counts: std::collections::BTreeMap<String, std::collections::BTreeMap<String, u64>>,
     /// Queries the last count round took — what a facet costs (F4).
     facet_queries: usize,
+    /// Queries asked for the rows or groups shown now (issue #33); the footer
+    /// adds the facets' to it.
+    queries: usize,
     /// Bumped per count round; an older round's answers are dropped.
     facet_generation: u64,
     /// The free text the search field applied (point 67), or empty.
@@ -260,6 +263,7 @@ fn fresh_runtime(
         facet_domain: Default::default(),
         facet_counts: Default::default(),
         facet_queries: 0,
+        queries: 0,
         facet_generation: 0,
         search_text: String::new(),
         known: known.clone(),
@@ -733,6 +737,7 @@ fn render(host: &HtmlElement, focus_after: bool) {
         return;
     }
     ensure_skeleton(host);
+    show_source(host);
     let Some(runtime) = runtime(host) else {
         return;
     };
@@ -908,6 +913,8 @@ pub(crate) fn run_query(host: &HtmlElement, kind: QueryKind, focus: bool) {
     let query = grid::query_json(&source, &columns, &sorts, filter.as_ref(), offset, pool);
     let mode = host.get_attribute(MODE_ATTRIBUTE).unwrap_or_default();
     let promise = provider.execute(&query, &mode);
+    // One query for what is shown: a scroll or a new page replaces the rows.
+    grid_runtime.borrow_mut().queries = 1;
     if kind == QueryKind::Data {
         refresh_facets(host);
     }
@@ -971,7 +978,7 @@ fn probe_then_query(
     let host = host.clone();
     let grid_runtime = grid_runtime.clone();
     spawn_local(async move {
-        let schema = match ask(&provider, &probe, &mode).await {
+        let schema = match ask(&provider, &grid_runtime, &probe, &mode).await {
             Ok(result) => result.schema,
             Err(message) => return settle(&host, generation, Err(message), focus),
         };
@@ -1258,6 +1265,9 @@ fn on_key_down(event: KeyboardEvent) {
             .ok()
             .flatten()
             .is_some()
+        // The search field sits in the toolbar's row (issue #33), and its keys
+        // are the combobox's below.
+        && target.closest("[part=\"search\"]").ok().flatten().is_none()
     {
         return;
     }
@@ -3363,7 +3373,21 @@ fn effective_aggregates(
 }
 
 /// Runs one query through the provider and reads its result.
+///
+/// Counted for the footer (issue #33); the facets count theirs themselves and
+/// ask through [`ask_uncounted`].
 async fn ask(
+    provider: &Rc<dyn opengrid_web_core::provider::DataProvider>,
+    runtime: &Rc<RefCell<GridRuntime>>,
+    query: &str,
+    mode: &str,
+) -> Result<opengrid_datasource::QueryResult, String> {
+    runtime.borrow_mut().queries += 1;
+    ask_uncounted(provider, query, mode).await
+}
+
+/// [`ask`] without counting the query.
+async fn ask_uncounted(
     provider: &Rc<dyn opengrid_web_core::provider::DataProvider>,
     query: &str,
     mode: &str,
@@ -3453,6 +3477,8 @@ fn run_grouped(
         render(host, false);
         refresh_facets(host);
     }
+    // The grouped path counts each query it asks, from here (issue #33).
+    grid_runtime.borrow_mut().queries = 0;
 
     let host = host.clone();
     let grid_runtime = grid_runtime.clone();
@@ -3476,7 +3502,7 @@ fn run_grouped(
                 return;
             };
             let probe = grid::query_json(&source, &columns, &sorts, filter.as_ref(), 0, 0);
-            let schema = match ask(&provider, &probe, &mode).await {
+            let schema = match ask(&provider, &grid_runtime, &probe, &mode).await {
                 Ok(result) => result.schema,
                 Err(message) => return fail(message),
             };
@@ -3496,7 +3522,7 @@ fn run_grouped(
             }
 
             let query = grouping::group_query_json(&source, &by, filter.as_ref(), &aggregates);
-            let result = match ask(&provider, &query, &mode).await {
+            let result = match ask(&provider, &grid_runtime, &query, &mode).await {
                 Ok(result) => result,
                 Err(message) => return fail(message),
             };
@@ -3531,7 +3557,7 @@ fn run_grouped(
 
             // The grand total: the same aggregates, no `group` — one row.
             let query = grouping::total_query_json(&source, filter.as_ref(), &aggregates);
-            let total = match ask(&provider, &query, &mode).await {
+            let total = match ask(&provider, &grid_runtime, &query, &mode).await {
                 Ok(result) => grouping::total_from(&result),
                 Err(message) => return fail(message),
             };
@@ -3565,7 +3591,7 @@ fn run_grouped(
                 };
                 let query =
                     grouping::group_query_json(&source, &second, scoped.as_ref(), &aggregates);
-                let result = match ask(&provider, &query, &mode).await {
+                let result = match ask(&provider, &grid_runtime, &query, &mode).await {
                     Ok(result) => result,
                     Err(message) => return fail(message),
                 };
@@ -3613,7 +3639,7 @@ fn run_grouped(
                 fetch.offset,
                 fetch.limit,
             );
-            let result = match ask(&provider, &query, &mode).await {
+            let result = match ask(&provider, &grid_runtime, &query, &mode).await {
                 Ok(result) => result,
                 Err(message) => return fail(message),
             };
@@ -3629,7 +3655,7 @@ fn run_grouped(
             Some(schema) => schema,
             None => {
                 let query = grid::query_json(&source, &columns, &sorts, filter.as_ref(), 0, 0);
-                match ask(&provider, &query, &mode).await {
+                match ask(&provider, &grid_runtime, &query, &mode).await {
                     Ok(result) => result.schema,
                     Err(message) => return fail(message),
                 }
@@ -4276,6 +4302,10 @@ fn draw_chips(host: &HtmlElement, root: &ShadowRoot) {
             continue;
         };
         let _ = span.set_attribute("part", "chip");
+        // The grouping chip looks different from a filter's (issue #33).
+        if chip.removes == "group" {
+            let _ = span.set_attribute("data-kind", "group");
+        }
         // The chip's words are the page's column name and value mixed with our
         // operator word — no `lang` fits both halves (the open question from
         // phase E (k), for point 71).
@@ -4609,7 +4639,7 @@ fn refresh_facets(host: &HtmlElement) {
             if needs_domain {
                 let query = grouping::group_query_json(&source, &column, None, &[]);
                 queries += 1;
-                let Ok(result) = ask(&provider, &query, &mode).await else {
+                let Ok(result) = ask_uncounted(&provider, &query, &mode).await else {
                     continue;
                 };
                 if let Ok(domain) = grouping::groups_from(&result) {
@@ -4621,7 +4651,7 @@ fn refresh_facets(host: &HtmlElement) {
             }
             let query = grouping::group_query_json(&source, &column, filter.as_ref(), &[]);
             queries += 1;
-            let Ok(result) = ask(&provider, &query, &mode).await else {
+            let Ok(result) = ask_uncounted(&provider, &query, &mode).await else {
                 continue;
             };
             if grid_runtime.borrow().facet_generation != generation {
@@ -4728,7 +4758,38 @@ fn facet_chip_text(
 /// changed; checked states, counts and the cost line are updated in place —
 /// a rebuild after every count round would take the focus off the box the
 /// reader just ticked.
+/// Writes the footer's source (issue #33): the provider's `kind` in words and
+/// the queries asked for what is shown — the rows' or groups', and the facets'.
+fn show_source(host: &HtmlElement) {
+    let (Some(runtime), Some(root)) = (runtime(host), host.shadow_root()) else {
+        return;
+    };
+    let Ok(Some(node)) = root.query_selector("[part=\"source\"]") else {
+        return;
+    };
+    let queries = {
+        let borrowed = runtime.borrow();
+        // The facets' counts are asked for only while the sidebar is there.
+        let facets = if host.has_attribute(grid::FACETS_ATTRIBUTE) {
+            borrowed.facet_queries
+        } else {
+            0
+        };
+        borrowed.queries + facets
+    };
+    let text = if queries == 0 {
+        String::new()
+    } else {
+        let kind = provider(host).and_then(|provider| provider.kind());
+        texts(host).source(kind.as_deref(), queries)
+    };
+    if node.text_content().as_deref() != Some(text.as_str()) {
+        node.set_text_content(Some(&text));
+    }
+}
+
 fn draw_facets(host: &HtmlElement, root: &ShadowRoot) {
+    show_source(host);
     let Ok(Some(sidebar)) = root.query_selector("[part=\"facets\"]") else {
         return;
     };

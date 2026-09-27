@@ -136,6 +136,12 @@ export function connect(host: HTMLElement, options?: ConnectOptions): Connection
 export interface Provider {
   execute(queryJson: string, mode: string, options?: ExecuteOptions): string | Promise<string>;
   /**
+   * Optional: where the queries run. The grid names it in its footer, beside
+   * the number of queries asked for what is shown; the built-in providers set
+   * it. A provider without it is shown with the count alone.
+   */
+  kind?: ProviderKind;
+  /**
    * Optional: the whole export of `query` in one go. `exportRows` uses it when
    * it is there instead of fetching pieces over `execute` —
    * `createRestProvider` has it, as `POST /export/{source}`.
@@ -350,6 +356,9 @@ export interface CodedError extends Error {
 /** Where a query may run; handed to the provider unchanged. */
 export type Mode = "local" | "remote" | "hybrid" | "auto";
 
+/** What a provider's `kind` says: where its queries run. */
+export type ProviderKind = "local" | "worker" | "remote" | "hybrid";
+
 export type Density = "compact" | "normal" | "comfortable";
 
 /**
@@ -549,6 +558,12 @@ export type TextKey =
   | "facetTo"
   | "facetQueries"
   | "facetChipValues"
+  | "sourceLocal"
+  | "sourceWorker"
+  | "sourceRemote"
+  | "sourceHybrid"
+  | "queriesOne"
+  | "queriesOther"
   | "searchLabel"
   | "searchPlaceholder"
   | "queryAnd"
