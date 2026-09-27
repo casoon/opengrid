@@ -16,6 +16,7 @@
     columnMenu = false,
     selection = false,
     density,
+    theme,
     view = $bindable(),
     element = $bindable(),
     ...rest
@@ -42,6 +43,7 @@
     "column-menu": flag(columnMenu),
     selection: flag(selection),
     density,
+    theme,
   }}
   bind:view
   bind:element

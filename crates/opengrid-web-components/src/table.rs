@@ -31,7 +31,13 @@ pub const DATASOURCE_ATTRIBUTE: &str = "datasource";
 pub const COLUMNS_ATTRIBUTE: &str = "columns";
 
 /// The host attributes the element reacts to.
-pub const OBSERVED: &[&str] = &[LABEL_ATTRIBUTE, DATASOURCE_ATTRIBUTE, COLUMNS_ATTRIBUTE];
+pub const OBSERVED: &[&str] = &[
+    LABEL_ATTRIBUTE,
+    DATASOURCE_ATTRIBUTE,
+    COLUMNS_ATTRIBUTE,
+    // CSS alone: the look is `:host([theme=…])` rules (issue #32).
+    crate::theme::THEME_ATTRIBUTE,
+];
 
 /// The direction of the single-column sort.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

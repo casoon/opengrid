@@ -49,6 +49,8 @@ pub const OBSERVED: &[&str] = &[
     ROWS_ATTRIBUTE,
     COLUMNS_ATTRIBUTE,
     VALUES_ATTRIBUTE,
+    // CSS alone: the look is `:host([theme=…])` rules (issue #32).
+    crate::theme::THEME_ATTRIBUTE,
 ];
 
 /// A comma-separated attribute as a list of names, empties dropped.
