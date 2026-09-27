@@ -352,6 +352,12 @@ export type Mode = "local" | "remote" | "hybrid" | "auto";
 
 export type Density = "compact" | "normal" | "comfortable";
 
+/**
+ * The built-in looks of the `theme` attribute; `base` is the default. The
+ * `--og-*` custom properties a page sets on the element win over them.
+ */
+export type Theme = "base" | "paper" | "violet" | "orange" | "dark";
+
 /** The filter operators, by wire token. */
 export type FilterOperator =
   | "eq"
@@ -643,12 +649,15 @@ export interface OpengridGridAttributes {
   "column-menu"?: string;
   selection?: string;
   density?: Density;
+  /** One of the built-in looks; Base when absent. */
+  theme?: Theme;
 }
 
 export interface OpengridTableAttributes {
   label?: string;
   datasource?: string;
   columns?: string;
+  theme?: Theme;
 }
 
 export interface OpengridPivotAttributes {
@@ -660,6 +669,7 @@ export interface OpengridPivotAttributes {
   columns?: string;
   /** The measures as the contract's JSON: `[{"field":"qty","fn":"sum","as":"total"}]`. */
   values?: string;
+  theme?: Theme;
 }
 
 /** `<opengrid-grid>`; it fires the three events. */
