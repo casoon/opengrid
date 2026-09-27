@@ -10,7 +10,7 @@ Two processes, two ports:
 
 ```console
 just wasm-build-components                                          # element module
-cargo run -p opengrid-example-server -- demo                        # :8081
+cargo run -p opengrid-example-server -- demo                        # :8081 (or demo-sqlite, demo-postgres)
 just serve-demo                                                     # :8080
 ```
 
