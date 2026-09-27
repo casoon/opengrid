@@ -541,6 +541,8 @@ pub const OBSERVED: &[&str] = &[
     TOOLBAR_ATTRIBUTE,
     FACETS_ATTRIBUTE,
     SEARCH_ATTRIBUTE,
+    // CSS alone: the look is `:host([theme=…])` rules (issue #32).
+    crate::theme::THEME_ATTRIBUTE,
 ];
 
 /// Reads `page-size`; absent, empty or unusable means "do not page".
@@ -688,8 +690,10 @@ pub enum GridKey {
 pub struct GridNodes {
     /// The type-agnostic filter row above the table (`part="filter"`).
     pub filter: FilterNodes,
-    /// The `role="status"` line below the filter row (`part="status"`).
+    /// The `role="status"` line, in the footer below the rows (`part="status"`).
     pub status: NodeId,
+    /// Where the queries ran, beside the status line (issue #33); not live.
+    pub source: NodeId,
     /// The scrollable viewport (`overflow-y: auto`) inside the shadow root.
     pub viewport: NodeId,
     /// The table's `<tbody>`, used as the sizer (`height = total * row_height`).
@@ -1499,23 +1503,12 @@ pub fn build_grid(
     let (compact_name, compact_row, compact_pad, compact_font) = DENSITIES[0];
     let (_, _, normal_pad, normal_font) = DENSITIES[1];
     let (comfy_name, comfy_row, comfy_pad, comfy_font) = DENSITIES[2];
+    let themes = crate::theme::host_rules();
     let styles = format!(
-        ":host {{ {FONT_PROPERTY}: inherit;
-                   {FONT_MONO_PROPERTY}: ui-monospace, SFMono-Regular, Menlo, monospace;
-                   {FONT_SIZE_PROPERTY}: {normal_font};
-                   {SURFACE_PROPERTY}: Canvas;
-                   {SURFACE_2_PROPERTY}: Canvas;
-                   {INK_PROPERTY}: CanvasText;
-                   {INK_MUTED_PROPERTY}: color-mix(in oklab, CanvasText 62%, Canvas);
-                   {LINE_PROPERTY}: color-mix(in oklab, CanvasText 14%, Canvas);
-                   {LINE_STRONG_PROPERTY}: color-mix(in oklab, CanvasText 26%, Canvas);
-                   /* `LinkText`, not `Highlight`: `Highlight` is the background of
-                      a text selection — a pale colour meant to have dark text
-                      on it — and the accent is also drawn *as* text
-                      (`--og-accent-ink`). Found by axe in point 65 at 2.6:1. */
-                   {ACCENT_PROPERTY}: LinkText;
-                   {ON_ACCENT_PROPERTY}: Canvas;
-                   {RADIUS_PROPERTY}: 0;
+        "{themes}
+         :host {{ {FONT_SIZE_PROPERTY}: {normal_font};
+                   /* The colours, the fonts and the radius come from the look
+                      above (issue #32): Base, or the `theme` the page picked. */
                    {PAD_PROPERTY}: {normal_pad}px;
                    {FOCUS_WIDTH_PROPERTY}: {DEFAULT_FOCUS_WIDTH};
                    {ROW_HEIGHT_PROPERTY}: {DEFAULT_ROW_HEIGHT}px;
@@ -1543,9 +1536,11 @@ pub fn build_grid(
                              border-bottom: 1px solid var({LINE_STRONG_PROPERTY});
                              overflow-x: auto; overflow-y: hidden; white-space: nowrap; }}
          [part=\"filter\"] select, [part=\"filter\"] input, [part=\"filter\"] button {{
-                             font: inherit; min-height: {MIN_TARGET_SIZE}px;
+                             font: inherit; min-height: 32px; box-sizing: border-box;
+                             padding: 0 8px;
                              color: var({INK_PROPERTY}); background: var({SURFACE_PROPERTY});
-                             border-radius: min(var({RADIUS_PROPERTY}), 8px); }}
+                             border: 1px solid var({LINE_STRONG_PROPERTY});
+                             border-radius: min(var({RADIUS_PROPERTY}), 7px); }}
          td[data-changed] {{ font-style: italic; }}
          td[data-changed]::after {{ content: \" *\"; }}
          [part=\"editor\"] {{ font: inherit; width: 100%; box-sizing: border-box;
@@ -1586,14 +1581,22 @@ pub fn build_grid(
                              min-width: {MIN_TARGET_SIZE}px;
                              color: var({INK_PROPERTY}); background: var({SURFACE_PROPERTY});
                              border-radius: min(var({RADIUS_PROPERTY}), 8px); }}
-         /* No border of its own: the status line sits directly under the
-            filter row, whose bottom border already separates the two. A top
-            border here draws the same line twice. */
-         [part=\"status\"] {{ flex: 0 0 auto; margin: 0; padding: 0 var({PAD_PROPERTY});
-                             box-sizing: border-box;
+         /* The footer (issue #33): the status line on the left, where the
+            queries ran on the right. */
+         /* As tall as the status line was: the viewport keeps its height, and
+            the viewport is what PageUp/PageDown step by. */
+         [part=\"footer\"] {{ flex: 0 0 auto; display: flex; align-items: center;
+                             justify-content: space-between; gap: 1rem; box-sizing: border-box;
+                             padding: 0 14px;
+                             /* No rule of its own: the last row draws one. */
+                             background: var({SURFACE_PROPERTY});
+                             color: var({INK_MUTED_PROPERTY}); font-size: 0.8125rem; }}
+         [part=\"status\"] {{ margin: 0; min-width: 0; box-sizing: border-box;
                              min-height: var({STATUS_HEIGHT_PROPERTY});
-                             background: var({SURFACE_2_PROPERTY});
-                             color: var({INK_MUTED_PROPERTY}); }}
+                             display: flex; align-items: center; }}
+         [part=\"source\"] {{ font-family: var({FONT_MONO_PROPERTY}); font-size: 0.75rem;
+                             white-space: nowrap; }}
+         [part=\"source\"]:empty {{ display: none; }}
          [part=\"status\"][data-state=\"error\"] {{ font-weight: bold; color: var({INK_PROPERTY}); }}
          [part=\"viewport\"] {{ flex: 1 1 0; min-height: 0; overflow-y: auto; position: relative; display: block; }}
          [part=\"sort-direction\"], [part=\"sort-index\"] {{ margin-left: 0.25rem; font-size: 0.75em;
@@ -1719,24 +1722,89 @@ pub fn build_grid(
          /* The toolbar and the chips (point 65). Each hidden group says
             `display: none` again: `display` beats `[hidden]` (phase E (h)), and
             a hidden row that kept its height would shrink the viewport. */
+         /* One row, as in the prototype (issue #33): the search field on the
+            left, the switches and the density on the right. */
          [part=\"toolbar\"] {{ display: flex; flex-wrap: wrap; align-items: center;
-                   gap: 0.5rem; padding: 0.375rem var({PAD_PROPERTY});
-                   border-bottom: 1px solid var({LINE_PROPERTY}); }}
-         [part=\"toolbar\"] button, [part=\"chips\"] button {{ font: inherit;
-                   min-height: {MIN_TARGET_SIZE}px; min-width: {MIN_TARGET_SIZE}px;
-                   color: var({INK_PROPERTY}); background: var({SURFACE_PROPERTY});
-                   border-radius: min(var({RADIUS_PROPERTY}), 8px); }}
+                   gap: 8px; padding: 12px 14px; }}
+         [part=\"toolbar\"] > [part=\"search\"] {{ flex: 1 1 17.5rem; max-width: 28.75rem;
+                   padding: 0; margin-right: auto; }}
+         [part=\"toolbar\"] button, [part=\"chips\"] button {{ font: inherit; font-size: 0.8125rem;
+                   font-weight: 500; min-height: 32px; min-width: {MIN_TARGET_SIZE}px;
+                   padding: 0 10px; border: 0; cursor: pointer;
+                   color: var({INK_PROPERTY}); background: transparent;
+                   border-radius: min(var({RADIUS_PROPERTY}), 7px); }}
+         [part=\"toolbar\"] button:hover {{ background: var({HOVER_PROPERTY}); }}
          [part=\"toolbar\"] button[aria-pressed=\"true\"] {{ background: var({ACCENT_SOFT_PROPERTY});
                    color: var({ACCENT_INK_PROPERTY}); }}
-         [part=\"density\"] {{ display: inline-flex; gap: 2px; margin-left: auto; }}
-         [part=\"chips\"] {{ display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem;
-                   padding: 0.375rem var({PAD_PROPERTY}); }}
+         /* The density as a segmented control: the pressed segment is lifted. */
+         [part=\"density\"] {{ display: inline-flex; padding: 2px;
+                   background: var({SURFACE_2_PROPERTY}); border: 1px solid var({LINE_PROPERTY});
+                   border-radius: min(var({RADIUS_PROPERTY}), 8px); }}
+         [part=\"toolbar\"] [part=\"density\"] button {{ min-height: {MIN_TARGET_SIZE}px;
+                   padding: 0 9px; font-size: 0.75rem; color: var({INK_MUTED_PROPERTY});
+                   background: transparent;
+                   border-radius: min(var({RADIUS_PROPERTY}), 6px); }}
+         [part=\"toolbar\"] [part=\"density\"] button[aria-pressed=\"true\"] {{
+                   background: var({SURFACE_PROPERTY}); color: var({INK_PROPERTY});
+                   box-shadow: 0 1px 2px rgb(0 0 0 / 0.1); }}
+         [part=\"chips\"] {{ display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+                   padding: 0 14px 12px; }}
          [part=\"chips\"][hidden], [part=\"filter\"][hidden] {{ display: none; }}
-         [part=\"chip\"] {{ display: inline-flex; align-items: center; gap: 0.25rem;
-                   padding: 0 0 0 0.75rem; border-radius: 999px;
+         [part=\"chip\"] {{ display: inline-flex; align-items: center; gap: 6px;
+                   min-height: 30px; box-sizing: border-box; padding: 0 3px 0 11px;
+                   border-radius: 999px; font-size: 0.8125rem; font-weight: 500;
                    background: var({ACCENT_SOFT_PROPERTY}); color: var({ACCENT_INK_PROPERTY}); }}
-         [part=\"chips\"] [part=\"chip-remove\"] {{ border: 0; background: transparent; border-radius: 999px;
-                   cursor: pointer; }}
+         /* The grouping is not a filter, and looks it: ink on surface. */
+         [part=\"chip\"][data-kind=\"group\"] {{ background: var({INK_PROPERTY});
+                   color: var({SURFACE_PROPERTY}); }}
+         [part=\"chips\"] [part=\"chip-remove\"] {{ min-width: {MIN_TARGET_SIZE}px;
+                   min-height: {MIN_TARGET_SIZE}px; padding: 0; border-radius: 999px;
+                   color: inherit; background: transparent; font-size: 0.875rem; }}
+         [part=\"chips\"] [part=\"chip-remove\"]:hover {{
+                   background: color-mix(in oklab, currentColor 18%, transparent); }}
+         [part=\"chips\"] [part=\"chips-clear\"] {{ font-weight: 400;
+                   color: var({INK_MUTED_PROPERTY}); }}
+         /* The quick doors of the prototype (issue #34): dashed pills that open
+            a dialog and a menu, both popovers like the column menu. */
+         [part=\"toolbar\"] [part=\"add-filter\"], [part=\"toolbar\"] [part=\"add-grouping\"] {{
+                   border: 1px dashed var({LINE_STRONG_PROPERTY}); border-radius: 999px;
+                   padding: 0 12px; }}
+         [part=\"toolbar\"] button[aria-disabled=\"true\"] {{ opacity: 0.55; cursor: not-allowed; }}
+         [part=\"filter-dialog\"], [part=\"grouping-menu\"] {{ position: fixed; inset: auto; margin: 0;
+                   box-sizing: border-box; background: var({SURFACE_PROPERTY}); color: var({INK_PROPERTY});
+                   border: 1px solid var({LINE_STRONG_PROPERTY});
+                   border-radius: min(var({RADIUS_PROPERTY}), 12px);
+                   box-shadow: 0 12px 32px rgb(0 0 0 / 0.16);
+                   font-family: var({FONT_PROPERTY}); font-size: 0.8125rem; }}
+         [part=\"filter-dialog\"] {{ width: 19.5rem; padding: 14px; }}
+         [part=\"filter-dialog\"]:popover-open {{ display: flex; flex-direction: column; gap: 10px; }}
+         [part=\"filter-dialog\"] [data-dialog-title] {{ font-weight: 600; font-size: 0.875rem; }}
+         [part=\"filter-dialog\"] label {{ display: grid; grid-template-columns: 5rem 1fr;
+                   align-items: center; gap: 8px; color: var({INK_MUTED_PROPERTY}); }}
+         [part=\"filter-dialog\"] label[hidden] {{ display: none; }}
+         [part=\"filter-dialog\"] select, [part=\"filter-dialog\"] input {{ font: inherit;
+                   min-height: 32px; box-sizing: border-box; padding: 0 8px; min-width: 0;
+                   color: var({INK_PROPERTY}); background: var({SURFACE_PROPERTY});
+                   border: 1px solid var({LINE_STRONG_PROPERTY});
+                   border-radius: min(var({RADIUS_PROPERTY}), 7px); }}
+         [part=\"filter-dialog\"] [data-dialog-problem] {{ margin: 0; font-weight: 600; }}
+         [part=\"filter-dialog\"] [data-dialog-problem][hidden] {{ display: none; }}
+         [part=\"filter-dialog\"] [data-dialog-actions] {{ display: flex; justify-content: flex-end; gap: 8px; }}
+         [part=\"filter-dialog\"] button {{ font: inherit; font-weight: 500; min-height: 30px;
+                   min-width: {MIN_TARGET_SIZE}px; padding: 0 12px; border: 0; cursor: pointer;
+                   color: var({INK_PROPERTY}); background: transparent;
+                   border-radius: min(var({RADIUS_PROPERTY}), 7px); }}
+         [part=\"filter-dialog\"] [data-dialog-action=\"apply\"] {{ background: var({ACCENT_PROPERTY});
+                   color: var({ON_ACCENT_PROPERTY}); }}
+         [part=\"grouping-menu\"] {{ min-width: 15rem; padding: 6px; }}
+         [part=\"grouping-menu\"] [role=\"menuitem\"] {{ display: flex; align-items: center;
+                   min-height: 34px; padding: 0 8px; cursor: pointer;
+                   font-family: var({FONT_MONO_PROPERTY});
+                   border-radius: min(var({RADIUS_PROPERTY}), 6px); }}
+         [part=\"grouping-menu\"] [role=\"menuitem\"]:hover {{ background: var({HOVER_PROPERTY}); }}
+         [part=\"grouping-menu\"] [role=\"menuitem\"]:focus {{
+                   outline: var({FOCUS_WIDTH_PROPERTY}) solid Highlight;
+                   outline-offset: calc(-1 * var({FOCUS_WIDTH_PROPERTY})); }}
          /* The facet sidebar (point 66). */
          [part=\"body\"] {{ flex: 1 1 0; min-height: 0; display: flex; }}
          [part=\"body\"] > [part=\"viewport\"] {{ flex: 1 1 0; min-width: 0; }}
@@ -1746,10 +1814,13 @@ pub fn build_grid(
                    border-right: 1px solid var({LINE_PROPERTY}); }}
          [part=\"facets-head\"] {{ display: flex; justify-content: space-between;
                    align-items: center; gap: 0.5rem; }}
-         [part=\"facets-head\"] button, [part=\"facet\"] button {{ font: inherit;
-                   min-height: {MIN_TARGET_SIZE}px; color: var({INK_PROPERTY});
-                   background: var({SURFACE_PROPERTY});
-                   border-radius: min(var({RADIUS_PROPERTY}), 8px); }}
+         [part=\"facets-head\"] {{ font-weight: 600; }}
+         [part=\"facets-head\"] button {{ font: inherit; font-size: 0.8125rem; font-weight: 500;
+                   min-height: {MIN_TARGET_SIZE}px; padding: 0; border: 0; cursor: pointer;
+                   color: var({ACCENT_INK_PROPERTY}); background: transparent; }}
+         [part=\"facet\"] button {{ font: inherit; min-height: 28px; padding: 0 10px;
+                   cursor: pointer; color: var({INK_PROPERTY}); background: var({SURFACE_PROPERTY});
+                   border-radius: min(var({RADIUS_PROPERTY}), 7px); font-size: 0.8125rem; }}
          [part=\"facet-cost\"] {{ color: var({INK_MUTED_PROPERTY}); font-size: 0.85em; }}
          [part=\"facet\"] {{ border: 0; margin: 0; padding: 0; display: flex;
                    flex-direction: column; gap: 0.25rem; min-width: 0; }}
@@ -1770,13 +1841,22 @@ pub fn build_grid(
          [part=\"facet-bounds\"] {{ display: grid; grid-template-columns: 1fr 1fr; gap: 0.375rem; }}
          [part=\"facet-bounds\"] label {{ display: flex; flex-direction: column; gap: 0.125rem;
                    font-size: 0.85em; color: var({INK_MUTED_PROPERTY}); min-width: 0; }}
-         [part=\"facet-bounds\"] input {{ font: inherit; min-height: {MIN_TARGET_SIZE}px;
-                   min-width: 0; color: var({INK_PROPERTY}); background: var({SURFACE_PROPERTY}); }}
+         [part=\"facet-bounds\"] input {{ font: inherit; min-height: 32px; min-width: 0;
+                   box-sizing: border-box; padding: 0 8px;
+                   color: var({INK_PROPERTY}); background: var({SURFACE_PROPERTY});
+                   border: 1px solid var({LINE_STRONG_PROPERTY});
+                   border-radius: min(var({RADIUS_PROPERTY}), 7px); }}
          /* The search field (point 67). */
          [part=\"search\"] {{ position: relative; display: flex; align-items: center; gap: 0.5rem;
                    padding: 0.375rem var({PAD_PROPERTY}); }}
+         [part=\"toolbar\"] > [part=\"search\"] > [part=\"search-input\"] {{ max-width: none; }}
+         /* The magnifier is drawn, and not read: the field has its label. */
+         [part=\"search\"]::before {{ content: \"\\2315\" / \"\"; position: absolute;
+                   left: calc(var({PAD_PROPERTY}) + 0.75rem); pointer-events: none;
+                   color: var({INK_MUTED_PROPERTY}); }}
+         [part=\"toolbar\"] > [part=\"search\"]::before {{ left: 0.75rem; }}
          [part=\"search-input\"] {{ flex: 1 1 18rem; max-width: 32rem; font: inherit;
-                   min-height: 32px; box-sizing: border-box; padding: 0 0.625rem;
+                   min-height: 36px; box-sizing: border-box; padding: 0 0.75rem 0 2rem;
                    color: var({INK_PROPERTY}); background: var({SURFACE_2_PROPERTY});
                    border: 1px solid var({LINE_STRONG_PROPERTY});
                    border-radius: min(var({RADIUS_PROPERTY}), 9px); }}
@@ -1819,7 +1899,10 @@ pub fn build_grid(
          tr:not([data-kind]) td[data-emphasis] {{ font-weight: 600; }}
          tr:not([data-kind]) td[data-muted] {{ color: var({INK_MUTED_PROPERTY}); }}
          th {{ height: var({HEADER_HEIGHT_PROPERTY}); background: var({SURFACE_2_PROPERTY});
-               color: var({INK_MUTED_PROPERTY}); text-align: left; }}
+               color: var({INK_MUTED_PROPERTY}); text-align: left;
+               font-size: 0.75rem; font-weight: 500; text-transform: uppercase;
+               letter-spacing: 0.04em; }}
+         [part=\"sort-direction\"], [part=\"sort-index\"] {{ text-transform: none; }}
          /* The focus ring never uses the accent: a pale accent would make it
             invisible, and the ring is not decoration. */
          th:focus, td:focus {{ outline: var({FOCUS_WIDTH_PROPERTY}) solid Highlight;
@@ -1857,23 +1940,24 @@ pub fn build_grid(
         name: "part".to_owned(),
         value: "layout".to_owned(),
     });
-    // The search field (point 67), first: it is where a reader starts.
-    if search {
-        build_search(buffer, nodes, layout, texts);
-    }
-    // The toolbar and the chips (point 65), above the filter row.
+    // The toolbar and the chips (point 65), above the filter row. The search
+    // field (point 67) is first — it is where a reader starts — and with a
+    // toolbar it opens the toolbar's row, as in the prototype (issue #33).
     let tools = toolbar.then(|| {
         build_toolbar(
             buffer,
             nodes,
             layout,
             texts,
+            search,
             !presentation.facets().is_empty(),
             facets,
         )
     });
+    if search && !toolbar {
+        build_search(buffer, nodes, layout, texts);
+    }
     let filter = build_filter(buffer, nodes, layout, fields, texts);
-    let status = build_status(buffer, nodes, layout, texts);
 
     // Inside the filter row, not above it: a new row of its own would shrink
     // the viewport, and the viewport is what `PageUp`/`PageDown` step by. With a
@@ -1886,6 +1970,10 @@ pub fn build_grid(
         declared,
         texts,
     );
+    // The density closes the toolbar's row, after the column list.
+    if let Some(bar) = tools {
+        build_density(buffer, nodes, bar, texts);
+    }
     let pager = build_pager(buffer, nodes, layout, texts);
 
     // With facets, the viewport shares a row with the sidebar (point 66).
@@ -1937,6 +2025,25 @@ pub fn build_grid(
         name: "tabindex".to_owned(),
         value: "-1".to_owned(),
     });
+
+    // The footer (issue #33): the status line, and beside it where the
+    // queries ran. The status line is the same live region as before; only
+    // its place moved, below the rows. The source is not live — it changes
+    // with every answer and would talk over the status line.
+    let footer = element(buffer, nodes, Some(layout), "div");
+    buffer.push(Patch::SetAttribute {
+        node: footer,
+        name: "part".to_owned(),
+        value: "footer".to_owned(),
+    });
+    let status = build_status(buffer, nodes, footer, texts);
+    let source = element(buffer, nodes, Some(footer), "span");
+    buffer.push(Patch::SetAttribute {
+        node: source,
+        name: "part".to_owned(),
+        value: "source".to_owned(),
+    });
+    set_lang(buffer, source, texts);
 
     let table = element(buffer, nodes, Some(viewport), "table");
     buffer.push(Patch::SetAttribute {
@@ -2225,6 +2332,7 @@ pub fn build_grid(
     GridNodes {
         filter,
         status,
+        source,
         viewport,
         tbody,
         table,
@@ -2325,6 +2433,7 @@ fn build_toolbar(
     nodes: &mut NodeAllocator,
     parent: NodeId,
     texts: &GridTexts,
+    search: bool,
     has_facets: bool,
     facets_shown: bool,
 ) -> NodeId {
@@ -2347,6 +2456,30 @@ fn build_toolbar(
         &texts.toolbar_group,
         texts,
     );
+
+    if search {
+        build_search(buffer, nodes, bar, texts);
+    }
+
+    // The two quick doors of the prototype (issue #34): a filter through a
+    // small dialog, a grouping level through a menu. Each opens its popup,
+    // built when it opens, like the column menu.
+    for (key, popup, text) in [
+        ("add-filter", "dialog", &texts.add_filter),
+        ("add-grouping", "menu", &texts.add_grouping),
+    ] {
+        let button = element(buffer, nodes, Some(bar), "button");
+        attribute(buffer, button, "type", "button");
+        attribute(buffer, button, "part", key);
+        attribute(buffer, button, "data-toolbar", key);
+        attribute(buffer, button, "aria-haspopup", popup);
+        attribute(buffer, button, "aria-expanded", "false");
+        buffer.push(Patch::SetText {
+            node: button,
+            text: text.clone(),
+        });
+        set_lang(buffer, button, texts);
+    }
 
     let toggle = element(buffer, nodes, Some(bar), "button");
     attribute(buffer, toggle, "type", "button");
@@ -2373,6 +2506,37 @@ fn build_toolbar(
         set_lang(buffer, switch, texts);
     }
 
+    let chips = element(buffer, nodes, Some(parent), "div");
+    attribute(buffer, chips, "part", "chips");
+    attribute(buffer, chips, "role", "group");
+    label_by(
+        buffer,
+        nodes,
+        parent,
+        chips,
+        "og-label-chips",
+        &texts.chips_group,
+        texts,
+    );
+    attribute(buffer, chips, "hidden", "");
+    bar
+}
+
+/// The density switch (point 58): three buttons in a labelled group, at the
+/// end of the toolbar's row.
+fn build_density(
+    buffer: &mut PatchBuffer,
+    nodes: &mut NodeAllocator,
+    bar: NodeId,
+    texts: &GridTexts,
+) {
+    let attribute = |buffer: &mut PatchBuffer, node: NodeId, name: &str, value: &str| {
+        buffer.push(Patch::SetAttribute {
+            node,
+            name: name.to_owned(),
+            value: value.to_owned(),
+        });
+    };
     let density = element(buffer, nodes, Some(bar), "div");
     attribute(buffer, density, "part", "density");
     attribute(buffer, density, "role", "group");
@@ -2393,21 +2557,6 @@ fn build_toolbar(
             text: texts.density(name).to_owned(),
         });
     }
-
-    let chips = element(buffer, nodes, Some(parent), "div");
-    attribute(buffer, chips, "part", "chips");
-    attribute(buffer, chips, "role", "group");
-    label_by(
-        buffer,
-        nodes,
-        parent,
-        chips,
-        "og-label-chips",
-        &texts.chips_group,
-        texts,
-    );
-    attribute(buffer, chips, "hidden", "");
-    bar
 }
 
 /// Builds the column-visibility group (plan point 36).
@@ -4100,13 +4249,13 @@ mod tests {
                 .collect()
         };
 
-        // The filter group, the status line, the pager and the grid itself
-        // carry roles; the status line stays the single polite live region
+        // The filter group, the pager, the status line — in the footer since
+        // issue #33, below the rows in the DOM — and the grid itself carry roles; the status line stays the single polite live region
         // (point 41), and the three groups all sit outside `role="grid"` so the
         // roving tabindex and the keyboard matrix are untouched.
         assert_eq!(
             attributes("role"),
-            ["group", "status", "group", "group", "grid"]
+            ["group", "group", "group", "status", "grid"]
         );
         assert_eq!(attributes("aria-live"), ["polite"]);
         // Three accessible names, and each names a different thing: the filter
@@ -4390,6 +4539,7 @@ mod tests {
         // ours, and it holds no data of the page's.
         let mut expected = vec![
             view.status,
+            view.source,
             view.columns.toggle,
             view.pager.container,
             view.empty,
@@ -4589,6 +4739,7 @@ mod tests {
                 "filter-clear",
                 "filter-operator",
                 "filter-value",
+                "footer",
                 "header",
                 "layout",
                 "page-first",
@@ -4600,6 +4751,7 @@ mod tests {
                 "row",
                 "sort-direction",
                 "sort-index",
+                "source",
                 "status",
                 "viewport",
             ]

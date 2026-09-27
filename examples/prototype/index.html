@@ -9,7 +9,8 @@
          Everything on this page that is not the grid — the views, the look
          studio, the header — is page code. That is the point of it: the
          element hands out its view and takes one back (point 59), and takes
-         its look from custom properties (point 57); the rest is the page's. */
+         its look from its `theme` attribute (issue #32) and from custom
+         properties on top (point 57); the rest is the page's. */
       :root {
         --page-canvas: #f5f6f8;
         --page-ink: #14161a;
@@ -212,10 +213,18 @@
         return `opengrid-grid {\n${lines.join("\n")}\n}`;
       }
 
+      // A preset is the element's own look (issue #32): the page only names it.
+      // A changed one is a look of the page's, written as properties on top.
+      const TOKENS = [...FIELDS.map(([, , token]) => token).filter(Boolean), "--og-font", "--og-radius"];
       function applyLook() {
-        for (const [key, , token] of FIELDS) if (token) grid.style.setProperty(token, look[key]);
-        grid.style.setProperty("--og-font", font(look.font));
-        grid.style.setProperty("--og-radius", `${look.radius}px`);
+        if (base === "custom") {
+          for (const [key, , token] of FIELDS) if (token) grid.style.setProperty(token, look[key]);
+          grid.style.setProperty("--og-font", font(look.font));
+          grid.style.setProperty("--og-radius", `${look.radius}px`);
+        } else {
+          grid.setAttribute("theme", base);
+          for (const token of TOKENS) grid.style.removeProperty(token);
+        }
         const root = document.documentElement.style;
         root.setProperty("--page-canvas", look.canvas);
         root.setProperty("--page-surface", look.surface);
@@ -231,7 +240,7 @@
         document.getElementById("radius-text").textContent = `${look.radius}px`;
         document.getElementById("font").value = look.font;
         document.getElementById("studio-base").textContent =
-          `Basiert auf „${base === "custom" ? "Eigene" : PRESETS[base].name}". Jede Änderung erzeugt eine eigene Ausprägung. Das Ergebnis ist CSS, das beim Nutzer liegt, nicht im Paket.`;
+          `Basiert auf „${base === "custom" ? "Eigene" : PRESETS[base].name}". Die fünf Ausprägungen liefert opengrid mit (theme="…"); jede Änderung erzeugt eine eigene, als CSS, das bei der Seite liegt.`;
         for (const [key] of FIELDS) {
           const input = document.getElementById(`color-${key}`);
           if (input) input.value = look[key];
@@ -456,6 +465,11 @@
         // before the provider so the first paint already speaks it.
         loader.module.set_texts(grid, {
           lang: "de", loading: "Wird geladen …", matchesOne: "{count} Treffer", matchesOther: "{count} Treffer",
+          sourceLocal: "lokal · wasm", sourceWorker: "Worker · wasm", sourceRemote: "Server", sourceHybrid: "hybrid",
+          queriesOne: "{count} Abfrage", queriesOther: "{count} Abfragen",
+          addFilter: "+ Filter", addFilterTitle: "Filter hinzufügen", filterColumnLabel: "Spalte",
+          filterConditionLabel: "Bedingung", filterValueLabel: "Wert", cancel: "Abbrechen", apply: "Anwenden",
+          addGrouping: "+ Gruppieren", groupingFull: "Schon nach zwei Spalten gruppiert",
           empty: "Keine Treffer", error: "Die Daten konnten nicht geladen werden: {cause}",
           errorUnknown: "Die Daten konnten nicht geladen werden.",
           filterGroup: "Filter", operatorLabel: "{column} Bedingung", valueLabel: "{column} Wert", clear: "Leeren",
@@ -506,7 +520,8 @@
           qty: { width: 104, aggregate: "sum" },
           ordered_on: { width: 196, muted: true, facet: "period", aggregate: "range" },
         });
-        provider = { execute: (query) => engine.execute(query) };
+        // `kind` names where the queries run, for the grid's footer (issue #33).
+        provider = { kind: "local", execute: (query) => engine.execute(query) };
         loader.module.set_provider(grid, provider);
 
         grid.addEventListener("opengrid-view-change", () => { drawTabs(); drawCode(); });

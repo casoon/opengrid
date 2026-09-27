@@ -22,6 +22,7 @@ import type { ForwardRefExoticComponent, HTMLAttributes, RefAttributes } from "r
 import type {
   ConnectOptions,
   Density,
+  Theme,
   Mode,
   OpengridGridElement,
   OpengridPivotElement,
@@ -54,12 +55,15 @@ export interface OpengridGridProps extends ConnectOptions, ElementProps {
   columnMenu?: boolean;
   selection?: boolean;
   density?: Density;
+  /** One of the built-in looks; Base when absent. */
+  theme?: Theme;
 }
 
 export interface OpengridTableProps extends ConnectOptions, ElementProps {
   label?: string;
   datasource?: string;
   columns?: string;
+  theme?: Theme;
 }
 
 export interface OpengridPivotProps extends ConnectOptions, ElementProps {
@@ -71,6 +75,7 @@ export interface OpengridPivotProps extends ConnectOptions, ElementProps {
   columns?: string;
   /** The measures as the contract's JSON. */
   values?: string;
+  theme?: Theme;
 }
 
 export const OpengridGrid: ForwardRefExoticComponent<

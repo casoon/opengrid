@@ -62,6 +62,9 @@
           searchSuggestions: "Spalten",
           typeText: "Text",
           emptyReset: "Filter zurücksetzen",
+          sourceLocal: "lokal · wasm",
+          queriesOne: "{count} Abfrage",
+          queriesOther: "{count} Abfragen",
         });
         loader.module.set_columns(host, {
           customer: { facet: "list" },
@@ -70,8 +73,12 @@
           qty: { aggregate: "sum" },
           ordered_on: { facet: "period" },
         });
-        loader.module.set_provider(host, { execute: (queryJson) => engine.execute(queryJson) });
+        loader.module.set_provider(host, {
+          kind: "local",
+          execute: (queryJson) => engine.execute(queryJson),
+        });
         window.__opengridModule = loader.module;
+        window.__opengridEngine = engine;
         return { fallback: loader.fallback };
       }
 

@@ -66,6 +66,12 @@ All from `loader.js`, all the same shape:
 | `createHybridProvider({ remote, planner, mode, onPlan })` | Splits each query between a remote source and the engine in the tab. `onPlan` receives the plan before anything is sent. |
 | `createPivotProvider({ url, source, token })` | `POST /pivot/{source}` — a whole pivot in one request. |
 
+Each of them carries a **`kind`** — `"local"`, `"worker"`, `"remote"` (REST and pivot) or
+`"hybrid"` — and a provider of a page's own may too. The grid names it in its footer,
+beside the number of queries asked for what is shown (`worker · wasm · 2 queries`); a
+provider without a `kind` is shown with the count alone. The words are
+[texts](#texts).
+
 **The engine** — `Engine` for the tab, `Planner` for the hybrid provider —
 ships in the package under `engine/`, a module of its own next to the
 elements'. A worker needs no URL; a page that queries on the main thread
@@ -157,6 +163,7 @@ An interactive `<table role="grid">`: virtualized, keyboard-driven, filterable.
 | `column-menu` | Gives every header a **column menu**: sort, filter, aggregate, group, hide. Opt-in. See [Column menu](#column-menu). |
 | `selection` | Shows the **selection column**: a checkbox per row and one in the header. Opt-in — selecting rows works from the keyboard either way; what this adds is the column that shows it and the pointer path to it. |
 | `density` | `compact`, `normal` or `comfortable` — row height, cell padding and font size in one step. `normal` is the default, and a grid without the attribute *is* a normal one; an unknown value is normal too. |
+| `theme` | `base`, `paper`, `violet`, `orange` or `dark` — one of the built-in looks ([Styling](#styling)). `base` is the default; absent or unknown is `base`. Not part of the [view](#the-view): the look is the page's choice, not the reader's. |
 
 **Keyboard.** The WAI-ARIA grid pattern — arrows, `Home`/`End`, `Ctrl`+`Home`/`End`,
 `PageUp`/`PageDown`, and:
@@ -231,13 +238,17 @@ its configuration — its type-dependent checks run again when it is shown.
 ### Toolbar
 
 With `toolbar`, a labelled group of ordinary buttons sits above the filter row —
-outside `role="grid"`, like the filter row, so the grid's keys never reach it.
+outside `role="grid"`, like the filter row, so the grid's keys never reach it. It is
+one row: the search field first (with `search`), then the switches, the column list
+and the density as a segmented control.
 
 | | |
 |---|---|
 | Filter row | A switch (`aria-pressed`). Hiding the row gives its height to the viewport, and `PageUp`/`PageDown` step by what is really there. Whether the row shows is part of the [view](#the-view) as `filterRow`, **on** by default — there is no attribute for it, because a boolean attribute is off by default and the row has always been there. |
 | Columns | The column list moves here from the filter row, so it stays reachable when the row is hidden. |
 | Density | Three buttons, the pressed one is the grid's `density`. |
+| + Filter | Opens *Add filter*, a non-modal `role="dialog"`: *Column*, *Condition* (the operators the column's type allows), *Value*, *Cancel*, *Apply*. The focus moves to *Column*; `Tab` cycles inside; *Apply* or `Enter` in *Value* writes the column's entry in the filter row — the one place a filter lives — and closes; `Escape`, *Cancel* or a click outside close without a change. A value the column cannot take is named in the dialog, which stays open. The focus returns to the button. |
+| + Group | Opens a `role="menu"` of the groupable columns not grouped yet, with the column menu's keys (`↓`/`↑`, `Home`/`End`, `Enter`/`Space`, `Escape`, `Tab`). A pick adds the next grouping level, as `group-by` does. With two levels the button is `aria-disabled` and says why. |
 | Chips | One per active filter, in words (`country is DE`), and one for the grouping. Each has a remove button **named for its filter** — `Remove country is DE` — and "Remove all" clears filters and grouping. A removal is said once, with the result that follows; the focus moves to the next chip, never to the document. |
 
 The chips are a display of the view, not a second truth about the filters: they
@@ -390,7 +401,7 @@ paste, browser find. No virtualization, no roving tabindex.
 
 | Attribute | Meaning |
 |---|---|
-| `label`, `datasource`, `columns` | As in the grid. |
+| `label`, `datasource`, `columns`, `theme` | As in the grid. |
 
 Header buttons sort a single column, `none → ascending → descending → none`.
 
@@ -413,7 +424,7 @@ and the row and column limits are what make rendering the whole thing safe.
 
 | Attribute | Meaning |
 |---|---|
-| `label`, `datasource` | As in the grid. |
+| `label`, `datasource`, `theme` | As in the grid. |
 | `rows` | Comma-separated row dimensions, outermost first. |
 | `columns` | Comma-separated column dimensions. V1 allows **one**. |
 | `values` | The measures, as the contract's own JSON — not an invented shorthand. |
@@ -685,23 +696,23 @@ declaration on the element wins over an inherited value.
 
 | Set | Default | What it paints |
 |---|---|---|
-| `--og-font` / `--og-font-size` | `inherit` | everything the grid writes |
-| `--og-font-mono` | `ui-monospace, …` | the values of a column marked `mono` |
-| `--og-surface` | `Canvas` | rows, the body of the grid |
-| `--og-surface-2` | `Canvas` | header, filter row, status line, pager |
-| `--og-ink` | `CanvasText` | the text |
-| `--og-ink-muted` | a mix of the two | text that is there but not the point |
-| `--og-line` | a mix of the two | the rules between rows |
-| `--og-line-strong` | a mix of the two | the rules between regions |
-| `--og-accent` | `LinkText` | the one colour a page picks — drawn as text too, so a colour meant for text |
-| `--og-on-accent` | `Canvas` | text drawn on the accent (the tick of a checked box) |
-| `--og-radius` | `0` | the corners of the grid's boxes |
+| `--og-font` / `--og-font-size` | `"Geist", system-ui, sans-serif` / `0.875rem` | everything the grid writes |
+| `--og-font-mono` | `"Geist Mono", ui-monospace, …` | the values of a column marked `mono` |
+| `--og-surface` | `#ffffff` | rows, the body of the grid |
+| `--og-surface-2` | `#fafbfc` | header, filter row, pager, the facet sidebar, the search field |
+| `--og-ink` | `#14161a` | the text |
+| `--og-ink-muted` | `#646b78` | text that is there but not the point |
+| `--og-line` | `#eceef2` | the rules between rows |
+| `--og-line-strong` | `#e0e3e9` | the rules between regions |
+| `--og-accent` | `#3d5fd6` | the one colour a page picks — drawn as text too, so a colour meant for text |
+| `--og-on-accent` | `#ffffff` | text drawn on the accent (the tick of a checked box) |
+| `--og-radius` | `12px` | the corners of the grid's boxes |
 | `--og-pad` | `8px` | horizontal padding inside a cell |
 | `--og-focus-width` | `2px` | the focus ring |
 | `--og-row-height` | `42px` | a data row; **goes into the window math** |
 | `--og-header-height` | `--og-row-height` | the header row |
 | `--og-filter-height` | `40px` | the filter row |
-| `--og-status-height` | `24px` | the status line, as a minimum |
+| `--og-status-height` | `24px` | the footer with the status line, as a minimum |
 
 | Computed | From |
 |---|---|
@@ -726,10 +737,33 @@ relative — and it should be, or a reader who raised their browser's font size
 would be overruled. The consequence a page has to know: **raising the font size
 means raising `--og-row-height` with it.**
 
-**The defaults are the system colours**, so a grid with no page CSS stays
-legible and in the right light or dark. Under `forced-colors` every colour here
-resolves to a system colour: a `color-mix` of two system colours resolves
-unpredictably, and the user's palette is the one that has to win.
+**The defaults are the look called Base** — the one of the design prototype — so a
+grid, table or pivot with no page CSS already looks finished. **`theme`** picks
+another built-in look; the defaults in the table above are Base's:
+
+| `theme` | Font | Surface | Ink | Accent | Radius | |
+|---|---|---|---|---|---|---|
+| `base` (default) | Geist | `#ffffff` | `#14161a` | `#3d5fd6` | `12px` | light |
+| `paper` | IBM Plex Sans | `#fffdf8` | `#1f1d19` | `#2a7a59` | `8px` | light |
+| `violet` | Geist | `#ffffff` | `#17161f` | `#6b4bc8` | `14px` | light |
+| `orange` | Geist | `#ffffff` | `#111111` | `#b44c1c` | `10px` | light |
+| `dark` | Geist | `#15181c` | `#e6e8eb` | `#4fd1d1` | `12px` | dark |
+
+A look sets every colour token, the fonts, the radius and `color-scheme`. What a
+page sets on the element wins over it, so a look is where a page's own starts:
+`<opengrid-grid theme="dark" style="--og-accent: #f0b429">`. A look does not follow
+the reader's light or dark preference by itself — a page that does sets `theme`.
+
+The fonts are **named, not loaded**: the element makes no request to a font
+service. A page that wants Geist or IBM Plex Sans loads it; without it the stack
+falls back to the system UI font.
+
+`<opengrid-table>` and `<opengrid-pivot>` take the same `theme` and tokens; until
+they have parts (issue #29) they apply the ink and the font to their text.
+
+Under `forced-colors` every colour here resolves to a system colour, whatever the
+look: a `color-mix` of two system colours resolves unpredictably, and the user's
+palette is the one that has to win.
 
 Three things a theme cannot switch off, because they are accessibility rather
 than decoration: the **focus ring** never uses `--og-accent` (a pale accent
@@ -737,16 +771,17 @@ would make it invisible), a **selected row** carries an inset accent bar as well
 as the tint (colour alone would be 1.4.1), and `prefers-reduced-motion` beats a
 theme that animates a part.
 
-**Parts:** `body`, `cell`, `chip`, `chip-remove`, `chips`, `chips-clear`, `column-menu`, `column-menu-button`, `column-toggle`, `columns`, `columns-toggle`, `editor`,
-`filter`, `filter-clear`, `filter-operator`, `filter-value`, `header`,
+**Parts:** `add-filter`, `add-grouping`, `body`, `cell`, `chip`, `chip-remove`, `chips`, `chips-clear`, `column-menu`, `column-menu-button`, `column-toggle`, `columns`, `columns-toggle`, `editor`,
+`filter`, `filter-clear`, `filter-dialog`, `filter-operator`, `filter-value`, `footer`, `grouping-menu`, `header`,
 `density`, `empty`, `empty-reset`, `empty-text`, `facet`, `facet-bounds`, `facet-cost`, `facet-count`, `facet-pill`,
 `facet-pills`, `facet-value`, `facets`, `facets-head`, `facets-toggle`, `filter-row-toggle`, `layout`, `menu-label`, `page-first`, `page-label`, `page-last`, `page-next`,
 `page-previous`, `pager`, `row`, `search`, `search-hint`, `search-input`, `search-list`, `select`, `select-all`, `select-mark`,
-`sort-direction`, `sort-index`, `status`, `toolbar`,
+`sort-direction`, `sort-index`, `source`, `status`, `toolbar`,
 `total-row`, `viewport`.
 
-`<opengrid-table>` and `<opengrid-pivot>` ship **no** stylesheet — they are
-plain tables and the page owns their look.
+`<opengrid-table>` and `<opengrid-pivot>` ship no stylesheet beyond the look's
+ink and font (above) — they are plain tables, and until they have parts (issue #29)
+the rest of their look is the page's.
 
 ## Texts
 
@@ -797,6 +832,12 @@ loader.module.set_texts(host, { lang: "de", loading: "Wird geladen …" });
 | `facetFrom` / `facetTo` | `From` / `To` | |
 | `facetQueries` | `Counted with {count} queries` | `{count}` |
 | `facetChipValues` | `{column} is one of {values}` | `{column}`, `{values}` |
+| `addFilter` / `addFilterTitle` | `+ Filter` / `Add filter` — the toolbar's button and the dialog's title | |
+| `filterColumnLabel` / `filterConditionLabel` / `filterValueLabel` | `Column` / `Condition` / `Value` | |
+| `cancel` / `apply` | `Cancel` / `Apply` | |
+| `addGrouping` / `groupingFull` | `+ Group` / `Grouped by two columns already` — the button, and its name when no level can be added | |
+| `sourceLocal` / `sourceWorker` / `sourceRemote` / `sourceHybrid` | `local · wasm` / `worker · wasm` / `server` / `hybrid` — the footer's source, by the provider's `kind` | |
+| `queriesOne` / `queriesOther` | `{count} query` / `{count} queries` — the footer's count | `{count}` |
 | `searchLabel` / `searchPlaceholder` | `Search or filter` / `Search, or filter: country = DE and amount ≥ 10` | |
 | `queryAnd` | `and` | |
 | `searchHint` / `searchSuggestions` | `Query · Enter` / `Columns` | |
