@@ -231,6 +231,12 @@ impl PostgresExport {
     /// transaction is rolled back; if even that fails, the connection is
     /// dropped as in any other early end.
     pub async fn close(mut self) {
+        self.roll_back().await;
+    }
+
+    /// [`close`](Self::close) without giving the export up: the transaction is
+    /// rolled back, and dropping the export afterwards hands the connection back.
+    pub(crate) async fn roll_back(&mut self) {
         if !self.finished && self.client().batch_execute("ROLLBACK").await.is_ok() {
             self.finished = true;
         }

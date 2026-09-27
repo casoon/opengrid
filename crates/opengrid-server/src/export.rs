@@ -83,9 +83,9 @@ use axum::extract::{Path, Query as Parameters, State};
 use axum::http::{HeaderMap, HeaderValue, Uri, header};
 use axum::response::Response;
 use http_body_util::channel::{Channel, Sender};
+use opengrid_connector::Cancel;
 use opengrid_datasource::wire::{ErrorCode, WireError};
 use opengrid_datasource::{DataSourceError, QueryResult};
-use opengrid_datasource_postgres::ExportCanceller;
 use opengrid_export::{CsvOptions, CsvWriter, JsonWriter};
 use opengrid_query::{Limits, ValidatedQuery};
 use tokio::sync::{OwnedSemaphorePermit, oneshot};
@@ -391,7 +391,7 @@ impl Drop for Outlet {
 async fn step<T>(
     work: impl Future<Output = Result<T, DataSourceError>>,
     give_up: impl Future<Output = ()>,
-    canceller: Option<&ExportCanceller>,
+    canceller: Option<&Arc<dyn Cancel>>,
 ) -> Option<Result<T, DataSourceError>> {
     tokio::select! {
         result = work => Some(result),

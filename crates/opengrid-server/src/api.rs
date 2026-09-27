@@ -69,22 +69,41 @@ pub struct AppState {
 impl AppState {
     /// Builds the shared state from a checked configuration and registry.
     pub fn new(config: &Config, registry: Registry) -> Self {
-        let concurrent = config
-            .server
-            .max_concurrent_exports
-            .unwrap_or_else(|| registry.default_concurrent_exports());
         let tokens = config
             .tokens
             .iter()
             .map(|token| (token.value.clone(), token.context.clone()))
             .collect();
+        Self::from_parts(
+            registry,
+            tokens,
+            &crate::server::Settings {
+                max_payload_bytes: config.server.max_payload_bytes,
+                timeout: Duration::from_millis(config.server.timeout_ms),
+                allowed_origins: config.server.allowed_origins.clone(),
+                max_export_rows: config.server.max_export_rows,
+                max_concurrent_exports: config.server.max_concurrent_exports,
+            },
+        )
+    }
+
+    /// The shared state from its parts — what the builder and the
+    /// configuration both come down to.
+    pub(crate) fn from_parts(
+        registry: Registry,
+        tokens: BTreeMap<String, BTreeMap<String, String>>,
+        settings: &crate::server::Settings,
+    ) -> Self {
+        let concurrent = settings
+            .max_concurrent_exports
+            .unwrap_or_else(|| registry.default_concurrent_exports());
         Self {
             registry,
             tokens,
-            max_payload_bytes: config.server.max_payload_bytes,
-            timeout: Duration::from_millis(config.server.timeout_ms),
-            allowed_origins: config.server.allowed_origins.clone(),
-            max_export_rows: config.server.max_export_rows,
+            max_payload_bytes: settings.max_payload_bytes,
+            timeout: settings.timeout,
+            allowed_origins: settings.allowed_origins.clone(),
+            max_export_rows: settings.max_export_rows,
             max_concurrent_exports: concurrent,
             exports: Arc::new(Semaphore::new(concurrent)),
         }
@@ -390,7 +409,7 @@ async fn pivot(
         )
         .map_err(prepare_failed)?;
 
-    let executed = tokio::time::timeout(state.timeout, source.data.execute_pivot(&prepared))
+    let executed = tokio::time::timeout(state.timeout, source.data.pivot(&prepared))
         .await
         .map_err(|_| {
             WireError::new(
