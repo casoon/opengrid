@@ -246,10 +246,10 @@ elements
   opengrid-pivot
 
 attributes
-  opengrid-table: columns datasource label
+  opengrid-table: columns datasource label theme
   opengrid-grid: column-menu columns datasource density facets group-by label mode page-size \
-search selection toolbar window-size
-  opengrid-pivot: columns datasource label rows values
+search selection theme toolbar window-size
+  opengrid-pivot: columns datasource label rows theme values
 
 events
   opengrid-selection-change

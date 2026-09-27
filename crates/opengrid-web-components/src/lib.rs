@@ -61,6 +61,7 @@ pub(crate) mod search;
 pub(crate) mod shared;
 pub(crate) mod table;
 pub(crate) mod texts;
+pub(crate) mod theme;
 #[cfg(feature = "grid")]
 pub(crate) mod view;
 

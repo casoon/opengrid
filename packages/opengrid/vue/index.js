@@ -141,6 +141,7 @@ export const OpengridGrid = component(
     columnMenu: "column-menu",
     selection: "selection",
     density: "density",
+    theme: "theme",
   },
   ["search", "facets", "toolbar", "columnMenu", "selection"],
 );
@@ -148,7 +149,7 @@ export const OpengridGrid = component(
 export const OpengridTable = component(
   "opengrid-table",
   "OpengridTable",
-  { label: "label", datasource: "datasource", columns: "columns" },
+  { label: "label", datasource: "datasource", columns: "columns", theme: "theme" },
   [],
 );
 
@@ -161,6 +162,7 @@ export const OpengridPivot = component(
     rows: "rows",
     columns: "columns",
     values: "values",
+    theme: "theme",
   },
   [],
 );

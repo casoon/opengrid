@@ -18,6 +18,20 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+### Changed
+
+- **The look of the design prototype is the default** ([#32](https://github.com/casoon/opengrid/issues/32)).
+  A grid, table or pivot without page CSS looks like the prototype's *Base*: Geist,
+  white surfaces, accent `#3d5fd6`, radius 12px.
+- **`theme`** on all three elements picks a built-in look: `base` (default), `paper`,
+  `violet`, `orange`, `dark`. `--og-*` properties set by the page still win. The adapters
+  take `theme` as a prop. The fonts are named, not loaded.
+
+**What breaks:** the defaults were the system colours (`Canvas`, `CanvasText`,
+`LinkText`) and followed the reader's light or dark mode. A page that relied on that sets
+`theme="dark"` itself, or its own `--og-*` properties. Under `forced-colors` nothing
+changes.
+
 ## [0.2.0] — 2026-09-27
 
 **Screen-reader pairings tested: none yet** — unchanged since 0.1.0

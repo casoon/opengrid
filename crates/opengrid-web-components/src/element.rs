@@ -265,6 +265,7 @@ fn on_connected(host: HtmlElement) {
     if let Ok(root) = attach_open_shadow_root(&host)
         && root.child_element_count() == 0
     {
+        crate::theme::adopt_table_look(&root);
         render_skeleton(&host, &root);
         add_sort_listener(&root);
     }
