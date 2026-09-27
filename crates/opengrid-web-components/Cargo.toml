@@ -47,6 +47,8 @@ opengrid-export = { path = "../opengrid-export" }
 # (issue #3); already built as a dependency of `opengrid-export`.
 opengrid-pivot = { path = "../opengrid-pivot" }
 web-sys = { version = "0.3", features = [
+    # The look of table and pivot, adopted into their shadow roots (issue #32).
+    "CssStyleSheet",
     "CustomElementRegistry",
     # The event seam of point 35.
     "CustomEvent",

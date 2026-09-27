@@ -29,6 +29,10 @@ const OURS = new Set([
   "status", "filter-operator", "filter-clear", "page-first", "page-previous", "page-next", "page-last",
   "search-hint", "filter-row-toggle", "facets-toggle", "density", "columns-toggle", "chips-clear",
   "facet-cost", "facets-head", "facet-bounds", "column-menu", "menu-label", "empty-text", "empty-reset",
+  // The footer's source (issue #33): where the queries ran, in our words.
+  "source",
+  // The quick doors (issue #34).
+  "add-filter", "add-grouping",
 ]);
 const PAGE = new Set([
   // Column names and values.
@@ -224,4 +228,33 @@ test("the total row's label stops being ours when its slot shows a value again",
     [...document.querySelector("opengrid-grid").shadowRoot.querySelectorAll("tbody td[lang]")].length,
   );
   expect(tagged).toBe(0);
+});
+
+test("the footer says where the queries ran, and how many were asked for what is shown", async ({ page }) => {
+  // Issue #33: the provider's `kind` in our words, then the rows' query plus
+  // the facets' — the facet head says what the facets cost.
+  const read = () =>
+    page.evaluate(() => {
+      const root = document.querySelector("opengrid-grid").shadowRoot;
+      return {
+        source: root.querySelector('[part="source"]').textContent,
+        live: root.querySelector('[part="source"]').closest("[aria-live]") !== null,
+        facets: Number(root.querySelector('[part="facet-cost"]').textContent.match(/\d+/)[0]),
+        footerLast: root.querySelector('[part="layout"]').lastElementChild.getAttribute("part"),
+      };
+    });
+  await expect.poll(async () => (await read()).source).toMatch(/^lokal · wasm · \d+ Abfragen$/);
+  const { source, live, facets, footerLast } = await read();
+  expect(source).toBe(`lokal · wasm · ${1 + facets} Abfragen`);
+  // Not a live region: it changes with every answer and would talk over the status line.
+  expect(live).toBe(false);
+  expect(footerLast).toBe("footer");
+
+  // A provider without a `kind` is shown with the count alone.
+  await page.evaluate(() => {
+    const grid = document.querySelector("opengrid-grid");
+    const engine = window.__opengridEngine;
+    window.__opengridModule.set_provider(grid, { execute: (queryJson) => engine.execute(queryJson) });
+  });
+  await expect.poll(async () => (await read()).source).toMatch(/^\d+ Abfragen$/);
 });
