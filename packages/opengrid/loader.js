@@ -189,6 +189,8 @@ export function createWorkerProvider({
   }
 
   return {
+    /** Where the queries run; the grid names it in its footer (issue #33). */
+    kind: "worker",
     /** Loads CSV bytes against a schema, starting the worker on first use. */
     async load(name, bytes, schema) {
       await start();
@@ -230,6 +232,8 @@ export function createWorkerProvider({
  */
 export function createLocalProvider(engine) {
   return {
+    /** Where the queries run; the grid names it in its footer (issue #33). */
+    kind: "local",
     async load(name, bytes, schema) {
       engine.load_csv(
         name,
@@ -277,6 +281,8 @@ export function createRestProvider({ url, source, token } = {}) {
   }
 
   return {
+    /** Where the queries run; the grid names it in its footer (issue #33). */
+    kind: "remote",
     /**
      * What the server says this source is: `{ name, schema, capabilities }`.
      *
@@ -446,6 +452,8 @@ export function createPivotProvider({ url, source, token } = {}) {
   }
 
   return {
+    /** Where the queries run; the grid names it in its footer (issue #33). */
+    kind: "remote",
     async execute(pivotJson, _mode, { signal } = {}) {
       const response = await fetch(endpoint, {
         method: "POST",
@@ -493,6 +501,8 @@ export function createPivotProvider({ url, source, token } = {}) {
  */
 export function createHybridProvider({ remote, planner, mode = "auto", onPlan } = {}) {
   return {
+    /** Where the queries run; the grid names it in its footer (issue #33). */
+    kind: "hybrid",
     async execute(queryJson, elementMode, { signal } = {}) {
       // The element's attribute wins when it has one: the page sets the default,
       // the markup can override it per grid.
