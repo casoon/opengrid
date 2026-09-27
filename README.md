@@ -1,14 +1,36 @@
 # opengrid
 
+[![npm](https://img.shields.io/npm/v/@casoon/opengrid?color=3d5fd6&label=npm)](https://www.npmjs.com/package/@casoon/opengrid)
+[![licence](https://img.shields.io/badge/licence-MIT%20OR%20Apache--2.0-3d5fd6)](#licence)
+
 Accessible data grid, table and pivot as Web Components — driven by one query engine that
 runs in the browser (WebAssembly), on a server (PostgreSQL), or split between the two, with
 the same results everywhere.
+
+<p>
+  <img src="https://raw.githubusercontent.com/casoon/opengrid/main/docs/assets/grid-base.png" alt="opengrid-grid in the Base look: search, + Filter, + Group, filter row and 5,000 orders" width="49%">
+  <img src="https://raw.githubusercontent.com/casoon/opengrid/main/docs/assets/grid-dark.png" alt="opengrid-grid in the Dark look, grouped by country with sums per group" width="49%">
+</p>
 
 - **`<opengrid-grid>`** — sorting, filtering, search, facets, grouping with totals,
   selection, editing, virtualized or paged; fully operable from the keyboard.
 - **`<opengrid-table>`** — a plain semantic `<table>` for displaying data.
 - **`<opengrid-pivot>`** — a pivot with subtotals and a grand total.
 - **Export** — what the reader sees, every match of it, as CSV or JSON.
+- **Five built-in looks** — `theme="paper"`, and your own `--og-*` properties on top.
+
+## Live demos
+
+The same 17 demos in every framework, each with its source, its data and options to change
+live:
+
+| [JavaScript](https://og-vanilla.casoon.dev) | [React](https://og-react.casoon.dev) | [Vue](https://og-vue.casoon.dev) | [Svelte](https://og-svelte.casoon.dev) | [Angular](https://og-angular.casoon.dev) |
+| :-: | :-: | :-: | :-: | :-: |
+
+Start with the [overview](https://og-vanilla.casoon.dev/overview), the
+[grouping](https://og-vanilla.casoon.dev/grouping), the
+[100,000 rows in a worker](https://og-vanilla.casoon.dev/large-data) or the
+[looks](https://og-vanilla.casoon.dev/theming).
 
 ## Install
 
@@ -88,6 +110,24 @@ import { OpengridGrid } from "@casoon/opengrid/react";   // or /vue, /svelte
 
 Angular, Astro and server-rendered pages use `connect` directly —
 [Frameworks](https://github.com/casoon/opengrid/blob/main/docs/guides/frameworks.md).
+
+## Looks
+
+A grid without any page CSS wears **Base**. `theme` picks another of the five built-in looks —
+`base`, `paper`, `violet`, `orange`, `dark` — on all three elements:
+
+```html
+<opengrid-grid theme="dark" label="Orders" datasource="orders"></opengrid-grid>
+```
+
+```css
+/* The page's own properties win over the look. */
+opengrid-grid { --og-accent: #0f766e; --og-row-height: 36px; }
+```
+
+The focus ring, the selection bar and the forced-colours palette stay what they are in every
+look. The fonts are named, not loaded: a page that wants Geist or IBM Plex Sans hosts them.
+See [Styling](https://github.com/casoon/opengrid/blob/main/docs/api.md#styling).
 
 ## Export
 
