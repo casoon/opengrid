@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use opengrid_types::{Schema, Value};
 
-use crate::Column;
+use crate::{Column, ColumnBuilder};
 
 /// Columns in schema order, with the invariant that every column has the type
 /// its field declares and all have the same number of rows.
@@ -59,6 +59,30 @@ impl Table {
             columns,
             rows,
         })
+    }
+
+    /// Builds a table from typed values, one `Vec` per field — the inverse of
+    /// [`Table::to_values`]. A value that is not of its field's type is an
+    /// error naming the column.
+    pub fn from_values(schema: &Schema, columns: &[Vec<Value>]) -> Result<Self, String> {
+        if columns.len() != schema.len() {
+            return Err(format!(
+                "{} columns for {} fields",
+                columns.len(),
+                schema.len()
+            ));
+        }
+        let mut built = Vec::with_capacity(columns.len());
+        for (field, values) in schema.fields().iter().zip(columns) {
+            let mut builder = ColumnBuilder::new(field.data_type, values.len());
+            for value in values {
+                builder
+                    .push(value)
+                    .map_err(|message| format!("column {} {message}", field.name))?;
+            }
+            built.push(builder.finish());
+        }
+        Self::new(schema, built)
     }
 
     /// The table's schema.
@@ -142,7 +166,6 @@ mod tests {
     use opengrid_types::{DataType, Field, FieldName};
 
     use super::*;
-    use crate::ColumnBuilder;
 
     fn int_column(values: &[i64]) -> Column {
         let mut builder = ColumnBuilder::new(DataType::Int64, values.len());

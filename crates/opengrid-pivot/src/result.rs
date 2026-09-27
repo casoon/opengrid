@@ -192,7 +192,27 @@ pub fn pivot_from_json(json: &str) -> Result<(PivotResult, Vec<FieldName>), Pivo
         .collect::<Result<Vec<PivotColumn>, PivotReadError>>()?;
     let data = opengrid_datasource::wire::result_from_json(&body["result"].to_string())
         .map_err(|error| PivotReadError::new(format!("pivot cells: {error}")))?;
+    checked(data, row_levels, columns, row_dimensions)
+}
 
+/// The shape both readers insist on: the row-dimension columns first and named
+/// as the dimensions, one column per generated column, one level per row, no
+/// level deeper than the dimensions.
+fn checked(
+    data: QueryResult,
+    row_levels: Vec<u16>,
+    columns: Vec<PivotColumn>,
+    row_dimensions: Vec<FieldName>,
+) -> Result<(PivotResult, Vec<FieldName>), PivotReadError> {
+    if let Some(level) = row_levels
+        .iter()
+        .find(|level| usize::from(**level) > row_dimensions.len())
+    {
+        return Err(PivotReadError::new(format!(
+            "level {level}: a number from 0 to {}",
+            row_dimensions.len()
+        )));
+    }
     let fields = data.schema.fields();
     let needed = row_dimensions.len() + columns.len();
     if fields.len() != needed {
@@ -229,6 +249,81 @@ pub fn pivot_from_json(json: &str) -> Result<(PivotResult, Vec<FieldName>), Pivo
         },
         row_dimensions,
     ))
+}
+
+/// The binary form of a pivot answer (decision E35): the cells as the binary
+/// result form of `opengrid-columns`, then the pivot's own section — the row
+/// dimensions, the level per row, and per generated column its measure and its
+/// typed path.
+///
+/// Unlike the JSON form, a path comes back **typed**: a date stays a date.
+pub fn pivot_to_bytes(result: &PivotResult, row_dimensions: &[FieldName]) -> Vec<u8> {
+    use opengrid_columns::wire::{Kind, Writer};
+
+    let table = opengrid_columns::Table::from_values(&result.data.schema, &result.data.columns)
+        .expect("a pivot's cells fit their own schema");
+    let mut writer = Writer::new(Kind::Pivot);
+    writer.table(&table, result.data.total_count);
+    writer.u64(row_dimensions.len() as u64);
+    for dimension in row_dimensions {
+        writer.string(dimension.as_str());
+    }
+    writer.u16s(&result.row_levels);
+    writer.u64(result.columns.len() as u64);
+    for column in &result.columns {
+        writer.string(column.measure.as_str());
+        writer.u64(column.path.len() as u64);
+        for value in &column.path {
+            writer.value(value);
+        }
+    }
+    writer.finish()
+}
+
+/// Reads the binary form of a pivot answer back, as strictly as
+/// [`pivot_from_json`] reads the JSON form.
+pub fn pivot_from_bytes(bytes: &[u8]) -> Result<(PivotResult, Vec<FieldName>), PivotReadError> {
+    use opengrid_columns::wire::{Kind, Reader};
+
+    let fail = |error: opengrid_columns::wire::WireError| PivotReadError::new(error.to_string());
+    let (mut reader, kind) = Reader::new(bytes).map_err(fail)?;
+    if kind != Kind::Pivot {
+        return Err(PivotReadError::new("this is a result, not a pivot answer"));
+    }
+    let (table, total_count) = reader.table().map_err(fail)?;
+    // Every count below is bounded by the bytes that follow: each entry takes
+    // at least eight of them, so a count past that is refused before anything
+    // is allocated for it.
+    let bounded = |count: u64, left: usize| {
+        usize::try_from(count)
+            .ok()
+            .filter(|count| count.saturating_mul(8) <= left)
+            .ok_or_else(|| PivotReadError::new("binary pivot: the bytes end too early"))
+    };
+    let dimensions = bounded(reader.u64().map_err(fail)?, bytes.len())?;
+    let row_dimensions = (0..dimensions)
+        .map(|_| {
+            let name = reader.string().map_err(fail)?;
+            FieldName::new(name)
+                .map_err(|_| PivotReadError::new(format!("row dimension {name:?}: not a name")))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let row_levels = reader.u16s(table.num_rows()).map_err(fail)?;
+    let count = bounded(reader.u64().map_err(fail)?, bytes.len())?;
+    let mut columns = Vec::with_capacity(count);
+    for _ in 0..count {
+        let measure = reader.string().map_err(fail)?;
+        let measure = FieldName::new(measure)
+            .map_err(|_| PivotReadError::new(format!("measure {measure:?}: not a name")))?;
+        let length = bounded(reader.u64().map_err(fail)?, bytes.len())?;
+        let path = (0..length)
+            .map(|_| reader.value().map_err(fail))
+            .collect::<Result<Vec<_>, _>>()?;
+        columns.push(PivotColumn { path, measure });
+    }
+    reader.finish().map_err(fail)?;
+    let data = QueryResult::new(table.schema().clone(), table.to_values(), total_count);
+    checked(data, row_levels, columns, row_dimensions)
 }
 
 #[cfg(test)]
@@ -287,6 +382,48 @@ mod tests {
         assert_eq!(read.columns, pivot().columns);
         assert_eq!(read.data.columns, pivot().data.columns);
         assert_eq!(pivot_to_json(&read, &rows), json);
+    }
+
+    #[test]
+    fn the_binary_form_reads_back_with_typed_paths() {
+        let mut dated = pivot();
+        dated.columns[0].path = vec![Value::from_wire_str("2025-01-31", &DataType::Date).unwrap()];
+        let bytes = pivot_to_bytes(&dated, &dimensions());
+        let (read, rows) = pivot_from_bytes(&bytes).expect("reads back");
+        assert_eq!(rows, dimensions());
+        assert_eq!(read, dated, "cells, levels and typed paths");
+        // The JSON written from either is the same answer.
+        assert_eq!(
+            pivot_to_json(&read, &rows),
+            pivot_to_json(&dated, &dimensions())
+        );
+    }
+
+    /// The same shape checks as the JSON reader, and no panic on cut bytes.
+    #[test]
+    fn a_binary_pivot_of_the_wrong_shape_is_an_error() {
+        let bytes = pivot_to_bytes(&pivot(), &dimensions());
+        for end in 0..bytes.len() {
+            assert!(pivot_from_bytes(&bytes[..end]).is_err(), "cut at {end}");
+        }
+        let mut deep = pivot();
+        deep.row_levels[0] = 3;
+        let message = pivot_from_bytes(&pivot_to_bytes(&deep, &dimensions()))
+            .unwrap_err()
+            .message()
+            .to_owned();
+        assert!(message.starts_with("level 3"), "{message}");
+        let swapped = pivot_to_bytes(&pivot(), &[name("customer"), name("country")]);
+        assert!(pivot_from_bytes(&swapped).is_err());
+        let result = opengrid_columns::wire::encode_result(
+            &opengrid_columns::Table::from_values(&pivot().data.schema, &pivot().data.columns)
+                .unwrap(),
+            3,
+        );
+        assert!(
+            pivot_from_bytes(&result).is_err(),
+            "a plain result is not a pivot"
+        );
     }
 
     #[test]

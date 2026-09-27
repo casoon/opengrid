@@ -115,8 +115,8 @@ pub(crate) fn run(host: &HtmlElement) {
         }
         let texts = texts::texts(&host);
         match outcome {
-            Ok(value) => match value.as_string() {
-                Some(json) => match pivot::parse_result(&json) {
+            Ok(value) => match pivot_json(&value) {
+                Ok(json) => match pivot::parse_result(&json) {
                     Ok(model) => {
                         // The grand total is always a row, so "no matches" means
                         // nothing but the total came back.
@@ -129,16 +129,29 @@ pub(crate) fn run(host: &HtmlElement) {
                     }
                     Err(message) => render(&host, None, &texts.error(&message), "error"),
                 },
-                None => render(
-                    &host,
-                    None,
-                    &texts.error("provider returned a non-string result"),
-                    "error",
-                ),
+                Err(message) => render(&host, None, &texts.error(&message), "error"),
             },
             Err(value) => render(&host, None, &texts.error(&describe(&value)), "error"),
         }
     });
+}
+
+/// A provider's pivot answer as the pivot wire form, whichever form it came in.
+///
+/// The binary form (E35) is read strictly and written back as JSON: the pivot
+/// renders and exports from that one form, so the headings read the same
+/// whichever way the answer travelled. A pivot's size is bounded by its column
+/// limit, so the detour is small.
+fn pivot_json(value: &JsValue) -> Result<String, String> {
+    match crate::element::answer(value) {
+        Some(crate::element::Answer::Json(json)) => Ok(json),
+        Some(crate::element::Answer::Binary(bytes)) => {
+            let (result, rows) =
+                opengrid_pivot::pivot_from_bytes(&bytes).map_err(|error| error.to_string())?;
+            Ok(opengrid_pivot::pivot_to_json(&result, &rows))
+        }
+        None => Err(crate::element::NOT_AN_ANSWER.to_owned()),
+    }
 }
 
 /// Clears the root and renders the whole pivot as one patch list: the model,

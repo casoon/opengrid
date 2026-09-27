@@ -34,6 +34,8 @@ opengrid-grid = { path = "../opengrid-grid", optional = true }
 opengrid-query = { path = "../opengrid-query", optional = true }
 # Query/result JSON of the table model; portable, so the model is host-testable.
 serde_json = "1"
+# The binary result form a provider may answer in (E35, issue #38).
+opengrid-columns = { path = "../opengrid-columns" }
 
 # Pinned to the CLI that builds the modules (E4/R7).
 [target.'cfg(target_arch = "wasm32")'.dependencies]

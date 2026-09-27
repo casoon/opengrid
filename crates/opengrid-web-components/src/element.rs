@@ -354,14 +354,14 @@ fn run_query(
             return;
         }
         match outcome {
-            Ok(value) => match value.as_string() {
-                Some(json) => match table::parse_result(&json) {
+            Ok(value) => match answer(&value) {
+                Some(answer) => match table_model(answer) {
                     Ok(model) => {
                         render_data(&host, &model, sort.as_ref(), focus_column.as_deref());
                     }
                     Err(message) => render_error(&host, &message),
                 },
-                None => render_error(&host, "provider returned a non-string result"),
+                None => render_error(&host, NOT_AN_ANSWER),
             },
             Err(value) => render_error(&host, &describe(&value)),
         }
@@ -524,6 +524,38 @@ fn focus_header(root: &ShadowRoot, column: &str) {
 /// collapsed into the generic fallback, and point 41 needs the cause. A rejected
 /// value that is neither a string nor carries a usable `message` falls back to a
 /// sentence rather than to `[object Object]`.
+/// What a provider's `execute` resolved to: the result JSON, or the binary
+/// form (decision E35) as a `Uint8Array` or an `ArrayBuffer`.
+pub(crate) enum Answer {
+    Json(String),
+    Binary(Vec<u8>),
+}
+
+/// The status line's sentence for an answer that is neither.
+pub(crate) const NOT_AN_ANSWER: &str = "provider returned neither result JSON nor the binary form";
+
+/// The table model of an answer, whichever form it came in.
+fn table_model(answer: Answer) -> Result<table::TableModel, String> {
+    match answer {
+        Answer::Json(json) => table::parse_result(&json),
+        Answer::Binary(bytes) => table::parse_result_bytes(&bytes),
+    }
+}
+
+/// Reads a provider's answer, whichever form it came in.
+pub(crate) fn answer(value: &JsValue) -> Option<Answer> {
+    if let Some(json) = value.as_string() {
+        return Some(Answer::Json(json));
+    }
+    if let Some(bytes) = value.dyn_ref::<js_sys::Uint8Array>() {
+        return Some(Answer::Binary(bytes.to_vec()));
+    }
+    if value.is_instance_of::<js_sys::ArrayBuffer>() {
+        return Some(Answer::Binary(js_sys::Uint8Array::new(value).to_vec()));
+    }
+    None
+}
+
 pub(crate) fn describe(value: &JsValue) -> String {
     if let Some(message) = value.as_string() {
         return message;

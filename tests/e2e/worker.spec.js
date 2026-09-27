@@ -163,7 +163,7 @@ test("keeps the main thread responsive during a large query", async ({ page }) =
   const measurement = await page.evaluate(async () => {
     const ROWS = 100000;
     // Enough queries to take well over 100 ms: a window of a sort is quick
-    // since the engine left Arrow (#37).
+    // since the engine left Arrow (#37) and answers bytes (#38).
     const QUERIES = 160;
     await window.__loadLarge(ROWS);
 
