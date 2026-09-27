@@ -328,6 +328,9 @@ pub(crate) fn source_failed(error: DataSourceError) -> WireError {
             WireError::new(ErrorCode::Backend, "the data source holds no data")
         }
         DataSourceError::Backend { message } => WireError::new(ErrorCode::Backend, message),
+        DataSourceError::LimitExceeded { message } => {
+            WireError::new(ErrorCode::LimitExceeded, message)
+        }
     }
 }
 
@@ -421,12 +424,7 @@ async fn pivot(
             )
         })?;
 
-    let result = executed.map_err(|error| match error {
-        DataSourceError::NoData => {
-            WireError::new(ErrorCode::Backend, "the data source holds no data")
-        }
-        DataSourceError::Backend { message } => WireError::new(ErrorCode::Backend, message),
-    })?;
+    let result = executed.map_err(source_failed)?;
 
     if wants_columns(&headers) {
         return Ok(columns_response(opengrid_pivot::pivot_to_bytes(

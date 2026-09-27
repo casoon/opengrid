@@ -13,8 +13,10 @@ opengrid-types = { path = "../opengrid-types" }
 opengrid-query = { path = "../opengrid-query" }
 opengrid-datasource = { path = "../opengrid-datasource" }
 opengrid-pivot = { path = "../opengrid-pivot" }
+# The rows tier (issue #46): a source that only hands out rows is answered by
+# the engine, natively, on the server.
+opengrid-engine = { path = "../opengrid-engine" }
 
 [dev-dependencies]
-opengrid-engine = { path = "../opengrid-engine" }
 opengrid-conformance = { path = "../opengrid-conformance" }
 serde_json = "1"
