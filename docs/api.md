@@ -157,6 +157,7 @@ An interactive `<table role="grid">`: virtualized, keyboard-driven, filterable.
 | `column-menu` | Gives every header a **column menu**: sort, filter, aggregate, group, hide. Opt-in. See [Column menu](#column-menu). |
 | `selection` | Shows the **selection column**: a checkbox per row and one in the header. Opt-in — selecting rows works from the keyboard either way; what this adds is the column that shows it and the pointer path to it. |
 | `density` | `compact`, `normal` or `comfortable` — row height, cell padding and font size in one step. `normal` is the default, and a grid without the attribute *is* a normal one; an unknown value is normal too. |
+| `theme` | `base`, `paper`, `violet`, `orange` or `dark` — one of the built-in looks ([Styling](#styling)). `base` is the default; absent or unknown is `base`. Not part of the [view](#the-view): the look is the page's choice, not the reader's. |
 
 **Keyboard.** The WAI-ARIA grid pattern — arrows, `Home`/`End`, `Ctrl`+`Home`/`End`,
 `PageUp`/`PageDown`, and:
@@ -390,7 +391,7 @@ paste, browser find. No virtualization, no roving tabindex.
 
 | Attribute | Meaning |
 |---|---|
-| `label`, `datasource`, `columns` | As in the grid. |
+| `label`, `datasource`, `columns`, `theme` | As in the grid. |
 
 Header buttons sort a single column, `none → ascending → descending → none`.
 
@@ -413,7 +414,7 @@ and the row and column limits are what make rendering the whole thing safe.
 
 | Attribute | Meaning |
 |---|---|
-| `label`, `datasource` | As in the grid. |
+| `label`, `datasource`, `theme` | As in the grid. |
 | `rows` | Comma-separated row dimensions, outermost first. |
 | `columns` | Comma-separated column dimensions. V1 allows **one**. |
 | `values` | The measures, as the contract's own JSON — not an invented shorthand. |
@@ -685,17 +686,17 @@ declaration on the element wins over an inherited value.
 
 | Set | Default | What it paints |
 |---|---|---|
-| `--og-font` / `--og-font-size` | `inherit` | everything the grid writes |
-| `--og-font-mono` | `ui-monospace, …` | the values of a column marked `mono` |
-| `--og-surface` | `Canvas` | rows, the body of the grid |
-| `--og-surface-2` | `Canvas` | header, filter row, status line, pager |
-| `--og-ink` | `CanvasText` | the text |
-| `--og-ink-muted` | a mix of the two | text that is there but not the point |
-| `--og-line` | a mix of the two | the rules between rows |
-| `--og-line-strong` | a mix of the two | the rules between regions |
-| `--og-accent` | `LinkText` | the one colour a page picks — drawn as text too, so a colour meant for text |
-| `--og-on-accent` | `Canvas` | text drawn on the accent (the tick of a checked box) |
-| `--og-radius` | `0` | the corners of the grid's boxes |
+| `--og-font` / `--og-font-size` | `"Geist", system-ui, sans-serif` / `0.875rem` | everything the grid writes |
+| `--og-font-mono` | `"Geist Mono", ui-monospace, …` | the values of a column marked `mono` |
+| `--og-surface` | `#ffffff` | rows, the body of the grid |
+| `--og-surface-2` | `#fafbfc` | header, filter row, status line, pager |
+| `--og-ink` | `#14161a` | the text |
+| `--og-ink-muted` | `#646b78` | text that is there but not the point |
+| `--og-line` | `#eceef2` | the rules between rows |
+| `--og-line-strong` | `#e0e3e9` | the rules between regions |
+| `--og-accent` | `#3d5fd6` | the one colour a page picks — drawn as text too, so a colour meant for text |
+| `--og-on-accent` | `#ffffff` | text drawn on the accent (the tick of a checked box) |
+| `--og-radius` | `12px` | the corners of the grid's boxes |
 | `--og-pad` | `8px` | horizontal padding inside a cell |
 | `--og-focus-width` | `2px` | the focus ring |
 | `--og-row-height` | `42px` | a data row; **goes into the window math** |
@@ -726,10 +727,33 @@ relative — and it should be, or a reader who raised their browser's font size
 would be overruled. The consequence a page has to know: **raising the font size
 means raising `--og-row-height` with it.**
 
-**The defaults are the system colours**, so a grid with no page CSS stays
-legible and in the right light or dark. Under `forced-colors` every colour here
-resolves to a system colour: a `color-mix` of two system colours resolves
-unpredictably, and the user's palette is the one that has to win.
+**The defaults are the look called Base** — the one of the design prototype — so a
+grid, table or pivot with no page CSS already looks finished. **`theme`** picks
+another built-in look; the defaults in the table above are Base's:
+
+| `theme` | Font | Surface | Ink | Accent | Radius | |
+|---|---|---|---|---|---|---|
+| `base` (default) | Geist | `#ffffff` | `#14161a` | `#3d5fd6` | `12px` | light |
+| `paper` | IBM Plex Sans | `#fffdf8` | `#1f1d19` | `#2a7a59` | `8px` | light |
+| `violet` | Geist | `#ffffff` | `#17161f` | `#6b4bc8` | `14px` | light |
+| `orange` | Geist | `#ffffff` | `#111111` | `#b44c1c` | `10px` | light |
+| `dark` | Geist | `#15181c` | `#e6e8eb` | `#4fd1d1` | `12px` | dark |
+
+A look sets every colour token, the fonts, the radius and `color-scheme`. What a
+page sets on the element wins over it, so a look is where a page's own starts:
+`<opengrid-grid theme="dark" style="--og-accent: #f0b429">`. A look does not follow
+the reader's light or dark preference by itself — a page that does sets `theme`.
+
+The fonts are **named, not loaded**: the element makes no request to a font
+service. A page that wants Geist or IBM Plex Sans loads it; without it the stack
+falls back to the system UI font.
+
+`<opengrid-table>` and `<opengrid-pivot>` take the same `theme` and tokens; until
+they have parts (issue #29) they apply the ink and the font to their text.
+
+Under `forced-colors` every colour here resolves to a system colour, whatever the
+look: a `color-mix` of two system colours resolves unpredictably, and the user's
+palette is the one that has to win.
 
 Three things a theme cannot switch off, because they are accessibility rather
 than decoration: the **focus ring** never uses `--og-accent` (a pale accent
@@ -745,8 +769,9 @@ theme that animates a part.
 `sort-direction`, `sort-index`, `status`, `toolbar`,
 `total-row`, `viewport`.
 
-`<opengrid-table>` and `<opengrid-pivot>` ship **no** stylesheet — they are
-plain tables and the page owns their look.
+`<opengrid-table>` and `<opengrid-pivot>` ship no stylesheet beyond the look's
+ink and font (above) — they are plain tables, and until they have parts (issue #29)
+the rest of their look is the page's.
 
 ## Texts
 

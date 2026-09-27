@@ -541,6 +541,8 @@ pub const OBSERVED: &[&str] = &[
     TOOLBAR_ATTRIBUTE,
     FACETS_ATTRIBUTE,
     SEARCH_ATTRIBUTE,
+    // CSS alone: the look is `:host([theme=…])` rules (issue #32).
+    crate::theme::THEME_ATTRIBUTE,
 ];
 
 /// Reads `page-size`; absent, empty or unusable means "do not page".
@@ -1499,23 +1501,12 @@ pub fn build_grid(
     let (compact_name, compact_row, compact_pad, compact_font) = DENSITIES[0];
     let (_, _, normal_pad, normal_font) = DENSITIES[1];
     let (comfy_name, comfy_row, comfy_pad, comfy_font) = DENSITIES[2];
+    let themes = crate::theme::host_rules();
     let styles = format!(
-        ":host {{ {FONT_PROPERTY}: inherit;
-                   {FONT_MONO_PROPERTY}: ui-monospace, SFMono-Regular, Menlo, monospace;
-                   {FONT_SIZE_PROPERTY}: {normal_font};
-                   {SURFACE_PROPERTY}: Canvas;
-                   {SURFACE_2_PROPERTY}: Canvas;
-                   {INK_PROPERTY}: CanvasText;
-                   {INK_MUTED_PROPERTY}: color-mix(in oklab, CanvasText 62%, Canvas);
-                   {LINE_PROPERTY}: color-mix(in oklab, CanvasText 14%, Canvas);
-                   {LINE_STRONG_PROPERTY}: color-mix(in oklab, CanvasText 26%, Canvas);
-                   /* `LinkText`, not `Highlight`: `Highlight` is the background of
-                      a text selection — a pale colour meant to have dark text
-                      on it — and the accent is also drawn *as* text
-                      (`--og-accent-ink`). Found by axe in point 65 at 2.6:1. */
-                   {ACCENT_PROPERTY}: LinkText;
-                   {ON_ACCENT_PROPERTY}: Canvas;
-                   {RADIUS_PROPERTY}: 0;
+        "{themes}
+         :host {{ {FONT_SIZE_PROPERTY}: {normal_font};
+                   /* The colours, the fonts and the radius come from the look
+                      above (issue #32): Base, or the `theme` the page picked. */
                    {PAD_PROPERTY}: {normal_pad}px;
                    {FOCUS_WIDTH_PROPERTY}: {DEFAULT_FOCUS_WIDTH};
                    {ROW_HEIGHT_PROPERTY}: {DEFAULT_ROW_HEIGHT}px;
