@@ -104,9 +104,10 @@ jobs:
     # packs `@casoon/opengrid` exactly as `just package` does and asks npm what
     # it would send. A dry run needs no token, so this runs on every push and
     # the tarball can never drift from the checklist in docs/releasing.md.
-    # The four tarballs are kept as the `npm-packages` artifact: they were
+    # The tarball is kept as the `npm-packages` artifact: it was
     # built with the pinned binaryen and checked here, and the release
-    # publishes exactly these (docs/releasing.md → The release).
+    # publishes exactly it (docs/releasing.md → The release). The React, Vue
+    # and Svelte components are its subpaths (#27), not packages of their own.
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -126,11 +127,6 @@ jobs:
         run: |
           curl -fsSL "https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}/binaryen-version_${BINARYEN_VERSION}-x86_64-linux.tar.gz" | tar -xz
           echo "$PWD/binaryen-version_${BINARYEN_VERSION}/bin" >> "$GITHUB_PATH"
-      # pnpm packs the adapters: it writes the element package's version
-      # where the workspace has `workspace:^` (plan point 77).
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.26.0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -138,19 +134,10 @@ jobs:
       - name: npm publish --dry-run
         run: npm publish --dry-run
         working-directory: target/npm-package/package
-      - name: npm publish --dry-run (React adapter)
-        run: npm publish --dry-run
-        working-directory: target/npm-package-react/package
-      - name: npm publish --dry-run (Vue adapter)
-        run: npm publish --dry-run
-        working-directory: target/npm-package-vue/package
-      - name: npm publish --dry-run (Svelte adapter)
-        run: npm publish --dry-run
-        working-directory: target/npm-package-svelte/package
       - uses: actions/upload-artifact@v4
         with:
           name: npm-packages
-          path: target/npm-package*/*.tgz
+          path: target/npm-package/*.tgz
           if-no-files-found: error
 
   baselines:

@@ -1,5 +1,5 @@
 /**
- * Types for `@casoon/opengrid-react` (plan point 77).
+ * Types for `@casoon/opengrid/react` (plan point 77).
  *
  * The props are the element's attributes in camelCase plus the options of
  * `connect` from `@casoon/opengrid` — no names of their own. Everything else
@@ -26,7 +26,7 @@ import type {
   OpengridGridElement,
   OpengridPivotElement,
   OpengridTableElement,
-} from "@casoon/opengrid";
+} from "../loader.js";
 
 /** What the element itself takes from React, minus what the component owns. */
 type ElementProps = Omit<

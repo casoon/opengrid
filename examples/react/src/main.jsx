@@ -9,7 +9,7 @@ import React, { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { loadOpengrid } from "@casoon/opengrid";
 import { MODULE_URL, ordersProvider } from "./provider.js";
-import { OpengridGrid } from "@casoon/opengrid-react";
+import { OpengridGrid } from "@casoon/opengrid/react";
 
 const SAVED = { sort: [{ field: "customer", direction: "asc" }] };
 const GERMAN = { lang: "de", matchesOne: "{count} Treffer", matchesOther: "{count} Treffer" };

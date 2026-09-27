@@ -9,7 +9,7 @@
 import React from "react";
 import { hydrateRoot } from "react-dom/client";
 import { loadOpengrid } from "@casoon/opengrid";
-import { OpengridGrid } from "@casoon/opengrid-react";
+import { OpengridGrid } from "@casoon/opengrid/react";
 import { MODULE_URL, ordersProvider } from "./provider.js";
 import { SSR_PROPS } from "./ssr-props.js";
 

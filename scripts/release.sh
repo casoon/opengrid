@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Publishes a release: the four npm tarballs that CI built for the release
-# commit, element package first, then the tag.
+# Publishes a release: the npm tarball that CI built for the release commit,
+# then the tag. One package: the React, Vue and Svelte components are its
+# subpaths (#27).
 #
 # What is published is what CI checked: the `publish-dry-run` job packs with the
 # pinned toolchain and uploads the tarballs as the artifact `npm-packages`, and
@@ -26,13 +27,8 @@ version=$(node -p 'require("./packages/opengrid/package.json").version')
 tag="v$version"
 dest="target/release"
 
-# The order matters: each adapter names `@casoon/opengrid` as a peer at this
-# version, so the element package has to be on npm before them.
 packages=(
     "npm-package/casoon-opengrid-$version.tgz"
-    "npm-package-react/casoon-opengrid-react-$version.tgz"
-    "npm-package-vue/casoon-opengrid-vue-$version.tgz"
-    "npm-package-svelte/casoon-opengrid-svelte-$version.tgz"
 )
 
 # --- The commit -------------------------------------------------------------

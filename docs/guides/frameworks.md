@@ -9,17 +9,18 @@ hand them their provider, texts and view the way the framework hands anything to
 props, `v-model`, `bind:`. Three adapters do that; for everything else there is `connect`, the
 function they are all built on ([The public API → Connecting](../../api/#connecting)).
 
-| | Package | View |
+| | Import | View |
 |---|---|---|
-| React 18 and 19 | `@casoon/opengrid-react` | `view` + `onViewChange`, or `defaultView` |
-| Vue 3.3 and later | `@casoon/opengrid-vue` | `v-model:view`, or `defaultView` |
-| Svelte 5 | `@casoon/opengrid-svelte` | `bind:view`, or `defaultView` |
+| React 18 and 19 | `@casoon/opengrid/react` | `view` + `onViewChange`, or `defaultView` |
+| Vue 3.3 and later | `@casoon/opengrid/vue` | `v-model:view`, or `defaultView` |
+| Svelte 5 | `@casoon/opengrid/svelte` | `bind:view`, or `defaultView` |
 | Angular 22 | a directive over `connect` (below) | `[(view)]` |
 | Lit, Astro, plain pages | `@casoon/opengrid` | `connect(host, { view, onViewChange })` |
 
-Each adapter installs next to the element package, which it names as a peer —
-`npm install @casoon/opengrid @casoon/opengrid-react react`, and the same with `-vue` and `vue`
-or `-svelte` and `svelte`. See [Installation](../../getting-started/installation/).
+The adapters are subpaths of the one package, and their frameworks are optional peers:
+`npm install @casoon/opengrid react` (or `vue`, `svelte`) and import from
+`@casoon/opengrid/react`. A page that uses none of them installs no framework. See
+[Installation](../../getting-started/installation/).
 
 ## What every adapter does the same way
 
@@ -72,7 +73,7 @@ Four rules to know, because they come from the grid and not from the framework:
 ```jsx
 import { useMemo, useState } from "react";
 import { createRestProvider } from "@casoon/opengrid";
-import { OpengridGrid } from "@casoon/opengrid-react";
+import { OpengridGrid } from "@casoon/opengrid/react";
 
 export function Orders() {
   const provider = useMemo(
@@ -111,7 +112,7 @@ export function Orders() {
 <script setup>
 import { ref } from "vue";
 import { createRestProvider } from "@casoon/opengrid";
-import { OpengridGrid } from "@casoon/opengrid-vue";
+import { OpengridGrid } from "@casoon/opengrid/vue";
 
 const provider = createRestProvider({ url: "https://example.org", source: "orders", token: "…" });
 const view = ref(null);
@@ -148,7 +149,7 @@ const view = ref(null);
 ```svelte
 <script>
   import { createRestProvider } from "@casoon/opengrid";
-  import { OpengridGrid } from "@casoon/opengrid-svelte";
+  import { OpengridGrid } from "@casoon/opengrid/svelte";
 
   const provider = createRestProvider({ url: "https://example.org", source: "orders", token: "…" });
   let view = $state(null);
@@ -315,9 +316,10 @@ than created inline.
 
 Each adapter has an example in `examples/` that the end-to-end suite runs in Chromium — React
 in both 18 and 19 — with StrictMode or a development build, axe-core, and a check that the grid
-is collected once the framework takes it out. Each adapter also renders on the server, and its
+is collected once the framework takes it out. Each adapter also renders on the server, and the
 packed tarball is put into a scratch project's `node_modules` — beside the framework and
-nothing else from the repository — and rendered and type-checked there. The Angular directive
+nothing else from the repository — and each subpath rendered and type-checked there. The same
+tarball installs into a project without any framework, which must pull none of them in. The Angular directive
 runs the same browser checks in an Angular 22 app built by the Angular CLI, plus a one-way
 `[view]` that keeps the reader's change.
 

@@ -1,5 +1,5 @@
 /**
- * Types for `@casoon/opengrid-vue` (plan point 78).
+ * Types for `@casoon/opengrid/vue` (plan point 78).
  *
  * The props are the element's attributes in camelCase plus the options of
  * `connect` from `@casoon/opengrid`; the callbacks are Vue events instead:
@@ -15,7 +15,7 @@ import type {
   Mode,
   SelectionChangeDetail,
   View,
-} from "@casoon/opengrid";
+} from "../loader.js";
 
 /** `connect`'s options, less the callbacks — those are events here. */
 type Options = Omit<ConnectOptions, "onViewChange" | "onSelectionChange" | "onCellChange">;

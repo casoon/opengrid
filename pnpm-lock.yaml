@@ -60,9 +60,6 @@ importers:
       '@casoon/opengrid':
         specifier: workspace:*
         version: link:../../packages/opengrid
-      '@casoon/opengrid-react':
-        specifier: workspace:*
-        version: link:../../packages/opengrid-react
       react:
         specifier: 19.3.0
         version: 19.3.0
@@ -91,9 +88,6 @@ importers:
       '@casoon/opengrid':
         specifier: workspace:*
         version: link:../../packages/opengrid
-      '@casoon/opengrid-svelte':
-        specifier: workspace:*
-        version: link:../../packages/opengrid-svelte
       svelte:
         specifier: 5.57.1
         version: 5.57.1
@@ -110,9 +104,6 @@ importers:
       '@casoon/opengrid':
         specifier: workspace:*
         version: link:../../packages/opengrid
-      '@casoon/opengrid-vue':
-        specifier: workspace:*
-        version: link:../../packages/opengrid-vue
       vue:
         specifier: 3.5.43
         version: 3.5.43(typescript@6.0.3)
@@ -124,35 +115,18 @@ importers:
         specifier: 8.3.1
         version: 8.3.1(esbuild@0.28.2)(sass-embedded@1.104.1)(sass@1.104.1)
 
-  packages/opengrid: {}
-
-  packages/opengrid-react:
+  packages/opengrid:
     dependencies:
       react:
         specifier: '>=18'
         version: 19.3.0
     devDependencies:
-      '@casoon/opengrid':
-        specifier: workspace:^
-        version: link:../opengrid
       '@types/react':
         specifier: 19.3.0
         version: 19.3.0
-
-  packages/opengrid-svelte:
-    devDependencies:
-      '@casoon/opengrid':
-        specifier: workspace:^
-        version: link:../opengrid
       svelte:
         specifier: 5.57.1
         version: 5.57.1
-
-  packages/opengrid-vue:
-    devDependencies:
-      '@casoon/opengrid':
-        specifier: workspace:^
-        version: link:../opengrid
       vue:
         specifier: 3.5.43
         version: 3.5.43(typescript@6.0.3)

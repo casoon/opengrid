@@ -24,7 +24,7 @@
 -->
 <script>
   import { tick, untrack } from "svelte";
-  import { connect } from "@casoon/opengrid";
+  import { connect } from "../loader.js";
 
   let {
     tag,

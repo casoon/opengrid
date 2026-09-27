@@ -40,7 +40,7 @@ export default defineConfig(({ mode }) => {
         // adapter only, so a stray directive anywhere else still warns.
         onwarn(warning, warn) {
           const ours =
-            warning.code === "MODULE_LEVEL_DIRECTIVE" && warning.id?.includes("opengrid-react");
+            warning.code === "MODULE_LEVEL_DIRECTIVE" && warning.id?.includes("/opengrid/react/");
           if (!ours) warn(warning);
         },
       },

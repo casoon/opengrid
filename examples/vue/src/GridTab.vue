@@ -1,6 +1,6 @@
 <script setup>
 import { ref, watchEffect } from "vue";
-import { OpengridGrid } from "@casoon/opengrid-vue";
+import { OpengridGrid } from "@casoon/opengrid/vue";
 
 defineProps({ provider: { type: Object, required: true } });
 

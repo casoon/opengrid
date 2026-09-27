@@ -2,7 +2,7 @@
 // type test, compiled by `just types` and never bundled.
 
 import { useRef, useState } from "react";
-import { OpengridGrid, OpengridPivot, OpengridTable } from "@casoon/opengrid-react";
+import { OpengridGrid, OpengridPivot, OpengridTable } from "@casoon/opengrid/react";
 import type { OpengridGridElement, View } from "@casoon/opengrid";
 
 export function Page() {

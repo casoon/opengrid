@@ -1,5 +1,5 @@
 /**
- * Types for `@casoon/opengrid-svelte` (plan point 79).
+ * Types for `@casoon/opengrid/svelte` (plan point 79).
  *
  * The props are the element's attributes in camelCase plus the options of
  * `connect` from `@casoon/opengrid`, with the callbacks in Svelte's own
@@ -22,7 +22,7 @@ import type {
   Mode,
   SelectionChangeDetail,
   View,
-} from "@casoon/opengrid";
+} from "../loader.js";
 
 /** `connect`'s options, the callbacks in Svelte's spelling. */
 type Options = Omit<ConnectOptions, "onViewChange" | "onSelectionChange" | "onCellChange"> & {

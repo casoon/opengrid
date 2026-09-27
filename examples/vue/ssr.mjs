@@ -3,7 +3,7 @@
 // adapter resolve.
 import { createSSRApp, h } from "vue";
 import { renderToString } from "vue/server-renderer";
-import { OpengridGrid } from "@casoon/opengrid-vue";
+import { OpengridGrid } from "@casoon/opengrid/vue";
 import { SSR_PROPS } from "./src/ssr-props.js";
 
 const app = createSSRApp({ render: () => h(OpengridGrid, SSR_PROPS) });

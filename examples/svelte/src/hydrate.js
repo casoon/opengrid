@@ -7,7 +7,7 @@
 // loads the module afterwards.
 import { hydrate } from "svelte";
 import { loadOpengrid } from "@casoon/opengrid";
-import { OpengridGrid } from "@casoon/opengrid-svelte";
+import { OpengridGrid } from "@casoon/opengrid/svelte";
 import { MODULE_URL, ordersProvider } from "./provider.js";
 import { SSR_PROPS } from "./ssr-props.js";
 
