@@ -1,6 +1,6 @@
 // Writes the export spec's 100 000 rows (export-data.js) to disk for the
-// `opengrid-server` the Playwright config starts; opengrid-e2e.toml names the
-// file. Under `target/`, which is ignored: the rows are made, not kept.
+// `opengrid-server` the Playwright config starts; the `e2e` preset of
+// examples/server names the file. Under `target/`, which is ignored: the rows are made, not kept.
 //
 //   node tests/e2e/fixtures/write-export-data.mjs
 

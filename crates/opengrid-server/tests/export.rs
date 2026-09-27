@@ -3,27 +3,32 @@
 //! formats and its headers. `export_postgres.rs` runs what needs a database:
 //! the cursor, the tenant filter in SQL, and a client that goes away.
 
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-
 use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
 use http_body_util::BodyExt;
+use opengrid_connector::LocalConnector;
 use opengrid_datasource::wire::{ErrorCode, WireError, result_from_json};
+use opengrid_datasource_postgres::PostgresDataSource;
 use opengrid_export::{CsvOptions, CsvWriter, JsonWriter};
-use opengrid_server::{AppState, Config, Registry, router};
+use opengrid_query::Limits;
+use opengrid_server::{RowFilter, Server, SourcePolicy};
 use tower::ServiceExt;
 
 const DE: &str = "token-de";
 const FR: &str = "token-fr";
 const ALL: &str = "token-all";
 
-fn repo_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(Path::parent)
-        .expect("crates/opengrid-server/../..")
-        .to_path_buf()
+fn fixture() -> LocalConnector {
+    LocalConnector::from_csv(
+        &opengrid_conformance::fixture_csv(),
+        &opengrid_conformance::suite_dir().join("data/orders.schema.json"),
+    )
+    .expect("the fixture")
+}
+
+/// A token without a context.
+fn no_context() -> std::iter::Empty<(&'static str, &'static str)> {
+    std::iter::empty()
 }
 
 /// Two sources over the conformance data set: `orders` with a tenant filter on
@@ -31,56 +36,33 @@ fn repo_root() -> PathBuf {
 /// and `open`, the same rows without either, to know what the truth is.
 /// `max_limit` is 10 and `max_export_rows` 45: the export has its own bound,
 /// and the 50 rows are above it.
-fn app() -> axum::Router {
-    use std::sync::atomic::{AtomicU32, Ordering};
-    static NEXT: AtomicU32 = AtomicU32::new(0);
-
-    let root = repo_root();
-    let id = NEXT.fetch_add(1, Ordering::Relaxed);
-    let path = root.join(format!("target/opengrid-server-export-test-{id}.toml"));
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    std::fs::write(
-        &path,
-        format!(
-            r#"
-[server]
-max_payload_bytes = 2048
-max_limit = 10
-max_export_rows = 45
-allowed_origins = ["http://127.0.0.1:8080"]
-
-[[tokens]]
-value = "{DE}"
-context = {{ country = "DE" }}
-
-[[tokens]]
-value = "{FR}"
-context = {{ country = "FR" }}
-
-[[tokens]]
-value = "{ALL}"
-
-[[datasources]]
-name = "orders"
-type = "local-csv"
-path = "crates/opengrid-conformance/data/orders.csv"
-schema = "crates/opengrid-conformance/data/orders.schema.json"
-allowed_fields = ["id", "customer", "amount", "note"]
-row_filter = {{ field = "country", op = "eq", value = ":country" }}
-
-[[datasources]]
-name = "open"
-type = "local-csv"
-path = "crates/opengrid-conformance/data/orders.csv"
-schema = "crates/opengrid-conformance/data/orders.schema.json"
-"#
-        ),
-    )
-    .unwrap();
-
-    let config = Config::load(&path).expect("configuration");
-    let registry = Registry::build(&config, &root).expect("registry");
-    router(Arc::new(AppState::new(&config, registry)))
+async fn app() -> axum::Router {
+    Server::builder()
+        .max_payload_bytes(2048)
+        .limits(Limits {
+            max_limit: 10,
+            ..Limits::default()
+        })
+        .max_export_rows(45)
+        .allow_origin("http://127.0.0.1:8080")
+        .token(DE, [("country", "DE")])
+        .token(FR, [("country", "FR")])
+        .token(ALL, no_context())
+        .source(
+            "orders",
+            fixture(),
+            SourcePolicy {
+                allowed_fields: ["id", "customer", "amount", "note"]
+                    .map(String::from)
+                    .to_vec(),
+                row_filter: Some(RowFilter::new("country", "eq", ":country")),
+            },
+        )
+        .source("open", fixture(), SourcePolicy::default())
+        .build()
+        .await
+        .expect("a server")
+        .router()
 }
 
 struct Answer {
@@ -127,7 +109,7 @@ async fn send(
 
 async fn export(query: &str, token: &str, body: &str) -> Answer {
     send(
-        app(),
+        app().await,
         &format!("/export/orders{query}"),
         Some(token),
         &[],
@@ -153,7 +135,7 @@ async fn truth(country: &str) -> Vec<i64> {
     let body = format!(
         r#"{{"source":"open","select":["id"],"filter":{{"field":"country","op":"eq","value":"{country}"}},"sort":[{{"field":"id","direction":"asc"}}]}}"#
     );
-    let answer = send(app(), "/export/open?bom=false", Some(ALL), &[], &body).await;
+    let answer = send(app().await, "/export/open?bom=false", Some(ALL), &[], &body).await;
     assert_eq!(answer.status, StatusCode::OK, "{}", answer.body);
     ids(&answer.body)
 }
@@ -204,7 +186,7 @@ async fn a_hidden_column_is_an_unknown_field() {
 #[tokio::test]
 async fn the_file_is_the_query_answer_in_the_export_notation() {
     let page = r#"{"source":"orders","select":["id","customer","amount","note"],"sort":[{"field":"id","direction":"asc"}],"limit":10}"#;
-    let queried = send(app(), "/query/orders", Some(DE), &[], page).await;
+    let queried = send(app().await, "/query/orders", Some(DE), &[], page).await;
     let result = result_from_json(&queried.body).expect("a result");
     let windowed = page.replace(r#""limit":10"#, r#""limit":10,"offset":0"#);
 
@@ -247,7 +229,7 @@ async fn the_file_is_the_query_answer_in_the_export_notation() {
 
     // `Accept` chooses when the parameter does not.
     let accepted = send(
-        app(),
+        app().await,
         "/export/orders",
         Some(DE),
         &[(header::ACCEPT, "application/json")],
@@ -278,7 +260,7 @@ async fn nothing_to_export_is_a_header_or_an_empty_array() {
 async fn the_export_has_its_own_bound_and_says_so_before_the_first_byte() {
     let everything =
         r#"{"source":"open","select":["id"],"sort":[{"field":"id","direction":"asc"}]}"#;
-    let refused = send(app(), "/export/open", Some(ALL), &[], everything).await;
+    let refused = send(app().await, "/export/open", Some(ALL), &[], everything).await;
     assert_eq!(refused.status, StatusCode::PAYLOAD_TOO_LARGE);
     assert_eq!(refused.headers[header::CONTENT_TYPE], "application/json");
     let error = error_of(&refused);
@@ -291,13 +273,13 @@ async fn the_export_has_its_own_bound_and_says_so_before_the_first_byte() {
     );
 
     let fits = r#"{"source":"open","select":["id"],"filter":{"field":"id","op":"lte","value":25},"sort":[{"field":"id","direction":"asc"}]}"#;
-    let answer = send(app(), "/export/open?bom=false", Some(ALL), &[], fits).await;
+    let answer = send(app().await, "/export/open?bom=false", Some(ALL), &[], fits).await;
     assert_eq!(answer.status, StatusCode::OK);
     assert_eq!(ids(&answer.body), (1..=25).collect::<Vec<_>>());
 
     // The bound counts what the export has, after its window.
     let windowed = r#"{"source":"open","select":["id"],"sort":[{"field":"id","direction":"asc"}],"offset":10}"#;
-    let windowed = send(app(), "/export/open", Some(ALL), &[], windowed).await;
+    let windowed = send(app().await, "/export/open", Some(ALL), &[], windowed).await;
     assert_eq!(windowed.status, StatusCode::OK);
     assert_eq!(windowed.headers["x-total-count"], "40");
 
@@ -305,7 +287,7 @@ async fn the_export_has_its_own_bound_and_says_so_before_the_first_byte() {
     // `max_limit` on `/query`.
     let asked =
         r#"{"source":"open","select":["id"],"sort":[{"field":"id","direction":"asc"}],"limit":46}"#;
-    let asked = send(app(), "/export/open", Some(ALL), &[], asked).await;
+    let asked = send(app().await, "/export/open", Some(ALL), &[], asked).await;
     assert_eq!(asked.status, StatusCode::UNPROCESSABLE_ENTITY);
 }
 
@@ -313,12 +295,12 @@ async fn the_export_has_its_own_bound_and_says_so_before_the_first_byte() {
 #[tokio::test]
 async fn an_export_is_guarded_like_a_query() {
     for token in [None, Some("wrong")] {
-        let answer = send(app(), "/export/orders", token, &[], BY_ID).await;
+        let answer = send(app().await, "/export/orders", token, &[], BY_ID).await;
         assert_eq!(answer.status, StatusCode::UNAUTHORIZED);
     }
-    let answer = send(app(), "/export/nothing", Some(DE), &[], BY_ID).await;
+    let answer = send(app().await, "/export/nothing", Some(DE), &[], BY_ID).await;
     assert_eq!(answer.status, StatusCode::NOT_FOUND);
-    let answer = send(app(), "/export/open", Some(ALL), &[], BY_ID).await;
+    let answer = send(app().await, "/export/open", Some(ALL), &[], BY_ID).await;
     assert_eq!(
         answer.status,
         StatusCode::UNPROCESSABLE_ENTITY,
@@ -348,7 +330,7 @@ async fn an_export_is_guarded_like_a_query() {
 #[tokio::test]
 async fn a_browser_on_an_allowed_origin_may_read_the_name_and_the_count() {
     let answer = send(
-        app(),
+        app().await,
         "/export/orders",
         Some(DE),
         &[(header::ORIGIN, "http://127.0.0.1:8080")],
@@ -367,38 +349,25 @@ async fn a_browser_on_an_allowed_origin_may_read_the_name_and_the_count() {
 /// Unset, `max_concurrent_exports` is half the smallest PostgreSQL pool — below
 /// it, so exports never take every connection `/query` needs. The pool
 /// connects lazily, so this needs no database.
-#[test]
-fn the_default_leaves_half_of_every_pool_to_queries() {
-    let root = repo_root();
-    let path = root.join("target/opengrid-server-export-default.toml");
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    std::fs::write(
-        &path,
-        r#"
-[[datasources]]
-name = "orders"
-type = "postgres"
-connection = "host=localhost dbname=opengrid_never_connected"
-schema = "crates/opengrid-conformance/data/orders.schema.json"
-"#,
+#[tokio::test]
+async fn the_default_leaves_half_of_every_pool_to_queries() {
+    let schema = opengrid_conformance::fixture_schema();
+    let source = PostgresDataSource::connect(
+        "host=localhost dbname=opengrid_never_connected",
+        "orders",
+        schema,
     )
-    .unwrap();
-    let config = Config::load(&path).expect("configuration");
-    let registry = Registry::build(&config, &root).expect("registry");
-    // The connector says half its pool; the pool is what the default is for.
-    let half = registry
-        .get("orders")
-        .expect("the source")
-        .data
-        .concurrent_exports()
-        .expect("a PostgreSQL source names a bound");
-    let pool = half * 2;
-    let exports = registry.default_concurrent_exports();
+    .expect("a lazy pool");
+    let pool = source.pool_size();
+    let server = Server::builder()
+        .source("orders", source, SourcePolicy::default())
+        .build()
+        .await
+        .expect("a server");
+    let exports = server.state().max_concurrent_exports;
     assert!(exports >= 1);
     assert!(exports < pool, "{exports} exports for a pool of {pool}");
     assert_eq!(exports, (pool / 2).max(1));
-    let state = AppState::new(&config, registry);
-    assert_eq!(state.max_concurrent_exports, exports);
 }
 
 /// **One export more than `max_concurrent_exports` is a `503` with the code
@@ -409,8 +378,7 @@ schema = "crates/opengrid-conformance/data/orders.schema.json"
 /// read keeps its place.
 #[tokio::test]
 async fn one_export_too_many_is_busy() {
-    let root = repo_root();
-    let dir = root.join("target/opengrid-server-export-busy");
+    let dir = opengrid_conformance::suite_dir().join("../../target/opengrid-server-export-busy");
     std::fs::create_dir_all(&dir).unwrap();
     let mut csv = String::from("id\n");
     for id in 0..60_000 {
@@ -422,29 +390,16 @@ async fn one_export_too_many_is_busy() {
         r#"{"fields":[{"name":"id","type":"int64","nullable":false}]}"#,
     )
     .unwrap();
-    let path = dir.join("config.toml");
-    std::fs::write(
-        &path,
-        format!(
-            r#"
-[server]
-max_concurrent_exports = 1
-
-[[tokens]]
-value = "{ALL}"
-
-[[datasources]]
-name = "rows"
-type = "local-csv"
-path = "target/opengrid-server-export-busy/rows.csv"
-schema = "target/opengrid-server-export-busy/rows.schema.json"
-"#
-        ),
-    )
-    .unwrap();
-    let config = Config::load(&path).expect("configuration");
-    let registry = Registry::build(&config, &root).expect("registry");
-    let app = router(Arc::new(AppState::new(&config, registry)));
+    let rows = LocalConnector::from_csv(&dir.join("rows.csv"), &dir.join("rows.schema.json"))
+        .expect("the rows");
+    let app = Server::builder()
+        .max_concurrent_exports(1)
+        .token(ALL, no_context())
+        .source("rows", rows, SourcePolicy::default())
+        .build()
+        .await
+        .expect("a server")
+        .router();
     let body = r#"{"source":"rows","select":["id"],"sort":[{"field":"id","direction":"asc"}]}"#;
 
     // One export, held: its body is never read.
