@@ -1764,6 +1764,47 @@ pub fn build_grid(
                    background: color-mix(in oklab, currentColor 18%, transparent); }}
          [part=\"chips\"] [part=\"chips-clear\"] {{ font-weight: 400;
                    color: var({INK_MUTED_PROPERTY}); }}
+         /* The quick doors of the prototype (issue #34): dashed pills that open
+            a dialog and a menu, both popovers like the column menu. */
+         [part=\"toolbar\"] [part=\"add-filter\"], [part=\"toolbar\"] [part=\"add-grouping\"] {{
+                   border: 1px dashed var({LINE_STRONG_PROPERTY}); border-radius: 999px;
+                   padding: 0 12px; }}
+         [part=\"toolbar\"] button[aria-disabled=\"true\"] {{ opacity: 0.55; cursor: not-allowed; }}
+         [part=\"filter-dialog\"], [part=\"grouping-menu\"] {{ position: fixed; inset: auto; margin: 0;
+                   box-sizing: border-box; background: var({SURFACE_PROPERTY}); color: var({INK_PROPERTY});
+                   border: 1px solid var({LINE_STRONG_PROPERTY});
+                   border-radius: min(var({RADIUS_PROPERTY}), 12px);
+                   box-shadow: 0 12px 32px rgb(0 0 0 / 0.16);
+                   font-family: var({FONT_PROPERTY}); font-size: 0.8125rem; }}
+         [part=\"filter-dialog\"] {{ width: 19.5rem; padding: 14px; }}
+         [part=\"filter-dialog\"]:popover-open {{ display: flex; flex-direction: column; gap: 10px; }}
+         [part=\"filter-dialog\"] [data-dialog-title] {{ font-weight: 600; font-size: 0.875rem; }}
+         [part=\"filter-dialog\"] label {{ display: grid; grid-template-columns: 5rem 1fr;
+                   align-items: center; gap: 8px; color: var({INK_MUTED_PROPERTY}); }}
+         [part=\"filter-dialog\"] label[hidden] {{ display: none; }}
+         [part=\"filter-dialog\"] select, [part=\"filter-dialog\"] input {{ font: inherit;
+                   min-height: 32px; box-sizing: border-box; padding: 0 8px; min-width: 0;
+                   color: var({INK_PROPERTY}); background: var({SURFACE_PROPERTY});
+                   border: 1px solid var({LINE_STRONG_PROPERTY});
+                   border-radius: min(var({RADIUS_PROPERTY}), 7px); }}
+         [part=\"filter-dialog\"] [data-dialog-problem] {{ margin: 0; font-weight: 600; }}
+         [part=\"filter-dialog\"] [data-dialog-problem][hidden] {{ display: none; }}
+         [part=\"filter-dialog\"] [data-dialog-actions] {{ display: flex; justify-content: flex-end; gap: 8px; }}
+         [part=\"filter-dialog\"] button {{ font: inherit; font-weight: 500; min-height: 30px;
+                   min-width: {MIN_TARGET_SIZE}px; padding: 0 12px; border: 0; cursor: pointer;
+                   color: var({INK_PROPERTY}); background: transparent;
+                   border-radius: min(var({RADIUS_PROPERTY}), 7px); }}
+         [part=\"filter-dialog\"] [data-dialog-action=\"apply\"] {{ background: var({ACCENT_PROPERTY});
+                   color: var({ON_ACCENT_PROPERTY}); }}
+         [part=\"grouping-menu\"] {{ min-width: 15rem; padding: 6px; }}
+         [part=\"grouping-menu\"] [role=\"menuitem\"] {{ display: flex; align-items: center;
+                   min-height: 34px; padding: 0 8px; cursor: pointer;
+                   font-family: var({FONT_MONO_PROPERTY});
+                   border-radius: min(var({RADIUS_PROPERTY}), 6px); }}
+         [part=\"grouping-menu\"] [role=\"menuitem\"]:hover {{ background: var({HOVER_PROPERTY}); }}
+         [part=\"grouping-menu\"] [role=\"menuitem\"]:focus {{
+                   outline: var({FOCUS_WIDTH_PROPERTY}) solid Highlight;
+                   outline-offset: calc(-1 * var({FOCUS_WIDTH_PROPERTY})); }}
          /* The facet sidebar (point 66). */
          [part=\"body\"] {{ flex: 1 1 0; min-height: 0; display: flex; }}
          [part=\"body\"] > [part=\"viewport\"] {{ flex: 1 1 0; min-width: 0; }}
@@ -2418,6 +2459,26 @@ fn build_toolbar(
 
     if search {
         build_search(buffer, nodes, bar, texts);
+    }
+
+    // The two quick doors of the prototype (issue #34): a filter through a
+    // small dialog, a grouping level through a menu. Each opens its popup,
+    // built when it opens, like the column menu.
+    for (key, popup, text) in [
+        ("add-filter", "dialog", &texts.add_filter),
+        ("add-grouping", "menu", &texts.add_grouping),
+    ] {
+        let button = element(buffer, nodes, Some(bar), "button");
+        attribute(buffer, button, "type", "button");
+        attribute(buffer, button, "part", key);
+        attribute(buffer, button, "data-toolbar", key);
+        attribute(buffer, button, "aria-haspopup", popup);
+        attribute(buffer, button, "aria-expanded", "false");
+        buffer.push(Patch::SetText {
+            node: button,
+            text: text.clone(),
+        });
+        set_lang(buffer, button, texts);
     }
 
     let toggle = element(buffer, nodes, Some(bar), "button");

@@ -31,6 +31,8 @@ const OURS = new Set([
   "facet-cost", "facets-head", "facet-bounds", "column-menu", "menu-label", "empty-text", "empty-reset",
   // The footer's source (issue #33): where the queries ran, in our words.
   "source",
+  // The quick doors (issue #34).
+  "add-filter", "add-grouping",
 ]);
 const PAGE = new Set([
   // Column names and values.
