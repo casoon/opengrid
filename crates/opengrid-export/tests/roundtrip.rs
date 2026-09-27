@@ -13,11 +13,11 @@
 //! does not tell a quoted `"\N"` from `\N`, so the text `\N` itself reads back
 //! as NULL.
 
-use opengrid_arrow_engine::datasource::LocalDataSource;
-use opengrid_arrow_engine::ingest::{CsvOptions as IngestOptions, load_csv};
 use opengrid_conformance::block_on;
 use opengrid_datasource::wire::result_to_json;
 use opengrid_datasource::{DataSource, QueryResult};
+use opengrid_engine::datasource::LocalDataSource;
+use opengrid_engine::ingest::{CsvOptions as IngestOptions, load_csv};
 use opengrid_export::{CsvOptions, CsvWriter, JsonWriter};
 use opengrid_query::{Limits, Query};
 
@@ -37,8 +37,8 @@ const STORED: [&str; 10] = [
 /// Every stored column of a CSV, in id order, through the engine.
 fn everything(csv: &str) -> QueryResult {
     let schema = xtask::orders_schema();
-    let batches = load_csv(csv.as_bytes(), &schema, IngestOptions::default()).expect("ingest");
-    let source = LocalDataSource::new(batches).expect("a source");
+    let table = load_csv(csv.as_bytes(), &schema, IngestOptions::default()).expect("ingest");
+    let source = LocalDataSource::new(table);
     let query: Query = serde_json::from_value(serde_json::json!({
         "source": "orders",
         "select": STORED,

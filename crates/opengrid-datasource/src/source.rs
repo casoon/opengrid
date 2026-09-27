@@ -7,8 +7,8 @@ use crate::{DataSourceCapabilities, DataSourceError, QueryResult};
 ///
 /// The single interface the UI and the planner work against
 /// (plan/spezifikation/03-datasource.md). Implementations: the local engine
-/// ([`LocalDataSource`], point 09 — in `opengrid-arrow-engine`, because Arrow
-/// lives there), PostgreSQL (point 24/26), REST (point 27).
+/// ([`LocalDataSource`], point 09 — in `opengrid-engine`, because the columns
+/// live there), PostgreSQL (point 24/26), REST (point 27).
 ///
 /// # `Send` and no `Send`
 ///

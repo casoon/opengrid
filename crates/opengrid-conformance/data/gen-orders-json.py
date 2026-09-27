@@ -13,7 +13,7 @@ Run it after editing orders.csv:
 
 The invariants below are asserted here; that the two encodings really produce
 identical Arrow batches is asserted by
-crates/opengrid-arrow-engine/tests/conformance_dataset.rs, which is the
+crates/opengrid-engine/tests/conformance_dataset.rs, which is the
 authoritative guard.
 """
 

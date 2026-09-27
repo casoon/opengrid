@@ -18,6 +18,25 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+### Changed
+
+- **The engine no longer uses Apache Arrow** ([#37](https://github.com/casoon/opengrid/issues/37)).
+  It keeps its data in `opengrid-columns` — typed columns of exactly the seven types of
+  the query model — and `opengrid-engine` replaces `opengrid-arrow-engine`, in the browser
+  and on the server. The engine module (`engine/opengrid_wasm_bg.wasm`) shrinks from
+  335 KiB to 118 KiB brotli (1.94 MB → 0.34 MB raw). Every conformance case answers as
+  before; an old-against-new differential test over random queries found no difference
+  before the old engine was removed. In the browser, grouping and aggregating got about
+  twice as fast and a sort window over sorted data too; a single-key sort is about 1.2×
+  slower, everything else within ±12 %.
+
+**What breaks** (Rust crates only; the npm package and its JavaScript API are
+unchanged): the crate `opengrid-arrow-engine` is now `opengrid-engine`. `load_csv` and
+`load_json` return one `Table` instead of `Vec<RecordBatch>`, `JsonOptions` and
+`CsvOptions::batch_size` are gone, `LocalDataSource::new` takes the table and cannot
+fail, and `execute::QueryResult` carries a `table`. `opengrid-types` has no `arrow`
+feature any more.
+
 ## [0.2.0] — 2026-09-27
 
 **Screen-reader pairings tested: none yet** — unchanged since 0.1.0

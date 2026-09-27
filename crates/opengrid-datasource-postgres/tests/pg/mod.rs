@@ -37,13 +37,13 @@ pub fn schema() -> Schema {
 /// from the same 50 rows.
 pub fn fixture_rows(schema: &Schema) -> QueryResult {
     let schema = &schema.stored();
-    use opengrid_arrow_engine::datasource::LocalDataSource;
-    use opengrid_arrow_engine::ingest::{CsvOptions, load_csv};
+    use opengrid_engine::datasource::LocalDataSource;
+    use opengrid_engine::ingest::{CsvOptions, load_csv};
     use opengrid_query::{Limits, Query};
 
     let csv = std::fs::read(suite_dir().join("data/orders.csv")).expect("the conformance data");
-    let batches = load_csv(&csv, schema, CsvOptions::default()).expect("ingest");
-    let source = LocalDataSource::new(batches).expect("a local source");
+    let table = load_csv(&csv, schema, CsvOptions::default()).expect("ingest");
+    let source = LocalDataSource::new(table);
 
     let select: Vec<String> = schema
         .stored()
@@ -188,11 +188,10 @@ pub async fn connect() -> Option<(tokio_postgres::Client, String)> {
 
 /// The same data set through the local engine — the other side of every
 /// comparison in this crate.
-pub fn local_source(schema: &Schema) -> opengrid_arrow_engine::datasource::LocalDataSource {
-    use opengrid_arrow_engine::datasource::LocalDataSource;
-    use opengrid_arrow_engine::ingest::{CsvOptions, load_csv};
+pub fn local_source(schema: &Schema) -> opengrid_engine::datasource::LocalDataSource {
+    use opengrid_engine::datasource::LocalDataSource;
+    use opengrid_engine::ingest::{CsvOptions, load_csv};
 
     let csv = std::fs::read(suite_dir().join("data/orders.csv")).expect("the conformance data");
     LocalDataSource::new(load_csv(&csv, schema, CsvOptions::default()).expect("ingest"))
-        .expect("a local source")
 }

@@ -1,0 +1,245 @@
+//! The `DataSource` adapter over the local engine (point 09).
+//!
+//! The suite runner next door proves the answers are *right*; this file pins down
+//! the adapter's own contract — the schema it reports, the column-oriented result
+//! (E14) and the empty page.
+
+mod common;
+
+use opengrid_conformance::{RowOrder, Table, block_on, compare};
+use opengrid_datasource::{DataSource, DataSourceCapabilities};
+use opengrid_engine::datasource::LocalDataSource;
+use opengrid_engine::execute::execute;
+use opengrid_query::{Limits, Query, ValidatedQuery};
+use opengrid_types::{Schema, Value};
+
+/// The schema comes from the data: ingest built it against exactly this schema.
+///
+/// **Materialized**, because a derived column stops being derived once ingest has
+/// computed it (point 54): the table really holds those values, and the source
+/// reports what it holds. Where they came from is the loader's business.
+#[test]
+fn the_schema_comes_from_the_table() {
+    let source = LocalDataSource::new(common::csv_table());
+    let reported = block_on(source.schema()).expect("a source with data has a schema");
+
+    assert_eq!(reported, common::schema().materialized());
+    assert!(!reported.has_derived());
+    assert!(
+        common::schema().has_derived(),
+        "the declared schema is the one with the derivations"
+    );
+}
+
+/// Everything runs in WASM, so the local source claims every capability
+/// (point 09, step 3).
+#[test]
+fn every_capability_is_reported() {
+    let source = LocalDataSource::new(common::csv_table());
+    assert_eq!(source.capabilities(), DataSourceCapabilities::ALL);
+}
+
+fn validate(json: &str, schema: &Schema) -> ValidatedQuery {
+    let query: Query = serde_json::from_str(json).expect("the query parses");
+    query
+        .validate(schema, &Limits::default())
+        .expect("the query validates")
+}
+
+/// The filter value the tests below use, spelled once.
+fn de() -> Value {
+    Value::Utf8("DE".to_owned())
+}
+
+/// The page the grid asks for: column-oriented (E14), in schema order, aligned —
+/// and cell for cell what the engine produced.
+///
+/// The expectation is built by the test helper (`common::decode`, row by row),
+/// the result by the adapter (column by column), so a shifted or dropped column
+/// shows up here.
+#[test]
+fn the_result_is_column_oriented_and_carries_the_engine_values() {
+    let schema = common::schema();
+    let data = common::csv_table();
+    let query = validate(
+        r#"{"source":"orders","select":["id","country","amount"],
+            "filter":{"field":"country","op":"eq","value":"DE"},
+            "sort":[{"field":"id"}],"limit":4}"#,
+        &schema,
+    );
+
+    let direct = execute(&data, &query).expect("the engine runs the query");
+    let source = LocalDataSource::new(data);
+    let result = block_on(source.execute(query)).expect("the source runs the query");
+
+    let names: Vec<&str> = result
+        .schema
+        .fields()
+        .iter()
+        .map(|field| field.name.as_str())
+        .collect();
+    assert_eq!(names, ["id", "country", "amount"], "schema order");
+    assert_eq!(result.columns.len(), 3, "one column per output field");
+    assert_eq!(result.row_count(), 4, "the page is four rows");
+    for column in &result.columns {
+        assert_eq!(column.len(), result.row_count(), "columns stay aligned");
+    }
+
+    let table = Table::from(&result);
+    assert_eq!(
+        table.rows,
+        common::decode(&direct.table),
+        "the adapter decodes what the engine produced"
+    );
+    assert_eq!(result.total_count, direct.total_count);
+
+    // The types travel with the values: `id` stays an integer, `amount` a decimal
+    // (a widened or narrowed column would have been caught above already).
+    assert!(matches!(result.columns[0][0], Value::Int64(_)));
+    assert!(matches!(result.columns[2][0], Value::Decimal(_)));
+    assert!(
+        result.columns[1].iter().all(|value| *value == de()),
+        "the filter held"
+    );
+}
+
+/// A page past the last row is empty, not an error, and keeps its columns: the
+/// grid draws the header from them, and `total_count` still counts the result.
+#[test]
+fn a_page_beyond_the_end_keeps_its_columns() {
+    let schema = common::schema();
+    let source = LocalDataSource::new(common::csv_table());
+    let query = validate(
+        r#"{"source":"orders","select":["id","country"],
+            "filter":{"field":"country","op":"eq","value":"DE"},
+            "sort":[{"field":"id"}],"offset":1000}"#,
+        &schema,
+    );
+
+    let result = block_on(source.execute(query)).expect("the source runs the query");
+    assert_eq!(result.row_count(), 0, "no row that far out");
+    assert_eq!(result.columns.len(), 2, "the columns stay");
+    assert!(result.columns.iter().all(Vec::is_empty));
+    assert!(result.total_count > 0, "the filter still matched rows");
+}
+
+/// The coercion path E14 names: a [`QueryResult`] becomes data again.
+///
+/// This is what makes hybrid execution possible (plan point 28) — the source's
+/// partial answer has to go back into the engine without losing a value on the
+/// way. Every column type of the dataset travels, NULLs and the non-finite
+/// floats of E13 included.
+#[test]
+fn a_result_goes_back_into_the_engine_unchanged() {
+    let schema = common::schema();
+    let source = LocalDataSource::new(common::csv_table());
+    let every_column: Vec<String> = schema
+        .fields()
+        .iter()
+        .map(|field| format!("\"{}\"", field.name.as_str()))
+        .collect();
+    let read_all = validate(
+        &format!(
+            r#"{{"source":"orders","select":[{}]}}"#,
+            every_column.join(",")
+        ),
+        &schema,
+    );
+
+    let first = block_on(source.execute(read_all.clone())).expect("the source answers");
+    let again = LocalDataSource::from_result(&first).expect("the result is data again");
+    let second = block_on(again.execute(read_all)).expect("the round trip answers");
+
+    assert_eq!(second.schema, first.schema);
+    assert_eq!(second.total_count, first.total_count);
+    // Through the suite's comparison, not `assert_eq!`: NaN is not equal to
+    // itself, and the dataset has one (E13).
+    compare(
+        &Table::from(&first),
+        &Table::from(&second),
+        RowOrder::Ordered,
+    )
+    .expect("every value survived the round trip");
+    assert!(
+        first
+            .columns
+            .iter()
+            .flatten()
+            .any(|value| *value == Value::Null),
+        "the dataset has NULLs — otherwise this proves less than it looks"
+    );
+}
+
+/// An empty answer keeps its columns on the way back, so the steps that follow
+/// still know what they are working on.
+#[test]
+fn an_empty_result_still_carries_its_schema() {
+    let schema = common::schema();
+    let source = LocalDataSource::new(common::csv_table());
+    let query = validate(
+        r#"{"source":"orders","select":["id","country"],
+            "filter":{"field":"country","op":"eq","value":"ZZ"}}"#,
+        &schema,
+    );
+
+    let empty = block_on(source.execute(query)).expect("the source answers");
+    assert_eq!(empty.row_count(), 0);
+
+    let again = LocalDataSource::from_result(&empty).expect("an empty result is still data");
+    assert_eq!(block_on(DataSource::schema(&again)).unwrap(), empty.schema);
+}
+
+/// The pieces of one run are the rows of the query's answer, in its order and
+/// after its window — nothing repeated at a seam, nothing missing (issue #2).
+#[test]
+fn the_pieces_add_up_to_the_answer() {
+    let source = LocalDataSource::new(common::csv_table());
+    let schema = common::schema().materialized();
+    let query = validate(
+        r#"{"source":"orders","select":["id","customer"],"sort":[{"field":"customer","direction":"desc"},{"field":"id","direction":"asc"}],"offset":3,"limit":40}"#,
+        &schema,
+    );
+    let whole = block_on(source.execute(query.clone())).expect("the answer");
+
+    let mut pieces = source.pieces(&query).expect("the pieces");
+    assert_eq!(pieces.rows(), 40);
+    let mut rows: Vec<Vec<Value>> = vec![Vec::new(); 2];
+    let mut sizes = Vec::new();
+    // Bounded: pieces that never get shorter must fail here, not hang.
+    for _ in 0..10 {
+        let piece = pieces.next_piece(15).expect("a piece");
+        assert_eq!(piece.schema, whole.schema);
+        sizes.push(piece.row_count());
+        for (column, values) in piece.columns.into_iter().enumerate() {
+            rows[column].extend(values);
+        }
+        if sizes.last() < Some(&15) {
+            break;
+        }
+    }
+    assert_eq!(sizes, vec![15, 15, 10]);
+    assert_eq!(rows, whole.columns);
+    // After the last piece there is nothing left, not the rows again.
+    assert_eq!(pieces.next_piece(15).expect("a piece").row_count(), 0);
+}
+
+/// Aggregates without a grouping are one row — counted as one by `execute`
+/// and by the pieces, the way PostgreSQL's count must count them too.
+#[test]
+fn an_aggregate_without_a_grouping_is_one_row() {
+    let source = LocalDataSource::new(common::csv_table());
+    let schema = common::schema().materialized();
+    for json in [
+        r#"{"source":"orders","select":["rows"],"aggregate":[{"fn":"count","as":"rows"}]}"#,
+        r#"{"source":"orders","select":["rows"],"filter":{"field":"id","op":"lt","value":0},"aggregate":[{"fn":"count","as":"rows"}]}"#,
+    ] {
+        let query = validate(json, &schema);
+        let answer = block_on(source.execute(query.clone())).expect("the answer");
+        assert_eq!((answer.row_count(), answer.total_count), (1, 1), "{json}");
+        assert_eq!(
+            source.pieces(&query).expect("the pieces").rows(),
+            1,
+            "{json}"
+        );
+    }
+}

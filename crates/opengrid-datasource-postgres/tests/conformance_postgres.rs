@@ -1,7 +1,7 @@
 //! The conformance suite against a real PostgreSQL (plan point 26).
 //!
 //! This is the test risk R4 exists for: the same 48 cases, the same expectations,
-//! answered once by the Arrow engine in the browser and once by a database, and
+//! answered once by the local engine in the browser and once by a database, and
 //! the two must agree exactly — NULL ordering, binary collation, exact decimals,
 //! NaN, microseconds and the NFC/NFD pair included.
 //!

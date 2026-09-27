@@ -1,9 +1,7 @@
 //! Shared type system for opengrid: schemas, data types, values and identifiers.
 //!
 //! This crate is the contract every other opengrid component builds on (query AST,
-//! local engine, server, SQL compilers). It deliberately carries **no Arrow
-//! dependency**: the Arrow mapping lives behind the optional `arrow` feature. It
-//! also pulls in no browser dependency (see plan/spezifikation/11-crates.md
+//! local engine, server, SQL compilers). It pulls in no browser dependency (see plan/spezifikation/11-crates.md
 //! §Portabilität).
 //!
 //! Type system and JSON representation follow plan/spezifikation/02-query-modell.md
@@ -17,14 +15,8 @@ mod identifier;
 mod schema;
 mod value;
 
-#[cfg(feature = "arrow")]
-mod arrow;
-
 pub use data_type::DataType;
 pub use error::{InvalidIdentifier, SchemaError, ValueError};
 pub use identifier::{DataSourceId, FieldName, is_valid_identifier};
 pub use schema::{DatePart, Derivation, Field, Schema};
 pub use value::{Date, Decimal, Timestamp, Value};
-
-#[cfg(feature = "arrow")]
-pub use arrow::TIMESTAMP_TIMEZONE;

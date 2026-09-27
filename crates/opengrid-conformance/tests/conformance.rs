@@ -211,7 +211,7 @@ fn the_engine_docking_point_is_usable() {
 ///
 /// The fixture deliberately keeps every field free of separators, quotes and line
 /// breaks, so a plain split is enough here — this is a fixture integrity check,
-/// not a general CSV reader. `arrow-csv` reads the file for real in point 06.
+/// not a general CSV reader. The engine's ingest reads the file for real.
 fn parse_csv(text: &str) -> Vec<Vec<String>> {
     text.lines()
         .filter(|line| !line.is_empty())

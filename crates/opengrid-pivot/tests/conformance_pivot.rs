@@ -11,9 +11,9 @@
 
 use std::path::{Path, PathBuf};
 
-use opengrid_arrow_engine::datasource::LocalDataSource;
-use opengrid_arrow_engine::ingest::{CsvOptions, load_csv};
 use opengrid_conformance::{block_on, load_schema};
+use opengrid_engine::datasource::LocalDataSource;
+use opengrid_engine::ingest::{CsvOptions, load_csv};
 use opengrid_pivot::{PivotLimits, PivotQuery, PivotResult, execute};
 use opengrid_query::Limits;
 use opengrid_types::{Schema, Value};
@@ -53,8 +53,8 @@ fn schema() -> Schema {
 
 fn source() -> LocalDataSource {
     let csv = std::fs::read(suite_dir().join("data/orders.csv")).expect("the dataset");
-    let batches = load_csv(&csv, &schema(), CsvOptions::default()).expect("ingest");
-    LocalDataSource::new(batches).expect("a local source")
+    let table = load_csv(&csv, &schema(), CsvOptions::default()).expect("ingest");
+    LocalDataSource::new(table)
 }
 
 fn cases() -> Vec<PivotCase> {

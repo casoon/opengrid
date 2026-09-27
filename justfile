@@ -22,7 +22,7 @@ check:
 
 # Build aller wasm-fähigen Crates für wasm32-unknown-unknown.
 wasm-check:
-    cargo build --target wasm32-unknown-unknown -p opengrid-types -p opengrid-query -p opengrid-arrow-engine -p opengrid-datasource -p opengrid-wasm -p opengrid-web-core -p opengrid-web-components -p opengrid-grid -p opengrid-export
+    cargo build --target wasm32-unknown-unknown -p opengrid-types -p opengrid-query -p opengrid-columns -p opengrid-engine -p opengrid-datasource -p opengrid-wasm -p opengrid-web-core -p opengrid-web-components -p opengrid-grid -p opengrid-export
 
 # Quellcode formatieren.
 fmt:
@@ -89,6 +89,10 @@ types:
 measure-modules:
     bash scripts/measure-modules.sh
 
+# Woraus das Engine-Modul besteht, nach Crate (twiggy) — Issue #37, E34.
+measure-engine:
+    bash scripts/measure-engine.sh
+
 # End-to-End- und A11y-Tests (Playwright + axe-core, plan/spezifikation/12-qualitaet.md §CI).
 # Baut das Element-Modul und das Engine-Modul (die Fixture fährt die echte Engine),
 # packt das npm-Paket (packaged.spec.js prüft das gepackte, nicht das Repository),
@@ -122,7 +126,7 @@ set-version version:
 
 # Native criterion-Benchmarks der Engine (plan/spezifikation/12-qualitaet.md §Benchmarks).
 bench-native:
-    cargo bench -p opengrid-arrow-engine
+    cargo bench -p opengrid-engine
 
 # Dieselben Operationen im WASM-Build, headless Chrome wie `wasm-test` (E4).
 bench-wasm:
