@@ -27,8 +27,9 @@ version=$(node -p 'require("./packages/opengrid/package.json").version')
 tag="v$version"
 dest="target/release"
 
+# The artifact holds the tarball at its root: CI uploads `target/npm-package/*.tgz`.
 packages=(
-    "npm-package/casoon-opengrid-$version.tgz"
+    "casoon-opengrid-$version.tgz"
 )
 
 # --- The commit -------------------------------------------------------------
