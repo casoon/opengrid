@@ -18,6 +18,11 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-09-27
+
+**Screen-reader pairings tested: none yet** — unchanged since 0.1.0
+([issue #5](https://github.com/casoon/opengrid/issues/5)). **Browsers:** as in 0.1.0.
+
 ### Changed
 
 - **One package instead of four** ([#27](https://github.com/casoon/opengrid/issues/27)).
