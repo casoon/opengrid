@@ -276,11 +276,15 @@ export interface ExportProgress {
 /**
  * How `exportRows` fetches and writes: its own keys, plus the
  * {@link CsvOptions} `get_pivot` takes too. Any other key is an error, and so
- * is a CSV option on a JSON export.
+ * is a CSV option on a JSON or XLSX export.
  */
 export interface ExportOptions extends CsvOptions {
-  /** `"csv"` (the default) or `"json"` — an array of row objects. */
-  format?: "csv" | "json";
+  /**
+   * `"csv"` (the default), `"json"` — an array of row objects — or `"xlsx"`,
+   * which only a provider that exports on the server (`createRestProvider`)
+   * writes; with any other provider it is a `TypeError`.
+   */
+  format?: "csv" | "json" | "xlsx";
   /** Rows per request; 10 000 by default, the server's `max_limit`. */
   chunkSize?: number;
   /** More matches than this is an error, never a truncated file; 1 000 000 by default. */

@@ -525,7 +525,7 @@ import { exportRows } from "@casoon/opengrid";
 
 const controller = new AbortController();
 const blob = await exportRows(provider, loader.module.get_query(grid), {
-  format: "csv",                       // or "json"
+  format: "csv",                       // or "json"; "xlsx" through a server
   signal: controller.signal,
   onProgress: ({ rows, total }) => { /* rows written so far, of total */ },
 });

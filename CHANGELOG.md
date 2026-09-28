@@ -20,6 +20,15 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Added
 
+- **XLSX export on the server** ([#72](https://github.com/casoon/opengrid/issues/72)).
+  `POST /export/{source}?format=xlsx` writes an Excel workbook, and `exportRows(rest, query,
+  { format: "xlsx" })` asks for it through `createRestProvider` — with any other provider it is
+  a `TypeError`. Values are Excel types where Excel holds them exactly (numbers, dates,
+  date-times in UTC, booleans) and text where it cannot (integers past 2⁵³, decimals past 15
+  digits, sub-millisecond timestamps), so no value changes; Excel's row and cell limits are
+  errors, never a shortened file. New server-side dependency: `rust_xlsxwriter`, behind the
+  feature `xlsx` of `opengrid-export`, so the browser modules do not carry it.
+
 - **Column titles** ([#66](https://github.com/casoon/opengrid/issues/66)). `set_columns` takes
   `title` per column — what a reader reads wherever the grid names the column: the header,
   the column list, the filter row's labels, the column menu, the "+ Filter" dialog and
