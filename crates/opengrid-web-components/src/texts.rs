@@ -37,6 +37,10 @@ pub struct GridTexts {
     /// headers are the page's data, in the page's language, and declaring them
     /// English would be the very WCAG 3.1.2 failure this point removes.
     pub lang: String,
+    /// The pages' titles for columns, by field name (`set_columns`'
+    /// `title`). Not a text key: they come with the presentation, and every
+    /// sentence that names a column names it by its title (issue #66).
+    pub titles: Vec<(String, String)>,
     /// While a query runs.
     pub loading: String,
     /// Exactly one matching row. May use `{count}`.
@@ -394,6 +398,7 @@ const _: () = assert!(DEFAULT_OPERATORS.len() == crate::shared::FILTER_OPERATORS
 impl Default for GridTexts {
     fn default() -> Self {
         Self {
+            titles: Vec::new(),
             lang: "en".to_owned(),
             loading: "Loading …".to_owned(),
             matches_one: "{count} match".to_owned(),
@@ -535,20 +540,29 @@ impl GridTexts {
         }
     }
 
+    /// How `column` is named where the grid names it: its title from
+    /// `set_columns`, or the field name when the page gave none.
+    pub fn column<'a>(&'a self, column: &'a str) -> &'a str {
+        self.titles
+            .iter()
+            .find(|(name, _)| name == column)
+            .map_or(column, |(_, title)| title.as_str())
+    }
+
     /// The accessible name of `column`'s operator control.
     pub fn operator_label(&self, column: &str) -> String {
-        fill(&self.operator_label, "column", column)
+        fill(&self.operator_label, "column", self.column(column))
     }
 
     /// The accessible name of `column`'s value input.
     pub fn value_label(&self, column: &str) -> String {
-        fill(&self.value_label, "column", column)
+        fill(&self.value_label, "column", self.column(column))
     }
 
     /// The sentence for a filter input the column cannot hold.
     pub fn filter_invalid(&self, column: &str, value: &str) -> String {
         fill(
-            &fill(&self.filter_invalid, "column", column),
+            &fill(&self.filter_invalid, "column", self.column(column)),
             "value",
             value,
         )
@@ -556,7 +570,7 @@ impl GridTexts {
 
     /// A cell that may not be empty.
     pub fn cell_required(&self, column: &str) -> String {
-        fill(&self.cell_required, "column", column)
+        fill(&self.cell_required, "column", self.column(column))
     }
 
     /// What a column operation did, for the status line (plan point 36).
@@ -575,7 +589,11 @@ impl GridTexts {
     /// The text of a group row (point 62).
     pub fn group_row(&self, column: &str, value: &str, count: u64) -> String {
         fill(
-            &fill(&fill(&self.group_row, "column", column), "value", value),
+            &fill(
+                &fill(&self.group_row, "column", self.column(column)),
+                "value",
+                value,
+            ),
             "rows",
             &self.rows(count),
         )
@@ -609,10 +627,14 @@ impl GridTexts {
     pub fn query_problem(&self, problem: &crate::search::Problem) -> String {
         use crate::search::Problem;
         match problem {
-            Problem::UnknownColumn(column) => fill(&self.query_unknown_column, "column", column),
-            Problem::MissingValue(column) => fill(&self.query_missing_value, "column", column),
+            Problem::UnknownColumn(column) => {
+                fill(&self.query_unknown_column, "column", self.column(column))
+            }
+            Problem::MissingValue(column) => {
+                fill(&self.query_missing_value, "column", self.column(column))
+            }
             Problem::WrongOperator { column, operator } => fill(
-                &fill(&self.query_wrong_operator, "column", column),
+                &fill(&self.query_wrong_operator, "column", self.column(column)),
                 "operator",
                 operator,
             ),
@@ -652,7 +674,7 @@ impl GridTexts {
     /// A chip for a facet with several values (point 66).
     pub fn facet_chip_values(&self, column: &str, values: &str) -> String {
         fill(
-            &fill(&self.facet_chip_values, "column", column),
+            &fill(&self.facet_chip_values, "column", self.column(column)),
             "values",
             values,
         )
@@ -674,7 +696,7 @@ impl GridTexts {
 
     /// The column menu's accessible name (point 64).
     pub fn column_menu(&self, column: &str) -> String {
-        fill(&self.column_menu, "column", column)
+        fill(&self.column_menu, "column", self.column(column))
     }
 
     /// The name of one aggregate, as a menu entry and a cell say it.
@@ -710,7 +732,7 @@ impl GridTexts {
 
     /// A `group-by` the grid refuses (point 62).
     pub fn group_invalid(&self, column: &str) -> String {
-        fill(&self.group_invalid, "column", column)
+        fill(&self.group_invalid, "column", self.column(column))
     }
 
     /// What the selection column's header says after it acted (point 61).
@@ -720,7 +742,7 @@ impl GridTexts {
 
     pub fn column_width(&self, column: &str, width: u32) -> String {
         fill(
-            &fill(&self.column_width, "column", column),
+            &fill(&self.column_width, "column", self.column(column)),
             "width",
             &width.to_string(),
         )
@@ -730,7 +752,7 @@ impl GridTexts {
     pub fn column_moved(&self, column: &str, position: u64, count: u64) -> String {
         fill(
             &fill(
-                &fill(&self.column_moved, "column", column),
+                &fill(&self.column_moved, "column", self.column(column)),
                 "position",
                 &position.to_string(),
             ),
@@ -741,7 +763,7 @@ impl GridTexts {
 
     /// A column that cannot move any further.
     pub fn column_at_edge(&self, column: &str) -> String {
-        fill(&self.column_at_edge, "column", column)
+        fill(&self.column_at_edge, "column", self.column(column))
     }
 
     /// A column that was hidden or shown again.
@@ -759,7 +781,7 @@ impl GridTexts {
         };
         fill(
             &fill(
-                &fill(template, "column", column),
+                &fill(template, "column", self.column(column)),
                 "visible",
                 &visible.to_string(),
             ),

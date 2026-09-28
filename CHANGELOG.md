@@ -18,6 +18,15 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+### Added
+
+- **Column titles** ([#66](https://github.com/casoon/opengrid/issues/66)). `set_columns` takes
+  `title` per column — what a reader reads wherever the grid names the column: the header,
+  the column list, the filter row's labels, the column menu, the "+ Filter" dialog and
+  "+ Group" menu, group rows, chips, facet headings, search suggestions (which show the
+  field name beside it, since that is what an expression takes) and every announcement.
+  The field name stays the identifier in queries, views, expressions, exports and events.
+
 ### Fixed
 
 - **A boolean column in the filter row** ([#60](https://github.com/casoon/opengrid/issues/60)).
