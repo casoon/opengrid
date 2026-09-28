@@ -1545,12 +1545,17 @@ pub fn build_grid(
          :host([{DENSITY_ATTRIBUTE}=\"{comfy_name}\"]) {{ {ROW_HEIGHT_PROPERTY}: {comfy_row}px;
                    {PAD_PROPERTY}: {comfy_pad}px; {FONT_SIZE_PROPERTY}: {comfy_font}; }}
          [part=\"layout\"] {{ display: flex; flex-direction: column; height: 100%; min-height: 0; }}
-         [part=\"filter\"] {{ display: flex; align-items: center; gap: 0.5rem; box-sizing: border-box;
+         [part=\"filter\"] {{ display: flex; align-items: center; gap: 0; box-sizing: border-box;
                              flex: 0 0 auto;
                              height: var({FILTER_HEIGHT_PROPERTY}); padding: 0 var({PAD_PROPERTY});
                              background: var({SURFACE_2_PROPERTY});
                              border-bottom: 1px solid var({LINE_STRONG_PROPERTY});
                              overflow-x: auto; overflow-y: hidden; white-space: nowrap; }}
+         /* Each group is as wide as its column (issue #62); its two controls
+            share that width. */
+         [part=\"filter\"] > span > select, [part=\"filter\"] > span > input {{
+                             flex: 1 1 0; min-width: 0; }}
+         [part=\"filter\"] > span > select[part=\"filter-operator\"] {{ flex-grow: 1.2; }}
          [part=\"filter\"] select, [part=\"filter\"] input, [part=\"filter\"] button {{
                              font: inherit; min-height: 32px; box-sizing: border-box;
                              padding: 0 8px;
@@ -2884,7 +2889,6 @@ fn build_filter(
             name: "aria-label".to_owned(),
             value: texts.value_label(field.name.as_str()),
         });
-        set_style(buffer, input, "width: 6rem;");
 
         // A boolean column's value is a choice of three (issue #60): no
         // filter, yes, no. A checkbox cannot say "no filter", and its `value`
@@ -2904,7 +2908,6 @@ fn build_filter(
             });
         }
         set_lang(buffer, choice, texts);
-        set_style(buffer, choice, "width: 6rem;");
         for (value, text) in [
             ("", &texts.filter_any),
             ("true", &texts.boolean_true),
