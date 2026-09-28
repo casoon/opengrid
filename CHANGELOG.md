@@ -18,6 +18,14 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+### Fixed
+
+- **A narrow column keeps its name** ([#61](https://github.com/casoon/opengrid/issues/61)).
+  With the column menu, a sorted 80 px column showed only "▲ ⋯": the header reserved a
+  fixed 2.75em for the sort marks on top of the menu button. It now reserves what stands
+  beside the name, the name keeps two characters at least, and a column is drawn at least
+  96 px wide with the column menu (64 px without) whatever width it was given.
+
 ## [0.4.0] — 2026-09-28
 
 **Screen-reader pairings tested: none yet** — unchanged since 0.1.0
