@@ -34,6 +34,10 @@ Two things belong in every release entry and are easy to leave out:
   answers every query on the server. `max_scan_rows` (default 1 000 000) bounds the rows one
   answer reads; over it the server answers `413 limit_exceeded`. `DataSourceError` has a new
   variant `LimitExceeded`.
+- **Conformance for connector authors** ([#47](https://github.com/casoon/opengrid/issues/47)).
+  `opengrid_conformance::check_source(&source)` runs every case against any source and returns
+  a `Report` (`assert_ok()` for tests); `suite_dir`, `fixture_schema`, `fixture_csv` say where
+  the fixture is. A `Connector` runs through `opengrid_connector::AsSource`.
 - **Results travel in a binary form** ([#38](https://github.com/casoon/opengrid/issues/38)),
   `application/vnd.opengrid.columns`: the engine's columns written out, decimals exact, no
   text per cell. `Engine.execute_columns` and `Planner.finish_columns` answer it next to
