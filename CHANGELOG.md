@@ -18,6 +18,15 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-09-28
+
+**Screen-reader pairings tested: none yet** — unchanged since 0.1.0
+([issue #5](https://github.com/casoon/opengrid/issues/5)). **Browsers:** as in 0.1.0.
+
+**Module sizes** (brotli, `just measure-modules`): the engine 335.1 → **122.6 KiB** (no
+Arrow, #37); the elements 201.9 → 211.2 KiB (the binary result codec, #38). A page with grid
+and engine loads about 334 KiB instead of 537 KiB.
+
 ### Added
 
 - **The server as a library, sources as connectors** ([#45](https://github.com/casoon/opengrid/issues/45)).
