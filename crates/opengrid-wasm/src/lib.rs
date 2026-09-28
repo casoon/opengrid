@@ -97,6 +97,26 @@ impl Engine {
             .map_err(|message| JsError::new(&message))
     }
 
+    /// Runs a pivot JSON over the source it names and answers the pivot's JSON
+    /// form (issue #28) — what `POST /pivot/{source}` answers, computed here.
+    #[wasm_bindgen(js_name = pivot)]
+    pub fn pivot_js(&self, pivot_json: &str) -> Result<String, JsError> {
+        let (result, rows) = self
+            .pivot_result(pivot_json)
+            .map_err(|message| JsError::new(&message))?;
+        Ok(opengrid_pivot::pivot_to_json(&result, &rows))
+    }
+
+    /// The same pivot in the binary form (E35) — what the tab and the worker
+    /// hand the element.
+    #[wasm_bindgen(js_name = pivot_columns)]
+    pub fn pivot_columns_js(&self, pivot_json: &str) -> Result<Vec<u8>, JsError> {
+        let (result, rows) = self
+            .pivot_result(pivot_json)
+            .map_err(|message| JsError::new(&message))?;
+        Ok(opengrid_pivot::pivot_to_bytes(&result, &rows))
+    }
+
     /// The names of the registered sources, in unspecified order.
     #[wasm_bindgen(js_name = source_names)]
     pub fn source_names(&self) -> Vec<String> {
@@ -147,6 +167,32 @@ impl Engine {
         let (source, validated) = self.admit(query_json)?;
         let (table, total_count) = source.run(&validated).map_err(|error| error.to_string())?;
         Ok(opengrid_columns::wire::encode_result(&table, total_count))
+    }
+
+    /// A pivot over the source it names, validated against that source's schema
+    /// with the server's default limits, and its row dimensions.
+    pub fn pivot_result(
+        &self,
+        pivot_json: &str,
+    ) -> Result<(opengrid_pivot::PivotResult, Vec<opengrid_types::FieldName>), String> {
+        let pivot: opengrid_pivot::PivotQuery =
+            opengrid_json::from_str(pivot_json).map_err(|error| format!("pivot JSON: {error}"))?;
+        let source = self
+            .sources
+            .get(pivot.source.as_str())
+            .ok_or_else(|| format!("unknown source {:?}", pivot.source.as_str()))?;
+        let schema = block_on(DataSource::schema(source)).map_err(|error| error.to_string())?;
+        let rows = pivot.rows.clone();
+        let validated = pivot
+            .validate(
+                &schema,
+                &opengrid_pivot::PivotLimits::default(),
+                &Limits::default(),
+            )
+            .map_err(|error| error.to_string())?;
+        let result = block_on(opengrid_pivot::execute(source, &validated))
+            .map_err(|error| error.to_string())?;
+        Ok((result, rows))
     }
 
     /// Parses a query JSON, finds its source and validates the query against

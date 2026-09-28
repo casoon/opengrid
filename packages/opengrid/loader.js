@@ -210,6 +210,12 @@ export function createWorkerProvider({
       return request({ type: "query", query: queryJson });
     },
 
+    /** Runs a pivot JSON and resolves with the pivot in the binary form (issue #28). */
+    async pivot(pivotJson) {
+      await start();
+      return request({ type: "pivot", pivot: pivotJson });
+    },
+
     /** Stops the worker and rejects everything still in flight. */
     terminate() {
       worker?.terminate();
@@ -249,6 +255,10 @@ export function createLocalProvider(engine) {
     },
     execute(queryJson) {
       return engine.execute_columns(queryJson);
+    },
+    /** A pivot over the engine's sources, in the binary form (issue #28). */
+    pivot(pivotJson) {
+      return engine.pivot_columns(pivotJson);
     },
     terminate() {},
   };
@@ -476,19 +486,24 @@ export function createPivotProvider({ url, source, token } = {}) {
     headers.Authorization = `Bearer ${token}`;
   }
 
+  async function pivot(pivotJson, _mode, { signal } = {}) {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers,
+      body: pivotJson,
+      signal,
+      redirect: "error",
+    });
+    return answerOf(response);
+  }
+
   return {
     /** Where the queries run; the grid names it in its footer (issue #33). */
     kind: "remote",
-    async execute(pivotJson, _mode, { signal } = {}) {
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers,
-        body: pivotJson,
-        signal,
-        redirect: "error",
-      });
-      return answerOf(response);
-    },
+    // `pivot` is what `<opengrid-pivot>` calls (issue #28); `execute` stays for
+    // a page that called it before.
+    execute: pivot,
+    pivot,
   };
 }
 

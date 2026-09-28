@@ -66,6 +66,11 @@ All from `loader.js`, all the same shape:
 | `createHybridProvider({ remote, planner, mode, onPlan })` | Splits each query between a remote source and the engine in the tab. `onPlan` receives the plan before anything is sent. |
 | `createPivotProvider({ url, source, token })` | `POST /pivot/{source}` — a whole pivot in one request. |
 
+**A pivot without a server.** `<opengrid-pivot>` calls `provider.pivot(pivotJson, mode, { signal })`
+when the provider has it, `execute` otherwise. `createLocalProvider` and `createWorkerProvider`
+have it — the engine answers pivots over its sources (`Engine.pivot`, `Engine.pivot_columns`),
+under the server's default limits — and so does `createPivotProvider`.
+
 Each of them carries a **`kind`** — `"local"`, `"worker"`, `"remote"` (REST and pivot) or
 `"hybrid"` — and a provider of a page's own may too. The grid names it in its footer,
 beside the number of queries asked for what is shown (`worker · wasm · 2 queries`); a

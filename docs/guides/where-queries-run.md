@@ -135,3 +135,8 @@ A pivot is a set of grouping sets plus a reshaping. `createPivotProvider` sends 
 as one request; PostgreSQL answers it as a single `GROUPING SETS` statement, and the local
 engine as ordinary queries with the same result. The pivot conformance cases in
 `crates/opengrid-conformance/pivot-cases/` pin that result.
+
+Without a server, `createLocalProvider` and `createWorkerProvider` answer the pivot too — the
+engine in the tab or in a worker runs the same grouping sets over the data the page loaded,
+under the server's default limits. `<opengrid-pivot>` calls a provider's `pivot(json)` when it
+has one and `execute(json)` otherwise, so a provider of your own keeps working.
