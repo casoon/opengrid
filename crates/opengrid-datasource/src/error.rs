@@ -13,13 +13,19 @@ pub enum DataSourceError {
     /// The source failed — engine, backend or transport. The message carries the
     /// diagnosis.
     Backend { message: String },
+    /// The query would need more than the source may do for one answer — more
+    /// rows to read than it is allowed to hold, say. The caller can narrow the
+    /// query; nothing is broken.
+    LimitExceeded { message: String },
 }
 
 impl std::fmt::Display for DataSourceError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             DataSourceError::NoData => f.write_str("the data source holds no data"),
-            DataSourceError::Backend { message } => f.write_str(message),
+            DataSourceError::Backend { message } | DataSourceError::LimitExceeded { message } => {
+                f.write_str(message)
+            }
         }
     }
 }

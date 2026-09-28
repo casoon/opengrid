@@ -50,6 +50,9 @@ pub use opengrid_types::{Schema, Value};
 
 use opengrid_datasource::SendDataSource;
 
+mod rows;
+pub use rows::{RowSource, RowStream, Rows};
+
 /// A future a connector returns: boxed, so the trait can be used as
 /// `dyn Connector`, and `Send`, so the server can run it on any thread.
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;

@@ -43,6 +43,28 @@ as `Arc<dyn Connector>`. A source written against `SendDataSource` becomes a con
 decimals — are in [Query semantics](query-semantics.md); a connector that answers them
 differently gives the browser different results from the engine in the tab.
 
+## Sources that only hand out rows
+
+A file, a list in memory, a service without a query language: implement `RowSource` — `schema()`
+and `scan()`, which hands out the rows in pieces — and wrap it in `Rows`. The engine then
+answers every query on the server, natively: filter, sort, group, aggregate, paging.
+
+```rust
+use opengrid_connector::Rows;
+
+let server = Server::builder()
+    .source("events", Rows::new(my_file).max_scan_rows(2_000_000), SourcePolicy::default())
+    // …
+```
+
+- Each piece holds the **stored** columns of the schema, in order; derived columns
+  (`"from": { "part": "year", … }`) are computed by the engine.
+- `scan` gets the query's filter, the row filter already in it. It is a **hint**: a source may
+  use it to hand out fewer rows; the engine applies the filter again either way.
+- The rows are held in memory for one answer. `max_scan_rows` (default 1 000 000, about
+  300 MiB for ten columns) bounds that; more is a `413` (`limit_exceeded`) that says so.
+  A source that has to answer bigger queries implements `execute` itself.
+
 ## What a connector never has to do
 
 Security. Before a query reaches the connector, the server has checked the token, validated the
