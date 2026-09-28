@@ -40,7 +40,7 @@ pub fn check_endpoint(endpoint: &str, token: &str) -> Result<Report, String> {
 
     let mut failures = Vec::new();
     for case in &cases {
-        let body = serde_json::to_vec(&case.case.query).map_err(|error| error.to_string())?;
+        let body = opengrid_json::to_string(&case.case.query).into_bytes();
         let path = format!("/query/{}", case.case.query.source.as_str());
         let order = if case.case.ordered {
             RowOrder::Ordered

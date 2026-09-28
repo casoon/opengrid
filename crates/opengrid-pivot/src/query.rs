@@ -1,31 +1,58 @@
 //! The pivot query, its limits, and the decomposition into grouping sets.
 
+use opengrid_json::{Error, Fields, FromJson, Json, ToJson};
 use opengrid_query::{
     Aggregate, Collation, FilterExpr, Limits, NullsOrder, Query, QueryError, Sort, SortDirection,
     ValidatedQuery,
 };
 use opengrid_types::{DataSourceId, FieldName, Schema};
-use serde::{Deserialize, Serialize};
 
 /// What to pivot: rows down the side, columns across the top, measures inside.
 ///
 /// Deliberately close to `Query` — the filter is the very same [`FilterExpr`],
 /// and a measure **is** an [`Aggregate`], not a parallel type. A pivot is a way
 /// of arranging a query's answer, not a second query language.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PivotQuery {
     pub source: DataSourceId,
     /// Dimensions down the side, outermost first.
-    #[serde(default)]
     pub rows: Vec<FieldName>,
     /// Dimensions across the top. V1 allows at most one (see [`PivotLimits`]).
-    #[serde(default)]
     pub columns: Vec<FieldName>,
     /// The measures in each cell, in display order.
     pub values: Vec<Aggregate>,
-    #[serde(default)]
     pub filter: Option<FilterExpr>,
+}
+
+impl FromJson for PivotQuery {
+    /// `{ "source", "rows", "columns", "values", "filter" }`; only `source`
+    /// and `values` are required.
+    fn from_json(json: &Json) -> Result<Self, Error> {
+        let fields = Fields::of(
+            json,
+            "struct PivotQuery",
+            &["source", "rows", "columns", "values", "filter"],
+        )?;
+        Ok(PivotQuery {
+            source: fields.read("source")?,
+            rows: fields.read_or_default("rows")?,
+            columns: fields.read_or_default("columns")?,
+            values: fields.read("values")?,
+            filter: fields.read_optional("filter")?,
+        })
+    }
+}
+
+impl ToJson for PivotQuery {
+    fn to_json(&self) -> Json {
+        opengrid_json::json!({
+            "source": self.source,
+            "rows": self.rows,
+            "columns": self.columns,
+            "values": self.values,
+            "filter": self.filter,
+        })
+    }
 }
 
 /// The bounds a pivot must stay inside (plan point 30).
@@ -235,7 +262,7 @@ mod tests {
     }
 
     fn pivot(json: &str) -> PivotQuery {
-        serde_json::from_str(json).expect("a pivot")
+        opengrid_json::from_str(json).expect("a pivot")
     }
 
     fn validate(json: &str) -> Result<ValidatedPivotQuery, PivotError> {
@@ -334,7 +361,7 @@ mod tests {
     #[test]
     fn a_pivot_reads_and_writes_itself() {
         let pivot = pivot(SIMPLE);
-        let json = serde_json::to_string(&pivot).expect("JSON");
-        assert_eq!(serde_json::from_str::<PivotQuery>(&json).unwrap(), pivot);
+        let json = opengrid_json::to_string(&pivot);
+        assert_eq!(opengrid_json::from_str::<PivotQuery>(&json).unwrap(), pivot);
     }
 }

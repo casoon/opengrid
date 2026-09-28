@@ -14,12 +14,11 @@ use std::path::{Path, PathBuf};
 use opengrid_conformance::{block_on, load_schema};
 use opengrid_engine::datasource::LocalDataSource;
 use opengrid_engine::ingest::{CsvOptions, load_csv};
+use opengrid_json::{Error, FromJson, Json};
 use opengrid_pivot::{PivotLimits, PivotQuery, PivotResult, execute};
 use opengrid_query::Limits;
 use opengrid_types::{Schema, Value};
-use serde::Deserialize;
 
-#[derive(Deserialize)]
 struct PivotCase {
     id: String,
     rule: String,
@@ -27,17 +26,50 @@ struct PivotCase {
     expected: Expected,
 }
 
-#[derive(Deserialize)]
 struct Expected {
     columns: Vec<ExpectedColumn>,
-    rows: Vec<Vec<serde_json::Value>>,
+    rows: Vec<Vec<Json>>,
     levels: Vec<u16>,
 }
 
-#[derive(Deserialize)]
 struct ExpectedColumn {
-    path: Vec<serde_json::Value>,
+    path: Vec<Json>,
     measure: String,
+}
+
+/// `json[key]` read as a `T`, naming the key when it is not one.
+fn read<T: FromJson>(json: &Json, key: &str) -> Result<T, Error> {
+    T::from_json(&json[key]).map_err(|error| Error::new(format!("{key}: {error}")))
+}
+
+impl FromJson for PivotCase {
+    fn from_json(json: &Json) -> Result<Self, Error> {
+        Ok(PivotCase {
+            id: read(json, "id")?,
+            rule: read(json, "rule")?,
+            pivot: read(json, "pivot")?,
+            expected: read(json, "expected")?,
+        })
+    }
+}
+
+impl FromJson for Expected {
+    fn from_json(json: &Json) -> Result<Self, Error> {
+        Ok(Expected {
+            columns: read(json, "columns")?,
+            rows: read(json, "rows")?,
+            levels: read(json, "levels")?,
+        })
+    }
+}
+
+impl FromJson for ExpectedColumn {
+    fn from_json(json: &Json) -> Result<Self, Error> {
+        Ok(ExpectedColumn {
+            path: read(json, "path")?,
+            measure: read(json, "measure")?,
+        })
+    }
 }
 
 fn suite_dir() -> PathBuf {
@@ -68,7 +100,7 @@ fn cases() -> Vec<PivotCase> {
         .into_iter()
         .map(|path| {
             let text = std::fs::read_to_string(&path).expect("read case");
-            serde_json::from_str(&text)
+            opengrid_json::from_str(&text)
                 .unwrap_or_else(|error| panic!("{}: {error}", path.display()))
         })
         .collect()
@@ -77,13 +109,14 @@ fn cases() -> Vec<PivotCase> {
 /// A value as the case file writes it. Floats compare with tolerance (S12:
 /// `avg` is Float64), everything else exactly — a decimal is a string and stays
 /// one.
-fn matches(actual: &Value, expected: &serde_json::Value) -> bool {
+fn matches(actual: &Value, expected: &opengrid_json::Json) -> bool {
     match (actual, expected) {
-        (Value::Null, serde_json::Value::Null) => true,
-        (Value::Float64(number), serde_json::Value::Number(other)) => other
-            .as_f64()
-            .is_some_and(|other| (number - other).abs() <= 1e-9 * other.abs().max(1.0)),
-        _ => serde_json::to_value(actual).expect("a value is JSON") == *expected,
+        (Value::Null, opengrid_json::Json::Null) => true,
+        (Value::Float64(number), opengrid_json::Json::Number(other)) => {
+            let other = other.as_f64();
+            (number - other).abs() <= 1e-9 * other.abs().max(1.0)
+        }
+        _ => opengrid_json::ToJson::to_json(actual) == *expected,
     }
 }
 
@@ -101,7 +134,7 @@ fn differences(case: &PivotCase, result: &PivotResult) -> Vec<String> {
                 column
                     .path
                     .iter()
-                    .map(|value| serde_json::to_string(value).expect("JSON"))
+                    .map(|value| opengrid_json::to_string(value))
                     .collect::<Vec<_>>()
                     .join(", ")
             )
@@ -118,7 +151,7 @@ fn differences(case: &PivotCase, result: &PivotResult) -> Vec<String> {
                 column
                     .path
                     .iter()
-                    .map(serde_json::Value::to_string)
+                    .map(opengrid_json::Json::to_string)
                     .collect::<Vec<_>>()
                     .join(", ")
             )
@@ -205,7 +238,7 @@ fn the_local_engine_answers_every_pivot_case() {
 #[test]
 fn a_pivot_costs_one_query_per_level() {
     let schema = schema();
-    let pivot: PivotQuery = serde_json::from_str(
+    let pivot: PivotQuery = opengrid_json::from_str(
         r#"{"source":"orders","rows":["country","customer"],"columns":["ordered_year"],
             "values":[{"fn":"count","as":"n"}]}"#,
     )
@@ -247,7 +280,7 @@ fn a_pivot_costs_one_query_per_level() {
 /// by whoever answered, never sorted here.
 #[test]
 fn the_columns_are_the_values_that_occur_in_the_order_they_belong() {
-    let pivot: PivotQuery = serde_json::from_str(
+    let pivot: PivotQuery = opengrid_json::from_str(
         r#"{"source":"orders","rows":["country"],"columns":["ordered_year"],
             "values":[{"fn":"count","as":"n"}]}"#,
     )
@@ -279,7 +312,7 @@ fn the_columns_are_the_values_that_occur_in_the_order_they_belong() {
 /// doing it.
 #[test]
 fn a_pivot_that_is_too_big_is_an_error_not_a_short_answer() {
-    let pivot: PivotQuery = serde_json::from_str(
+    let pivot: PivotQuery = opengrid_json::from_str(
         r#"{"source":"orders","rows":["country"],"columns":["ordered_year"],
             "values":[{"fn":"count","as":"n"}]}"#,
     )

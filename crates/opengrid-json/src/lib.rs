@@ -353,6 +353,12 @@ impl From<i64> for Json {
     }
 }
 
+impl From<i32> for Json {
+    fn from(value: i32) -> Self {
+        Json::from(i64::from(value))
+    }
+}
+
 impl From<u64> for Json {
     fn from(value: u64) -> Self {
         Json::Number(Number::PosInt(value))
@@ -776,4 +782,40 @@ macro_rules! __json_object {
     ($object:ident $key:literal : $value:expr) => {
         $object.insert($key, $crate::json!($value));
     };
+}
+
+impl std::ops::IndexMut<&str> for Json {
+    /// The value of `key`, inserted as `null` when missing.
+    ///
+    /// # Panics
+    /// When this is not an object — a caller that writes into a document
+    /// knows its shape.
+    fn index_mut(&mut self, key: &str) -> &mut Json {
+        let Json::Object(object) = self else {
+            panic!("cannot index into {} with a key", self.unexpected());
+        };
+        if !object.contains_key(key) {
+            object.push(key.to_owned(), Json::Null);
+        }
+        let at = object
+            .0
+            .iter()
+            .rposition(|(name, _)| name == key)
+            .expect("just ensured");
+        &mut object.0[at].1
+    }
+}
+
+impl std::ops::IndexMut<usize> for Json {
+    /// The element at `index`.
+    ///
+    /// # Panics
+    /// When this is not an array or is shorter.
+    fn index_mut(&mut self, index: usize) -> &mut Json {
+        let what = self.unexpected();
+        match self {
+            Json::Array(items) if index < items.len() => &mut items[index],
+            _ => panic!("cannot index into {what} at {index}"),
+        }
+    }
 }

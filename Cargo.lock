@@ -897,10 +897,9 @@ dependencies = [
  "opengrid-columns",
  "opengrid-datasource",
  "opengrid-engine",
+ "opengrid-json",
  "opengrid-query",
  "opengrid-types",
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -967,11 +966,11 @@ dependencies = [
  "opengrid-columns",
  "opengrid-conformance",
  "opengrid-datasource",
+ "opengrid-json",
  "opengrid-planner",
  "opengrid-query",
  "opengrid-types",
  "proptest",
- "serde_json",
  "xtask",
 ]
 
@@ -1029,10 +1028,9 @@ dependencies = [
  "opengrid-conformance",
  "opengrid-datasource",
  "opengrid-engine",
+ "opengrid-json",
  "opengrid-query",
  "opengrid-types",
- "serde",
- "serde_json",
 ]
 
 [[package]]
