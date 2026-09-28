@@ -3,6 +3,7 @@
 //! ```sh
 //! cargo run -p opengrid-example-server -- demo            # :8081, the remote demo
 //! cargo run -p opengrid-example-server -- demo-postgres   # :8081, the same over PostgreSQL
+//! cargo run -p opengrid-example-server -- demo-sqlite     # :8081, the same from a SQLite file
 //! cargo run -p opengrid-example-server -- e2e             # :8082, the Playwright suite
 //! ```
 //!
@@ -32,9 +33,10 @@ async fn main() -> Result<(), Error> {
     let (address, server) = match preset.as_str() {
         "demo" => ("127.0.0.1:8081", demo(csv_orders()?)),
         "demo-postgres" => ("127.0.0.1:8081", demo(postgres_orders()?)),
+        "demo-sqlite" => ("127.0.0.1:8081", demo(sqlite_orders()?)),
         "e2e" => ("127.0.0.1:8082", e2e()?),
         _ => {
-            eprintln!("usage: opengrid-example-server demo | demo-postgres | e2e");
+            eprintln!("usage: opengrid-example-server demo | demo-postgres | demo-sqlite | e2e");
             std::process::exit(2);
         }
     };
@@ -114,6 +116,45 @@ fn postgres_orders() -> Result<Orders, Error> {
     let schema: Schema = serde_json::from_str(&std::fs::read_to_string(fixture_schema_path())?)?;
     let connector = PostgresDataSource::connect(&url, "opengrid_demo_orders", schema)?;
     let allowed = vec!["id", "customer", "country", "amount", "qty", "ordered_on"];
+    Ok(Orders {
+        connector: Arc::new(connector),
+        allowed,
+    })
+}
+
+/// The same rows in a SQLite file, `target/demo-orders.sqlite` — written from
+/// the fixture on the first start. No installation: SQLite is compiled in.
+fn sqlite_orders() -> Result<Orders, Error> {
+    use opengrid_connector::QueryResult;
+    use opengrid_connector_sqlite::{Connection, SqliteConnector, create_table, insert};
+    use opengrid_engine::ingest::{CsvOptions, load_csv};
+
+    let schema: Schema = serde_json::from_str(&std::fs::read_to_string(fixture_schema_path())?)?;
+    let path = repo().join("target/demo-orders.sqlite");
+    if !path.exists() {
+        std::fs::create_dir_all(repo().join("target"))?;
+        let stored = schema.stored();
+        let csv = std::fs::read(repo().join("crates/opengrid-conformance/data/orders.csv"))?;
+        let rows = load_csv(&csv, &stored, CsvOptions::default())?;
+        let mut connection = Connection::open(&path)?;
+        create_table(&connection, "orders", &schema)?;
+        insert(
+            &mut connection,
+            "orders",
+            &schema,
+            &QueryResult::new(stored, rows.to_values(), 0),
+        )?;
+    }
+    let connector = SqliteConnector::open(&path, "orders", schema)?;
+    let allowed = vec![
+        "id",
+        "customer",
+        "country",
+        "amount",
+        "qty",
+        "ordered_on",
+        "ordered_year",
+    ];
     Ok(Orders {
         connector: Arc::new(connector),
         allowed,

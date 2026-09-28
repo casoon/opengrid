@@ -1,0 +1,23 @@
+[package]
+name = "opengrid-connector-sqlite"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "SQLite as a reference connector for opengrid-server: a file, no installation"
+
+[lints]
+workspace = true
+
+[dependencies]
+opengrid-types = { path = "../opengrid-types" }
+opengrid-query = { path = "../opengrid-query" }
+opengrid-datasource = { path = "../opengrid-datasource" }
+opengrid-connector = { path = "../opengrid-connector" }
+# Decided in #51 (E36): SQLite needs no installation — the library is compiled
+# in. Only this reference connector depends on it, never the server.
+rusqlite = { version = "0.40", features = ["bundled"] }
+
+[dev-dependencies]
+opengrid-conformance = { path = "../opengrid-conformance" }
+opengrid-engine = { path = "../opengrid-engine" }
+serde_json = "1"
