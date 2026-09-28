@@ -113,7 +113,7 @@ fn matches(actual: &Value, expected: &opengrid_json::Json) -> bool {
     match (actual, expected) {
         (Value::Null, opengrid_json::Json::Null) => true,
         (Value::Float64(number), opengrid_json::Json::Number(other)) => {
-            let other = other.as_f64();
+            let other = other.as_f64().expect("every number is an f64");
             (number - other).abs() <= 1e-9 * other.abs().max(1.0)
         }
         _ => opengrid_json::ToJson::to_json(actual) == *expected,
@@ -134,7 +134,7 @@ fn differences(case: &PivotCase, result: &PivotResult) -> Vec<String> {
                 column
                     .path
                     .iter()
-                    .map(|value| opengrid_json::to_string(value))
+                    .map(opengrid_json::to_string)
                     .collect::<Vec<_>>()
                     .join(", ")
             )

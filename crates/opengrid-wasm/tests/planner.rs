@@ -39,7 +39,7 @@ fn engine() -> Engine {
 
 /// The whole loop: plan, let the "remote" answer, finish here.
 fn hybrid(planner: &Planner, remote: &Engine, query: &str, mode: &str) -> (String, String) {
-    let plan: serde_json::Value = serde_json::from_str(
+    let plan: opengrid_json::Json = opengrid_json::from_str(
         &planner
             .plan_json(query, mode)
             .unwrap_or_else(|_| panic!("planning {query} in mode {mode:?}")),
@@ -152,11 +152,11 @@ fn a_grouped_query_splits_and_still_adds_up() {
 
     let planner = Planner::build(ORDERS_SCHEMA, &capabilities(&["filter", "paging"]), "auto")
         .expect("planner");
-    let plan: serde_json::Value =
-        serde_json::from_str(&planner.plan_json(query, "").expect("a plan")).expect("JSON");
+    let plan: opengrid_json::Json =
+        opengrid_json::from_str(&planner.plan_json(query, "").expect("a plan")).expect("JSON");
     assert_eq!(
         plan["source"]["select"],
-        serde_json::json!(["country", "amount"]),
+        opengrid_json::json!(["country", "amount"]),
         "the group key and the column the sum reads"
     );
 
@@ -188,8 +188,8 @@ fn every_split_gives_the_same_answer_in_the_binary_form() {
         capabilities(&[]),
     ] {
         let planner = Planner::build(ORDERS_SCHEMA, &caps, "auto").expect("a planner");
-        let plan: serde_json::Value =
-            serde_json::from_str(&planner.plan_json(QUERY, "").unwrap()).unwrap();
+        let plan: opengrid_json::Json =
+            opengrid_json::from_str(&planner.plan_json(QUERY, "").unwrap()).unwrap();
         let partial = remote
             .execute_columns(&plan["source"].to_string())
             .expect("the remote answers its half");

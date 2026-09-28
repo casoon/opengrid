@@ -60,7 +60,7 @@ fn sqlite_answers_like_the_engine_where_it_differs_most() {
         r#"{"source":"orders","select":["ordered_year"],"group":["ordered_year"],"aggregate":[{"fn":"count","as":"n"}],"sort":[{"field":"ordered_year"}]}"#,
     ];
     for json in queries {
-        let query: opengrid_query::Query = serde_json::from_str(json).unwrap();
+        let query: opengrid_query::Query = opengrid_json::from_str(json).unwrap();
         let query = query
             .validate(&schema, &opengrid_query::Limits::default())
             .unwrap_or_else(|error| panic!("{json}: {error}"));

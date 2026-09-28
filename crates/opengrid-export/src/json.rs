@@ -15,7 +15,7 @@ pub fn json_rows(result: &QueryResult, first: bool) -> String {
         .schema
         .fields()
         .iter()
-        .map(|field| serde_json::to_string(field.name.as_str()).expect("a name serializes"))
+        .map(|field| opengrid_json::to_string(field.name.as_str()))
         .collect();
     let mut out = String::new();
     for row in 0..result.row_count() {
@@ -29,7 +29,7 @@ pub fn json_rows(result: &QueryResult, first: bool) -> String {
             }
             out.push_str(&names[col]);
             out.push(':');
-            out.push_str(&serde_json::to_string(&column[row]).expect("a value serializes"));
+            out.push_str(&opengrid_json::to_string(&column[row]));
         }
         out.push('}');
     }
@@ -116,7 +116,7 @@ mod tests {
             out,
             r#"[{"id":1,"amount":"10.50","ratio":"Infinity"},{"id":2,"amount":"10.50","ratio":null}]"#
         );
-        let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+        let parsed: opengrid_json::Json = opengrid_json::from_str(&out).unwrap();
         assert_eq!(parsed.as_array().unwrap().len(), 2);
     }
 

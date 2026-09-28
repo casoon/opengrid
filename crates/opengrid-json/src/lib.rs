@@ -68,13 +68,14 @@ impl Number {
         }
     }
 
-    /// The number as an `f64` — always, an integer converted.
-    pub fn as_f64(&self) -> f64 {
-        match *self {
+    /// The number as an `f64` — always `Some`, an integer converted; an
+    /// `Option` so a reader written for `serde_json` reads the same.
+    pub fn as_f64(&self) -> Option<f64> {
+        Some(match *self {
             Number::PosInt(value) => value as f64,
             Number::NegInt(value) => value as f64,
             Number::Float(value) => value,
-        }
+        })
     }
 
     /// Whether the number was written as a float.
@@ -137,13 +138,13 @@ impl Object {
     }
 
     /// The members, in order.
-    pub fn iter(&self) -> impl Iterator<Item = (&str, &Json)> {
-        self.0.iter().map(|(key, value)| (key.as_str(), value))
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &Json)> {
+        self.0.iter().map(|(key, value)| (key, value))
     }
 
     /// The keys, in order.
-    pub fn keys(&self) -> impl Iterator<Item = &str> {
-        self.0.iter().map(|(key, _)| key.as_str())
+    pub fn keys(&self) -> impl Iterator<Item = &String> {
+        self.0.iter().map(|(key, _)| key)
     }
 
     /// Number of members.
@@ -161,6 +162,19 @@ impl Object {
     }
 }
 
+/// The member of an object as its iterator hands it out.
+type Member<'a> = (&'a String, &'a Json);
+
+impl<'a> IntoIterator for &'a Object {
+    type Item = Member<'a>;
+    type IntoIter =
+        std::iter::Map<std::slice::Iter<'a, (String, Json)>, fn(&'a (String, Json)) -> Member<'a>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter().map(|(key, value)| (key, value))
+    }
+}
+
 impl<K: Into<String>, V: Into<Json>> FromIterator<(K, V)> for Object {
     fn from_iter<I: IntoIterator<Item = (K, V)>>(members: I) -> Self {
         let mut object = Object::new();
@@ -168,6 +182,36 @@ impl<K: Into<String>, V: Into<Json>> FromIterator<(K, V)> for Object {
             object.insert(key, value);
         }
         object
+    }
+}
+
+/// What [`Json::get`] takes: a key of an object or a position in an array.
+pub trait JsonIndex {
+    /// The value this index names in `json`, if there is one.
+    fn index_into<'a>(&self, json: &'a Json) -> Option<&'a Json>;
+}
+
+impl JsonIndex for str {
+    fn index_into<'a>(&self, json: &'a Json) -> Option<&'a Json> {
+        json.as_object().and_then(|object| object.get(self))
+    }
+}
+
+impl JsonIndex for String {
+    fn index_into<'a>(&self, json: &'a Json) -> Option<&'a Json> {
+        self.as_str().index_into(json)
+    }
+}
+
+impl JsonIndex for usize {
+    fn index_into<'a>(&self, json: &'a Json) -> Option<&'a Json> {
+        json.as_array().and_then(|items| items.get(*self))
+    }
+}
+
+impl<T: JsonIndex + ?Sized> JsonIndex for &T {
+    fn index_into<'a>(&self, json: &'a Json) -> Option<&'a Json> {
+        (**self).index_into(json)
     }
 }
 
@@ -230,7 +274,7 @@ impl Json {
 
     /// The number as an `f64`, if this is a number.
     pub fn as_f64(&self) -> Option<f64> {
-        self.as_number().map(Number::as_f64)
+        self.as_number().and_then(Number::as_f64)
     }
 
     /// The elements, if this is an array.
@@ -265,9 +309,35 @@ impl Json {
         }
     }
 
-    /// The value of `key`, if this is an object that has it.
-    pub fn get(&self, key: &str) -> Option<&Json> {
-        self.as_object().and_then(|object| object.get(key))
+    /// The member `key` of an object, or the element at a `usize` of an array
+    /// — `None` when this is neither or has no such member.
+    pub fn get<I: JsonIndex>(&self, index: I) -> Option<&Json> {
+        index.index_into(self)
+    }
+
+    /// Whether this is an array.
+    pub fn is_array(&self) -> bool {
+        matches!(self, Json::Array(_))
+    }
+
+    /// Whether this is an object.
+    pub fn is_object(&self) -> bool {
+        matches!(self, Json::Object(_))
+    }
+
+    /// Whether this is a string.
+    pub fn is_string(&self) -> bool {
+        matches!(self, Json::String(_))
+    }
+
+    /// Whether this is a number.
+    pub fn is_number(&self) -> bool {
+        matches!(self, Json::Number(_))
+    }
+
+    /// Whether this is a boolean.
+    pub fn is_boolean(&self) -> bool {
+        matches!(self, Json::Bool(_))
     }
 
     /// How this value is named in an error: `null`, `boolean `true``,
@@ -671,6 +741,12 @@ impl<T: ToJson> ToJson for [T] {
     }
 }
 
+impl<T: ToJson, const N: usize> ToJson for [T; N] {
+    fn to_json(&self) -> Json {
+        self.as_slice().to_json()
+    }
+}
+
 impl<T: ToJson> ToJson for Vec<T> {
     fn to_json(&self) -> Json {
         self.as_slice().to_json()
@@ -819,3 +895,85 @@ impl std::ops::IndexMut<usize> for Json {
         }
     }
 }
+
+// A `Json` never holds NaN (a non-finite float becomes `null`), so equality is
+// an equivalence and the documents can be compared, keyed and deduplicated.
+impl Eq for Number {}
+impl Eq for Json {}
+impl Eq for Object {}
+
+impl Number {
+    /// A finite float as a number; `None` for NaN and the infinities.
+    pub fn from_f64(value: f64) -> Option<Number> {
+        value.is_finite().then_some(Number::Float(value))
+    }
+}
+
+macro_rules! number_from {
+    ($($name:ty),*) => {$(
+        impl From<$name> for Number {
+            fn from(value: $name) -> Self {
+                match Json::from(value) {
+                    Json::Number(number) => number,
+                    _ => unreachable!("an integer is a number"),
+                }
+            }
+        }
+    )*};
+}
+
+number_from!(u8, u16, u32, u64, usize, i32, i64);
+
+impl PartialEq<str> for Json {
+    fn eq(&self, other: &str) -> bool {
+        self.as_str() == Some(other)
+    }
+}
+
+impl PartialEq<&str> for Json {
+    fn eq(&self, other: &&str) -> bool {
+        self.as_str() == Some(*other)
+    }
+}
+
+impl PartialEq<String> for Json {
+    fn eq(&self, other: &String) -> bool {
+        self.as_str() == Some(other.as_str())
+    }
+}
+
+impl PartialEq<bool> for Json {
+    fn eq(&self, other: &bool) -> bool {
+        self.as_bool() == Some(*other)
+    }
+}
+
+impl PartialEq<i64> for Json {
+    fn eq(&self, other: &i64) -> bool {
+        self.as_i64() == Some(*other)
+    }
+}
+
+impl PartialEq<u64> for Json {
+    fn eq(&self, other: &u64) -> bool {
+        self.as_u64() == Some(*other)
+    }
+}
+
+impl PartialEq<i32> for Json {
+    fn eq(&self, other: &i32) -> bool {
+        self.as_i64() == Some(i64::from(*other))
+    }
+}
+
+macro_rules! eq_through_reference {
+    ($($other:ty),*) => {$(
+        impl PartialEq<$other> for &Json {
+            fn eq(&self, other: &$other) -> bool {
+                **self == *other
+            }
+        }
+    )*};
+}
+
+eq_through_reference!(str, String, bool, i64, u64, i32);

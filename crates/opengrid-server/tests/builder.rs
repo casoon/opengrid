@@ -34,7 +34,7 @@ struct Recording {
 impl Recording {
     fn new() -> (Self, Arc<Mutex<Vec<ValidatedQuery>>>) {
         let data = Path::new(env!("CARGO_MANIFEST_DIR")).join("../opengrid-conformance/data");
-        let schema: Schema = serde_json::from_str(
+        let schema: Schema = opengrid_json::from_str(
             &std::fs::read_to_string(data.join("orders.schema.json")).unwrap(),
         )
         .unwrap();
@@ -235,7 +235,7 @@ async fn a_rows_source_over_its_bound_is_a_413() {
     impl RowSource for Numbers {
         fn schema(&self) -> BoxFuture<'_, Result<Schema, DataSourceError>> {
             Box::pin(async {
-                Ok(serde_json::from_str(
+                Ok(opengrid_json::from_str(
                     r#"{"fields":[{"name":"n","type":"int64","nullable":false}]}"#,
                 )
                 .unwrap())
@@ -259,7 +259,7 @@ async fn a_rows_source_over_its_bound_is_a_413() {
                 if done {
                     return Ok(None);
                 }
-                let schema: Schema = serde_json::from_str(
+                let schema: Schema = opengrid_json::from_str(
                     r#"{"fields":[{"name":"n","type":"int64","nullable":false}]}"#,
                 )
                 .unwrap();
@@ -298,7 +298,7 @@ async fn an_endless_ready_source_meets_the_timeout() {
     use opengrid_query::ValidatedFilter;
 
     fn schema() -> Schema {
-        serde_json::from_str(r#"{"fields":[{"name":"n","type":"int64","nullable":false}]}"#)
+        opengrid_json::from_str(r#"{"fields":[{"name":"n","type":"int64","nullable":false}]}"#)
             .unwrap()
     }
     struct Endless;

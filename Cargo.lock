@@ -910,10 +910,10 @@ dependencies = [
  "opengrid-conformance",
  "opengrid-datasource",
  "opengrid-engine",
+ "opengrid-json",
  "opengrid-pivot",
  "opengrid-query",
  "opengrid-types",
- "serde_json",
 ]
 
 [[package]]
@@ -924,10 +924,10 @@ dependencies = [
  "opengrid-connector",
  "opengrid-datasource",
  "opengrid-engine",
+ "opengrid-json",
  "opengrid-query",
  "opengrid-types",
  "rusqlite",
- "serde_json",
 ]
 
 [[package]]
@@ -950,10 +950,10 @@ dependencies = [
  "opengrid-connector",
  "opengrid-datasource",
  "opengrid-engine",
+ "opengrid-json",
  "opengrid-pivot",
  "opengrid-query",
  "opengrid-types",
- "serde_json",
  "tokio",
  "tokio-postgres",
 ]
@@ -983,9 +983,9 @@ dependencies = [
  "opengrid-connector-sqlite",
  "opengrid-datasource-postgres",
  "opengrid-engine",
+ "opengrid-json",
  "opengrid-server",
  "opengrid-types",
- "serde_json",
  "tokio",
 ]
 
@@ -996,10 +996,10 @@ dependencies = [
  "opengrid-conformance",
  "opengrid-datasource",
  "opengrid-engine",
+ "opengrid-json",
  "opengrid-pivot",
  "opengrid-query",
  "opengrid-types",
- "serde_json",
  "xtask",
 ]
 
@@ -1038,9 +1038,9 @@ name = "opengrid-planner"
 version = "0.4.0"
 dependencies = [
  "opengrid-datasource",
+ "opengrid-json",
  "opengrid-query",
  "opengrid-types",
- "serde_json",
 ]
 
 [[package]]
@@ -1064,11 +1064,10 @@ dependencies = [
  "opengrid-datasource-postgres",
  "opengrid-engine",
  "opengrid-export",
+ "opengrid-json",
  "opengrid-pivot",
  "opengrid-query",
  "opengrid-types",
- "serde",
- "serde_json",
  "tokio",
  "tokio-postgres",
  "tower",
@@ -1090,11 +1089,10 @@ dependencies = [
  "opengrid-conformance",
  "opengrid-datasource",
  "opengrid-engine",
+ "opengrid-json",
  "opengrid-planner",
  "opengrid-query",
  "opengrid-types",
- "serde",
- "serde_json",
  "wasm-bindgen",
  "wasm-bindgen-test",
  "xtask",
@@ -1109,11 +1107,11 @@ dependencies = [
  "opengrid-datasource",
  "opengrid-export",
  "opengrid-grid",
+ "opengrid-json",
  "opengrid-pivot",
  "opengrid-query",
  "opengrid-types",
  "opengrid-web-core",
- "serde_json",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",

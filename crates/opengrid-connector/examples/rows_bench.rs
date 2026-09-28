@@ -102,7 +102,7 @@ fn main() {
         .and_then(|n| n.parse().ok())
         .expect("a row count");
     let what = args.next().unwrap_or_else(|| "page".to_owned());
-    let schema: Schema = serde_json::from_str(SCHEMA).unwrap();
+    let schema: Schema = opengrid_json::from_str(SCHEMA).unwrap();
     let query_json = match what.as_str() {
         "page" | "materialized" => {
             r#"{"source":"s","select":["id","country","amount"],"filter":{"field":"country","op":"eq","value":"DE"},"sort":[{"field":"amount","direction":"desc"}],"limit":50}"#
@@ -115,7 +115,7 @@ fn main() {
         }
         other => panic!("unknown query {other}"),
     };
-    let query: Query = serde_json::from_str(query_json).unwrap();
+    let query: Query = opengrid_json::from_str(query_json).unwrap();
     let limits = Limits {
         max_limit: u64::MAX,
         ..Limits::default()

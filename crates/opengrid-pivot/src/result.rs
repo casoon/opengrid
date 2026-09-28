@@ -165,10 +165,11 @@ pub fn pivot_from_json(json: &str) -> Result<(PivotResult, Vec<FieldName>), Pivo
                 .map(|value| match value {
                     Json::Null => Ok(Value::Null),
                     Json::Bool(flag) => Ok(Value::Bool(*flag)),
-                    Json::Number(number) => Ok(number
-                        .as_i64()
-                        .map(Value::Int64)
-                        .unwrap_or_else(|| Value::Float64(number.as_f64()))),
+                    Json::Number(number) => {
+                        Ok(number.as_i64().map(Value::Int64).unwrap_or_else(|| {
+                            Value::Float64(number.as_f64().expect("every number is an f64"))
+                        }))
+                    }
                     Json::String(text) => Ok(Value::Utf8(text.clone())),
                     other => Err(PivotReadError::new(format!(
                         "column {measure}: path value {other} is not a scalar"
