@@ -868,6 +868,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "opengrid-connector"
+version = "0.3.0"
+dependencies = [
+ "opengrid-conformance",
+ "opengrid-datasource",
+ "opengrid-engine",
+ "opengrid-pivot",
+ "opengrid-query",
+ "opengrid-types",
+ "serde_json",
+]
+
+[[package]]
 name = "opengrid-datasource"
 version = "0.3.0"
 dependencies = [
@@ -885,6 +898,7 @@ dependencies = [
  "deadpool-postgres",
  "insta",
  "opengrid-conformance",
+ "opengrid-connector",
  "opengrid-datasource",
  "opengrid-engine",
  "opengrid-pivot",
@@ -975,6 +989,7 @@ dependencies = [
  "http-body-util",
  "opengrid-columns",
  "opengrid-conformance",
+ "opengrid-connector",
  "opengrid-datasource",
  "opengrid-datasource-postgres",
  "opengrid-engine",

@@ -385,10 +385,14 @@ schema = "crates/opengrid-conformance/data/orders.schema.json"
     .unwrap();
     let config = Config::load(&path).expect("configuration");
     let registry = Registry::build(&config, &root).expect("registry");
-    let pool = match &registry.get("orders").expect("the source").data {
-        opengrid_server::registry::Backend::Postgres(source) => source.pool_size(),
-        opengrid_server::registry::Backend::LocalCsv(_) => unreachable!("a postgres source"),
-    };
+    // The connector says half its pool; the pool is what the default is for.
+    let half = registry
+        .get("orders")
+        .expect("the source")
+        .data
+        .concurrent_exports()
+        .expect("a PostgreSQL source names a bound");
+    let pool = half * 2;
     let exports = registry.default_concurrent_exports();
     assert!(exports >= 1);
     assert!(exports < pool, "{exports} exports for a pool of {pool}");

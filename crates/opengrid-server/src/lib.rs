@@ -20,14 +20,18 @@
 pub mod api;
 pub mod config;
 mod export;
+pub mod local;
 pub mod registry;
+mod server;
 
 use std::path::Path;
 use std::sync::Arc;
 
 pub use api::{AppState, router};
 pub use config::Config;
-pub use registry::Registry;
+pub use opengrid_connector::Connector;
+pub use registry::{Registry, RowFilter, SourcePolicy};
+pub use server::{Server, ServerBuilder};
 
 /// Builds the router from a configuration file.
 ///

@@ -20,6 +20,15 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Added
 
+- **The server as a library, sources as connectors** ([#45](https://github.com/casoon/opengrid/issues/45)).
+  A new crate `opengrid-connector` holds the one contract a source implements: `schema`,
+  `capabilities` and `execute`, with optional `pivot` and `export` that default to plain
+  queries. `opengrid-server` holds its sources as `Arc<dyn Connector>` and has a builder —
+  `Server::builder().source(name, connector, policy).token(..).build().await` — so an
+  application hands in its own source without changing the server. The server still checks
+  the token, the allowed fields and the row filter before a connector sees a query.
+  PostgreSQL and the local engine are reference connectors. See
+  [Connectors](docs/guides/connectors.md).
 - **Results travel in a binary form** ([#38](https://github.com/casoon/opengrid/issues/38)),
   `application/vnd.opengrid.columns`: the engine's columns written out, decimals exact, no
   text per cell. `Engine.execute_columns` and `Planner.finish_columns` answer it next to
