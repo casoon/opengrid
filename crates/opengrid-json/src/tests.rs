@@ -170,7 +170,9 @@ fn an_error_says_where() {
         Json::parse("[01]").unwrap_err().message(),
         "invalid number at line 1 column 3"
     );
-    let serde = serde_json::from_str::<serde_json::Value>("[01]").unwrap_err().to_string();
+    let serde = serde_json::from_str::<serde_json::Value>("[01]")
+        .unwrap_err()
+        .to_string();
     assert_eq!(serde, "invalid number at line 1 column 3");
 }
 
