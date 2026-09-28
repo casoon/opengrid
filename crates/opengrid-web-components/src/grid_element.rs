@@ -537,10 +537,8 @@ fn write_filter_entries(root: &ShadowRoot, entries: &[FilterEntry]) {
         {
             select.set_value(entry.op.as_str());
         }
-        if let Ok(Some(node)) = root.query_selector(&format!("input[data-col=\"{col}\"]"))
-            && let Ok(input) = node.dyn_into::<HtmlInputElement>()
-        {
-            input.set_value(&entry.value);
+        if let Some(control) = ValueControl::of(&root, col) {
+            control.set_value(&entry.value);
         }
     }
 }
@@ -2222,6 +2220,66 @@ fn is_filter_control(element: &Element) -> bool {
 
 /// Reads the filter row into [`FilterEntry`]s, one per output column.
 ///
+/// A column's value control in the filter row: the text input, or for a
+/// boolean column the choice of *any*, *yes*, *no* (issue #60). Every read
+/// and write of a filter value goes through here, so the two cannot drift.
+enum ValueControl {
+    Input(HtmlInputElement),
+    Choice(HtmlSelectElement),
+}
+
+impl ValueControl {
+    /// The control that is shown for column `col`.
+    fn of(root: &ShadowRoot, col: usize) -> Option<Self> {
+        if let Ok(Some(node)) =
+            root.query_selector(&format!("select[data-value-col=\"{col}\"]:not([hidden])"))
+            && let Ok(choice) = node.dyn_into::<HtmlSelectElement>()
+        {
+            return Some(Self::Choice(choice));
+        }
+        root.query_selector(&format!("input[data-col=\"{col}\"]"))
+            .ok()
+            .flatten()
+            .and_then(|node| node.dyn_into::<HtmlInputElement>().ok())
+            .map(Self::Input)
+    }
+
+    fn value(&self) -> String {
+        match self {
+            Self::Input(input) => input.value(),
+            Self::Choice(choice) => choice.value(),
+        }
+    }
+
+    fn set_value(&self, value: &str) {
+        match self {
+            Self::Input(input) => input.set_value(value),
+            Self::Choice(choice) => choice.set_value(value),
+        }
+    }
+
+    fn set_disabled(&self, disabled: bool) {
+        match self {
+            Self::Input(input) => input.set_disabled(disabled),
+            Self::Choice(choice) => choice.set_disabled(disabled),
+        }
+    }
+
+    fn is_disabled(&self) -> bool {
+        match self {
+            Self::Input(input) => input.disabled(),
+            Self::Choice(choice) => choice.disabled(),
+        }
+    }
+
+    fn element(&self) -> &HtmlElement {
+        match self {
+            Self::Input(input) => input,
+            Self::Choice(choice) => choice,
+        }
+    }
+}
+
 /// The operator `select` and value `input` are ordinary form controls; a missing
 /// control (should not happen after the skeleton) falls back to `eq`/empty.
 fn read_filter_entries(root: &ShadowRoot, columns: &[String]) -> Vec<FilterEntry> {
@@ -2236,12 +2294,8 @@ fn read_filter_entries(root: &ShadowRoot, columns: &[String]) -> Vec<FilterEntry
                 .and_then(|node| node.dyn_into::<HtmlSelectElement>().ok())
                 .map(|select| select.value())
                 .unwrap_or_default();
-            let value = root
-                .query_selector(&format!("input[data-col=\"{col}\"]"))
-                .ok()
-                .flatten()
-                .and_then(|node| node.dyn_into::<HtmlInputElement>().ok())
-                .map(|input| input.value())
+            let value = ValueControl::of(root, col)
+                .map(|control| control.value())
                 .unwrap_or_default();
             FilterEntry {
                 column: column.clone(),
@@ -2406,10 +2460,8 @@ fn fix_operator_choices(root: &ShadowRoot, schema: &opengrid_types::Schema) {
 
         // The two operators that take no value say so: their input is disabled
         // rather than silently ignored.
-        if let Ok(Some(node)) = root.query_selector(&format!("input[data-col=\"{col}\"]"))
-            && let Ok(input) = node.dyn_into::<HtmlInputElement>()
-        {
-            input.set_disabled(!grid::takes_value(&select.value()));
+        if let Some(control) = ValueControl::of(&root, col) {
+            control.set_disabled(!grid::takes_value(&select.value()));
         }
     }
 }
@@ -2646,6 +2698,15 @@ fn on_filter_clear(event: Event) {
                 && let Ok(input) = node.dyn_into::<HtmlInputElement>()
             {
                 input.set_value("");
+            }
+        }
+    }
+    if let Ok(choices) = root.query_selector_all("select[data-value-col]") {
+        for index in 0..choices.length() {
+            if let Some(node) = choices.item(index)
+                && let Ok(choice) = node.dyn_into::<HtmlSelectElement>()
+            {
+                choice.set_value("");
             }
         }
     }
@@ -4148,10 +4209,9 @@ fn activate_menu_item(host: &HtmlElement, item: &Element) {
             // column whose operator takes no value has its field disabled, so
             // the operator is where the focus can go.
             if let Some(root) = host.shadow_root() {
-                let field = root
-                    .query_selector(&format!("input[data-col=\"{col}\"]:not([disabled])"))
-                    .ok()
-                    .flatten()
+                let field = ValueControl::of(&root, col)
+                    .filter(|control| !control.is_disabled())
+                    .map(|control| Element::from(control.element().clone()))
                     .or_else(|| {
                         root.query_selector(&format!("select[data-col=\"{col}\"]"))
                             .ok()
@@ -4435,11 +4495,9 @@ fn reset_filter_column(root: &ShadowRoot, col: usize) {
             }
         }
     }
-    if let Ok(Some(node)) = root.query_selector(&format!("input[data-col=\"{col}\"]"))
-        && let Ok(input) = node.dyn_into::<HtmlInputElement>()
-    {
-        input.set_value("");
-        input.set_disabled(false);
+    if let Some(control) = ValueControl::of(&root, col) {
+        control.set_value("");
+        control.set_disabled(false);
     }
 }
 
@@ -5417,10 +5475,7 @@ fn apply_search(host: &HtmlElement) {
                     {
                         select.set_value(entry.op.as_str());
                     }
-                    if let Ok(Some(node)) =
-                        root.query_selector(&format!("input[data-col=\"{col}\"]"))
-                        && let Ok(field) = node.dyn_into::<HtmlInputElement>()
-                    {
+                    if let Some(field) = ValueControl::of(&root, col) {
                         field.set_disabled(false);
                         field.set_value(&entry.value);
                     }
@@ -5757,8 +5812,15 @@ fn apply_filter_dialog(host: &HtmlElement) {
                     .dyn_into::<HtmlSelectElement>()
                     .map(|select| select.value())
                     .or_else(|node| {
-                        node.dyn_into::<HtmlInputElement>()
-                            .map(|input| input.value())
+                        // A boolean's value in the dialog is a checkbox, whose
+                        // `value` is `on` either way (issue #60).
+                        node.dyn_into::<HtmlInputElement>().map(|input| {
+                            if input.type_() == "checkbox" {
+                                input.checked().to_string()
+                            } else {
+                                input.value()
+                            }
+                        })
                     })
                     .ok()
             })
@@ -5806,9 +5868,7 @@ fn apply_filter_dialog(host: &HtmlElement) {
     {
         select.set_value(&op);
     }
-    if let Ok(Some(node)) = root.query_selector(&format!("input[data-col=\"{col}\"]"))
-        && let Ok(field) = node.dyn_into::<HtmlInputElement>()
-    {
+    if let Some(field) = ValueControl::of(&root, col) {
         field.set_disabled(!grid::takes_value(&op));
         field.set_value(&value);
     }
