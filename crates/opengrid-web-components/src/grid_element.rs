@@ -1801,12 +1801,15 @@ fn apply_widths(host: &HtmlElement) {
     let layout = columns::layout(host);
     let layout = layout.borrow();
     let mut rules = String::new();
+    let narrowest = grid::header_min_width(host.has_attribute(grid::COLUMN_MENU_ATTRIBUTE));
     for (col, name) in columns_of(host).iter().enumerate() {
         // The reader's resize leads; the configuration is only where a column
         // starts (point 60, the same attribute/value relationship as the view).
+        // Neither may draw it narrower than its header needs (issue #61).
         let width = layout
             .width(name)
-            .or_else(|| presentation::styles(host).width(name));
+            .or_else(|| presentation::styles(host).width(name))
+            .map(|width| width.max(narrowest));
         if let Some(width) = width {
             rules.push_str(&format!("td[data-col=\"{col}\"] {{ width: {width}px; }}\n"));
         }
