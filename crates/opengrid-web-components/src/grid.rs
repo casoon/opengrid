@@ -338,6 +338,10 @@ pub const GROUP_BY_ATTRIBUTE: &str = "group-by";
 /// the row shows is part of the view instead (`filterRow`), on by default.
 pub const TOOLBAR_ATTRIBUTE: &str = "toolbar";
 
+/// Below this width (CSS px) of the grid, the toolbar's buttons stop wrapping
+/// and scroll sideways in one row (issue #77).
+const NARROW_TOOLBAR: u32 = 560;
+
 /// The boolean attribute that puts a search field above the grid (point 67):
 /// free text, or a filter written out (`country = DE and amount ≥ 10`).
 pub const SEARCH_ATTRIBUTE: &str = "search";
@@ -1772,6 +1776,23 @@ pub fn build_grid(
                    gap: 8px; padding: 12px 14px; }}
          [part=\"toolbar\"] > [part=\"search\"] {{ flex: 1 1 17.5rem; max-width: 28.75rem;
                    padding: 0; margin-right: auto; }}
+         /* The buttons' row is no box on a wide grid (issue #77). On a narrow
+            one it is a row of its own that scrolls sideways, under a search
+            field as wide as the grid, where wrapping took four rows from the
+            data. Not at a 320 px viewport, the reflow case (1.4.10): there it
+            wraps as before. Its padding keeps the focus rings unclipped; the
+            column list opens on a line of its own below it. */
+         [part=\"toolbar\"] {{ container-type: inline-size; }}
+         [data-toolbar-row] {{ display: contents; }}
+         @media (min-width: 321px) {{ @container (max-width: {NARROW_TOOLBAR}px) {{
+           [part=\"toolbar\"] > [part=\"search\"] {{ flex: 1 1 100%; max-width: none;
+                   margin-right: 0; }}
+           [data-toolbar-row] {{ display: flex; flex: 1 1 100%; align-items: center; gap: 8px;
+                   min-width: 0; overflow-x: auto; scrollbar-width: thin;
+                   padding: 4px; margin: -4px; }}
+           [data-toolbar-row] > * {{ flex: 0 0 auto; }}
+           [part=\"toolbar\"] > [part=\"columns\"] {{ flex: 1 1 100%; flex-wrap: wrap; }}
+         }} }}
          [part=\"toolbar\"] button, [part=\"chips\"] button {{ font: inherit; font-size: 0.8125rem;
                    font-weight: 500; min-height: 32px; min-width: {MIN_TARGET_SIZE}px;
                    padding: 0 10px; border: 0; cursor: pointer;
@@ -2010,13 +2031,14 @@ pub fn build_grid(
     let columns = build_columns(
         buffer,
         nodes,
-        tools.unwrap_or(filter.container),
+        tools.map_or(filter.container, |(_, row)| row),
+        tools.map_or(filter.container, |(bar, _)| bar),
         declared,
         texts,
     );
-    // The density closes the toolbar's row, after the column list.
-    if let Some(bar) = tools {
-        build_density(buffer, nodes, bar, texts);
+    // The density closes the toolbar's row, after the column list's toggle.
+    if let Some((_, row)) = tools {
+        build_density(buffer, nodes, row, texts);
     }
     // With facets, the viewport shares a row with the sidebar (point 66).
     // Without, the skeleton is exactly what it was: the wrapper would be one
@@ -2467,7 +2489,9 @@ fn build_search(
 }
 
 /// Builds the toolbar and the (empty) chip group (point 65); answers the
-/// toolbar's node, into which the column list is then put.
+/// toolbar's node and its row of buttons, into which the column list's toggle
+/// and the density are then put (its panel goes into the toolbar, after the
+/// row).
 ///
 /// A labelled `group` of ordinary buttons, **outside** `role="grid"`, like the
 /// filter row: `role="toolbar"` would promise arrow-key movement between the
@@ -2482,7 +2506,7 @@ fn build_toolbar(
     search: bool,
     has_facets: bool,
     facets_shown: bool,
-) -> NodeId {
+) -> (NodeId, NodeId) {
     let attribute = |buffer: &mut PatchBuffer, node: NodeId, name: &str, value: &str| {
         buffer.push(Patch::SetAttribute {
             node,
@@ -2507,6 +2531,11 @@ fn build_toolbar(
         build_search(buffer, nodes, bar, texts);
     }
 
+    // The buttons in a row of their own, without a part (issue #77): no box on
+    // a wide grid, one row that scrolls sideways on a narrow one.
+    let row = element(buffer, nodes, Some(bar), "div");
+    attribute(buffer, row, "data-toolbar-row", "");
+
     // The two quick doors of the prototype (issue #34): a filter through a
     // small dialog, a grouping level through a menu. Each opens its popup,
     // built when it opens, like the column menu.
@@ -2514,7 +2543,7 @@ fn build_toolbar(
         ("add-filter", "dialog", &texts.add_filter),
         ("add-grouping", "menu", &texts.add_grouping),
     ] {
-        let button = element(buffer, nodes, Some(bar), "button");
+        let button = element(buffer, nodes, Some(row), "button");
         attribute(buffer, button, "type", "button");
         attribute(buffer, button, "part", key);
         attribute(buffer, button, "data-toolbar", key);
@@ -2527,7 +2556,7 @@ fn build_toolbar(
         set_lang(buffer, button, texts);
     }
 
-    let toggle = element(buffer, nodes, Some(bar), "button");
+    let toggle = element(buffer, nodes, Some(row), "button");
     attribute(buffer, toggle, "type", "button");
     attribute(buffer, toggle, "part", "filter-row-toggle");
     attribute(buffer, toggle, "data-toolbar", "filter-row");
@@ -2540,7 +2569,7 @@ fn build_toolbar(
 
     // The facet switch, only where there are facets to show (point 66).
     if has_facets {
-        let switch = element(buffer, nodes, Some(bar), "button");
+        let switch = element(buffer, nodes, Some(row), "button");
         attribute(buffer, switch, "type", "button");
         attribute(buffer, switch, "part", "facets-toggle");
         attribute(buffer, switch, "data-toolbar", "facets");
@@ -2565,7 +2594,7 @@ fn build_toolbar(
         texts,
     );
     attribute(buffer, chips, "hidden", "");
-    bar
+    (bar, row)
 }
 
 /// The density switch (point 58): three buttons in a labelled group, at the
@@ -2614,6 +2643,7 @@ fn build_columns(
     buffer: &mut PatchBuffer,
     nodes: &mut NodeAllocator,
     parent: NodeId,
+    panel_parent: NodeId,
     declared: &[(String, bool)],
     texts: &GridTexts,
 ) -> ColumnsNodes {
@@ -2639,7 +2669,7 @@ fn build_columns(
     // container below, whose children are column names (see `set_lang`).
     set_lang(buffer, toggle, texts);
 
-    let container = element(buffer, nodes, Some(parent), "div");
+    let container = element(buffer, nodes, Some(panel_parent), "div");
     for (name, value) in [("part", "columns"), ("role", "group"), ("hidden", "")] {
         buffer.push(Patch::SetAttribute {
             node: container,
