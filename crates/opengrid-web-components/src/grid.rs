@@ -787,8 +787,11 @@ pub struct FilterColumnNodes {
     /// first result (point 23). Which of them apply is therefore an attribute on
     /// each option, updated per frame, not a different set of nodes.
     pub options: Vec<NodeId>,
-    /// The value `<input>`.
+    /// The value `<input>`; hidden for a boolean column.
     pub input: NodeId,
+    /// The value `<select>` of a boolean column — *any*, *yes*, *no*
+    /// (issue #60); hidden for every other column.
+    pub choice: NodeId,
 }
 
 /// The nodes of one recycled pool row.
@@ -1000,8 +1003,8 @@ pub fn literal(text: &str, data_type: DataType) -> Option<serde_json::Value> {
     match data_type {
         DataType::Utf8 => Some(serde_json::Value::String(text.to_owned())),
         DataType::Bool => match text {
-            "true" | "on" | "1" => Some(serde_json::Value::Bool(true)),
-            "false" | "off" | "0" | "" => Some(serde_json::Value::Bool(false)),
+            "true" | "1" => Some(serde_json::Value::Bool(true)),
+            "false" | "0" => Some(serde_json::Value::Bool(false)),
             _ => None,
         },
         DataType::Int64 => text.parse::<i64>().ok().map(Into::into),
@@ -2882,10 +2885,47 @@ fn build_filter(
             value: texts.value_label(field.name.as_str()),
         });
         set_style(buffer, input, "width: 6rem;");
+
+        // A boolean column's value is a choice of three (issue #60): no
+        // filter, yes, no. A checkbox cannot say "no filter", and its `value`
+        // is `on` whether it is ticked or not. Built for every column, because
+        // the type only arrives with the first answer; shown for booleans only.
+        let choice = element(buffer, nodes, Some(group), "select");
+        for (name, value) in [
+            ("part", "filter-value".to_owned()),
+            ("data-value-col", col.to_string()),
+            ("aria-label", texts.value_label(field.name.as_str())),
+            ("hidden", String::new()),
+        ] {
+            buffer.push(Patch::SetAttribute {
+                node: choice,
+                name: name.to_owned(),
+                value,
+            });
+        }
+        set_lang(buffer, choice, texts);
+        set_style(buffer, choice, "width: 6rem;");
+        for (value, text) in [
+            ("", &texts.filter_any),
+            ("true", &texts.boolean_true),
+            ("false", &texts.boolean_false),
+        ] {
+            let option = element(buffer, nodes, Some(choice), "option");
+            buffer.push(Patch::SetAttribute {
+                node: option,
+                name: "value".to_owned(),
+                value: value.to_owned(),
+            });
+            buffer.push(Patch::SetText {
+                node: option,
+                text: text.clone(),
+            });
+        }
         columns.push(FilterColumnNodes {
             select,
             options,
             input,
+            choice,
         });
     }
 
@@ -3045,6 +3085,22 @@ pub fn patch_grid(
             node: column.input,
             name: "type".to_owned(),
             value: input_type(field.data_type).to_owned(),
+        });
+        // One value control per column is shown: the choice for a boolean,
+        // the input for everything else.
+        let (shown, hidden) = if field.data_type == DataType::Bool {
+            (column.choice, column.input)
+        } else {
+            (column.input, column.choice)
+        };
+        buffer.push(Patch::RemoveAttribute {
+            node: shown,
+            name: "hidden".to_owned(),
+        });
+        buffer.push(Patch::SetAttribute {
+            node: hidden,
+            name: "hidden".to_owned(),
+            value: String::new(),
         });
         match input_step(field.data_type) {
             Some(step) => buffer.push(Patch::SetAttribute {
@@ -4546,8 +4602,8 @@ mod tests {
             .collect();
         // Tagged: every node whose whole subtree is our own wording — the
         // status line, the pager (it writes words too, point 38), the
-        // disclosure's toggle, each operator `select` (its options are our
-        // words) and the clear button.
+        // disclosure's toggle, each operator `select` and each boolean choice
+        // (their options are our words) and the clear button.
         // And the empty state of point 68: its sentence and its button are
         // ours, and it holds no data of the page's.
         let mut expected = vec![
@@ -4560,6 +4616,8 @@ mod tests {
         expected.push(view.filter.clear);
         for column in &view.filter.columns {
             expected.push(column.select);
+            // A boolean's choice — any, yes, no — is our words too (#60).
+            expected.push(column.choice);
         }
         // And the hidden names of the two containers below (F9): the name is
         // ours even where the container's contents are not.

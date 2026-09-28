@@ -851,6 +851,7 @@ loader.module.set_texts(host, { lang: "de", loading: "Wird geladen …" });
 | `filterColumnLabel` / `filterConditionLabel` / `filterValueLabel` | `Column` / `Condition` / `Value` | |
 | `cancel` / `apply` | `Cancel` / `Apply` | |
 | `addGrouping` / `groupingFull` | `+ Group` / `Grouped by two columns already` — the button, and its name when no level can be added | |
+| `filterAny` / `booleanTrue` / `booleanFalse` | `any` / `yes` / `no` — the filter row's choice for a boolean column | |
 | `sourceLocal` / `sourceWorker` / `sourceRemote` / `sourceHybrid` | `local · wasm` / `worker · wasm` / `server` / `hybrid` — the footer's source, by the provider's `kind` | |
 | `queriesOne` / `queriesOther` | `{count} query` / `{count} queries` — the footer's count | `{count}` |
 | `searchLabel` / `searchPlaceholder` | `Search or filter` / `Search, or filter: country = DE and amount ≥ 10` | |
