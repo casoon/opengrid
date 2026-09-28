@@ -8,5 +8,7 @@
 # bit-for-bit, and brotli moves by some dozens of bytes between builds.
 #
 # module      bound   (measured when set)
-grid+pivot    205000  # 203278 B, 2026-09-28, after #41 (serde left the browser)
+# Raised 2026-09-28 from 205000: column titles (#66) and the filter-row fixes
+# (#60-#62) grew the element module by 3.7 KiB, to 206972 B.
+grid+pivot    209000  # 206972 B, 2026-09-28, after #41 and #66
 engine        108000  # 106650 B, 2026-09-28, after #41
