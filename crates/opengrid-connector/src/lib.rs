@@ -50,7 +50,9 @@ pub use opengrid_types::{Schema, Value};
 
 use opengrid_datasource::SendDataSource;
 
+pub mod local;
 mod rows;
+pub use local::LocalConnector;
 pub use rows::{RowSource, RowStream, Rows};
 
 /// A future a connector returns: boxed, so the trait can be used as

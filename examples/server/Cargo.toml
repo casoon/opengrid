@@ -1,0 +1,19 @@
+[package]
+name = "opengrid-example-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "An opengrid server around the library: the demo and e2e sources, configured in code"
+
+[lints]
+workspace = true
+
+[dependencies]
+opengrid-server = { path = "../../crates/opengrid-server" }
+opengrid-connector = { path = "../../crates/opengrid-connector" }
+opengrid-datasource-postgres = { path = "../../crates/opengrid-datasource-postgres" }
+opengrid-types = { path = "../../crates/opengrid-types" }
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
+serde_json = "1"

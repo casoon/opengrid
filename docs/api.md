@@ -582,7 +582,7 @@ const same = await rest.export(query, { format: "csv", delimiter: ";" });
 | `onProgress` | Called once, at the end, with `{ rows, total }`. |
 | `signal` | Aborts the request, the download included: an `AbortError`, no `Blob`. The server notices at its next piece and ends the database query. |
 | Rules | The server's for `/query`, unchanged: the token, `allowed_fields`, the tenant's `row_filter`. |
-| A break | A failure after the first byte cannot be a status any more; the server breaks the connection off, and the export rejects — never a shorter file. A client that takes no piece for the server's `timeout_ms` is broken off too. |
+| A break | A failure after the first byte cannot be a status any more; the server breaks the connection off, and the export rejects — never a shorter file. A client that takes no piece for the server's timeout is broken off too. |
 | Redirects | Not followed, by any request of `createRestProvider` or `createPivotProvider`: the token goes to the configured URL and nowhere else. |
 
 ### Exporting a pivot
@@ -668,7 +668,7 @@ the same for `/query`, `/pivot`, `/source` and `/export`:
 | `malformed` | `400` | The body or a parameter is not readable: not JSON, an unknown export parameter, a `delimiter` of two characters. | The same. |
 | `unauthorized` | `401` | No token, or one the server does not accept. | Sign in again. |
 | `unknown_source` | `404` | No source of that name. | A bug in the configuration. |
-| `limit_exceeded` | `413` | Too big for the server: a body over `max_payload_bytes`, a query over `timeout_ms`, more rows than `max_export_rows`, an export without its first byte within `timeout_ms`. The same request usually fails again — a timeout may pass under less load. | Narrow the view. |
+| `limit_exceeded` | `413` | Too big for the server: a body over `max_payload_bytes`, a query over the server's timeout, more rows than `max_export_rows`, an export without its first byte within the timeout. The same request usually fails again — a timeout may pass under less load. | Narrow the view. |
 | `busy` | `503` | `max_concurrent_exports` exports are already running. The request itself is fine. | Try again in a moment. |
 | `backend` | `502` | The source behind the server failed. | Try again later; the operator's log says why. |
 

@@ -10,7 +10,7 @@ Two processes, two ports:
 
 ```console
 just wasm-build-components                                          # element module
-cargo run -p opengrid-server -- examples/remote-demo/opengrid.toml  # :8081
+cargo run -p opengrid-example-server -- demo                        # :8081
 just serve-demo                                                     # :8080
 ```
 
@@ -41,12 +41,13 @@ transient failure should not throw away the context the user was working in.
   the difference, which is the point.
 - The mandatory filter cannot be worked around: ask the DE token for
   `country = FR` and you get zero rows, not the French ones.
-- CORS is **off** by default. `allowed_origins` lists origins one by one; no
+- CORS is **off** by default. `allow_origin` adds origins one by one; no
   wildcard, because a wildcard together with a bearer token would authorise
   every window the user happens to have open.
 
 ## With 100,000 rows
 
-Point `path` in `opengrid.toml` at `../../target/grid-demo/orders-100k.csv`
-(generating the data set is described in `examples/grid-demo/README.md`) and
-adjust `allowed_fields` and `row_filter` to that schema.
+Point `csv_orders` in `examples/server/src/main.rs` at
+`target/grid-demo/orders-100k.csv` (generating the data set is described in
+`examples/grid-demo/README.md`) and adjust the allowed fields and the row filter
+to that schema. The sources are code, not a file.

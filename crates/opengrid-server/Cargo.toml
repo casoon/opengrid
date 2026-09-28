@@ -3,7 +3,7 @@ name = "opengrid-server"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Data gateway for opengrid: query AST in, column-oriented JSON out"
+description = "Data gateway for opengrid, as a library: query AST in, columns out, sources handed in as connectors"
 
 [lints]
 workspace = true
@@ -15,20 +15,15 @@ opengrid-pivot = { path = "../opengrid-pivot" }
 opengrid-datasource = { path = "../opengrid-datasource" }
 # The contract every source comes through (issue #45, E36).
 opengrid-connector = { path = "../opengrid-connector" }
-# The source of point 24 is the local engine: the server is fully testable
-# before a database exists (PostgreSQL docks in point 26).
-opengrid-engine = { path = "../opengrid-engine" }
 # The binary result form (E35), answered when `Accept` asks for it.
 opengrid-columns = { path = "../opengrid-columns" }
-# PostgreSQL as a source (point 26) — the registry decides per configuration.
-opengrid-datasource-postgres = { path = "../opengrid-datasource-postgres" }
 
 # Server stack, decision E12.
 axum = "0.8"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "signal", "sync"] }
 tower = { version = "0.5", features = ["timeout"] }
 # CORS. A gateway whose whole purpose is to answer a browser on another origin
-# needs it; off by default, the configuration opts in per origin.
+# needs it; off by default, the application opts in per origin.
 tower-http = { version = "0.6", features = ["cors"] }
 
 # The export's response body (issue #2): a bounded channel the rows are
@@ -40,14 +35,16 @@ opengrid-export = { path = "../opengrid-export" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-# The configuration format of plan/spezifikation/07-server.md is TOML.
-toml = "0.8"
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
 # The whole suite through `POST /query` in both result forms (issue #38).
 opengrid-conformance = { path = "../opengrid-conformance" }
+# The tests hand the server the reference connectors: the local engine over
+# the conformance fixture, and PostgreSQL (issue #49 — no database driver in
+# the server itself).
+opengrid-engine = { path = "../opengrid-engine" }
+opengrid-datasource-postgres = { path = "../opengrid-datasource-postgres" }
 # The PostgreSQL export tests (issue #2) make their table and watch
-# `pg_stat_activity` directly. Already in the tree through
-# opengrid-datasource-postgres; test-only.
+# `pg_stat_activity` directly; test-only.
 tokio-postgres = "0.7"

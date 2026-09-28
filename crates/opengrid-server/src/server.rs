@@ -18,9 +18,8 @@
 //! # Ok(()) }
 //! ```
 //!
-//! Every rule of the gateway holds for a source handed in this way exactly as
-//! for one from the configuration file: the token, the narrowed schema, the
-//! mandatory row filter, the limits. The connector answers; the server decides
+//! Every rule of the gateway holds for every source handed in: the token, the
+//! narrowed schema, the mandatory row filter, the limits. The connector answers; the server decides
 //! what it gets asked.
 
 use std::collections::BTreeMap;
@@ -41,8 +40,8 @@ pub struct Server {
 }
 
 impl Server {
-    /// Starts a server description with the defaults of the configuration
-    /// file: 64 KiB bodies, a 10 s timeout, no CORS, a million rows per export.
+    /// Starts a server description with the defaults: 64 KiB bodies, a 10 s
+    /// timeout, no CORS, a million rows per export.
     pub fn builder() -> ServerBuilder {
         ServerBuilder::default()
     }

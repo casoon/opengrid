@@ -101,7 +101,7 @@ e2e: wasm-build-components wasm-build package
     # Die Hybrid-Specs (Punkt 28) fahren gegen einen echten opengrid-server, den
     # Playwright startet. Hier gebaut, damit dort nur noch gestartet wird — ein
     # Kaltbau innerhalb des webServer-Timeouts wäre ein Glücksspiel.
-    cargo build -p opengrid-server
+    cargo build -p opengrid-example-server
     pnpm install --frozen-lockfile
     pnpm --filter "./examples/*" build
     just types
@@ -112,7 +112,7 @@ e2e: wasm-build-components wasm-build package
 # die gehören Chromium. Die Browser einmal holen:
 # `pnpm exec playwright install firefox webkit`.
 e2e-browsers: wasm-build-components wasm-build package
-    cargo build -p opengrid-server
+    cargo build -p opengrid-example-server
     pnpm install --frozen-lockfile
     pnpm --filter "./examples/*" build
     OPENGRID_E2E_BROWSERS=1 pnpm exec playwright test --config tests/e2e/playwright.config.js --project firefox --project webkit
