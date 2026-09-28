@@ -51,6 +51,11 @@ impl LocalDataSource {
         Self { table }
     }
 
+    /// The table it answers from — for what it costs (issue #70).
+    pub fn table(&self) -> &Table {
+        &self.table
+    }
+
     /// Runs `query` and answers with the result table and its `total_count`,
     /// without turning a single cell into a value — the path of the binary
     /// result form (E35), which serialises the columns as they are.

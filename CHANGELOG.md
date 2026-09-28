@@ -20,6 +20,12 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Added
 
+- **A resource report** ([#70](https://github.com/casoon/opengrid/issues/70)). The grid fires
+  `opengrid-query` after every answer of its provider — `{ kind, ms, rows, total, bytes,
+  form, memory }`: where it ran, the round trip measured in the tab, what came back and in
+  which form, and the element module's WASM memory. The local and worker providers answer
+  `stats()` — the engine's WASM memory and, per loaded source, rows, columns and bytes held
+  (`Engine.stats()`, a worker message `stats`). Measured always, sent nowhere.
 - **Column titles** ([#66](https://github.com/casoon/opengrid/issues/66)). `set_columns` takes
   `title` per column — what a reader reads wherever the grid names the column: the header,
   the column list, the filter row's labels, the column menu, the "+ Filter" dialog and

@@ -97,6 +97,17 @@ impl Engine {
             .map_err(|message| JsError::new(&message))
     }
 
+    /// What the engine holds (issue #70), as JSON:
+    /// `{ "memory": bytes, "sources": [{ "name", "rows", "columns", "bytes" }] }`.
+    ///
+    /// `memory` is the module's whole linear memory — what the browser gave
+    /// it, which only grows; `bytes` is what a source's columns take inside
+    /// it. Sources by name.
+    #[wasm_bindgen(js_name = stats)]
+    pub fn stats_js(&self) -> String {
+        self.stats().to_string()
+    }
+
     /// The names of the registered sources, in unspecified order.
     #[wasm_bindgen(js_name = source_names)]
     pub fn source_names(&self) -> Vec<String> {
@@ -127,6 +138,25 @@ impl Engine {
         let source = LocalDataSource::new(table);
         self.sources.insert(id.as_str().to_owned(), source);
         Ok(())
+    }
+
+    /// [`stats`](Engine::stats_js) as a JSON value.
+    pub fn stats(&self) -> serde_json::Value {
+        let mut names: Vec<&String> = self.sources.keys().collect();
+        names.sort();
+        let sources: Vec<serde_json::Value> = names
+            .into_iter()
+            .map(|name| {
+                let table = self.sources[name].table();
+                serde_json::json!({
+                    "name": name,
+                    "rows": table.num_rows(),
+                    "columns": table.schema().len(),
+                    "bytes": table.byte_size(),
+                })
+            })
+            .collect();
+        serde_json::json!({ "memory": linear_memory(), "sources": sources })
     }
 
     /// Runs a query JSON against the source it names and answers with the
@@ -353,4 +383,39 @@ impl Planner {
 fn parse_mode(mode: &str) -> Result<ExecutionMode, String> {
     ExecutionMode::parse(mode)
         .ok_or_else(|| format!("unknown mode {mode:?}: expected local, remote, hybrid or auto"))
+}
+
+/// The module's linear memory in bytes; none outside WASM.
+fn linear_memory() -> usize {
+    #[cfg(target_arch = "wasm32")]
+    {
+        core::arch::wasm32::memory_size(0) * 65_536
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        0
+    }
+}
+
+#[cfg(test)]
+mod stats_tests {
+    use super::Engine;
+
+    /// Every source with its rows, columns and bytes, by name (issue #70).
+    #[test]
+    fn stats_name_every_source_and_what_it_holds() {
+        let mut engine = Engine::new();
+        let schema = r#"{"fields":[{"name":"n","type":"int64","nullable":false},{"name":"s","type":"utf8","nullable":true}]}"#;
+        engine.load_csv("b", b"n,s\n1,ab\n2,cde\n", schema).unwrap();
+        engine.load_csv("a", b"n,s\n7,x\n", schema).unwrap();
+        let stats = engine.stats();
+        let sources = stats["sources"].as_array().unwrap();
+        assert_eq!(sources[0]["name"], "a");
+        assert_eq!(sources[1]["name"], "b");
+        assert_eq!(sources[1]["rows"], 2);
+        assert_eq!(sources[1]["columns"], 2);
+        // 2 ints, 3 offsets and 5 bytes of text, no NULL, no bitmap.
+        assert_eq!(sources[1]["bytes"], 2 * 8 + 3 * 4 + 5);
+        assert!(stats["memory"].is_u64());
+    }
 }

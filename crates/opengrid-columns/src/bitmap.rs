@@ -8,6 +8,11 @@ pub struct Bitmap {
 }
 
 impl Bitmap {
+    /// The bytes its words take.
+    pub fn byte_size(&self) -> usize {
+        self.words.len() * std::mem::size_of::<u64>()
+    }
+
     /// An empty bitmap with room for `capacity` bits.
     pub fn with_capacity(capacity: usize) -> Self {
         Self {

@@ -30,6 +30,10 @@ const LOADER_EXPORTS: [&str; 8] = [
 /// the server's export (issue #2), which `exportRows` uses when it is there.
 const REST_PROVIDER_METHODS: [&str; 3] = ["describe", "execute", "export"];
 
+/// The methods of the two engine providers — `stats` is what the engine holds
+/// (issue #70). The same list for both: a page swaps one for the other.
+const ENGINE_PROVIDER_METHODS: [&str; 4] = ["execute", "load", "stats", "terminate"];
+
 /// The fields on the `Error` a server provider or `exportRows` rejects with
 /// (issue #16): a plain `Error`, no class of its own, the message unchanged.
 const ERROR_FIELDS: [&str; 3] = ["status", "code", "path"];
@@ -76,6 +80,7 @@ fn surface() -> String {
         crate::grid_element_events::SELECTION_EVENT,
         crate::grid_element_events::CELL_EVENT,
         crate::grid_element_events::VIEW_EVENT,
+        crate::grid_element_events::QUERY_EVENT,
     ] {
         out.push_str(&format!("  {event}\n"));
     }
@@ -108,6 +113,12 @@ fn surface() -> String {
         "  createRestProvider: {}\n",
         REST_PROVIDER_METHODS.join(" ")
     ));
+    for provider in ["createWorkerProvider", "createLocalProvider"] {
+        out.push_str(&format!(
+            "  {provider}: {}\n",
+            ENGINE_PROVIDER_METHODS.join(" ")
+        ));
+    }
 
     // What a page branches on when a call fails (issue #16).
     out.push_str("\nerror fields\n");
@@ -258,6 +269,7 @@ events
   opengrid-selection-change
   opengrid-cell-change
   opengrid-view-change
+  opengrid-query
 
 functions
   register
@@ -283,6 +295,8 @@ loader exports
 
 provider methods
   createRestProvider: describe execute export
+  createWorkerProvider: execute load stats terminate
+  createLocalProvider: execute load stats terminate
 
 error fields
   status code path
@@ -521,12 +535,28 @@ totalRow typeBool typeDate typeInteger typeNumber typeText typeTime ungroupColum
     /// no fewer. A method is a promise like an export is.
     #[test]
     fn the_rest_provider_has_the_frozen_methods() {
+        assert_eq!(
+            provider_methods("createRestProvider"),
+            REST_PROVIDER_METHODS
+        );
+        assert_eq!(
+            provider_methods("createWorkerProvider"),
+            ENGINE_PROVIDER_METHODS
+        );
+        assert_eq!(
+            provider_methods("createLocalProvider"),
+            ENGINE_PROVIDER_METHODS
+        );
+    }
+
+    /// The methods the object a provider factory returns defines, sorted.
+    fn provider_methods(factory: &str) -> Vec<&'static str> {
         let loader = include_str!("../../../packages/opengrid/loader.js");
         let body = loader
-            .split("export function createRestProvider(")
+            .split(&format!("export function {factory}("))
             .nth(1)
             .and_then(|rest| rest.split("\n}\n").next())
-            .expect("loader.js defines createRestProvider");
+            .expect("loader.js defines the factory");
         let mut methods: Vec<&str> = body
             .lines()
             // A method is a line at the object's indent that is a name and `(`;
@@ -540,7 +570,7 @@ totalRow typeBool typeDate typeInteger typeNumber typeText typeTime ungroupColum
             })
             .collect();
         methods.sort_unstable();
-        assert_eq!(methods, REST_PROVIDER_METHODS);
+        methods
     }
 
     /// The loader exports what the freeze lists — no more, no fewer. An export

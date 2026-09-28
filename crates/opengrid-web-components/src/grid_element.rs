@@ -81,7 +81,7 @@ use opengrid_web_core::provider::provider;
 
 use crate::columns::{self, WIDTH_STEP};
 use crate::formats::{CellFormat, Formatter, formats};
-use crate::grid_element_events::{CELL_EVENT, SELECTION_EVENT, VIEW_EVENT};
+use crate::grid_element_events::{CELL_EVENT, QUERY_EVENT, SELECTION_EVENT, VIEW_EVENT};
 use opengrid_web_core::renderer::{Dom, WebRenderer};
 
 use crate::element::{clear_root, describe};
@@ -920,7 +920,9 @@ pub(crate) fn run_query(host: &HtmlElement, kind: QueryKind, focus: bool) {
 
     let query = grid::query_json(&source, &columns, &sorts, filter.as_ref(), offset, pool);
     let mode = host.get_attribute(MODE_ATTRIBUTE).unwrap_or_default();
+    let started = now();
     let promise = provider.execute(&query, &mode);
+    let provider_kind = provider.kind();
     // One query for what is shown: a scroll or a new page replaces the rows.
     grid_runtime.borrow_mut().queries = 1;
     if kind == QueryKind::Data {
@@ -929,10 +931,8 @@ pub(crate) fn run_query(host: &HtmlElement, kind: QueryKind, focus: bool) {
 
     let host = host.clone();
     spawn_local(async move {
-        let outcome = match JsFuture::from(promise).await {
-            Ok(value) => read_answer(&value),
-            Err(value) => Err(describe(&value)),
-        };
+        let answered = JsFuture::from(promise).await;
+        let outcome = measured(&host, provider_kind, started, answered);
         settle(&host, generation, outcome, focus);
     });
 }
@@ -983,7 +983,7 @@ fn probe_then_query(
     let host = host.clone();
     let grid_runtime = grid_runtime.clone();
     spawn_local(async move {
-        let schema = match ask(&provider, &grid_runtime, &probe, &mode).await {
+        let schema = match ask(&host, &provider, &grid_runtime, &probe, &mode).await {
             Ok(result) => result.schema,
             Err(message) => return settle(&host, generation, Err(message), focus),
         };
@@ -3661,25 +3661,118 @@ fn read_answer(value: &JsValue) -> Result<opengrid_datasource::QueryResult, Stri
 /// Counted for the footer (issue #33); the facets count theirs themselves and
 /// ask through [`ask_uncounted`].
 async fn ask(
+    host: &HtmlElement,
     provider: &Rc<dyn opengrid_web_core::provider::DataProvider>,
     runtime: &Rc<RefCell<GridRuntime>>,
     query: &str,
     mode: &str,
 ) -> Result<opengrid_datasource::QueryResult, String> {
     runtime.borrow_mut().queries += 1;
-    ask_uncounted(provider, query, mode).await
+    ask_uncounted(host, provider, query, mode).await
 }
 
 /// [`ask`] without counting the query.
+///
+/// Every query of the grid passes here, so here it is measured (issue #70):
+/// the round trip, and the answer's size as it arrived — reported on the
+/// element as `opengrid-query`.
 async fn ask_uncounted(
+    host: &HtmlElement,
     provider: &Rc<dyn opengrid_web_core::provider::DataProvider>,
     query: &str,
     mode: &str,
 ) -> Result<opengrid_datasource::QueryResult, String> {
-    match JsFuture::from(provider.execute(query, mode)).await {
-        Ok(value) => read_answer(&value),
-        Err(value) => Err(describe(&value)),
+    let started = now();
+    let answered = JsFuture::from(provider.execute(query, mode)).await;
+    measured(host, provider.kind(), started, answered)
+}
+
+/// Reads an answer and reports it as `opengrid-query` (issue #70) — for
+/// [`ask_uncounted`] and for the window query, which starts its promise
+/// before it awaits it.
+fn measured(
+    host: &HtmlElement,
+    kind: Option<String>,
+    started: f64,
+    answered: Result<JsValue, JsValue>,
+) -> Result<opengrid_datasource::QueryResult, String> {
+    let value = match answered {
+        Ok(value) => value,
+        Err(value) => return Err(describe(&value)),
+    };
+    let ms = now() - started;
+    // Read off the value as it arrived, without copying it once more.
+    let (bytes, form) = match value.as_string() {
+        Some(json) => (json.len(), "json"),
+        None => (
+            js_sys::Reflect::get(&value, &JsValue::from_str("byteLength"))
+                .ok()
+                .and_then(|length| length.as_f64())
+                .unwrap_or(0.0) as usize,
+            "binary",
+        ),
+    };
+    let result = read_answer(&value)?;
+    dispatch_query(host, kind, ms, &result, bytes, form);
+    Ok(result)
+}
+
+/// Milliseconds on the page's clock: `performance.now()`, finer than
+/// `Date.now()` and never set back.
+fn now() -> f64 {
+    let global = js_sys::global();
+    js_sys::Reflect::get(&global, &JsValue::from_str("performance"))
+        .ok()
+        .and_then(|performance| {
+            let clock = js_sys::Reflect::get(&performance, &JsValue::from_str("now")).ok()?;
+            clock
+                .dyn_into::<js_sys::Function>()
+                .ok()?
+                .call0(&performance)
+                .ok()?
+                .as_f64()
+        })
+        .unwrap_or_else(js_sys::Date::now)
+}
+
+/// `opengrid-query` (issue #70): where the query ran, how long it took, how
+/// much came back — and what the element module holds.
+fn dispatch_query(
+    host: &HtmlElement,
+    kind: Option<String>,
+    ms: f64,
+    result: &opengrid_datasource::QueryResult,
+    bytes: usize,
+    form: &str,
+) {
+    let detail = js_sys::Object::new();
+    let set = |key: &str, value: JsValue| {
+        let _ = js_sys::Reflect::set(&detail, &JsValue::from_str(key), &value);
+    };
+    set(
+        "kind",
+        kind.map_or(JsValue::NULL, |kind| JsValue::from_str(&kind)),
+    );
+    set("ms", JsValue::from_f64((ms * 100.0).round() / 100.0));
+    set("rows", JsValue::from_f64(result.row_count() as f64));
+    set("total", JsValue::from_f64(result.total_count as f64));
+    set("bytes", JsValue::from_f64(bytes as f64));
+    set("form", JsValue::from_str(form));
+    set("memory", JsValue::from_f64(linear_memory() as f64));
+
+    let init = web_sys::CustomEventInit::new();
+    init.set_bubbles(true);
+    init.set_composed(true);
+    init.set_cancelable(false);
+    init.set_detail(&detail);
+    if let Ok(event) = web_sys::CustomEvent::new_with_event_init_dict(QUERY_EVENT, &init) {
+        let _ = host.dispatch_event(&event);
     }
+}
+
+/// This module's linear memory in bytes.
+fn linear_memory() -> usize {
+    core::arch::wasm32::memory_size(0) * 65_536
 }
 
 /// The grouped counterpart of [`run_query`]: several queries, one result.
@@ -3783,7 +3876,7 @@ fn run_grouped(
                 return;
             };
             let probe = grid::query_json(&source, &columns, &sorts, filter.as_ref(), 0, 0);
-            let schema = match ask(&provider, &grid_runtime, &probe, &mode).await {
+            let schema = match ask(&host, &provider, &grid_runtime, &probe, &mode).await {
                 Ok(result) => result.schema,
                 Err(message) => return fail(message),
             };
@@ -3803,7 +3896,7 @@ fn run_grouped(
             }
 
             let query = grouping::group_query_json(&source, &by, filter.as_ref(), &aggregates);
-            let result = match ask(&provider, &grid_runtime, &query, &mode).await {
+            let result = match ask(&host, &provider, &grid_runtime, &query, &mode).await {
                 Ok(result) => result,
                 Err(message) => return fail(message),
             };
@@ -3838,7 +3931,7 @@ fn run_grouped(
 
             // The grand total: the same aggregates, no `group` — one row.
             let query = grouping::total_query_json(&source, filter.as_ref(), &aggregates);
-            let total = match ask(&provider, &grid_runtime, &query, &mode).await {
+            let total = match ask(&host, &provider, &grid_runtime, &query, &mode).await {
                 Ok(result) => grouping::total_from(&result),
                 Err(message) => return fail(message),
             };
@@ -3872,7 +3965,7 @@ fn run_grouped(
                 };
                 let query =
                     grouping::group_query_json(&source, &second, scoped.as_ref(), &aggregates);
-                let result = match ask(&provider, &grid_runtime, &query, &mode).await {
+                let result = match ask(&host, &provider, &grid_runtime, &query, &mode).await {
                     Ok(result) => result,
                     Err(message) => return fail(message),
                 };
@@ -3920,7 +4013,7 @@ fn run_grouped(
                 fetch.offset,
                 fetch.limit,
             );
-            let result = match ask(&provider, &grid_runtime, &query, &mode).await {
+            let result = match ask(&host, &provider, &grid_runtime, &query, &mode).await {
                 Ok(result) => result,
                 Err(message) => return fail(message),
             };
@@ -3936,7 +4029,7 @@ fn run_grouped(
             Some(schema) => schema,
             None => {
                 let query = grid::query_json(&source, &columns, &sorts, filter.as_ref(), 0, 0);
-                match ask(&provider, &grid_runtime, &query, &mode).await {
+                match ask(&host, &provider, &grid_runtime, &query, &mode).await {
                     Ok(result) => result.schema,
                     Err(message) => return fail(message),
                 }
@@ -4931,7 +5024,7 @@ fn refresh_facets(host: &HtmlElement) {
             if needs_domain {
                 let query = grouping::group_query_json(&source, &column, None, &[]);
                 queries += 1;
-                let Ok(result) = ask_uncounted(&provider, &query, &mode).await else {
+                let Ok(result) = ask_uncounted(&host, &provider, &query, &mode).await else {
                     continue;
                 };
                 if let Ok(domain) = grouping::groups_from(&result) {
@@ -4943,7 +5036,7 @@ fn refresh_facets(host: &HtmlElement) {
             }
             let query = grouping::group_query_json(&source, &column, filter.as_ref(), &[]);
             queries += 1;
-            let Ok(result) = ask_uncounted(&provider, &query, &mode).await else {
+            let Ok(result) = ask_uncounted(&host, &provider, &query, &mode).await else {
                 continue;
             };
             if grid_runtime.borrow().facet_generation != generation {

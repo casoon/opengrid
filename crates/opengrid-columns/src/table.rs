@@ -123,6 +123,11 @@ impl Table {
         self.rows
     }
 
+    /// The bytes its columns take (issue #70).
+    pub fn byte_size(&self) -> usize {
+        self.columns.iter().map(|column| column.byte_size()).sum()
+    }
+
     /// The rows at `positions`, in that order.
     pub fn take(&self, positions: &[u32]) -> Table {
         Table {
@@ -254,5 +259,29 @@ mod tests {
         let table = Table::new(&schema(&["a"]), vec![int_column(&[1, 2, 3])]).unwrap();
         assert_eq!(table.slice(2, 10).num_rows(), 1);
         assert_eq!(table.slice(5, 1).num_rows(), 0);
+    }
+
+    /// The size is the buffers: 8 bytes per int, offsets plus text for
+    /// strings, and a bitmap word only where a NULL made one (issue #70).
+    #[test]
+    fn a_table_knows_its_bytes() {
+        let schema = Schema::new(vec![
+            Field::new(FieldName::new("n").unwrap(), DataType::Int64),
+            Field::new(FieldName::new("s").unwrap(), DataType::Utf8),
+        ]);
+        let table = Table::from_values(
+            &schema,
+            &[
+                vec![Value::Int64(1), Value::Int64(2), Value::Int64(3)],
+                vec![
+                    Value::Utf8("ab".into()),
+                    Value::Null,
+                    Value::Utf8("cde".into()),
+                ],
+            ],
+        )
+        .unwrap();
+        // 3 × 8 for the ints; 4 offsets × 4 + 5 bytes of text + one bitmap word.
+        assert_eq!(table.byte_size(), 24 + 16 + 5 + 8);
     }
 }
