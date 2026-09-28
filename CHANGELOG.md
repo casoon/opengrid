@@ -18,6 +18,15 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+### Fixed
+
+- **A boolean column in the filter row** ([#60](https://github.com/casoon/opengrid/issues/60)).
+  It was a checkbox whose value reads `on` whether ticked or not: the grid showed a chip
+  "… is on" with nothing filtered, and the first filter on any other column silently
+  brought `= true` along. It is now a choice of three — *any*, *yes*, *no* — with three new
+  text keys `filterAny`, `booleanTrue`, `booleanFalse`. The "+ Filter" dialog reads a
+  boolean's checkbox by whether it is ticked.
+
 ## [0.4.0] — 2026-09-28
 
 **Screen-reader pairings tested: none yet** — unchanged since 0.1.0

@@ -154,6 +154,11 @@ pub struct GridTexts {
     pub add_grouping: String,
     /// Its name while no further level can be added.
     pub grouping_full: String,
+    /// A boolean column's filter choice (issue #60): no filter, `true`,
+    /// `false`.
+    pub filter_any: String,
+    pub boolean_true: String,
+    pub boolean_false: String,
     /// The footer's source (issue #33): where the provider runs the queries,
     /// by its `kind`.
     pub source_local: String,
@@ -313,6 +318,9 @@ pub(crate) const KEYS: &[&str] = &[
     "apply",
     "addGrouping",
     "groupingFull",
+    "filterAny",
+    "booleanTrue",
+    "booleanFalse",
     "sourceLocal",
     "sourceWorker",
     "sourceRemote",
@@ -451,6 +459,9 @@ impl Default for GridTexts {
             apply: "Apply".to_owned(),
             add_grouping: "+ Group".to_owned(),
             grouping_full: "Grouped by two columns already".to_owned(),
+            filter_any: "any".to_owned(),
+            boolean_true: "yes".to_owned(),
+            boolean_false: "no".to_owned(),
             source_local: "local \u{b7} wasm".to_owned(),
             source_worker: "worker \u{b7} wasm".to_owned(),
             source_remote: "server".to_owned(),
@@ -940,6 +951,9 @@ mod host {
         overwrite(&mut texts.apply, string("apply"));
         overwrite(&mut texts.add_grouping, string("addGrouping"));
         overwrite(&mut texts.grouping_full, string("groupingFull"));
+        overwrite(&mut texts.filter_any, string("filterAny"));
+        overwrite(&mut texts.boolean_true, string("booleanTrue"));
+        overwrite(&mut texts.boolean_false, string("booleanFalse"));
         overwrite(&mut texts.source_local, string("sourceLocal"));
         overwrite(&mut texts.source_worker, string("sourceWorker"));
         overwrite(&mut texts.source_remote, string("sourceRemote"));
