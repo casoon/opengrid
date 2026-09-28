@@ -13,6 +13,7 @@
  *   load  { type:"load", id, name, bytes, schema }
  *                                              -> { type:"loaded", id }
  *   query { type:"query", id, query }          -> { id, result }
+ *   stats { type:"stats", id }                 -> { id, result }   (issue #70)
  *
  * Any request that throws answers `{ id, type:"error", message }`. The `bytes`
  * of `load` arrive as a transferable `ArrayBuffer`; a `result` is the engine's
@@ -38,6 +39,11 @@ self.onmessage = async ({ data }) => {
       case "load": {
         engine.load_csv(data.name, new Uint8Array(data.bytes), data.schema);
         self.postMessage({ type: "loaded", id: data.id });
+        break;
+      }
+      case "stats": {
+        // What the engine holds: its memory and each source's size, as JSON.
+        self.postMessage({ id: data.id, result: engine.stats() });
         break;
       }
       case "query": {

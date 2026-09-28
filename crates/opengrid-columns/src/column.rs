@@ -114,6 +114,21 @@ pub struct Column {
 }
 
 impl Column {
+    /// The bytes its values and its NULL bitmap take — what holding this
+    /// column costs, for the resource report (issue #70). Buffers only: the
+    /// allocator's slack and the few bytes of the struct are not counted.
+    pub fn byte_size(&self) -> usize {
+        let values = match &self.values {
+            Values::Bool(values) => values.len(),
+            Values::Int64(values) | Values::Timestamp(values) => values.len() * 8,
+            Values::Float64(values) => values.len() * 8,
+            Values::Decimal(values) => values.len() * 16,
+            Values::Utf8 { offsets, text } => offsets.len() * 4 + text.len(),
+            Values::Date(values) => values.len() * 4,
+        };
+        values + self.validity.as_ref().map_or(0, Bitmap::byte_size)
+    }
+
     /// A column of `len` NULLs.
     pub fn nulls(data_type: DataType, len: usize) -> Self {
         let mut builder = ColumnBuilder::new(data_type, len);
