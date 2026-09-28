@@ -1606,18 +1606,21 @@ pub fn build_grid(
          [part=\"column-toggle\"] input {{ min-width: {MIN_TARGET_SIZE}px;
                              min-height: {MIN_TARGET_SIZE}px;
                              accent-color: var({ACCENT_PROPERTY}); }}
-         [part=\"pager\"] {{ flex: 0 0 auto; display: flex; gap: 0.5rem; align-items: center;
-                             padding: 0.25rem var({PAD_PROPERTY});
-                             background: var({SURFACE_2_PROPERTY});
-                             border-top: 1px solid var({LINE_STRONG_PROPERTY}); }}
+         /* In the footer, between the status and the source (issue #75). */
+         [part=\"pager\"] {{ flex: 0 0 auto; display: flex; gap: 2px; align-items: center; }}
+         [part=\"page-label\"] {{ padding: 0 0.5rem; color: var({INK_PROPERTY});
+                             font-variant-numeric: tabular-nums; }}
          /* `display` beats the user agent's `[hidden] {{ display: none }}`, so
             the hidden pager has to be told again — otherwise it takes height
             and shrinks the viewport that PageUp/PageDown step by. */
          [part=\"pager\"][hidden] {{ display: none; }}
-         [part=\"pager\"] button {{ font: inherit; min-height: {MIN_TARGET_SIZE}px;
-                             min-width: {MIN_TARGET_SIZE}px;
-                             color: var({INK_PROPERTY}); background: var({SURFACE_PROPERTY});
-                             border-radius: min(var({RADIUS_PROPERTY}), 8px); }}
+         [part=\"pager\"] button {{ font: inherit; font-size: 1rem; line-height: 1;
+                             min-height: 28px; min-width: 28px; padding: 0 6px;
+                             color: var({INK_PROPERTY}); background: transparent; border: 0;
+                             border-radius: min(var({RADIUS_PROPERTY}), 8px); cursor: pointer; }}
+         [part=\"pager\"] button:hover:not(:disabled) {{ background: var({HOVER_PROPERTY}); }}
+         [part=\"pager\"] button:disabled {{ color: var({INK_MUTED_PROPERTY}); opacity: 0.5;
+                             cursor: default; }}
          /* The footer (issue #33): the status line on the left, where the
             queries ran on the right. */
          /* As tall as the status line was: the viewport keeps its height, and
@@ -2015,8 +2018,6 @@ pub fn build_grid(
     if let Some(bar) = tools {
         build_density(buffer, nodes, bar, texts);
     }
-    let pager = build_pager(buffer, nodes, layout, texts);
-
     // With facets, the viewport shares a row with the sidebar (point 66).
     // Without, the skeleton is exactly what it was: the wrapper would be one
     // more box around the viewport, and the viewport's height is what the
@@ -2078,6 +2079,9 @@ pub fn build_grid(
         value: "footer".to_owned(),
     });
     let status = build_status(buffer, nodes, footer, texts);
+    // The pager pages the rows above it, so it sits below them (issue #75),
+    // between what the rows say and where they came from.
+    let pager = build_pager(buffer, nodes, footer, texts);
     let source = element(buffer, nodes, Some(footer), "span");
     buffer.push(Patch::SetAttribute {
         node: source,
@@ -2750,33 +2754,45 @@ fn build_pager(
     }
     set_lang(buffer, container, texts);
 
-    let button =
-        |buffer: &mut PatchBuffer, nodes: &mut NodeAllocator, part: &str, label: &str| -> NodeId {
-            let node = element(buffer, nodes, Some(container), "button");
-            for (name, value) in [("type", "button"), ("part", part)] {
-                buffer.push(Patch::SetAttribute {
-                    node,
-                    name: name.to_owned(),
-                    value: value.to_owned(),
-                });
-            }
-            buffer.push(Patch::SetText {
+    // A glyph to see, the words to hear (issue #75): the buttons show « ‹ › »
+    // and are named by the texts, which the container's `lang` covers.
+    let button = |buffer: &mut PatchBuffer,
+                  nodes: &mut NodeAllocator,
+                  part: &str,
+                  glyph: &str,
+                  label: &str|
+     -> NodeId {
+        let node = element(buffer, nodes, Some(container), "button");
+        for (name, value) in [("type", "button"), ("part", part), ("aria-label", label)] {
+            buffer.push(Patch::SetAttribute {
                 node,
-                text: label.to_owned(),
+                name: name.to_owned(),
+                value: value.to_owned(),
             });
-            node
-        };
+        }
+        buffer.push(Patch::SetText {
+            node,
+            text: glyph.to_owned(),
+        });
+        node
+    };
 
-    let first = button(buffer, nodes, "page-first", &texts.page_first);
-    let previous = button(buffer, nodes, "page-previous", &texts.page_previous);
+    let first = button(buffer, nodes, "page-first", "\u{ab}", &texts.page_first);
+    let previous = button(
+        buffer,
+        nodes,
+        "page-previous",
+        "\u{2039}",
+        &texts.page_previous,
+    );
     let label = element(buffer, nodes, Some(container), "span");
     buffer.push(Patch::SetAttribute {
         node: label,
         name: "part".to_owned(),
         value: "page-label".to_owned(),
     });
-    let next = button(buffer, nodes, "page-next", &texts.page_next);
-    let last = button(buffer, nodes, "page-last", &texts.page_last);
+    let next = button(buffer, nodes, "page-next", "\u{203a}", &texts.page_next);
+    let last = button(buffer, nodes, "page-last", "\u{bb}", &texts.page_last);
 
     PagerNodes {
         container,
@@ -4342,13 +4358,15 @@ mod tests {
                 .collect()
         };
 
-        // The filter group, the pager, the status line — in the footer since
-        // issue #33, below the rows in the DOM — and the grid itself carry roles; the status line stays the single polite live region
-        // (point 41), and the three groups all sit outside `role="grid"` so the
-        // roving tabindex and the keyboard matrix are untouched.
+        // The filter group, the column list, the status line and the pager —
+        // both in the footer (issues #33, #75), below the rows in the DOM —
+        // and the grid itself carry roles; the status line stays the single
+        // polite live region (point 41), and the three groups all sit outside
+        // `role="grid"` so the roving tabindex and the keyboard matrix are
+        // untouched.
         assert_eq!(
             attributes("role"),
-            ["group", "group", "group", "status", "grid"]
+            ["group", "group", "status", "group", "grid"]
         );
         assert_eq!(attributes("aria-live"), ["polite"]);
         // Three accessible names, and each names a different thing: the filter

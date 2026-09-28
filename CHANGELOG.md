@@ -35,6 +35,11 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Fixed
 
+- **The pager sits in the footer** ([#75](https://github.com/casoon/opengrid/issues/75)).
+  It stood between the filter row and the header, in the browser's unstyled buttons. It
+  now follows the status in `part="footer"`, below the rows it pages, as compact glyph
+  buttons (« ‹ › ») that keep their names — "First page" and so on — as `aria-label`.
+  A stylesheet that placed `[part="pager"]` by its old position has to follow.
 - **A boolean column in the filter row** ([#60](https://github.com/casoon/opengrid/issues/60)).
   It was a checkbox whose value reads `on` whether ticked or not: the grid showed a chip
   "… is on" with nothing filtered, and the first filter on any other column silently
