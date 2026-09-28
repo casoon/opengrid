@@ -23,6 +23,9 @@ use opengrid_datasource::{DataSource, QueryResult};
 use opengrid_types::{FieldName, Schema, Value};
 
 mod case;
+mod endpoint;
+
+pub use endpoint::check_endpoint;
 
 pub use case::{
     Case, CaseError, Checked, ExpectedTable, check_case, check_dir, load_schema, rules_covered,
