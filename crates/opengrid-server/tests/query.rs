@@ -8,79 +8,56 @@
 //! decimals and the NFC/NFD pair, which means the wire form gets exercised on
 //! real values rather than on toy ones.
 
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::time::Duration;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
 use http_body_util::BodyExt;
+use opengrid_connector::LocalConnector;
 use opengrid_datasource::wire::{ErrorCode, WireError, result_from_json};
-use opengrid_server::{AppState, Config, Registry, router};
+use opengrid_server::{RowFilter, Server, SourcePolicy};
 use tower::ServiceExt;
 
 const TOKEN: &str = "s3cret-token";
 const OTHER_TOKEN: &str = "other-token";
 
-/// The repository root, so the fixture paths do not depend on the test's cwd.
-fn repo_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(Path::parent)
-        .expect("crates/opengrid-server/../..")
-        .to_path_buf()
-}
-
-/// A configuration over the conformance data set.
+/// The server over the conformance data set.
 ///
 /// `allowed_fields` deliberately leaves out `note` and `flag`, and the mandatory
 /// row filter names `country` — a column the client *may* see here, so the tests
 /// can show both sides of it.
-fn config_toml(row_filter: bool) -> String {
-    let filter = if row_filter {
-        "row_filter = { field = \"country\", op = \"eq\", value = \":country\" }"
-    } else {
-        ""
-    };
-    format!(
-        r#"
-[server]
-max_payload_bytes = 2048
-timeout_ms = 5000
-
-[[tokens]]
-value = "{TOKEN}"
-context = {{ country = "DE" }}
-
-[[tokens]]
-value = "{OTHER_TOKEN}"
-context = {{ country = "FR" }}
-
-[[datasources]]
-name = "orders"
-type = "local-csv"
-path = "crates/opengrid-conformance/data/orders.csv"
-schema = "crates/opengrid-conformance/data/orders.schema.json"
-allowed_fields = ["id", "customer", "country", "amount", "qty", "ordered_on", "ordered_year"]
-{filter}
-"#
+async fn app(row_filter: bool) -> axum::Router {
+    let connector = LocalConnector::from_csv(
+        &opengrid_conformance::fixture_csv(),
+        &opengrid_conformance::suite_dir().join("data/orders.schema.json"),
     )
-}
-
-fn app(row_filter: bool) -> axum::Router {
-    use std::sync::atomic::{AtomicU32, Ordering};
-    static NEXT: AtomicU32 = AtomicU32::new(0);
-
-    let root = repo_root();
-    // A file per call: the tests run in parallel, and a shared path means one
-    // test reads the configuration while another is still writing it.
-    let id = NEXT.fetch_add(1, Ordering::Relaxed);
-    let path = root.join(format!("target/opengrid-server-test-{id}.toml"));
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    std::fs::write(&path, config_toml(row_filter)).unwrap();
-
-    let config = Config::load(&path).expect("configuration");
-    let registry = Registry::build(&config, &root).expect("registry");
-    router(Arc::new(AppState::new(&config, registry)))
+    .expect("the fixture");
+    let allowed = [
+        "id",
+        "customer",
+        "country",
+        "amount",
+        "qty",
+        "ordered_on",
+        "ordered_year",
+    ];
+    Server::builder()
+        .max_payload_bytes(2048)
+        .timeout(Duration::from_secs(5))
+        .token(TOKEN, [("country", "DE")])
+        .token(OTHER_TOKEN, [("country", "FR")])
+        .source(
+            "orders",
+            connector,
+            SourcePolicy {
+                allowed_fields: allowed.map(String::from).to_vec(),
+                row_filter: row_filter.then(|| RowFilter::new("country", "eq", ":country")),
+            },
+        )
+        .build()
+        .await
+        .expect("a server")
+        .router()
 }
 
 /// Sends a query and answers with the status and the body.
@@ -113,7 +90,7 @@ fn error_of(body: &str) -> WireError {
 #[tokio::test]
 async fn a_valid_query_answers_in_the_wire_form() {
     let body = r#"{"source":"orders","select":["id","customer"],"sort":[{"field":"id","direction":"asc"}],"limit":3}"#;
-    let (status, answer) = post(app(false), "orders", Some(TOKEN), body).await;
+    let (status, answer) = post(app(false).await, "orders", Some(TOKEN), body).await;
 
     assert_eq!(status, StatusCode::OK);
     let result = result_from_json(&answer).expect("the body is a result");
@@ -132,7 +109,7 @@ async fn without_a_token_there_is_no_data() {
     let body = r#"{"source":"orders","select":["id"],"limit":1}"#;
 
     for token in [None, Some("wrong"), Some("")] {
-        let (status, answer) = post(app(false), "orders", token, body).await;
+        let (status, answer) = post(app(false).await, "orders", token, body).await;
         assert_eq!(status, StatusCode::UNAUTHORIZED, "{token:?}");
         assert_eq!(error_of(&answer).code, ErrorCode::Unauthorized);
         // The refusal says nothing about which part was wrong.
@@ -154,7 +131,7 @@ async fn no_answer_carries_the_token() {
     ];
     for body in bodies {
         for token in [Some(TOKEN), Some("wrong"), None] {
-            let (_, answer) = post(app(false), "orders", token, body).await;
+            let (_, answer) = post(app(false).await, "orders", token, body).await;
             assert!(!answer.contains(TOKEN), "{answer}");
             assert!(!answer.contains(OTHER_TOKEN), "{answer}");
         }
@@ -164,7 +141,7 @@ async fn no_answer_carries_the_token() {
 #[tokio::test]
 async fn an_unknown_source_is_a_404() {
     let body = r#"{"source":"ghosts","select":["id"]}"#;
-    let (status, answer) = post(app(false), "ghosts", Some(TOKEN), body).await;
+    let (status, answer) = post(app(false).await, "ghosts", Some(TOKEN), body).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(error_of(&answer).code, ErrorCode::UnknownSource);
 }
@@ -172,7 +149,7 @@ async fn an_unknown_source_is_a_404() {
 #[tokio::test]
 async fn a_body_that_is_not_a_query_is_a_400() {
     for body in ["not json", "{}", r#"{"source":"orders","select":5}"#] {
-        let (status, answer) = post(app(false), "orders", Some(TOKEN), body).await;
+        let (status, answer) = post(app(false).await, "orders", Some(TOKEN), body).await;
         assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
         assert_eq!(error_of(&answer).code, ErrorCode::Malformed);
     }
@@ -182,7 +159,7 @@ async fn a_body_that_is_not_a_query_is_a_400() {
 async fn an_invalid_query_names_the_place_it_broke() {
     // `ratio` exists in the schema but is not allowed, so it is as good as absent.
     let body = r#"{"source":"orders","select":["ratio"]}"#;
-    let (status, answer) = post(app(false), "orders", Some(TOKEN), body).await;
+    let (status, answer) = post(app(false).await, "orders", Some(TOKEN), body).await;
 
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     let error = error_of(&answer);
@@ -197,7 +174,7 @@ async fn the_path_decides_which_source_is_queried() {
     // A *valid* identifier that is simply a different source — a hyphen would
     // already fail identifier parsing and never reach this check.
     let body = r#"{"source":"something_else","select":["id"]}"#;
-    let (status, answer) = post(app(false), "orders", Some(TOKEN), body).await;
+    let (status, answer) = post(app(false).await, "orders", Some(TOKEN), body).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(error_of(&answer).path.as_deref(), Some("source"));
 }
@@ -208,7 +185,7 @@ async fn a_body_over_the_limit_is_refused() {
     let body = format!(
         r#"{{"source":"orders","select":["id"],"filter":{{"field":"customer","op":"eq","value":"{padding}"}}}}"#
     );
-    let (status, answer) = post(app(false), "orders", Some(TOKEN), &body).await;
+    let (status, answer) = post(app(false).await, "orders", Some(TOKEN), &body).await;
     assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
     assert_eq!(error_of(&answer).code, ErrorCode::LimitExceeded);
 }
@@ -216,7 +193,7 @@ async fn a_body_over_the_limit_is_refused() {
 #[tokio::test]
 async fn a_limit_over_the_maximum_is_a_validation_error() {
     let body = r#"{"source":"orders","select":["id"],"sort":[{"field":"id","direction":"asc"}],"limit":999999}"#;
-    let (status, answer) = post(app(false), "orders", Some(TOKEN), body).await;
+    let (status, answer) = post(app(false).await, "orders", Some(TOKEN), body).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(error_of(&answer).code, ErrorCode::Validation);
 }
@@ -226,11 +203,11 @@ async fn a_limit_over_the_maximum_is_a_validation_error() {
 async fn two_tokens_see_two_different_sets_of_rows() {
     let body = r#"{"source":"orders","select":["id","country"],"sort":[{"field":"id","direction":"asc"}],"limit":100}"#;
 
-    let (status, german) = post(app(true), "orders", Some(TOKEN), body).await;
+    let (status, german) = post(app(true).await, "orders", Some(TOKEN), body).await;
     assert_eq!(status, StatusCode::OK);
     let german = result_from_json(&german).unwrap();
 
-    let (_, french) = post(app(true), "orders", Some(OTHER_TOKEN), body).await;
+    let (_, french) = post(app(true).await, "orders", Some(OTHER_TOKEN), body).await;
     let french = result_from_json(&french).unwrap();
 
     assert!(german.total_count > 0 && french.total_count > 0);
@@ -248,7 +225,7 @@ async fn two_tokens_see_two_different_sets_of_rows() {
 #[tokio::test]
 async fn a_request_cannot_switch_the_mandatory_filter_off() {
     let body = r#"{"source":"orders","select":["id","country"],"filter":{"field":"country","op":"eq","value":"FR"},"limit":100}"#;
-    let (status, answer) = post(app(true), "orders", Some(TOKEN), body).await;
+    let (status, answer) = post(app(true).await, "orders", Some(TOKEN), body).await;
 
     assert_eq!(status, StatusCode::OK);
     let result = result_from_json(&answer).unwrap();
@@ -263,7 +240,7 @@ async fn a_request_cannot_switch_the_mandatory_filter_off() {
 #[tokio::test]
 async fn without_a_row_filter_a_token_sees_every_row() {
     let body = r#"{"source":"orders","select":["id"],"limit":100}"#;
-    let (_, answer) = post(app(false), "orders", Some(TOKEN), body).await;
+    let (_, answer) = post(app(false).await, "orders", Some(TOKEN), body).await;
     assert_eq!(result_from_json(&answer).unwrap().total_count, 50);
 }
 
@@ -287,7 +264,7 @@ async fn describe(app: axum::Router, source: &str, token: Option<&str>) -> (Stat
 /// What a browser-side planner needs before it can split anything (point 28).
 #[tokio::test]
 async fn a_source_describes_its_schema_and_capabilities() {
-    let (status, body) = describe(app(true), "orders", Some(TOKEN)).await;
+    let (status, body) = describe(app(true).await, "orders", Some(TOKEN)).await;
     assert_eq!(status, StatusCode::OK);
 
     let described: serde_json::Value = serde_json::from_str(&body).expect("JSON");
@@ -315,11 +292,11 @@ async fn a_source_describes_its_schema_and_capabilities() {
 /// The description is data too: no token, no answer.
 #[tokio::test]
 async fn describing_a_source_needs_a_token() {
-    let (status, body) = describe(app(true), "orders", None).await;
+    let (status, body) = describe(app(true).await, "orders", None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert_eq!(error_of(&body).code, ErrorCode::Unauthorized);
 
-    let (status, body) = describe(app(true), "nope", Some(TOKEN)).await;
+    let (status, body) = describe(app(true).await, "nope", Some(TOKEN)).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(error_of(&body).code, ErrorCode::UnknownSource);
 }
@@ -335,14 +312,14 @@ async fn a_derived_column_works_but_does_not_announce_itself() {
         "group":["ordered_year"],
         "aggregate":[{"fn":"count","as":"rows"}],
         "sort":[{"field":"ordered_year","direction":"asc"}]}"#;
-    let (status, answer) = post(app(false), "orders", Some(TOKEN), body).await;
+    let (status, answer) = post(app(false).await, "orders", Some(TOKEN), body).await;
     assert_eq!(status, StatusCode::OK, "{answer}");
 
     let result: serde_json::Value = serde_json::from_str(&answer).expect("JSON");
     assert_eq!(result["columns"][0]["name"], "ordered_year");
     assert_eq!(result["columns"][0]["values"][0], 2025);
 
-    let (status, described) = describe(app(false), "orders", Some(TOKEN)).await;
+    let (status, described) = describe(app(false).await, "orders", Some(TOKEN)).await;
     assert_eq!(status, StatusCode::OK);
     let described: serde_json::Value = serde_json::from_str(&described).expect("JSON");
     let year = described["schema"]["fields"]
@@ -387,7 +364,7 @@ const PIVOT: &str = r#"{"source":"orders","rows":["country"],"columns":["ordered
 /// The pivot wire form: the ordinary result, plus the two things it cannot say.
 #[tokio::test]
 async fn a_pivot_answers_in_the_pivot_wire_form() {
-    let (status, body) = post_pivot(app(false), "orders", Some(TOKEN), PIVOT).await;
+    let (status, body) = post_pivot(app(false).await, "orders", Some(TOKEN), PIVOT).await;
     assert_eq!(status, StatusCode::OK, "{body}");
 
     let answer: serde_json::Value = serde_json::from_str(&body).expect("JSON");
@@ -414,9 +391,9 @@ async fn the_row_filter_reaches_the_grand_total() {
     let body = r#"{"source":"orders","rows":["customer"],
         "values":[{"fn":"count","as":"n"}]}"#;
 
-    let (status, de) = post_pivot(app(true), "orders", Some(TOKEN), body).await;
+    let (status, de) = post_pivot(app(true).await, "orders", Some(TOKEN), body).await;
     assert_eq!(status, StatusCode::OK, "{de}");
-    let (_, fr) = post_pivot(app(true), "orders", Some(OTHER_TOKEN), body).await;
+    let (_, fr) = post_pivot(app(true).await, "orders", Some(OTHER_TOKEN), body).await;
 
     let total_of = |answer: &str| -> i64 {
         let answer: serde_json::Value = serde_json::from_str(answer).expect("JSON");
@@ -433,7 +410,7 @@ async fn the_row_filter_reaches_the_grand_total() {
     assert_ne!(de, fr, "two tokens must not see the same total");
 
     // And neither of them sees the whole table.
-    let (_, all) = post_pivot(app(false), "orders", Some(TOKEN), body).await;
+    let (_, all) = post_pivot(app(false).await, "orders", Some(TOKEN), body).await;
     assert!(
         total_of(&all) > de + fr,
         "without the filter the total is larger: {} vs {de} + {fr}",
@@ -447,7 +424,7 @@ async fn the_row_filter_reaches_the_grand_total() {
 async fn a_forbidden_column_does_not_exist_for_a_pivot_either() {
     let body = r#"{"source":"orders","rows":["note"],
         "values":[{"fn":"count","as":"n"}]}"#;
-    let (status, answer) = post_pivot(app(false), "orders", Some(TOKEN), body).await;
+    let (status, answer) = post_pivot(app(false).await, "orders", Some(TOKEN), body).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(error_of(&answer).code, ErrorCode::Validation);
     assert!(error_of(&answer).message.contains("note"));
@@ -457,17 +434,17 @@ async fn a_forbidden_column_does_not_exist_for_a_pivot_either() {
 /// server-side, with a message the caller can act on.
 #[tokio::test]
 async fn a_pivot_is_guarded_like_every_other_request() {
-    let (status, _) = post_pivot(app(false), "orders", None, PIVOT).await;
+    let (status, _) = post_pivot(app(false).await, "orders", None, PIVOT).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 
-    let (status, answer) = post_pivot(app(false), "nope", Some(TOKEN), PIVOT).await;
+    let (status, answer) = post_pivot(app(false).await, "nope", Some(TOKEN), PIVOT).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(error_of(&answer).code, ErrorCode::UnknownSource);
 
     // Two dimensions across the top is more than V1 allows.
     let wide = r#"{"source":"orders","rows":["country"],"columns":["customer","ordered_year"],
         "values":[{"fn":"count","as":"n"}]}"#;
-    let (status, answer) = post_pivot(app(false), "orders", Some(TOKEN), wide).await;
+    let (status, answer) = post_pivot(app(false).await, "orders", Some(TOKEN), wide).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert!(error_of(&answer).message.contains("column dimensions"));
 }
@@ -475,7 +452,7 @@ async fn a_pivot_is_guarded_like_every_other_request() {
 /// The bounds travel with the description, so a client knows before it asks.
 #[tokio::test]
 async fn a_source_describes_its_pivot_limits() {
-    let (_, body) = describe(app(false), "orders", Some(TOKEN)).await;
+    let (_, body) = describe(app(false).await, "orders", Some(TOKEN)).await;
     let described: serde_json::Value = serde_json::from_str(&body).expect("JSON");
     assert_eq!(described["pivot_limits"]["max_column_dimensions"], 1);
     assert_eq!(described["pivot_limits"]["max_columns"], 256);

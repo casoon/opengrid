@@ -7,14 +7,14 @@
 //! 200 000 rows, so an export is many pieces and a client can leave between
 //! them.
 
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
 use http_body_util::BodyExt;
-use opengrid_server::{AppState, Config, Registry, router};
+use opengrid_datasource_postgres::PostgresDataSource;
+use opengrid_server::{RowFilter, Server, ServerBuilder, SourcePolicy};
+use opengrid_types::Schema;
 use tower::ServiceExt;
 
 const DE: &str = "token-de";
@@ -108,25 +108,24 @@ async fn drop_table(client: &tokio_postgres::Client, table: &str) {
 
 /// The server over `table`, the tenant filter on `country` — a column its
 /// callers cannot see — and at most 150 000 rows per export.
-fn app(table: &str, application: &str) -> axum::Router {
-    app_with(table, application, "timeout_ms = 10000")
+async fn app(table: &str, application: &str) -> axum::Router {
+    app_with(table, application, |server| server).await
 }
 
-fn app_with_timeout(table: &str, application: &str, timeout_ms: u64) -> axum::Router {
-    app_with(table, application, &format!("timeout_ms = {timeout_ms}"))
+async fn app_with_timeout(table: &str, application: &str, timeout_ms: u64) -> axum::Router {
+    app_with(table, application, |server| {
+        server.timeout(Duration::from_millis(timeout_ms))
+    })
+    .await
 }
 
-/// The server with `settings` added to `[server]`.
-fn app_with(table: &str, application: &str, settings: &str) -> axum::Router {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(Path::parent)
-        .expect("the repository")
-        .to_path_buf();
-    let dir: PathBuf = root.join(format!("target/opengrid-server-{table}"));
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(
-        dir.join("schema.json"),
+/// The server, with `settings` applied to its builder.
+async fn app_with(
+    table: &str,
+    application: &str,
+    settings: impl FnOnce(ServerBuilder) -> ServerBuilder,
+) -> axum::Router {
+    let schema: Schema = serde_json::from_str(
         r#"{ "fields": [
             { "name": "id", "type": "int64", "nullable": false },
             { "name": "country", "type": "utf8", "nullable": true },
@@ -135,43 +134,23 @@ fn app_with(table: &str, application: &str, settings: &str) -> axum::Router {
         ] }"#,
     )
     .unwrap();
-    let path = dir.join("config.toml");
-    std::fs::write(
-        &path,
-        format!(
-            r#"
-[server]
-max_export_rows = 150000
-{settings}
-
-[[tokens]]
-value = "{DE}"
-context = {{ country = "DE" }}
-
-[[tokens]]
-value = "{FR}"
-context = {{ country = "FR" }}
-
-[[tokens]]
-value = "{ALL}"
-context = {{ country = "%" }}
-
-[[datasources]]
-name = "orders"
-type = "postgres"
-connection = {connection:?}
-table = "{table}"
-schema = "schema.json"
-allowed_fields = ["id", "amount", "note"]
-row_filter = {{ field = "country", op = "eq", value = ":country" }}
-"#,
-            connection = named(&connection(), application),
-        ),
-    )
-    .unwrap();
-    let config = Config::load(&path).expect("configuration");
-    let registry = Registry::build(&config, &dir).expect("registry");
-    router(Arc::new(AppState::new(&config, registry)))
+    let source = PostgresDataSource::connect(&named(&connection(), application), table, schema)
+        .expect("a source");
+    let server = Server::builder()
+        .max_export_rows(150_000)
+        .timeout(Duration::from_secs(10))
+        .token(DE, [("country", "DE")])
+        .token(FR, [("country", "FR")])
+        .token(ALL, [("country", "%")])
+        .source(
+            "orders",
+            source,
+            SourcePolicy {
+                allowed_fields: vec!["id".into(), "amount".into(), "note".into()],
+                row_filter: Some(RowFilter::new("country", "eq", ":country")),
+            },
+        );
+    settings(server).build().await.expect("a server").router()
 }
 
 async fn export(app: axum::Router, token: &str, body: &str) -> axum::response::Response {
@@ -199,7 +178,7 @@ async fn a_tenant_exports_its_own_rows_from_postgresql_and_no_other() {
     };
     let table = "opengrid_server_export_tenant";
     create_table(&client, table).await;
-    let app = app(table, "opengrid_server_export_tenant");
+    let app = app(table, "opengrid_server_export_tenant").await;
 
     for (token, country) in [(DE, "DE"), (FR, "FR")] {
         let response = export(app.clone(), token, BY_ID).await;
@@ -253,7 +232,7 @@ async fn too_many_rows_are_refused_before_the_first_byte() {
         .await
         .unwrap();
     let application = "opengrid_server_export_bound";
-    let app = app(table, application);
+    let app = app(table, application).await;
 
     let response = export(app.clone(), DE, BY_ID).await;
     assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
@@ -288,7 +267,7 @@ async fn a_client_that_leaves_ends_the_query() {
     let table = "opengrid_server_export_abort";
     let application = "opengrid_server_export_abort";
     create_table(&client, table).await;
-    let app = app(table, application);
+    let app = app(table, application).await;
 
     let backends = || async {
         client
@@ -349,7 +328,7 @@ async fn a_failure_in_the_middle_is_a_broken_body_not_a_short_file() {
     let table = "opengrid_server_export_broken";
     let application = "opengrid_server_export_broken";
     create_table(&client, table).await;
-    let app = app(table, application);
+    let app = app(table, application).await;
 
     let response = export(app, DE, BY_ID).await;
     assert_eq!(response.status(), StatusCode::OK);
@@ -411,7 +390,7 @@ async fn an_export_that_does_not_start_in_time_is_cancelled_in_the_database() {
     let table = "opengrid_server_export_slow";
     let application = "opengrid_server_export_slow";
     create_table(&client, table).await;
-    let app = app_with_timeout(table, application, 500);
+    let app = app_with_timeout(table, application, 500).await;
 
     locker
         .batch_execute(&format!(
@@ -465,7 +444,7 @@ async fn a_client_that_stops_reading_is_cut_off_within_the_deadline() {
     let table = "opengrid_server_export_stalled";
     let application = "opengrid_server_export_stalled";
     create_table(&client, table).await;
-    let app = app_with_timeout(table, application, 500);
+    let app = app_with_timeout(table, application, 500).await;
 
     let response = export(app.clone(), DE, BY_ID).await;
     assert_eq!(response.status(), StatusCode::OK);
@@ -508,7 +487,10 @@ async fn one_export_too_many_is_turned_away_before_the_database() {
     let table = "opengrid_server_export_crowded";
     let application = "opengrid_server_export_crowded";
     create_table(&client, table).await;
-    let app = app_with(table, application, "max_concurrent_exports = 1");
+    let app = app_with(table, application, |server| {
+        server.max_concurrent_exports(1)
+    })
+    .await;
 
     // One export, held: its client reads a piece and waits.
     let held = export(app.clone(), DE, BY_ID).await;

@@ -6,64 +6,38 @@
 //! and every case has to come back the same both ways — and as the suite
 //! expects.
 
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::time::Duration;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
 use http_body_util::BodyExt;
 use opengrid_columns::wire::{MEDIA_TYPE, decode_result};
 use opengrid_conformance::{RowOrder, Table, check_dir, compare, load_schema};
+use opengrid_connector::LocalConnector;
 use opengrid_datasource::QueryResult;
 use opengrid_datasource::wire::result_from_json;
-use opengrid_server::{AppState, Config, Registry, router};
+use opengrid_server::{Server, SourcePolicy};
 use tower::ServiceExt;
 
 const TOKEN: &str = "binary-token";
 
-fn repo_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(Path::parent)
-        .expect("crates/opengrid-server/../..")
-        .to_path_buf()
-}
-
 /// The fixture with every column open and no row filter: the suite's queries
 /// name all of them.
-fn app() -> axum::Router {
-    use std::sync::atomic::{AtomicU32, Ordering};
-    static NEXT: AtomicU32 = AtomicU32::new(0);
-
-    let root = repo_root();
-    // A file per call: the tests run in parallel, and a shared path means one
-    // test reads the configuration while another is still writing it.
-    let id = NEXT.fetch_add(1, Ordering::Relaxed);
-    let path = root.join(format!("target/opengrid-server-binary-test-{id}.toml"));
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    std::fs::write(
-        &path,
-        format!(
-            r#"
-[server]
-max_payload_bytes = 65536
-timeout_ms = 5000
-
-[[tokens]]
-value = "{TOKEN}"
-
-[[datasources]]
-name = "orders"
-type = "local-csv"
-path = "crates/opengrid-conformance/data/orders.csv"
-schema = "crates/opengrid-conformance/data/orders.schema.json"
-"#
-        ),
+async fn app() -> axum::Router {
+    let connector = LocalConnector::from_csv(
+        &opengrid_conformance::fixture_csv(),
+        &opengrid_conformance::suite_dir().join("data/orders.schema.json"),
     )
-    .unwrap();
-    let config = Config::load(&path).expect("configuration");
-    let registry = Registry::build(&config, &root).expect("registry");
-    router(Arc::new(AppState::new(&config, registry)))
+    .expect("the fixture");
+    Server::builder()
+        .max_payload_bytes(65536)
+        .timeout(Duration::from_secs(5))
+        .token(TOKEN, [("unused", "")])
+        .source("orders", connector, SourcePolicy::default())
+        .build()
+        .await
+        .expect("a server")
+        .router()
 }
 
 /// Posts `body` to `path`, with `accept` if given; the status, the content
@@ -107,10 +81,10 @@ fn from_bytes(bytes: &[u8]) -> QueryResult {
 
 #[tokio::test]
 async fn the_whole_suite_answers_the_same_in_both_forms() {
-    let root = repo_root().join("crates/opengrid-conformance");
+    let root = opengrid_conformance::suite_dir();
     let schema = load_schema(&root.join("data/orders.schema.json")).unwrap();
     let cases = check_dir(&root.join("cases"), &schema).expect("the cases load");
-    let app = app();
+    let app = app().await;
 
     let mut failed = Vec::new();
     for case in &cases {
@@ -155,7 +129,7 @@ async fn the_whole_suite_answers_the_same_in_both_forms() {
 /// answer JSON. Either way `Vary: Accept` tells a cache the two apart.
 #[tokio::test]
 async fn only_the_media_type_asks_for_bytes() {
-    let app = app();
+    let app = app().await;
     let body = r#"{"source":"orders","select":["id"],"sort":[{"field":"id"}],"limit":2}"#;
     for (accept, binary) in [
         (None, false),
@@ -185,7 +159,7 @@ async fn only_the_media_type_asks_for_bytes() {
 #[tokio::test]
 async fn an_error_stays_json() {
     let (status, content_type, _, body) = post(
-        &app(),
+        &app().await,
         "/query/orders",
         r#"{"source":"orders","select":["nope"]}"#,
         Some(MEDIA_TYPE),
@@ -199,7 +173,7 @@ async fn an_error_stays_json() {
 /// The pivot answers the same in both forms.
 #[tokio::test]
 async fn a_pivot_answers_the_same_in_both_forms() {
-    let app = app();
+    let app = app().await;
     let body = r#"{"source":"orders","rows":["country"],"columns":["ordered_year"],
         "values":[{"field":"qty","fn":"sum","as":"total"}]}"#;
     let (_, _, _, json) = post(&app, "/pivot/orders", body, None).await;

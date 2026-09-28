@@ -10,8 +10,8 @@ import { fileURLToPath } from "node:url";
 // is pinned in package.json; `just e2e` builds the module first.
 
 const PORT = 8080;
-// The `opengrid-server` the hybrid and export fixtures query; the port is also written in
-// tests/e2e/fixtures/opengrid-e2e.toml.
+// The `opengrid-server` the hybrid and export fixtures query: the `e2e` preset of
+// examples/server, whose port is also written there.
 const SERVER_PORT = 8082;
 const baseURL = `http://127.0.0.1:${PORT}`;
 // Serve the repo from its root: the fixture loads /packages/opengrid/loader.js
@@ -85,7 +85,7 @@ export default defineConfig({
       // and the export spec fails with "unknown source". Stop it; or run with
       // CI=1, which never reuses and says so when the port is still taken.
       command:
-        "node tests/e2e/fixtures/write-export-data.mjs && cargo run -p opengrid-server -- tests/e2e/fixtures/opengrid-e2e.toml",
+        "node tests/e2e/fixtures/write-export-data.mjs && cargo run -p opengrid-example-server -- e2e",
       cwd: repoRoot,
       port: SERVER_PORT,
       reuseExistingServer: !process.env.CI,

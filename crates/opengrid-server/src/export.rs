@@ -26,7 +26,7 @@
 //! count and the rows come from one snapshot (see `opengrid-datasource-postgres`),
 //! so the number in [`ROWS_HEADER`] is the number of rows that come.
 //!
-//! `timeout_ms` bounds the time to the first byte and then **each** fetch from
+//! The timeout bounds the time to the first byte and then **each** fetch from
 //! the source; the whole length is bounded by `max_export_rows`, not by a
 //! clock — a million rows to a slow client may take longer than any one query.
 //!
@@ -46,7 +46,7 @@
 //! `VACUUM` from removing rows that are dead since it began) for as long as it
 //! runs, and a client decides how long that is. So:
 //!
-//! 1. **Each piece must be taken within `timeout_ms`.** A client that stops
+//! 1. **Each piece must be taken within the timeout.** A client that stops
 //!    reading keeps the channel full; when a piece waits longer than that, the
 //!    body is broken off and the export dropped — connection out of the pool,
 //!    transaction and cursor gone.
@@ -57,7 +57,7 @@
 //!    needs.
 //! 3. **PostgreSQL's own backstop**: the transaction sets
 //!    `idle_in_transaction_session_timeout` to [`BACKSTOP_FACTOR`] times
-//!    `timeout_ms`, and the database ends it if the server's own bound ever
+//!    the timeout, and the database ends it if the server's own bound ever
 //!    fails.
 //!
 //! The local engine holds its whole answer (columns, not values) for the length
@@ -101,8 +101,8 @@ const PIECE_ROWS: usize = 10_000;
 /// the one being read, this is all an export keeps in memory.
 const BUFFERED_PIECES: usize = 2;
 
-/// PostgreSQL's backstop, in multiples of `timeout_ms`. The server bounds each
-/// pause in the transaction itself — a piece taken within `timeout_ms`, then a
+/// PostgreSQL's backstop, in multiples of the timeout. The server bounds each
+/// pause in the transaction itself — a piece taken within the timeout, then a
 /// piece written, which takes milliseconds — so twice that is only reached
 /// when the server's own bound has failed.
 const BACKSTOP_FACTOR: u32 = 2;
