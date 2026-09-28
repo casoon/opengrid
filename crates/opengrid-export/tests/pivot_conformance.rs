@@ -66,8 +66,8 @@ fn cases() -> Vec<(String, PivotQuery)> {
         .into_iter()
         .map(|path| {
             let text = std::fs::read_to_string(&path).expect("read case");
-            let case: serde_json::Value = serde_json::from_str(&text).expect("a case is JSON");
-            let pivot = serde_json::from_value(case["pivot"].clone())
+            let case: opengrid_json::Json = opengrid_json::from_str(&text).expect("a case is JSON");
+            let pivot = opengrid_json::FromJson::from_json(&case["pivot"])
                 .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
             (case["id"].as_str().expect("an id").to_owned(), pivot)
         })
@@ -101,7 +101,7 @@ fn text_of(value: &Value) -> Option<String> {
     match value {
         Value::Null => None,
         Value::Utf8(text) => Some(text.clone()),
-        other => Some(serde_json::to_value(other).expect("JSON").to_string()),
+        other => Some(opengrid_json::ToJson::to_json(other).to_string()),
     }
 }
 

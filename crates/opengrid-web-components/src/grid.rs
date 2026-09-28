@@ -995,23 +995,23 @@ pub fn filter_expr(
 /// right *kind*, and validation against the schema does the rest. What it must
 /// not do is pass something through that will fail later: the user typed it, so
 /// the user should hear about it here.
-pub fn literal(text: &str, data_type: DataType) -> Option<serde_json::Value> {
+pub fn literal(text: &str, data_type: DataType) -> Option<opengrid_json::Json> {
     let text = text.trim();
     match data_type {
-        DataType::Utf8 => Some(serde_json::Value::String(text.to_owned())),
+        DataType::Utf8 => Some(opengrid_json::Json::String(text.to_owned())),
         DataType::Bool => match text {
-            "true" | "on" | "1" => Some(serde_json::Value::Bool(true)),
-            "false" | "off" | "0" | "" => Some(serde_json::Value::Bool(false)),
+            "true" | "on" | "1" => Some(opengrid_json::Json::Bool(true)),
+            "false" | "off" | "0" | "" => Some(opengrid_json::Json::Bool(false)),
             _ => None,
         },
         DataType::Int64 => text.parse::<i64>().ok().map(Into::into),
         DataType::Float64 => {
             // E13: the three non-finite values travel as those exact words.
             if matches!(text, "NaN" | "Infinity" | "-Infinity") {
-                return Some(serde_json::Value::String(text.to_owned()));
+                return Some(opengrid_json::Json::String(text.to_owned()));
             }
             let number = text.parse::<f64>().ok()?;
-            serde_json::Number::from_f64(number).map(serde_json::Value::Number)
+            opengrid_json::Number::from_f64(number).map(opengrid_json::Json::Number)
         }
         // A decimal travels as a string so no precision is lost on the way
         // (§Typsystem). Checked here for shape only.
@@ -1021,7 +1021,7 @@ pub fn literal(text: &str, data_type: DataType) -> Option<serde_json::Value> {
             let ok = !whole.is_empty()
                 && whole.bytes().all(|b| b.is_ascii_digit())
                 && fraction.bytes().all(|b| b.is_ascii_digit());
-            ok.then(|| serde_json::Value::String(text.to_owned()))
+            ok.then(|| opengrid_json::Json::String(text.to_owned()))
         }
         DataType::Date => {
             // `YYYY-MM-DD`, which is what `<input type="date">` produces.
@@ -1031,11 +1031,11 @@ pub fn literal(text: &str, data_type: DataType) -> Option<serde_json::Value> {
                 && parts[1].len() == 2
                 && parts[2].len() == 2
                 && parts.iter().all(|p| p.bytes().all(|b| b.is_ascii_digit()));
-            ok.then(|| serde_json::Value::String(text.to_owned()))
+            ok.then(|| opengrid_json::Json::String(text.to_owned()))
         }
         DataType::Timestamp => {
             let ok = text.len() >= 20 && text.ends_with('Z') && text.contains('T');
-            ok.then(|| serde_json::Value::String(text.to_owned()))
+            ok.then(|| opengrid_json::Json::String(text.to_owned()))
         }
     }
 }
@@ -1111,7 +1111,7 @@ pub fn query_json(
     offset: u64,
     limit: u64,
 ) -> String {
-    use serde_json::{Value as Json, json};
+    use opengrid_json::{Json, json};
     let sort = sorts
         .iter()
         .map(|(field, direction)| json!({ "field": field, "direction": direction }))
@@ -1136,7 +1136,7 @@ pub fn view_query_json(
     sorts: &[(String, &str)],
     filter: Option<&FilterExpr>,
 ) -> String {
-    use serde_json::json;
+    use opengrid_json::json;
     let sort = groups
         .iter()
         .map(|field| json!({ "field": field, "direction": "asc", "nulls": "last" }))
@@ -1147,25 +1147,25 @@ pub fn view_query_json(
                 .map(|(field, direction)| json!({ "field": field, "direction": direction })),
         )
         .collect();
-    serde_json::Value::Object(query_object(source, columns, sort, filter)).to_string()
+    opengrid_json::Json::Object(query_object(source, columns, sort, filter)).to_string()
 }
 
 /// Source, projection, filter and sort — everything but the window.
 fn query_object(
     source: &str,
     columns: &[String],
-    sort: Vec<serde_json::Value>,
+    sort: Vec<opengrid_json::Json>,
     filter: Option<&FilterExpr>,
-) -> serde_json::Map<String, serde_json::Value> {
-    use serde_json::Value as Json;
-    let mut query = serde_json::Map::new();
+) -> opengrid_json::Object {
+    use opengrid_json::Json;
+    let mut query = opengrid_json::Object::new();
     query.insert("source".to_owned(), Json::String(source.to_owned()));
     query.insert(
         "select".to_owned(),
         Json::Array(columns.iter().cloned().map(Json::String).collect()),
     );
     if let Some(filter) = filter {
-        let filter = serde_json::to_value(filter).expect("a filter expression serializes");
+        let filter = opengrid_json::ToJson::to_json(&filter);
         query.insert("filter".to_owned(), filter);
     }
     if !sort.is_empty() {
@@ -3878,9 +3878,9 @@ mod tests {
     /// The query carries select, limit and offset, and omits sort when unsorted.
     #[test]
     fn an_unsorted_query_has_limit_and_offset() {
-        use serde_json::{Value as Json, json};
+        use opengrid_json::{Json, json};
         let query = query_json("orders", &["a".to_owned()], &[], None, 100, 40);
-        let value: Json = serde_json::from_str(&query).expect("valid JSON");
+        let value: Json = opengrid_json::from_str(&query).expect("valid JSON");
         assert_eq!(value["source"], "orders");
         assert_eq!(value["select"], json!(["a"]));
         assert_eq!(value["limit"], json!(40));
@@ -3892,7 +3892,7 @@ mod tests {
     /// A sorted query carries one sort object per key, in order.
     #[test]
     fn a_sorted_query_names_one_direction() {
-        use serde_json::{Value as Json, json};
+        use opengrid_json::{Json, json};
         let query = query_json(
             "orders",
             &["customer".to_owned()],
@@ -3901,7 +3901,7 @@ mod tests {
             0,
             40,
         );
-        let value: Json = serde_json::from_str(&query).expect("valid JSON");
+        let value: Json = opengrid_json::from_str(&query).expect("valid JSON");
         assert_eq!(
             value["sort"],
             json!([{ "field": "customer", "direction": "desc" }])
@@ -3913,7 +3913,7 @@ mod tests {
     /// and no window.
     #[test]
     fn a_view_query_leads_with_the_group_keys_null_last() {
-        use serde_json::{Value as Json, json};
+        use opengrid_json::{Json, json};
         let query = view_query_json(
             "orders",
             &["country".to_owned(), "amount".to_owned()],
@@ -3924,7 +3924,7 @@ mod tests {
             ],
             None,
         );
-        let value: Json = serde_json::from_str(&query).expect("valid JSON");
+        let value: Json = opengrid_json::from_str(&query).expect("valid JSON");
         assert_eq!(
             value["sort"],
             json!([
@@ -3943,7 +3943,7 @@ mod tests {
             &[("amount".to_owned(), "desc")],
             None,
         );
-        let value: Json = serde_json::from_str(&plain).expect("valid JSON");
+        let value: Json = opengrid_json::from_str(&plain).expect("valid JSON");
         assert_eq!(
             value["sort"],
             json!([{ "field": "amount", "direction": "desc" }])
@@ -3953,7 +3953,7 @@ mod tests {
     /// A multi-sort query keeps the keys in the user's order.
     #[test]
     fn a_multi_sort_query_keeps_the_key_order() {
-        use serde_json::{Value as Json, json};
+        use opengrid_json::{Json, json};
         let query = query_json(
             "orders",
             &["customer".to_owned()],
@@ -3965,7 +3965,7 @@ mod tests {
             0,
             40,
         );
-        let value: Json = serde_json::from_str(&query).expect("valid JSON");
+        let value: Json = opengrid_json::from_str(&query).expect("valid JSON");
         assert_eq!(
             value["sort"],
             json!([
@@ -4002,7 +4002,7 @@ mod tests {
     /// written the way its column expects (point 51).
     #[test]
     fn the_filter_query_types_every_literal() {
-        use serde_json::{Value as Json, json};
+        use opengrid_json::{Json, json};
         let entries = [
             entry("customer", "contains", "Al"),
             entry("qty", "gt", "2"),
@@ -4021,7 +4021,7 @@ mod tests {
             0,
             40,
         );
-        let value: Json = serde_json::from_str(&query).expect("valid JSON");
+        let value: Json = opengrid_json::from_str(&query).expect("valid JSON");
 
         assert_eq!(
             value["filter"],
@@ -4041,7 +4041,7 @@ mod tests {
     /// The two operators that take no value become their own filter nodes.
     #[test]
     fn the_null_operators_need_no_value() {
-        use serde_json::{Value as Json, json};
+        use opengrid_json::{Json, json};
         let entries = [
             entry("customer", "is_null", ""),
             entry("qty", "is_not_null", ""),
@@ -4057,7 +4057,7 @@ mod tests {
             0,
             40,
         );
-        let value: Json = serde_json::from_str(&query).expect("valid JSON");
+        let value: Json = opengrid_json::from_str(&query).expect("valid JSON");
         assert_eq!(
             value["filter"],
             json!({ "and": [

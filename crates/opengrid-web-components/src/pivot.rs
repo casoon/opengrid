@@ -14,7 +14,7 @@
 //! Everything here is portable data, so the same functions run in unit tests on
 //! the host and in the browser through the renderer.
 
-use serde_json::{Value, json};
+use opengrid_json::{Json as Value, json};
 
 use opengrid_web_core::element::{LABEL_ATTRIBUTE, mirror_label};
 use opengrid_web_core::patch::{NodeAllocator, NodeId, Patch, PatchBuffer};
@@ -78,7 +78,7 @@ pub fn pivot_json(
     if raw.is_empty() {
         return Err("the values attribute is empty: a pivot needs a measure".to_owned());
     }
-    let values: Value = serde_json::from_str(raw)
+    let values: Value = opengrid_json::from_str(raw)
         .map_err(|error| format!("the values attribute is not JSON: {error}"))?;
     if !values.is_array() {
         return Err("the values attribute must be a JSON array of measures".to_owned());
@@ -145,7 +145,7 @@ impl PivotModel {
 
 /// Reads the pivot wire form of point 53.
 pub fn parse_result(json: &str) -> Result<PivotModel, String> {
-    let body: Value = serde_json::from_str(json).map_err(|error| error.to_string())?;
+    let body: Value = opengrid_json::from_str(json).map_err(|error| error.to_string())?;
 
     let row_dimensions: Vec<String> = body["row_dimensions"]
         .as_array()

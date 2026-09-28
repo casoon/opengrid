@@ -62,7 +62,7 @@ impl FromJson for DataType {
                     return Err(json.invalid_type("a type name or one {\"decimal\": …}"));
                 };
                 if name != "decimal" {
-                    return Err(match TYPES.contains(&name) {
+                    return Err(match TYPES.contains(&name.as_str()) {
                         true => Error::new("invalid type: map, expected unit variant"),
                         false => unknown_variant(name, &TYPES),
                     });

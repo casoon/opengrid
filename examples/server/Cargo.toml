@@ -18,4 +18,4 @@ opengrid-engine = { path = "../../crates/opengrid-engine" }
 opengrid-types = { path = "../../crates/opengrid-types" }
 axum = "0.8"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
-serde_json = "1"
+opengrid-json = { path = "../../crates/opengrid-json" }

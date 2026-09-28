@@ -118,7 +118,7 @@ fn a_rows_only_source_answers_the_whole_suite() {
 fn the_bound_counts_what_is_held_not_what_is_read() {
     let schema = Fixture::new().schema;
     let query = |json: &str| {
-        let query: opengrid_query::Query = serde_json::from_str(json).unwrap();
+        let query: opengrid_query::Query = opengrid_json::from_str(json).unwrap();
         query
             .validate(&schema, &opengrid_query::Limits::default())
             .unwrap()

@@ -37,7 +37,7 @@
 //! { "error": { "code": "validation", "message": "…", "path": "filter.and[1].value" } }
 //! ```
 
-use opengrid_json::{Error, Fields, FromJson, Json, ToJson, json, unknown_variant};
+use opengrid_json::{Error, FromJson, Json, ToJson, json, unknown_variant};
 use opengrid_types::{DataType, Field, FieldName, Schema, Value};
 
 use crate::QueryResult;

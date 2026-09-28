@@ -14,7 +14,7 @@
 //! `aria-sort` on the `<th>`. Sorting is single-column — table mode is display,
 //! not interaction (plan/spezifikation/02-query-modell.md §Struktur).
 
-use serde_json::{Value, json};
+use opengrid_json::{Json as Value, json};
 
 use opengrid_web_core::element::{LABEL_ATTRIBUTE, mirror_label};
 use opengrid_web_core::patch::{NodeAllocator, NodeId, Patch, PatchBuffer};
@@ -110,7 +110,7 @@ pub fn parse_columns(raw: Option<&str>) -> Vec<String> {
 /// `{ "field", "direction" }` object otherwise
 /// (plan/spezifikation/02-query-modell.md §JSON-Vertrag).
 pub fn query_json(source: &str, columns: &[String], sort: Option<(&str, SortDirection)>) -> String {
-    let mut query = serde_json::Map::new();
+    let mut query = opengrid_json::Object::new();
     query.insert("source".to_owned(), Value::String(source.to_owned()));
     query.insert(
         "select".to_owned(),
@@ -133,7 +133,7 @@ pub fn query_json(source: &str, columns: &[String], sort: Option<(&str, SortDire
 /// arrive as strings, E13).
 pub fn parse_result(result_json: &str) -> Result<TableModel, String> {
     let value: Value =
-        serde_json::from_str(result_json).map_err(|error| format!("result JSON: {error}"))?;
+        opengrid_json::from_str(result_json).map_err(|error| format!("result JSON: {error}"))?;
     let columns = value
         .get("columns")
         .and_then(Value::as_array)
@@ -480,7 +480,7 @@ mod tests {
     #[test]
     fn an_unsorted_query_has_no_sort_key() {
         let query = query_json("orders", &["a".to_owned(), "b".to_owned()], None);
-        let value: Value = serde_json::from_str(&query).expect("valid JSON");
+        let value: Value = opengrid_json::from_str(&query).expect("valid JSON");
         assert_eq!(value["source"], "orders");
         assert_eq!(value["select"], json!(["a", "b"]));
         assert!(value.get("sort").is_none());
@@ -494,7 +494,7 @@ mod tests {
             &["customer".to_owned()],
             Some(("customer", SortDirection::Desc)),
         );
-        let value: Value = serde_json::from_str(&query).expect("valid JSON");
+        let value: Value = opengrid_json::from_str(&query).expect("valid JSON");
         assert_eq!(
             value["sort"],
             json!([{ "field": "customer", "direction": "desc" }])
