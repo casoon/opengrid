@@ -493,6 +493,15 @@ pub fn takes_value(op: &str) -> bool {
     !matches!(op, "is_null" | "is_not_null")
 }
 
+/// The narrowest a column is drawn, whatever width the page or the reader
+/// gave it (issue #61): the header's padding (2 × 12 px), two characters of
+/// its name, the sort direction and order (about 13 px each) and, with the
+/// column menu, its 24 px button and gap. Narrower, the name was cut to
+/// nothing.
+pub fn header_min_width(column_menu: bool) -> u32 {
+    if column_menu { 96 } else { 64 }
+}
+
 /// The `type` of the value input for a column (plan point 51).
 ///
 /// A date picker for a date, a number spinner for a number, a checkbox for a
@@ -1630,10 +1639,19 @@ pub fn build_grid(
             invisible exactly where it is needed (point 49). Letting the *name*
             ellipsize instead keeps them: measured, a flex header would drop out
             of the table layout and break the column alignment. */
-         [part=\"header\"] > span:first-child {{ display: inline-block; max-width: 100%;
+         /* What stands beside the name is reserved as it is, not as the most
+            it could be: a fixed 2.75em for the marks cut a narrow sorted
+            column's name to nothing (issue #61). The name keeps two characters
+            at least; `header_min_width` keeps the column wide enough for them. */
+         [part=\"header\"] > span:first-child {{ display: inline-block; min-width: 2ch;
+                   max-width: calc(100% - var(--og-reserve-sort, 0px) - var(--og-reserve-index, 0px)
+                                        - var(--og-reserve-menu, 0px));
                    overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }}
-         [part=\"header\"][aria-sort=\"ascending\"] > span:first-child,
-         [part=\"header\"][aria-sort=\"descending\"] > span:first-child {{ max-width: calc(100% - 2.75em); }}
+         [part=\"header\"][aria-sort=\"ascending\"],
+         [part=\"header\"][aria-sort=\"descending\"] {{ --og-reserve-sort: 1.1em; }}
+         [part=\"header\"]:has([part=\"sort-index\"]:not(:empty)) {{ --og-reserve-index: 1.1em; }}
+         [part=\"header\"]:has([part=\"column-menu-button\"]) {{
+                   --og-reserve-menu: calc({MIN_TARGET_SIZE}px + 0.25rem); }}
          table {{ width: 100%; table-layout: fixed; border-collapse: collapse; }}
          thead {{ position: sticky; top: 0; z-index: 2;
                   background: var({SURFACE_2_PROPERTY}); color: var({INK_PROPERTY}); }}
@@ -1712,11 +1730,6 @@ pub fn build_grid(
                    margin-left: 0.25rem; vertical-align: middle; cursor: pointer;
                    border-radius: min(var({RADIUS_PROPERTY}), 5px); color: var({INK_MUTED_PROPERTY}); }}
          [part=\"column-menu-button\"]:hover {{ background: var({HOVER_PROPERTY}); }}
-         [part=\"header\"]:has([part=\"column-menu-button\"]) > span:first-child {{
-                   max-width: calc(100% - {MIN_TARGET_SIZE}px - 0.5rem); }}
-         [part=\"header\"][aria-sort=\"ascending\"]:has([part=\"column-menu-button\"]) > span:first-child,
-         [part=\"header\"][aria-sort=\"descending\"]:has([part=\"column-menu-button\"]) > span:first-child {{
-                   max-width: calc(100% - 2.75em - {MIN_TARGET_SIZE}px - 0.5rem); }}
          [part=\"column-menu\"] {{ position: fixed; inset: auto; margin: 0; padding: 6px;
                    min-width: 14rem; box-sizing: border-box;
                    background: var({SURFACE_PROPERTY}); color: var({INK_PROPERTY});
