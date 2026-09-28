@@ -186,6 +186,12 @@ struct GridRuntime {
     /// the offset of an element that leaves the document, even for a move;
     /// this is what puts it back (point 74).
     scroll_top: i32,
+    /// Which of viewport (`true`) and filter row (`false`) was just scrolled
+    /// to follow the other, and to where (issue #62). A scroll event from it
+    /// at exactly that position is the echo; passing it back would pull the
+    /// other to where it cannot go — the filter row reaches further than the
+    /// rows, past its "Clear". Anywhere else, the reader moved it.
+    scroll_echo: Option<(bool, i32)>,
 }
 
 impl GridRuntime {
@@ -269,6 +275,7 @@ fn fresh_runtime(
         known: known.clone(),
         retype_filter: false,
         scroll_top: 0,
+        scroll_echo: None,
     }
 }
 
@@ -537,10 +544,8 @@ fn write_filter_entries(root: &ShadowRoot, entries: &[FilterEntry]) {
         {
             select.set_value(entry.op.as_str());
         }
-        if let Ok(Some(node)) = root.query_selector(&format!("input[data-col=\"{col}\"]"))
-            && let Ok(input) = node.dyn_into::<HtmlInputElement>()
-        {
-            input.set_value(&entry.value);
+        if let Some(control) = ValueControl::of(&root, col) {
+            control.set_value(&entry.value);
         }
     }
 }
@@ -704,6 +709,9 @@ fn ensure_skeleton(host: &HtmlElement) {
     // The reader's widths live on the header cells and survive the frames that
     // follow; a fresh skeleton has to get them back (point 36).
     apply_widths(host);
+    // The filter row follows the columns' widths as the table changes size
+    // (issue #62); the observer fires once at once, which lines it up.
+    observe_columns(&root);
     if let Some((entries, search)) = carried {
         write_filter_entries(&root, &entries);
         if let (Some(input), Some(search)) = (search_input(&root), search) {
@@ -1686,6 +1694,94 @@ fn announce(host: &HtmlElement, message: &str) {
 }
 
 /// The rendered width of a header cell, if it has been laid out.
+/// Lines the filter row up with the columns (issue #62): each column's group
+/// as wide as its header cell, the first starting where the first column
+/// starts — after the selection column. The row scrolls with the viewport
+/// (`on_scroll`), so a field stays under its column.
+fn align_filter(host: &HtmlElement) {
+    let Some(root) = host.shadow_root() else {
+        return;
+    };
+    let (Ok(Some(filter)), Ok(Some(table))) = (
+        root.query_selector("[part=\"filter\"]"),
+        root.query_selector("table"),
+    ) else {
+        return;
+    };
+    let Ok(headers) = root.query_selector_all("th[data-col]") else {
+        return;
+    };
+    let table_left = table.get_bounding_client_rect().left();
+    let mut first = None;
+    for index in 0..headers.length() {
+        let Some(header) = headers
+            .item(index)
+            .and_then(|node| node.dyn_into::<Element>().ok())
+        else {
+            continue;
+        };
+        let Some(col) = header.get_attribute("data-col") else {
+            continue;
+        };
+        let rect = header.get_bounding_client_rect();
+        first.get_or_insert(rect.left() - table_left);
+        if let Ok(Some(operator)) = root.query_selector(&format!("select[data-col=\"{col}\"]"))
+            && let Some(group) = operator.parent_element()
+        {
+            let _ = group.set_attribute(
+                "style",
+                &format!(
+                    "display: inline-flex; align-items: center; gap: 0.25rem; flex: none; \
+                     box-sizing: border-box; padding-right: 0.25rem; width: {:.2}px;",
+                    rect.width()
+                ),
+            );
+        }
+    }
+    let Some(first) = first else {
+        return;
+    };
+    // Where the table starts, unscrolled, measured from the row's own inside.
+    let scrolled = root
+        .query_selector("[part~=\"viewport\"]")
+        .ok()
+        .flatten()
+        .map_or(0, |viewport| viewport.scroll_left());
+    let indent = table_left + f64::from(scrolled)
+        - filter.get_bounding_client_rect().left()
+        - f64::from(filter.client_left())
+        + first;
+    if let Ok(filter) = filter.dyn_into::<HtmlElement>() {
+        let _ = filter
+            .style()
+            .set_property("padding-left", &format!("{:.2}px", indent.max(0.0)));
+    }
+}
+
+/// Re-aligns the filter row whenever the table changes size — a wider
+/// window, a column shown, the facets opened beside it. The callback finds
+/// its grid through the table it observes and holds nothing, so an observer
+/// never keeps a removed grid alive.
+fn observe_columns(root: &ShadowRoot) {
+    let Ok(Some(table)) = root.query_selector("table") else {
+        return;
+    };
+    let callback = Closure::<dyn FnMut(js_sys::Array)>::new(|entries: js_sys::Array| {
+        let host = js_sys::Reflect::get(&entries.get(0), &JsValue::from_str("target"))
+            .ok()
+            .and_then(|target| target.dyn_into::<Element>().ok())
+            .and_then(|table| table.get_root_node().dyn_into::<ShadowRoot>().ok())
+            .and_then(|root| root.host().dyn_into::<HtmlElement>().ok());
+        if let Some(host) = host {
+            align_filter(&host);
+        }
+    })
+    .into_js_value();
+    if let Ok(observer) = web_sys::ResizeObserver::new(callback.unchecked_ref()) {
+        observer.observe(&table);
+    }
+}
+
 fn measured_width(host: &HtmlElement, col: usize) -> Option<u32> {
     let root = host.shadow_root()?;
     let cell = root
@@ -1712,12 +1808,33 @@ fn apply_widths(host: &HtmlElement) {
     let layout = columns::layout(host);
     let layout = layout.borrow();
     let mut rules = String::new();
+    let filter_shown = runtime(host).is_some_and(|runtime| runtime.borrow().filter_row)
+        && root
+            .query_selector("[part=\"filter\"]:not([hidden])")
+            .ok()
+            .flatten()
+            .is_some();
+    let narrowest = grid::header_min_width(host.has_attribute(grid::COLUMN_MENU_ATTRIBUTE)).max(
+        if filter_shown {
+            grid::FILTER_MIN_WIDTH
+        } else {
+            0
+        },
+    );
+    // What the columns need together: a column without a width of its own
+    // shares what is left, and in a narrow grid that was 11 px — header and
+    // filter unusable (issue #62). With this as the table's least width, the
+    // viewport scrolls sideways instead.
+    let mut least = 0u32;
     for (col, name) in columns_of(host).iter().enumerate() {
         // The reader's resize leads; the configuration is only where a column
         // starts (point 60, the same attribute/value relationship as the view).
+        // Neither may draw it narrower than its header needs (issue #61).
         let width = layout
             .width(name)
-            .or_else(|| presentation::styles(host).width(name));
+            .or_else(|| presentation::styles(host).width(name))
+            .map(|width| width.max(narrowest));
+        least += width.unwrap_or(narrowest);
         if let Some(width) = width {
             rules.push_str(&format!("td[data-col=\"{col}\"] {{ width: {width}px; }}\n"));
         }
@@ -1743,11 +1860,22 @@ fn apply_widths(host: &HtmlElement) {
                 let _ = root.append_child(sheet);
             }),
     };
+    // The selection column, when there is one, is 44 px (its own rule).
+    if root
+        .query_selector("th[data-select]")
+        .ok()
+        .flatten()
+        .is_some()
+    {
+        least += 44;
+    }
+    rules.push_str(&format!("table {{ min-width: {least}px; }}\n"));
     if let Some(sheet) = sheet
         && sheet.text_content().unwrap_or_default() != rules
     {
         sheet.set_text_content(Some(&rules));
     }
+    align_filter(host);
 }
 
 /// The columns the grid actually shows, in the order it shows them.
@@ -2220,6 +2348,66 @@ fn is_filter_control(element: &Element) -> bool {
 
 /// Reads the filter row into [`FilterEntry`]s, one per output column.
 ///
+/// A column's value control in the filter row: the text input, or for a
+/// boolean column the choice of *any*, *yes*, *no* (issue #60). Every read
+/// and write of a filter value goes through here, so the two cannot drift.
+enum ValueControl {
+    Input(HtmlInputElement),
+    Choice(HtmlSelectElement),
+}
+
+impl ValueControl {
+    /// The control that is shown for column `col`.
+    fn of(root: &ShadowRoot, col: usize) -> Option<Self> {
+        if let Ok(Some(node)) =
+            root.query_selector(&format!("select[data-value-col=\"{col}\"]:not([hidden])"))
+            && let Ok(choice) = node.dyn_into::<HtmlSelectElement>()
+        {
+            return Some(Self::Choice(choice));
+        }
+        root.query_selector(&format!("input[data-col=\"{col}\"]"))
+            .ok()
+            .flatten()
+            .and_then(|node| node.dyn_into::<HtmlInputElement>().ok())
+            .map(Self::Input)
+    }
+
+    fn value(&self) -> String {
+        match self {
+            Self::Input(input) => input.value(),
+            Self::Choice(choice) => choice.value(),
+        }
+    }
+
+    fn set_value(&self, value: &str) {
+        match self {
+            Self::Input(input) => input.set_value(value),
+            Self::Choice(choice) => choice.set_value(value),
+        }
+    }
+
+    fn set_disabled(&self, disabled: bool) {
+        match self {
+            Self::Input(input) => input.set_disabled(disabled),
+            Self::Choice(choice) => choice.set_disabled(disabled),
+        }
+    }
+
+    fn is_disabled(&self) -> bool {
+        match self {
+            Self::Input(input) => input.disabled(),
+            Self::Choice(choice) => choice.disabled(),
+        }
+    }
+
+    fn element(&self) -> &HtmlElement {
+        match self {
+            Self::Input(input) => input,
+            Self::Choice(choice) => choice,
+        }
+    }
+}
+
 /// The operator `select` and value `input` are ordinary form controls; a missing
 /// control (should not happen after the skeleton) falls back to `eq`/empty.
 fn read_filter_entries(root: &ShadowRoot, columns: &[String]) -> Vec<FilterEntry> {
@@ -2234,12 +2422,8 @@ fn read_filter_entries(root: &ShadowRoot, columns: &[String]) -> Vec<FilterEntry
                 .and_then(|node| node.dyn_into::<HtmlSelectElement>().ok())
                 .map(|select| select.value())
                 .unwrap_or_default();
-            let value = root
-                .query_selector(&format!("input[data-col=\"{col}\"]"))
-                .ok()
-                .flatten()
-                .and_then(|node| node.dyn_into::<HtmlInputElement>().ok())
-                .map(|input| input.value())
+            let value = ValueControl::of(root, col)
+                .map(|control| control.value())
                 .unwrap_or_default();
             FilterEntry {
                 column: column.clone(),
@@ -2404,10 +2588,8 @@ fn fix_operator_choices(root: &ShadowRoot, schema: &opengrid_types::Schema) {
 
         // The two operators that take no value say so: their input is disabled
         // rather than silently ignored.
-        if let Ok(Some(node)) = root.query_selector(&format!("input[data-col=\"{col}\"]"))
-            && let Ok(input) = node.dyn_into::<HtmlInputElement>()
-        {
-            input.set_disabled(!grid::takes_value(&select.value()));
+        if let Some(control) = ValueControl::of(&root, col) {
+            control.set_disabled(!grid::takes_value(&select.value()));
         }
     }
 }
@@ -2647,6 +2829,15 @@ fn on_filter_clear(event: Event) {
             }
         }
     }
+    if let Ok(choices) = root.query_selector_all("select[data-value-col]") {
+        for index in 0..choices.length() {
+            if let Some(node) = choices.item(index)
+                && let Ok(choice) = node.dyn_into::<HtmlSelectElement>()
+            {
+                choice.set_value("");
+            }
+        }
+    }
     apply_filters(&host);
 }
 
@@ -2688,6 +2879,36 @@ fn on_scroll(event: Event) {
     let Ok(host) = root.host().dyn_into::<HtmlElement>() else {
         return;
     };
+    // The filter row and the viewport share one horizontal position, so a
+    // filter field stays under its column (issue #62). Written only where it
+    // differs, so the echo of the other's scroll event stops at once.
+    if let Some(target) = event
+        .target()
+        .and_then(|target| target.dyn_into::<Element>().ok())
+        && let Some(runtime) = runtime(&host)
+    {
+        let part = target.get_attribute("part").unwrap_or_default();
+        let from_viewport = part.split_whitespace().any(|name| name == "viewport");
+        let other = if from_viewport {
+            root.query_selector("[part=\"filter\"]").ok().flatten()
+        } else if part == "filter" {
+            root.query_selector("[part~=\"viewport\"]").ok().flatten()
+        } else {
+            None
+        };
+        if let Some(other) = other {
+            let echo = runtime.borrow_mut().scroll_echo.take();
+            let is_echo = echo == Some((from_viewport, target.scroll_left()));
+            if !is_echo && other.scroll_left() != target.scroll_left() {
+                let before = other.scroll_left();
+                other.set_scroll_left(target.scroll_left());
+                // Only a scroll that happened sends an event back.
+                if other.scroll_left() != before {
+                    runtime.borrow_mut().scroll_echo = Some((!from_viewport, other.scroll_left()));
+                }
+            }
+        }
+    }
     // While paging there is nothing to scroll into: the sizer is the page, and
     // the window belongs to the pager (point 38).
     if grid::parse_page_size(host.get_attribute(PAGE_SIZE_ATTRIBUTE).as_deref()).is_some() {
@@ -3226,6 +3447,9 @@ pub(crate) fn write_view(host: &HtmlElement, value: &JsValue) {
     APPLYING_VIEW.with(|flag| flag.set(false));
 
     render(host, false);
+    // A view may show or hide the filter row, which moves the columns' least
+    // widths (issue #62).
+    apply_widths(host);
     if had_selection {
         // The page hears it the same way it hears every other selection change.
         dispatch_selection(host, &[]);
@@ -4146,10 +4370,9 @@ fn activate_menu_item(host: &HtmlElement, item: &Element) {
             // column whose operator takes no value has its field disabled, so
             // the operator is where the focus can go.
             if let Some(root) = host.shadow_root() {
-                let field = root
-                    .query_selector(&format!("input[data-col=\"{col}\"]:not([disabled])"))
-                    .ok()
-                    .flatten()
+                let field = ValueControl::of(&root, col)
+                    .filter(|control| !control.is_disabled())
+                    .map(|control| Element::from(control.element().clone()))
                     .or_else(|| {
                         root.query_selector(&format!("select[data-col=\"{col}\"]"))
                             .ok()
@@ -4272,7 +4495,14 @@ fn chips_of(host: &HtmlElement) -> Vec<Chip> {
     let mut out = Vec::new();
     if !view.group.is_empty() {
         out.push(Chip {
-            text: texts.group_chip(&view.group.join(" \u{203A} ")),
+            text: texts.group_chip(
+                &view
+                    .group
+                    .iter()
+                    .map(|column| texts.column(column))
+                    .collect::<Vec<_>>()
+                    .join(" \u{203A} "),
+            ),
             removes: "group".to_owned(),
         });
     }
@@ -4315,9 +4545,13 @@ fn chips_of(host: &HtmlElement) -> Vec<Chip> {
             .unwrap_or(0);
         let operator = texts.operator(index, token);
         let text = if grid::takes_value(token) {
-            format!("{} {operator} {}", entry.column, entry.value.trim())
+            format!(
+                "{} {operator} {}",
+                texts.column(&entry.column),
+                entry.value.trim()
+            )
         } else {
-            format!("{} {operator}", entry.column)
+            format!("{} {operator}", texts.column(&entry.column))
         };
         out.push(Chip {
             text,
@@ -4407,6 +4641,8 @@ fn toggle_filter_row(host: &HtmlElement) {
         borrowed.filter_row = !borrowed.filter_row;
     }
     sync_chrome(host);
+    // Shown, the filter row asks more width of every column (issue #62).
+    apply_widths(host);
     run_query(host, QueryKind::Window, false);
     dispatch_view(host);
 }
@@ -4433,11 +4669,9 @@ fn reset_filter_column(root: &ShadowRoot, col: usize) {
             }
         }
     }
-    if let Ok(Some(node)) = root.query_selector(&format!("input[data-col=\"{col}\"]"))
-        && let Ok(input) = node.dyn_into::<HtmlInputElement>()
-    {
-        input.set_value("");
-        input.set_disabled(false);
+    if let Some(control) = ValueControl::of(&root, col) {
+        control.set_value("");
+        control.set_disabled(false);
     }
 }
 
@@ -4780,7 +5014,7 @@ fn facet_chip_text(
                 .collect();
             if labels.len() == 1 {
                 let is = texts.operator(2, "eq");
-                format!("{column} {is} {}", labels[0])
+                format!("{} {is} {}", texts.column(column), labels[0])
             } else {
                 texts.facet_chip_values(column, &labels.join(", "))
             }
@@ -4794,7 +5028,8 @@ fn facet_chip_text(
             to: high,
         } => {
             format!(
-                "{column} {} \u{2013} {}",
+                "{} {} \u{2013} {}",
+                texts.column(column),
                 if low.trim().is_empty() {
                     "\u{2026}"
                 } else {
@@ -4919,7 +5154,7 @@ fn draw_facets(host: &HtmlElement, root: &ShadowRoot) {
             let _ = fieldset.set_attribute("part", "facet");
             let _ = fieldset.set_attribute("data-facet", column);
             if let Some(legend) = new("legend") {
-                legend.set_text_content(Some(column));
+                legend.set_text_content(Some(texts.column(column)));
                 let _ = fieldset.append_child(&legend);
             }
             match kind {
@@ -5240,7 +5475,14 @@ fn update_search(host: &HtmlElement, root: &ShadowRoot) {
         let _ = option.set_attribute("id", &format!("og-search-option-{index}"));
         let _ = option.set_attribute("aria-selected", "false");
         let _ = option.set_attribute("data-column", column);
-        option.set_text_content(Some(column));
+        // The title reads; the field name is what the expression takes, so a
+        // titled column shows both (issue #66).
+        let title = texts.column(column);
+        if title == column {
+            option.set_text_content(Some(column));
+        } else {
+            option.set_text_content(Some(&format!("{title} \u{b7} {column}")));
+        }
         // The type beside the name, as the prototype shows it. The option is
         // the page's column name and claims no language; the type is our word
         // (F8), so it carries ours.
@@ -5415,10 +5657,7 @@ fn apply_search(host: &HtmlElement) {
                     {
                         select.set_value(entry.op.as_str());
                     }
-                    if let Ok(Some(node)) =
-                        root.query_selector(&format!("input[data-col=\"{col}\"]"))
-                        && let Ok(field) = node.dyn_into::<HtmlInputElement>()
-                    {
+                    if let Some(field) = ValueControl::of(&root, col) {
                         field.set_disabled(false);
                         field.set_value(&entry.value);
                     }
@@ -5632,7 +5871,7 @@ fn open_filter_dialog(host: &HtmlElement) {
             if let Ok(option) = document.create_element("option") {
                 let name = field.name.as_str();
                 let _ = option.set_attribute("value", name);
-                option.set_text_content(Some(name));
+                option.set_text_content(Some(texts.column(name)));
                 // The column's name is the page's word, not ours.
                 let _ = option.set_attribute("lang", "");
                 let _ = select.append_child(&option);
@@ -5755,8 +5994,15 @@ fn apply_filter_dialog(host: &HtmlElement) {
                     .dyn_into::<HtmlSelectElement>()
                     .map(|select| select.value())
                     .or_else(|node| {
-                        node.dyn_into::<HtmlInputElement>()
-                            .map(|input| input.value())
+                        // A boolean's value in the dialog is a checkbox, whose
+                        // `value` is `on` either way (issue #60).
+                        node.dyn_into::<HtmlInputElement>().map(|input| {
+                            if input.type_() == "checkbox" {
+                                input.checked().to_string()
+                            } else {
+                                input.value()
+                            }
+                        })
                     })
                     .ok()
             })
@@ -5804,9 +6050,7 @@ fn apply_filter_dialog(host: &HtmlElement) {
     {
         select.set_value(&op);
     }
-    if let Ok(Some(node)) = root.query_selector(&format!("input[data-col=\"{col}\"]"))
-        && let Ok(field) = node.dyn_into::<HtmlInputElement>()
-    {
+    if let Some(field) = ValueControl::of(&root, col) {
         field.set_disabled(!grid::takes_value(&op));
         field.set_value(&value);
     }
@@ -5901,7 +6145,7 @@ fn open_group_menu(host: &HtmlElement) {
             let _ = item.set_attribute("data-group-column", name);
             // The column's name is the page's word, not ours.
             let _ = item.set_attribute("lang", "");
-            item.set_text_content(Some(name));
+            item.set_text_content(Some(texts.column(name)));
             let _ = menu.append_child(&item);
         }
     }

@@ -18,6 +18,15 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+### Added
+
+- **Column titles** ([#66](https://github.com/casoon/opengrid/issues/66)). `set_columns` takes
+  `title` per column — what a reader reads wherever the grid names the column: the header,
+  the column list, the filter row's labels, the column menu, the "+ Filter" dialog and
+  "+ Group" menu, group rows, chips, facet headings, search suggestions (which show the
+  field name beside it, since that is what an expression takes) and every announcement.
+  The field name stays the identifier in queries, views, expressions, exports and events.
+
 ### Changed
 
 - **One JSON codec for browser and server, and no `serde` in the browser**
@@ -36,6 +45,27 @@ unchanged): the opengrid types no longer implement `serde::Serialize`/`Deseriali
 Read and write them with `opengrid_json` (`from_str`, `to_string`, `FromJson`, `ToJson`);
 `Value::deserialize_typed` is `Value::from_json_typed`, and a filter literal is an
 `opengrid_json::Json`.
+
+### Fixed
+
+- **A boolean column in the filter row** ([#60](https://github.com/casoon/opengrid/issues/60)).
+  It was a checkbox whose value reads `on` whether ticked or not: the grid showed a chip
+  "… is on" with nothing filtered, and the first filter on any other column silently
+  brought `= true` along. It is now a choice of three — *any*, *yes*, *no* — with three new
+  text keys `filterAny`, `booleanTrue`, `booleanFalse`. The "+ Filter" dialog reads a
+  boolean's checkbox by whether it is ticked.
+- **A narrow column keeps its name** ([#61](https://github.com/casoon/opengrid/issues/61)).
+  With the column menu, a sorted 80 px column showed only "▲ ⋯": the header reserved a
+  fixed 2.75em for the sort marks on top of the menu button. It now reserves what stands
+  beside the name, the name keeps two characters at least, and a column is drawn at least
+  96 px wide with the column menu (64 px without) whatever width it was given.
+- **The filter row stands under the columns and scrolls with them** ([#62](https://github.com/casoon/opengrid/issues/62)).
+  Its groups sat at fixed 248 px steps and the row scrolled on its own, so at a phone's
+  width a field was under the wrong column. Each group is now as wide as its column and
+  starts where it starts (measured from the header, again whenever the table changes size),
+  rows and filter share one horizontal position, and the table is at least as wide as its
+  columns' minimum widths — a column without a width of its own no longer shrinks to a few
+  pixels, the grid scrolls sideways instead.
 
 ## [0.4.0] — 2026-09-28
 
