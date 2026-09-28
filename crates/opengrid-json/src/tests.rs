@@ -48,10 +48,14 @@ fn documents() -> impl Strategy<Value = serde_json::Value> {
 
 /// Our writer, with floats compared as numbers: where `serde_json` picks the
 /// other of two shortest spellings, both read back to the same `f64`.
+///
+/// Read back with our reader, not `serde_json`'s: without its
+/// `float_roundtrip` feature it can read the two spellings of one `f64` as two
+/// neighbouring ones (`-123016336635935.62` and `…63`), and the oracle would
+/// fail our correct output. Our reader's floats are `str::parse`'s, which
+/// `floats_read_back` checks bit for bit.
 fn same_document(ours: &str, theirs: &str) -> bool {
-    ours == theirs
-        || serde_json::from_str::<serde_json::Value>(ours).unwrap()
-            == serde_json::from_str::<serde_json::Value>(theirs).unwrap()
+    ours == theirs || Json::parse(ours).unwrap() == Json::parse(theirs).unwrap()
 }
 
 proptest! {
