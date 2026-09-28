@@ -861,6 +861,7 @@ name = "opengrid-conformance"
 version = "0.3.0"
 dependencies = [
  "opengrid-datasource",
+ "opengrid-engine",
  "opengrid-query",
  "opengrid-types",
  "serde",
