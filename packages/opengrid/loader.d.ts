@@ -403,6 +403,12 @@ export type WireValue = string | number | boolean | null;
 
 /** Per-column presentation for `set_columns` — `presentation` in `connect`. */
 export interface ColumnConfig {
+  /**
+   * What the column is called where a reader reads it — header, column list,
+   * filter labels, menus, chips, announcements. The field name stays the
+   * identifier: query, view, search expressions, export.
+   */
+  title?: string;
   /** The starting width in pixels; a reader's resize leads after that. */
   width?: number;
   align?: "start" | "end" | "center";
@@ -579,6 +585,9 @@ export type TextKey =
   | "apply"
   | "addGrouping"
   | "groupingFull"
+  | "filterAny"
+  | "booleanTrue"
+  | "booleanFalse"
   | "sourceLocal"
   | "sourceWorker"
   | "sourceRemote"
