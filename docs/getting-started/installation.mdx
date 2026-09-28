@@ -15,7 +15,7 @@ One package, two WebAssembly modules:
 | In the package | Contains | Imported as |
 |---|---|---|
 | `loader.js`, `pkg/` | `<opengrid-table>`, `<opengrid-grid>`, `<opengrid-pivot>`; the providers and `connect` | `@casoon/opengrid` |
-| `engine/`, `worker.js` | `Engine` (in-memory sources over Apache Arrow) and `Planner`; the worker that runs the engine | `@casoon/opengrid/engine/opengrid_wasm.js` |
+| `engine/`, `worker.js` | `Engine` (in-memory sources over its own typed columns) and `Planner`; the worker that runs the engine | `@casoon/opengrid/engine/opengrid_wasm.js` |
 
 A page that only talks to an `opengrid-server` never loads the engine. One that queries in the
 tab imports it, and `createWorkerProvider()` finds it on its own ([The public API →

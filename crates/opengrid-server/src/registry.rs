@@ -23,10 +23,10 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use opengrid_arrow_engine::datasource::{LocalDataSource, LocalPieces};
-use opengrid_arrow_engine::ingest::{CsvOptions, load_csv};
 use opengrid_datasource::SendDataSource;
 use opengrid_datasource_postgres::{ExportCanceller, PostgresDataSource, PostgresExport};
+use opengrid_engine::datasource::{LocalDataSource, LocalPieces};
+use opengrid_engine::ingest::{CsvOptions, load_csv};
 use opengrid_pivot::{PivotError, PivotLimits, PivotQuery, PivotResult, ValidatedPivotQuery};
 use opengrid_query::{CmpOp, FilterExpr, Limits, Query, ValidatedQuery};
 use opengrid_types::{FieldName, Schema};
@@ -325,13 +325,10 @@ fn load_source(config: &SourceConfig, base: &Path) -> Result<Source, RegistryErr
                     data_path.display()
                 ))
             })?;
-            let batches =
-                load_csv(&bytes, &full_schema, CsvOptions::default()).map_err(|error| {
-                    RegistryError::new(format!("datasource {:?}: {error}", config.name))
-                })?;
-            Backend::LocalCsv(LocalDataSource::new(batches).map_err(|error| {
+            let table = load_csv(&bytes, &full_schema, CsvOptions::default()).map_err(|error| {
                 RegistryError::new(format!("datasource {:?}: {error}", config.name))
-            })?)
+            })?;
+            Backend::LocalCsv(LocalDataSource::new(table))
         }
     };
 

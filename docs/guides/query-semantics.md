@@ -26,10 +26,10 @@ a query against the shared `orders` dataset and the exact expected answer.
 
 The same case files run against
 
-- the Arrow engine, natively (`crates/opengrid-arrow-engine/tests/conformance_engine.rs`),
+- the local engine, natively (`crates/opengrid-engine/tests/conformance_engine.rs`),
 - the WASM build in headless Chrome (`crates/opengrid-wasm/tests/conformance_in_browser.rs`),
 - the hybrid path, with a source that refuses what it does not declare
-  (`crates/opengrid-arrow-engine/tests/conformance_hybrid.rs`),
+  (`crates/opengrid-engine/tests/conformance_hybrid.rs`),
 - PostgreSQL (`crates/opengrid-datasource-postgres/tests/conformance_postgres.rs`) — this one
   skips itself without a database; point it at one with `OPENGRID_TEST_PG`.
 

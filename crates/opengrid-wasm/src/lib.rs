@@ -19,7 +19,7 @@
 //! `load_csv` names the source; the query JSON carries the same name in its
 //! `source` field, so one engine can hold several datasets (E6).
 //!
-//! No Arrow type crosses this boundary: both directions speak the
+//! No engine type crosses this boundary: both directions speak the
 //! column-oriented JSON of E6, values in the wire notation of E13 (decimals as
 //! strings, non-finite floats as `"NaN"`/`"Infinity"`/`"-Infinity"`).
 
@@ -30,9 +30,9 @@ use std::future::Future;
 use std::pin::pin;
 use std::task::{Context, Poll, Waker};
 
-use opengrid_arrow_engine::datasource::LocalDataSource;
-use opengrid_arrow_engine::ingest::{CsvOptions, load_csv as read_csv};
 use opengrid_datasource::{DataSource, DataSourceCapabilities, QueryResult};
+use opengrid_engine::datasource::LocalDataSource;
+use opengrid_engine::ingest::{CsvOptions, load_csv as read_csv};
 use opengrid_planner::ExecutionMode;
 use opengrid_query::{Limits, Query};
 use opengrid_types::{DataSourceId, Schema};
@@ -112,9 +112,9 @@ impl Engine {
         let id = DataSourceId::new(name).map_err(|error| format!("source {name:?}: {error}"))?;
         let schema =
             schema_json::from_json(schema_json).map_err(|error| format!("schema: {error}"))?;
-        let batches =
+        let table =
             read_csv(bytes, &schema, CsvOptions::default()).map_err(|error| error.to_string())?;
-        let source = LocalDataSource::new(batches).map_err(|error| error.to_string())?;
+        let source = LocalDataSource::new(table);
         self.sources.insert(id.as_str().to_owned(), source);
         Ok(())
     }
@@ -144,7 +144,7 @@ impl Engine {
 
 /// Drives a future that is ready on the first poll.
 ///
-/// The local source never awaits — it holds batches and runs the executor
+/// The local source never awaits — it holds a table and runs the executor
 /// (plan/spezifikation/04-local-engine.md §DataSource-Adapter) — so no executor
 /// is needed and none is pulled into the bundle. A future that does suspend is
 /// a bug on our side: it panics with a diagnosis instead of hanging the tab.
@@ -216,7 +216,7 @@ impl Planner {
     /// Runs `client_query_json` over `result_json` — the source's answer.
     ///
     /// This is the hybrid return path E14 names: the partial result becomes
-    /// Arrow batches again and the engine finishes the query over them, which
+    /// a table again and the engine finishes the query over them, which
     /// includes recounting `total_count` — filtering or grouping changed it.
     pub fn finish(&self, client_query_json: &str, result_json: &str) -> Result<String, JsError> {
         self.finish_result(client_query_json, result_json)
