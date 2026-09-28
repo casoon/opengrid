@@ -385,9 +385,7 @@ export function createRestProvider({ url, source, token } = {}) {
       const blob = await response.blob();
       onProgress?.({ rows: total, total });
       // The type `exportRows` gives its Blob, whatever the header's spelling.
-      return new Blob([blob], {
-        type: format === "json" ? "application/json" : "text/csv;charset=utf-8",
-      });
+      return new Blob([blob], { type: EXPORT_TYPES[format] ?? EXPORT_TYPES.csv });
     },
   };
 }
@@ -548,6 +546,13 @@ export function createHybridProvider({ remote, planner, mode = "auto", onPlan } 
   };
 }
 
+/** The media type of each export's `Blob`. */
+const EXPORT_TYPES = {
+  csv: "text/csv;charset=utf-8",
+  json: "application/json",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+};
+
 /** The options of `exportRows` that are its own. */
 const EXPORT_OPTIONS = ["format", "chunkSize", "maxRows", "onProgress", "signal"];
 /**
@@ -626,14 +631,25 @@ export async function exportRows(provider, query, options = {}) {
     protectFormulas,
     null: nullText,
   } = options;
-  if (format !== "csv" && format !== "json") {
-    throw new TypeError(`exportRows: format is "csv" or "json", not ${JSON.stringify(format)}`);
+  if (format !== "csv" && format !== "json" && format !== "xlsx") {
+    throw new TypeError(
+      `exportRows: format is "csv", "json" or "xlsx", not ${JSON.stringify(format)}`,
+    );
   }
-  if (format === "json") {
-    // A CSV option on a JSON export would do nothing, and do it silently.
+  if (format === "xlsx" && typeof provider?.export !== "function") {
+    // An XLSX file is written on the server (issue #72); pieces fetched here
+    // cannot become one.
+    throw new TypeError(
+      "exportRows: an XLSX export needs a provider that exports on the server (createRestProvider)",
+    );
+  }
+  if (format !== "csv") {
+    // A CSV option on another export would do nothing, and do it silently.
     const stray = CSV_OPTIONS.find((key) => options[key] !== undefined);
     if (stray) {
-      throw new TypeError(`exportRows: "${stray}" is a CSV option, and this export is JSON`);
+      throw new TypeError(
+        `exportRows: "${stray}" is a CSV option, and this export is ${format.toUpperCase()}`,
+      );
     }
   }
   if (!Number.isSafeInteger(chunkSize) || chunkSize < 1) {

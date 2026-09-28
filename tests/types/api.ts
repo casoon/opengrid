@@ -174,8 +174,11 @@ export async function page(): Promise<void> {
     });
     void blob;
     await exportRows(local, query, { format: "json", chunkSize: 1_000, maxRows: 50_000 });
-    // @ts-expect-error — CSV or JSON, nothing else
+    // XLSX is a format (issue #72); only a server writes it, which the types
+    // cannot tell from the provider — `exportRows` refuses it at run time.
     await exportRows(local, query, { format: "xlsx" });
+    // @ts-expect-error — CSV, JSON or XLSX, nothing else
+    await exportRows(local, query, { format: "xls" });
     // @ts-expect-error — not an option
     await exportRows(local, query, { filename: "orders.csv" });
     // @ts-expect-error — an export is of a view's rows, not of groups
