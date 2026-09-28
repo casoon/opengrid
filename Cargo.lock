@@ -935,10 +935,9 @@ dependencies = [
 name = "opengrid-datasource"
 version = "0.4.0"
 dependencies = [
+ "opengrid-json",
  "opengrid-query",
  "opengrid-types",
- "serde",
- "serde_json",
  "trait-variant",
 ]
 
