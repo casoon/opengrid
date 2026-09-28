@@ -35,6 +35,14 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Fixed
 
+- **The toolbar on a narrow grid** ([#77](https://github.com/casoon/opengrid/issues/77)).
+  On a phone it wrapped into four rows, 178 of a 460 px grid, and left room for four
+  rows of data. Under 560 px of grid width, the search field now takes a line of its own
+  and the buttons stay in one row that scrolls sideways; a button that takes the focus
+  comes fully into view. At a 320 px viewport (reflow, 1.4.10) it wraps as before. The
+  buttons now sit in an inner row without a part, so `::part` rules are unaffected;
+  an opened column list comes after the density rather than before it.
+
 - **The pager sits in the footer** ([#75](https://github.com/casoon/opengrid/issues/75)).
   It stood between the filter row and the header, in the browser's unstyled buttons. It
   now follows the status in `part="footer"`, below the rows it pages, as compact glyph

@@ -263,6 +263,12 @@ outside `role="grid"`, like the filter row, so the grid's keys never reach it. I
 one row: the search field first (with `search`), then the switches, the column list
 and the density as a segmented control.
 
+On a narrow grid — under 560 px of its own width, whatever the window — the search
+field takes a line of its own and the buttons stay in one row that scrolls sideways,
+instead of wrapping into several; a button that takes the focus is brought into view.
+An opened column list gets a line of its own below the row. At a 320 px viewport, the
+reflow case of WCAG 1.4.10, the toolbar wraps instead.
+
 | | |
 |---|---|
 | Filter row | A switch (`aria-pressed`). Hiding the row gives its height to the viewport, and `PageUp`/`PageDown` step by what is really there. Whether the row shows is part of the [view](#the-view) as `filterRow`, **on** by default — there is no attribute for it, because a boolean attribute is off by default and the row has always been there. |
