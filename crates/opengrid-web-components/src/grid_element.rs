@@ -4497,7 +4497,14 @@ fn chips_of(host: &HtmlElement) -> Vec<Chip> {
     let mut out = Vec::new();
     if !view.group.is_empty() {
         out.push(Chip {
-            text: texts.group_chip(&view.group.join(" \u{203A} ")),
+            text: texts.group_chip(
+                &view
+                    .group
+                    .iter()
+                    .map(|column| texts.column(column))
+                    .collect::<Vec<_>>()
+                    .join(" \u{203A} "),
+            ),
             removes: "group".to_owned(),
         });
     }
@@ -4540,9 +4547,13 @@ fn chips_of(host: &HtmlElement) -> Vec<Chip> {
             .unwrap_or(0);
         let operator = texts.operator(index, token);
         let text = if grid::takes_value(token) {
-            format!("{} {operator} {}", entry.column, entry.value.trim())
+            format!(
+                "{} {operator} {}",
+                texts.column(&entry.column),
+                entry.value.trim()
+            )
         } else {
-            format!("{} {operator}", entry.column)
+            format!("{} {operator}", texts.column(&entry.column))
         };
         out.push(Chip {
             text,
@@ -5005,7 +5016,7 @@ fn facet_chip_text(
                 .collect();
             if labels.len() == 1 {
                 let is = texts.operator(2, "eq");
-                format!("{column} {is} {}", labels[0])
+                format!("{} {is} {}", texts.column(column), labels[0])
             } else {
                 texts.facet_chip_values(column, &labels.join(", "))
             }
@@ -5019,7 +5030,8 @@ fn facet_chip_text(
             to: high,
         } => {
             format!(
-                "{column} {} \u{2013} {}",
+                "{} {} \u{2013} {}",
+                texts.column(column),
                 if low.trim().is_empty() {
                     "\u{2026}"
                 } else {
@@ -5144,7 +5156,7 @@ fn draw_facets(host: &HtmlElement, root: &ShadowRoot) {
             let _ = fieldset.set_attribute("part", "facet");
             let _ = fieldset.set_attribute("data-facet", column);
             if let Some(legend) = new("legend") {
-                legend.set_text_content(Some(column));
+                legend.set_text_content(Some(texts.column(column)));
                 let _ = fieldset.append_child(&legend);
             }
             match kind {
@@ -5465,7 +5477,14 @@ fn update_search(host: &HtmlElement, root: &ShadowRoot) {
         let _ = option.set_attribute("id", &format!("og-search-option-{index}"));
         let _ = option.set_attribute("aria-selected", "false");
         let _ = option.set_attribute("data-column", column);
-        option.set_text_content(Some(column));
+        // The title reads; the field name is what the expression takes, so a
+        // titled column shows both (issue #66).
+        let title = texts.column(column);
+        if title == column {
+            option.set_text_content(Some(column));
+        } else {
+            option.set_text_content(Some(&format!("{title} \u{b7} {column}")));
+        }
         // The type beside the name, as the prototype shows it. The option is
         // the page's column name and claims no language; the type is our word
         // (F8), so it carries ours.
@@ -5854,7 +5873,7 @@ fn open_filter_dialog(host: &HtmlElement) {
             if let Ok(option) = document.create_element("option") {
                 let name = field.name.as_str();
                 let _ = option.set_attribute("value", name);
-                option.set_text_content(Some(name));
+                option.set_text_content(Some(texts.column(name)));
                 // The column's name is the page's word, not ours.
                 let _ = option.set_attribute("lang", "");
                 let _ = select.append_child(&option);
@@ -6128,7 +6147,7 @@ fn open_group_menu(host: &HtmlElement) {
             let _ = item.set_attribute("data-group-column", name);
             // The column's name is the page's word, not ours.
             let _ = item.set_attribute("lang", "");
-            item.set_text_content(Some(name));
+            item.set_text_content(Some(texts.column(name)));
             let _ = menu.append_child(&item);
         }
     }

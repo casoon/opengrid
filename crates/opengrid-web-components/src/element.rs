@@ -242,7 +242,10 @@ pub fn set_view(host: &HtmlElement, view: JsValue) {
 
 #[wasm_bindgen(js_name = set_texts)]
 pub fn set_texts(host: &HtmlElement, values: JsValue) {
-    texts::store(host, Rc::new(texts::from_js(&values)));
+    let mut new = texts::from_js(&values);
+    // The column titles come from `set_columns`, not from the texts (#66).
+    new.titles = texts::texts(host).titles.clone();
+    texts::store(host, Rc::new(new));
     if host.shadow_root().is_none() {
         // Not connected yet — `connectedCallback` will read the stored texts.
         return;

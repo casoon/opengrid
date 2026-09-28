@@ -225,13 +225,14 @@ the exact text.
 ```js
 loader.module.set_columns(host, {
   id:       { width: 96, mono: true, muted: true },
-  customer: { emphasis: true },
+  customer: { title: "Customer", emphasis: true },
   amount:   { width: 150, align: "end", aggregate: "sum", facet: "range" },
 });
 ```
 
 | Key | Meaning |
 |---|---|
+| `title` | What the column is **called** where a reader reads it: the header, the column list, the filter row's labels, the column menu, the "+ Filter" dialog and "+ Group" menu, group rows, chips, facet headings, search suggestions and every announcement. The page's words, in the page's language. The field name stays the identifier — the query, the view, the search expressions (`country = DE`), exports and events. An empty title is reported. |
 | `width` | The column's **starting** width in pixels. A reader's resize leads after that. |
 | `align` | `start`, `end` or `center`. Numbers default to `end`, everything else to `start`. |
 | `mono` | Draw the values monospaced, so they line up character by character. |
