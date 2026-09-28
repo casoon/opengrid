@@ -922,10 +922,7 @@ pub(crate) fn run_query(host: &HtmlElement, kind: QueryKind, focus: bool) {
     let host = host.clone();
     spawn_local(async move {
         let outcome = match JsFuture::from(promise).await {
-            Ok(value) => match value.as_string() {
-                Some(json) => grid::parse_result(&json),
-                None => Err("provider returned a non-string result".to_owned()),
-            },
+            Ok(value) => read_answer(&value),
             Err(value) => Err(describe(&value)),
         };
         settle(&host, generation, outcome, focus);
@@ -3426,6 +3423,15 @@ fn effective_aggregates(
     (chosen, refused)
 }
 
+/// A provider's answer as a result, whichever form it came in (E35).
+fn read_answer(value: &JsValue) -> Result<opengrid_datasource::QueryResult, String> {
+    match crate::element::answer(value) {
+        Some(crate::element::Answer::Json(json)) => grid::parse_result(&json),
+        Some(crate::element::Answer::Binary(bytes)) => grid::parse_result_bytes(&bytes),
+        None => Err(crate::element::NOT_AN_ANSWER.to_owned()),
+    }
+}
+
 /// Runs one query through the provider and reads its result.
 ///
 /// Counted for the footer (issue #33); the facets count theirs themselves and
@@ -3447,10 +3453,7 @@ async fn ask_uncounted(
     mode: &str,
 ) -> Result<opengrid_datasource::QueryResult, String> {
     match JsFuture::from(provider.execute(query, mode)).await {
-        Ok(value) => match value.as_string() {
-            Some(json) => grid::parse_result(&json),
-            None => Err("provider returned a non-string result".to_owned()),
-        },
+        Ok(value) => read_answer(&value),
         Err(value) => Err(describe(&value)),
     }
 }

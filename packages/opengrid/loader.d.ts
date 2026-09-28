@@ -127,14 +127,21 @@ export function connect(host: HTMLElement, options?: ConnectOptions): Connection
 // ---------------------------------------------------------------------------
 
 /**
+ * What a provider's `execute` answers: the result as JSON, or the binary result
+ * form (`application/vnd.opengrid.columns`) as bytes. The elements and
+ * `exportRows` read both.
+ */
+export type Answer = string | Uint8Array | ArrayBuffer;
+
+/**
  * Where the data comes from. A seam, not a class: anything with an `execute`
  * method fits. `queryJson` is the query as JSON; the answer is the result as
- * JSON, or a Promise of it. `mode` is the element's `mode` attribute, `""`
- * without one. `options` is optional and new: a provider written for two
- * arguments still fits.
+ * JSON or in the binary form, or a Promise of it. `mode` is the element's
+ * `mode` attribute, `""` without one. `options` is optional and new: a
+ * provider written for two arguments still fits.
  */
 export interface Provider {
-  execute(queryJson: string, mode: string, options?: ExecuteOptions): string | Promise<string>;
+  execute(queryJson: string, mode: string, options?: ExecuteOptions): Answer | Promise<Answer>;
   /**
    * Optional: where the queries run. The grid names it in its footer, beside
    * the number of queries asked for what is shown; the built-in providers set
@@ -169,7 +176,10 @@ export interface EngineProvider extends Provider {
 /** The engine of the engine module, as `createLocalProvider` uses it. */
 export interface Engine {
   load_csv(name: string, bytes: Uint8Array, schema: string): void;
+  /** The result as JSON. */
   execute(queryJson: string): string;
+  /** The result in the binary form — what the tab and worker providers answer. */
+  execute_columns(queryJson: string): Uint8Array;
 }
 
 /** What a server says a source is. */
@@ -198,6 +208,8 @@ export interface PlannerLike {
   plan(queryJson: string, mode: string): string;
   /** Finishes the client half over the source's answer; the result as JSON. */
   finish(clientQueryJson: string, resultJson: string): string;
+  /** The same over an answer in the binary form; the result as bytes. */
+  finish_columns(clientQueryJson: string, result: Uint8Array): Uint8Array;
 }
 
 /** The plan `createHybridProvider` hands to `onPlan` before anything is sent. */

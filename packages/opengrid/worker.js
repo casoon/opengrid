@@ -15,9 +15,9 @@
  *   query { type:"query", id, query }          -> { id, result }
  *
  * Any request that throws answers `{ id, type:"error", message }`. The `bytes`
- * of `load` arrive as a transferable `ArrayBuffer`; the response strings are the
- * wire JSON of the engine (E6/E13), so nothing engine-specific is serialised
- * here.
+ * of `load` arrive as a transferable `ArrayBuffer`; a `result` is the engine's
+ * binary result form (E35, `execute_columns`) and travels back the same way —
+ * transferred, not copied. Nothing engine-specific is serialised here.
  */
 
 /** The single engine instance, created on `init` and reused for every query. */
@@ -41,7 +41,8 @@ self.onmessage = async ({ data }) => {
         break;
       }
       case "query": {
-        self.postMessage({ id: data.id, result: engine.execute(data.query) });
+        const result = engine.execute_columns(data.query);
+        self.postMessage({ id: data.id, result }, [result.buffer]);
         break;
       }
       default:

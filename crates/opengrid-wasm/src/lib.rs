@@ -87,6 +87,16 @@ impl Engine {
         Ok(result_json_of(&result))
     }
 
+    /// Runs a query JSON and answers with the result in the binary form
+    /// (decision E35, `opengrid_columns::wire`): the same answer as
+    /// [`execute`](Engine::execute_js), but as bytes a worker can hand over
+    /// without copying and an element can read without parsing.
+    #[wasm_bindgen(js_name = execute_columns)]
+    pub fn execute_columns_js(&self, query_json: &str) -> Result<Vec<u8>, JsError> {
+        self.execute_columns(query_json)
+            .map_err(|message| JsError::new(&message))
+    }
+
     /// The names of the registered sources, in unspecified order.
     #[wasm_bindgen(js_name = source_names)]
     pub fn source_names(&self) -> Vec<String> {
@@ -127,6 +137,24 @@ impl Engine {
     /// not optional — [`DataSource::execute`] accepts only a
     /// [`ValidatedQuery`](opengrid_query::ValidatedQuery).
     pub fn execute_result(&self, query_json: &str) -> Result<QueryResult, String> {
+        let (source, validated) = self.admit(query_json)?;
+        block_on(DataSource::execute(source, validated)).map_err(|error| error.to_string())
+    }
+
+    /// The same run as [`execute_result`](Engine::execute_result), answered in
+    /// the binary form.
+    pub fn execute_columns(&self, query_json: &str) -> Result<Vec<u8>, String> {
+        let (source, validated) = self.admit(query_json)?;
+        let (table, total_count) = source.run(&validated).map_err(|error| error.to_string())?;
+        Ok(opengrid_columns::wire::encode_result(&table, total_count))
+    }
+
+    /// Parses a query JSON, finds its source and validates the query against
+    /// that source's schema.
+    fn admit(
+        &self,
+        query_json: &str,
+    ) -> Result<(&LocalDataSource, opengrid_query::ValidatedQuery), String> {
         let query: Query =
             serde_json::from_str(query_json).map_err(|error| format!("query JSON: {error}"))?;
         let source = self
@@ -138,7 +166,7 @@ impl Engine {
         let validated = query
             .validate(&schema, &Limits::default())
             .map_err(|error| error.to_string())?;
-        block_on(DataSource::execute(source, validated)).map_err(|error| error.to_string())
+        Ok((source, validated))
     }
 }
 
@@ -223,6 +251,18 @@ impl Planner {
             .map(|result| result_json_of(&result))
             .map_err(|message| JsError::new(&message))
     }
+
+    /// [`finish`](Planner::finish) for a source that answered in the binary
+    /// form: the bytes in, the finished result as bytes out.
+    #[wasm_bindgen(js_name = finish_columns)]
+    pub fn finish_columns_js(
+        &self,
+        client_query_json: &str,
+        result: &[u8],
+    ) -> Result<Vec<u8>, JsError> {
+        self.finish_columns(client_query_json, result)
+            .map_err(|message| JsError::new(&message))
+    }
 }
 
 /// The Rust side of the JS API — the same paths, minus the `JsError` wrapping,
@@ -269,6 +309,25 @@ impl Planner {
             "client": plan.client_query.as_ref().map(Query::from),
         });
         Ok(body.to_string())
+    }
+
+    /// The client half over a source answer in the binary form: decoded
+    /// straight into the engine's columns, no value by value transposition.
+    pub fn finish_columns(
+        &self,
+        client_query_json: &str,
+        result: &[u8],
+    ) -> Result<Vec<u8>, String> {
+        let (table, _) =
+            opengrid_columns::wire::decode_result(result).map_err(|error| error.to_string())?;
+        let query: Query = serde_json::from_str(client_query_json)
+            .map_err(|error| format!("client query JSON: {error}"))?;
+        let validated = query
+            .validate(table.schema(), &Limits::default())
+            .map_err(|error| error.to_string())?;
+        let source = LocalDataSource::new(table);
+        let (table, total_count) = source.run(&validated).map_err(|error| error.to_string())?;
+        Ok(opengrid_columns::wire::encode_result(&table, total_count))
     }
 
     /// Runs the client half over the source's answer.

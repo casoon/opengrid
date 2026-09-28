@@ -435,15 +435,16 @@ test.describe("over a real server", () => {
         rest: await outcome(window.__rest, query),
         pivot: await outcome(window.__pivot, pivot),
         hybrid: await outcome(window.__hybrid, query),
-        // A provider asked with two arguments, as the grid asks, still answers.
-        twoArguments: typeof (await window.__rest.execute(query, "")),
+        // A provider asked with two arguments, as the grid asks, still answers —
+        // in the binary form it asked the server for (E35).
+        twoArguments: (await window.__rest.execute(query, "")).constructor.name,
       };
     });
     expect(names).toEqual({
       rest: "AbortError",
       pivot: "AbortError",
       hybrid: "AbortError",
-      twoArguments: "string",
+      twoArguments: "Uint8Array",
     });
   });
 });
@@ -458,7 +459,7 @@ test("a source that changes during the export is refused, not exported", async (
       const counted = {
         execute(json, mode, options) {
           calls += 1;
-          return provider(calls, JSON.parse(window.__tab.execute(json, mode, options)));
+          return provider(calls, JSON.parse(window.__engine.execute(json)));
         },
       };
       try {
@@ -535,7 +536,7 @@ test("without a unique column, the rows are the engine's rows all the same", asy
         // dropped again, the way a database orders by what it does not return.
         query.select = [...query.select, "id"];
         query.sort = [...query.sort, { field: "id", direction: calls % 2 ? "asc" : "desc" }];
-        const result = JSON.parse(window.__tab.execute(JSON.stringify(query), mode, options));
+        const result = JSON.parse(window.__engine.execute(JSON.stringify(query)));
         result.columns = result.columns.filter((column) => column.name !== "id");
         return JSON.stringify(result);
       },
@@ -886,7 +887,7 @@ test.describe("a page tells the failures apart without reading the sentence", ()
       const moving = {
         execute(json, mode, options) {
           calls += 1;
-          const result = JSON.parse(window.__tab.execute(json, mode, options));
+          const result = JSON.parse(window.__engine.execute(json));
           return JSON.stringify({ ...result, total_count: calls >= 2 ? 100_001 : result.total_count });
         },
       };

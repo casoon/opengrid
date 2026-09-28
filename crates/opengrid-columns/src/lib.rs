@@ -1,6 +1,7 @@
 //! Column storage for the opengrid engine: typed columns, NULL bitmaps, and the
 //! kernels the executor is built from — gather ([`Column::take`]) and sort
-//! ([`sort::order`]).
+//! ([`sort::order`]) — plus the binary form a result travels in ([`wire`],
+//! decision E35).
 //!
 //! Decision E34 (plan/spezifikation/14-entscheidungen.md): the engine used to
 //! keep its data in Arrow. Arrow's kernels branch over every Arrow type — lists,
@@ -21,6 +22,7 @@ mod bitmap;
 mod column;
 pub mod sort;
 mod table;
+pub mod wire;
 
 pub use bitmap::Bitmap;
 pub use column::{Column, ColumnBuilder, Values};

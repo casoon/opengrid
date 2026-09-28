@@ -43,6 +43,9 @@ row_filter = { field = "country", op = "eq", value = ":country" }
   `422 unknown field` as a typo.
 - `row_filter` is attached to every query from the token's context and cannot be switched off.
 - CORS is off by default. `allowed_origins` lists origins one by one; there is no `*`.
+- `POST /query` and `POST /pivot` answer JSON, or the binary result form when `Accept`
+  names `application/vnd.opengrid.columns` — what `createRestProvider` and
+  `createPivotProvider` send. Errors are always JSON; every answer carries `Vary: Accept`.
 
 `[server]` also takes `max_payload_bytes` (64 KiB), `timeout_ms` (10 000), `max_limit`
 (10 000 rows a page), `max_depth`, the pivot bounds, and for exports `max_export_rows`

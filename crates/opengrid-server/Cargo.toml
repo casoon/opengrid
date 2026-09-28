@@ -16,6 +16,8 @@ opengrid-datasource = { path = "../opengrid-datasource" }
 # The source of point 24 is the local engine: the server is fully testable
 # before a database exists (PostgreSQL docks in point 26).
 opengrid-engine = { path = "../opengrid-engine" }
+# The binary result form (E35), answered when `Accept` asks for it.
+opengrid-columns = { path = "../opengrid-columns" }
 # PostgreSQL as a source (point 26) — the registry decides per configuration.
 opengrid-datasource-postgres = { path = "../opengrid-datasource-postgres" }
 
@@ -41,6 +43,8 @@ toml = "0.8"
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
+# The whole suite through `POST /query` in both result forms (issue #38).
+opengrid-conformance = { path = "../opengrid-conformance" }
 # The PostgreSQL export tests (issue #2) make their table and watch
 # `pg_stat_activity` directly. Already in the tree through
 # opengrid-datasource-postgres; test-only.

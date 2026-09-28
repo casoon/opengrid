@@ -18,7 +18,27 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+### Added
+
+- **Results travel in a binary form** ([#38](https://github.com/casoon/opengrid/issues/38)),
+  `application/vnd.opengrid.columns`: the engine's columns written out, decimals exact, no
+  text per cell. `Engine.execute_columns` and `Planner.finish_columns` answer it next to
+  the JSON methods; the worker hands it over without a copy; `opengrid-server` answers it
+  for `POST /query` and `POST /pivot` when `Accept` asks, JSON otherwise (with
+  `Vary: Accept`). The elements and `exportRows` read both forms. For 100 000 rows × 10
+  columns the engine answers in 18 ms instead of 124 ms and an element reads the answer in
+  13 ms instead of 76 ms; compressed, both forms are about the same size.
+
 ### Changed
+
+- **The built-in providers answer bytes.** `createLocalProvider` and `createWorkerProvider`
+  answer the binary form; `createRestProvider` and `createPivotProvider` ask the server
+  for it and still take JSON from a server that answers JSON. A provider of your own may
+  keep answering JSON.
+
+**What breaks:** a page that calls a built-in provider's `execute` itself and parses the
+answer as JSON now gets a `Uint8Array`. Call `Engine.execute` for JSON, or hand the
+answer to the element or `exportRows`, which read both.
 
 - **The engine no longer uses Apache Arrow** ([#37](https://github.com/casoon/opengrid/issues/37)).
   It keeps its data in `opengrid-columns` — typed columns of exactly the seven types of
