@@ -51,6 +51,14 @@ impl LocalDataSource {
         Self { table }
     }
 
+    /// Runs `query` and answers with the result table and its `total_count`,
+    /// without turning a single cell into a value — the path of the binary
+    /// result form (E35), which serialises the columns as they are.
+    pub fn run(&self, query: &ValidatedQuery) -> Result<(Table, u64), DataSourceError> {
+        let result = execute(&self.table, query).map_err(backend)?;
+        Ok((result.table, result.total_count))
+    }
+
     /// Runs `query` **once** and hands its rows out in pieces (issue #2, the
     /// server's export).
     ///

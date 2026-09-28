@@ -33,7 +33,7 @@ instead.
 
 | Function | What it does |
 |---|---|
-| `set_provider(host, provider)` | Attaches the data source. `provider.execute(queryJson, mode, { signal })` answers the result JSON, or a Promise of it; the third argument is optional, and so is everything else. |
+| `set_provider(host, provider)` | Attaches the data source. `provider.execute(queryJson, mode, { signal })` answers the result as JSON or in the [binary form](#the-binary-result-form) (`Uint8Array`, `ArrayBuffer`), or a Promise of either; the third argument is optional, and so is everything else. |
 | `set_texts(host, texts)` | Overrides any subset of the [texts](#texts). Call it **before** `set_provider` and the component renders the right words from its first paint. |
 | `set_formats(host, formats)` | Per-column display formatting — see [`<opengrid-grid>`](#opengrid-grid). |
 | `set_choices(host, choices)` | Per-column editor choices: `{ customer: ["Alpha", "Beta"] }` turns that column's editor into a `<select>`. |
@@ -90,6 +90,21 @@ Its types are generated with it and declare `[Symbol.dispose]()`: a
 TypeScript project that checks library types needs `ESNext` or
 `ESNext.Disposable` in `lib` (TypeScript 5.2+), or `skipLibCheck` — only a
 project that imports the engine.
+
+### The binary result form
+
+A result can travel as JSON or as bytes in `application/vnd.opengrid.columns` — the
+engine's own columns, written out: no text per cell, decimals exact, and a worker hands
+the bytes over without copying them. The elements and `exportRows` read both forms, so a
+provider of your own may answer either.
+
+The built-in providers use the bytes: `createLocalProvider` and `createWorkerProvider`
+answer them (`Engine.execute_columns`), `createRestProvider` and `createPivotProvider` ask
+the server for them with `Accept` and take JSON when the server answers JSON, and
+`createHybridProvider` finishes in the form its remote answered in
+(`Planner.finish_columns`). `Engine.execute` and `Planner.finish` still answer JSON. A page
+that calls a built-in provider's `execute` itself gets bytes; the layout is described in
+`crates/opengrid-columns/src/wire.rs`.
 
 **Cancelling.** `execute` takes an optional third argument, `{ signal }`. The
 REST, pivot and hybrid providers hand the `AbortSignal` to `fetch`, so an

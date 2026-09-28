@@ -186,12 +186,65 @@ async fn query(
 
     let result = executed.map_err(source_failed)?;
 
-    Ok((
+    if wants_columns(&headers) {
+        let table = opengrid_columns::Table::from_values(&result.schema, &result.columns)
+            .map_err(|message| WireError::new(ErrorCode::Backend, message))?;
+        return Ok(columns_response(opengrid_columns::wire::encode_result(
+            &table,
+            result.total_count,
+        )));
+    }
+    Ok(json_response(result_to_json(&result)))
+}
+
+/// Whether the client asked for the binary result form (E35): its media type
+/// in `Accept`, with any parameters, and not refused with `q=0`. Everything
+/// else — no `Accept`, `*/*`, `application/json` — gets JSON, so curl and
+/// other clients see what they always saw.
+fn wants_columns(headers: &HeaderMap) -> bool {
+    headers
+        .get_all(header::ACCEPT)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .flat_map(|value| value.split(','))
+        .any(|entry| {
+            let mut parts = entry.split(';').map(str::trim);
+            let media = parts.next().unwrap_or_default();
+            let refused = parts.any(|parameter| {
+                parameter
+                    .strip_prefix("q=")
+                    .and_then(|q| q.parse::<f32>().ok())
+                    .is_some_and(|q| q == 0.0)
+            });
+            media.eq_ignore_ascii_case(opengrid_columns::wire::MEDIA_TYPE) && !refused
+        })
+}
+
+/// A successful answer in JSON. `Vary: Accept`, because the same request can
+/// be answered in two forms and a cache must not hand one out for the other.
+fn json_response(body: String) -> Response {
+    (
         StatusCode::OK,
-        [(header::CONTENT_TYPE, "application/json")],
-        result_to_json(&result),
+        [
+            (header::CONTENT_TYPE, "application/json"),
+            (header::VARY, "Accept"),
+        ],
+        body,
     )
-        .into_response())
+        .into_response()
+}
+
+/// A successful answer in the binary form.
+fn columns_response(body: Vec<u8>) -> Response {
+    (
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, opengrid_columns::wire::MEDIA_TYPE),
+            (header::VARY, "Accept"),
+        ],
+        body,
+    )
+        .into_response()
 }
 
 /// Everything a query goes through before it may run: the token, the payload
@@ -356,12 +409,12 @@ async fn pivot(
         DataSourceError::Backend { message } => WireError::new(ErrorCode::Backend, message),
     })?;
 
-    Ok((
-        StatusCode::OK,
-        [(header::CONTENT_TYPE, "application/json")],
-        opengrid_pivot::pivot_to_json(&result, &rows),
-    )
-        .into_response())
+    if wants_columns(&headers) {
+        return Ok(columns_response(opengrid_pivot::pivot_to_bytes(
+            &result, &rows,
+        )));
+    }
+    Ok(json_response(opengrid_pivot::pivot_to_json(&result, &rows)))
 }
 
 /// `GET /source/{source}` — the schema and capabilities of one source.

@@ -1188,6 +1188,19 @@ pub fn parse_result(result_json: &str) -> Result<QueryResult, String> {
         .map_err(|error| error.message().to_owned())
 }
 
+/// Reads a result in the binary form (E35) — the answer of the engine's
+/// `execute_columns` or of a server asked with `Accept` — into the same
+/// [`QueryResult`] as [`parse_result`]. No text per cell on the way.
+pub fn parse_result_bytes(bytes: &[u8]) -> Result<QueryResult, String> {
+    let (table, total_count) =
+        opengrid_columns::wire::decode_result(bytes).map_err(|error| error.to_string())?;
+    Ok(QueryResult::new(
+        table.schema().clone(),
+        table.to_values(),
+        total_count,
+    ))
+}
+
 /// The first logical row visible at `scroll_top`.
 ///
 /// With rows at `r * row_height` and a sticky header, the row whose top is at or

@@ -158,6 +158,23 @@ pub fn parse_result(result_json: &str) -> Result<TableModel, String> {
     Ok(TableModel { columns: parsed })
 }
 
+/// Reads a result in the binary form (E35) into the same model.
+///
+/// Through the JSON form on purpose: table mode shows a value's wire text, and
+/// writing the decoded result in that notation is what keeps the text the same
+/// whichever form the provider answered in. Table mode shows one page, so the
+/// detour costs little.
+pub fn parse_result_bytes(bytes: &[u8]) -> Result<TableModel, String> {
+    let (table, total_count) =
+        opengrid_columns::wire::decode_result(bytes).map_err(|error| error.to_string())?;
+    let result = opengrid_datasource::QueryResult::new(
+        table.schema().clone(),
+        table.to_values(),
+        total_count,
+    );
+    parse_result(&opengrid_datasource::wire::result_to_json(&result))
+}
+
 /// The display text of one wire value.
 fn value_text(value: &Value) -> String {
     match value {

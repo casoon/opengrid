@@ -21,6 +21,12 @@
  *   createLocalProvider(engine)                   engine on the main thread
  *   createRestProvider({ url, source, token })    opengrid-server über HTTP (point 27)
  *
+ * A provider's `execute` answers the result JSON **or** the binary result form
+ * (decision E35, a `Uint8Array`): the elements and `exportRows` read both. The
+ * tab and worker providers answer bytes — the worker hands them over without a
+ * copy — and the REST providers ask the server for them and fall back to JSON
+ * when it answers JSON.
+ *
  * Every provider's `execute(queryJson, mode, { signal })` may take an
  * `AbortSignal` as its third argument (point 84). The providers that talk HTTP
  * hand it to `fetch`, so an aborted export leaves no request running; the tab
@@ -198,7 +204,7 @@ export function createWorkerProvider({
       await request({ type: "load", name, bytes: buffer, schema }, [buffer]);
     },
 
-    /** Runs a query JSON and resolves with the result JSON. */
+    /** Runs a query JSON and resolves with the result in the binary form. */
     async execute(queryJson) {
       await start();
       return request({ type: "query", query: queryJson });
@@ -242,7 +248,7 @@ export function createLocalProvider(engine) {
       );
     },
     execute(queryJson) {
-      return engine.execute(queryJson);
+      return engine.execute_columns(queryJson);
     },
     terminate() {},
   };
@@ -275,10 +281,12 @@ export function createLocalProvider(engine) {
 export function createRestProvider({ url, source, token } = {}) {
   const base = String(url).replace(/\/$/, "");
   const endpoint = `${base}/query/${encodeURIComponent(source)}`;
-  const headers = { "Content-Type": "application/json" };
+  const headers = { "Content-Type": "application/json", Accept: ACCEPT_ANSWER };
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }
+  // The export answers a file, CSV or JSON, whatever a query would.
+  const { Accept: _answer, ...exportHeaders } = headers;
 
   return {
     /** Where the queries run; the grid names it in its footer (issue #33). */
@@ -310,11 +318,7 @@ export function createRestProvider({ url, source, token } = {}) {
         signal,
         redirect: "error",
       });
-      const text = await response.text();
-      if (response.ok) {
-        return text;
-      }
-      throw refusal(text, response.status);
+      return answerOf(response);
     },
 
     /**
@@ -353,7 +357,7 @@ export function createRestProvider({ url, source, token } = {}) {
       }
       const response = await fetch(`${base}/export/${encodeURIComponent(source)}?${parameters}`, {
         method: "POST",
-        headers,
+        headers: exportHeaders,
         body: JSON.stringify(query),
         signal,
         redirect: "error",
@@ -386,6 +390,29 @@ export function createRestProvider({ url, source, token } = {}) {
       });
     },
   };
+}
+
+/**
+ * What a provider asks the server for: the binary result form (E35), JSON as
+ * the fallback — a server that does not know the form answers JSON, and
+ * `answerOf` takes that too.
+ */
+const COLUMNS_TYPE = "application/vnd.opengrid.columns";
+const ACCEPT_ANSWER = `${COLUMNS_TYPE}, application/json;q=0.9`;
+
+/**
+ * A response as a provider's answer: the bytes of the binary form, the result
+ * JSON otherwise, the server's refusal as an `Error`.
+ */
+async function answerOf(response) {
+  if (!response.ok) {
+    throw refusal(await response.text(), response.status);
+  }
+  const type = response.headers.get("Content-Type") ?? "";
+  if (type.split(";")[0].trim().toLowerCase() === COLUMNS_TYPE) {
+    return new Uint8Array(await response.arrayBuffer());
+  }
+  return response.text();
 }
 
 /**
@@ -446,7 +473,7 @@ function coded(code, message) {
  */
 export function createPivotProvider({ url, source, token } = {}) {
   const endpoint = `${String(url).replace(/\/$/, "")}/pivot/${encodeURIComponent(source)}`;
-  const headers = { "Content-Type": "application/json" };
+  const headers = { "Content-Type": "application/json", Accept: ACCEPT_ANSWER };
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }
@@ -462,11 +489,7 @@ export function createPivotProvider({ url, source, token } = {}) {
         signal,
         redirect: "error",
       });
-      const text = await response.text();
-      if (response.ok) {
-        return text;
-      }
-      throw refusal(text, response.status);
+      return answerOf(response);
     },
   };
 }
@@ -517,7 +540,10 @@ export function createHybridProvider({ remote, planner, mode = "auto", onPlan } 
       if (!plan.client) {
         return partial;
       }
-      return planner.finish(JSON.stringify(plan.client), partial);
+      // The engine finishes in the form the source answered in.
+      return typeof partial === "string"
+        ? planner.finish(JSON.stringify(plan.client), partial)
+        : planner.finish_columns(JSON.stringify(plan.client), partial);
     },
   };
 }
@@ -688,8 +714,8 @@ export async function exportRows(provider, query, options = {}) {
     const limit = total === undefined ? chunkSize : Math.min(chunkSize, total - rows);
     const piece = JSON.stringify({ ...query, sort, offset: rows, limit });
     const answer = await unlessAborted(ask(provider, piece, signal), signal);
-    const result = JSON.parse(answer);
-    const count = result.columns[0]?.values.length ?? 0;
+    const result = countsOf(answer);
+    const count = result.rows;
     const first = total === undefined;
     if (first) {
       total = result.total_count;
@@ -730,6 +756,28 @@ export async function exportRows(provider, query, options = {}) {
   return new Blob(parts, {
     type: format === "csv" ? "text/csv;charset=utf-8" : "application/json",
   });
+}
+
+/**
+ * `total_count` and the rows of an answer, whichever form it came in: from the
+ * JSON, or from the header of the binary form (E35) — `total_count` at byte 8,
+ * the row count at byte 16, both little-endian `u64`.
+ */
+function countsOf(answer) {
+  if (typeof answer === "string") {
+    const result = JSON.parse(answer);
+    return { total_count: result.total_count, rows: result.columns[0]?.values.length ?? 0 };
+  }
+  const bytes = answer instanceof ArrayBuffer ? new Uint8Array(answer) : answer;
+  if (bytes.byteLength < 24) {
+    throw new TypeError("exportRows: the provider answered neither JSON nor the binary form");
+  }
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const columns = view.getUint32(24, true);
+  return {
+    total_count: Number(view.getBigUint64(8, true)),
+    rows: columns === 0 ? 0 : Number(view.getBigUint64(16, true)),
+  };
 }
 
 /** One piece from the provider; a synchronous throw becomes a rejection. */
