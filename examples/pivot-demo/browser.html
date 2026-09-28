@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>opengrid — pivot demo</title>
+    <title>opengrid — pivot demo, in the browser</title>
     <style>
       body {
         font-family: system-ui, sans-serif;
@@ -30,22 +30,15 @@
     </style>
   </head>
   <body>
-    <h1>opengrid — a pivot is one request</h1>
+    <h1>opengrid — a pivot in the browser</h1>
     <p>
       Rows: country · columns: year · measures: sum of quantity, and a count.
-      The whole thing is <strong>one</strong> request to
-      <code>POST /pivot/orders</code>. PostgreSQL answers it as a single
-      <code>GROUPING SETS</code> statement and the local engine as
-      <code>n+1</code> ordinary queries — with the same result, which the
+      No server: the engine runs in a worker over the conformance dataset and
+      answers the pivot as <code>n+1</code> ordinary queries — the same answer
+      the server gives (<a href="index.html">index.html</a>), which the
       conformance suite checks.
     </p>
-    <p>
-      Start the server with
-      <code>cargo run -p opengrid-example-server -- demo</code>
-      and serve the page with <code>just serve-demo</code>. The same pivot
-      without a server — the engine in a worker —
-      is <a href="browser.html">browser.html</a>.
-    </p>
+    <p>Serve the page with <code>just serve-demo</code>.</p>
 
     <opengrid-pivot
       label="Orders by country and year"
@@ -56,17 +49,17 @@
     ></opengrid-pivot>
 
     <script type="module">
-      import { loadOpengrid, createPivotProvider } from "/packages/opengrid/loader.js";
+      import { loadOpengrid, createWorkerProvider } from "/packages/opengrid/loader.js";
 
-      const provider = createPivotProvider({
-        url: "http://127.0.0.1:8081",
-        source: "orders",
-        token: "demo-token-de",
-      });
+      const provider = createWorkerProvider();
+      const [csv, schema] = await Promise.all([
+        fetch("/crates/opengrid-conformance/data/orders.csv").then((response) => response.arrayBuffer()),
+        fetch("/crates/opengrid-conformance/data/orders.schema.json").then((response) => response.text()),
+      ]);
+      await provider.load("orders", csv, schema);
 
       const loader = await loadOpengrid();
-      const host = document.querySelector("opengrid-pivot");
-      loader.module.set_provider(host, provider);
+      loader.module.set_provider(document.querySelector("opengrid-pivot"), provider);
     </script>
   </body>
 </html>

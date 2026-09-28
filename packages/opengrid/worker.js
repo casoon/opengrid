@@ -13,6 +13,7 @@
  *   load  { type:"load", id, name, bytes, schema }
  *                                              -> { type:"loaded", id }
  *   query { type:"query", id, query }          -> { id, result }
+ *   pivot { type:"pivot", id, pivot }          -> { id, result }   (issue #28)
  *
  * Any request that throws answers `{ id, type:"error", message }`. The `bytes`
  * of `load` arrive as a transferable `ArrayBuffer`; a `result` is the engine's
@@ -42,6 +43,11 @@ self.onmessage = async ({ data }) => {
       }
       case "query": {
         const result = engine.execute_columns(data.query);
+        self.postMessage({ id: data.id, result }, [result.buffer]);
+        break;
+      }
+      case "pivot": {
+        const result = engine.pivot_columns(data.pivot);
         self.postMessage({ id: data.id, result }, [result.buffer]);
         break;
       }

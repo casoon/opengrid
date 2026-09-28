@@ -20,6 +20,14 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Added
 
+- **The pivot in the browser** ([#28](https://github.com/casoon/opengrid/issues/28)).
+  `createLocalProvider` and `createWorkerProvider` answer `<opengrid-pivot>`: the engine runs
+  the pivot's grouping sets over the data the page loaded, with the server's limits
+  (`Engine.pivot`, `Engine.pivot_columns`, a `pivot` message in the worker). The element calls
+  a provider's new optional `pivot(json)` and falls back to `execute`, so providers of a page's
+  own keep working; `createPivotProvider` has `pivot` too. `examples/pivot-demo/browser.html`
+  shows it without a server.
+
 - **XLSX export on the server** ([#72](https://github.com/casoon/opengrid/issues/72)).
   `POST /export/{source}?format=xlsx` writes an Excel workbook, and `exportRows(rest, query,
   { format: "xlsx" })` asks for it through `createRestProvider` — with any other provider it is
