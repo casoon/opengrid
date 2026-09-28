@@ -13,6 +13,8 @@ opengrid-types = { path = "../opengrid-types" }
 opengrid-query = { path = "../opengrid-query" }
 opengrid-pivot = { path = "../opengrid-pivot" }
 opengrid-datasource = { path = "../opengrid-datasource" }
+# The contract every source comes through (issue #45, E36).
+opengrid-connector = { path = "../opengrid-connector" }
 # The source of point 24 is the local engine: the server is fully testable
 # before a database exists (PostgreSQL docks in point 26).
 opengrid-engine = { path = "../opengrid-engine" }
