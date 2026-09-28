@@ -245,6 +245,79 @@ pub fn load_result(result: &QueryResult) -> Result<Table, IngestError> {
     Table::new(schema, columns).map_err(|message| IngestError::Schema { message })
 }
 
+/// Builds a table from pieces of rows — the way a source that only hands out
+/// rows (issue #46) becomes something the engine can answer.
+///
+/// Each piece holds the **stored** columns of `schema`, in order; the derived
+/// ones are computed here, as on every other ingest path. The rows go straight
+/// into the column builders, piece by piece, so the typed rows of the whole
+/// source never exist at once.
+pub struct PieceBuilder<'a> {
+    stored: Schema,
+    layout: Layout,
+    builders: Builders<'a>,
+    rows: u64,
+}
+
+impl<'a> PieceBuilder<'a> {
+    pub fn new(schema: &'a Schema) -> Self {
+        let stored = schema.stored();
+        let layout = Layout::of(schema, &stored);
+        Self {
+            stored,
+            layout,
+            builders: Builders::new(schema, 0),
+            rows: 0,
+        }
+    }
+
+    /// Appends a piece. Its columns must be the stored columns of the schema,
+    /// by name and type, in order.
+    pub fn push(&mut self, piece: &QueryResult) -> Result<(), IngestError> {
+        let names = |schema: &Schema| -> Vec<(String, DataType)> {
+            schema
+                .fields()
+                .iter()
+                .map(|field| (field.name.as_str().to_owned(), field.data_type))
+                .collect()
+        };
+        if names(&piece.schema) != names(&self.stored) {
+            return Err(IngestError::Schema {
+                message: format!(
+                    "a piece has the columns {:?}, the source's stored columns are {:?}",
+                    names(&piece.schema),
+                    names(&self.stored)
+                ),
+            });
+        }
+        let row_count = piece.row_count();
+        if piece.columns.iter().any(|column| column.len() != row_count) {
+            return Err(IngestError::Schema {
+                message: "a piece has columns of different lengths".to_owned(),
+            });
+        }
+        for row in 0..row_count {
+            let values = piece
+                .columns
+                .iter()
+                .map(|column| column[row].clone())
+                .collect();
+            self.builders.push(self.layout.complete(values))?;
+        }
+        self.rows += row_count as u64;
+        Ok(())
+    }
+
+    /// The rows pushed so far.
+    pub fn rows(&self) -> u64 {
+        self.rows
+    }
+
+    pub fn finish(self) -> Result<Table, IngestError> {
+        self.builders.finish()
+    }
+}
+
 /// One builder per column of the schema, filled a row at a time.
 struct Builders<'a> {
     schema: &'a Schema,

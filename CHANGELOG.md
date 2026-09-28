@@ -29,6 +29,11 @@ Two things belong in every release entry and are easy to leave out:
   the token, the allowed fields and the row filter before a connector sees a query.
   PostgreSQL and the local engine are reference connectors. See
   [Connectors](docs/guides/connectors.md).
+- **Sources that only hand out rows** ([#46](https://github.com/casoon/opengrid/issues/46)).
+  `RowSource` (`schema`, `scan` in pieces) wrapped in `Rows` is a full connector: the engine
+  answers every query on the server. `max_scan_rows` (default 1 000 000) bounds the rows one
+  answer reads; over it the server answers `413 limit_exceeded`. `DataSourceError` has a new
+  variant `LimitExceeded`.
 - **Results travel in a binary form** ([#38](https://github.com/casoon/opengrid/issues/38)),
   `application/vnd.opengrid.columns`: the engine's columns written out, decimals exact, no
   text per cell. `Engine.execute_columns` and `Planner.finish_columns` answer it next to

@@ -223,3 +223,68 @@ async fn a_wrong_description_does_not_build() {
         .unwrap_or_default();
     assert!(message.contains("nope"), "{message}");
 }
+
+/// A source of the rows tier (issue #46): only schema and rows. Its bound
+/// reaches the client as `limit_exceeded` (413), a query it can narrow.
+#[tokio::test]
+async fn a_rows_source_over_its_bound_is_a_413() {
+    use opengrid_connector::{RowSource, RowStream, Rows};
+    use opengrid_query::ValidatedFilter;
+
+    struct Numbers;
+    impl RowSource for Numbers {
+        fn schema(&self) -> BoxFuture<'_, Result<Schema, DataSourceError>> {
+            Box::pin(async {
+                Ok(serde_json::from_str(
+                    r#"{"fields":[{"name":"n","type":"int64","nullable":false}]}"#,
+                )
+                .unwrap())
+            })
+        }
+        fn scan<'a>(
+            &'a self,
+            _filter: Option<&'a ValidatedFilter>,
+        ) -> BoxFuture<'a, Result<Box<dyn RowStream + 'a>, DataSourceError>> {
+            Box::pin(async {
+                let stream: Box<dyn RowStream + 'a> = Box::new(Once(false));
+                Ok(stream)
+            })
+        }
+    }
+    struct Once(bool);
+    impl RowStream for Once {
+        fn next_piece(&mut self) -> BoxFuture<'_, Result<Option<QueryResult>, DataSourceError>> {
+            let done = std::mem::replace(&mut self.0, true);
+            Box::pin(async move {
+                if done {
+                    return Ok(None);
+                }
+                let schema: Schema = serde_json::from_str(
+                    r#"{"fields":[{"name":"n","type":"int64","nullable":false}]}"#,
+                )
+                .unwrap();
+                let values = (0..100).map(opengrid_types::Value::Int64).collect();
+                Ok(Some(QueryResult::new(schema, vec![values], 0)))
+            })
+        }
+    }
+
+    let server = Server::builder()
+        .source(
+            "numbers",
+            Rows::new(Numbers).max_scan_rows(10),
+            SourcePolicy::default(),
+        )
+        .token(TOKEN, [("unused", "")])
+        .build()
+        .await
+        .expect("a server");
+    let (status, body) = post(
+        server.router(),
+        "/query/numbers",
+        r#"{"source":"numbers","select":["n"]}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE, "{body}");
+    assert!(body.contains("max_scan_rows"), "{body}");
+}
