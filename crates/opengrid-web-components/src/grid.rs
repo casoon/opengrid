@@ -2216,9 +2216,10 @@ pub fn build_grid(
         // through `aria-sort`. Reading order is name, direction, order index —
         // "customer ▲ 2".
         let name = element(buffer, nodes, Some(th), "span");
+        // The page's title for the column where it gave one (issue #66).
         buffer.push(Patch::SetText {
             node: name,
-            text: field.name.as_str().to_owned(),
+            text: texts.column(field.name.as_str()).to_owned(),
         });
         let direction = marker(buffer, nodes, th, "sort-direction");
         let index = marker(buffer, nodes, th, "sort-index");
@@ -2680,7 +2681,7 @@ fn build_columns(
         let text = element(buffer, nodes, Some(label), "span");
         buffer.push(Patch::SetText {
             node: text,
-            text: name.clone(),
+            text: texts.column(name).to_owned(),
         });
         boxes.push((input, name.clone()));
     }
