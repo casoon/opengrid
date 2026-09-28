@@ -60,11 +60,16 @@ All from `loader.js`, all the same shape:
 
 | | |
 |---|---|
-| `createLocalProvider(engine)` | The engine on the main thread. |
-| `createWorkerProvider({ moduleUrl?, wasmUrl?, workerUrl? })` | The engine in a module worker; started lazily, once. Every option is optional: without `moduleUrl` it is the engine the package ships under `engine/`, without `workerUrl` the package's `worker.js`. `moduleUrl` and `wasmUrl` are strings, since they travel to the worker by `postMessage`. Under a production bundler, pass `moduleUrl` and `workerUrl` — see [Frameworks → Bundlers](../guides/frameworks/#what-every-adapter-does-the-same-way). |
+| `createLocalProvider(engine)` | The engine on the main thread. `load(name, bytes, schema)`, `execute`, `stats()`, `terminate()` (a no-op here). |
+| `createWorkerProvider({ moduleUrl?, wasmUrl?, workerUrl? })` | The engine in a module worker; started lazily, once. Every option is optional: without `moduleUrl` it is the engine the package ships under `engine/`, without `workerUrl` the package's `worker.js`. The same methods as the local provider; `terminate()` stops the worker. `moduleUrl` and `wasmUrl` are strings, since they travel to the worker by `postMessage`. Under a production bundler, pass `moduleUrl` and `workerUrl` — see [Frameworks → Bundlers](../guides/frameworks/#what-every-adapter-does-the-same-way). |
 | `createRestProvider({ url, source, token })` | `POST /query/{source}` of an `opengrid-server`. Also offers `describe()` → `{ name, schema, capabilities, pivot_limits }`, and `export(query, options)` → a `Blob` from `POST /export/{source}` ([below](#over-a-server-one-request)). |
 | `createHybridProvider({ remote, planner, mode, onPlan })` | Splits each query between a remote source and the engine in the tab. `onPlan` receives the plan before anything is sent. |
 | `createPivotProvider({ url, source, token })` | `POST /pivot/{source}` — a whole pivot in one request. |
+
+**What the engine holds** — `stats()` of the local and the worker provider (issue #70) answers
+`{ kind, memory, sources: [{ name, rows, columns, bytes }] }`: the engine module's WASM
+memory, which only grows, and what each loaded source's columns take inside it. Together with
+the grid's `opengrid-query` event it is a page's resource report.
 
 Each of them carries a **`kind`** — `"local"`, `"worker"`, `"remote"` (REST and pivot) or
 `"hybrid"` — and a provider of a page's own may too. The grid names it in its footer,
@@ -683,7 +688,7 @@ the same for `/query`, `/pivot`, `/source` and `/export`:
 
 ## Events
 
-All three fire on the host, `bubbles` and `composed` (without `composed` they would
+All four fire on the host, `bubbles` and `composed` (without `composed` they would
 not leave a shadow root the page wrapped the element in), and neither is
 `cancelable` — they report what has already happened.
 
@@ -692,6 +697,7 @@ not leave a shadow root the page wrapped the element in), and neither is
 | `opengrid-selection-change` | `{ rows: number[], count: number }` — logical row numbers, ascending. |
 | `opengrid-cell-change` | `{ row, column, value, previous }` — everything needed to persist it. |
 | `opengrid-view-change` | `{ view }` — the whole [view](#the-view) after the change. Scrolling and selecting are not view changes. |
+| `opengrid-query` | `{ kind, ms, rows, total, bytes, form, memory }` after **every** answer of the provider (issue #70): where it ran (the provider's `kind`), the round trip in milliseconds measured in the tab, rows answered and matches before paging, the answer's size as it arrived and its form (`binary` or `json`), and the element module's WASM memory. Measured always, sent nowhere — what the page does with it is the page's. |
 
 **The component edits; the page saves.** There is no write path: the engine's
 contract is a query. An edited value is shown at once and marked unsaved; a

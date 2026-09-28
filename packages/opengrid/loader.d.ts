@@ -169,8 +169,19 @@ export interface ExecuteOptions {
 export interface EngineProvider extends Provider {
   /** Loads CSV bytes as the source `name`, against a schema (JSON). */
   load(name: string, bytes: ArrayBuffer | Uint8Array, schema: string): Promise<void>;
+  /** What the engine holds: its memory and each source's size (issue #70). */
+  stats(): Promise<EngineStats>;
   /** Stops a worker; a no-op in the tab. */
   terminate(): void;
+}
+
+/** What an engine holds, from `stats()` of an engine provider. */
+export interface EngineStats {
+  kind: "local" | "worker";
+  /** The engine module's WASM linear memory in bytes — it only grows. */
+  memory: number;
+  /** Every loaded source, by name. */
+  sources: { name: string; rows: number; columns: number; bytes: number }[];
 }
 
 /** The engine of the engine module, as `createLocalProvider` uses it. */
@@ -180,6 +191,8 @@ export interface Engine {
   execute(queryJson: string): string;
   /** The result in the binary form — what the tab and worker providers answer. */
   execute_columns(queryJson: string): Uint8Array;
+  /** What it holds, as JSON (see `EngineStats`). */
+  stats(): string;
 }
 
 /** What a server says a source is. */
@@ -658,6 +671,22 @@ export interface CellChangeDetail {
   previous: string;
 }
 
+/** `opengrid-query`: one answer of the grid's provider (issue #70). */
+export interface QueryDetail {
+  /** The provider's `kind`, or `null` when it names none. */
+  kind: ProviderKind | null;
+  /** The round trip in milliseconds, measured in the tab. */
+  ms: number;
+  /** Rows answered, and matches before paging. */
+  rows: number;
+  total: number;
+  /** The answer's size as it arrived, and its form. */
+  bytes: number;
+  form: "binary" | "json";
+  /** The element module's WASM linear memory in bytes. */
+  memory: number;
+}
+
 /** `opengrid-view-change`: the whole view after the change. */
 export interface ViewChangeDetail {
   view: View;
@@ -668,6 +697,7 @@ export interface OpengridEventMap {
   "opengrid-selection-change": CustomEvent<SelectionChangeDetail>;
   "opengrid-cell-change": CustomEvent<CellChangeDetail>;
   "opengrid-view-change": CustomEvent<ViewChangeDetail>;
+  "opengrid-query": CustomEvent<QueryDetail>;
 }
 
 // ---------------------------------------------------------------------------

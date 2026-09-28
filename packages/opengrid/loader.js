@@ -210,6 +210,15 @@ export function createWorkerProvider({
       return request({ type: "query", query: queryJson });
     },
 
+    /**
+     * What the engine in the worker holds (issue #70): its WASM memory and,
+     * per source, rows, columns and bytes.
+     */
+    async stats() {
+      await start();
+      return { kind: "worker", ...JSON.parse(await request({ type: "stats" })) };
+    },
+
     /** Stops the worker and rejects everything still in flight. */
     terminate() {
       worker?.terminate();
@@ -249,6 +258,10 @@ export function createLocalProvider(engine) {
     },
     execute(queryJson) {
       return engine.execute_columns(queryJson);
+    },
+    /** What the engine holds (issue #70), as the worker provider says it. */
+    async stats() {
+      return { kind: "local", ...JSON.parse(engine.stats()) };
     },
     terminate() {},
   };
