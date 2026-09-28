@@ -163,7 +163,12 @@ pub fn set_columns(host: &HtmlElement, columns: JsValue) {
         // Not connected yet — the check runs when the schema arrives.
         return;
     }
-    crate::grid_element::recolumn(host);
+    match host.tag_name().to_ascii_lowercase().as_str() {
+        "opengrid-grid" => crate::grid_element::recolumn(host),
+        // The table checks it against the next answer (issue #29).
+        TABLE_TAG => run_query(host, None, None),
+        _ => {}
+    }
 }
 
 /// Reads the whole view as a plain JS object (plan point 59).
@@ -359,7 +364,7 @@ fn run_query(
         }
         match outcome {
             Ok(value) => match answer(&value) {
-                Some(answer) => match table_model(answer) {
+                Some(answer) => match table_model(&host, answer, &columns) {
                     Ok(model) => {
                         render_data(&host, &model, sort.as_ref(), focus_column.as_deref());
                     }
@@ -538,11 +543,75 @@ pub(crate) enum Answer {
 /// The status line's sentence for an answer that is neither.
 pub(crate) const NOT_AN_ANSWER: &str = "provider returned neither result JSON nor the binary form";
 
-/// The table model of an answer, whichever form it came in.
-fn table_model(answer: Answer) -> Result<table::TableModel, String> {
-    match answer {
+/// The table model of an answer, whichever form it came in, shown the way
+/// the page asked (issue #29).
+fn table_model(
+    host: &HtmlElement,
+    answer: Answer,
+    columns: &[String],
+) -> Result<TableModel, String> {
+    let result = match answer {
         Answer::Json(json) => table::parse_result(&json),
         Answer::Binary(bytes) => table::parse_result_bytes(&bytes),
+    }?;
+    let look = HostLook::new(host, &result.schema, columns)?;
+    Ok(table::model(&result, &look))
+}
+
+/// The page's look for a table: its formats and, with the grid's
+/// `set_columns`, a column's title and presentation markers.
+struct HostLook {
+    formatter: crate::formats::Formatter,
+    #[cfg(feature = "grid")]
+    styles: crate::presentation::ColumnStyles,
+}
+
+impl HostLook {
+    /// A configuration the table refuses is an error, like any other.
+    #[cfg_attr(not(feature = "grid"), allow(unused_variables))]
+    fn new(
+        host: &HtmlElement,
+        schema: &opengrid_types::Schema,
+        columns: &[String],
+    ) -> Result<Self, String> {
+        Ok(Self {
+            formatter: crate::formats::Formatter::new(&crate::formats::formats(host), schema),
+            #[cfg(feature = "grid")]
+            styles: crate::presentation::ColumnStyles::new(
+                crate::presentation::validate_for_table(
+                    &crate::presentation::raw(host),
+                    schema,
+                    columns,
+                )
+                .map_err(|problems| {
+                    problems
+                        .iter()
+                        .map(|problem| format!("{}: {}", problem.column, problem.reason))
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                })?,
+            ),
+        })
+    }
+}
+
+impl table::TableLook for HostLook {
+    fn text(&self, column: usize, value: &opengrid_types::Value) -> String {
+        crate::formats::CellFormat::text(&self.formatter, column, value)
+    }
+
+    #[cfg(feature = "grid")]
+    fn title(&self, field: &opengrid_types::Field) -> String {
+        let name = field.name.as_str();
+        self.styles
+            .get(name)
+            .and_then(|column| column.title.clone())
+            .unwrap_or_else(|| name.to_owned())
+    }
+
+    #[cfg(feature = "grid")]
+    fn markers(&self, field: &opengrid_types::Field) -> Vec<(&'static str, String)> {
+        self.styles.markers(field.name.as_str(), field.data_type)
     }
 }
 

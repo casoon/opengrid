@@ -13,6 +13,12 @@
 //! `<thead>`/`<tbody>`, `<th scope="col">` and a `<button>` per header carrying
 //! `aria-sort` on the `<th>`. Sorting is single-column — table mode is display,
 //! not interaction (plan/spezifikation/02-query-modell.md §Struktur).
+//!
+//! Since issue #29 the table shows its values **as the grid does**: the same
+//! formats, the same titles and the same `align`/`mono`/`emphasis`/`muted`
+//! markers ([`TableLook`]), and its elements carry parts with the grid's names
+//! (`table`, `caption`, `header`, `sort-button`, `sort-direction`, `row`,
+//! `cell`), so a page styles it from outside the shadow root.
 
 use opengrid_json::{Json as Value, json};
 
@@ -69,10 +75,64 @@ impl SortDirection {
 /// One output column with its already formatted cell text.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ColumnModel {
-    /// The output name.
+    /// The output name — the identifier the sort names.
     pub name: String,
+    /// What the header shows: the page's title for the column, or its name.
+    pub title: String,
+    /// The `data-` markers of the column's cells (`data-align`, `data-mono`, …).
+    pub markers: Vec<(&'static str, String)>,
     /// One text per row, in row order.
     pub values: Vec<String>,
+}
+
+/// How the table shows a result: the text of a value, and per column the
+/// header text and the cell markers. The element answers it from the page's
+/// formats and presentation; [`PlainLook`] is the value's own notation.
+pub trait TableLook {
+    /// The text of `value` in the column at `column`.
+    fn text(&self, column: usize, value: &opengrid_types::Value) -> String;
+
+    /// What the header of `field` shows.
+    fn title(&self, field: &opengrid_types::Field) -> String {
+        field.name.as_str().to_owned()
+    }
+
+    /// The markers of `field`'s cells.
+    fn markers(&self, _field: &opengrid_types::Field) -> Vec<(&'static str, String)> {
+        Vec::new()
+    }
+}
+
+/// The value's own notation (decimals exact, dates ISO, UTC), the field names,
+/// no markers. Test-only, like [`crate::formats::Plain`]: in the browser the
+/// table always has the host's look, which without formats renders this.
+#[cfg(test)]
+pub struct PlainLook;
+
+#[cfg(test)]
+impl TableLook for PlainLook {
+    fn text(&self, _column: usize, value: &opengrid_types::Value) -> String {
+        crate::formats::plain_text(value)
+    }
+}
+
+/// The model of a typed result, shown through `look`.
+pub fn model(result: &opengrid_datasource::QueryResult, look: &dyn TableLook) -> TableModel {
+    TableModel {
+        columns: result
+            .schema
+            .fields()
+            .iter()
+            .zip(&result.columns)
+            .enumerate()
+            .map(|(index, (field, values))| ColumnModel {
+                name: field.name.as_str().to_owned(),
+                title: look.title(field),
+                markers: look.markers(field),
+                values: values.iter().map(|value| look.text(index, value)).collect(),
+            })
+            .collect(),
+    }
 }
 
 /// The parsed result the table renders.
@@ -125,65 +185,21 @@ pub fn query_json(source: &str, columns: &[String], sort: Option<(&str, SortDire
     Value::Object(query).to_string()
 }
 
-/// Parses the engine's result JSON `{ "columns": [ { "name", "values" } ] }`.
-///
-/// Only the column envelope matters here; `total_count`/`row_count` are ignored
-/// because table mode shows the whole page. Values become their display text:
-/// JSON `null` is empty text, everything else its scalar form (decimals already
-/// arrive as strings, E13).
-pub fn parse_result(result_json: &str) -> Result<TableModel, String> {
-    let value: Value =
-        opengrid_json::from_str(result_json).map_err(|error| format!("result JSON: {error}"))?;
-    let columns = value
-        .get("columns")
-        .and_then(Value::as_array)
-        .ok_or_else(|| "result has no columns".to_owned())?;
-
-    let mut parsed = Vec::with_capacity(columns.len());
-    for column in columns {
-        let name = column
-            .get("name")
-            .and_then(Value::as_str)
-            .ok_or_else(|| "a column has no name".to_owned())?
-            .to_owned();
-        let values = column
-            .get("values")
-            .and_then(Value::as_array)
-            .ok_or_else(|| format!("column {name:?} has no values"))?;
-        parsed.push(ColumnModel {
-            name,
-            values: values.iter().map(value_text).collect(),
-        });
-    }
-    Ok(TableModel { columns: parsed })
+/// Reads a result in the wire form (E17) — typed, so the table can show it
+/// through the page's formats.
+pub fn parse_result(result_json: &str) -> Result<opengrid_datasource::QueryResult, String> {
+    opengrid_datasource::wire::result_from_json(result_json).map_err(|error| error.to_string())
 }
 
-/// Reads a result in the binary form (E35) into the same model.
-///
-/// Through the JSON form on purpose: table mode shows a value's wire text, and
-/// writing the decoded result in that notation is what keeps the text the same
-/// whichever form the provider answered in. Table mode shows one page, so the
-/// detour costs little.
-pub fn parse_result_bytes(bytes: &[u8]) -> Result<TableModel, String> {
+/// Reads a result in the binary form (E35) into the same typed result.
+pub fn parse_result_bytes(bytes: &[u8]) -> Result<opengrid_datasource::QueryResult, String> {
     let (table, total_count) =
         opengrid_columns::wire::decode_result(bytes).map_err(|error| error.to_string())?;
-    let result = opengrid_datasource::QueryResult::new(
+    Ok(opengrid_datasource::QueryResult::new(
         table.schema().clone(),
         table.to_values(),
         total_count,
-    );
-    parse_result(&opengrid_datasource::wire::result_to_json(&result))
-}
-
-/// The display text of one wire value.
-fn value_text(value: &Value) -> String {
-    match value {
-        Value::Null => String::new(),
-        Value::String(text) => text.clone(),
-        Value::Bool(flag) => flag.to_string(),
-        Value::Number(number) => number.to_string(),
-        other => other.to_string(),
-    }
+    ))
 }
 
 /// The visible sort mark for an `aria-sort` token, empty when unsorted.
@@ -244,6 +260,7 @@ pub fn build_table(
     sort: Option<(&str, SortDirection)>,
 ) -> TableNodes {
     let table = element(buffer, nodes, Some(NodeId::ROOT), "table");
+    part(buffer, table, "table");
     if let Some((name, value)) = mirror_label(label) {
         buffer.push(Patch::SetAttribute {
             node: table,
@@ -253,6 +270,7 @@ pub fn build_table(
     }
 
     let caption = element(buffer, nodes, Some(table), "caption");
+    part(buffer, caption, "caption");
     buffer.push(Patch::SetText {
         node: caption,
         text: label.unwrap_or_default().to_owned(),
@@ -263,11 +281,22 @@ pub fn build_table(
         let header_row = element(buffer, nodes, Some(thead), "tr");
         for column in &model.columns {
             let th = element(buffer, nodes, Some(header_row), "th");
+            part(buffer, th, "header");
             buffer.push(Patch::SetAttribute {
                 node: th,
                 name: "scope".to_owned(),
                 value: "col".to_owned(),
             });
+            // The header lines up with the values under it, as in the grid.
+            for (name, value) in &column.markers {
+                if *name == "data-align" {
+                    buffer.push(Patch::SetAttribute {
+                        node: th,
+                        name: (*name).to_owned(),
+                        value: value.clone(),
+                    });
+                }
+            }
             buffer.push(Patch::SetAttribute {
                 node: th,
                 name: "data-column".to_owned(),
@@ -284,6 +313,7 @@ pub fn build_table(
             });
 
             let button = element(buffer, nodes, Some(th), "button");
+            part(buffer, button, "sort-button");
             buffer.push(Patch::SetAttribute {
                 node: button,
                 name: "type".to_owned(),
@@ -302,7 +332,7 @@ pub fn build_table(
             let name = element(buffer, nodes, Some(button), "span");
             buffer.push(Patch::SetText {
                 node: name,
-                text: column.name.clone(),
+                text: column.title.clone(),
             });
             let mark = crate::shared::marker(buffer, nodes, button, "sort-direction");
             buffer.push(Patch::SetText {
@@ -315,8 +345,17 @@ pub fn build_table(
         let tbody = element(buffer, nodes, Some(table), "tbody");
         for row in 0..rows {
             let tr = element(buffer, nodes, Some(tbody), "tr");
+            part(buffer, tr, "row");
             for column in &model.columns {
                 let td = element(buffer, nodes, Some(tr), "td");
+                part(buffer, td, "cell");
+                for (name, value) in &column.markers {
+                    buffer.push(Patch::SetAttribute {
+                        node: td,
+                        name: (*name).to_owned(),
+                        value: value.clone(),
+                    });
+                }
                 buffer.push(Patch::SetText {
                     node: td,
                     text: column.values.get(row).cloned().unwrap_or_default(),
@@ -326,6 +365,15 @@ pub fn build_table(
     }
 
     TableNodes { table, caption }
+}
+
+/// Names a part (issue #29).
+fn part(buffer: &mut PatchBuffer, node: NodeId, name: &str) {
+    buffer.push(Patch::SetAttribute {
+        node,
+        name: "part".to_owned(),
+        value: name.to_owned(),
+    });
 }
 
 #[cfg(test)]
@@ -341,10 +389,14 @@ mod tests {
             columns: vec![
                 ColumnModel {
                     name: "customer".to_owned(),
+                    title: "customer".to_owned(),
+                    markers: Vec::new(),
                     values: vec!["Alpha".to_owned()],
                 },
                 ColumnModel {
                     name: "qty".to_owned(),
+                    title: "qty".to_owned(),
+                    markers: Vec::new(),
                     values: vec!["1".to_owned()],
                 },
             ],
@@ -501,22 +553,110 @@ mod tests {
         );
     }
 
-    /// The wire result becomes text: null empty, decimals already strings.
+    /// The wire result, typed, becomes text: NULL empty, a decimal exact.
     #[test]
     fn result_json_parses_into_a_table_model() {
         let result = r#"{
             "total_count": 3,
             "row_count": 3,
             "columns": [
-                { "name": "customer", "values": ["Alpha", null, ""] },
-                { "name": "amount", "values": ["10.00", "20.00", null] }
+                { "name": "customer", "type": "utf8", "nullable": true,
+                  "values": ["Alpha", null, ""] },
+                { "name": "amount", "type": {"decimal": {"precision": 12, "scale": 2}},
+                  "nullable": true, "values": ["10.00", "20.50", null] }
             ]
         }"#;
-        let model = parse_result(result).expect("parses");
+        let model = model(&parse_result(result).expect("parses"), &PlainLook);
         assert_eq!(model.columns.len(), 2);
         assert_eq!(model.columns[0].name, "customer");
+        assert_eq!(model.columns[0].title, "customer");
         assert_eq!(model.columns[0].values, ["Alpha", "", ""]);
-        assert_eq!(model.columns[1].values, ["10.00", "20.00", ""]);
+        assert_eq!(model.columns[1].values, ["10.00", "20.50", ""]);
+        assert!(model.columns[0].markers.is_empty());
+    }
+
+    /// Issue #29: the page's look reaches the table — the text through its
+    /// formats, the header through its title, the cells through its markers,
+    /// and the header takes the column's alignment.
+    #[test]
+    fn the_page_look_reaches_title_text_and_markers() {
+        struct Look;
+        impl TableLook for Look {
+            fn text(&self, column: usize, value: &opengrid_types::Value) -> String {
+                format!("#{column}:{}", crate::formats::plain_text(value))
+            }
+            fn title(&self, field: &opengrid_types::Field) -> String {
+                format!("Title of {}", field.name)
+            }
+            fn markers(&self, _field: &opengrid_types::Field) -> Vec<(&'static str, String)> {
+                vec![
+                    ("data-align", "end".to_owned()),
+                    ("data-mono", "true".to_owned()),
+                ]
+            }
+        }
+        let result = parse_result(
+            r#"{"total_count":1,"row_count":1,"columns":[
+                {"name":"qty","type":"int64","nullable":false,"values":[7]}]}"#,
+        )
+        .unwrap();
+        let model = model(&result, &Look);
+        assert_eq!(model.columns[0].values, ["#0:7"]);
+        assert_eq!(model.columns[0].title, "Title of qty");
+
+        let mut nodes = NodeAllocator::new();
+        let mut buffer = PatchBuffer::new();
+        build_table(&mut buffer, &mut nodes, Some("Orders"), Some(&model), None);
+        let attributes = |element: &str| -> Vec<(String, String)> {
+            let created: Vec<NodeId> = buffer
+                .patches()
+                .iter()
+                .filter_map(|patch| match patch {
+                    Patch::CreateElement { node, tag } if tag == element => Some(*node),
+                    _ => None,
+                })
+                .collect();
+            buffer
+                .patches()
+                .iter()
+                .filter_map(|patch| match patch {
+                    Patch::SetAttribute { node, name, value } if created.contains(node) => {
+                        Some((name.clone(), value.clone()))
+                    }
+                    _ => None,
+                })
+                .collect()
+        };
+        let pair = |name: &str, value: &str| (name.to_owned(), value.to_owned());
+        let td = attributes("td");
+        assert!(td.contains(&pair("part", "cell")));
+        assert!(td.contains(&pair("data-align", "end")));
+        assert!(td.contains(&pair("data-mono", "true")));
+        let th = attributes("th");
+        assert!(th.contains(&pair("part", "header")));
+        assert!(
+            th.contains(&pair("data-align", "end")),
+            "the header lines up"
+        );
+        assert!(
+            !th.contains(&pair("data-mono", "true")),
+            "only the alignment"
+        );
+        for (element, name) in [
+            ("table", "table"),
+            ("caption", "caption"),
+            ("tr", "row"),
+            ("button", "sort-button"),
+        ] {
+            assert!(
+                attributes(element).contains(&pair("part", name)),
+                "{element}"
+            );
+        }
+        assert!(buffer.patches().iter().any(|patch| matches!(
+            patch,
+            Patch::SetText { text, .. } if text == "Title of qty"
+        )));
     }
 
     /// A malformed result is an error, not a panic.
@@ -534,10 +674,14 @@ mod tests {
             columns: vec![
                 ColumnModel {
                     name: "customer".to_owned(),
+                    title: "customer".to_owned(),
+                    markers: Vec::new(),
                     values: vec!["Alpha".to_owned(), "Beta".to_owned()],
                 },
                 ColumnModel {
                     name: "qty".to_owned(),
+                    title: "qty".to_owned(),
+                    markers: Vec::new(),
                     values: vec!["1".to_owned(), "2".to_owned()],
                 },
             ],

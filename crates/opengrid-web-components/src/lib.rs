@@ -46,7 +46,7 @@ pub(crate) mod column_menu;
 pub(crate) mod columns;
 #[cfg(feature = "grid")]
 pub(crate) mod facets;
-#[cfg(feature = "grid")]
+// The table shows values through the page's formats too (issue #29).
 pub(crate) mod formats;
 #[cfg(feature = "grid")]
 pub(crate) mod grid;
