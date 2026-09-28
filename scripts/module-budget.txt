@@ -1,0 +1,12 @@
+# Upper bounds for the WebAssembly modules the package ships, in brotli bytes
+# (quality 11, as `just measure-modules` measures them). Issue #69.
+#
+# `just measure-modules` fails when a module grows past its bound. Raising a
+# bound is a change of its own: the new number, and on the line above it the
+# reason, in the same commit — so growth is a decision, never a drift.
+# The margin over the measurement is about 1 %: `wasm-opt` does not build
+# bit-for-bit, and brotli moves by some dozens of bytes between builds.
+#
+# module      bound   (measured when set)
+grid+pivot    205000  # 203278 B, 2026-09-28, after #41 (serde left the browser)
+engine        108000  # 106650 B, 2026-09-28, after #41
