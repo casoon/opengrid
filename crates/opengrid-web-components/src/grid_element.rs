@@ -186,6 +186,12 @@ struct GridRuntime {
     /// the offset of an element that leaves the document, even for a move;
     /// this is what puts it back (point 74).
     scroll_top: i32,
+    /// Which of viewport (`true`) and filter row (`false`) was just scrolled
+    /// to follow the other, and to where (issue #62). A scroll event from it
+    /// at exactly that position is the echo; passing it back would pull the
+    /// other to where it cannot go — the filter row reaches further than the
+    /// rows, past its "Clear". Anywhere else, the reader moved it.
+    scroll_echo: Option<(bool, i32)>,
 }
 
 impl GridRuntime {
@@ -269,6 +275,7 @@ fn fresh_runtime(
         known: known.clone(),
         retype_filter: false,
         scroll_top: 0,
+        scroll_echo: None,
     }
 }
 
@@ -1801,7 +1808,24 @@ fn apply_widths(host: &HtmlElement) {
     let layout = columns::layout(host);
     let layout = layout.borrow();
     let mut rules = String::new();
-    let narrowest = grid::header_min_width(host.has_attribute(grid::COLUMN_MENU_ATTRIBUTE));
+    let filter_shown = runtime(host).is_some_and(|runtime| runtime.borrow().filter_row)
+        && root
+            .query_selector("[part=\"filter\"]:not([hidden])")
+            .ok()
+            .flatten()
+            .is_some();
+    let narrowest = grid::header_min_width(host.has_attribute(grid::COLUMN_MENU_ATTRIBUTE)).max(
+        if filter_shown {
+            grid::FILTER_MIN_WIDTH
+        } else {
+            0
+        },
+    );
+    // What the columns need together: a column without a width of its own
+    // shares what is left, and in a narrow grid that was 11 px — header and
+    // filter unusable (issue #62). With this as the table's least width, the
+    // viewport scrolls sideways instead.
+    let mut least = 0u32;
     for (col, name) in columns_of(host).iter().enumerate() {
         // The reader's resize leads; the configuration is only where a column
         // starts (point 60, the same attribute/value relationship as the view).
@@ -1810,6 +1834,7 @@ fn apply_widths(host: &HtmlElement) {
             .width(name)
             .or_else(|| presentation::styles(host).width(name))
             .map(|width| width.max(narrowest));
+        least += width.unwrap_or(narrowest);
         if let Some(width) = width {
             rules.push_str(&format!("td[data-col=\"{col}\"] {{ width: {width}px; }}\n"));
         }
@@ -1835,6 +1860,16 @@ fn apply_widths(host: &HtmlElement) {
                 let _ = root.append_child(sheet);
             }),
     };
+    // The selection column, when there is one, is 44 px (its own rule).
+    if root
+        .query_selector("th[data-select]")
+        .ok()
+        .flatten()
+        .is_some()
+    {
+        least += 44;
+    }
+    rules.push_str(&format!("table {{ min-width: {least}px; }}\n"));
     if let Some(sheet) = sheet
         && sheet.text_content().unwrap_or_default() != rules
     {
@@ -2852,19 +2887,28 @@ fn on_scroll(event: Event) {
     if let Some(target) = event
         .target()
         .and_then(|target| target.dyn_into::<Element>().ok())
+        && let Some(runtime) = runtime(&host)
     {
         let part = target.get_attribute("part").unwrap_or_default();
-        let other = if part.split_whitespace().any(|name| name == "viewport") {
+        let from_viewport = part.split_whitespace().any(|name| name == "viewport");
+        let other = if from_viewport {
             root.query_selector("[part=\"filter\"]").ok().flatten()
         } else if part == "filter" {
             root.query_selector("[part~=\"viewport\"]").ok().flatten()
         } else {
             None
         };
-        if let Some(other) = other
-            && other.scroll_left() != target.scroll_left()
-        {
-            other.set_scroll_left(target.scroll_left());
+        if let Some(other) = other {
+            let echo = runtime.borrow_mut().scroll_echo.take();
+            let is_echo = echo == Some((from_viewport, target.scroll_left()));
+            if !is_echo && other.scroll_left() != target.scroll_left() {
+                let before = other.scroll_left();
+                other.set_scroll_left(target.scroll_left());
+                // Only a scroll that happened sends an event back.
+                if other.scroll_left() != before {
+                    runtime.borrow_mut().scroll_echo = Some((!from_viewport, other.scroll_left()));
+                }
+            }
         }
     }
     // While paging there is nothing to scroll into: the sizer is the page, and
@@ -3405,6 +3449,9 @@ pub(crate) fn write_view(host: &HtmlElement, value: &JsValue) {
     APPLYING_VIEW.with(|flag| flag.set(false));
 
     render(host, false);
+    // A view may show or hide the filter row, which moves the columns' least
+    // widths (issue #62).
+    apply_widths(host);
     if had_selection {
         // The page hears it the same way it hears every other selection change.
         dispatch_selection(host, &[]);
@@ -4585,6 +4632,8 @@ fn toggle_filter_row(host: &HtmlElement) {
         borrowed.filter_row = !borrowed.filter_row;
     }
     sync_chrome(host);
+    // Shown, the filter row asks more width of every column (issue #62).
+    apply_widths(host);
     run_query(host, QueryKind::Window, false);
     dispatch_view(host);
 }

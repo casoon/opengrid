@@ -86,6 +86,22 @@ async function focusByKeyboard(page, row, col) {
   }
 }
 
+/**
+ * Hides the filter row. Shown, it keeps every column at least 128 px wide
+ * (issue #62) — too wide for the narrow columns these tests are about.
+ */
+async function withoutFilterRow(page) {
+  await page.evaluate(async () => {
+    const { loadOpengrid } = await import("/packages/opengrid/loader.js");
+    const { module } = await loadOpengrid();
+    module.set_view(document.querySelector("opengrid-grid"), { filterRow: false });
+  });
+  await page.waitForFunction(() => {
+    const filter = document.querySelector("opengrid-grid").shadowRoot.querySelector('[part="filter"]');
+    return !filter || filter.hidden;
+  });
+}
+
 test.beforeEach(async ({ page }) => {
   await page.goto("/tests/e2e/fixtures/grid-long.html");
   await page.waitForFunction(() => window.__opengridReady);
@@ -263,6 +279,7 @@ test("an over-tall value starts at its first line, below the sticky header", asy
 }) => {
   // 400% zoom of a 1280x1024 window is a 320x256 CSS-pixel viewport (WCAG 1.4.10).
   await page.setViewportSize({ width: 320, height: 256 });
+  await withoutFilterRow(page);
   await page.locator("opengrid-grid").scrollIntoViewIfNeeded();
   await focusByKeyboard(page, 0, 1);
 
@@ -307,6 +324,7 @@ test("a narrow column truncates its name, not its sort direction", async ({ page
   // wide and "customer" no longer fits, so this is the real case, not a
   // constructed one.
   await page.setViewportSize({ width: 320, height: 600 });
+  await withoutFilterRow(page);
   await page.evaluate(() =>
     document
       .querySelector("opengrid-grid")

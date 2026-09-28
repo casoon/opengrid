@@ -49,7 +49,8 @@ test("without the menu the narrowest column is smaller, and the name still shows
     const grid = document.querySelector("opengrid-grid");
     grid.removeAttribute("column-menu");
     window.__opengridModule.set_columns(grid, { id: { width: 40 } });
-    window.__opengridModule.set_view(grid, { sort: [{ field: "id", direction: "desc" }] });
+    // Without the filter row, whose groups ask more of every column (#62).
+    window.__opengridModule.set_view(grid, { sort: [{ field: "id", direction: "desc" }], filterRow: false });
   });
   await expect.poll(async () => (await header(page)).sorted).toBe("descending");
   const { column, name, menu, cut } = await header(page);
