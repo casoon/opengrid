@@ -66,6 +66,8 @@ web-sys = { version = "0.3", features = [
     "KeyboardEvent",
     "Node",
     "NodeList",
+    # The filter row follows the columns' widths (issue #62).
+    "ResizeObserver",
     "ScrollIntoViewOptions",
     "ScrollLogicalPosition",
     "ShadowRoot",

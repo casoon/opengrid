@@ -186,6 +186,12 @@ struct GridRuntime {
     /// the offset of an element that leaves the document, even for a move;
     /// this is what puts it back (point 74).
     scroll_top: i32,
+    /// Which of viewport (`true`) and filter row (`false`) was just scrolled
+    /// to follow the other, and to where (issue #62). A scroll event from it
+    /// at exactly that position is the echo; passing it back would pull the
+    /// other to where it cannot go — the filter row reaches further than the
+    /// rows, past its "Clear". Anywhere else, the reader moved it.
+    scroll_echo: Option<(bool, i32)>,
 }
 
 impl GridRuntime {
@@ -269,6 +275,7 @@ fn fresh_runtime(
         known: known.clone(),
         retype_filter: false,
         scroll_top: 0,
+        scroll_echo: None,
     }
 }
 
@@ -702,6 +709,9 @@ fn ensure_skeleton(host: &HtmlElement) {
     // The reader's widths live on the header cells and survive the frames that
     // follow; a fresh skeleton has to get them back (point 36).
     apply_widths(host);
+    // The filter row follows the columns' widths as the table changes size
+    // (issue #62); the observer fires once at once, which lines it up.
+    observe_columns(&root);
     if let Some((entries, search)) = carried {
         write_filter_entries(&root, &entries);
         if let (Some(input), Some(search)) = (search_input(&root), search) {
@@ -1684,6 +1694,94 @@ fn announce(host: &HtmlElement, message: &str) {
 }
 
 /// The rendered width of a header cell, if it has been laid out.
+/// Lines the filter row up with the columns (issue #62): each column's group
+/// as wide as its header cell, the first starting where the first column
+/// starts — after the selection column. The row scrolls with the viewport
+/// (`on_scroll`), so a field stays under its column.
+fn align_filter(host: &HtmlElement) {
+    let Some(root) = host.shadow_root() else {
+        return;
+    };
+    let (Ok(Some(filter)), Ok(Some(table))) = (
+        root.query_selector("[part=\"filter\"]"),
+        root.query_selector("table"),
+    ) else {
+        return;
+    };
+    let Ok(headers) = root.query_selector_all("th[data-col]") else {
+        return;
+    };
+    let table_left = table.get_bounding_client_rect().left();
+    let mut first = None;
+    for index in 0..headers.length() {
+        let Some(header) = headers
+            .item(index)
+            .and_then(|node| node.dyn_into::<Element>().ok())
+        else {
+            continue;
+        };
+        let Some(col) = header.get_attribute("data-col") else {
+            continue;
+        };
+        let rect = header.get_bounding_client_rect();
+        first.get_or_insert(rect.left() - table_left);
+        if let Ok(Some(operator)) = root.query_selector(&format!("select[data-col=\"{col}\"]"))
+            && let Some(group) = operator.parent_element()
+        {
+            let _ = group.set_attribute(
+                "style",
+                &format!(
+                    "display: inline-flex; align-items: center; gap: 0.25rem; flex: none; \
+                     box-sizing: border-box; padding-right: 0.25rem; width: {:.2}px;",
+                    rect.width()
+                ),
+            );
+        }
+    }
+    let Some(first) = first else {
+        return;
+    };
+    // Where the table starts, unscrolled, measured from the row's own inside.
+    let scrolled = root
+        .query_selector("[part~=\"viewport\"]")
+        .ok()
+        .flatten()
+        .map_or(0, |viewport| viewport.scroll_left());
+    let indent = table_left + f64::from(scrolled)
+        - filter.get_bounding_client_rect().left()
+        - f64::from(filter.client_left())
+        + first;
+    if let Ok(filter) = filter.dyn_into::<HtmlElement>() {
+        let _ = filter
+            .style()
+            .set_property("padding-left", &format!("{:.2}px", indent.max(0.0)));
+    }
+}
+
+/// Re-aligns the filter row whenever the table changes size — a wider
+/// window, a column shown, the facets opened beside it. The callback finds
+/// its grid through the table it observes and holds nothing, so an observer
+/// never keeps a removed grid alive.
+fn observe_columns(root: &ShadowRoot) {
+    let Ok(Some(table)) = root.query_selector("table") else {
+        return;
+    };
+    let callback = Closure::<dyn FnMut(js_sys::Array)>::new(|entries: js_sys::Array| {
+        let host = js_sys::Reflect::get(&entries.get(0), &JsValue::from_str("target"))
+            .ok()
+            .and_then(|target| target.dyn_into::<Element>().ok())
+            .and_then(|table| table.get_root_node().dyn_into::<ShadowRoot>().ok())
+            .and_then(|root| root.host().dyn_into::<HtmlElement>().ok());
+        if let Some(host) = host {
+            align_filter(&host);
+        }
+    })
+    .into_js_value();
+    if let Ok(observer) = web_sys::ResizeObserver::new(callback.unchecked_ref()) {
+        observer.observe(&table);
+    }
+}
+
 fn measured_width(host: &HtmlElement, col: usize) -> Option<u32> {
     let root = host.shadow_root()?;
     let cell = root
@@ -1710,12 +1808,33 @@ fn apply_widths(host: &HtmlElement) {
     let layout = columns::layout(host);
     let layout = layout.borrow();
     let mut rules = String::new();
+    let filter_shown = runtime(host).is_some_and(|runtime| runtime.borrow().filter_row)
+        && root
+            .query_selector("[part=\"filter\"]:not([hidden])")
+            .ok()
+            .flatten()
+            .is_some();
+    let narrowest = grid::header_min_width(host.has_attribute(grid::COLUMN_MENU_ATTRIBUTE)).max(
+        if filter_shown {
+            grid::FILTER_MIN_WIDTH
+        } else {
+            0
+        },
+    );
+    // What the columns need together: a column without a width of its own
+    // shares what is left, and in a narrow grid that was 11 px — header and
+    // filter unusable (issue #62). With this as the table's least width, the
+    // viewport scrolls sideways instead.
+    let mut least = 0u32;
     for (col, name) in columns_of(host).iter().enumerate() {
         // The reader's resize leads; the configuration is only where a column
         // starts (point 60, the same attribute/value relationship as the view).
+        // Neither may draw it narrower than its header needs (issue #61).
         let width = layout
             .width(name)
-            .or_else(|| presentation::styles(host).width(name));
+            .or_else(|| presentation::styles(host).width(name))
+            .map(|width| width.max(narrowest));
+        least += width.unwrap_or(narrowest);
         if let Some(width) = width {
             rules.push_str(&format!("td[data-col=\"{col}\"] {{ width: {width}px; }}\n"));
         }
@@ -1741,11 +1860,22 @@ fn apply_widths(host: &HtmlElement) {
                 let _ = root.append_child(sheet);
             }),
     };
+    // The selection column, when there is one, is 44 px (its own rule).
+    if root
+        .query_selector("th[data-select]")
+        .ok()
+        .flatten()
+        .is_some()
+    {
+        least += 44;
+    }
+    rules.push_str(&format!("table {{ min-width: {least}px; }}\n"));
     if let Some(sheet) = sheet
         && sheet.text_content().unwrap_or_default() != rules
     {
         sheet.set_text_content(Some(&rules));
     }
+    align_filter(host);
 }
 
 /// The columns the grid actually shows, in the order it shows them.
@@ -2751,6 +2881,36 @@ fn on_scroll(event: Event) {
     let Ok(host) = root.host().dyn_into::<HtmlElement>() else {
         return;
     };
+    // The filter row and the viewport share one horizontal position, so a
+    // filter field stays under its column (issue #62). Written only where it
+    // differs, so the echo of the other's scroll event stops at once.
+    if let Some(target) = event
+        .target()
+        .and_then(|target| target.dyn_into::<Element>().ok())
+        && let Some(runtime) = runtime(&host)
+    {
+        let part = target.get_attribute("part").unwrap_or_default();
+        let from_viewport = part.split_whitespace().any(|name| name == "viewport");
+        let other = if from_viewport {
+            root.query_selector("[part=\"filter\"]").ok().flatten()
+        } else if part == "filter" {
+            root.query_selector("[part~=\"viewport\"]").ok().flatten()
+        } else {
+            None
+        };
+        if let Some(other) = other {
+            let echo = runtime.borrow_mut().scroll_echo.take();
+            let is_echo = echo == Some((from_viewport, target.scroll_left()));
+            if !is_echo && other.scroll_left() != target.scroll_left() {
+                let before = other.scroll_left();
+                other.set_scroll_left(target.scroll_left());
+                // Only a scroll that happened sends an event back.
+                if other.scroll_left() != before {
+                    runtime.borrow_mut().scroll_echo = Some((!from_viewport, other.scroll_left()));
+                }
+            }
+        }
+    }
     // While paging there is nothing to scroll into: the sizer is the page, and
     // the window belongs to the pager (point 38).
     if grid::parse_page_size(host.get_attribute(PAGE_SIZE_ATTRIBUTE).as_deref()).is_some() {
@@ -3289,6 +3449,9 @@ pub(crate) fn write_view(host: &HtmlElement, value: &JsValue) {
     APPLYING_VIEW.with(|flag| flag.set(false));
 
     render(host, false);
+    // A view may show or hide the filter row, which moves the columns' least
+    // widths (issue #62).
+    apply_widths(host);
     if had_selection {
         // The page hears it the same way it hears every other selection change.
         dispatch_selection(host, &[]);
@@ -4469,6 +4632,8 @@ fn toggle_filter_row(host: &HtmlElement) {
         borrowed.filter_row = !borrowed.filter_row;
     }
     sync_chrome(host);
+    // Shown, the filter row asks more width of every column (issue #62).
+    apply_widths(host);
     run_query(host, QueryKind::Window, false);
     dispatch_view(host);
 }
