@@ -29,8 +29,8 @@ pub enum DataType {
 }
 
 impl DataType {
-    /// Arrow's `Decimal128` maximum precision, and the limit `sum(Decimal)` is
-    /// cast to (semantics rule S12).
+    /// The most digits an `i128` coefficient holds throughout, and the limit
+    /// `sum(Decimal)` is cast to (semantics rule S12).
     pub const MAX_DECIMAL_PRECISION: u8 = 38;
 
     /// Builds a decimal type, rejecting invalid precision/scale combinations.

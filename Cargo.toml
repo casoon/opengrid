@@ -3,7 +3,8 @@ resolver = "3"
 members = [
     "crates/opengrid-types",
     "crates/opengrid-query",
-    "crates/opengrid-arrow-engine",
+    "crates/opengrid-columns",
+    "crates/opengrid-engine",
     "crates/opengrid-conformance",
     "crates/opengrid-datasource",
     "crates/opengrid-wasm",

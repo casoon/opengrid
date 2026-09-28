@@ -17,7 +17,7 @@ serde_json = "1"
 
 [dev-dependencies]
 # The round trip: an export read back by the engine's own CSV ingest.
-opengrid-arrow-engine = { path = "../opengrid-arrow-engine" }
+opengrid-engine = { path = "../opengrid-engine" }
 opengrid-conformance = { path = "../opengrid-conformance" }
 opengrid-query = { path = "../opengrid-query" }
 xtask = { path = "../xtask" }

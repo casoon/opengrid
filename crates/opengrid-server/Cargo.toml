@@ -15,7 +15,7 @@ opengrid-pivot = { path = "../opengrid-pivot" }
 opengrid-datasource = { path = "../opengrid-datasource" }
 # The source of point 24 is the local engine: the server is fully testable
 # before a database exists (PostgreSQL docks in point 26).
-opengrid-arrow-engine = { path = "../opengrid-arrow-engine" }
+opengrid-engine = { path = "../opengrid-engine" }
 # PostgreSQL as a source (point 26) — the registry decides per configuration.
 opengrid-datasource-postgres = { path = "../opengrid-datasource-postgres" }
 

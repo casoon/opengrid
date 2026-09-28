@@ -27,7 +27,7 @@ opengrid-pivot = { path = "../opengrid-pivot" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 # The conformance run needs the local engine as the other side of the
 # comparison — that is the whole point of the differential test (R4).
-opengrid-arrow-engine = { path = "../opengrid-arrow-engine" }
+opengrid-engine = { path = "../opengrid-engine" }
 # Snapshot tests of the generated SQL (decision E12).
 insta = "1"
 opengrid-conformance = { path = "../opengrid-conformance" }

@@ -8,7 +8,7 @@
 //!
 //! The engines that answer these cases are the
 //! [`DataSource`](opengrid_datasource::DataSource) implementations of point 09:
-//! the local Arrow engine in `opengrid-arrow-engine`, PostgreSQL in point 26,
+//! the local engine in `opengrid-engine`, PostgreSQL in point 26,
 //! later MySQL and Mongo. This crate stays engine-neutral — it holds the cases,
 //! the comparison and [`Table`], plus [`block_on`], the bridge between the suite's
 //! synchronous runners and the engines' async trait (decision E5). Before point
