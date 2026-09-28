@@ -3044,13 +3044,14 @@ fn on_focus_in(event: Event) {
     let Ok(target) = target.dyn_into::<Element>() else {
         return;
     };
-    // The filter row scrolls sideways when narrow and the facets scroll down,
-    // and a browser does not reliably bring a control that takes the focus into
-    // view inside them. Tabbing to one hidden past the edge is losing sight of
+    // The filter row and the toolbar's row (issue #77) scroll sideways when
+    // narrow and the facets scroll down, and a browser does not reliably bring
+    // a control that takes the focus into view inside them — Chromium leaves
+    // one that shows a few pixels at the edge where it is. Tabbing to one hidden past the edge is losing sight of
     // the focus (WCAG 2.4.11). The scrollers themselves are only focused by a
     // click, and a click needs no scrolling.
     if target
-        .closest("[part=\"filter\"], [part=\"facets\"]")
+        .closest("[part=\"filter\"], [part=\"facets\"], [data-toolbar-row]")
         .ok()
         .flatten()
         .is_some_and(|scroller| scroller != target)
