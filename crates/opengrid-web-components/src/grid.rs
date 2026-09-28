@@ -502,6 +502,13 @@ pub fn header_min_width(column_menu: bool) -> u32 {
     if column_menu { 96 } else { 64 }
 }
 
+/// The narrowest a column is drawn while the filter row is shown (issue #62):
+/// its group holds an operator and a value, and below this the operator is a
+/// bare arrow and the value a sliver. A grid narrower than its columns
+/// scrolls sideways instead — for a data table, two-way scrolling is what
+/// reflow allows (WCAG 1.4.10).
+pub const FILTER_MIN_WIDTH: u32 = 128;
+
 /// The `type` of the value input for a column (plan point 51).
 ///
 /// A date picker for a date, a number spinner for a number, a checkbox for a

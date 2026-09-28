@@ -31,6 +31,13 @@ Two things belong in every release entry and are easy to leave out:
   fixed 2.75em for the sort marks on top of the menu button. It now reserves what stands
   beside the name, the name keeps two characters at least, and a column is drawn at least
   96 px wide with the column menu (64 px without) whatever width it was given.
+- **The filter row stands under the columns and scrolls with them** ([#62](https://github.com/casoon/opengrid/issues/62)).
+  Its groups sat at fixed 248 px steps and the row scrolled on its own, so at a phone's
+  width a field was under the wrong column. Each group is now as wide as its column and
+  starts where it starts (measured from the header, again whenever the table changes size),
+  rows and filter share one horizontal position, and the table is at least as wide as its
+  columns' minimum widths — a column without a width of its own no longer shrinks to a few
+  pixels, the grid scrolls sideways instead.
 
 ## [0.4.0] — 2026-09-28
 
