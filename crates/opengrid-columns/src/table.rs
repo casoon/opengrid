@@ -151,6 +151,36 @@ impl Table {
         }
     }
 
+    /// The rows of `parts`, one after the other, in a table of `schema` —
+    /// every part must have that schema's columns. Used where rows arrive in
+    /// pieces and are kept together (the rows tier's streaming path, #50).
+    pub fn concat(schema: &Schema, parts: &[Table]) -> Result<Table, String> {
+        let rows: usize = parts.iter().map(Table::num_rows).sum();
+        let mut builders: Vec<ColumnBuilder> = schema
+            .fields()
+            .iter()
+            .map(|field| ColumnBuilder::new(field.data_type, rows))
+            .collect();
+        for part in parts {
+            if part.columns.len() != builders.len() {
+                return Err(format!(
+                    "a part has {} columns, the schema {}",
+                    part.columns.len(),
+                    builders.len()
+                ));
+            }
+            for (builder, column) in builders.iter_mut().zip(&part.columns) {
+                for row in 0..part.rows {
+                    builder.push(&column.value(row))?;
+                }
+            }
+        }
+        Table::new(
+            schema,
+            builders.into_iter().map(ColumnBuilder::finish).collect(),
+        )
+    }
+
     /// The typed values, one `Vec` per column — the column-oriented form of
     /// the storage-free `QueryResult` (E14).
     pub fn to_values(&self) -> Vec<Vec<Value>> {

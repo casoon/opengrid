@@ -44,6 +44,13 @@ Two things belong in every release entry and are easy to leave out:
   token, row filter, field allowlist, bounds. `opengrid-conformance --endpoint <url> --token <t>`
   runs the whole suite over HTTP in both result forms against any server, in any language
   (`check_endpoint` in the library).
+- **The rows tier streams** ([#50](https://github.com/casoon/opengrid/issues/50)). A rows-only
+  source is read piece by piece and the server keeps only what the answer needs: top
+  `offset + limit` for a page, partial aggregates per group. 100 million generated rows answer
+  a page in 13 s with 75 MiB, a grouping in 16 s with 41 MiB (reading them into one table
+  first would take about 4.5 GiB). `max_scan_rows` now bounds the rows or groups an answer
+  holds, not the rows read; `Rows::compact_at` tunes how often held rows are cut back.
+  `Table::concat` in `opengrid-columns`.
 - **Results travel in a binary form** ([#38](https://github.com/casoon/opengrid/issues/38)),
   `application/vnd.opengrid.columns`: the engine's columns written out, decimals exact, no
   text per cell. `Engine.execute_columns` and `Planner.finish_columns` answer it next to

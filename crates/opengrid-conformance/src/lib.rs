@@ -79,11 +79,26 @@ impl From<&QueryResult> for Table {
 /// panics with a message instead of hanging. This is not a general-purpose
 /// runtime; the runner of point 26 brings its own.
 pub fn block_on<F: Future>(future: F) -> F::Output {
-    let mut context = Context::from_waker(Waker::noop());
+    /// Whether the future woke itself before it said `Pending`.
+    struct Woken(std::sync::atomic::AtomicBool);
+    impl std::task::Wake for Woken {
+        fn wake(self: std::sync::Arc<Self>) {
+            self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+    let woken = std::sync::Arc::new(Woken(std::sync::atomic::AtomicBool::new(false)));
+    let waker = Waker::from(std::sync::Arc::clone(&woken));
+    let mut context = Context::from_waker(&waker);
     let mut future = Box::pin(future);
-    match future.as_mut().poll(&mut context) {
-        Poll::Ready(output) => output,
-        Poll::Pending => panic!("a data source awaited; the suite's runners are synchronous"),
+    loop {
+        woken.0.store(false, std::sync::atomic::Ordering::SeqCst);
+        match future.as_mut().poll(&mut context) {
+            Poll::Ready(output) => return output,
+            // A future that only gives others their turn (the rows tier does,
+            // between pieces) wakes itself at once: poll it again.
+            Poll::Pending if woken.0.load(std::sync::atomic::Ordering::SeqCst) => {}
+            Poll::Pending => panic!("a data source awaited; the suite's runners are synchronous"),
+        }
     }
 }
 

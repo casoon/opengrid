@@ -7,7 +7,7 @@
 
 use std::path::PathBuf;
 
-use opengrid_conformance::{block_on, check_dir, load_schema};
+use opengrid_conformance::{block_on, load_schema};
 use opengrid_connector::{
     AsSource, BoxFuture, Connector, DataSourceError, QueryResult, RowSource, RowStream, Rows,
     Schema, Value,
@@ -92,6 +92,16 @@ impl RowStream for Sevens<'_> {
     }
 }
 
+/// The same suite with the held rows cut back after every few rows: pages
+/// through top-k again and again, groups through partials merged with
+/// partials — the answers must not change.
+#[test]
+fn cutting_back_often_changes_no_answer() {
+    let connector = Rows::new(Fixture::new()).compact_at(3);
+    let report = block_on(opengrid_conformance::check_source(&AsSource(&connector)));
+    report.assert_ok();
+}
+
 #[test]
 fn a_rows_only_source_answers_the_whole_suite() {
     let connector = Rows::new(Fixture::new());
@@ -101,29 +111,31 @@ fn a_rows_only_source_answers_the_whole_suite() {
     assert!(report.cases >= 40);
 }
 
-/// More rows than the bound is an error that says so, not a server out of
-/// memory — and the bound counts rows read, so it stops while reading.
+/// The bound counts the rows an answer has to **hold**: every match of a
+/// query without a page is over it, a page of the same rows is not — the
+/// streaming path keeps only the page (issue #50).
 #[test]
-fn more_rows_than_the_bound_is_a_limit_error() {
-    let fixture = Fixture::new();
-    let schema = fixture.schema.clone();
-    let connector = Rows::new(fixture).max_scan_rows(20);
-    let query = check_dir(&data().join("cases"), &schema).expect("the cases")[0]
-        .query
-        .clone();
-    match block_on(connector.execute(query)) {
+fn the_bound_counts_what_is_held_not_what_is_read() {
+    let schema = Fixture::new().schema;
+    let query = |json: &str| {
+        let query: opengrid_query::Query = serde_json::from_str(json).unwrap();
+        query
+            .validate(&schema, &opengrid_query::Limits::default())
+            .unwrap()
+    };
+    let connector = Rows::new(Fixture::new()).max_scan_rows(20);
+
+    match block_on(connector.execute(query(r#"{"source":"orders","select":["id"]}"#))) {
         Err(DataSourceError::LimitExceeded { message }) => {
             assert!(message.contains("20"), "{message}");
         }
         other => panic!("expected a limit error, got {other:?}"),
     }
 
-    let fits = Rows::new(Fixture::new()).max_scan_rows(50);
-    let query = check_dir(&data().join("cases"), &schema).expect("the cases")[0]
-        .query
-        .clone();
-    assert!(
-        block_on(fits.execute(query)).is_ok(),
-        "50 rows fit a bound of 50"
-    );
+    let page = block_on(connector.execute(query(
+        r#"{"source":"orders","select":["id"],"sort":[{"field":"id","direction":"desc"}],"limit":5}"#,
+    )))
+    .expect("a page of 5 fits a bound of 20");
+    assert_eq!(page.total_count, 50, "every match is counted");
+    assert_eq!(page.columns[0].first(), Some(&Value::Int64(50)));
 }

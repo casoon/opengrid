@@ -61,9 +61,25 @@ let server = Server::builder()
   (`"from": { "part": "year", … }`) are computed by the engine.
 - `scan` gets the query's filter, the row filter already in it. It is a **hint**: a source may
   use it to hand out fewer rows; the engine applies the filter again either way.
-- The rows are held in memory for one answer. `max_scan_rows` (default 1 000 000, about
-  300 MiB for ten columns) bounds that; more is a `413` (`limit_exceeded`) that says so.
-  A source that has to answer bigger queries implements `execute` itself.
+- The rows **stream**: the server keeps only what the answer needs — the best
+  `offset + limit` rows for a page, the partial sums and counts per group for a grouping, a
+  counter for `total_count`. Memory follows the answer, not the source.
+- `max_scan_rows` (default 1 000 000) bounds the rows or groups one answer has to **hold** —
+  every match of a query without a page, say. More is a `413` (`limit_exceeded`) that says so.
+  How long a scan may take is the server's timeout; the scan gives the runtime its turn between
+  pieces, so the timeout fires even for a source whose pieces are always ready.
+
+Measured (2026-09-28, Apple M4 Pro, release build, four columns generated on the fly — the time
+includes making the rows; `cargo run --release -p opengrid-connector --example rows_bench`):
+
+| Rows | Page (filter, sort, 50) | Group by country, sum + avg | Count of a filter |
+|---|---|---|---|
+| 1 000 000 | 0.15 s, 28 MiB | 0.17 s, 27 MiB | 0.14 s, 28 MiB |
+| 10 000 000 | 1.3 s, 31 MiB | 1.6 s, 28 MiB | 1.4 s, 28 MiB |
+| 100 000 000 | 13 s, 75 MiB | 16 s, 41 MiB | 14 s, 40 MiB |
+
+Reading every row into one table first, as the tier did before, took 65 MiB for a million rows
+and 452 MiB for ten million — and would take about 4.5 GiB for a hundred million.
 
 ## Proving a connector
 
