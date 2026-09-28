@@ -246,11 +246,16 @@ pub fn build_pivot(
         text: status.to_owned(),
     });
 
+    // Parts (issue #29) with the grid's names where there is one, so a page
+    // styles the pivot from outside the shadow root: `table`, `caption`,
+    // `header` (a column header cell), `row-header`, `row`, `total-row`, `cell`.
     let table = element(buffer, nodes, Some(layout), "table");
+    attribute(buffer, table, "part", "table");
     if let Some((name, value)) = mirror_label(label) {
         attribute(buffer, table, name, value);
     }
     let caption = element(buffer, nodes, Some(table), "caption");
+    attribute(buffer, caption, "part", "caption");
     buffer.push(Patch::SetText {
         node: caption,
         text: label.unwrap_or_default().to_owned(),
@@ -262,10 +267,10 @@ pub fn build_pivot(
         let nested = groups.first().is_some_and(|path| !path.is_empty());
 
         let thead = element(buffer, nodes, Some(table), "thead");
-        attribute(buffer, thead, "part", "header");
         let first_row = element(buffer, nodes, Some(thead), "tr");
         for name in &model.row_dimensions {
             let th = element(buffer, nodes, Some(first_row), "th");
+            attribute(buffer, th, "part", "header");
             attribute(buffer, th, "scope", "col");
             if nested {
                 // The dimension name spans both header rows, so the row below
@@ -281,6 +286,7 @@ pub fn build_pivot(
         if nested {
             for group in &groups {
                 let th = element(buffer, nodes, Some(first_row), "th");
+                attribute(buffer, th, "part", "header");
                 attribute(buffer, th, "scope", "colgroup");
                 attribute(buffer, th, "colspan", &measures.to_string());
                 // The separator is the one `get_pivot`'s CSV header composes
@@ -298,6 +304,7 @@ pub fn build_pivot(
             let second_row = element(buffer, nodes, Some(thead), "tr");
             for column in &model.columns {
                 let th = element(buffer, nodes, Some(second_row), "th");
+                attribute(buffer, th, "part", "header");
                 attribute(buffer, th, "scope", "col");
                 buffer.push(Patch::SetText {
                     node: th,
@@ -307,6 +314,7 @@ pub fn build_pivot(
         } else {
             for column in &model.columns {
                 let th = element(buffer, nodes, Some(first_row), "th");
+                attribute(buffer, th, "part", "header");
                 attribute(buffer, th, "scope", "col");
                 buffer.push(Patch::SetText {
                     node: th,
@@ -341,6 +349,7 @@ pub fn build_pivot(
                 // **says** that it is a total (WCAG 1.4.1 — not colour alone).
                 attribute(buffer, tr, "data-total", "true");
                 let th = element(buffer, nodes, Some(tr), "th");
+                attribute(buffer, th, "part", "row-header");
                 attribute(buffer, th, "scope", "row");
                 if dimensions > 1 {
                     attribute(buffer, th, "colspan", &dimensions.to_string());
@@ -355,6 +364,7 @@ pub fn build_pivot(
             } else {
                 for value in cells.iter().take(dimensions) {
                     let th = element(buffer, nodes, Some(tr), "th");
+                    attribute(buffer, th, "part", "row-header");
                     attribute(buffer, th, "scope", "row");
                     buffer.push(Patch::SetText {
                         node: th,
@@ -365,6 +375,7 @@ pub fn build_pivot(
 
             for value in cells.iter().skip(dimensions) {
                 let td = element(buffer, nodes, Some(tr), "td");
+                attribute(buffer, td, "part", "cell");
                 buffer.push(Patch::SetText {
                     node: td,
                     text: cell(value),

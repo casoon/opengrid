@@ -14,16 +14,17 @@
         background: #eef1f5;
         font-weight: 600;
       }
-      opengrid-pivot table {
+      opengrid-pivot::part(table) {
         border-collapse: collapse;
       }
-      opengrid-pivot th,
-      opengrid-pivot td {
+      opengrid-pivot::part(header),
+      opengrid-pivot::part(row-header),
+      opengrid-pivot::part(cell) {
         border: 1px solid #ccc;
         padding: 0.25rem 0.5rem;
         text-align: start;
       }
-      opengrid-pivot td {
+      opengrid-pivot::part(cell) {
         text-align: end;
         font-variant-numeric: tabular-nums;
       }

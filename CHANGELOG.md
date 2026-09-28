@@ -65,6 +65,17 @@ Read and write them with `opengrid_json` (`from_str`, `to_string`, `FromJson`, `
 
 ### Fixed
 
+- **`<opengrid-table>` and `<opengrid-pivot>` can be styled, and the table takes formats**
+  ([#29](https://github.com/casoon/opengrid/issues/29)). Both render into a shadow root, so
+  no page rule reached their cells. They now carry parts named like the grid's — `table`,
+  `caption`, `header`, `row`, `cell`, the table's `sort-button`, the pivot's `row-header` and
+  `total-row` — and `examples/pivot-demo` and `examples/table-demo` style them through
+  `::part`. The table shows its values as the grid does: `formats` apply to its cells, and
+  `presentation` (`set_columns`) gives a column its `title`, `align`, `mono`, `emphasis` and
+  `muted`; the grid's `width`, `aggregate` and `facet` are refused for a table with an alert
+  rather than ignored. A number is right-aligned by its type, as in the grid.
+  **What breaks:** the pivot's `header` part was on its `<thead>`; it is now on each column
+  header cell, like the grid's.
 - **A boolean column in the filter row** ([#60](https://github.com/casoon/opengrid/issues/60)).
   It was a checkbox whose value reads `on` whether ticked or not: the grid showed a chip
   "… is on" with nothing filtered, and the first filter on any other column silently
