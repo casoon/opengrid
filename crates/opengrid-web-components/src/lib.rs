@@ -86,6 +86,9 @@ pub(crate) mod grid_element_events {
     /// Fired when the view changed — sort, filters, columns or density
     /// (plan point 59). Scrolling and selecting are not view changes.
     pub const VIEW_EVENT: &str = "opengrid-view-change";
+    /// Fired after every answer of the grid's provider: where it ran, how
+    /// long it took, how much came back (issue #70).
+    pub const QUERY_EVENT: &str = "opengrid-query";
 }
 #[cfg(target_arch = "wasm32")]
 pub use element::register;
