@@ -1,6 +1,7 @@
 //! The shape of a pivot's answer.
 
 use opengrid_datasource::QueryResult;
+use opengrid_json::{Json, json};
 use opengrid_types::{FieldName, Value};
 
 /// One generated leaf column: which column-dimension values it stands for, and
@@ -64,30 +65,20 @@ impl PivotResult {
 /// level per row and what each generated column stands for. A pivot is an
 /// arrangement of a result, and the wire form says so.
 pub fn pivot_to_json(result: &PivotResult, row_dimensions: &[FieldName]) -> String {
-    let columns: Vec<serde_json::Value> = result
+    let columns: Vec<Json> = result
         .columns
         .iter()
-        .map(|column| {
-            serde_json::json!({
-                "path": column.path,
-                "measure": column.measure.as_str(),
-            })
-        })
+        .map(|column| json!({ "path": column.path, "measure": column.measure }))
         .collect();
-
-    let body = serde_json::json!({
-        "row_dimensions": row_dimensions
-            .iter()
-            .map(FieldName::as_str)
-            .collect::<Vec<_>>(),
+    let cells = Json::parse(&opengrid_datasource::wire::result_to_json(&result.data))
+        .expect("the result form is JSON");
+    json!({
+        "row_dimensions": row_dimensions,
         "columns": columns,
         "levels": result.row_levels,
-        "result": serde_json::from_str::<serde_json::Value>(
-            &opengrid_datasource::wire::result_to_json(&result.data),
-        )
-        .expect("the result form is JSON"),
-    });
-    body.to_string()
+        "result": cells,
+    })
+    .to_string()
 }
 
 /// A pivot answer that could not be read back.
@@ -129,10 +120,8 @@ impl std::error::Error for PivotReadError {}
 /// one a typed value would print, which is all a heading needs; the cells are
 /// typed, because the result form carries their types.
 pub fn pivot_from_json(json: &str) -> Result<(PivotResult, Vec<FieldName>), PivotReadError> {
-    use serde_json::Value as Json;
-
-    let body: Json = serde_json::from_str(json)
-        .map_err(|error| PivotReadError::new(format!("pivot JSON: {error}")))?;
+    let body =
+        Json::parse(json).map_err(|error| PivotReadError::new(format!("pivot JSON: {error}")))?;
     let row_dimensions = body["row_dimensions"]
         .as_array()
         .ok_or_else(|| PivotReadError::new("pivot has no row_dimensions"))?
@@ -176,11 +165,10 @@ pub fn pivot_from_json(json: &str) -> Result<(PivotResult, Vec<FieldName>), Pivo
                 .map(|value| match value {
                     Json::Null => Ok(Value::Null),
                     Json::Bool(flag) => Ok(Value::Bool(*flag)),
-                    Json::Number(number) => number
+                    Json::Number(number) => Ok(number
                         .as_i64()
                         .map(Value::Int64)
-                        .or_else(|| number.as_f64().map(Value::Float64))
-                        .ok_or_else(|| PivotReadError::new(format!("path value {number}"))),
+                        .unwrap_or_else(|| Value::Float64(number.as_f64()))),
                     Json::String(text) => Ok(Value::Utf8(text.clone())),
                     other => Err(PivotReadError::new(format!(
                         "column {measure}: path value {other} is not a scalar"
@@ -440,9 +428,9 @@ mod tests {
     /// sentence, never a shape that panics whoever reads it next.
     #[test]
     fn a_pivot_of_the_wrong_shape_is_an_error() {
-        let good: serde_json::Value =
-            serde_json::from_str(&pivot_to_json(&pivot(), &dimensions())).unwrap();
-        let broken = |change: &dyn Fn(&mut serde_json::Value)| {
+        let good: opengrid_json::Json =
+            opengrid_json::from_str(&pivot_to_json(&pivot(), &dimensions())).unwrap();
+        let broken = |change: &dyn Fn(&mut opengrid_json::Json)| {
             let mut body = good.clone();
             change(&mut body);
             pivot_from_json(&body.to_string())
@@ -471,7 +459,7 @@ mod tests {
         assert!(short.contains("2 levels for 3 rows"), "{short}");
         let deep = broken(&|body| body["levels"][0] = 3.into());
         assert!(deep.contains("from 0 to 2"), "{deep}");
-        let nested = broken(&|body| body["columns"][0]["path"][0] = serde_json::json!([1]));
+        let nested = broken(&|body| body["columns"][0]["path"][0] = opengrid_json::json!([1]));
         assert!(nested.contains("not a scalar"), "{nested}");
         let untyped = broken(&|body| body["result"]["columns"][2]["values"][0] = "x".into());
         assert!(untyped.contains("pivot cells"), "{untyped}");
