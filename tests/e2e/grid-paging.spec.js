@@ -122,3 +122,35 @@ test("has no axe violations", async ({ page }) => {
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);
 });
+
+test("the pager sits in the footer, below the rows it pages, and its buttons say what they do", async ({ page }) => {
+  // Issue #75: it stood between the filter row and the header, in the
+  // browser's own buttons.
+  await open(page);
+  const pager = await page.evaluate(() => {
+    const root = document.querySelector("opengrid-grid").shadowRoot;
+    const pager = root.querySelector('[part="pager"]');
+    const footer = root.querySelector('[part="footer"]');
+    const viewport = root.querySelector('[part="viewport"]');
+    return {
+      inFooter: pager.parentElement === footer,
+      belowRows: pager.getBoundingClientRect().top >= viewport.getBoundingClientRect().bottom - 1,
+      between: [...footer.children].map((child) => child.getAttribute("part")),
+      buttons: ["page-first", "page-previous", "page-next", "page-last"].map((part) => {
+        const button = root.querySelector(`[part="${part}"]`);
+        return [button.textContent, button.getAttribute("aria-label"), getComputedStyle(button).borderTopWidth];
+      }),
+      size: root.querySelector('[part="page-next"]').getBoundingClientRect().height,
+    };
+  });
+  expect(pager.inFooter).toBe(true);
+  expect(pager.belowRows).toBe(true);
+  expect(pager.between).toEqual(["status", "pager", "source"]);
+  expect(pager.buttons).toEqual([
+    ["«", "First page", "0px"],
+    ["‹", "Previous page", "0px"],
+    ["›", "Next page", "0px"],
+    ["»", "Last page", "0px"],
+  ]);
+  expect(pager.size).toBeGreaterThanOrEqual(24);
+});
