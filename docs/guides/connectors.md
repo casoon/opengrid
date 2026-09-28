@@ -89,6 +89,12 @@ query against the schema narrowed to `allowed_fields`, added the row filter with
 the token's context, and validated the result against the full schema. A connector only ever
 sees a `ValidatedQuery` that already carries every rule — it cannot forget one.
 
+## A server in another language
+
+The Rust contract helps Rust programs. A server written in .NET, Java or Node implements the
+HTTP [protocol](../../protocol/) instead, and proves it with the same suite over HTTP:
+`opengrid-conformance --endpoint <url> --token <token>`.
+
 ## Reference connectors
 
 PostgreSQL (`opengrid-datasource-postgres`: the pivot as one `GROUPING SETS` statement, the

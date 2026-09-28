@@ -14,6 +14,8 @@ opengrid-types = { path = "../opengrid-types" }
 opengrid-query = { path = "../opengrid-query" }
 # The docking point of the suite: every engine answers through this trait (point 09).
 opengrid-datasource = { path = "../opengrid-datasource" }
+# The binary result form, read by the HTTP runner (issue #48).
+opengrid-columns = { path = "../opengrid-columns" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
