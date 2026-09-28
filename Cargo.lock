@@ -1050,9 +1050,8 @@ dependencies = [
 name = "opengrid-query"
 version = "0.4.0"
 dependencies = [
+ "opengrid-json",
  "opengrid-types",
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -1083,8 +1082,7 @@ dependencies = [
 name = "opengrid-types"
 version = "0.4.0"
 dependencies = [
- "serde",
- "serde_json",
+ "opengrid-json",
 ]
 
 [[package]]

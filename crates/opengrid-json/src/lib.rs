@@ -707,3 +707,73 @@ impl<T: ToJson + ?Sized> ToJson for &T {
 
 #[cfg(test)]
 mod tests;
+
+/// A document written as JSON, the way `serde_json::json!` wrote it:
+/// `json!({ "key": value, "list": [1, null, { "a": true }] })`. A value that
+/// is not a literal is any expression whose type implements [`ToJson`]. Keys
+/// are string literals and keep the order they are written in.
+#[macro_export]
+macro_rules! json {
+    (null) => {
+        $crate::Json::Null
+    };
+    ([ $($tt:tt)* ]) => {
+        $crate::Json::Array($crate::__json_array!([] $($tt)*))
+    };
+    ({ $($tt:tt)* }) => {{
+        let mut object = $crate::Object::new();
+        $crate::__json_object!(object $($tt)*);
+        $crate::Json::Object(object)
+    }};
+    ($other:expr) => {
+        $crate::ToJson::to_json(&$other)
+    };
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __json_array {
+    ([$($done:expr,)*]) => {
+        vec![$($done,)*]
+    };
+    ([$($done:expr,)*] null $(, $($rest:tt)*)?) => {
+        $crate::__json_array!([$($done,)* $crate::Json::Null,] $($($rest)*)?)
+    };
+    ([$($done:expr,)*] [$($inner:tt)*] $(, $($rest:tt)*)?) => {
+        $crate::__json_array!([$($done,)* $crate::json!([$($inner)*]),] $($($rest)*)?)
+    };
+    ([$($done:expr,)*] {$($inner:tt)*} $(, $($rest:tt)*)?) => {
+        $crate::__json_array!([$($done,)* $crate::json!({$($inner)*}),] $($($rest)*)?)
+    };
+    ([$($done:expr,)*] $next:expr , $($rest:tt)*) => {
+        $crate::__json_array!([$($done,)* $crate::json!($next),] $($rest)*)
+    };
+    ([$($done:expr,)*] $last:expr) => {
+        $crate::__json_array!([$($done,)* $crate::json!($last),])
+    };
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __json_object {
+    ($object:ident) => {};
+    ($object:ident $key:literal : null $(, $($rest:tt)*)?) => {
+        $object.insert($key, $crate::Json::Null);
+        $crate::__json_object!($object $($($rest)*)?);
+    };
+    ($object:ident $key:literal : [$($inner:tt)*] $(, $($rest:tt)*)?) => {
+        $object.insert($key, $crate::json!([$($inner)*]));
+        $crate::__json_object!($object $($($rest)*)?);
+    };
+    ($object:ident $key:literal : {$($inner:tt)*} $(, $($rest:tt)*)?) => {
+        $object.insert($key, $crate::json!({$($inner)*}));
+        $crate::__json_object!($object $($($rest)*)?);
+    };
+    ($object:ident $key:literal : $value:expr , $($rest:tt)*) => {
+        $object.insert($key, $crate::json!($value));
+        $crate::__json_object!($object $($rest)*);
+    };
+    ($object:ident $key:literal : $value:expr) => {
+        $object.insert($key, $crate::json!($value));
+    };
+}
