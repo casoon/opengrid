@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
+    "crates/opengrid-json",
     "crates/opengrid-types",
     "crates/opengrid-query",
     "crates/opengrid-columns",

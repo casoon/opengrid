@@ -1015,6 +1015,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "opengrid-json"
+version = "0.4.0"
+dependencies = [
+ "proptest",
+ "serde_json",
+]
+
+[[package]]
 name = "opengrid-pivot"
 version = "0.4.0"
 dependencies = [
