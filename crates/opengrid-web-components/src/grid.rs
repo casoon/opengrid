@@ -493,6 +493,22 @@ pub fn takes_value(op: &str) -> bool {
     !matches!(op, "is_null" | "is_not_null")
 }
 
+/// The narrowest a column is drawn, whatever width the page or the reader
+/// gave it (issue #61): the header's padding (2 × 12 px), two characters of
+/// its name, the sort direction and order (about 13 px each) and, with the
+/// column menu, its 24 px button and gap. Narrower, the name was cut to
+/// nothing.
+pub fn header_min_width(column_menu: bool) -> u32 {
+    if column_menu { 96 } else { 64 }
+}
+
+/// The narrowest a column is drawn while the filter row is shown (issue #62):
+/// its group holds an operator and a value, and below this the operator is a
+/// bare arrow and the value a sliver. A grid narrower than its columns
+/// scrolls sideways instead — for a data table, two-way scrolling is what
+/// reflow allows (WCAG 1.4.10).
+pub const FILTER_MIN_WIDTH: u32 = 128;
+
 /// The `type` of the value input for a column (plan point 51).
 ///
 /// A date picker for a date, a number spinner for a number, a checkbox for a
@@ -787,8 +803,11 @@ pub struct FilterColumnNodes {
     /// first result (point 23). Which of them apply is therefore an attribute on
     /// each option, updated per frame, not a different set of nodes.
     pub options: Vec<NodeId>,
-    /// The value `<input>`.
+    /// The value `<input>`; hidden for a boolean column.
     pub input: NodeId,
+    /// The value `<select>` of a boolean column — *any*, *yes*, *no*
+    /// (issue #60); hidden for every other column.
+    pub choice: NodeId,
 }
 
 /// The nodes of one recycled pool row.
@@ -1000,8 +1019,8 @@ pub fn literal(text: &str, data_type: DataType) -> Option<opengrid_json::Json> {
     match data_type {
         DataType::Utf8 => Some(opengrid_json::Json::String(text.to_owned())),
         DataType::Bool => match text {
-            "true" | "on" | "1" => Some(opengrid_json::Json::Bool(true)),
-            "false" | "off" | "0" | "" => Some(opengrid_json::Json::Bool(false)),
+            "true" | "1" => Some(opengrid_json::Json::Bool(true)),
+            "false" | "0" => Some(opengrid_json::Json::Bool(false)),
             _ => None,
         },
         DataType::Int64 => text.parse::<i64>().ok().map(Into::into),
@@ -1542,12 +1561,17 @@ pub fn build_grid(
          :host([{DENSITY_ATTRIBUTE}=\"{comfy_name}\"]) {{ {ROW_HEIGHT_PROPERTY}: {comfy_row}px;
                    {PAD_PROPERTY}: {comfy_pad}px; {FONT_SIZE_PROPERTY}: {comfy_font}; }}
          [part=\"layout\"] {{ display: flex; flex-direction: column; height: 100%; min-height: 0; }}
-         [part=\"filter\"] {{ display: flex; align-items: center; gap: 0.5rem; box-sizing: border-box;
+         [part=\"filter\"] {{ display: flex; align-items: center; gap: 0; box-sizing: border-box;
                              flex: 0 0 auto;
                              height: var({FILTER_HEIGHT_PROPERTY}); padding: 0 var({PAD_PROPERTY});
                              background: var({SURFACE_2_PROPERTY});
                              border-bottom: 1px solid var({LINE_STRONG_PROPERTY});
                              overflow-x: auto; overflow-y: hidden; white-space: nowrap; }}
+         /* Each group is as wide as its column (issue #62); its two controls
+            share that width. */
+         [part=\"filter\"] > span > select, [part=\"filter\"] > span > input {{
+                             flex: 1 1 0; min-width: 0; }}
+         [part=\"filter\"] > span > select[part=\"filter-operator\"] {{ flex-grow: 1.2; }}
          [part=\"filter\"] select, [part=\"filter\"] input, [part=\"filter\"] button {{
                              font: inherit; min-height: 32px; box-sizing: border-box;
                              padding: 0 8px;
@@ -1622,10 +1646,19 @@ pub fn build_grid(
             invisible exactly where it is needed (point 49). Letting the *name*
             ellipsize instead keeps them: measured, a flex header would drop out
             of the table layout and break the column alignment. */
-         [part=\"header\"] > span:first-child {{ display: inline-block; max-width: 100%;
+         /* What stands beside the name is reserved as it is, not as the most
+            it could be: a fixed 2.75em for the marks cut a narrow sorted
+            column's name to nothing (issue #61). The name keeps two characters
+            at least; `header_min_width` keeps the column wide enough for them. */
+         [part=\"header\"] > span:first-child {{ display: inline-block; min-width: 2ch;
+                   max-width: calc(100% - var(--og-reserve-sort, 0px) - var(--og-reserve-index, 0px)
+                                        - var(--og-reserve-menu, 0px));
                    overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }}
-         [part=\"header\"][aria-sort=\"ascending\"] > span:first-child,
-         [part=\"header\"][aria-sort=\"descending\"] > span:first-child {{ max-width: calc(100% - 2.75em); }}
+         [part=\"header\"][aria-sort=\"ascending\"],
+         [part=\"header\"][aria-sort=\"descending\"] {{ --og-reserve-sort: 1.1em; }}
+         [part=\"header\"]:has([part=\"sort-index\"]:not(:empty)) {{ --og-reserve-index: 1.1em; }}
+         [part=\"header\"]:has([part=\"column-menu-button\"]) {{
+                   --og-reserve-menu: calc({MIN_TARGET_SIZE}px + 0.25rem); }}
          table {{ width: 100%; table-layout: fixed; border-collapse: collapse; }}
          thead {{ position: sticky; top: 0; z-index: 2;
                   background: var({SURFACE_2_PROPERTY}); color: var({INK_PROPERTY}); }}
@@ -1704,11 +1737,6 @@ pub fn build_grid(
                    margin-left: 0.25rem; vertical-align: middle; cursor: pointer;
                    border-radius: min(var({RADIUS_PROPERTY}), 5px); color: var({INK_MUTED_PROPERTY}); }}
          [part=\"column-menu-button\"]:hover {{ background: var({HOVER_PROPERTY}); }}
-         [part=\"header\"]:has([part=\"column-menu-button\"]) > span:first-child {{
-                   max-width: calc(100% - {MIN_TARGET_SIZE}px - 0.5rem); }}
-         [part=\"header\"][aria-sort=\"ascending\"]:has([part=\"column-menu-button\"]) > span:first-child,
-         [part=\"header\"][aria-sort=\"descending\"]:has([part=\"column-menu-button\"]) > span:first-child {{
-                   max-width: calc(100% - 2.75em - {MIN_TARGET_SIZE}px - 0.5rem); }}
          [part=\"column-menu\"] {{ position: fixed; inset: auto; margin: 0; padding: 6px;
                    min-width: 14rem; box-sizing: border-box;
                    background: var({SURFACE_PROPERTY}); color: var({INK_PROPERTY});
@@ -2188,9 +2216,10 @@ pub fn build_grid(
         // through `aria-sort`. Reading order is name, direction, order index —
         // "customer ▲ 2".
         let name = element(buffer, nodes, Some(th), "span");
+        // The page's title for the column where it gave one (issue #66).
         buffer.push(Patch::SetText {
             node: name,
-            text: field.name.as_str().to_owned(),
+            text: texts.column(field.name.as_str()).to_owned(),
         });
         let direction = marker(buffer, nodes, th, "sort-direction");
         let index = marker(buffer, nodes, th, "sort-index");
@@ -2652,7 +2681,7 @@ fn build_columns(
         let text = element(buffer, nodes, Some(label), "span");
         buffer.push(Patch::SetText {
             node: text,
-            text: name.clone(),
+            text: texts.column(name).to_owned(),
         });
         boxes.push((input, name.clone()));
     }
@@ -2881,11 +2910,46 @@ fn build_filter(
             name: "aria-label".to_owned(),
             value: texts.value_label(field.name.as_str()),
         });
-        set_style(buffer, input, "width: 6rem;");
+
+        // A boolean column's value is a choice of three (issue #60): no
+        // filter, yes, no. A checkbox cannot say "no filter", and its `value`
+        // is `on` whether it is ticked or not. Built for every column, because
+        // the type only arrives with the first answer; shown for booleans only.
+        let choice = element(buffer, nodes, Some(group), "select");
+        for (name, value) in [
+            ("part", "filter-value".to_owned()),
+            ("data-value-col", col.to_string()),
+            ("aria-label", texts.value_label(field.name.as_str())),
+            ("hidden", String::new()),
+        ] {
+            buffer.push(Patch::SetAttribute {
+                node: choice,
+                name: name.to_owned(),
+                value,
+            });
+        }
+        set_lang(buffer, choice, texts);
+        for (value, text) in [
+            ("", &texts.filter_any),
+            ("true", &texts.boolean_true),
+            ("false", &texts.boolean_false),
+        ] {
+            let option = element(buffer, nodes, Some(choice), "option");
+            buffer.push(Patch::SetAttribute {
+                node: option,
+                name: "value".to_owned(),
+                value: value.to_owned(),
+            });
+            buffer.push(Patch::SetText {
+                node: option,
+                text: text.clone(),
+            });
+        }
         columns.push(FilterColumnNodes {
             select,
             options,
             input,
+            choice,
         });
     }
 
@@ -3045,6 +3109,22 @@ pub fn patch_grid(
             node: column.input,
             name: "type".to_owned(),
             value: input_type(field.data_type).to_owned(),
+        });
+        // One value control per column is shown: the choice for a boolean,
+        // the input for everything else.
+        let (shown, hidden) = if field.data_type == DataType::Bool {
+            (column.choice, column.input)
+        } else {
+            (column.input, column.choice)
+        };
+        buffer.push(Patch::RemoveAttribute {
+            node: shown,
+            name: "hidden".to_owned(),
+        });
+        buffer.push(Patch::SetAttribute {
+            node: hidden,
+            name: "hidden".to_owned(),
+            value: String::new(),
         });
         match input_step(field.data_type) {
             Some(step) => buffer.push(Patch::SetAttribute {
@@ -4546,8 +4626,8 @@ mod tests {
             .collect();
         // Tagged: every node whose whole subtree is our own wording — the
         // status line, the pager (it writes words too, point 38), the
-        // disclosure's toggle, each operator `select` (its options are our
-        // words) and the clear button.
+        // disclosure's toggle, each operator `select` and each boolean choice
+        // (their options are our words) and the clear button.
         // And the empty state of point 68: its sentence and its button are
         // ours, and it holds no data of the page's.
         let mut expected = vec![
@@ -4560,6 +4640,8 @@ mod tests {
         expected.push(view.filter.clear);
         for column in &view.filter.columns {
             expected.push(column.select);
+            // A boolean's choice — any, yes, no — is our words too (#60).
+            expected.push(column.choice);
         }
         // And the hidden names of the two containers below (F9): the name is
         // ours even where the container's contents are not.

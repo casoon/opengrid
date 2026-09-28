@@ -313,11 +313,11 @@ total-row viewport
 
 text keys
   addFilter addFilterTitle addGrouping aggregateAvg aggregateCell aggregateCount aggregateGroup aggregateMax aggregateMin \
-aggregateNone aggregateRange aggregateSum apply cancel cellRequired chipRemove chipsClear chipsGroup clear columnAtEdge \
+aggregateNone aggregateRange aggregateSum apply booleanFalse booleanTrue cancel cellRequired chipRemove chipsClear chipsGroup clear columnAtEdge \
 columnHidden columnMenu columnMoved columnShown columnWidth columnsGroup densityComfortable \
 densityCompact densityGroup densityNormal empty emptyFiltered emptyReset emptySource emptyValue \
 error errorUnknown facetChipValues facetFrom facetQueries facetTo facetsGroup facetsReset \
-facetsToggle filterColumn filterColumnLabel filterConditionLabel filterGroup filterInvalid \
+facetsToggle filterAny filterColumn filterColumnLabel filterConditionLabel filterGroup filterInvalid \
 filterRemoved filterRowToggle filterValueLabel filtersCleared groupByColumn groupChip \
 groupCollapsed groupExpanded groupInvalid groupRow groupSecondLevel \
 groupingFull hideColumn lang loading matchesOne matchesOther noValue operatorLabel \

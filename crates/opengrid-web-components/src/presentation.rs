@@ -192,6 +192,9 @@ pub fn aggregate_from(token: &str) -> Option<Summary> {
 /// Everything a page may say about one column.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ColumnPresentation {
+    /// What the column is called where a reader reads it (issue #66). The
+    /// field name stays the identifier: query, view, expressions, export.
+    pub title: Option<String>,
     /// Starting width in pixels. The reader's resize leads after that — the
     /// same attribute/value relationship the view has (point 59).
     pub width: Option<u32>,
@@ -229,6 +232,7 @@ impl PresentationProblem {
 /// One entry of a `set_columns` call, before it has met the schema.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RawColumn {
+    pub title: Option<String>,
     pub width: Option<u32>,
     pub align: Option<String>,
     pub mono: Option<bool>,
@@ -269,12 +273,21 @@ pub fn validate(
         // when the reader hid a column would be unusable.
         let data_type = field.map(|field| field.data_type);
         let mut column = ColumnPresentation {
+            title: None,
             width: entry.width,
             mono: entry.mono.unwrap_or(false),
             emphasis: entry.emphasis.unwrap_or(false),
             muted: entry.muted.unwrap_or(false),
             ..ColumnPresentation::default()
         };
+
+        if let Some(title) = &entry.title {
+            if title.trim().is_empty() {
+                problems.push(PresentationProblem::new(name, "has an empty title"));
+            } else {
+                column.title = Some(title.trim().to_owned());
+            }
+        }
 
         if let Some(token) = &entry.align {
             match Align::parse(token) {
@@ -381,6 +394,14 @@ impl ColumnStyles {
         self.by_name
             .iter()
             .filter_map(|(name, column)| column.facet.map(|kind| (name.clone(), kind)))
+            .collect()
+    }
+
+    /// The titles the page gave, by field name (issue #66).
+    pub fn titles(&self) -> Vec<(String, String)> {
+        self.by_name
+            .iter()
+            .filter_map(|(name, column)| column.title.clone().map(|title| (name.clone(), title)))
             .collect()
     }
 
@@ -669,7 +690,16 @@ mod host {
     /// Stores the checked presentation.
     pub fn store(host: &HtmlElement, checked: ColumnStyles) {
         let id = id_of(host);
+        // The titles go with the texts (issue #66): every sentence that names
+        // a column reads them there.
+        let titles = checked.titles();
         STYLES.with(|map| map.borrow_mut().insert(id, Rc::new(checked)));
+        let current = crate::texts::texts(host);
+        if current.titles != titles {
+            let mut texts = (*current).clone();
+            texts.titles = titles;
+            crate::texts::store(host, Rc::new(texts));
+        }
     }
 
     /// Reads a `set_columns` object into the unchecked form and remembers it.
@@ -701,6 +731,7 @@ mod host {
                 out.push((
                     name,
                     RawColumn {
+                        title: text("title"),
                         width,
                         align: text("align"),
                         mono: flag("mono"),
