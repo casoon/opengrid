@@ -64,14 +64,15 @@ test("a wide grid keeps its one toolbar row", async ({ page }) => {
   expect(wide.height).toBeLessThanOrEqual(64);
 });
 
-test("Tab reaches every button of the row, and each comes into view", async ({ page }) => {
+test("Tab reaches every button of the row, and each comes into view", async ({ page, browserName }) => {
   await open(page, 375);
   await page.evaluate(() =>
     document.querySelector("opengrid-grid").shadowRoot.querySelector('[part="search-input"]').focus(),
   );
   const seen = [];
   for (let step = 0; step < 12; step += 1) {
-    await page.keyboard.press("Tab");
+    // WebKit on macOS moves Tab between text fields only; Option+Tab is Tab.
+    await page.keyboard.press(browserName === "webkit" ? "Alt+Tab" : "Tab");
     const focus = await page.evaluate(() => {
       const root = document.querySelector("opengrid-grid").shadowRoot;
       const active = root.activeElement;
