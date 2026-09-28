@@ -224,3 +224,21 @@ fn non_finite_floats_are_null() {
     assert_eq!(Json::from(f64::NAN), Json::Null);
     assert_eq!(Json::from(f64::INFINITY).to_string(), "null");
 }
+
+#[test]
+fn the_macro_writes_what_it_shows() {
+    let name = "orders".to_owned();
+    let count = 3u64;
+    let document = json!({
+        "source": name,
+        "select": ["id", "amount"],
+        "nested": { "none": null, "list": [1, null, { "a": true }], "count": count + 1 },
+        "empty": [],
+    });
+    assert_eq!(
+        document.to_string(),
+        r#"{"source":"orders","select":["id","amount"],"nested":{"none":null,"list":[1,null,{"a":true}],"count":4},"empty":[]}"#
+    );
+    assert_eq!(json!(null), Json::Null);
+    assert_eq!(json!("x"), Json::from("x"));
+}

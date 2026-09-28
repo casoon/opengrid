@@ -1,8 +1,5 @@
 use std::fmt;
 
-use serde::de::{self, Deserializer, Visitor};
-use serde::{Serialize, Serializer};
-
 use crate::{DataType, ValueError};
 
 // ---------------------------------------------------------------------------
@@ -388,28 +385,11 @@ pub enum Value {
 }
 
 impl Value {
-    /// Parses a JSON scalar into a `Value` of the given column type.
-    ///
-    /// This is the typed counterpart of the plain [`Serialize`] representation:
-    /// JSON alone cannot tell a decimal string from a `Utf8` string, so the
-    /// caller supplies the column type (see the column-oriented wire format, E6).
-    /// `null` is accepted for every type.
-    pub fn deserialize_typed<'de, D>(
-        deserializer: D,
-        data_type: &DataType,
-    ) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let raw = deserializer.deserialize_any(RawVisitor)?;
-        coerce(raw, data_type).map_err(de::Error::custom)
-    }
-
     /// Reads a value of the given column type from its string spelling in the
     /// wire format (E13): a decimal (S8: rescaled, never rounded), a date, a UTC
     /// timestamp (S9), one of the non-finite floats, or a string.
     ///
-    /// This **is** the string branch of [`Value::deserialize_typed`] — a JSON
+    /// This **is** the string branch of [`Value::from_json_typed`] — a JSON
     /// string and a CSV cell go through the same code, so the two formats cannot
     /// drift apart (plan point 45). It exists separately so that a caller holding
     /// a `&str` does not have to wrap it in a JSON value first.
@@ -421,26 +401,8 @@ impl Value {
     }
 }
 
-impl Serialize for Value {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        match self {
-            Value::Null => serializer.serialize_none(),
-            Value::Bool(v) => serializer.serialize_bool(*v),
-            Value::Int64(v) => serializer.serialize_i64(*v),
-            Value::Float64(v) => match non_finite_name(*v) {
-                Some(name) => serializer.serialize_str(name),
-                None => serializer.serialize_f64(*v),
-            },
-            Value::Decimal(v) => serializer.serialize_str(&v.to_string()),
-            Value::Utf8(v) => serializer.serialize_str(v),
-            Value::Date(v) => serializer.serialize_str(&v.to_string()),
-            Value::Timestamp(v) => serializer.serialize_str(&v.to_string()),
-        }
-    }
-}
-
 /// The JSON shapes a typed value can be read from.
-enum Raw {
+pub(crate) enum Raw {
     Null,
     Bool(bool),
     Int(i64),
@@ -461,59 +423,13 @@ impl Raw {
     }
 }
 
-struct RawVisitor;
-
-impl<'de> Visitor<'de> for RawVisitor {
-    type Value = Raw;
-
-    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("a JSON scalar (null, bool, number or string)")
-    }
-
-    fn visit_bool<E: de::Error>(self, v: bool) -> Result<Raw, E> {
-        Ok(Raw::Bool(v))
-    }
-
-    fn visit_i64<E: de::Error>(self, v: i64) -> Result<Raw, E> {
-        Ok(Raw::Int(v))
-    }
-
-    fn visit_u64<E: de::Error>(self, v: u64) -> Result<Raw, E> {
-        Ok(Raw::UInt(v))
-    }
-
-    fn visit_f64<E: de::Error>(self, v: f64) -> Result<Raw, E> {
-        Ok(Raw::Float(v))
-    }
-
-    fn visit_str<E: de::Error>(self, v: &str) -> Result<Raw, E> {
-        Ok(Raw::Str(v.to_owned()))
-    }
-
-    fn visit_string<E: de::Error>(self, v: String) -> Result<Raw, E> {
-        Ok(Raw::Str(v))
-    }
-
-    fn visit_unit<E: de::Error>(self) -> Result<Raw, E> {
-        Ok(Raw::Null)
-    }
-
-    fn visit_none<E: de::Error>(self) -> Result<Raw, E> {
-        Ok(Raw::Null)
-    }
-
-    fn visit_some<D: Deserializer<'de>>(self, deserializer: D) -> Result<Raw, D::Error> {
-        deserializer.deserialize_any(RawVisitor)
-    }
-}
-
 /// The JSON notation for a non-finite `Float64`.
 ///
 /// JSON has no `NaN` and no infinities, so a `serialize_f64` would silently emit
 /// `null` and turn a NaN into a NULL — a different value with different semantics
 /// (rule S1 vs S7). Non-finite floats therefore travel as strings, in both
 /// directions (plan/spezifikation/02-query-modell.md §Typsystem).
-fn non_finite_name(value: f64) -> Option<&'static str> {
+pub(crate) fn non_finite_name(value: f64) -> Option<&'static str> {
     if value.is_nan() {
         Some("NaN")
     } else if value == f64::INFINITY {
@@ -536,7 +452,7 @@ fn parse_non_finite(name: &str) -> Option<f64> {
     }
 }
 
-fn coerce(raw: Raw, data_type: &DataType) -> Result<Value, ValueError> {
+pub(crate) fn coerce(raw: Raw, data_type: &DataType) -> Result<Value, ValueError> {
     let mismatch = |found: &'static str| ValueError::TypeMismatch {
         expected: *data_type,
         found,
@@ -699,9 +615,9 @@ mod tests {
     #[test]
     fn non_finite_floats_survive_the_json_round_trip() {
         for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 1.5, -0.0] {
-            let json = serde_json::to_string(&Value::Float64(value)).unwrap();
-            let back = Value::deserialize_typed(
-                serde_json::from_str::<serde_json::Value>(&json).unwrap(),
+            let json = opengrid_json::to_string(&Value::Float64(value));
+            let back = Value::from_json_typed(
+                &opengrid_json::Json::parse(&json).unwrap(),
                 &DataType::Float64,
             )
             .unwrap();
@@ -715,7 +631,7 @@ mod tests {
         }
         // A NaN must not quietly become a NULL: that would change rule S7 into S1.
         assert_eq!(
-            serde_json::to_string(&Value::Float64(f64::NAN)).unwrap(),
+            opengrid_json::to_string(&Value::Float64(f64::NAN)),
             "\"NaN\""
         );
     }
@@ -723,11 +639,9 @@ mod tests {
     #[test]
     fn only_the_three_non_finite_spellings_are_accepted_for_floats() {
         for (text, expected) in [("NaN", f64::NAN), ("Infinity", f64::INFINITY)] {
-            let value = Value::deserialize_typed(
-                serde_json::Value::String(text.to_owned()),
-                &DataType::Float64,
-            )
-            .unwrap();
+            let value =
+                Value::from_json_typed(&opengrid_json::Json::from(text), &DataType::Float64)
+                    .unwrap();
             match value {
                 Value::Float64(value) => assert!(
                     value == expected || (value.is_nan() && expected.is_nan()),
@@ -737,11 +651,7 @@ mod tests {
             }
         }
         assert!(
-            Value::deserialize_typed(
-                serde_json::Value::String("nan".to_owned()),
-                &DataType::Float64
-            )
-            .is_err()
+            Value::from_json_typed(&opengrid_json::Json::from("nan"), &DataType::Float64).is_err()
         );
     }
 }

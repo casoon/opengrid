@@ -1,7 +1,5 @@
 use std::fmt;
 
-use serde::{Deserialize, Serialize};
-
 use crate::InvalidIdentifier;
 
 /// The identifier rule shared by field names, data source ids and (later) SQL
@@ -27,8 +25,7 @@ pub fn is_valid_identifier(s: &str) -> bool {
 macro_rules! identifier {
     ($(#[$meta:meta])* $name:ident) => {
         $(#[$meta])*
-        #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-        #[serde(try_from = "String", into = "String")]
+        #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
         pub struct $name(String);
 
         impl $name {
