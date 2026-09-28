@@ -18,6 +18,28 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-09-28
+
+**Screen-reader pairings tested: none yet** — unchanged since 0.1.0
+([issue #5](https://github.com/casoon/opengrid/issues/5)). **Browsers:** Chromium, the whole
+e2e suite. WebKit (Playwright's, not Safari): the whole suite, one failure — the layout
+misses the look's colour and font until the first restyle
+([#81](https://github.com/casoon/opengrid/issues/81), there since 0.3.0). Firefox: **not
+run** — Playwright's Firefox did not start on the release machine.
+
+**What breaks:** no frozen name was renamed or removed; what moved is structure a page
+stylesheet or script may have leaned on:
+- the pager is in `part="footer"` now, not above the header (#75);
+- a boolean column's filter-row control is a `<select>` (any / yes / no), no longer a
+  checkbox (#60);
+- a column is drawn at least 96 px wide with the column menu, 64 px without, and at least
+  128 px while the filter row shows (#61, #62);
+- the toolbar's buttons sit in an inner row without a part, and an opened column list
+  follows the density (#77).
+
+**Module sizes** (brotli, `just measure-modules`): the elements 211.2 → 215.8 KiB, the
+engine 122.6 → 124.9 KiB (the resource report's measuring, #70).
+
 ### Added
 
 - **A resource report** ([#70](https://github.com/casoon/opengrid/issues/70)). The grid fires
@@ -42,7 +64,6 @@ Two things belong in every release entry and are easy to leave out:
   comes fully into view. At a 320 px viewport (reflow, 1.4.10) it wraps as before. The
   buttons now sit in an inner row without a part, so `::part` rules are unaffected;
   an opened column list comes after the density rather than before it.
-
 - **The pager sits in the footer** ([#75](https://github.com/casoon/opengrid/issues/75)).
   It stood between the filter row and the header, in the browser's unstyled buttons. It
   now follows the status in `part="footer"`, below the rows it pages, as compact glyph
