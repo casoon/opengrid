@@ -19,6 +19,24 @@ Calling something accessible is easy and usually wrong, so here is the split.
 - A pivot group whose value is NULL is named `(no value)`, one whose value is the empty string
   `(empty)`: an empty header cell is silence to a screen reader.
 
+## Machine-readable by the same means
+
+What makes the grid usable with a screen reader makes it readable for programs, so there is no
+second, machine-only layer to keep in step:
+
+- The accessibility tree is the interface. Roles, names, `aria-rowcount` for the whole result
+  and `aria-rowindex` per row tell a test, an automation tool or a browser agent what the grid
+  holds and where it is, even though only a window of rows is in the DOM.
+- The data is open at every step: the schema is a JSON document, a query is a JSON AST, the
+  view is JSON, and an export is CSV or JSON of what the reader sees, or of every match.
+- Structured data (schema.org, JSON-LD) stays the page's: only the page knows what the data
+  set *is*. The grid adds none of its own.
+
+Without JavaScript, the rows the element draws don't exist. So a page can write its data as a
+plain `<table>` inside the element: that's what a reader or crawler without script reads, and
+what stays when the module can't load. Once the element has rendered, it replaces that table
+([Data without JavaScript](../../api/#data-without-javascript)).
+
 ## Verified by tests, on every commit
 
 Roles, accessible names, `aria-rowcount` / `aria-rowindex` / `aria-sort` / `aria-selected`, the

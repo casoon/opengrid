@@ -3,9 +3,9 @@
 [![npm](https://img.shields.io/npm/v/@casoon/opengrid?color=3d5fd6&label=npm)](https://www.npmjs.com/package/@casoon/opengrid)
 [![licence](https://img.shields.io/badge/licence-MIT%20OR%20Apache--2.0-3d5fd6)](#licence)
 
-Accessible data grid, table and pivot as Web Components — driven by one query engine that
-runs in the browser (WebAssembly), on a server (PostgreSQL), or split between the two, with
-the same results everywhere.
+Data grid, table and pivot as Web Components, built to be accessible and machine-readable —
+driven by one query engine that runs in the browser (WebAssembly), on a server (PostgreSQL),
+or split between the two, with the same results everywhere.
 
 <p>
   <img src="https://raw.githubusercontent.com/casoon/opengrid/main/docs/assets/grid-base.png" alt="opengrid-grid in the Base look: search, + Filter, + Group, filter row and 5,000 orders" width="49%">
@@ -13,11 +13,19 @@ the same results everywhere.
 </p>
 
 - **`<opengrid-grid>`** — sorting, filtering, search, facets, grouping with totals,
-  selection, editing, virtualized or paged; fully operable from the keyboard.
+  selection, editing, virtualized or paged; operated from the keyboard.
 - **`<opengrid-table>`** — a plain semantic `<table>` for displaying data.
-- **`<opengrid-pivot>`** — a pivot with subtotals and a grand total.
-- **Export** — what the reader sees, every match of it, as CSV or JSON.
-- **Five built-in looks** — `theme="paper"`, and your own `--og-*` properties on top.
+- **`<opengrid-pivot>`** — a pivot with subtotals and a grand total, from a server or from
+  the engine in the tab.
+- **Column titles** — the page names its columns, in its own language, wherever the grid
+  names them.
+- **Export** — what the reader sees, every match of it, as CSV or JSON; XLSX from the server.
+- **A resource report** — every answer as an event (where it ran, how long, how big), and
+  what the engine holds in memory.
+- **Data without JavaScript** — a page can put its own `<table>` inside an element, for
+  readers and crawlers that run no script.
+- **Five built-in looks** — `theme="paper"`, your own `--og-*` properties on top, and
+  `::part` for every element.
 
 ## Live demos
 
@@ -141,8 +149,9 @@ const query = module.get_query(grid);               // the reader's view, withou
 const blob = await exportRows(provider, query, { format: "csv" });
 ```
 
-CSV per RFC 4180 with a guard against formula injection, or JSON; a pivot exports as shown
-with `get_pivot`. See [Export](https://github.com/casoon/opengrid/blob/main/docs/guides/export.md).
+CSV per RFC 4180 with a guard against formula injection, or JSON; through
+`createRestProvider` also XLSX, written by the server (`format: "xlsx"`). A pivot exports as
+shown with `get_pivot`. See [Export](https://github.com/casoon/opengrid/blob/main/docs/guides/export.md).
 
 ## Documentation
 
@@ -151,16 +160,38 @@ with `get_pivot`. See [Export](https://github.com/casoon/opengrid/blob/main/docs
 - [Guides](https://github.com/casoon/opengrid/tree/main/docs/guides) and the
   [project page](https://casoon.github.io/opengrid/)
 
-## Accessibility
+## Accessible and machine-readable: the aim
 
-Keyboard operation under the WAI-ARIA grid pattern, one polite live region for every state,
-no dragging required, and axe-core in every state of the end-to-end suite (Chromium, Firefox,
-WebKit). **Not yet verified with a screen reader** — that pass follows this release.
+opengrid is meant to be more than a WebAssembly engine that draws a grid. Its data should
+reach **everyone and everything** that reads a page: a person using a keyboard or a screen
+reader, and a program — a test, a browser agent, an export. How it is built toward that:
+
+- **One structure for people and programs.** A native `<table>` where reading is all there
+  is to do, `role="grid"` (or `treegrid` when grouped) where interaction needs it: row and
+  column headers, `aria-rowcount` for the whole result behind a virtualized window,
+  `aria-sort`, `aria-selected`, a name for every control. The accessibility tree a screen
+  reader reads is the one an automation tool or an AI agent reads.
+- **Designed for the keyboard.** The WAI-ARIA grid pattern for the keys, nothing that needs
+  dragging, and one polite live region for every change of state.
+- **Open data at every step.** The schema is a JSON document, a query is a JSON AST, the view
+  is JSON, an export is CSV, JSON or XLSX, and a page can write its data as a plain table
+  inside the element for readers that run no script.
+- **Tested, not assumed.** axe-core runs over every state of the end-to-end suite; target
+  sizes, reflow at 320 px and forced colours are tests; the announcements are recorded in
+  order.
+
+**This is not a statement of conformance yet.** A pass with a screen reader is still to come
+([#5](https://github.com/casoon/opengrid/issues/5)), and a conformance report follows it. What
+is tested and what is not: [Accessibility](https://github.com/casoon/opengrid/blob/main/docs/guides/accessibility.md).
 
 ## Status
 
 Pre-1.0: a minor version may change the API, a patch version does not
 ([CHANGELOG](https://github.com/casoon/opengrid/blob/main/CHANGELOG.md)).
+
+This page describes `main`. The pivot in the browser, XLSX export, the table's parts and
+formats, and data without JavaScript are in it but not yet on npm: they come with the next
+release ([Unreleased](https://github.com/casoon/opengrid/blob/main/CHANGELOG.md#unreleased)).
 
 ## Licence
 
