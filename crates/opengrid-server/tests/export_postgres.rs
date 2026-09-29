@@ -76,7 +76,8 @@ async fn settles_to(
     application: &str,
     expected: &[&str],
 ) -> Vec<String> {
-    let deadline = Instant::now() + Duration::from_secs(5);
+    // Only how long to keep looking: what a test promises, it asserts itself.
+    let deadline = Instant::now() + Duration::from_secs(10);
     let mut states = states_of(client, application).await;
     while states != expected && Instant::now() < deadline {
         tokio::time::sleep(Duration::from_millis(50)).await;
@@ -432,6 +433,9 @@ async fn an_export_that_does_not_start_in_time_is_cancelled_in_the_database() {
     drop_table(&client, table).await;
 }
 
+/// The server's timeout in the stalled-client test, in milliseconds.
+const STALL_TIMEOUT_MS: u64 = 2_000;
+
 /// **A client that stops reading is cut off.** It keeps the channel full, so
 /// the next piece waits; after `timeout_ms` the body is broken off and the
 /// export dropped — its connection and transaction gone while the client
@@ -444,11 +448,19 @@ async fn a_client_that_stops_reading_is_cut_off_within_the_deadline() {
     let table = "opengrid_server_export_stalled";
     let application = "opengrid_server_export_stalled";
     create_table(&client, table).await;
-    let app = app_with_timeout(table, application, 500).await;
+    // The same timeout bounds the export's start (count and first piece over
+    // 200 000 rows) and the stalled client. 500 ms was too tight for the start
+    // while the other tests of this file fill their tables: a `413` "took longer
+    // than 500 ms to start", now and then. Two seconds leave that room.
+    let app = app_with_timeout(table, application, STALL_TIMEOUT_MS).await;
 
     let response = export(app.clone(), DE, BY_ID).await;
-    assert_eq!(response.status(), StatusCode::OK);
+    let status = response.status();
     let mut body = response.into_body();
+    if status != StatusCode::OK {
+        let text = axum::body::to_bytes(body, usize::MAX).await.unwrap();
+        panic!("{status}: {}", String::from_utf8_lossy(&text));
+    }
     body.frame().await.expect("a frame").expect("data");
     let stalled = Instant::now();
 
@@ -458,7 +470,7 @@ async fn a_client_that_stops_reading_is_cut_off_within_the_deadline() {
         Vec::<String>::new()
     );
     assert!(
-        stalled.elapsed() < Duration::from_secs(3),
+        stalled.elapsed() < Duration::from_millis(3 * STALL_TIMEOUT_MS),
         "{:?}",
         stalled.elapsed()
     );
@@ -471,7 +483,10 @@ async fn a_client_that_stops_reading_is_cut_off_within_the_deadline() {
             None => panic!("the body ended as if it were whole"),
         }
     };
-    assert!(error.contains("took no piece for 500 ms"), "{error}");
+    assert!(
+        error.contains(&format!("took no piece for {STALL_TIMEOUT_MS} ms")),
+        "{error}"
+    );
 
     drop(app);
     drop_table(&client, table).await;
