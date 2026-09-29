@@ -12,6 +12,7 @@
 mod data_type;
 mod error;
 mod identifier;
+mod json;
 mod schema;
 mod value;
 

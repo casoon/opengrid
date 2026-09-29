@@ -26,6 +26,52 @@ Two things belong in every release entry and are easy to leave out:
   nothing is read twice. When the module can't load, the plain-DOM stand-in now shows the
   page's table (through a `<slot>`) instead of hiding it behind an empty skeleton. The
   skeleton only shows when there is no table of its own.
+- **The pivot in the browser** ([#28](https://github.com/casoon/opengrid/issues/28)).
+  `createLocalProvider` and `createWorkerProvider` answer `<opengrid-pivot>`: the engine runs
+  the pivot's grouping sets over the data the page loaded, with the server's limits
+  (`Engine.pivot`, `Engine.pivot_columns`, a `pivot` message in the worker). The element calls
+  a provider's new optional `pivot(json)` and falls back to `execute`, so providers of a page's
+  own keep working; `createPivotProvider` has `pivot` too. `examples/pivot-demo/browser.html`
+  shows it without a server.
+- **XLSX export on the server** ([#72](https://github.com/casoon/opengrid/issues/72)).
+  `POST /export/{source}?format=xlsx` writes an Excel workbook, and `exportRows(rest, query,
+  { format: "xlsx" })` asks for it through `createRestProvider` — with any other provider it is
+  a `TypeError`. Values are Excel types where Excel holds them exactly (numbers, dates,
+  date-times in UTC, booleans) and text where it cannot (integers past 2⁵³, decimals past 15
+  digits, sub-millisecond timestamps), so no value changes; Excel's row and cell limits are
+  errors, never a shortened file. New server-side dependency: `rust_xlsxwriter`, behind the
+  feature `xlsx` of `opengrid-export`, so the browser modules do not carry it.
+- **`<opengrid-table>` and `<opengrid-pivot>` can be styled, and the table takes formats**
+  ([#29](https://github.com/casoon/opengrid/issues/29)). Both render into a shadow root, so
+  no page rule reached their cells. They now carry parts named like the grid's — `table`,
+  `caption`, `header`, `row`, `cell`, the table's `sort-button`, the pivot's `row-header` and
+  `total-row` — and `examples/pivot-demo` and `examples/table-demo` style them through
+  `::part`. The table shows its values as the grid does: `formats` apply to its cells, and
+  `presentation` (`set_columns`) gives a column its `title`, `align`, `mono`, `emphasis` and
+  `muted`; the grid's `width`, `aggregate` and `facet` are refused for a table with an alert
+  rather than ignored. A number is right-aligned by its type, as in the grid.
+  **What breaks:** the pivot's `header` part was on its `<thead>`; it is now on each column
+  header cell, like the grid's.
+
+### Changed
+
+- **One JSON codec for browser and server, and no `serde` in the browser**
+  ([#41](https://github.com/casoon/opengrid/issues/41)). `opengrid-json` reads and writes
+  every JSON form — query, schema, view, texts, errors, the JSON result — on both sides,
+  so the two cannot read the same bytes two ways. `serde` and `serde_json` are gone from
+  both browser modules. Against 0.5.0, with everything else in this release (`just
+  measure-modules`, brotli): the elements 215.8 → 204.1 KiB, the engine 124.9 → 115.2 KiB,
+  although the engine now answers pivots too. What is read and refused is what `serde_json` read
+  and refused (checked against it as an oracle); what is written is what it wrote, keys
+  aside — an object now keeps the order it is written in instead of sorting its keys —
+  and one rare case: where a float has two shortest spellings, the one closer to the
+  value is written. Both read back to the same number.
+
+  **What breaks** (Rust crates only; the npm package and its JavaScript API are
+  unchanged): the opengrid types no longer implement `serde::Serialize`/`Deserialize`.
+  Read and write them with `opengrid_json` (`from_str`, `to_string`, `FromJson`, `ToJson`);
+  `Value::deserialize_typed` is `Value::from_json_typed`, and a filter literal is an
+  `opengrid_json::Json`.
 
 ### Fixed
 

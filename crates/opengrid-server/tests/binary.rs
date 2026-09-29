@@ -88,7 +88,7 @@ async fn the_whole_suite_answers_the_same_in_both_forms() {
 
     let mut failed = Vec::new();
     for case in &cases {
-        let body = serde_json::to_string(&case.case.query).unwrap();
+        let body = opengrid_json::to_string(&case.case.query);
         let (json_status, json_type, _, json) = post(&app, "/query/orders", &body, None).await;
         let (status, content_type, _, bytes) =
             post(&app, "/query/orders", &body, Some(MEDIA_TYPE)).await;

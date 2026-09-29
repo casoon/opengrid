@@ -10,17 +10,17 @@
         margin: 2rem;
         max-width: 50rem;
       }
-      opengrid-table table {
+      opengrid-table::part(table) {
         border-collapse: collapse;
         width: 100%;
       }
-      opengrid-table th,
-      opengrid-table td {
+      /* No text-align here: the table aligns a column by its type. */
+      opengrid-table::part(header),
+      opengrid-table::part(cell) {
         border: 1px solid #ccc;
         padding: 0.25rem 0.5rem;
-        text-align: start;
       }
-      opengrid-table caption {
+      opengrid-table::part(caption) {
         text-align: start;
         font-weight: 600;
         padding-bottom: 0.5rem;

@@ -143,6 +143,12 @@ export type Answer = string | Uint8Array | ArrayBuffer;
 export interface Provider {
   execute(queryJson: string, mode: string, options?: ExecuteOptions): Answer | Promise<Answer>;
   /**
+   * Optional: a pivot JSON in, the pivot's answer out (issue #28).
+   * `<opengrid-pivot>` calls it when it is there, `execute` otherwise. The
+   * tab, worker and pivot providers have it.
+   */
+  pivot?(pivotJson: string, mode: string, options?: ExecuteOptions): Answer | Promise<Answer>;
+  /**
    * Optional: where the queries run. The grid names it in its footer, beside
    * the number of queries asked for what is shown; the built-in providers set
    * it. A provider without it is shown with the count alone.
@@ -193,6 +199,10 @@ export interface Engine {
   execute_columns(queryJson: string): Uint8Array;
   /** What it holds, as JSON (see `EngineStats`). */
   stats(): string;
+  /** A pivot over the engine's sources, as JSON (issue #28). */
+  pivot(pivotJson: string): string;
+  /** The same pivot in the binary form — what the tab and worker providers answer. */
+  pivot_columns(pivotJson: string): Uint8Array;
 }
 
 /** What a server says a source is. */
@@ -289,11 +299,15 @@ export interface ExportProgress {
 /**
  * How `exportRows` fetches and writes: its own keys, plus the
  * {@link CsvOptions} `get_pivot` takes too. Any other key is an error, and so
- * is a CSV option on a JSON export.
+ * is a CSV option on a JSON or XLSX export.
  */
 export interface ExportOptions extends CsvOptions {
-  /** `"csv"` (the default) or `"json"` — an array of row objects. */
-  format?: "csv" | "json";
+  /**
+   * `"csv"` (the default), `"json"` — an array of row objects — or `"xlsx"`,
+   * which only a provider that exports on the server (`createRestProvider`)
+   * writes; with any other provider it is a `TypeError`.
+   */
+  format?: "csv" | "json" | "xlsx";
   /** Rows per request; 10 000 by default, the server's `max_limit`. */
   chunkSize?: number;
   /** More matches than this is an error, never a truncated file; 1 000 000 by default. */

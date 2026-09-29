@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use opengrid_json::{Error, Fields, FromJson, Json, ToJson};
 
 /// What a data source can answer.
 ///
@@ -14,8 +14,7 @@ use serde::{Deserialize, Serialize};
 /// told what that source can do (plan point 28). Every field defaults to `false`
 /// on the way in, so a reader that learns a capability later still parses an
 /// older declaration.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct DataSourceCapabilities {
     pub filter: bool,
     pub sort: bool,
@@ -39,4 +38,46 @@ impl DataSourceCapabilities {
         calculated_fields: true,
         streaming: true,
     };
+}
+
+const FLAGS: [&str; 8] = [
+    "filter",
+    "sort",
+    "group",
+    "aggregate",
+    "paging",
+    "pivot",
+    "calculated_fields",
+    "streaming",
+];
+
+impl FromJson for DataSourceCapabilities {
+    fn from_json(json: &Json) -> Result<Self, Error> {
+        let fields = Fields::of(json, "struct DataSourceCapabilities", &FLAGS)?;
+        Ok(Self {
+            filter: fields.read_or_default("filter")?,
+            sort: fields.read_or_default("sort")?,
+            group: fields.read_or_default("group")?,
+            aggregate: fields.read_or_default("aggregate")?,
+            paging: fields.read_or_default("paging")?,
+            pivot: fields.read_or_default("pivot")?,
+            calculated_fields: fields.read_or_default("calculated_fields")?,
+            streaming: fields.read_or_default("streaming")?,
+        })
+    }
+}
+
+impl ToJson for DataSourceCapabilities {
+    fn to_json(&self) -> Json {
+        opengrid_json::json!({
+            "filter": self.filter,
+            "sort": self.sort,
+            "group": self.group,
+            "aggregate": self.aggregate,
+            "paging": self.paging,
+            "pivot": self.pivot,
+            "calculated_fields": self.calculated_fields,
+            "streaming": self.streaming,
+        })
+    }
 }

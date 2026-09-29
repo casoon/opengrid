@@ -159,14 +159,21 @@ pub fn host_rules() -> String {
     css
 }
 
-/// The stylesheet of `<opengrid-table>` and `<opengrid-pivot>`: the looks, and
-/// the text in the look's ink and font. Everything else about their look is
-/// the page's until they get parts (issue #29) — so the tokens are there to
-/// use, and only the two that already apply are applied.
+/// The stylesheet of `<opengrid-table>` and `<opengrid-pivot>`: the looks, the
+/// text in the look's ink and font, and what a column's presentation marks on
+/// a table cell — the grid's own rules for the same markers. Everything else
+/// about their look is the page's, through their parts (issue #29).
 pub fn table_css() -> String {
     format!(
         "{}:host {{ color: var(--og-ink); font-family: var(--og-font); }}\n\
-         @media (forced-colors: active) {{ :host {{ --og-ink: CanvasText; }} }}\n",
+         [data-align=\"end\"] {{ text-align: right; }}\n\
+         [data-align=\"center\"] {{ text-align: center; }}\n\
+         [data-align=\"start\"] {{ text-align: left; }}\n\
+         td[data-align=\"end\"] {{ font-variant-numeric: tabular-nums; }}\n\
+         td[data-mono] {{ font-family: var(--og-font-mono); }}\n\
+         td[data-emphasis] {{ font-weight: 600; }}\n\
+         td[data-muted] {{ color: var(--og-ink-muted); }}\n\
+         @media (forced-colors: active) {{ :host {{ --og-ink: CanvasText; --og-ink-muted: CanvasText; }} }}\n",
         host_rules()
     )
 }

@@ -264,14 +264,14 @@ mod tests {
     const CSV: &str = "id,country,qty\n1,DE,3\n2,FR,1\n3,DE,2\n4,AT,5\n5,DE,4\n";
 
     fn connector() -> FromSource<LocalDataSource> {
-        let schema: Schema = serde_json::from_str(SCHEMA).unwrap();
+        let schema: Schema = opengrid_json::from_str(SCHEMA).unwrap();
         let table = load_csv(CSV.as_bytes(), &schema, CsvOptions::default()).unwrap();
         FromSource(LocalDataSource::new(table))
     }
 
     fn validated(json: &str) -> ValidatedQuery {
-        let schema: Schema = serde_json::from_str(SCHEMA).unwrap();
-        let query: Query = serde_json::from_str(json).unwrap();
+        let schema: Schema = opengrid_json::from_str(SCHEMA).unwrap();
+        let query: Query = opengrid_json::from_str(json).unwrap();
         query.validate(&schema, &Limits::default()).unwrap()
     }
 

@@ -39,9 +39,10 @@ scheduled, and nothing below it should be read as a promise that it will be.
       and installs the tarball into a project without any framework
 - [ ] `cargo check -p opengrid-web-components --no-default-features --features grid`, and
       the same with `--features pivot` — E25 keeps both as a way out, so both must build
-- [ ] `just measure-modules` — if a number moved noticeably against the last release, say
-      so in the changelog: shipping grid and pivot as one module (E25) was decided on
-      those numbers
+- [ ] `just measure-modules` — passes its budget (`scripts/module-budget.txt`: a module
+      over its bound fails the run; a raised bound carries its reason). If a number moved
+      noticeably against the last release, say so in the changelog: shipping grid and
+      pivot as one module (E25) was decided on those numbers
 
 ### 👤 The parts no command covers
 

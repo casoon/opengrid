@@ -16,7 +16,7 @@ them.
 
 | Call | What it answers | Where the work is done |
 |---|---|---|
-| `exportRows(provider, query, options)` | Every match of a query, as a `Blob` of CSV or JSON. | Through any provider, in pieces — or in one request where the provider can. |
+| `exportRows(provider, query, options)` | Every match of a query, as a `Blob` of CSV or JSON — or XLSX, written by a server. | Through any provider, in pieces — or in one request where the provider can. |
 | `createRestProvider(…).export(query, options)` | The same, from `POST /export/{source}`. | On an `opengrid-server`, streamed. `exportRows` uses it by itself. |
 | `get_pivot(host, options)` | An `<opengrid-pivot>` as it is shown, as CSV text. | In the element, without a request. |
 
@@ -166,6 +166,32 @@ order, and without the default `maxRows`. Prefer `exportRows`.
 The endpoint itself — its parameters, headers and status codes, a `curl` line, the bounds on
 what an export holds and a memory measurement for a million rows — is in
 [Where queries run → Exporting from a server](../where-queries-run/#exporting-from-a-server).
+
+### XLSX
+
+`format: "xlsx"` writes an Excel workbook — on the server only: `exportRows` with any other
+provider is a `TypeError` before anything is fetched. One sheet, named after the source, the
+header row with the field names, frozen. XLSX is the format for people in a spreadsheet; CSV
+and JSON stay the exact ones, and nothing changes a value on the way:
+
+| Type | In the workbook |
+|---|---|
+| `bool` | a boolean |
+| `int64` | a number — **text** past ±2⁵³, where a spreadsheet number loses digits |
+| `decimal` | a number with its scale as the number format (`0.00`) — **text** past 15 significant digits, Excel's precision |
+| `float64` | a number; `NaN`, `Infinity`, `-Infinity` as text |
+| `date` | an Excel date, `yyyy-mm-dd` — **text** outside Excel's years 1900–9999 |
+| `timestamp` | an Excel date-time in UTC, `yyyy-mm-dd hh:mm:ss.000` — **text** (ISO) with sub-millisecond digits |
+| `utf8` | a string — never a formula, so the formula guard has nothing to do |
+| NULL | an empty cell |
+
+One difference a workbook cannot hold: **the empty string and NULL are both an empty cell** —
+Excel has no empty text apart from an empty cell. CSV and JSON keep the two apart.
+
+Excel's limits are errors, never a shortened file: more rows than a sheet holds (1 048 575 under
+the header) is a `413` before the first byte, and a text longer than a cell holds (32 767
+characters) breaks the download off. The file is written as the rows are read and sent as one
+piece at the end, so `onProgress` hears the end as for any server export.
 
 ## A pivot
 

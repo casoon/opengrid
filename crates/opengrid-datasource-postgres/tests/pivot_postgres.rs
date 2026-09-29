@@ -30,9 +30,10 @@ fn cases() -> Vec<(String, PivotQuery)> {
         .into_iter()
         .map(|path| {
             let text = std::fs::read_to_string(&path).expect("read case");
-            let body: serde_json::Value = serde_json::from_str(&text).expect("JSON");
+            let body: opengrid_json::Json = opengrid_json::from_str(&text).expect("JSON");
             let id = body["id"].as_str().expect("an id").to_owned();
-            let pivot: PivotQuery = serde_json::from_value(body["pivot"].clone()).expect("a pivot");
+            let pivot: PivotQuery =
+                opengrid_json::FromJson::from_json(&body["pivot"]).expect("a pivot");
             (id, pivot)
         })
         .collect()
@@ -52,7 +53,7 @@ fn render(result: &PivotResult) -> Vec<String> {
                     column
                         .path
                         .iter()
-                        .map(|value| serde_json::to_string(value).expect("JSON"))
+                        .map(opengrid_json::to_string)
                         .collect::<Vec<_>>()
                         .join(",")
                 )
@@ -69,7 +70,7 @@ fn render(result: &PivotResult) -> Vec<String> {
                 // S12: `avg` is a float, and two engines may differ in the last
                 // bit. Everything else is compared exactly.
                 Value::Float64(number) => format!("{number:.9}"),
-                other => serde_json::to_string(other).expect("JSON"),
+                other => opengrid_json::to_string(other),
             })
             .collect();
         lines.push(format!("L{} {}", result.row_levels[row], cells.join(" | ")));

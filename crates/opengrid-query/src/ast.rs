@@ -6,34 +6,68 @@
 //! a [`Schema`](opengrid_types::Schema) — the typed, guaranteed-valid counterpart
 //! is [`ValidatedQuery`](crate::ValidatedQuery).
 //!
-//! Unknown fields are rejected everywhere (`deny_unknown_fields`), so a typo in a
-//! request never silently changes its meaning.
+//! Unknown fields are rejected everywhere, so a typo in a request never
+//! silently changes its meaning. The JSON forms are read and written through
+//! `opengrid-json`, the one codec of browser and server (issue #41).
 
 use std::fmt;
 
+use opengrid_json::{Error, Fields, FromJson, Json, ToJson, unknown_variant};
 use opengrid_types::{DataSourceId, DataType, FieldName};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use serde_json::Value as JsonValue;
 
 /// A full query as sent by a client.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Query {
     pub source: DataSourceId,
-    #[serde(default)]
     pub select: Vec<FieldName>,
-    #[serde(default)]
     pub filter: Option<FilterExpr>,
-    #[serde(default)]
     pub group: Vec<FieldName>,
-    #[serde(default)]
     pub aggregate: Vec<Aggregate>,
-    #[serde(default)]
     pub sort: Vec<Sort>,
-    #[serde(default)]
     pub offset: Option<u64>,
-    #[serde(default)]
     pub limit: Option<u64>,
+}
+
+const QUERY_FIELDS: [&str; 8] = [
+    "source",
+    "select",
+    "filter",
+    "group",
+    "aggregate",
+    "sort",
+    "offset",
+    "limit",
+];
+
+impl FromJson for Query {
+    fn from_json(json: &Json) -> Result<Self, Error> {
+        let fields = Fields::of(json, "struct Query", &QUERY_FIELDS)?;
+        Ok(Query {
+            source: fields.read("source")?,
+            select: fields.read_or_default("select")?,
+            filter: fields.read_optional("filter")?,
+            group: fields.read_or_default("group")?,
+            aggregate: fields.read_or_default("aggregate")?,
+            sort: fields.read_or_default("sort")?,
+            offset: fields.read_optional("offset")?,
+            limit: fields.read_optional("limit")?,
+        })
+    }
+}
+
+impl ToJson for Query {
+    fn to_json(&self) -> Json {
+        opengrid_json::json!({
+            "source": self.source,
+            "select": self.select,
+            "filter": self.filter,
+            "group": self.group,
+            "aggregate": self.aggregate,
+            "sort": self.sort,
+            "offset": self.offset,
+            "limit": self.limit,
+        })
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -50,7 +84,7 @@ pub enum FilterExpr {
     Cmp {
         field: FieldName,
         op: CmpOp,
-        value: JsonValue,
+        value: Json,
     },
     IsNull {
         field: FieldName,
@@ -76,8 +110,7 @@ impl FilterExpr {
 /// Filter operators that carry a value (semantics-ready, plan/spezifikation
 /// 02-query-modell.md). `is_null`/`is_not_null` are not operators here but their
 /// own [`FilterExpr`] variants.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum CmpOp {
     Eq,
     Ne,
@@ -128,77 +161,74 @@ impl CmpOp {
     }
 }
 
-/// Flat view of a single filter object used for deserialization.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct FilterRepr {
-    #[serde(default)]
-    and: Option<Vec<FilterExpr>>,
-    #[serde(default)]
-    or: Option<Vec<FilterExpr>>,
-    #[serde(default)]
-    not: Option<Box<FilterExpr>>,
-    #[serde(default)]
-    field: Option<FieldName>,
-    #[serde(default)]
-    op: Option<String>,
-    #[serde(default)]
-    value: Option<JsonValue>,
-}
+/// The keys a filter object may have.
+const FILTER_FIELDS: [&str; 6] = ["and", "or", "not", "field", "op", "value"];
 
-impl FilterRepr {
-    fn into_expr(self) -> Result<FilterExpr, String> {
-        // Decide the shape before moving anything out of `self`.
-        let only_logical_keys = self.field.is_none() && self.op.is_none() && self.value.is_none();
-        let logical_keys = [self.and.is_some(), self.or.is_some(), self.not.is_some()]
+impl FromJson for FilterExpr {
+    /// One filter object: `and`, `or` or `not` alone, or a `field` with an
+    /// `op` and — unless the operator is a null check — a `value`. A key set to
+    /// `null` counts as absent.
+    fn from_json(json: &Json) -> Result<Self, Error> {
+        let fields = Fields::of(json, "struct FilterRepr", &FILTER_FIELDS)?;
+        let and = fields.read_optional::<Vec<FilterExpr>>("and")?;
+        let or = fields.read_optional::<Vec<FilterExpr>>("or")?;
+        let not = fields.read_optional::<Box<FilterExpr>>("not")?;
+        let field = fields.read_optional::<FieldName>("field")?;
+        let op = fields.read_optional::<String>("op")?;
+        let value = fields.optional("value").cloned();
+
+        // Decide the shape before moving anything out.
+        let only_logical_keys = field.is_none() && op.is_none() && value.is_none();
+        let logical_keys = [and.is_some(), or.is_some(), not.is_some()]
             .into_iter()
             .filter(|&set| set)
             .count();
+        let fail = |message: String| Err(Error::new(message));
         if logical_keys > 1 {
-            return Err("filter expression must use only one of: and, or, not".to_owned());
+            return fail("filter expression must use only one of: and, or, not".to_owned());
         }
-        if let Some(and) = self.and {
+        if let Some(and) = and {
             if !only_logical_keys {
-                return Err("and must not carry field, op or value".to_owned());
+                return fail("and must not carry field, op or value".to_owned());
             }
             return Ok(FilterExpr::And(and));
         }
-        if let Some(or) = self.or {
+        if let Some(or) = or {
             if !only_logical_keys {
-                return Err("or must not carry field, op or value".to_owned());
+                return fail("or must not carry field, op or value".to_owned());
             }
             return Ok(FilterExpr::Or(or));
         }
-        if let Some(not) = self.not {
+        if let Some(not) = not {
             if !only_logical_keys {
-                return Err("not must not carry field, op or value".to_owned());
+                return fail("not must not carry field, op or value".to_owned());
             }
             return Ok(FilterExpr::Not(not));
         }
-        let Some(field) = self.field else {
-            return Err("filter expression needs one of: and, or, not, field".to_owned());
+        let Some(field) = field else {
+            return fail("filter expression needs one of: and, or, not, field".to_owned());
         };
-        let Some(op) = self.op else {
-            return Err(format!("field {field:?} needs an \"op\""));
+        let Some(op) = op else {
+            return fail(format!("field {field:?} needs an \"op\""));
         };
         match op.as_str() {
             "is_null" => {
-                if self.value.is_some() {
-                    return Err("is_null takes no value".to_owned());
+                if value.is_some() {
+                    return fail("is_null takes no value".to_owned());
                 }
                 Ok(FilterExpr::IsNull { field })
             }
             "is_not_null" => {
-                if self.value.is_some() {
-                    return Err("is_not_null takes no value".to_owned());
+                if value.is_some() {
+                    return fail("is_not_null takes no value".to_owned());
                 }
                 Ok(FilterExpr::IsNotNull { field })
             }
             other => {
-                let op =
-                    CmpOp::parse(other).ok_or_else(|| format!("unknown operator {other:?}"))?;
-                let Some(value) = self.value else {
-                    return Err(format!("operator {} needs a \"value\"", op.as_str()));
+                let op = CmpOp::parse(other)
+                    .ok_or_else(|| Error::new(format!("unknown operator {other:?}")))?;
+                let Some(value) = value else {
+                    return fail(format!("operator {} needs a \"value\"", op.as_str()));
                 };
                 Ok(FilterExpr::Cmp { field, op, value })
             }
@@ -206,71 +236,82 @@ impl FilterRepr {
     }
 }
 
-impl<'de> Deserialize<'de> for FilterExpr {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        FilterRepr::deserialize(deserializer)?
-            .into_expr()
-            .map_err(serde::de::Error::custom)
-    }
-}
-
-impl Serialize for FilterExpr {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        #[derive(Serialize)]
-        struct Logical<'a> {
-            and: &'a Vec<FilterExpr>,
-        }
-        #[derive(Serialize)]
-        struct LogicalOr<'a> {
-            or: &'a Vec<FilterExpr>,
-        }
-        #[derive(Serialize)]
-        struct LogicalNot<'a> {
-            not: &'a FilterExpr,
-        }
-        #[derive(Serialize)]
-        struct Cmp<'a> {
-            field: &'a FieldName,
-            op: CmpOp,
-            value: &'a JsonValue,
-        }
-        #[derive(Serialize)]
-        struct NullCheck<'a> {
-            field: &'a FieldName,
-            op: &'static str,
-        }
-
+impl ToJson for FilterExpr {
+    fn to_json(&self) -> Json {
         match self {
-            FilterExpr::And(items) => Logical { and: items }.serialize(serializer),
-            FilterExpr::Or(items) => LogicalOr { or: items }.serialize(serializer),
-            FilterExpr::Not(inner) => LogicalNot { not: inner }.serialize(serializer),
-            FilterExpr::Cmp { field, op, value } => Cmp {
-                field,
-                op: *op,
-                value,
+            FilterExpr::And(items) => opengrid_json::json!({ "and": items }),
+            FilterExpr::Or(items) => opengrid_json::json!({ "or": items }),
+            FilterExpr::Not(inner) => opengrid_json::json!({ "not": inner }),
+            FilterExpr::Cmp { field, op, value } => {
+                opengrid_json::json!({ "field": field, "op": op.as_str(), "value": value })
             }
-            .serialize(serializer),
-            FilterExpr::IsNull { field } => NullCheck {
-                field,
-                op: "is_null",
+            FilterExpr::IsNull { field } => {
+                opengrid_json::json!({ "field": field, "op": "is_null" })
             }
-            .serialize(serializer),
-            FilterExpr::IsNotNull { field } => NullCheck {
-                field,
-                op: "is_not_null",
+            FilterExpr::IsNotNull { field } => {
+                opengrid_json::json!({ "field": field, "op": "is_not_null" })
             }
-            .serialize(serializer),
         }
     }
 }
+
+/// A unit enum written as its snake-case name.
+macro_rules! named {
+    ($name:ident { $($variant:ident = $text:literal),* $(,)? }) => {
+        impl $name {
+            fn name(&self) -> &'static str {
+                match self {
+                    $($name::$variant => $text,)*
+                }
+            }
+        }
+
+        impl FromJson for $name {
+            fn from_json(json: &Json) -> Result<Self, Error> {
+                let text = String::from_json(json)?;
+                match text.as_str() {
+                    $($text => Ok($name::$variant),)*
+                    other => Err(unknown_variant(other, &[$($text),*])),
+                }
+            }
+        }
+
+        impl ToJson for $name {
+            fn to_json(&self) -> Json {
+                Json::from(self.name())
+            }
+        }
+    };
+}
+
+named!(CmpOp {
+    Eq = "eq",
+    Ne = "ne",
+    Lt = "lt",
+    Lte = "lte",
+    Gt = "gt",
+    Gte = "gte",
+    In = "in",
+    Contains = "contains",
+    StartsWith = "starts_with",
+});
+named!(SortDirection { Asc = "asc", Desc = "desc" });
+named!(NullsOrder { First = "first", Last = "last" });
+named!(Collation { Binary = "binary" });
+named!(AggregateFn {
+    Sum = "sum",
+    Avg = "avg",
+    Count = "count",
+    Min = "min",
+    Max = "max",
+});
 
 // ---------------------------------------------------------------------------
 // Sort
 // ---------------------------------------------------------------------------
 
 /// Sort direction.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum SortDirection {
     #[default]
     Asc,
@@ -279,8 +320,7 @@ pub enum SortDirection {
 
 /// Where NULLs land. Always explicit in compiled SQL, default `last` regardless
 /// of direction (rule S3).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum NullsOrder {
     First,
     #[default]
@@ -288,24 +328,46 @@ pub enum NullsOrder {
 }
 
 /// String collation. V1 knows only `binary` (rule S4).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Collation {
     #[default]
     Binary,
 }
 
 /// One sort key on an output column.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Sort {
     pub field: FieldName,
-    #[serde(default)]
     pub direction: SortDirection,
-    #[serde(default)]
     pub nulls: NullsOrder,
-    #[serde(default)]
     pub collation: Collation,
+}
+
+impl FromJson for Sort {
+    fn from_json(json: &Json) -> Result<Self, Error> {
+        let fields = Fields::of(
+            json,
+            "struct Sort",
+            &["field", "direction", "nulls", "collation"],
+        )?;
+        Ok(Sort {
+            field: fields.read("field")?,
+            direction: fields.read_or_default("direction")?,
+            nulls: fields.read_or_default("nulls")?,
+            collation: fields.read_or_default("collation")?,
+        })
+    }
+}
+
+impl ToJson for Sort {
+    fn to_json(&self) -> Json {
+        opengrid_json::json!({
+            "field": self.field,
+            "direction": self.direction,
+            "nulls": self.nulls,
+            "collation": self.collation,
+        })
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -313,8 +375,7 @@ pub struct Sort {
 // ---------------------------------------------------------------------------
 
 /// Aggregate functions in V1.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum AggregateFn {
     Sum,
     Avg,
@@ -366,16 +427,30 @@ impl AggregateFn {
 }
 
 /// One aggregate over a field, published under an alias.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Aggregate {
     /// Missing for `count(*)`.
-    #[serde(default)]
     pub field: Option<FieldName>,
-    #[serde(rename = "fn")]
     pub function: AggregateFn,
-    #[serde(rename = "as")]
     pub alias: FieldName,
+}
+
+impl FromJson for Aggregate {
+    /// `{ "field", "fn", "as" }`; no `field` is `count(*)`.
+    fn from_json(json: &Json) -> Result<Self, Error> {
+        let fields = Fields::of(json, "struct Aggregate", &["field", "fn", "as"])?;
+        Ok(Aggregate {
+            field: fields.read_optional("field")?,
+            function: fields.read("fn")?,
+            alias: fields.read("as")?,
+        })
+    }
+}
+
+impl ToJson for Aggregate {
+    fn to_json(&self) -> Json {
+        opengrid_json::json!({ "field": self.field, "fn": self.function, "as": self.alias })
+    }
 }
 
 impl fmt::Display for FilterExpr {

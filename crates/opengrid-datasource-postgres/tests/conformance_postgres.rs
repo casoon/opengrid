@@ -115,7 +115,7 @@ async fn both_engines_answer_the_same_thing() {
                      "filter":{{"field":"{column}","op":"{op}","value":{literal}}},
                      "sort":[{{"field":"id","direction":"asc"}}]}}"#
             );
-            let query: Query = serde_json::from_str(&json).expect("a query");
+            let query: Query = opengrid_json::from_str(&json).expect("a query");
             let Ok(validated) = query.validate(&schema, &Limits::default()) else {
                 // Not every operator fits every type — the validator says so, and
                 // that is a case the compiler never sees.

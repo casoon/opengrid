@@ -48,7 +48,7 @@ fn valid_fixtures_parse_and_validate() {
     assert!(!paths.is_empty(), "no valid fixtures found");
     for path in paths {
         let json = fs::read_to_string(&path).expect("read fixture");
-        let query: Query = serde_json::from_str(&json)
+        let query: Query = opengrid_json::from_str(&json)
             .unwrap_or_else(|error| panic!("{}: does not parse: {error}", path.display()));
         query
             .validate(&orders(), &Limits::default())
@@ -58,12 +58,6 @@ fn valid_fixtures_parse_and_validate() {
 
 #[test]
 fn invalid_fixtures_fail_with_expected_code() {
-    #[derive(serde::Deserialize)]
-    struct Case {
-        expect: String,
-        query: serde_json::Value,
-    }
-
     let paths = fixtures("invalid");
     assert!(
         paths.len() >= 15,
@@ -72,17 +66,18 @@ fn invalid_fixtures_fail_with_expected_code() {
     );
     for path in paths {
         let json = fs::read_to_string(&path).expect("read fixture");
-        let case: Case = serde_json::from_str(&json)
+        let case = opengrid_json::Json::parse(&json)
             .unwrap_or_else(|error| panic!("{}: bad fixture: {error}", path.display()));
+        let expect = case["expect"].as_str().expect("the fixture names its code");
         // The query itself must parse: we are testing validation, not the parser.
-        let query: Query = serde_json::from_value(case.query)
+        let query: Query = opengrid_json::FromJson::from_json(&case["query"])
             .unwrap_or_else(|error| panic!("{}: query does not parse: {error}", path.display()));
         let error = query
             .validate(&orders(), &Limits::default())
             .expect_err(&format!("{}: expected validation to fail", path.display()));
         assert_eq!(
             error.code(),
-            case.expect,
+            expect,
             "{}: wrong error ({error})",
             path.display()
         );
@@ -104,7 +99,7 @@ fn specification_example_validates_unchanged() {
         .nth(1)
         .and_then(|rest| rest.split("```").next())
         .expect("a ```json block in the query model spec");
-    let query: Query = serde_json::from_str(block).expect("spec example parses");
+    let query: Query = opengrid_json::from_str(block).expect("spec example parses");
     let validated = query
         .validate(&orders(), &Limits::default())
         .expect("spec example validates");
@@ -124,9 +119,9 @@ fn specification_example_validates_unchanged() {
 #[test]
 fn filter_survives_a_json_round_trip() {
     let json = fmt_fixture(&fixture_dir("valid").join("spec-example.json"));
-    let query: Query = serde_json::from_str(&json).expect("parse");
+    let query: Query = opengrid_json::from_str(&json).expect("parse");
     let again: Query =
-        serde_json::from_str(&serde_json::to_string(&query).expect("serialize")).expect("re-parse");
+        opengrid_json::from_str(&opengrid_json::to_string(&query)).expect("re-parse");
     assert_eq!(query, again);
 }
 
@@ -139,7 +134,7 @@ fn filter_with_two_logical_keys_is_rejected() {
         r#"{"source":"orders","select":["customer"],"filter":{"or":[],"not":{"field":"note","op":"is_null"}}}"#,
     ] {
         assert!(
-            serde_json::from_str::<Query>(json).is_err(),
+            opengrid_json::from_str::<Query>(json).is_err(),
             "accepted ambiguous filter: {json}"
         );
     }
@@ -159,7 +154,7 @@ fn fmt_fixture(path: &Path) -> String {
 fn a_validated_query_writes_itself_back() {
     for path in fixtures("valid") {
         let json = fs::read_to_string(&path).expect("read fixture");
-        let query: Query = serde_json::from_str(&json).expect("the fixture parses");
+        let query: Query = opengrid_json::from_str(&json).expect("the fixture parses");
         let validated = query
             .validate(&orders(), &Limits::default())
             .expect("the fixture validates");

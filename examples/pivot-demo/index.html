@@ -14,16 +14,17 @@
         background: #eef1f5;
         font-weight: 600;
       }
-      opengrid-pivot table {
+      opengrid-pivot::part(table) {
         border-collapse: collapse;
       }
-      opengrid-pivot th,
-      opengrid-pivot td {
+      opengrid-pivot::part(header),
+      opengrid-pivot::part(row-header),
+      opengrid-pivot::part(cell) {
         border: 1px solid #ccc;
         padding: 0.25rem 0.5rem;
         text-align: start;
       }
-      opengrid-pivot td {
+      opengrid-pivot::part(cell) {
         text-align: end;
         font-variant-numeric: tabular-nums;
       }
@@ -41,9 +42,10 @@
     </p>
     <p>
       Start the server with
-      <code>cargo run -p opengrid-server -- examples/remote-demo/opengrid.toml</code>
-      and serve the page with <code>just serve-demo</code>. This demo needs the
-      server: the pivot has no client-side path yet.
+      <code>cargo run -p opengrid-example-server -- demo</code>
+      and serve the page with <code>just serve-demo</code>. The same pivot
+      without a server — the engine in a worker —
+      is <a href="browser.html">browser.html</a>.
     </p>
 
     <opengrid-pivot
