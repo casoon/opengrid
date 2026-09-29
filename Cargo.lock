@@ -897,10 +897,9 @@ dependencies = [
  "opengrid-columns",
  "opengrid-datasource",
  "opengrid-engine",
+ "opengrid-json",
  "opengrid-query",
  "opengrid-types",
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -911,10 +910,10 @@ dependencies = [
  "opengrid-conformance",
  "opengrid-datasource",
  "opengrid-engine",
+ "opengrid-json",
  "opengrid-pivot",
  "opengrid-query",
  "opengrid-types",
- "serde_json",
 ]
 
 [[package]]
@@ -925,20 +924,19 @@ dependencies = [
  "opengrid-connector",
  "opengrid-datasource",
  "opengrid-engine",
+ "opengrid-json",
  "opengrid-query",
  "opengrid-types",
  "rusqlite",
- "serde_json",
 ]
 
 [[package]]
 name = "opengrid-datasource"
 version = "0.5.0"
 dependencies = [
+ "opengrid-json",
  "opengrid-query",
  "opengrid-types",
- "serde",
- "serde_json",
  "trait-variant",
 ]
 
@@ -952,10 +950,10 @@ dependencies = [
  "opengrid-connector",
  "opengrid-datasource",
  "opengrid-engine",
+ "opengrid-json",
  "opengrid-pivot",
  "opengrid-query",
  "opengrid-types",
- "serde_json",
  "tokio",
  "tokio-postgres",
 ]
@@ -968,11 +966,11 @@ dependencies = [
  "opengrid-columns",
  "opengrid-conformance",
  "opengrid-datasource",
+ "opengrid-json",
  "opengrid-planner",
  "opengrid-query",
  "opengrid-types",
  "proptest",
- "serde_json",
  "xtask",
 ]
 
@@ -985,9 +983,9 @@ dependencies = [
  "opengrid-connector-sqlite",
  "opengrid-datasource-postgres",
  "opengrid-engine",
+ "opengrid-json",
  "opengrid-server",
  "opengrid-types",
- "serde_json",
  "tokio",
 ]
 
@@ -998,10 +996,10 @@ dependencies = [
  "opengrid-conformance",
  "opengrid-datasource",
  "opengrid-engine",
+ "opengrid-json",
  "opengrid-pivot",
  "opengrid-query",
  "opengrid-types",
- "serde_json",
  "xtask",
 ]
 
@@ -1015,6 +1013,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "opengrid-json"
+version = "0.4.0"
+dependencies = [
+ "proptest",
+ "serde_json",
+]
+
+[[package]]
 name = "opengrid-pivot"
 version = "0.5.0"
 dependencies = [
@@ -1022,10 +1028,9 @@ dependencies = [
  "opengrid-conformance",
  "opengrid-datasource",
  "opengrid-engine",
+ "opengrid-json",
  "opengrid-query",
  "opengrid-types",
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -1033,18 +1038,17 @@ name = "opengrid-planner"
 version = "0.5.0"
 dependencies = [
  "opengrid-datasource",
+ "opengrid-json",
  "opengrid-query",
  "opengrid-types",
- "serde_json",
 ]
 
 [[package]]
 name = "opengrid-query"
 version = "0.5.0"
 dependencies = [
+ "opengrid-json",
  "opengrid-types",
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -1060,11 +1064,10 @@ dependencies = [
  "opengrid-datasource-postgres",
  "opengrid-engine",
  "opengrid-export",
+ "opengrid-json",
  "opengrid-pivot",
  "opengrid-query",
  "opengrid-types",
- "serde",
- "serde_json",
  "tokio",
  "tokio-postgres",
  "tower",
@@ -1075,8 +1078,7 @@ dependencies = [
 name = "opengrid-types"
 version = "0.5.0"
 dependencies = [
- "serde",
- "serde_json",
+ "opengrid-json",
 ]
 
 [[package]]
@@ -1087,11 +1089,10 @@ dependencies = [
  "opengrid-conformance",
  "opengrid-datasource",
  "opengrid-engine",
+ "opengrid-json",
  "opengrid-planner",
  "opengrid-query",
  "opengrid-types",
- "serde",
- "serde_json",
  "wasm-bindgen",
  "wasm-bindgen-test",
  "xtask",
@@ -1106,11 +1107,11 @@ dependencies = [
  "opengrid-datasource",
  "opengrid-export",
  "opengrid-grid",
+ "opengrid-json",
  "opengrid-pivot",
  "opengrid-query",
  "opengrid-types",
  "opengrid-web-core",
- "serde_json",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",

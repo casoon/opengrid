@@ -13,7 +13,7 @@
 //! point 54 a field may also carry `"from"` and be computed rather than stored.
 //!
 //! **This is no longer a reader.** Until point 23 the module held its own structs,
-//! because `opengrid_types::Schema` had no serde impls and the wire form was not
+//! because `opengrid_types::Schema` had no JSON form of its own and the wire form was not
 //! decided yet; the doc comment said they would collapse into one once it was.
 //! E17 decided it, so what is left here is the thin part that was never shared:
 //! turning a parse failure into a sentence a person can act on, and checking the
@@ -27,7 +27,7 @@ use opengrid_types::Schema;
 /// The error is the diagnosis, ready to be shown to the user: a hand-edited
 /// schema is the normal input here.
 pub fn from_json(json: &str) -> Result<Schema, String> {
-    let schema: Schema = serde_json::from_str(json).map_err(|error| error.to_string())?;
+    let schema: Schema = opengrid_json::from_str(json).map_err(|error| error.to_string())?;
     schema.check().map_err(|error| error.to_string())?;
     Ok(schema)
 }

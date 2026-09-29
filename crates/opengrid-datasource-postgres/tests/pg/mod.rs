@@ -51,7 +51,7 @@ pub fn fixture_rows(schema: &Schema) -> QueryResult {
         .iter()
         .map(|field| format!("\"{}\"", field.name.as_str()))
         .collect();
-    let query: Query = serde_json::from_str(&format!(
+    let query: Query = opengrid_json::from_str(&format!(
         r#"{{"source":"orders","select":[{}]}}"#,
         select.join(",")
     ))

@@ -39,7 +39,7 @@ fn everything(csv: &str) -> QueryResult {
     let schema = xtask::orders_schema();
     let table = load_csv(csv.as_bytes(), &schema, IngestOptions::default()).expect("ingest");
     let source = LocalDataSource::new(table);
-    let query: Query = serde_json::from_value(serde_json::json!({
+    let query: Query = opengrid_json::FromJson::from_json(&opengrid_json::json!({
         "source": "orders",
         "select": STORED,
         "sort": [{ "field": "id", "direction": "asc" }],
@@ -78,7 +78,7 @@ fn a_json_export_is_one_array_of_every_row() {
     let original = everything(&xtask::orders_csv(500, 3));
     let mut writer = JsonWriter::new();
     let json = writer.write(&original) + &writer.finish();
-    let rows: Vec<serde_json::Value> = serde_json::from_str(&json).expect("valid JSON");
+    let rows: Vec<opengrid_json::Json> = opengrid_json::from_str(&json).expect("valid JSON");
     assert_eq!(rows.len(), 500);
     // Keys in the order of the columns, values in the wire notation.
     // Keys in the order of the columns (read from the text: a parsed map

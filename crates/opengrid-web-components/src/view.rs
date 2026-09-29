@@ -37,7 +37,7 @@
 //! attribute. Gathering and restoring that is exactly the work this module
 //! names, and the element glue is the only place that knows all four.
 
-use serde_json::{Map, Value};
+use opengrid_json::{Json as Value, Object as Map};
 
 use crate::columns::ColumnLayout;
 use crate::grid::{FilterEntry, FilterOp};
@@ -475,7 +475,7 @@ mod tests {
             expanded: vec![vec![Value::Null], vec![Value::String("Alpha".to_owned())]],
             aggregates: vec![("amount".to_owned(), "avg".to_owned())],
             filter_row: false,
-            facets: serde_json::json!({ "customer": { "values": [null, "Alpha"] } }),
+            facets: opengrid_json::json!({ "customer": { "values": [null, "Alpha"] } }),
         }
     }
 
@@ -507,19 +507,19 @@ mod tests {
         for field in ["group", "expanded", "facets"] {
             assert!(json.get(field).is_some(), "{field} is missing from a view");
         }
-        assert_eq!(json["group"], serde_json::json!(["customer"]));
+        assert_eq!(json["group"], opengrid_json::json!(["customer"]));
         // A NULL key is a key: the NULL group can be open like any other.
-        assert_eq!(json["expanded"][0], serde_json::json!([null]));
+        assert_eq!(json["expanded"][0], opengrid_json::json!([null]));
     }
 
     /// An aggregate that is not one, or on a column that is not there, is named.
     #[test]
     fn a_wrong_aggregate_is_refused() {
         for aggregates in [
-            serde_json::json!({ "amount": "median" }),
-            serde_json::json!({ "nope": "sum" }),
+            opengrid_json::json!({ "amount": "median" }),
+            opengrid_json::json!({ "nope": "sum" }),
         ] {
-            let json = serde_json::json!({ "aggregates": aggregates });
+            let json = opengrid_json::json!({ "aggregates": aggregates });
             let problems = GridView::from_json(&json, &declared()).expect_err("is refused");
             assert_eq!(problems[0].field, "aggregates");
         }
@@ -529,10 +529,10 @@ mod tests {
     #[test]
     fn a_grouping_the_grid_cannot_have_is_refused() {
         for group in [
-            serde_json::json!(["nope"]),
-            serde_json::json!(["id", "customer", "amount"]),
+            opengrid_json::json!(["nope"]),
+            opengrid_json::json!(["id", "customer", "amount"]),
         ] {
-            let json = serde_json::json!({ "group": group });
+            let json = opengrid_json::json!({ "group": group });
             let problems = GridView::from_json(&json, &declared()).expect_err("is refused");
             assert_eq!(problems[0].field, "group");
         }
@@ -542,7 +542,7 @@ mod tests {
     /// reported, not half-applied.
     #[test]
     fn an_unknown_column_is_named_everywhere_it_appears() {
-        let json = serde_json::json!({
+        let json = opengrid_json::json!({
             "sort": [{ "field": "nope", "direction": "asc" }],
             "filters": [{ "column": "nope", "op": "eq", "value": "x" }],
             "columns": { "order": ["nope"], "hidden": ["nope"], "widths": { "nope": 100 } },
@@ -565,7 +565,7 @@ mod tests {
     /// ascending would look like it worked.
     #[test]
     fn a_direction_that_is_neither_is_refused() {
-        let json = serde_json::json!({ "sort": [{ "field": "id", "direction": "sideways" }] });
+        let json = opengrid_json::json!({ "sort": [{ "field": "id", "direction": "sideways" }] });
         let problems = GridView::from_json(&json, &declared()).expect_err("is refused");
         assert_eq!(problems.len(), 1);
         assert!(problems[0].reason.contains("sideways"));
@@ -575,7 +575,7 @@ mod tests {
     /// one rule, in one place.
     #[test]
     fn an_unknown_density_is_the_normal_one() {
-        let json = serde_json::json!({ "density": "roomy" });
+        let json = opengrid_json::json!({ "density": "roomy" });
         let view = GridView::from_json(&json, &declared()).expect("reads");
         assert_eq!(view.density, "normal");
     }
@@ -586,7 +586,7 @@ mod tests {
     fn a_view_has_no_selection() {
         let json = filled().to_json();
         assert!(json.get("selection").is_none());
-        let smuggled = serde_json::json!({ "density": "normal", "selection": [1, 2, 3] });
+        let smuggled = opengrid_json::json!({ "density": "normal", "selection": [1, 2, 3] });
         let view = GridView::from_json(&smuggled, &declared()).expect("reads");
         assert_eq!(
             view,

@@ -20,7 +20,7 @@ fn both_forms_answer_the_whole_suite_the_same() {
         .expect("the dataset loads");
 
     for case in &cases {
-        let query = serde_json::to_string(&case.case.query).unwrap();
+        let query = opengrid_json::to_string(&case.case.query);
         let values = engine.execute_result(&query).expect("the engine answers");
         let bytes = engine.execute_columns(&query).expect("the engine answers");
         let (table, total_count) = opengrid_columns::wire::decode_result(&bytes).unwrap();

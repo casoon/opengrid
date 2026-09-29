@@ -231,7 +231,7 @@ pub fn free_text(text: &str, schema: &Schema) -> Option<FilterExpr> {
         .map(|field| FilterExpr::Cmp {
             field,
             op: CmpOp::Contains,
-            value: serde_json::Value::String(text.to_owned()),
+            value: opengrid_json::Json::String(text.to_owned()),
         })
         .collect();
     match parts.len() {

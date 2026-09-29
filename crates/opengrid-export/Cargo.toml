@@ -13,7 +13,7 @@ opengrid-types = { path = "../opengrid-types" }
 opengrid-datasource = { path = "../opengrid-datasource" }
 # The pivot's answer (`PivotResult`), exported as it is shown (issue #3).
 opengrid-pivot = { path = "../opengrid-pivot" }
-serde_json = "1"
+opengrid-json = { path = "../opengrid-json" }
 
 [dev-dependencies]
 # The round trip: an export read back by the engine's own CSV ingest.

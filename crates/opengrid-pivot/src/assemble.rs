@@ -24,9 +24,7 @@ pub(crate) fn same_key(values: &[Value]) -> Key {
             // zeroes that are.
             Value::Float64(number) if number.is_nan() => key.push_str("nan"),
             Value::Float64(number) if *number == 0.0 => key.push('0'),
-            other => {
-                key.push_str(&serde_json::to_string(other).expect("a value serializes into JSON"))
-            }
+            other => key.push_str(&opengrid_json::to_string(other)),
         }
     }
     key
