@@ -38,6 +38,8 @@
         loader.module.set_provider(host, {
           execute: (queryJson) => engine.execute(queryJson),
         });
+        // For the specs that set formats and columns (issue #29).
+        window.__module = loader.module;
         return { fallback: loader.fallback };
       }
 

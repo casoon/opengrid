@@ -183,12 +183,29 @@ fn parts() -> Vec<String> {
             search: true,
         },
     );
-    table::build_table(&mut buffer, &mut nodes, Some("x"), None, None);
+    // The table and the pivot **with** data (issue #29): their header, row
+    // and cell parts only exist once there is something to show.
+    let table_model = table::model(
+        &table::parse_result(
+            r#"{"total_count":1,"row_count":1,"columns":[
+                {"name":"qty","type":"int64","nullable":false,"values":[1]}]}"#,
+        )
+        .expect("a result"),
+        &table::PlainLook,
+    );
+    table::build_table(&mut buffer, &mut nodes, Some("x"), Some(&table_model), None);
+    let pivot_model = pivot::parse_result(
+        r#"{"row_dimensions":["country"],"columns":[{"path":[2025],"measure":"n"}],
+            "levels":[1,0],"result":{"total_count":2,"row_count":2,"columns":[
+            {"name":"country","type":"utf8","nullable":true,"values":["DE",null]},
+            {"name":"n_0","type":"int64","nullable":true,"values":[1,1]}]}}"#,
+    )
+    .expect("a pivot");
     pivot::build_pivot(
         &mut buffer,
         &mut nodes,
         Some("x"),
-        None,
+        Some(&pivot_model),
         "",
         "ready",
         &texts,
@@ -316,14 +333,14 @@ custom properties (computed)
   --og-accent-soft --og-accent-ink --og-selected --og-hover
 
 parts
-  add-filter add-grouping body cell chip chip-remove chips chips-clear column-menu \
+  add-filter add-grouping body caption cell chip chip-remove chips chips-clear column-menu \
 column-menu-button column-toggle columns columns-toggle density editor empty empty-reset \
-empty-text facet facet-bounds facet-cost facet-count facet-pill facet-pills facet-value facets \
-facets-head facets-toggle filter filter-clear filter-dialog filter-operator filter-row-toggle \
-filter-value footer grouping-menu header layout menu-label \
-page-first page-label page-last page-next page-previous pager row search search-hint \
-search-input search-list select select-all select-mark sort-direction sort-index source status toolbar \
-total-row viewport
+empty-text facet facet-bounds facet-cost facet-count facet-pill facet-pills facet-value \
+facets facets-head facets-toggle filter filter-clear filter-dialog filter-operator \
+filter-row-toggle filter-value footer grouping-menu header layout menu-label page-first \
+page-label page-last page-next page-previous pager row row-header search search-hint \
+search-input search-list select select-all select-mark sort-button sort-direction \
+sort-index source status table toolbar total-row viewport
 
 text keys
   addFilter addFilterTitle addGrouping aggregateAvg aggregateCell aggregateCount aggregateGroup aggregateMax aggregateMin \
