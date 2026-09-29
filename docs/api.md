@@ -236,6 +236,15 @@ voice per row would double every announcement.
 Column visibility is a disclosure in the filter row: a checkbox per column,
 including the hidden ones — otherwise there would be no way back.
 
+**The filter row's fields** follow the column's type: text for text, a number
+field for numbers, a date field for dates (a timestamp is typed as text), a
+choice of *any / yes / no* for booleans. The date field is the browser's own `<input type="date">`, so it
+shows dates the way the **reader's** system writes them (`dd.mm.yyyy` on a
+German one), whatever the page's language, and it brings the browser's picker
+and its keyboard and screen-reader support. The value it gives the query is
+always `YYYY-MM-DD`. This is deliberate: the reader's own format is the one
+they read and type fastest.
+
 **Formatting** is display only and never reaches a query:
 
 ```js
