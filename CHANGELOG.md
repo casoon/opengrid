@@ -18,6 +18,13 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+### Fixed
+
+- **`<opengrid-table>` says it is loading** ([#86](https://github.com/casoon/opengrid/issues/86)).
+  Until its first answer it was a table with a caption and no rows, which a screen reader
+  couldn't tell from an empty one. The waiting table now carries `aria-busy="true"`, and
+  the table with its answer doesn't.
+
 ## [0.5.0] — 2026-09-28
 
 **Screen-reader pairings tested: none yet** — unchanged since 0.1.0
