@@ -12,7 +12,7 @@ export default defineConfig({
       description:
         'A portable Rust/WASM data and query engine, with an accessible data grid, table and pivot delivered as Web Components.',
       repo: 'casoon/opengrid',
-      version: '0.5.0',
+      version: '0.6.0',
       license: 'MIT OR Apache-2.0',
       // Not published yet: no crates.io, npm or docs.rs links until a release exists.
       packages: [],
