@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>opengrid light DOM fixture</title>
+    <style>
+      opengrid-grid {
+        display: block;
+        height: 300px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid light DOM fixture</h1>
+      <!-- Issue #84: the page writes its data as a plain table inside the
+           element. Without script that is what everyone reads; once the element
+           has rendered, its shadow root replaces it. -->
+      <opengrid-table label="Bestellungen" datasource="orders" columns="customer,amount,qty">
+        <table>
+          <caption>Bestellungen</caption>
+          <thead>
+            <tr><th scope="col">customer</th><th scope="col">amount</th><th scope="col">qty</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Aus dem HTML A</td><td>10.00</td><td>1</td></tr>
+            <tr><td>Aus dem HTML B</td><td>20.00</td><td>2</td></tr>
+          </tbody>
+        </table>
+      </opengrid-table>
+      <opengrid-grid label="Raster" datasource="orders" columns="customer,amount,qty">
+        <table>
+          <caption>Raster</caption>
+          <thead>
+            <tr><th scope="col">customer</th><th scope="col">amount</th><th scope="col">qty</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Aus dem HTML C</td><td>30.00</td><td>3</td></tr>
+          </tbody>
+        </table>
+      </opengrid-grid>
+      <opengrid-table label="Leer" id="empty"></opengrid-table>
+    </main>
+    <script type="module">
+      import { loadOpengrid } from "/packages/opengrid/loader.js";
+      import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+
+      async function start() {
+        // `?fallback`: the element module cannot be loaded.
+        const loader = await loadOpengrid(
+          location.search.includes("fallback")
+            ? { moduleUrl: "/nowhere/opengrid_web_components.js" }
+            : {},
+        );
+        if (loader.fallback) return loader;
+        await init();
+        const engine = new Engine();
+        const schema = await (await fetch("/tests/e2e/fixtures/orders.schema.json")).text();
+        const csv = await (await fetch("/tests/e2e/fixtures/orders.csv")).arrayBuffer();
+        engine.load_csv("orders", new Uint8Array(csv), schema);
+        const provider = { execute: (queryJson) => engine.execute(queryJson) };
+        for (const host of document.querySelectorAll("[datasource]")) {
+          loader.module.set_provider(host, provider);
+        }
+        return loader;
+      }
+      window.__opengridReady = start();
+    </script>
+  </body>
+</html>
