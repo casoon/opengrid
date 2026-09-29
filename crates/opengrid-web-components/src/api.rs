@@ -660,9 +660,9 @@ totalRow typeBool typeDate typeInteger typeNumber typeText typeTime ungroupColum
             "the wire's variants, in order"
         );
         for name in SERVER_ERROR_CODES {
-            let code: ErrorCode = serde_json::from_str(&format!("\"{name}\""))
+            let code: ErrorCode = opengrid_json::from_str(&format!("\"{name}\""))
                 .unwrap_or_else(|_| panic!("not a wire code: {name}"));
-            assert_eq!(serde_json::to_string(&code).unwrap(), format!("\"{name}\""));
+            assert_eq!(opengrid_json::to_string(&code), format!("\"{name}\""));
         }
     }
 

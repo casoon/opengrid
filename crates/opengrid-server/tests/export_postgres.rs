@@ -126,7 +126,7 @@ async fn app_with(
     application: &str,
     settings: impl FnOnce(ServerBuilder) -> ServerBuilder,
 ) -> axum::Router {
-    let schema: Schema = serde_json::from_str(
+    let schema: Schema = opengrid_json::from_str(
         r#"{ "fields": [
             { "name": "id", "type": "int64", "nullable": false },
             { "name": "country", "type": "utf8", "nullable": true },

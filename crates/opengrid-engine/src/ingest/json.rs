@@ -5,14 +5,14 @@
 //! are errors, not guesses: an unknown field is rejected the same way the query
 //! reader rejects it.
 
+use opengrid_json::Json;
 use opengrid_types::{Schema, Value};
-use serde_json::Value as Json;
 
 use super::{IngestError, cell, check_null};
 
 /// Reads a JSON array of objects into rows of typed values.
 pub(crate) fn rows(text: &str, schema: &Schema) -> Result<Vec<Vec<Value>>, IngestError> {
-    let parsed: Json = serde_json::from_str(text).map_err(|error| IngestError::Input {
+    let parsed = Json::parse(text).map_err(|error| IngestError::Input {
         message: format!("input is not JSON: {error}"),
     })?;
     let Json::Array(rows) = parsed else {
@@ -38,9 +38,13 @@ fn one(value: Json, row: usize, schema: &Schema) -> Result<Vec<Value>, IngestErr
     let mut cells = Vec::with_capacity(schema.len());
     for field in schema.fields() {
         let name = field.name.as_str();
-        let value = match object.remove(name) {
+        // A key given twice counts once, the last time — as a JSON reader
+        // customarily takes it.
+        let given = object.remove(name);
+        while object.remove(name).is_some() {}
+        let value = match given {
             Some(cell) => {
-                cell::from_json(cell, field.data_type).map_err(|message| IngestError::Json {
+                cell::from_json(&cell, field.data_type).map_err(|message| IngestError::Json {
                     row,
                     field: Some(name.to_owned()),
                     message,
@@ -56,12 +60,12 @@ fn one(value: Json, row: usize, schema: &Schema) -> Result<Vec<Value>, IngestErr
             })?,
         );
     }
-    // serde_json keeps object keys sorted, so which field is reported for a row
-    // with several unknown fields does not depend on hash order.
-    if let Some((unknown, _)) = object.into_iter().next() {
+    // Of several unknown fields the first in name order is reported, so the
+    // message does not depend on how the object was written.
+    if let Some(unknown) = object.keys().min() {
         return Err(IngestError::Json {
             row,
-            field: Some(unknown),
+            field: Some(unknown.to_owned()),
             message: "unknown field".to_owned(),
         });
     }

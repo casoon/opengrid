@@ -50,11 +50,11 @@ fn engine() -> Engine {
 
 /// Runs one committed case and fails with the suite's own diagnosis.
 fn check(case_json: &str) {
-    let case: Case = serde_json::from_str(case_json).expect("the case parses");
+    let case: Case = opengrid_json::from_str(case_json).expect("the case parses");
     let schema = opengrid_wasm::schema_json::from_json(ORDERS_SCHEMA).expect("the schema parses");
     let checked = check_case(case, &schema).expect("the case validates against the schema");
 
-    let query_json = serde_json::to_string(&checked.case.query).expect("the query serializes");
+    let query_json = opengrid_json::to_string(&checked.case.query);
     let result = engine()
         .execute_result(&query_json)
         .expect("the query runs against the WASM engine");

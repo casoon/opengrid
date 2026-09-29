@@ -2174,11 +2174,9 @@ fn end_edit(host: &HtmlElement, commit: bool) {
         // One notation: the same parser the filter row and the wire format use,
         // so a value typed into a cell means what it would have meant anywhere
         // else (E13, S8, S9).
-        match grid::literal(text, data_type).and_then(|json| {
-            let text = json.to_string();
-            let mut deserializer = serde_json::Deserializer::from_str(&text);
-            Value::deserialize_typed(&mut deserializer, &data_type).ok()
-        }) {
+        match grid::literal(text, data_type)
+            .and_then(|json| Value::from_json_typed(&json, &data_type).ok())
+        {
             Some(value) => {
                 let previous = runtime
                     .borrow()
@@ -3229,12 +3227,12 @@ pub(crate) fn read_view(host: &HtmlElement) -> JsValue {
     to_js(&view.to_json())
 }
 
-/// A `serde_json::Value` as a real JS value, through `JSON.parse`.
+/// A `opengrid_json::Json` as a real JS value, through `JSON.parse`.
 ///
-/// Not `serde-wasm-bindgen`: the crate has `serde_json` already and this is the
-/// only place that needs the bridge — a dependency for one conversion is not
+/// Not a bridge crate: the JSON codec is here already and this is the only
+/// place that needs the conversion — a dependency for one conversion is not
 /// one this project takes.
-fn to_js(value: &serde_json::Value) -> JsValue {
+fn to_js(value: &opengrid_json::Json) -> JsValue {
     js_sys::JSON::parse(&value.to_string()).unwrap_or(JsValue::NULL)
 }
 
@@ -3246,7 +3244,7 @@ pub(crate) fn write_view(host: &HtmlElement, value: &JsValue) {
     let Ok(text) = js_sys::JSON::stringify(value).map(String::from) else {
         return;
     };
-    let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) else {
+    let Ok(json) = opengrid_json::Json::parse(&text) else {
         return;
     };
 
@@ -5101,8 +5099,8 @@ fn facet_chip_text(
                         .and_then(|domain| domain.iter().find(|group| &group.key == key))
                         .map(|group| group.value.clone())
                         .unwrap_or_else(|| match key {
-                            serde_json::Value::Null => Value::Null,
-                            serde_json::Value::String(text) => Value::Utf8(text.clone()),
+                            opengrid_json::Json::Null => Value::Null,
+                            opengrid_json::Json::String(text) => Value::Utf8(text.clone()),
                             other => Value::Utf8(other.to_string()),
                         });
                     facet_label(host, column, &value, schema)
@@ -5359,7 +5357,7 @@ fn draw_facets(host: &HtmlElement, root: &ShadowRoot) {
                 continue;
             };
             let key = item.get_attribute("data-key").unwrap_or_default();
-            let parsed = serde_json::from_str::<serde_json::Value>(&key).ok();
+            let parsed = opengrid_json::Json::parse(&key).ok();
             let chosen = matches!(selection, crate::facets::Selection::Values(values)
                 if values.iter().any(|value| Some(value) == parsed.as_ref()));
             if let Ok(input) = item.clone().dyn_into::<HtmlInputElement>() {
@@ -5470,7 +5468,7 @@ fn toggle_facet_value(host: &HtmlElement, pill: &Element) {
 }
 
 fn toggle_key(runtime: &Rc<RefCell<GridRuntime>>, column: &str, key: &str) {
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(key) else {
+    let Ok(value) = opengrid_json::Json::parse(key) else {
         return;
     };
     for (name, selection) in runtime.borrow_mut().facets.iter_mut() {

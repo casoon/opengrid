@@ -1,5 +1,3 @@
-use serde::{Deserialize, Serialize};
-
 use crate::{DataType, FieldName, SchemaError, Value};
 
 /// The part of a date or timestamp a column can be derived from (plan point 54).
@@ -8,8 +6,7 @@ use crate::{DataType, FieldName, SchemaError, Value};
 /// no calculated fields, and the two parts here exist because a pivot by year
 /// or month is otherwise not expressible at all
 /// (plan/spezifikation/06-pivot.md).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DatePart {
     /// The civil year in UTC, e.g. `2026`.
     Year,
@@ -52,8 +49,7 @@ impl DatePart {
 /// Where a field's values come from, when they are not in the data (point 54).
 ///
 /// JSON form: `"from": { "part": "year", "field": "ordered_on" }`.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Derivation {
     pub part: DatePart,
     pub field: FieldName,
@@ -71,16 +67,12 @@ pub struct Derivation {
 /// — validation, the planner, filters, sorting, the grid — sees an ordinary
 /// column, which is the whole point of putting the derivation here instead of
 /// into the query model.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Field {
     pub name: FieldName,
-    #[serde(rename = "type")]
     pub data_type: DataType,
-    #[serde(default)]
     pub nullable: bool,
     /// The field this one is computed from, if it is not in the data.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub from: Option<Derivation>,
 }
 
@@ -129,8 +121,7 @@ impl Field {
 /// An ordered list of [`Field`]s, looked up by name.
 ///
 /// JSON form: `{ "fields": [ … ] }` (plan point 23).
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Schema {
     fields: Vec<Field>,
 }
@@ -392,16 +383,16 @@ mod tests {
     /// The JSON form of an ordinary field is unchanged — no `from` key appears.
     #[test]
     fn only_a_derived_field_carries_its_origin() {
-        let plain = serde_json::to_string(&Field::required(name("id"), DataType::Int64)).unwrap();
+        let plain = opengrid_json::to_string(&Field::required(name("id"), DataType::Int64));
         assert_eq!(plain, r#"{"name":"id","type":"int64","nullable":false}"#);
 
         let derived = Field::derived(name("ordered_year"), DatePart::Year, name("ordered_on"));
-        let json = serde_json::to_string(&derived).unwrap();
+        let json = opengrid_json::to_string(&derived);
         assert_eq!(
             json,
             r#"{"name":"ordered_year","type":"int64","nullable":true,"from":{"part":"year","field":"ordered_on"}}"#
         );
-        assert_eq!(serde_json::from_str::<Field>(&json).unwrap(), derived);
+        assert_eq!(opengrid_json::from_str::<Field>(&json).unwrap(), derived);
     }
 
     #[test]

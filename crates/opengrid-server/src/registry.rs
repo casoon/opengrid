@@ -321,8 +321,8 @@ fn build_row_filter(
 
     let value = match filter.value.strip_prefix(':') {
         // A literal, read as JSON so a number stays a number.
-        None => serde_json::from_str(&filter.value)
-            .unwrap_or_else(|_| serde_json::Value::String(filter.value.clone())),
+        None => opengrid_json::Json::parse(&filter.value)
+            .unwrap_or_else(|_| opengrid_json::Json::from(filter.value.as_str())),
         Some(key) => {
             let resolved = context.get(key).ok_or_else(|| {
                 // The caller's token carries no such context value. That is a
@@ -332,7 +332,7 @@ fn build_row_filter(
                     "the token carries no context value {key:?} for the mandatory row filter"
                 ))
             })?;
-            serde_json::Value::String(resolved.clone())
+            opengrid_json::Json::from(resolved.as_str())
         }
     };
 

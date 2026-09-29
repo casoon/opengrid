@@ -6,9 +6,9 @@ use opengrid_types::{DataType, Date, Decimal, Timestamp, Value};
 /// Serializes a value to its JSON representation and reads it back using the
 /// given column type.
 fn roundtrip(value: &Value, data_type: DataType) -> Value {
-    let json = serde_json::to_string(value).expect("serialize");
-    let mut deserializer = serde_json::Deserializer::from_str(&json);
-    Value::deserialize_typed(&mut deserializer, &data_type).expect("deserialize")
+    let json = opengrid_json::to_string(value);
+    Value::from_json_typed(&opengrid_json::Json::parse(&json).unwrap(), &data_type)
+        .expect("deserialize")
 }
 
 fn assert_roundtrip(value: Value, data_type: DataType) {
@@ -80,32 +80,45 @@ fn decimal_boundaries_roundtrip() {
 
 #[test]
 fn decimal_is_serialized_as_string() {
-    let json = serde_json::to_string(&Value::Decimal(Decimal::new(12345, 2))).unwrap();
+    let json = opengrid_json::to_string(&Value::Decimal(Decimal::new(12345, 2)));
     assert_eq!(json, "\"123.45\"");
 }
 
 #[test]
 fn decimal_is_rescaled_to_the_column_scale() {
-    let mut deserializer = serde_json::Deserializer::from_str("\"123.450\"");
-    let value = Value::deserialize_typed(&mut deserializer, &DataType::decimal(6, 2).unwrap())
-        .expect("rescale down");
+    let value = Value::from_json_typed(
+        &opengrid_json::Json::parse("\"123.450\"").unwrap(),
+        &DataType::decimal(6, 2).unwrap(),
+    )
+    .expect("rescale down");
     assert_eq!(value, Value::Decimal(Decimal::new(12345, 2)));
 
-    let mut deserializer = serde_json::Deserializer::from_str("\"5\"");
-    let value = Value::deserialize_typed(&mut deserializer, &DataType::decimal(6, 2).unwrap())
-        .expect("rescale up");
+    let value = Value::from_json_typed(
+        &opengrid_json::Json::parse("\"5\"").unwrap(),
+        &DataType::decimal(6, 2).unwrap(),
+    )
+    .expect("rescale up");
     assert_eq!(value, Value::Decimal(Decimal::new(500, 2)));
 }
 
 #[test]
 fn decimal_rejects_lossy_rescale_and_precision_overflow() {
-    let mut lossy = serde_json::Deserializer::from_str("\"123.456\"");
-    assert!(Value::deserialize_typed(&mut lossy, &DataType::decimal(6, 2).unwrap()).is_err());
+    assert!(
+        Value::from_json_typed(
+            &opengrid_json::Json::parse("\"123.456\"").unwrap(),
+            &DataType::decimal(6, 2).unwrap()
+        )
+        .is_err()
+    );
 
     // 39 digits exceed the 38-digit cap.
-    let mut too_big =
-        serde_json::Deserializer::from_str("\"999999999999999999999999999999999999999\"");
-    assert!(Value::deserialize_typed(&mut too_big, &DataType::decimal(38, 0).unwrap()).is_err());
+    assert!(
+        Value::from_json_typed(
+            &opengrid_json::Json::parse("\"999999999999999999999999999999999999999\"").unwrap(),
+            &DataType::decimal(38, 0).unwrap()
+        )
+        .is_err()
+    );
 }
 
 #[test]
@@ -146,9 +159,8 @@ fn type_mismatches_are_rejected() {
         ("\"not-a-date\"", DataType::Date),
         ("\"2024-01-15\"", DataType::Timestamp),
     ] {
-        let mut deserializer = serde_json::Deserializer::from_str(json);
         assert!(
-            Value::deserialize_typed(&mut deserializer, &ty).is_err(),
+            Value::from_json_typed(&opengrid_json::Json::parse(json).unwrap(), &ty).is_err(),
             "{json} should not be accepted as {ty}"
         );
     }

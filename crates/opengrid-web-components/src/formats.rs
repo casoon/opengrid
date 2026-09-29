@@ -225,10 +225,8 @@ mod host {
                 // No format for this column: no boundary crossing (R1).
                 return plain;
             };
-            let json = serde_json::to_string(value)
-                .ok()
-                .and_then(|text| js_sys::JSON::parse(&text).ok())
-                .unwrap_or(JsValue::NULL);
+            let json =
+                js_sys::JSON::parse(&opengrid_json::to_string(value)).unwrap_or(JsValue::NULL);
             function
                 .call2(&JsValue::NULL, &JsValue::from_str(&plain), &json)
                 .ok()

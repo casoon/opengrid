@@ -35,12 +35,11 @@ fn plain(value: &Value) -> Option<String> {
         Value::Null => return None,
         Value::Bool(flag) => flag.to_string(),
         Value::Int64(number) => number.to_string(),
-        // serde_json writes the shortest text that reads back to the same f64,
-        // and spells the non-finite ones the way the wire does (E13).
-        Value::Float64(_) => match serde_json::to_value(value) {
-            Ok(serde_json::Value::String(name)) => name,
-            Ok(number) => number.to_string(),
-            Err(error) => unreachable!("a float serializes: {error}"),
+        // The wire's spelling: the shortest text that reads back to the same
+        // f64, and the non-finite ones as the wire names them (E13).
+        Value::Float64(_) => match opengrid_json::ToJson::to_json(value) {
+            opengrid_json::Json::String(name) => name,
+            number => number.to_string(),
         },
         Value::Decimal(decimal) => decimal.to_string(),
         Value::Utf8(text) => text.clone(),

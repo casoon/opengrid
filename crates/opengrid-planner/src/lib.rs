@@ -424,7 +424,7 @@ mod tests {
 
     /// A query with filter, sort and paging.
     fn query(json: &str) -> ValidatedQuery {
-        let query: Query = serde_json::from_str(json).expect("valid query JSON");
+        let query: Query = opengrid_json::from_str(json).expect("valid query JSON");
         query
             .validate(&schema(), &Limits::default())
             .expect("a valid query")

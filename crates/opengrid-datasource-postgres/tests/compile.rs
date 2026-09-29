@@ -298,7 +298,7 @@ fn a_pivot_compiles_into_one_statement() {
 
     let mut report = String::new();
     for (title, json) in pivots {
-        let pivot: PivotQuery = serde_json::from_str(json).expect("a pivot");
+        let pivot: PivotQuery = opengrid_json::from_str(json).expect("a pivot");
         let validated = pivot
             .validate(&schema, &PivotLimits::default(), &Limits::default())
             .expect("valid");

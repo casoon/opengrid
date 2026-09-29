@@ -38,8 +38,8 @@ use std::collections::BTreeSet;
 use opengrid_query::{CmpOp, FilterExpr};
 
 use crate::presentation::Summary;
+use opengrid_json::Json;
 use opengrid_types::{DataType, FieldName, Value};
-use serde_json::Value as Json;
 
 /// The most levels a grid groups by. The prototype has two, and a third would
 /// need a tree in the UI that nobody has designed (point 62 §Nicht Teil).
@@ -84,7 +84,7 @@ pub fn parse_group_by(raw: Option<&str>) -> Result<Vec<String>, String> {
 
 /// The identity of a group: the canonical JSON text of each key on its path.
 ///
-/// Text rather than `serde_json::Value`, because a path has to live in a set
+/// Text rather than `opengrid_json::Json`, because a path has to live in a set
 /// and `Value` is neither `Ord` nor `Hash`. Canonical because
 /// `Value::to_string` always writes the same value the same way.
 pub type Path = Vec<String>;
@@ -108,7 +108,7 @@ pub struct Group {
 
 impl Group {
     pub fn new(value: Value, count: u64) -> Self {
-        let key = serde_json::to_value(&value).unwrap_or(Json::Null);
+        let key = opengrid_json::ToJson::to_json(&&value);
         Self {
             key,
             value,
@@ -285,7 +285,7 @@ impl Grouping {
             .iter()
             .map(|path| {
                 path.iter()
-                    .map(|id| serde_json::from_str(id).unwrap_or(Json::Null))
+                    .map(|id| opengrid_json::from_str(id).unwrap_or(Json::Null))
                     .collect()
             })
             .collect()
@@ -554,7 +554,7 @@ pub fn aggregate_alias(index: usize) -> String {
 }
 
 fn aggregate_list(aggregates: &[(String, Summary)]) -> Vec<Json> {
-    let mut list = vec![serde_json::json!({ "fn": "count", "as": COUNT_ALIAS })];
+    let mut list = vec![opengrid_json::json!({ "fn": "count", "as": COUNT_ALIAS })];
     let functions = aggregates.iter().flat_map(|(column, summary)| {
         summary
             .functions()
@@ -562,7 +562,7 @@ fn aggregate_list(aggregates: &[(String, Summary)]) -> Vec<Json> {
             .map(move |function| (column, function))
     });
     for (index, (column, function)) in functions.enumerate() {
-        list.push(serde_json::json!({
+        list.push(opengrid_json::json!({
             "fn": function.as_str(),
             "field": column,
             "as": aggregate_alias(index),
@@ -612,7 +612,7 @@ pub fn group_query_json(
     ];
     select
         .extend((0..aggregate_width(aggregates)).map(|index| Json::String(aggregate_alias(index))));
-    let mut query = serde_json::json!({
+    let mut query = opengrid_json::json!({
         "source": source,
         "group": [column],
         "aggregate": aggregate_list(aggregates),
@@ -620,7 +620,7 @@ pub fn group_query_json(
         "sort": [{ "field": column, "direction": "asc", "nulls": "last" }],
     });
     if let Some(filter) = filter {
-        query["filter"] = serde_json::to_value(filter).expect("a filter expression serializes");
+        query["filter"] = opengrid_json::ToJson::to_json(&filter);
     }
     query.to_string()
 }
@@ -635,13 +635,13 @@ pub fn total_query_json(
     let mut select = vec![Json::String(COUNT_ALIAS.to_owned())];
     select
         .extend((0..aggregate_width(aggregates)).map(|index| Json::String(aggregate_alias(index))));
-    let mut query = serde_json::json!({
+    let mut query = opengrid_json::json!({
         "source": source,
         "aggregate": aggregate_list(aggregates),
         "select": select,
     });
     if let Some(filter) = filter {
-        query["filter"] = serde_json::to_value(filter).expect("a filter expression serializes");
+        query["filter"] = opengrid_json::ToJson::to_json(&filter);
     }
     query.to_string()
 }
@@ -1054,11 +1054,11 @@ mod tests {
             ),
         ];
         let grouped: Json =
-            serde_json::from_str(&group_query_json("orders", "country", None, &aggregates))
+            opengrid_json::from_str(&group_query_json("orders", "country", None, &aggregates))
                 .unwrap();
         assert_eq!(
             grouped["select"],
-            serde_json::json!(["country", COUNT_ALIAS, "__og_a0", "__og_a1", "__og_a2"])
+            opengrid_json::json!(["country", COUNT_ALIAS, "__og_a0", "__og_a1", "__og_a2"])
         );
         let asked: Vec<(&str, &str)> = grouped["aggregate"]
             .as_array()
@@ -1109,31 +1109,31 @@ mod tests {
             ),
         ];
         let grouped: Json =
-            serde_json::from_str(&group_query_json("orders", "country", None, &aggregates))
+            opengrid_json::from_str(&group_query_json("orders", "country", None, &aggregates))
                 .unwrap();
         assert_eq!(
             grouped["select"],
-            serde_json::json!(["country", COUNT_ALIAS, "__og_a0", "__og_a1"])
+            opengrid_json::json!(["country", COUNT_ALIAS, "__og_a0", "__og_a1"])
         );
         assert_eq!(grouped["aggregate"][2]["field"], "qty");
         assert_eq!(grouped["aggregate"][2]["fn"], "avg");
 
         let total: Json =
-            serde_json::from_str(&total_query_json("orders", None, &aggregates)).unwrap();
+            opengrid_json::from_str(&total_query_json("orders", None, &aggregates)).unwrap();
         assert!(
             total.get("group").is_none(),
             "the total is one row, not a group"
         );
         assert_eq!(
             total["select"],
-            serde_json::json!([COUNT_ALIAS, "__og_a0", "__og_a1"])
+            opengrid_json::json!([COUNT_ALIAS, "__og_a0", "__og_a1"])
         );
     }
 
     #[test]
     fn the_group_query_puts_null_last_and_has_no_limit() {
         let query: Json =
-            serde_json::from_str(&group_query_json("orders", "country", None, &[])).unwrap();
+            opengrid_json::from_str(&group_query_json("orders", "country", None, &[])).unwrap();
         assert_eq!(query["sort"][0]["nulls"], "last");
         assert!(query.get("limit").is_none());
         assert_eq!(query["aggregate"][0]["as"], COUNT_ALIAS);

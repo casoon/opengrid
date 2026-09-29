@@ -186,7 +186,7 @@ impl Engine {
         query_json: &str,
     ) -> Result<(&LocalDataSource, opengrid_query::ValidatedQuery), String> {
         let query: Query =
-            serde_json::from_str(query_json).map_err(|error| format!("query JSON: {error}"))?;
+            opengrid_json::from_str(query_json).map_err(|error| format!("query JSON: {error}"))?;
         let source = self
             .sources
             .get(query.source.as_str())
@@ -306,7 +306,7 @@ impl Planner {
     ) -> Result<Planner, String> {
         let schema =
             schema_json::from_json(schema_json).map_err(|error| format!("schema: {error}"))?;
-        let capabilities: DataSourceCapabilities = serde_json::from_str(capabilities_json)
+        let capabilities: DataSourceCapabilities = opengrid_json::from_str(capabilities_json)
             .map_err(|error| format!("capabilities: {error}"))?;
         Ok(Planner {
             schema,
@@ -318,7 +318,7 @@ impl Planner {
     /// Splits a query and writes the plan as JSON.
     pub fn plan_json(&self, query_json: &str, mode: &str) -> Result<String, String> {
         let query: Query =
-            serde_json::from_str(query_json).map_err(|error| format!("query JSON: {error}"))?;
+            opengrid_json::from_str(query_json).map_err(|error| format!("query JSON: {error}"))?;
         let validated = query
             .validate(&self.schema, &Limits::default())
             .map_err(|error| error.to_string())?;
@@ -331,7 +331,7 @@ impl Planner {
         let plan = opengrid_planner::plan(&validated, &self.schema, self.capabilities, mode)
             .map_err(|error| error.to_string())?;
 
-        let body = serde_json::json!({
+        let body = opengrid_json::json!({
             "mode": mode.as_str(),
             "describe": plan.describe(),
             "steps": plan.client_steps.iter().map(|step| step.as_str()).collect::<Vec<_>>(),
@@ -350,7 +350,7 @@ impl Planner {
     ) -> Result<Vec<u8>, String> {
         let (table, _) =
             opengrid_columns::wire::decode_result(result).map_err(|error| error.to_string())?;
-        let query: Query = serde_json::from_str(client_query_json)
+        let query: Query = opengrid_json::from_str(client_query_json)
             .map_err(|error| format!("client query JSON: {error}"))?;
         let validated = query
             .validate(table.schema(), &Limits::default())
@@ -370,7 +370,7 @@ impl Planner {
             .map_err(|error| format!("result JSON: {error}"))?;
         let source = LocalDataSource::from_result(&partial).map_err(|error| error.to_string())?;
 
-        let query: Query = serde_json::from_str(client_query_json)
+        let query: Query = opengrid_json::from_str(client_query_json)
             .map_err(|error| format!("client query JSON: {error}"))?;
         let validated = query
             .validate(&partial.schema, &Limits::default())
