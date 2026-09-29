@@ -17,6 +17,9 @@ opengrid-query = { path = "../opengrid-query" }
 opengrid-datasource = { path = "../opengrid-datasource" }
 opengrid-engine = { path = "../opengrid-engine" }
 opengrid-columns = { path = "../opengrid-columns" }
+# Pivots over the in-memory sources (issue #28): the grouping sets run through
+# the same engine, with the server's limits.
+opengrid-pivot = { path = "../opengrid-pivot" }
 opengrid-planner = { path = "../opengrid-planner" }
 opengrid-json = { path = "../opengrid-json" }
 # Pinned to the CLI that builds the module (`just wasm-build`): the glue the

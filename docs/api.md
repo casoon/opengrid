@@ -97,6 +97,11 @@ All from `loader.js`, all the same shape:
 memory, which only grows, and what each loaded source's columns take inside it. Together with
 the grid's `opengrid-query` event it is a page's resource report.
 
+**A pivot without a server.** `<opengrid-pivot>` calls `provider.pivot(pivotJson, mode, { signal })`
+when the provider has it, `execute` otherwise. `createLocalProvider` and `createWorkerProvider`
+have it — the engine answers pivots over its sources (`Engine.pivot`, `Engine.pivot_columns`),
+under the server's default limits — and so does `createPivotProvider`.
+
 Each of them carries a **`kind`** — `"local"`, `"worker"`, `"remote"` (REST and pivot) or
 `"hybrid"` — and a provider of a page's own may too. The grid names it in its footer,
 beside the number of queries asked for what is shown (`worker · wasm · 2 queries`); a
