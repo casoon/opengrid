@@ -18,6 +18,23 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-09-29
+
+**Screen-reader pairings tested: none yet** — the VoiceOver pass is prepared and not yet run
+([issue #5](https://github.com/casoon/opengrid/issues/5)). **Browsers:** Chromium, the whole
+e2e suite. WebKit (Playwright's, not Safari): the whole suite; its one failure, the plain-DOM
+stand-in counting a second table, is fixed in this release (#93). Firefox: **not run**:
+Playwright's Firefox does not start on the release machine.
+
+**What breaks** (details in the entries below):
+- the pivot's `header` part moved from its `<thead>` to each column header cell (#29);
+- in the Rust crates, the opengrid types no longer implement `serde` — read and write them
+  with `opengrid_json` (#41). The npm package's JavaScript API is unchanged apart from
+  additions.
+
+**Module sizes** (brotli, `just measure-modules`): the elements 215.8 → 204.1 KiB, the engine
+124.9 → 115.2 KiB — `serde` left both modules (#41), and the engine now answers pivots (#28).
+
 ### Added
 
 - **Data without JavaScript** ([#84](https://github.com/casoon/opengrid/issues/84)). A page
