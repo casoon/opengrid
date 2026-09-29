@@ -752,6 +752,8 @@ mod tests {
         let model = TableModel {
             columns: vec![ColumnModel {
                 name: "id".to_owned(),
+                title: "id".to_owned(),
+                markers: Vec::new(),
                 values: vec!["1".to_owned()],
             }],
         };
