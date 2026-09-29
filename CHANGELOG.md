@@ -18,6 +18,15 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+### Added
+
+- **Data without JavaScript** ([#84](https://github.com/casoon/opengrid/issues/84)). A page
+  can write its data as a plain `<table>` inside an element. Without script, that's what
+  readers and crawlers see; once the element has rendered, its shadow root replaces it, so
+  nothing is read twice. When the module can't load, the plain-DOM stand-in now shows the
+  page's table (through a `<slot>`) instead of hiding it behind an empty skeleton. The
+  skeleton only shows when there is no table of its own.
+
 ### Fixed
 
 - **`<opengrid-table>` says it is loading** ([#86](https://github.com/casoon/opengrid/issues/86)).

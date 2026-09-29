@@ -54,6 +54,32 @@ so `grid.addEventListener("opengrid-view-change", e => e.detail.view)` knows wha
 which is how the engine can sit in the tab, in a worker, behind HTTP, or be
 split across two of them without the elements knowing.
 
+### Data without JavaScript
+
+The rows exist only once an element has run. A reader or crawler that runs no
+script, and a page whose module failed to load, would see none of them. So a page
+can write its data as a plain table **inside** the element:
+
+```html
+<opengrid-table label="Orders" datasource="orders" columns="id,customer,amount">
+  <table>
+    <caption>Orders</caption>
+    <thead><tr><th scope="col">id</th><th scope="col">customer</th><th scope="col">amount</th></tr></thead>
+    <tbody><tr><td>1</td><td>Alpha</td><td>120.00</td></tr></tbody>
+  </table>
+</opengrid-table>
+```
+
+| When | What is read |
+|---|---|
+| No JavaScript | The page's table, as HTML: headers, rows, caption. |
+| The element has rendered | Its own shadow root. The page's table is not rendered and not in the accessibility tree, so nothing is read twice. |
+| The module could not load | The page's table again: the plain-DOM stand-in shows it in its place, and its empty skeleton only when there is none. |
+
+The element does not read that table: its data comes from the provider. What the
+page puts there is the page's choice, such as the first page of rows or a summary,
+and it should say what it is, with a caption and `scope` on its headers.
+
 ## Providers
 
 All from `loader.js`, all the same shape:
