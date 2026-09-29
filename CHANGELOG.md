@@ -59,8 +59,9 @@ Two things belong in every release entry and are easy to leave out:
   ([#41](https://github.com/casoon/opengrid/issues/41)). `opengrid-json` reads and writes
   every JSON form — query, schema, view, texts, errors, the JSON result — on both sides,
   so the two cannot read the same bytes two ways. `serde` and `serde_json` are gone from
-  both browser modules: the engine module shrinks from 122.6 to 104.2 KiB brotli, the
-  elements' from 211.2 to 198.5 KiB. What is read and refused is what `serde_json` read
+  both browser modules. Against 0.5.0, with everything else in this release (`just
+  measure-modules`, brotli): the elements 215.8 → 204.1 KiB, the engine 124.9 → 115.2 KiB,
+  although the engine now answers pivots too. What is read and refused is what `serde_json` read
   and refused (checked against it as an oracle); what is written is what it wrote, keys
   aside — an object now keeps the order it is written in instead of sorting its keys —
   and one rare case: where a float has two shortest spellings, the one closer to the
