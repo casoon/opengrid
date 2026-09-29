@@ -53,3 +53,26 @@ test("matches the visual baseline", async ({ page, browserName }) => {
     maxDiffPixelRatio: 0.02,
   });
 });
+
+// Issue #86: a table waiting for its rows said nothing — a screen reader met a
+// table without rows and could not tell "loading" from "empty".
+test("a table without its answer yet is busy", async ({ page }) => {
+  const busy = await page.evaluate(
+    () => document.querySelector("opengrid-table").shadowRoot.querySelector("table").getAttribute("aria-busy"),
+  );
+  expect(busy).toBe("true");
+});
+
+test("a table with its answer is no longer busy", async ({ page }) => {
+  await page.goto("/tests/e2e/fixtures/table-data.html");
+  await page.evaluate(() => window.__opengridReady);
+  await expect
+    .poll(() =>
+      page.evaluate(() => document.querySelector("opengrid-table").shadowRoot.querySelectorAll("tbody tr").length),
+    )
+    .toBeGreaterThan(0);
+  const busy = await page.evaluate(() =>
+    document.querySelector("opengrid-table").shadowRoot.querySelector("table").hasAttribute("aria-busy"),
+  );
+  expect(busy).toBe(false);
+});
