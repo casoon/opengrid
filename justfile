@@ -85,7 +85,8 @@ types:
     bash scripts/check-core-install.sh
 
 # Größen der Elementmodule (beide Elemente, nur Grid, nur Pivot) und des Engine-Moduls — roh, gzip,
-# brotli (Punkt 40). Die Zahlen stehen in plan/spezifikation/12-qualitaet.md.
+# brotli (Punkt 40) — und das Budget (Issue #69): scheitert, wenn ein ausgeliefertes Modul über seine
+# Grenze in scripts/module-budget.txt wächst.
 measure-modules:
     bash scripts/measure-modules.sh
 

@@ -73,3 +73,38 @@ node -e '
   console.log("shared, i.e. duplicated by a split (brotli)",
               br(g) + br(p) - br(both), kib(br(g) + br(p) - br(both)));
 ' "$out/both/m_bg.wasm" "$out/grid-only/m_bg.wasm" "$out/pivot-only/m_bg.wasm"
+
+# The budget (issue #69): the shipped modules against their bounds.
+node -e '
+  const fs = require("fs"), zlib = require("zlib");
+  const br = (p) => zlib.brotliCompressSync(fs.readFileSync(p), {
+    params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 11 },
+  }).length;
+  const [budget, both, engine] = process.argv.slice(1);
+  const measured = { "grid+pivot": br(both), engine: br(engine) };
+  const bounds = {};
+  for (const line of fs.readFileSync(budget, "utf8").split("\n")) {
+    const text = line.replace(/#.*/, "").trim();
+    if (!text) continue;
+    const [name, bound] = text.split(/\s+/);
+    bounds[name] = Number(bound);
+  }
+  console.log("");
+  let over = false;
+  for (const [name, size] of Object.entries(measured)) {
+    const bound = bounds[name];
+    if (bound === undefined) {
+      console.log(`budget: ${name} has no bound in scripts/module-budget.txt`);
+      over = true;
+    } else if (size > bound) {
+      console.log(`budget: ${name} is ${size} B, over its bound of ${bound} B`);
+      over = true;
+    } else {
+      console.log(`budget: ${name} ${size} B of ${bound} B`);
+    }
+  }
+  if (over) {
+    console.log("A module grew past its bound: shrink it, or raise the bound with its reason (scripts/module-budget.txt).");
+    process.exit(1);
+  }
+' scripts/module-budget.txt "$out/both/m_bg.wasm" "$out/engine/m_bg.wasm"
