@@ -1,4 +1,5 @@
-//! `opengrid-export` — a query result as CSV or JSON (plan point 83, E33).
+//! `opengrid-export` — a query result as CSV or JSON (plan point 83, E33), and on
+//! the server as XLSX (feature `xlsx`, issue #72).
 //!
 //! One implementation of the notation for every place that exports: the
 //! server streams through it (point 85), the browser calls it through the
@@ -19,10 +20,14 @@
 mod csv;
 mod json;
 mod pivot;
+#[cfg(feature = "xlsx")]
+mod xlsx;
 
 pub use csv::{CsvOptions, CsvWriter, csv_header, csv_rows};
 pub use json::{JsonWriter, json_rows};
 pub use pivot::{PATH_SEPARATOR, PivotLabels, pivot_csv};
+#[cfg(feature = "xlsx")]
+pub use xlsx::{XLSX_MAX_ROWS, XLSX_MEDIA_TYPE, XlsxWriter};
 
 use opengrid_types::Value;
 
