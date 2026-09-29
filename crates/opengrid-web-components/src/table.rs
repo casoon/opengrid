@@ -233,7 +233,8 @@ pub fn build_error(buffer: &mut PatchBuffer, nodes: &mut NodeAllocator, message:
 /// Appends the table to `buffer` and answers its nodes.
 ///
 /// Without a model this is the empty skeleton of point 13 (`<table>` and
-/// `<caption>` only). With a model it adds `<thead>` with one sortable
+/// `<caption>` only), marked `aria-busy` (issue #86): a table without rows says
+/// it is still being filled, rather than being taken for an empty one. With a model it adds `<thead>` with one sortable
 /// `<th scope="col">` per column and the `<tbody>` rows. `sort` names the one
 /// sorted column, if any; every other header gets `aria-sort="none"`.
 pub fn build_table(
@@ -249,6 +250,14 @@ pub fn build_table(
             node: table,
             name: name.to_owned(),
             value: value.to_owned(),
+        });
+    }
+
+    if model.is_none() {
+        buffer.push(Patch::SetAttribute {
+            node: table,
+            name: "aria-busy".to_owned(),
+            value: "true".to_owned(),
         });
     }
 
@@ -585,6 +594,30 @@ mod tests {
             patch,
             Patch::CreateElement { tag, .. }
                 if tag == "thead" || tag == "tbody"
+        )));
+        // Waiting for its rows, and saying so (issue #86).
+        assert!(buffer.patches().iter().any(|patch| matches!(
+            patch,
+            Patch::SetAttribute { name, value, .. } if name == "aria-busy" && value == "true"
+        )));
+    }
+
+    /// A table with its answer is no longer busy.
+    #[test]
+    fn a_table_with_data_is_not_busy() {
+        let model = TableModel {
+            columns: vec![ColumnModel {
+                name: "id".to_owned(),
+                values: vec!["1".to_owned()],
+            }],
+        };
+        let mut nodes = NodeAllocator::new();
+        let mut buffer = PatchBuffer::new();
+        build_table(&mut buffer, &mut nodes, None, Some(&model), None);
+
+        assert!(!buffer.patches().iter().any(|patch| matches!(
+            patch,
+            Patch::SetAttribute { name, .. } if name == "aria-busy"
         )));
     }
 }
