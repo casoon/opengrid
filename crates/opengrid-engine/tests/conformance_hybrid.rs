@@ -168,7 +168,7 @@ fn the_count_belongs_to_the_final_result() {
     use opengrid_query::{Limits, Query};
 
     let schema = common::schema();
-    let query: Query = serde_json::from_str(
+    let query: Query = opengrid_json::from_str(
         r#"{"source":"orders","select":["id"],
             "filter":{"field":"country","op":"eq","value":"DE"},
             "sort":[{"field":"id","direction":"asc"}],
@@ -199,7 +199,7 @@ fn the_explicit_modes_override_what_auto_would_do() {
     use opengrid_query::{Limits, Query};
 
     let schema = common::schema();
-    let query: Query = serde_json::from_str(
+    let query: Query = opengrid_json::from_str(
         r#"{"source":"orders","select":["id"],
             "filter":{"field":"country","op":"eq","value":"DE"},
             "sort":[{"field":"id","direction":"asc"}],

@@ -280,8 +280,7 @@ pub(crate) fn admit(
         )
     })?;
 
-    let query: Query = serde_json::from_slice(body)
-        .map_err(|error| WireError::new(ErrorCode::Malformed, format!("request body: {error}")))?;
+    let query: Query = request_body(body)?;
     if query.source.as_str() != source_name {
         return Err(WireError::at(
             ErrorCode::Validation,
@@ -367,8 +366,7 @@ async fn pivot(
         )
     })?;
 
-    let query: PivotQuery = serde_json::from_slice(&body)
-        .map_err(|error| WireError::new(ErrorCode::Malformed, format!("request body: {error}")))?;
+    let query: PivotQuery = request_body(&body)?;
     if query.source.as_str() != source_name {
         return Err(WireError::at(
             ErrorCode::Validation,
@@ -435,7 +433,7 @@ async fn describe(
         )
     })?;
 
-    let body = serde_json::json!({
+    let body = opengrid_json::json!({
         "name": source.name,
         "schema": source.client_schema,
         "capabilities": source.data.capabilities(),
@@ -453,6 +451,15 @@ async fn describe(
         body.to_string(),
     )
         .into_response())
+}
+
+/// A request body read as `T`: UTF-8 JSON, or a `malformed` error that says
+/// what is wrong with it.
+fn request_body<T: opengrid_json::FromJson>(body: &[u8]) -> Result<T, WireError> {
+    let malformed = |message: String| WireError::new(ErrorCode::Malformed, message);
+    let text =
+        std::str::from_utf8(body).map_err(|_| malformed("request body: not UTF-8".to_owned()))?;
+    opengrid_json::from_str(text).map_err(|error| malformed(format!("request body: {error}")))
 }
 
 /// Checks the bearer token and answers with the context it stands for.

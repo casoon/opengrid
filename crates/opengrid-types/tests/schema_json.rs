@@ -7,11 +7,11 @@
 
 use opengrid_types::{DataType, DatePart, Field, FieldName, Schema};
 
-/// The schema file of the conformance data set, read through `serde` alone.
+/// The schema file of the conformance data set, read through the JSON codec alone.
 #[test]
 fn the_conformance_schema_file_reads_back() {
     let json = include_str!("../../opengrid-conformance/data/orders.schema.json");
-    let schema: Schema = serde_json::from_str(json).expect("the canonical schema file parses");
+    let schema: Schema = opengrid_json::from_str(json).expect("the canonical schema file parses");
 
     assert_eq!(
         schema.len(),
@@ -32,7 +32,7 @@ fn the_conformance_schema_file_reads_back() {
     );
     assert!(schema.field("note").expect("note").nullable);
 
-    // The derived columns of point 54, read through the same `serde` impl.
+    // The derived columns of point 54, read through the same codec.
     let year = schema.field("ordered_year").expect("ordered_year");
     assert_eq!(year.data_type, DataType::Int64);
     let derivation = year.from.as_ref().expect("a derivation");
@@ -59,10 +59,10 @@ fn a_schema_survives_a_round_trip() {
         field("created_at", DataType::Timestamp),
     ]);
 
-    let json = serde_json::to_string(&schema).unwrap();
-    assert_eq!(serde_json::from_str::<Schema>(&json).unwrap(), schema);
+    let json = opengrid_json::to_string(&schema);
+    assert_eq!(opengrid_json::from_str::<Schema>(&json).unwrap(), schema);
     // Field order is projection order and must not be reordered by the round trip.
-    let read: Schema = serde_json::from_str(&json).unwrap();
+    let read: Schema = opengrid_json::from_str(&json).unwrap();
     let names: Vec<&str> = read.fields().iter().map(|f| f.name.as_str()).collect();
     assert_eq!(
         names,
@@ -88,6 +88,6 @@ fn a_malformed_schema_is_rejected() {
         r#"{"fields":[{"name":"","type":"int64"}]}"#,
         r#"{"fields":[{"name":"id","type":"int65"}]}"#,
     ] {
-        assert!(serde_json::from_str::<Schema>(json).is_err(), "{json}");
+        assert!(opengrid_json::from_str::<Schema>(json).is_err(), "{json}");
     }
 }

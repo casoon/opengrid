@@ -105,7 +105,7 @@ pub(crate) fn run(host: &HtmlElement) {
     let texts = texts::texts(host);
     render(host, None, &texts.loading, "loading");
 
-    let promise = provider.execute(&request_json, "");
+    let promise = provider.pivot(&request_json, "");
     let host = host.clone();
     spawn_local(async move {
         let outcome = JsFuture::from(promise).await;

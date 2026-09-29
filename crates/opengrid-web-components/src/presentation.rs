@@ -344,6 +344,40 @@ pub fn validate(
     }
 }
 
+/// [`validate`] for `<opengrid-table>` (issue #29): the same checks, and the
+/// grid's own options — `width`, `aggregate`, `facet` — refused. The table has
+/// no resize, no groups and no facets, and an option that silently did nothing
+/// would hide the mistake the same way an unknown column would.
+pub fn validate_for_table(
+    raw: &[(String, RawColumn)],
+    schema: &Schema,
+    declared: &[String],
+) -> Result<Vec<(String, ColumnPresentation)>, Vec<PresentationProblem>> {
+    let mut problems = Vec::new();
+    for (name, entry) in raw {
+        for (given, option) in [
+            (entry.width.is_some(), "width"),
+            (entry.aggregate.is_some(), "aggregate"),
+            (entry.facet.is_some(), "facet"),
+        ] {
+            if given {
+                problems.push(PresentationProblem::new(
+                    name,
+                    format!("{option} belongs to the grid, not to a table"),
+                ));
+            }
+        }
+    }
+    match validate(raw, schema, declared) {
+        Ok(checked) if problems.is_empty() => Ok(checked),
+        Ok(_) => Err(problems),
+        Err(more) => {
+            problems.extend(more);
+            Err(problems)
+        }
+    }
+}
+
 /// The presentation of every column of a host, already checked.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ColumnStyles {
@@ -426,6 +460,65 @@ mod tests {
 
     fn raw(entry: RawColumn) -> Vec<(String, RawColumn)> {
         vec![("amount".to_owned(), entry)]
+    }
+
+    /// A table takes the look (title, alignment, faces) and refuses the grid's
+    /// own options by name, together with any ordinary mistake.
+    #[test]
+    fn a_table_refuses_the_grid_options() {
+        let accepted = validate_for_table(
+            &raw(RawColumn {
+                title: Some("Betrag".to_owned()),
+                align: Some("center".to_owned()),
+                muted: Some(true),
+                ..RawColumn::default()
+            }),
+            &schema(),
+            &[],
+        )
+        .unwrap();
+        assert_eq!(accepted[0].1.title.as_deref(), Some("Betrag"));
+        assert!(accepted[0].1.muted);
+
+        for (entry, option) in [
+            (
+                RawColumn {
+                    width: Some(90),
+                    ..RawColumn::default()
+                },
+                "width",
+            ),
+            (
+                RawColumn {
+                    aggregate: Some("sum".to_owned()),
+                    ..RawColumn::default()
+                },
+                "aggregate",
+            ),
+            (
+                RawColumn {
+                    facet: Some("range".to_owned()),
+                    ..RawColumn::default()
+                },
+                "facet",
+            ),
+        ] {
+            let problems = validate_for_table(&raw(entry), &schema(), &[]).unwrap_err();
+            assert_eq!(problems.len(), 1, "{option}");
+            assert!(problems[0].reason.starts_with(option), "{problems:?}");
+        }
+
+        let problems = validate_for_table(
+            &raw(RawColumn {
+                width: Some(90),
+                align: Some("sideways".to_owned()),
+                ..RawColumn::default()
+            }),
+            &schema(),
+            &[],
+        )
+        .unwrap_err();
+        assert_eq!(problems.len(), 2, "both at once: {problems:?}");
     }
 
     /// The whole point: what the schema forbids, the configuration cannot buy.

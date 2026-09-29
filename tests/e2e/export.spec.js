@@ -212,6 +212,24 @@ test.describe("over a real server", () => {
       expect(paths).toEqual(["/export/export", "/export/export"]);
     });
 
+    test("an XLSX export comes from the server as a workbook (issue #72)", async ({ page }) => {
+      const paths = watch(page);
+      const workbook = await page.evaluate(async (query) => {
+        const progress = [];
+        const blob = await window.__exportRows(window.__rest, query, {
+          format: "xlsx",
+          onProgress: (step) => progress.push(step),
+        });
+        const head = new Uint8Array(await blob.slice(0, 2).arrayBuffer());
+        return { type: blob.type, size: blob.size, zip: String.fromCharCode(...head), progress };
+      }, BY_DAY);
+      expect(workbook.type).toBe("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      expect(workbook.zip).toBe("PK");
+      expect(workbook.size).toBeGreaterThan(100_000);
+      expect(workbook.progress).toEqual([{ rows: 100_000, total: 100_000 }]);
+      expect(paths).toEqual(["/export/export"]);
+    });
+
     test("the file name and the row count reach a page on another origin", async ({ page }) => {
       const headers = await page.evaluate(async () => {
         const response = await fetch("http://127.0.0.1:8082/export/export?format=json", {
@@ -715,7 +733,9 @@ test("a wrong option is refused before anything is asked", async ({ page }) => {
     return {
       unknown: await refused(query, { filename: "orders.csv" }),
       csvOnJson: await refused(query, { format: "json", delimiter: ";" }),
-      format: await refused(query, { format: "xlsx" }),
+      format: await refused(query, { format: "xls" }),
+      // An XLSX file is written on a server; this provider has no `export`.
+      xlsx: await refused(query, { format: "xlsx" }),
       delimiter: await refused(query, { delimiter: "ab" }),
       nullQuery: await refused(null, {}),
       windowed: await refused({ ...query, limit: 10 }, {}),
@@ -734,7 +754,8 @@ test("a wrong option is refused before anything is asked", async ({ page }) => {
   });
   expect(outcome.unknown).toContain('unknown option "filename"');
   expect(outcome.csvOnJson).toContain('"delimiter" is a CSV option');
-  expect(outcome.format).toContain("xlsx");
+  expect(outcome.format).toContain('"csv", "json" or "xlsx", not "xls"');
+  expect(outcome.xlsx).toContain("an XLSX export needs a provider that exports on the server");
   expect(outcome.delimiter).toContain("delimiter");
   expect(outcome.nullQuery).toContain("get_query");
   expect(outcome.windowed).toContain("window");

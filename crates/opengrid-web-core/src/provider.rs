@@ -75,6 +75,13 @@ pub trait DataProvider {
     /// reads it, and that is the only reason it travels this far.
     fn execute(&self, query_json: &str, mode: &str) -> js_sys::Promise;
 
+    /// Runs a pivot JSON (issue #28). A provider without a pivot path of its
+    /// own answers it through [`execute`](Self::execute), which is what a
+    /// server's pivot provider did before it had this method.
+    fn pivot(&self, pivot_json: &str, mode: &str) -> js_sys::Promise {
+        self.execute(pivot_json, mode)
+    }
+
     /// Where the queries run — `local`, `worker`, `remote` or `hybrid` — if the
     /// provider says (issue #33). The grid names it in its footer; a provider
     /// that does not say is shown without it.
@@ -152,30 +159,45 @@ impl DataProvider for JsProvider {
     /// one simply ignores it — that is how JavaScript calls work, and it is why
     /// the seam did not have to change shape for point 28.
     fn execute(&self, query_json: &str, mode: &str) -> js_sys::Promise {
+        self.call("execute", query_json, mode).unwrap_or_else(|| {
+            js_sys::Promise::reject(&JsValue::from_str(
+                "provider has no execute(queryJson) method",
+            ))
+        })
+    }
+
+    /// The object's own `pivot`, when it has one; `execute` otherwise.
+    fn pivot(&self, pivot_json: &str, mode: &str) -> js_sys::Promise {
+        self.call("pivot", pivot_json, mode)
+            .unwrap_or_else(|| self.execute(pivot_json, mode))
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl JsProvider {
+    /// Calls the object's `method(json, mode)` as a promise; `None` when the
+    /// object has no such function.
+    fn call(&self, method: &str, json: &str, mode: &str) -> Option<js_sys::Promise> {
         use wasm_bindgen::JsCast;
 
-        let called =
-            js_sys::Reflect::get(&self.object, &JsValue::from_str("execute")).and_then(|method| {
-                match method.dyn_into::<js_sys::Function>() {
-                    Ok(function) => function.call2(
-                        &self.object,
-                        &JsValue::from_str(query_json),
-                        &JsValue::from_str(mode),
-                    ),
-                    Err(_) => Err(JsValue::from_str(
-                        "provider has no execute(queryJson) method",
-                    )),
-                }
-            });
-
-        match called {
-            // A synchronous value is a resolved promise with that value.
-            Ok(value) => match value.dyn_ref::<js_sys::Promise>() {
-                Some(promise) => promise.clone(),
-                None => js_sys::Promise::resolve(&value),
+        let function = js_sys::Reflect::get(&self.object, &JsValue::from_str(method))
+            .ok()?
+            .dyn_into::<js_sys::Function>()
+            .ok()?;
+        Some(
+            match function.call2(
+                &self.object,
+                &JsValue::from_str(json),
+                &JsValue::from_str(mode),
+            ) {
+                // A synchronous value is a resolved promise with that value.
+                Ok(value) => match value.dyn_ref::<js_sys::Promise>() {
+                    Some(promise) => promise.clone(),
+                    None => js_sys::Promise::resolve(&value),
+                },
+                Err(error) => js_sys::Promise::reject(&error),
             },
-            Err(error) => js_sys::Promise::reject(&error),
-        }
+        )
     }
 }
 

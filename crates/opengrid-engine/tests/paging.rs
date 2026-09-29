@@ -30,7 +30,7 @@ const SORTS: [(&str, Range<usize>); 2] = [
 ];
 
 fn validate(json: &str, schema: &Schema) -> ValidatedQuery {
-    let query: Query = serde_json::from_str(json).expect("a well-formed query");
+    let query: Query = opengrid_json::from_str(json).expect("a well-formed query");
     query
         .validate(schema, &Limits::default())
         .expect("a valid query")

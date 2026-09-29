@@ -116,8 +116,13 @@ test("a grid nobody has themed wears Base, and theme picks another look", async 
     page.evaluate(() => {
       const root = document.querySelector("opengrid-grid").shadowRoot;
       const row = getComputedStyle(root.querySelector("tbody tr"));
-      const layout = getComputedStyle(root.querySelector('[part="layout"]'));
-      return { surface: row.backgroundColor, ink: layout.color };
+      // The ink where it is drawn: a body cell has no colour of its own and
+      // inherits it from the host through the layout. Not the layout itself —
+      // it draws no text, and WebKit answers `getComputedStyle` for it with the
+      // host's values before the shadow `:host` rules until it is restyled,
+      // while its descendants are drawn right (issue #81).
+      const cell = getComputedStyle(root.querySelector("tbody td"));
+      return { surface: row.backgroundColor, ink: cell.color };
     });
 
   expect(await look()).toEqual({ surface: "rgb(255, 255, 255)", ink: "rgb(20, 22, 26)" });
