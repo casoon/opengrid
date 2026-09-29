@@ -68,7 +68,9 @@ async fn app() -> axum::Router {
 struct Answer {
     status: StatusCode,
     headers: axum::http::HeaderMap,
+    /// The body as text — lossy for a binary one, which `bytes` holds.
     body: String,
+    bytes: Vec<u8>,
 }
 
 async fn send(
@@ -103,7 +105,8 @@ async fn send(
     Answer {
         status,
         headers,
-        body: String::from_utf8(bytes.to_vec()).unwrap(),
+        body: String::from_utf8_lossy(&bytes).into_owned(),
+        bytes: bytes.to_vec(),
     }
 }
 
@@ -314,7 +317,7 @@ async fn an_export_is_guarded_like_a_query() {
     assert_eq!(answer.status, StatusCode::PAYLOAD_TOO_LARGE);
 
     for query in [
-        "?format=xlsx",
+        "?format=xls",
         "?delimiter=ab",
         "?format=json&bom=false",
         "?filename=x",
@@ -435,4 +438,30 @@ async fn one_export_too_many_is_busy() {
         error.message
     );
     drop(held);
+}
+
+/// XLSX (issue #72): a workbook with the export's headers, and Excel's row
+/// bound before the first byte. The cells themselves are pinned in
+/// `opengrid-export`'s tests.
+#[tokio::test]
+async fn an_xlsx_export_is_a_workbook() {
+    let body = r#"{"source":"orders","select":["id","customer"],"sort":[{"field":"id","direction":"asc"}]}"#;
+    let answer = export("?format=xlsx", DE, body).await;
+    assert_eq!(answer.status, StatusCode::OK, "{}", answer.body);
+    assert_eq!(
+        answer.headers[header::CONTENT_TYPE],
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+    assert!(
+        answer.headers[header::CONTENT_DISPOSITION]
+            .to_str()
+            .unwrap()
+            .contains("orders.xlsx")
+    );
+    assert!(answer.headers.contains_key("x-total-count"));
+    assert_eq!(&answer.bytes[..2], b"PK", "a ZIP archive");
+
+    let refused = export("?format=xlsx&delimiter=%3B", DE, body).await;
+    assert_eq!(refused.status, StatusCode::BAD_REQUEST);
+    assert!(error_of(&refused).message.contains("this export is XLSX"));
 }

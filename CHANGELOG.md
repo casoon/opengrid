@@ -71,25 +71,6 @@ engine 122.6 → 124.9 KiB (the resource report's measuring, #70).
   field name beside it, since that is what an expression takes) and every announcement.
   The field name stays the identifier in queries, views, expressions, exports and events.
 
-### Changed
-
-- **One JSON codec for browser and server, and no `serde` in the browser**
-  ([#41](https://github.com/casoon/opengrid/issues/41)). `opengrid-json` reads and writes
-  every JSON form — query, schema, view, texts, errors, the JSON result — on both sides,
-  so the two cannot read the same bytes two ways. `serde` and `serde_json` are gone from
-  both browser modules: the engine module shrinks from 122.6 to 104.2 KiB brotli, the
-  elements' from 211.2 to 198.5 KiB. What is read and refused is what `serde_json` read
-  and refused (checked against it as an oracle); what is written is what it wrote, keys
-  aside — an object now keeps the order it is written in instead of sorting its keys —
-  and one rare case: where a float has two shortest spellings, the one closer to the
-  value is written. Both read back to the same number.
-
-**What breaks** (Rust crates only; the npm package and its JavaScript API are
-unchanged): the opengrid types no longer implement `serde::Serialize`/`Deserialize`.
-Read and write them with `opengrid_json` (`from_str`, `to_string`, `FromJson`, `ToJson`);
-`Value::deserialize_typed` is `Value::from_json_typed`, and a filter literal is an
-`opengrid_json::Json`.
-
 ### Fixed
 
 - **The toolbar on a narrow grid** ([#77](https://github.com/casoon/opengrid/issues/77)).

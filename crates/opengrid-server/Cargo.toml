@@ -31,7 +31,7 @@ tower-http = { version = "0.6", features = ["cors"] }
 # the issue over `futures-util` or a hand-written body.
 http-body-util = { version = "0.1", features = ["channel"] }
 # The export writes its rows in the one notation every export uses (E33).
-opengrid-export = { path = "../opengrid-export" }
+opengrid-export = { path = "../opengrid-export", features = ["xlsx"] }
 
 opengrid-json = { path = "../opengrid-json" }
 
