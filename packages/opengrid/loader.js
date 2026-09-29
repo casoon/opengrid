@@ -85,10 +85,11 @@ async function start({ moduleUrl = DEFAULT_MODULE_URL, wasmUrl } = {}) {
  * Defines the elements in plain DOM, mirroring the Rust skeleton: an open
  * shadow root, a native `<table>` with a `<caption>`, and `label` -> `aria-label`.
  *
- * The skeleton sits inside a `<slot>`, as its default content (issue #84): a
- * page that wrote its data as a table inside the element keeps showing it when
- * the module cannot load, which is when it is needed most. Without such a table
- * the skeleton shows, as before.
+ * A page that wrote its data as a table inside the element (issue #84) keeps
+ * showing it when the module cannot load, which is when it is needed most: the
+ * stand-in then renders only a `<slot>`. Without such content it renders the
+ * skeleton, as before. Never both — as the slot's default content the skeleton
+ * still counted as a second table in WebKit's accessibility tree.
  *
  * Not exported: `loadOpengrid` installs it when the module fails to load, and a
  * page that reaches for it directly is asking for the broken state on purpose
@@ -111,12 +112,14 @@ function installFallback(name = "opengrid-table") {
         return;
       }
       const root = this.attachShadow({ mode: "open" });
-      const slot = document.createElement("slot");
+      if (this.firstElementChild) {
+        root.append(document.createElement("slot"));
+        return;
+      }
       const table = document.createElement("table");
       const caption = document.createElement("caption");
       table.append(caption);
-      slot.append(table);
-      root.append(slot);
+      root.append(table);
       this.#applyLabel();
     }
 
@@ -128,6 +131,9 @@ function installFallback(name = "opengrid-table") {
 
     #applyLabel() {
       const table = this.shadowRoot.querySelector("table");
+      if (!table) {
+        return;
+      }
       const caption = this.shadowRoot.querySelector("caption");
       const label = this.getAttribute("label");
       if (label) {

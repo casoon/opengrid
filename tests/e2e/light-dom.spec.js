@@ -60,6 +60,12 @@ test.describe("when the module cannot load", () => {
   });
 
   test("the page's own tables stay readable", async ({ page }) => {
+    // The stand-in draws no table of its own next to the page's: in WebKit even
+    // an unrendered default content of a slot counted as a second table.
+    const ownTable = await page.evaluate(
+      () => !!document.querySelector("opengrid-table").shadowRoot.querySelector("table"),
+    );
+    expect(ownTable).toBe(false);
     await expect(page.getByRole("table", { name: "Bestellungen" })).toBeVisible();
     await expect(page.getByRole("table", { name: "Raster" })).toBeVisible();
     await expect(pageCells(page)).toHaveCount(3);
