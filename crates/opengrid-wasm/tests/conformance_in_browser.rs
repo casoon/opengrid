@@ -152,3 +152,15 @@ fn spec_example_runs_and_matches_no_row() {
     assert_eq!(result.total_count, 0);
     assert_eq!(result.row_count(), 0);
 }
+
+#[path = "pivot_cases/mod.rs"]
+mod pivot_cases;
+
+/// The pivot conformance cases through the engine compiled to WebAssembly
+/// (issue #28): the pivot a page gets from `createWorkerProvider()`.
+#[wasm_bindgen_test]
+fn the_wasm_engine_answers_every_pivot_case() {
+    for case in pivot_cases::CASES {
+        pivot_cases::check(case);
+    }
+}

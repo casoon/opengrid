@@ -147,3 +147,34 @@ test.describe("pivot", () => {
     expect(results.violations).toEqual([]);
   });
 });
+
+// Issue #28: the pivot in the browser. The engine in a worker answers the very
+// pivot the server answers — same data, same element — so the two tables have
+// to be the same, cell for cell.
+test.describe("pivot in the browser", () => {
+  /** Every cell of the pivot, header and body, as text. */
+  async function cells(page, fixture) {
+    await page.goto(`/tests/e2e/fixtures/${fixture}`);
+    await page.waitForFunction(() => window.__ready === true);
+    await expect(page.locator("opengrid-pivot tbody tr").first()).toBeVisible();
+    return page.evaluate(() => {
+      const root = document.querySelector("opengrid-pivot").shadowRoot;
+      return [...root.querySelectorAll("tr")].map((row) =>
+        [...row.querySelectorAll("th, td")].map((cell) => cell.textContent),
+      );
+    });
+  }
+
+  test("the worker's pivot is the server's pivot", async ({ page }) => {
+    const server = await cells(page, "pivot.html");
+    const worker = await cells(page, "pivot-worker.html");
+    expect(worker.length).toBeGreaterThan(3);
+    expect(worker).toEqual(server);
+  });
+
+  test("a pivot from the worker has no axe violations", async ({ page }) => {
+    await cells(page, "pivot-worker.html");
+    const { violations } = await new AxeBuilder({ page }).include("opengrid-pivot").analyze();
+    expect(violations).toEqual([]);
+  });
+});
