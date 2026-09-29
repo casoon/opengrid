@@ -19,6 +19,23 @@ Calling something accessible is easy and usually wrong, so here is the split.
 - A pivot group whose value is NULL is named `(no value)`, one whose value is the empty string
   `(empty)`: an empty header cell is silence to a screen reader.
 
+## Machine-readable by the same means
+
+What makes the grid usable with a screen reader makes it readable for programs, so there is no
+second, machine-only layer to keep in step:
+
+- The accessibility tree is the interface. Roles, names, `aria-rowcount` for the whole result
+  and `aria-rowindex` per row tell a test, an automation tool or a browser agent what the grid
+  holds and where it is, even though only a window of rows is in the DOM.
+- The data is open at every step: the schema is a JSON document, a query is a JSON AST, the
+  view is JSON, and an export is CSV or JSON of what the reader sees, or of every match.
+- Structured data (schema.org, JSON-LD) stays the page's: only the page knows what the data
+  set *is*. The grid adds none of its own.
+
+What it cannot do yet: the rows exist only once the element has run. A reader or crawler that
+executes no JavaScript sees the element's name and nothing of its data
+([#84](https://github.com/casoon/opengrid/issues/84)).
+
 ## Verified by tests, on every commit
 
 Roles, accessible names, `aria-rowcount` / `aria-rowindex` / `aria-sort` / `aria-selected`, the

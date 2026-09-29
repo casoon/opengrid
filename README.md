@@ -151,11 +151,28 @@ with `get_pivot`. See [Export](https://github.com/casoon/opengrid/blob/main/docs
 - [Guides](https://github.com/casoon/opengrid/tree/main/docs/guides) and the
   [project page](https://casoon.github.io/opengrid/)
 
-## Accessibility
+## Accessible and machine-readable
 
-Keyboard operation under the WAI-ARIA grid pattern, one polite live region for every state,
-no dragging required, and axe-core in every state of the end-to-end suite (Chromium, Firefox,
-WebKit). **Not yet verified with a screen reader** — that pass follows this release.
+opengrid is not only a WebAssembly engine that draws a grid. The data should reach **everyone
+and everything** that reads the page: a person with a keyboard or a screen reader, and a
+program — a test, a browser agent, an export.
+
+- **One structure for people and programs.** A native `<table>` where reading is all there is
+  to do, `role="grid"` (or `treegrid` when grouped) where interaction needs it. Row and column
+  headers, `aria-rowcount` for the whole result behind a virtualized window,
+  `aria-sort`, `aria-selected`, names for every control. The accessibility tree that a screen
+  reader reads is the same one an automation tool or an AI agent reads.
+- **Operable without a mouse.** The WAI-ARIA grid pattern for the keys, no dragging required,
+  one polite live region for every change of state, targets of at least 24 px, reflow at
+  320 px, forced colours respected.
+- **Open data at every step.** The schema is a JSON document, a query is a JSON AST, the view
+  is JSON, and an export gives CSV or JSON of exactly what the reader sees — or every match.
+- **Checked, not claimed.** axe-core runs over every state of the end-to-end suite, and the
+  announcements are recorded in order.
+
+**Not yet verified with a screen reader** ([#5](https://github.com/casoon/opengrid/issues/5)).
+Until that pass is done, the structure is tested hard and the experience is not signed off.
+What is verified and what is not: [Accessibility](https://github.com/casoon/opengrid/blob/main/docs/guides/accessibility.md).
 
 ## Status
 
