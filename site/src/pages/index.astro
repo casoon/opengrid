@@ -51,7 +51,7 @@ const page = `<opengrid-table label="Orders" datasource="orders"
 <Base>
   <Hero
     title="One query model. The same answer in the tab, on the server and in PostgreSQL."
-    lead="opengrid is a portable Rust data and query engine. On top of it sit an accessible data grid, table and pivot, delivered as Web Components. The product is the engine, not a JavaScript grid."
+    lead="opengrid is a portable Rust data and query engine. On top of it sit a data grid, table and pivot, delivered as Web Components and built to be accessible. The product is the engine, not a JavaScript grid."
   >
     <Install
       commands={[
@@ -93,12 +93,12 @@ const page = `<opengrid-table label="Orders" datasource="orders"
         body: 'In the tab (WebAssembly, about 120 KiB), on a server (PostgreSQL, one compiled statement), or split between the two. The planner decides from what the source declares it can do.',
       },
       {
-        title: 'Accessible and machine-readable',
-        body: 'A native table where that suffices and role="grid" where interaction needs one — the same structure a screen reader, a test and a browser agent read. Every feature is keyboard-operable, every state change goes through one polite live region, and schema, query, view and export are open JSON and CSV. A screen-reader run is still open.',
+        title: 'Built to be accessible and machine-readable',
+        body: 'A native table where that suffices and role="grid" where interaction needs one — the structure a screen reader, a test and a browser agent read alike. Designed for the keyboard, one polite live region for every change of state, open JSON, CSV and XLSX, and a plain table for readers without script. Tested with axe in every state; a screen-reader pass and a conformance report are still to come.',
       },
       {
         title: 'A pivot that is an engine',
-        body: 'A pivot is a set of grouping sets plus a reshaping, so it works over any source — and PostgreSQL folds it into a single GROUPING SETS statement.',
+        body: 'A pivot is a set of grouping sets plus a reshaping, so it works over any source: the engine in the tab or in a worker answers it over the data the page loaded, and PostgreSQL folds it into a single GROUPING SETS statement.',
       },
     ]}
   />
