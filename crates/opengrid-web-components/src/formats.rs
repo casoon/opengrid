@@ -76,7 +76,9 @@ pub fn plain_text(value: &Value) -> String {
 }
 
 #[cfg(target_arch = "wasm32")]
-pub use host::{formats, set_formats_for};
+pub use host::formats;
+#[cfg(all(target_arch = "wasm32", feature = "grid"))]
+pub use host::set_formats_for;
 
 /// Per-host storage of the column formats.
 ///
@@ -185,6 +187,7 @@ mod host {
 
     /// Resolves `value` — `Intl` options become functions here, once — and
     /// attaches the result to `host`, replacing any previous formats.
+    #[cfg(feature = "grid")]
     pub fn set_formats_for(host: &HtmlElement, value: &JsValue) {
         let resolved = js_sys::Object::new();
         for (name, function) in ColumnFormats::from_js(value).by_name {

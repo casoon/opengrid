@@ -826,8 +826,8 @@ The fonts are **named, not loaded**: the element makes no request to a font
 service. A page that wants Geist or IBM Plex Sans loads it; without it the stack
 falls back to the system UI font.
 
-`<opengrid-table>` and `<opengrid-pivot>` take the same `theme` and tokens; until
-they have parts (issue #29) they apply the ink and the font to their text.
+`<opengrid-table>` and `<opengrid-pivot>` take the same `theme` and tokens, apply the
+ink and the font to their text, and are styled beyond that through their parts.
 
 Under `forced-colors` every colour here resolves to a system colour, whatever the
 look: a `color-mix` of two system colours resolves unpredictably, and the user's
@@ -839,17 +839,38 @@ would make it invisible), a **selected row** carries an inset accent bar as well
 as the tint (colour alone would be 1.4.1), and `prefers-reduced-motion` beats a
 theme that animates a part.
 
-**Parts:** `add-filter`, `add-grouping`, `body`, `cell`, `chip`, `chip-remove`, `chips`, `chips-clear`, `column-menu`, `column-menu-button`, `column-toggle`, `columns`, `columns-toggle`, `editor`,
-`filter`, `filter-clear`, `filter-dialog`, `filter-operator`, `filter-value`, `footer`, `grouping-menu`, `header`,
-`density`, `empty`, `empty-reset`, `empty-text`, `facet`, `facet-bounds`, `facet-cost`, `facet-count`, `facet-pill`,
-`facet-pills`, `facet-value`, `facets`, `facets-head`, `facets-toggle`, `filter-row-toggle`, `layout`, `menu-label`, `page-first`, `page-label`, `page-last`, `page-next`,
-`page-previous`, `pager`, `row`, `search`, `search-hint`, `search-input`, `search-list`, `select`, `select-all`, `select-mark`,
-`sort-direction`, `sort-index`, `source`, `status`, `toolbar`,
-`total-row`, `viewport`.
+**Parts:** `add-filter`, `add-grouping`, `body`, `caption`, `cell`, `chip`, `chip-remove`, `chips`,
+`chips-clear`, `column-menu`, `column-menu-button`, `column-toggle`, `columns`, `columns-toggle`, `density`,
+`editor`, `empty`, `empty-reset`, `empty-text`, `facet`, `facet-bounds`, `facet-cost`, `facet-count`,
+`facet-pill`, `facet-pills`, `facet-value`, `facets`, `facets-head`, `facets-toggle`, `filter`,
+`filter-clear`, `filter-dialog`, `filter-operator`, `filter-row-toggle`, `filter-value`, `footer`,
+`grouping-menu`, `header`, `layout`, `menu-label`, `page-first`, `page-label`, `page-last`, `page-next`,
+`page-previous`, `pager`, `row`, `row-header`, `search`, `search-hint`, `search-input`, `search-list`,
+`select`, `select-all`, `select-mark`, `sort-button`, `sort-direction`, `sort-index`, `source`, `status`,
+`table`, `toolbar`, `total-row`, `viewport`.
 
 `<opengrid-table>` and `<opengrid-pivot>` ship no stylesheet beyond the look's
-ink and font (above) — they are plain tables, and until they have parts (issue #29)
-the rest of their look is the page's.
+ink and font and the alignment of a column (above) — they are plain tables, and the
+rest of their look is the page's, through their parts (issue #29):
+
+| Part | `<opengrid-table>` | `<opengrid-pivot>` |
+|---|---|---|
+| `table`, `caption` | the table and its caption | the same |
+| `header` | a column header cell | a column header cell, both header rows |
+| `sort-button`, `sort-direction` | the button in a header, its mark | — |
+| `row-header` | — | a row's header cell, the total rows' included |
+| `row`, `total-row` | a body row | a body row; `total-row` a subtotal or the grand total |
+| `cell` | a value | a value |
+
+```css
+opengrid-table::part(cell) { padding: 0.25rem 0.5rem; border-bottom: 1px solid #ddd; }
+opengrid-pivot::part(total-row) { font-weight: 600; }
+```
+
+`<opengrid-table>` shows its values **as the grid does**: `set_formats` applies to its
+cells, and `set_columns` gives a column its `title` and its `align`, `mono`, `emphasis`
+and `muted`. The grid's own options — `width`, `aggregate`, `facet` — are refused for a
+table, in the same alert as any other mistake, not ignored.
 
 ## Texts
 
