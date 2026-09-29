@@ -161,22 +161,26 @@ impl Engine {
     }
 
     /// [`stats`](Engine::stats_js) as a JSON value.
-    pub fn stats(&self) -> serde_json::Value {
+    pub fn stats(&self) -> opengrid_json::Json {
+        use opengrid_json::Json;
         let mut names: Vec<&String> = self.sources.keys().collect();
         names.sort();
-        let sources: Vec<serde_json::Value> = names
+        let sources: Vec<Json> = names
             .into_iter()
             .map(|name| {
                 let table = self.sources[name].table();
-                serde_json::json!({
-                    "name": name,
-                    "rows": table.num_rows(),
-                    "columns": table.schema().len(),
-                    "bytes": table.byte_size(),
-                })
+                Json::object([
+                    ("name", Json::from(name.as_str())),
+                    ("rows", Json::from(table.num_rows())),
+                    ("columns", Json::from(table.schema().len())),
+                    ("bytes", Json::from(table.byte_size())),
+                ])
             })
             .collect();
-        serde_json::json!({ "memory": linear_memory(), "sources": sources })
+        Json::object([
+            ("memory", Json::from(linear_memory())),
+            ("sources", Json::from(sources)),
+        ])
     }
 
     /// Runs a query JSON against the source it names and answers with the
@@ -462,6 +466,6 @@ mod stats_tests {
         assert_eq!(sources[1]["columns"], 2);
         // 2 ints, 3 offsets and 5 bytes of text, no NULL, no bitmap.
         assert_eq!(sources[1]["bytes"], 2 * 8 + 3 * 4 + 5);
-        assert!(stats["memory"].is_u64());
+        assert!(stats["memory"].as_u64().is_some());
     }
 }

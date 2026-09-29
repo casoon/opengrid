@@ -32,7 +32,7 @@ const REST_PROVIDER_METHODS: [&str; 3] = ["describe", "execute", "export"];
 
 /// The methods of the two engine providers — `stats` is what the engine holds
 /// (issue #70). The same list for both: a page swaps one for the other.
-const ENGINE_PROVIDER_METHODS: [&str; 4] = ["execute", "load", "stats", "terminate"];
+const ENGINE_PROVIDER_METHODS: [&str; 5] = ["execute", "load", "pivot", "stats", "terminate"];
 
 /// The fields on the `Error` a server provider or `exportRows` rejects with
 /// (issue #16): a plain `Error`, no class of its own, the message unchanged.
@@ -312,8 +312,8 @@ loader exports
 
 provider methods
   createRestProvider: describe execute export
-  createWorkerProvider: execute load stats terminate
-  createLocalProvider: execute load stats terminate
+  createWorkerProvider: execute load pivot stats terminate
+  createLocalProvider: execute load pivot stats terminate
 
 error fields
   status code path
