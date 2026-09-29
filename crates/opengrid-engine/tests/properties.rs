@@ -92,7 +92,7 @@ fn answered(
         CsvOptions::default(),
     )
     .expect("the generated data loads");
-    let query: Query = serde_json::from_str(QUERY).expect("the query parses");
+    let query: Query = opengrid_json::from_str(QUERY).expect("the query parses");
     let query = query
         .validate(&schema, &Limits::default())
         .expect("the query validates");

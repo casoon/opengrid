@@ -1,4 +1,5 @@
-//! `opengrid-export` — a query result as CSV or JSON (plan point 83, E33).
+//! `opengrid-export` — a query result as CSV or JSON (plan point 83, E33), and on
+//! the server as XLSX (feature `xlsx`, issue #72).
 //!
 //! One implementation of the notation for every place that exports: the
 //! server streams through it (point 85), the browser calls it through the
@@ -19,10 +20,14 @@
 mod csv;
 mod json;
 mod pivot;
+#[cfg(feature = "xlsx")]
+mod xlsx;
 
 pub use csv::{CsvOptions, CsvWriter, csv_header, csv_rows};
 pub use json::{JsonWriter, json_rows};
 pub use pivot::{PATH_SEPARATOR, PivotLabels, pivot_csv};
+#[cfg(feature = "xlsx")]
+pub use xlsx::{XLSX_MAX_ROWS, XLSX_MEDIA_TYPE, XlsxWriter};
 
 use opengrid_types::Value;
 
@@ -35,12 +40,11 @@ fn plain(value: &Value) -> Option<String> {
         Value::Null => return None,
         Value::Bool(flag) => flag.to_string(),
         Value::Int64(number) => number.to_string(),
-        // serde_json writes the shortest text that reads back to the same f64,
-        // and spells the non-finite ones the way the wire does (E13).
-        Value::Float64(_) => match serde_json::to_value(value) {
-            Ok(serde_json::Value::String(name)) => name,
-            Ok(number) => number.to_string(),
-            Err(error) => unreachable!("a float serializes: {error}"),
+        // The wire's spelling: the shortest text that reads back to the same
+        // f64, and the non-finite ones as the wire names them (E13).
+        Value::Float64(_) => match opengrid_json::ToJson::to_json(value) {
+            opengrid_json::Json::String(name) => name,
+            number => number.to_string(),
         },
         Value::Decimal(decimal) => decimal.to_string(),
         Value::Utf8(text) => text.clone(),

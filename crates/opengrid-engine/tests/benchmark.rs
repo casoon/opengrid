@@ -44,7 +44,7 @@ fn one_million_rows_with_one_group_key() {
     let table = load_csv(text.as_bytes(), &schema, CsvOptions::default()).expect("the CSV loads");
     let ingest = ingest_started.elapsed();
 
-    let query: Query = serde_json::from_str(
+    let query: Query = opengrid_json::from_str(
         r#"{"source":"orders","select":["grp","total"],
             "group":["grp"],
             "aggregate":[{"field":"amount","fn":"sum","as":"total"}],

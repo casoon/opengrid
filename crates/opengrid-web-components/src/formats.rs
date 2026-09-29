@@ -76,7 +76,9 @@ pub fn plain_text(value: &Value) -> String {
 }
 
 #[cfg(target_arch = "wasm32")]
-pub use host::{formats, set_formats_for};
+pub use host::formats;
+#[cfg(all(target_arch = "wasm32", feature = "grid"))]
+pub use host::set_formats_for;
 
 /// Per-host storage of the column formats.
 ///
@@ -185,6 +187,7 @@ mod host {
 
     /// Resolves `value` — `Intl` options become functions here, once — and
     /// attaches the result to `host`, replacing any previous formats.
+    #[cfg(feature = "grid")]
     pub fn set_formats_for(host: &HtmlElement, value: &JsValue) {
         let resolved = js_sys::Object::new();
         for (name, function) in ColumnFormats::from_js(value).by_name {
@@ -225,10 +228,8 @@ mod host {
                 // No format for this column: no boundary crossing (R1).
                 return plain;
             };
-            let json = serde_json::to_string(value)
-                .ok()
-                .and_then(|text| js_sys::JSON::parse(&text).ok())
-                .unwrap_or(JsValue::NULL);
+            let json =
+                js_sys::JSON::parse(&opengrid_json::to_string(value)).unwrap_or(JsValue::NULL);
             function
                 .call2(&JsValue::NULL, &JsValue::from_str(&plain), &json)
                 .ok()

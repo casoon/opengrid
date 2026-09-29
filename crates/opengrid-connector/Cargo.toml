@@ -19,7 +19,7 @@ opengrid-engine = { path = "../opengrid-engine" }
 # Tables of pieces, held together while streaming (issue #50).
 opengrid-columns = { path = "../opengrid-columns" }
 # `LocalConnector::from_csv` reads the schema file.
-serde_json = "1"
+opengrid-json = { path = "../opengrid-json" }
 
 [dev-dependencies]
 opengrid-conformance = { path = "../opengrid-conformance" }

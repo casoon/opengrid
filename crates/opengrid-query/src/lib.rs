@@ -9,7 +9,7 @@
 //!     FieldName::new("customer")?,
 //!     DataType::Utf8,
 //! )]);
-//! let query: Query = serde_json::from_str(r#"{"source":"orders","select":["customer"]}"#)?;
+//! let query: Query = opengrid_json::from_str(r#"{"source":"orders","select":["customer"]}"#)?;
 //! let _validated = query.validate(&schema, &Limits::default())?;
 //! # Ok(())
 //! # }

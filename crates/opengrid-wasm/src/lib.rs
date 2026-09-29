@@ -108,6 +108,26 @@ impl Engine {
         self.stats().to_string()
     }
 
+    /// Runs a pivot JSON over the source it names and answers the pivot's JSON
+    /// form (issue #28) — what `POST /pivot/{source}` answers, computed here.
+    #[wasm_bindgen(js_name = pivot)]
+    pub fn pivot_js(&self, pivot_json: &str) -> Result<String, JsError> {
+        let (result, rows) = self
+            .pivot_result(pivot_json)
+            .map_err(|message| JsError::new(&message))?;
+        Ok(opengrid_pivot::pivot_to_json(&result, &rows))
+    }
+
+    /// The same pivot in the binary form (E35) — what the tab and the worker
+    /// hand the element.
+    #[wasm_bindgen(js_name = pivot_columns)]
+    pub fn pivot_columns_js(&self, pivot_json: &str) -> Result<Vec<u8>, JsError> {
+        let (result, rows) = self
+            .pivot_result(pivot_json)
+            .map_err(|message| JsError::new(&message))?;
+        Ok(opengrid_pivot::pivot_to_bytes(&result, &rows))
+    }
+
     /// The names of the registered sources, in unspecified order.
     #[wasm_bindgen(js_name = source_names)]
     pub fn source_names(&self) -> Vec<String> {
@@ -141,22 +161,26 @@ impl Engine {
     }
 
     /// [`stats`](Engine::stats_js) as a JSON value.
-    pub fn stats(&self) -> serde_json::Value {
+    pub fn stats(&self) -> opengrid_json::Json {
+        use opengrid_json::Json;
         let mut names: Vec<&String> = self.sources.keys().collect();
         names.sort();
-        let sources: Vec<serde_json::Value> = names
+        let sources: Vec<Json> = names
             .into_iter()
             .map(|name| {
                 let table = self.sources[name].table();
-                serde_json::json!({
-                    "name": name,
-                    "rows": table.num_rows(),
-                    "columns": table.schema().len(),
-                    "bytes": table.byte_size(),
-                })
+                Json::object([
+                    ("name", Json::from(name.as_str())),
+                    ("rows", Json::from(table.num_rows())),
+                    ("columns", Json::from(table.schema().len())),
+                    ("bytes", Json::from(table.byte_size())),
+                ])
             })
             .collect();
-        serde_json::json!({ "memory": linear_memory(), "sources": sources })
+        Json::object([
+            ("memory", Json::from(linear_memory())),
+            ("sources", Json::from(sources)),
+        ])
     }
 
     /// Runs a query JSON against the source it names and answers with the
@@ -179,6 +203,32 @@ impl Engine {
         Ok(opengrid_columns::wire::encode_result(&table, total_count))
     }
 
+    /// A pivot over the source it names, validated against that source's schema
+    /// with the server's default limits, and its row dimensions.
+    pub fn pivot_result(
+        &self,
+        pivot_json: &str,
+    ) -> Result<(opengrid_pivot::PivotResult, Vec<opengrid_types::FieldName>), String> {
+        let pivot: opengrid_pivot::PivotQuery =
+            opengrid_json::from_str(pivot_json).map_err(|error| format!("pivot JSON: {error}"))?;
+        let source = self
+            .sources
+            .get(pivot.source.as_str())
+            .ok_or_else(|| format!("unknown source {:?}", pivot.source.as_str()))?;
+        let schema = block_on(DataSource::schema(source)).map_err(|error| error.to_string())?;
+        let rows = pivot.rows.clone();
+        let validated = pivot
+            .validate(
+                &schema,
+                &opengrid_pivot::PivotLimits::default(),
+                &Limits::default(),
+            )
+            .map_err(|error| error.to_string())?;
+        let result = block_on(opengrid_pivot::execute(source, &validated))
+            .map_err(|error| error.to_string())?;
+        Ok((result, rows))
+    }
+
     /// Parses a query JSON, finds its source and validates the query against
     /// that source's schema.
     fn admit(
@@ -186,7 +236,7 @@ impl Engine {
         query_json: &str,
     ) -> Result<(&LocalDataSource, opengrid_query::ValidatedQuery), String> {
         let query: Query =
-            serde_json::from_str(query_json).map_err(|error| format!("query JSON: {error}"))?;
+            opengrid_json::from_str(query_json).map_err(|error| format!("query JSON: {error}"))?;
         let source = self
             .sources
             .get(query.source.as_str())
@@ -306,7 +356,7 @@ impl Planner {
     ) -> Result<Planner, String> {
         let schema =
             schema_json::from_json(schema_json).map_err(|error| format!("schema: {error}"))?;
-        let capabilities: DataSourceCapabilities = serde_json::from_str(capabilities_json)
+        let capabilities: DataSourceCapabilities = opengrid_json::from_str(capabilities_json)
             .map_err(|error| format!("capabilities: {error}"))?;
         Ok(Planner {
             schema,
@@ -318,7 +368,7 @@ impl Planner {
     /// Splits a query and writes the plan as JSON.
     pub fn plan_json(&self, query_json: &str, mode: &str) -> Result<String, String> {
         let query: Query =
-            serde_json::from_str(query_json).map_err(|error| format!("query JSON: {error}"))?;
+            opengrid_json::from_str(query_json).map_err(|error| format!("query JSON: {error}"))?;
         let validated = query
             .validate(&self.schema, &Limits::default())
             .map_err(|error| error.to_string())?;
@@ -331,7 +381,7 @@ impl Planner {
         let plan = opengrid_planner::plan(&validated, &self.schema, self.capabilities, mode)
             .map_err(|error| error.to_string())?;
 
-        let body = serde_json::json!({
+        let body = opengrid_json::json!({
             "mode": mode.as_str(),
             "describe": plan.describe(),
             "steps": plan.client_steps.iter().map(|step| step.as_str()).collect::<Vec<_>>(),
@@ -350,7 +400,7 @@ impl Planner {
     ) -> Result<Vec<u8>, String> {
         let (table, _) =
             opengrid_columns::wire::decode_result(result).map_err(|error| error.to_string())?;
-        let query: Query = serde_json::from_str(client_query_json)
+        let query: Query = opengrid_json::from_str(client_query_json)
             .map_err(|error| format!("client query JSON: {error}"))?;
         let validated = query
             .validate(table.schema(), &Limits::default())
@@ -370,7 +420,7 @@ impl Planner {
             .map_err(|error| format!("result JSON: {error}"))?;
         let source = LocalDataSource::from_result(&partial).map_err(|error| error.to_string())?;
 
-        let query: Query = serde_json::from_str(client_query_json)
+        let query: Query = opengrid_json::from_str(client_query_json)
             .map_err(|error| format!("client query JSON: {error}"))?;
         let validated = query
             .validate(&partial.schema, &Limits::default())
@@ -416,6 +466,6 @@ mod stats_tests {
         assert_eq!(sources[1]["columns"], 2);
         // 2 ints, 3 offsets and 5 bytes of text, no NULL, no bitmap.
         assert_eq!(sources[1]["bytes"], 2 * 8 + 3 * 4 + 5);
-        assert!(stats["memory"].is_u64());
+        assert!(stats["memory"].as_u64().is_some());
     }
 }

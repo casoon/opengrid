@@ -35,7 +35,7 @@ impl LocalConnector {
         let schema_text =
             std::fs::read_to_string(schema).map_err(|error| failed(schema, &error))?;
         let schema_value: Schema =
-            serde_json::from_str(&schema_text).map_err(|error| failed(schema, &error))?;
+            opengrid_json::from_str(&schema_text).map_err(|error| failed(schema, &error))?;
         let bytes = std::fs::read(csv).map_err(|error| failed(csv, &error))?;
         let table = load_csv(&bytes, &schema_value, CsvOptions::default())
             .map_err(|error| failed(csv, &error))?;

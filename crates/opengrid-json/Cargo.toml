@@ -1,0 +1,17 @@
+[package]
+name = "opengrid-json"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "The one JSON codec of opengrid: a small reader and writer shared by the browser and the server"
+
+[lints]
+workspace = true
+
+[dependencies]
+
+[dev-dependencies]
+# The oracle for the property tests: what the codec reads and writes is
+# checked against serde_json, which it replaces (issue #41). Test-only.
+serde_json = "1"
+proptest = "1"

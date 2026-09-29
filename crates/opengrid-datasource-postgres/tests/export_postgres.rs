@@ -17,7 +17,7 @@ use opengrid_types::{Schema, Value};
 const LONG: Duration = Duration::from_secs(60);
 
 fn validate(json: &str, schema: &Schema) -> ValidatedQuery {
-    let query: Query = serde_json::from_str(json).expect("the query parses");
+    let query: Query = opengrid_json::from_str(json).expect("the query parses");
     query
         .validate(&schema.materialized(), &Limits::default())
         .expect("the query validates")

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>opengrid pivot fixture — engine in a worker</title>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid pivot fixture — engine in a worker</h1>
+      <opengrid-pivot
+        label="Orders by country and year"
+        datasource="orders"
+        rows="country"
+        columns="ordered_year"
+        values='[{"field":"qty","fn":"sum","as":"total"},{"fn":"count","as":"n"}]'
+      ></opengrid-pivot>
+    </main>
+    <script type="module">
+      // Issue #28: the same pivot as pivot.html, answered by the engine in a
+      // worker over the same data — no server.
+      import { loadOpengrid, createWorkerProvider } from "/packages/opengrid/loader.js";
+
+      const provider = createWorkerProvider();
+      const [csv, schema] = await Promise.all([
+        fetch("/crates/opengrid-conformance/data/orders.csv").then((response) => response.arrayBuffer()),
+        fetch("/crates/opengrid-conformance/data/orders.schema.json").then((response) => response.text()),
+      ]);
+      await provider.load("orders", csv, schema);
+
+      const loader = await loadOpengrid();
+      loader.module.set_provider(document.querySelector("opengrid-pivot"), provider);
+      window.__opengridModule = loader.module;
+      window.__ready = true;
+    </script>
+  </body>
+</html>

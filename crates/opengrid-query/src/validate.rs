@@ -5,8 +5,8 @@
 //! (plan/spezifikation/07-server.md §Sicherheit): nothing downstream has to
 //! re-check field existence, operator suitability or literal types.
 
+use opengrid_json::Json as JsonValue;
 use opengrid_types::{DataSourceId, DataType, Field, FieldName, Schema, Value as GridValue};
-use serde_json::Value as JsonValue;
 
 use crate::{Aggregate, CmpOp, FilterExpr, Query, QueryError, Sort};
 
@@ -380,12 +380,10 @@ fn field_type(schema: &Schema, field: &FieldName, path: &str) -> Result<DataType
 
 /// Reads a raw JSON literal as the given type.
 fn coerce(value: &JsonValue, data_type: DataType, path: &str) -> Result<GridValue, QueryError> {
-    GridValue::deserialize_typed(value.clone(), &data_type).map_err(|error| {
-        QueryError::ValueTypeMismatch {
-            path: path.to_owned(),
-            data_type,
-            message: error.to_string(),
-        }
+    GridValue::from_json_typed(value, &data_type).map_err(|error| QueryError::ValueTypeMismatch {
+        path: path.to_owned(),
+        data_type,
+        message: error.to_string(),
     })
 }
 
@@ -415,7 +413,7 @@ impl From<&ValidatedFilter> for FilterExpr {
         /// The literal as the contract writes it — the same notation the wire
         /// format uses, since both go through `Value`'s own serialization.
         fn literal(value: &GridValue) -> JsonValue {
-            serde_json::to_value(value).expect("a value serializes into JSON")
+            opengrid_json::ToJson::to_json(value)
         }
 
         match filter {

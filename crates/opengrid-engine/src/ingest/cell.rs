@@ -33,8 +33,8 @@ pub(crate) fn from_text(raw: &str, data_type: DataType) -> Result<Value, String>
 }
 
 /// Reads a JSON cell as the column's type, through the wire contract (E13).
-pub(crate) fn from_json(cell: serde_json::Value, data_type: DataType) -> Result<Value, String> {
-    Value::deserialize_typed(cell, &data_type).map_err(|error| error.to_string())
+pub(crate) fn from_json(cell: &opengrid_json::Json, data_type: DataType) -> Result<Value, String> {
+    Value::from_json_typed(cell, &data_type).map_err(|error| error.to_string())
 }
 
 /// A plain number, plus exactly the three non-finite spellings of the wire
@@ -167,21 +167,21 @@ mod tests {
     #[test]
     fn json_cells_take_the_same_route() {
         assert_eq!(
-            from_json(serde_json::json!("2025-12-31"), DataType::Date).unwrap(),
+            from_json(&opengrid_json::json!("2025-12-31"), DataType::Date).unwrap(),
             text("2025-12-31", DataType::Date).unwrap()
         );
         assert_eq!(
-            from_json(serde_json::json!(-0.0), DataType::Float64).unwrap(),
+            from_json(&opengrid_json::json!(-0.0), DataType::Float64).unwrap(),
             text("-0.0", DataType::Float64).unwrap()
         );
         assert_eq!(
-            from_json(serde_json::json!(10), DataType::Float64).unwrap(),
+            from_json(&opengrid_json::json!(10), DataType::Float64).unwrap(),
             Value::Float64(10.0)
         );
         assert_eq!(
-            from_json(serde_json::Value::Null, DataType::Int64).unwrap(),
+            from_json(&opengrid_json::Json::Null, DataType::Int64).unwrap(),
             Value::Null
         );
-        assert!(from_json(serde_json::json!("10.00"), DataType::Float64).is_err());
+        assert!(from_json(&opengrid_json::json!("10.00"), DataType::Float64).is_err());
     }
 }

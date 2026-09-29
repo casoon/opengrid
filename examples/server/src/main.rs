@@ -113,7 +113,7 @@ fn csv_orders() -> Result<Orders, Error> {
 fn postgres_orders() -> Result<Orders, Error> {
     let url = std::env::var("DEMO_DATABASE_URL")
         .unwrap_or_else(|_| "host=localhost dbname=postgres".to_owned());
-    let schema: Schema = serde_json::from_str(&std::fs::read_to_string(fixture_schema_path())?)?;
+    let schema: Schema = opengrid_json::from_str(&std::fs::read_to_string(fixture_schema_path())?)?;
     let connector = PostgresDataSource::connect(&url, "opengrid_demo_orders", schema)?;
     let allowed = vec!["id", "customer", "country", "amount", "qty", "ordered_on"];
     Ok(Orders {
@@ -129,7 +129,7 @@ fn sqlite_orders() -> Result<Orders, Error> {
     use opengrid_connector_sqlite::{Connection, SqliteConnector, create_table, insert};
     use opengrid_engine::ingest::{CsvOptions, load_csv};
 
-    let schema: Schema = serde_json::from_str(&std::fs::read_to_string(fixture_schema_path())?)?;
+    let schema: Schema = opengrid_json::from_str(&std::fs::read_to_string(fixture_schema_path())?)?;
     let path = repo().join("target/demo-orders.sqlite");
     if !path.exists() {
         std::fs::create_dir_all(repo().join("target"))?;

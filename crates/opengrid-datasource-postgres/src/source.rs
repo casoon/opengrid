@@ -252,14 +252,14 @@ fn value_from_text(
                 _ => text.to_owned(),
             }
         }
-        _ => serde_json::Value::String(text.to_owned()).to_string(),
+        _ => opengrid_json::Json::from(text).to_string(),
     };
 
-    let mut deserializer = serde_json::Deserializer::from_str(&json);
-    Value::deserialize_typed(&mut deserializer, &data_type).map_err(|error| {
-        DataSourceError::Backend {
-            message: format!("column {column:?}: {text:?} is not a {data_type:?}: {error}"),
-        }
+    let parsed = opengrid_json::Json::parse(&json).map_err(|error| DataSourceError::Backend {
+        message: format!("column {column:?}: {text:?} is not a {data_type:?}: {error}"),
+    })?;
+    Value::from_json_typed(&parsed, &data_type).map_err(|error| DataSourceError::Backend {
+        message: format!("column {column:?}: {text:?} is not a {data_type:?}: {error}"),
     })
 }
 
