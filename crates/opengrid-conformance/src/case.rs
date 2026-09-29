@@ -16,14 +16,14 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
+use opengrid_json::{Fields, FromJson, Json};
 use opengrid_query::{Limits, Query, QueryError, ValidatedQuery};
 use opengrid_types::{Schema, Value};
 
 use crate::Table;
 
 /// One semantics case, as written in `cases/*.json`.
-#[derive(Clone, Debug, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Clone, Debug)]
 pub struct Case {
     /// Stable identifier, e.g. `s3-nulls-last-desc`.
     pub id: String,
@@ -32,18 +32,43 @@ pub struct Case {
     pub query: Query,
     pub expected: ExpectedTable,
     /// Whether row order is part of the expectation.
-    #[serde(default)]
     pub ordered: bool,
 }
 
+impl FromJson for Case {
+    fn from_json(json: &Json) -> Result<Self, opengrid_json::Error> {
+        let fields = Fields::of(
+            json,
+            "struct Case",
+            &["id", "rule", "query", "expected", "ordered"],
+        )?;
+        Ok(Case {
+            id: fields.read("id")?,
+            rule: fields.read("rule")?,
+            query: fields.read("query")?,
+            expected: fields.read("expected")?,
+            ordered: fields.read_or_default("ordered")?,
+        })
+    }
+}
+
 /// The expected result of a case, before its cells are typed.
-#[derive(Clone, Debug, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Clone, Debug)]
 pub struct ExpectedTable {
     /// Output column names, in order — must equal the query's output columns.
     pub columns: Vec<String>,
     /// One array per row. Cells are JSON scalars read against the column type.
-    pub rows: Vec<Vec<serde_json::Value>>,
+    pub rows: Vec<Vec<Json>>,
+}
+
+impl FromJson for ExpectedTable {
+    fn from_json(json: &Json) -> Result<Self, opengrid_json::Error> {
+        let fields = Fields::of(json, "struct ExpectedTable", &["columns", "rows"])?;
+        Ok(ExpectedTable {
+            columns: fields.read("columns")?,
+            rows: fields.read("rows")?,
+        })
+    }
 }
 
 /// A case whose query validated and whose expectation is typed.
@@ -63,7 +88,7 @@ pub enum CaseError {
     },
     Json {
         path: PathBuf,
-        source: serde_json::Error,
+        source: opengrid_json::Error,
     },
     Schema {
         path: PathBuf,
@@ -131,10 +156,11 @@ pub fn load_schema(path: &Path) -> Result<Schema, CaseError> {
     // Since point 23 `Schema` reads itself: this file's shape *is* the canonical
     // JSON form, and the hand-written reader that used to live here was the only
     // thing keeping the two in step.
-    let schema: Schema = serde_json::from_str(&read(path)?).map_err(|source| CaseError::Json {
-        path: path.to_path_buf(),
-        source,
-    })?;
+    let schema: Schema =
+        opengrid_json::from_str(&read(path)?).map_err(|source| CaseError::Json {
+            path: path.to_path_buf(),
+            source,
+        })?;
     // A derived column that cannot work is a broken schema, not a column full of
     // NULL discovered later (plan point 54).
     schema.check().map_err(|error| CaseError::Schema {
@@ -176,14 +202,15 @@ pub fn check_case(case: Case, schema: &Schema) -> Result<Checked, CaseError> {
         }
         let mut cells = Vec::with_capacity(row.len());
         for (column, cell) in row.iter().enumerate() {
-            let value = Value::deserialize_typed(cell.clone(), &output[column].data_type).map_err(
-                |error| CaseError::Cell {
-                    id: case.id.clone(),
-                    row: row_index,
-                    column,
-                    message: error.to_string(),
-                },
-            )?;
+            let value =
+                Value::from_json_typed(cell, &output[column].data_type).map_err(|error| {
+                    CaseError::Cell {
+                        id: case.id.clone(),
+                        row: row_index,
+                        column,
+                        message: error.to_string(),
+                    }
+                })?;
             cells.push(value);
         }
         rows.push(cells);
@@ -223,10 +250,11 @@ pub fn check_dir(dir: &Path, schema: &Schema) -> Result<Vec<Checked>, CaseError>
     let mut seen = BTreeSet::new();
     let mut checked = Vec::with_capacity(paths.len());
     for path in paths {
-        let case: Case = serde_json::from_str(&read(&path)?).map_err(|source| CaseError::Json {
-            path: path.clone(),
-            source,
-        })?;
+        let case: Case =
+            opengrid_json::from_str(&read(&path)?).map_err(|source| CaseError::Json {
+                path: path.clone(),
+                source,
+            })?;
         if !seen.insert(case.id.clone()) {
             return Err(CaseError::DuplicateId {
                 id: case.id.clone(),

@@ -9,8 +9,11 @@
 //!
 //! # Format and options
 //!
-//! `?format=csv` or `?format=json`; without it, whichever of `text/csv` and
-//! `application/json` the `Accept` header prefers; without either, CSV. The CSV
+//! `?format=csv`, `?format=json` or `?format=xlsx`; without it, whichever of
+//! `text/csv`, `application/json` and the XLSX media type the `Accept` header
+//! prefers; without any, CSV. An XLSX file (issue #72) is written as the rows
+//! come and goes out as one piece at the end — a ZIP archive cannot be sent in
+//! pieces — so its status and headers still come first. The CSV
 //! options are parameters too, spelled as `exportRows` spells them —
 //! `delimiter`, `bom`, `protectFormulas`, `null` — and checked with
 //! [`CsvOptions::check`] before anything runs. An unknown parameter, and a CSV
@@ -86,7 +89,9 @@ use http_body_util::channel::{Channel, Sender};
 use opengrid_connector::Cancel;
 use opengrid_datasource::wire::{ErrorCode, WireError};
 use opengrid_datasource::{DataSourceError, QueryResult};
-use opengrid_export::{CsvOptions, CsvWriter, JsonWriter};
+use opengrid_export::{
+    CsvOptions, CsvWriter, JsonWriter, XLSX_MAX_ROWS, XLSX_MEDIA_TYPE, XlsxWriter,
+};
 use opengrid_query::{Limits, ValidatedQuery};
 use tokio::sync::{OwnedSemaphorePermit, oneshot};
 
@@ -121,6 +126,7 @@ const CSV_PARAMETERS: [&str; 4] = ["delimiter", "bom", "protectFormulas", "null"
 enum Format {
     Csv(CsvOptions),
     Json,
+    Xlsx,
 }
 
 impl Format {
@@ -128,6 +134,7 @@ impl Format {
         match self {
             Format::Csv(_) => "text/csv; charset=utf-8",
             Format::Json => "application/json",
+            Format::Xlsx => XLSX_MEDIA_TYPE,
         }
     }
 
@@ -135,6 +142,7 @@ impl Format {
         match self {
             Format::Csv(_) => "csv",
             Format::Json => "json",
+            Format::Xlsx => "xlsx",
         }
     }
 }
@@ -250,6 +258,18 @@ async fn stream(
         }
         Some(Ok(count)) => count,
     };
+    if format == Format::Xlsx && count > XLSX_MAX_ROWS {
+        let _ = ready.send(Err(WireError::new(
+            ErrorCode::LimitExceeded,
+            format!(
+                "the export has {count} rows, more than the {XLSX_MAX_ROWS} an Excel sheet holds; \
+                 export it as CSV or JSON"
+            ),
+        )
+        .into()));
+        rows.close().await;
+        return;
+    }
     if count > max_rows {
         let _ = ready.send(Err(WireError::new(
             ErrorCode::LimitExceeded,
@@ -278,10 +298,25 @@ async fn stream(
         Some(Ok(first)) => first,
     };
 
-    let mut writer = Writer::new(format);
+    let mut writer = match Writer::new(format, &source.name) {
+        Ok(writer) => writer,
+        Err(message) => {
+            let _ = ready.send(Err(WireError::new(ErrorCode::Backend, message).into()));
+            rows.close().await;
+            return;
+        }
+    };
     let mut last = first.row_count() < PIECE_ROWS;
     // The channel is empty, so this does not wait for the client.
-    if outlet.send(writer.write(&first), timeout).await.is_err() {
+    let piece = match writer.write(&first) {
+        Ok(piece) => piece,
+        Err(message) => {
+            let _ = ready.send(Err(WireError::new(ErrorCode::LimitExceeded, message).into()));
+            rows.close().await;
+            return;
+        }
+    };
+    if !piece.is_empty() && outlet.send(piece, timeout).await.is_err() {
         return;
     }
     drop(first);
@@ -315,13 +350,30 @@ async fn stream(
             }
         };
         last = piece.row_count() < PIECE_ROWS;
-        if outlet.send(writer.write(&piece), timeout).await.is_err() {
+        let piece = match writer.write(&piece) {
+            Ok(piece) => piece,
+            Err(message) => {
+                outlet.abort(message);
+                return;
+            }
+        };
+        if !piece.is_empty() && outlet.send(piece, timeout).await.is_err() {
             // The client is gone, or took too long. Dropping `rows` ends the
             // transaction.
             return;
         }
     }
-    if let Some(end) = writer.finish()
+    // The source is read to the end: its transaction can go before the file
+    // is assembled.
+    drop(rows);
+    let end = match writer.finish().await {
+        Ok(end) => end,
+        Err(message) => {
+            outlet.abort(message);
+            return;
+        }
+    };
+    if let Some(end) = end
         && outlet.send(end, timeout).await.is_err()
     {
         return;
@@ -421,29 +473,43 @@ impl std::error::Error for Broken {}
 enum Writer {
     Csv(CsvWriter),
     Json(JsonWriter),
+    Xlsx(Box<XlsxWriter>),
 }
 
 impl Writer {
-    fn new(format: Format) -> Self {
-        match format {
+    fn new(format: Format, source: &str) -> Result<Self, String> {
+        Ok(match format {
             Format::Csv(options) => Writer::Csv(CsvWriter::new(options)),
             Format::Json => Writer::Json(JsonWriter::new()),
-        }
-    }
-
-    /// The next piece; the first carries the header, or the `[`.
-    fn write(&mut self, piece: &QueryResult) -> Bytes {
-        Bytes::from(match self {
-            Writer::Csv(writer) => writer.write(piece),
-            Writer::Json(writer) => writer.write(piece),
+            Format::Xlsx => Writer::Xlsx(Box::new(XlsxWriter::new(source)?)),
         })
     }
 
-    /// What closes the file: the `]` of a JSON array, nothing for a CSV.
-    fn finish(self) -> Option<Bytes> {
+    /// The next piece; the first carries the header, or the `[`. An XLSX
+    /// piece goes into the workbook and nothing goes out yet. `Err` is a
+    /// value past what Excel holds.
+    fn write(&mut self, piece: &QueryResult) -> Result<Bytes, String> {
+        Ok(Bytes::from(match self {
+            Writer::Csv(writer) => writer.write(piece),
+            Writer::Json(writer) => writer.write(piece),
+            Writer::Xlsx(writer) => {
+                writer.write(piece)?;
+                String::new()
+            }
+        }))
+    }
+
+    /// What closes the file: the `]` of a JSON array, the whole XLSX file —
+    /// assembled off the async threads, it compresses every row — nothing for
+    /// a CSV.
+    async fn finish(self) -> Result<Option<Bytes>, String> {
         match self {
-            Writer::Csv(_) => None,
-            Writer::Json(writer) => Some(Bytes::from(writer.finish())),
+            Writer::Csv(_) => Ok(None),
+            Writer::Json(writer) => Ok(Some(Bytes::from(writer.finish()))),
+            Writer::Xlsx(writer) => tokio::task::spawn_blocking(move || writer.finish())
+                .await
+                .map_err(|_| "the XLSX file could not be assembled".to_owned())?
+                .map(|file| Some(Bytes::from(file))),
         }
     }
 }
@@ -475,24 +541,30 @@ fn format_of(uri: &Uri, accept: Option<&HeaderValue>) -> Result<Format, WireErro
             .map(|(_, value)| value.as_str())
     };
 
-    let json = match value("format") {
-        Some("csv") => false,
-        Some("json") => true,
+    let kind = match value("format") {
+        Some("csv") => Kind::Csv,
+        Some("json") => Kind::Json,
+        Some("xlsx") => Kind::Xlsx,
         Some(other) => {
             return Err(malformed(format!(
-                "format is \"csv\" or \"json\", not {other:?}"
+                "format is \"csv\", \"json\" or \"xlsx\", not {other:?}"
             )));
         }
-        None => accept.is_some_and(prefers_json),
+        None => accept.map_or(Kind::Csv, preferred),
     };
-    if json {
-        // A CSV option on a JSON export would do nothing, and do it silently.
+    if kind != Kind::Csv {
+        let name = if kind == Kind::Json { "JSON" } else { "XLSX" };
+        // A CSV option on another export would do nothing, and do it silently.
         if let Some(stray) = CSV_PARAMETERS.iter().find(|key| value(key).is_some()) {
             return Err(malformed(format!(
-                "{stray:?} is a CSV option, and this export is JSON"
+                "{stray:?} is a CSV option, and this export is {name}"
             )));
         }
-        return Ok(Format::Json);
+        return Ok(if kind == Kind::Json {
+            Format::Json
+        } else {
+            Format::Xlsx
+        });
     }
 
     let [delimiter_key, bom_key, protect_key, null_key] = CSV_PARAMETERS;
@@ -526,18 +598,27 @@ fn format_of(uri: &Uri, accept: Option<&HeaderValue>) -> Result<Format, WireErro
     Ok(Format::Csv(options))
 }
 
-/// Whether `Accept` prefers JSON to CSV. The higher `q` wins, the earlier one
-/// on a tie; a header that names neither leaves the default, CSV.
-fn prefers_json(accept: &HeaderValue) -> bool {
+/// Which export `Accept` asks for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Kind {
+    Csv,
+    Json,
+    Xlsx,
+}
+
+/// The export `Accept` prefers among CSV, JSON and XLSX. The higher `q` wins,
+/// the earlier one on a tie; a header that names none leaves the default, CSV.
+fn preferred(accept: &HeaderValue) -> Kind {
     let Ok(accept) = accept.to_str() else {
-        return false;
+        return Kind::Csv;
     };
-    let mut best: Option<(bool, f32)> = None;
+    let mut best: Option<(Kind, f32)> = None;
     for entry in accept.split(',') {
         let mut parts = entry.split(';');
-        let json = match parts.next().map(str::trim) {
-            Some(media) if media.eq_ignore_ascii_case("application/json") => true,
-            Some(media) if media.eq_ignore_ascii_case("text/csv") => false,
+        let kind = match parts.next().map(str::trim) {
+            Some(media) if media.eq_ignore_ascii_case("application/json") => Kind::Json,
+            Some(media) if media.eq_ignore_ascii_case("text/csv") => Kind::Csv,
+            Some(media) if media.eq_ignore_ascii_case(XLSX_MEDIA_TYPE) => Kind::Xlsx,
             _ => continue,
         };
         let q = parts
@@ -545,10 +626,10 @@ fn prefers_json(accept: &HeaderValue) -> bool {
             .find_map(|q| q.trim().parse::<f32>().ok())
             .unwrap_or(1.0);
         if q > 0.0 && best.is_none_or(|(_, top)| q > top) {
-            best = Some((json, q));
+            best = Some((kind, q));
         }
     }
-    best.is_some_and(|(json, _)| json)
+    best.map_or(Kind::Csv, |(kind, _)| kind)
 }
 
 /// `attachment` with a file name from the source: a plain ASCII `filename`
@@ -711,6 +792,25 @@ mod tests {
             csv(CsvOptions::default()),
             "q=0 means not this one"
         );
+        // XLSX (issue #72): by the parameter, or by its media type in `Accept`.
+        assert_eq!(format(Some("format=xlsx"), None), Ok(Format::Xlsx));
+        assert_eq!(
+            format(
+                None,
+                Some(&accept(
+                    "text/csv;q=0.5, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                ))
+            ),
+            Ok(Format::Xlsx)
+        );
+        assert!(format(Some("format=xls"), None).is_err());
+        assert!(
+            format(Some("format=xlsx&bom=false"), None)
+                .unwrap_err()
+                .message
+                .contains("this export is XLSX"),
+            "a CSV option on an XLSX export is refused"
+        );
     }
 
     #[test]
@@ -734,7 +834,7 @@ mod tests {
                 .message
         };
         assert!(refused("filename=x").contains("not a parameter"));
-        assert!(refused("format=xlsx").contains("xlsx"));
+        assert!(refused("format=xls").contains("\"xlsx\", not \"xls\""));
         assert!(refused("format=json&delimiter=%3B").contains("CSV option"));
         assert!(refused("delimiter=ab").contains("one character"));
         assert!(refused("bom=yes").contains("true or false"));

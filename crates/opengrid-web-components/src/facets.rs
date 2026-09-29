@@ -22,9 +22,9 @@
 //! matches nothing (S1) — and the empty string is `eq ""`, a different value
 //! (S14).
 
+use opengrid_json::{Json as Value, Object as Map};
 use opengrid_query::{CmpOp, FilterExpr};
 use opengrid_types::{DataType, FieldName, Schema};
-use serde_json::{Map, Value};
 
 use crate::presentation::FacetKind;
 
@@ -68,9 +68,9 @@ impl Selection {
     /// The selection as the view writes it.
     pub fn to_json(&self) -> Value {
         match self {
-            Selection::Values(values) => serde_json::json!({ "values": values }),
-            Selection::Range { min, max } => serde_json::json!({ "min": min, "max": max }),
-            Selection::Period { from, to } => serde_json::json!({ "from": from, "to": to }),
+            Selection::Values(values) => opengrid_json::json!({ "values": values }),
+            Selection::Range { min, max } => opengrid_json::json!({ "min": min, "max": max }),
+            Selection::Period { from, to } => opengrid_json::json!({ "from": from, "to": to }),
         }
     }
 

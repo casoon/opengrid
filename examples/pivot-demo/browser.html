@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>opengrid — pivot demo, in the browser</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        margin: 2rem;
+        max-width: 60rem;
+      }
+      opengrid-pivot::part(row total-row) {
+        background: #eef1f5;
+        font-weight: 600;
+      }
+      opengrid-pivot::part(table) {
+        border-collapse: collapse;
+      }
+      opengrid-pivot::part(header),
+      opengrid-pivot::part(row-header),
+      opengrid-pivot::part(cell) {
+        border: 1px solid #ccc;
+        padding: 0.25rem 0.5rem;
+        text-align: start;
+      }
+      opengrid-pivot::part(cell) {
+        text-align: end;
+        font-variant-numeric: tabular-nums;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>opengrid — a pivot in the browser</h1>
+    <p>
+      Rows: country · columns: year · measures: sum of quantity, and a count.
+      No server: the engine runs in a worker over the conformance dataset and
+      answers the pivot as <code>n+1</code> ordinary queries — the same answer
+      the server gives (<a href="index.html">index.html</a>), which the
+      conformance suite checks.
+    </p>
+    <p>Serve the page with <code>just serve-demo</code>.</p>
+
+    <opengrid-pivot
+      label="Orders by country and year"
+      datasource="orders"
+      rows="country"
+      columns="ordered_year"
+      values='[{"field":"qty","fn":"sum","as":"Quantity"},{"fn":"count","as":"Count"}]'
+    ></opengrid-pivot>
+
+    <script type="module">
+      import { loadOpengrid, createWorkerProvider } from "/packages/opengrid/loader.js";
+
+      const provider = createWorkerProvider();
+      const [csv, schema] = await Promise.all([
+        fetch("/crates/opengrid-conformance/data/orders.csv").then((response) => response.arrayBuffer()),
+        fetch("/crates/opengrid-conformance/data/orders.schema.json").then((response) => response.text()),
+      ]);
+      await provider.load("orders", csv, schema);
+
+      const loader = await loadOpengrid();
+      loader.module.set_provider(document.querySelector("opengrid-pivot"), provider);
+    </script>
+  </body>
+</html>

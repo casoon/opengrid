@@ -13,9 +13,23 @@ opengrid-types = { path = "../opengrid-types" }
 opengrid-datasource = { path = "../opengrid-datasource" }
 # The pivot's answer (`PivotResult`), exported as it is shown (issue #3).
 opengrid-pivot = { path = "../opengrid-pivot" }
-serde_json = "1"
+opengrid-json = { path = "../opengrid-json" }
+# XLSX on the server (issue #72, decided by the owner): off by default, so the
+# browser modules never carry it. `constant_memory` writes finished rows to a
+# temporary file, so an export's memory does not grow with its rows.
+rust_xlsxwriter = { version = "0.99", default-features = false, features = ["constant_memory"], optional = true }
+
+[features]
+xlsx = ["dep:rust_xlsxwriter"]
+
+[[test]]
+name = "xlsx"
+required-features = ["xlsx"]
 
 [dev-dependencies]
+# Opens a written workbook in the tests (issue #72): the archive
+# `rust_xlsxwriter` already builds with, test-only.
+zip = { version = "8.3", default-features = false, features = ["deflate"] }
 # The round trip: an export read back by the engine's own CSV ingest.
 opengrid-engine = { path = "../opengrid-engine" }
 opengrid-conformance = { path = "../opengrid-conformance" }

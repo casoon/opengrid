@@ -1,5 +1,3 @@
-use serde::{Deserialize, Serialize};
-
 use crate::ValueError;
 
 /// The closed set of value types in opengrid V1
@@ -7,8 +5,7 @@ use crate::ValueError;
 ///
 /// Deliberately narrow: no extra integer widths, no lists or structs, no time
 /// zones beyond UTC.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(try_from = "DataTypeRepr", into = "DataTypeRepr")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum DataType {
     Bool,
     Int64,
@@ -54,59 +51,6 @@ impl DataType {
     }
 }
 
-/// The JSON shape of a [`DataType`] (plan point 23).
-///
-/// Canonical form, as `crates/opengrid-conformance/data/orders.schema.json` has
-/// written it since point 05: a lower-case name for the simple types, an object
-/// for the one type that carries parameters — `"int64"`, `{"decimal":
-/// {"precision": 12, "scale": 2}}`.
-///
-/// It exists as a separate type so that reading goes through
-/// [`DataType::decimal`]: a derived `Deserialize` on `DataType` itself would
-/// wave through `precision: 0` or `scale > precision`, which
-/// [`DataType::decimal`] rejects by contract.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case", deny_unknown_fields)]
-enum DataTypeRepr {
-    Bool,
-    Int64,
-    Float64,
-    Decimal { precision: u8, scale: u8 },
-    Utf8,
-    Date,
-    Timestamp,
-}
-
-impl TryFrom<DataTypeRepr> for DataType {
-    type Error = ValueError;
-
-    fn try_from(repr: DataTypeRepr) -> Result<Self, Self::Error> {
-        Ok(match repr {
-            DataTypeRepr::Bool => DataType::Bool,
-            DataTypeRepr::Int64 => DataType::Int64,
-            DataTypeRepr::Float64 => DataType::Float64,
-            DataTypeRepr::Decimal { precision, scale } => DataType::decimal(precision, scale)?,
-            DataTypeRepr::Utf8 => DataType::Utf8,
-            DataTypeRepr::Date => DataType::Date,
-            DataTypeRepr::Timestamp => DataType::Timestamp,
-        })
-    }
-}
-
-impl From<DataType> for DataTypeRepr {
-    fn from(data_type: DataType) -> Self {
-        match data_type {
-            DataType::Bool => DataTypeRepr::Bool,
-            DataType::Int64 => DataTypeRepr::Int64,
-            DataType::Float64 => DataTypeRepr::Float64,
-            DataType::Decimal { precision, scale } => DataTypeRepr::Decimal { precision, scale },
-            DataType::Utf8 => DataTypeRepr::Utf8,
-            DataType::Date => DataTypeRepr::Date,
-            DataType::Timestamp => DataTypeRepr::Timestamp,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -130,8 +74,11 @@ mod tests {
             ),
         ];
         for (data_type, json) in cases {
-            assert_eq!(serde_json::to_string(&data_type).unwrap(), json);
-            assert_eq!(serde_json::from_str::<DataType>(json).unwrap(), data_type);
+            assert_eq!(opengrid_json::to_string(&data_type), json);
+            assert_eq!(
+                opengrid_json::from_str::<DataType>(json).unwrap(),
+                data_type
+            );
         }
     }
 
@@ -144,8 +91,8 @@ mod tests {
             "{\"decimal\":{\"precision\":2,\"scale\":5}}",
             "{\"decimal\":{\"precision\":39,\"scale\":2}}",
         ] {
-            assert!(serde_json::from_str::<DataType>(json).is_err(), "{json}");
+            assert!(opengrid_json::from_str::<DataType>(json).is_err(), "{json}");
         }
-        assert!(serde_json::from_str::<DataType>("\"int128\"").is_err());
+        assert!(opengrid_json::from_str::<DataType>("\"int128\"").is_err());
     }
 }

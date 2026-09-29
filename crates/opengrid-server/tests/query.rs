@@ -267,7 +267,7 @@ async fn a_source_describes_its_schema_and_capabilities() {
     let (status, body) = describe(app(true).await, "orders", Some(TOKEN)).await;
     assert_eq!(status, StatusCode::OK);
 
-    let described: serde_json::Value = serde_json::from_str(&body).expect("JSON");
+    let described: opengrid_json::Json = opengrid_json::from_str(&body).expect("JSON");
     assert_eq!(described["name"], "orders");
     assert_eq!(described["capabilities"]["filter"], true);
     assert_eq!(described["capabilities"]["paging"], true);
@@ -315,13 +315,13 @@ async fn a_derived_column_works_but_does_not_announce_itself() {
     let (status, answer) = post(app(false).await, "orders", Some(TOKEN), body).await;
     assert_eq!(status, StatusCode::OK, "{answer}");
 
-    let result: serde_json::Value = serde_json::from_str(&answer).expect("JSON");
+    let result: opengrid_json::Json = opengrid_json::from_str(&answer).expect("JSON");
     assert_eq!(result["columns"][0]["name"], "ordered_year");
     assert_eq!(result["columns"][0]["values"][0], 2025);
 
     let (status, described) = describe(app(false).await, "orders", Some(TOKEN)).await;
     assert_eq!(status, StatusCode::OK);
-    let described: serde_json::Value = serde_json::from_str(&described).expect("JSON");
+    let described: opengrid_json::Json = opengrid_json::from_str(&described).expect("JSON");
     let year = described["schema"]["fields"]
         .as_array()
         .expect("fields")
@@ -367,12 +367,12 @@ async fn a_pivot_answers_in_the_pivot_wire_form() {
     let (status, body) = post_pivot(app(false).await, "orders", Some(TOKEN), PIVOT).await;
     assert_eq!(status, StatusCode::OK, "{body}");
 
-    let answer: serde_json::Value = serde_json::from_str(&body).expect("JSON");
-    assert_eq!(answer["row_dimensions"], serde_json::json!(["country"]));
+    let answer: opengrid_json::Json = opengrid_json::from_str(&body).expect("JSON");
+    assert_eq!(answer["row_dimensions"], opengrid_json::json!(["country"]));
     // One generated column per column value, each naming what it stands for.
     let columns = answer["columns"].as_array().expect("columns");
     assert_eq!(columns[0]["measure"], "total");
-    assert_eq!(columns[0]["path"], serde_json::json!([2025]));
+    assert_eq!(columns[0]["path"], opengrid_json::json!([2025]));
     // The cells are the result form of E17, untouched.
     assert!(answer["result"]["columns"].is_array());
     assert!(answer["result"]["total_count"].is_number());
@@ -396,7 +396,7 @@ async fn the_row_filter_reaches_the_grand_total() {
     let (_, fr) = post_pivot(app(true).await, "orders", Some(OTHER_TOKEN), body).await;
 
     let total_of = |answer: &str| -> i64 {
-        let answer: serde_json::Value = serde_json::from_str(answer).expect("JSON");
+        let answer: opengrid_json::Json = opengrid_json::from_str(answer).expect("JSON");
         let levels = answer["levels"].as_array().expect("levels");
         let grand = levels.iter().position(|level| level == 0).expect("a total");
         // The measure is the column after the one row dimension.
@@ -453,7 +453,7 @@ async fn a_pivot_is_guarded_like_every_other_request() {
 #[tokio::test]
 async fn a_source_describes_its_pivot_limits() {
     let (_, body) = describe(app(false).await, "orders", Some(TOKEN)).await;
-    let described: serde_json::Value = serde_json::from_str(&body).expect("JSON");
+    let described: opengrid_json::Json = opengrid_json::from_str(&body).expect("JSON");
     assert_eq!(described["pivot_limits"]["max_column_dimensions"], 1);
     assert_eq!(described["pivot_limits"]["max_columns"], 256);
     assert_eq!(described["pivot_limits"]["max_rows"], 2000);

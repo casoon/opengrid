@@ -27,10 +27,9 @@
 //!   they disagree.
 //! * **Reading needs the type.** JSON cannot tell a decimal from a string
 //!   (`"10.00"`) or `NaN` from the word (E13), so values are read through
-//!   [`Value::deserialize_typed`] with the column's type — which is why this
-//!   module walks the JSON itself instead of deriving `Deserialize`: the derived
-//!   reader would depend on `type` arriving before `values`, and JSON object keys
-//!   have no order.
+//!   [`Value::from_json_typed`] with the column's type — which is why this
+//!   module walks the JSON itself: a reader that went key by key would depend on
+//!   `type` arriving before `values`, and JSON object keys have no order.
 //!
 //! The error form is the counterpart:
 //!
@@ -38,8 +37,8 @@
 //! { "error": { "code": "validation", "message": "…", "path": "filter.and[1].value" } }
 //! ```
 
+use opengrid_json::{Error, FromJson, Json, ToJson, json, unknown_variant};
 use opengrid_types::{DataType, Field, FieldName, Schema, Value};
-use serde::{Deserialize, Serialize};
 
 use crate::QueryResult;
 
@@ -48,8 +47,7 @@ use crate::QueryResult;
 /// Closed on purpose: a client has to be able to branch on it, and a free-text
 /// message is not something to branch on. The human-readable part is
 /// [`WireError::message`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ErrorCode {
     /// The query is not valid against the source's schema, or breaks a limit
     /// that belongs to the query itself (`QueryError`, including its JSON path).
@@ -74,8 +72,46 @@ pub enum ErrorCode {
     Malformed,
 }
 
+const ERROR_CODES: [(&str, ErrorCode); 7] = [
+    ("validation", ErrorCode::Validation),
+    ("unknown_source", ErrorCode::UnknownSource),
+    ("limit_exceeded", ErrorCode::LimitExceeded),
+    ("busy", ErrorCode::Busy),
+    ("unauthorized", ErrorCode::Unauthorized),
+    ("backend", ErrorCode::Backend),
+    ("malformed", ErrorCode::Malformed),
+];
+
+impl ErrorCode {
+    /// The wire name: `validation`, `unknown_source`, ….
+    pub fn as_str(self) -> &'static str {
+        ERROR_CODES
+            .iter()
+            .find(|(_, code)| *code == self)
+            .map(|(name, _)| *name)
+            .expect("every code has a name")
+    }
+}
+
+impl FromJson for ErrorCode {
+    fn from_json(json: &Json) -> Result<Self, Error> {
+        let name = String::from_json(json)?;
+        ERROR_CODES
+            .iter()
+            .find(|(candidate, _)| *candidate == name)
+            .map(|(_, code)| *code)
+            .ok_or_else(|| unknown_variant(&name, &ERROR_CODES.map(|(name, _)| name)))
+    }
+}
+
+impl ToJson for ErrorCode {
+    fn to_json(&self) -> Json {
+        Json::from(self.as_str())
+    }
+}
+
 /// A failure in the form it travels in.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WireError {
     /// The machine-readable class.
     pub code: ErrorCode,
@@ -83,7 +119,6 @@ pub struct WireError {
     pub message: String,
     /// Where in the query it sits, when that is known — the JSON path that
     /// `QueryError` already carries (`filter.and[1].value`).
-    #[serde(skip_serializing_if = "Option::is_none", default)]
     pub path: Option<String>,
 }
 
@@ -106,15 +141,24 @@ impl WireError {
         }
     }
 
-    /// The envelope: `{ "error": { … } }`.
+    /// The envelope: `{ "error": { "code", "message", "path"? } }`.
     pub fn to_json(&self) -> String {
-        serde_json::json!({ "error": self }).to_string()
+        let mut error = json!({ "code": self.code, "message": self.message });
+        if let (Some(path), Some(object)) = (&self.path, error.as_object_mut()) {
+            object.insert("path", path.as_str());
+        }
+        json!({ "error": error }).to_string()
     }
 
     /// Reads the envelope back, or `None` when this is not an error body.
     pub fn from_json(json: &str) -> Option<Self> {
-        let value: serde_json::Value = serde_json::from_str(json).ok()?;
-        serde_json::from_value(value.get("error")?.clone()).ok()
+        let body = Json::parse(json).ok()?;
+        let error = body.get("error")?;
+        Some(Self {
+            code: ErrorCode::from_json(error.get("code")?).ok()?,
+            message: String::from_json(error.get("message")?).ok()?,
+            path: <Option<String>>::from_json(&error["path"]).ok()?,
+        })
     }
 }
 
@@ -156,31 +200,24 @@ impl std::fmt::Display for ReadError {
 
 impl std::error::Error for ReadError {}
 
-/// One column on the wire: its name, its type, and its values.
-#[derive(Serialize)]
-struct ColumnOut<'a> {
-    name: &'a str,
-    #[serde(rename = "type")]
-    data_type: DataType,
-    nullable: bool,
-    values: &'a [Value],
-}
-
-/// Writes a result in the wire form.
+/// Writes a result in the wire form: `total_count`, `row_count`, then the
+/// columns, each with its name, type, nullability and values.
 pub fn result_to_json(result: &QueryResult) -> String {
-    let columns: Vec<ColumnOut<'_>> = result
+    let columns: Vec<Json> = result
         .schema
         .fields()
         .iter()
         .zip(&result.columns)
-        .map(|(field, values)| ColumnOut {
-            name: field.name.as_str(),
-            data_type: field.data_type,
-            nullable: field.nullable,
-            values,
+        .map(|(field, values)| {
+            json!({
+                "name": field.name,
+                "type": field.data_type,
+                "nullable": field.nullable,
+                "values": values,
+            })
         })
         .collect();
-    serde_json::json!({
+    json!({
         "total_count": result.total_count,
         "row_count": result.row_count(),
         "columns": columns,
@@ -194,16 +231,16 @@ pub fn result_to_json(result: &QueryResult) -> String {
 /// column, or columns of differing length are errors here rather than surprises
 /// later. The invariant of [`QueryResult`] holds for everything this returns.
 pub fn result_from_json(json: &str) -> Result<QueryResult, ReadError> {
-    let body: serde_json::Value = serde_json::from_str(json)
-        .map_err(|error| ReadError::new(format!("result JSON: {error}")))?;
+    let body =
+        Json::parse(json).map_err(|error| ReadError::new(format!("result JSON: {error}")))?;
 
     let total_count = body
         .get("total_count")
-        .and_then(serde_json::Value::as_u64)
+        .and_then(Json::as_u64)
         .ok_or_else(|| ReadError::new("result has no total_count"))?;
     let raw_columns = body
         .get("columns")
-        .and_then(serde_json::Value::as_array)
+        .and_then(Json::as_array)
         .ok_or_else(|| ReadError::new("result has no columns"))?;
 
     let mut fields = Vec::with_capacity(raw_columns.len());
@@ -211,31 +248,30 @@ pub fn result_from_json(json: &str) -> Result<QueryResult, ReadError> {
     for column in raw_columns {
         let name = column
             .get("name")
-            .and_then(serde_json::Value::as_str)
+            .and_then(Json::as_str)
             .ok_or_else(|| ReadError::new("a column has no name"))?;
         let name = FieldName::new(name)
             .map_err(|error| ReadError::new(format!("column {name:?}: {error}")))?;
-        let data_type: DataType = column
+        let data_type = column
             .get("type")
             .ok_or_else(|| ReadError::new(format!("column {name} has no type")))
             .and_then(|raw| {
-                serde_json::from_value(raw.clone())
+                DataType::from_json(raw)
                     .map_err(|error| ReadError::new(format!("column {name}: {error}")))
             })?;
         let nullable = column
             .get("nullable")
-            .and_then(serde_json::Value::as_bool)
+            .and_then(Json::as_bool)
             .unwrap_or(false);
         let raw_values = column
             .get("values")
-            .and_then(serde_json::Value::as_array)
+            .and_then(Json::as_array)
             .ok_or_else(|| ReadError::new(format!("column {name} has no values")))?;
 
         let mut values = Vec::with_capacity(raw_values.len());
         for raw in raw_values {
-            let value = Value::deserialize_typed(raw.clone(), &data_type).map_err(
-                |error: serde_json::Error| ReadError::new(format!("column {name}: {error}")),
-            )?;
+            let value = Value::from_json_typed(raw, &data_type)
+                .map_err(|error| ReadError::new(format!("column {name}: {error}")))?;
             values.push(value);
         }
 

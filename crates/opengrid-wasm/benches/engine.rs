@@ -39,7 +39,7 @@ fn configured() -> Criterion {
 }
 
 fn validate(json: &str, schema: &Schema) -> ValidatedQuery {
-    let query: Query = serde_json::from_str(json).expect("the query parses");
+    let query: Query = opengrid_json::from_str(json).expect("the query parses");
     query
         .validate(schema, &Limits::default())
         .expect("the query validates")
