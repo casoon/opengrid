@@ -38,17 +38,23 @@ function exported(page, options) {
     const csv = window.__opengridModule.get_pivot(pivot, options);
     const root = pivot.shadowRoot;
     const head = [...root.querySelectorAll("thead tr")];
+    const said = (node) => {
+      // What a reader hears: the direction mark is `aria-hidden`.
+      const copy = node.cloneNode(true);
+      copy.querySelectorAll('[aria-hidden="true"]').forEach((mark) => mark.remove());
+      return copy.textContent;
+    };
     let header;
     if (head.length === 2) {
       // Row-dimension names span both rows; each value spans its measures.
-      const dimensions = [...head[0].querySelectorAll("th[rowspan]")].map((th) => th.textContent);
+      const dimensions = [...head[0].querySelectorAll("th[rowspan]")].map(said);
       const groups = [...head[0].querySelectorAll('th[scope="colgroup"]')].flatMap((th) =>
         Array(Number(th.getAttribute("colspan"))).fill(th.textContent),
       );
-      const measures = [...head[1].querySelectorAll("th")].map((th) => th.textContent);
+      const measures = [...head[1].querySelectorAll("th")].map(said);
       header = [...dimensions, ...measures.map((measure, i) => `${groups[i]} · ${measure}`)];
     } else {
-      header = [...head[0].querySelectorAll("th")].map((th) => th.textContent);
+      header = [...head[0].querySelectorAll("th")].map(said);
     }
     const rows = [...root.querySelectorAll("tbody tr")].map((tr) =>
       [...tr.children].flatMap((cell) => [
@@ -130,7 +136,10 @@ test("subtotals are rows with their label, spanning the dimensions", async ({ pa
   // Each attribute asks again; wait for the answer to the last one.
   await page.waitForFunction(() => {
     const root = document.querySelector("opengrid-pivot").shadowRoot;
-    const header = [...root.querySelectorAll("thead th")].map((th) => th.textContent);
+    // The name, without the direction mark beside it.
+    const header = [...root.querySelectorAll("thead th")].map(
+      (th) => th.querySelector("button > span:first-child")?.textContent ?? th.textContent,
+    );
     return (
       header.join() === "country,customer,n" &&
       root.querySelectorAll("tbody tr[data-total]").length > 1

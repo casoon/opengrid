@@ -538,13 +538,26 @@ export interface PivotMeasure {
 
 /**
  * The view of `<opengrid-pivot>`: what it pivots by and what it measures — its
- * `rows`, `columns` and `values` attributes as one value. `sort`, `collapsed`
+ * `rows`, `columns`, `values` and `sort` attributes as one value. `collapsed`
  * and `filters` join it later.
  */
 export interface PivotView {
   rows: string[];
   columns: string[];
   values: PivotMeasure[];
+  /** How each level is ordered; empty is every level ascending by its values. */
+  sort: PivotSort[];
+}
+
+/**
+ * One level's order (rule P9): `field` names the row dimension; without `by`
+ * the level is ordered by its own values, with it by that measure over the
+ * whole row. A subtotal stays after its group.
+ */
+export interface PivotSort {
+  field: string;
+  by?: string;
+  direction: "asc" | "desc";
 }
 
 /** What `set_view` takes for a pivot: a part left out is empty. */
@@ -797,6 +810,8 @@ export interface OpengridPivotAttributes {
   columns?: string;
   /** The measures as the contract's JSON: `[{"field":"qty","fn":"sum","as":"total"}]`. */
   values?: string;
+  /** How each level is ordered, as the wire's JSON: `[{"field":"country","by":"total","direction":"desc"}]`. */
+  sort?: string;
   theme?: Theme;
 }
 

@@ -42,6 +42,11 @@ pub const COLUMNS_ATTRIBUTE: &str = "columns";
 /// learn, and nothing to keep in step with the query model.
 pub const VALUES_ATTRIBUTE: &str = "values";
 
+/// The host attribute ordering the rows (rule P9, issue #108): the wire's own
+/// JSON, `[{ "field", "by"?, "direction" }]`. The reader's clicks write it, so
+/// the view stays "the attributes".
+pub const SORT_ATTRIBUTE: &str = "sort";
+
 /// The host attributes the element reacts to.
 pub const OBSERVED: &[&str] = &[
     LABEL_ATTRIBUTE,
@@ -49,6 +54,7 @@ pub const OBSERVED: &[&str] = &[
     ROWS_ATTRIBUTE,
     COLUMNS_ATTRIBUTE,
     VALUES_ATTRIBUTE,
+    SORT_ATTRIBUTE,
     // CSS alone: the look is `:host([theme=…])` rules (issue #32).
     crate::theme::THEME_ATTRIBUTE,
 ];
@@ -73,6 +79,7 @@ pub fn pivot_json(
     rows: &[String],
     columns: &[String],
     values: Option<&str>,
+    sort: &[PivotOrder],
 ) -> Result<String, String> {
     let raw = values.unwrap_or_default().trim();
     if raw.is_empty() {
@@ -83,13 +90,168 @@ pub fn pivot_json(
     if !values.is_array() {
         return Err("the values attribute must be a JSON array of measures".to_owned());
     }
-    Ok(json!({
+    let mut request = json!({
         "source": source,
         "rows": rows,
         "columns": columns,
         "values": values,
-    })
-    .to_string())
+    });
+    // Only when there is one: a server from before rule P9 reads the rest.
+    if !sort.is_empty()
+        && let Value::Object(object) = &mut request
+    {
+        object.insert(
+            "sort".to_owned(),
+            Value::Array(sort.iter().map(PivotOrder::to_json).collect()),
+        );
+    }
+    Ok(request.to_string())
+}
+
+/// One level's order (rule P9): by its own values, or `by` a measure.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PivotOrder {
+    /// The row dimension — the level.
+    pub field: String,
+    /// A measure alias; `None` orders the level by its own values.
+    pub by: Option<String>,
+    pub descending: bool,
+}
+
+impl PivotOrder {
+    pub fn to_json(&self) -> Value {
+        let direction = if self.descending { "desc" } else { "asc" };
+        match &self.by {
+            Some(by) => json!({ "field": self.field, "by": by, "direction": direction }),
+            None => json!({ "field": self.field, "direction": direction }),
+        }
+    }
+
+    /// `{ field, by?, direction? }`, or `None` when it is not that.
+    fn from_json(value: &Value) -> Option<Self> {
+        let object = value.as_object()?;
+        let field = object.get("field")?.as_str()?.to_owned();
+        let by = match object.get("by") {
+            None => None,
+            Some(by) => Some(by.as_str()?.to_owned()),
+        };
+        let descending = match object.get("direction").map(Value::as_str) {
+            None => false,
+            Some(Some("asc")) => false,
+            Some(Some("desc")) => true,
+            Some(_) => return None,
+        };
+        Some(Self {
+            field,
+            by,
+            descending,
+        })
+    }
+}
+
+/// The `sort` attribute as orders. Absent or empty is none; anything that is
+/// not a list of `{ field, by?, direction }` is an error the page can fix.
+pub fn parse_sort(raw: Option<&str>) -> Result<Vec<PivotOrder>, String> {
+    let raw = raw.unwrap_or_default().trim();
+    if raw.is_empty() {
+        return Ok(Vec::new());
+    }
+    opengrid_json::from_str::<Value>(raw)
+        .ok()
+        .and_then(|value| {
+            value
+                .as_array()?
+                .iter()
+                .map(PivotOrder::from_json)
+                .collect::<Option<Vec<_>>>()
+        })
+        .ok_or_else(|| {
+            "the sort attribute must be a JSON array of { field, by?, direction }".to_owned()
+        })
+}
+
+/// What a header sorts by when the reader presses it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SortTarget<'a> {
+    /// A row dimension's own values, at its level.
+    Dimension(&'a str),
+    /// A measure, at every level.
+    Measure(&'a str),
+}
+
+/// The order after the reader pressed `target` (issue #108).
+///
+/// A dimension toggles its level between ascending — the default, so its
+/// entry goes — and descending; a level ordered by a measure starts again
+/// ascending by its values. A measure orders every level by itself: ascending
+/// first, descending when it already orders every level ascending.
+pub fn next_sort(current: &[PivotOrder], rows: &[String], target: SortTarget) -> Vec<PivotOrder> {
+    match target {
+        SortTarget::Dimension(field) => {
+            let descending = !matches!(
+                current.iter().find(|order| order.field == field),
+                Some(PivotOrder {
+                    by: None,
+                    descending: true,
+                    ..
+                })
+            ) && !matches!(
+                current.iter().find(|order| order.field == field),
+                Some(PivotOrder { by: Some(_), .. })
+            );
+            let mut next: Vec<PivotOrder> = current
+                .iter()
+                .filter(|order| order.field != field)
+                .cloned()
+                .collect();
+            if descending {
+                next.push(PivotOrder {
+                    field: field.to_owned(),
+                    by: None,
+                    descending: true,
+                });
+            }
+            next
+        }
+        SortTarget::Measure(measure) => {
+            let descending = measure_order(current, rows, measure) == Some(false);
+            rows.iter()
+                .map(|field| PivotOrder {
+                    field: field.clone(),
+                    by: Some(measure.to_owned()),
+                    descending,
+                })
+                .collect()
+        }
+    }
+}
+
+/// Whether `measure` orders every level, and which way (`Some(true)` is
+/// descending).
+fn measure_order(current: &[PivotOrder], rows: &[String], measure: &str) -> Option<bool> {
+    let mut direction = None;
+    for field in rows {
+        let order = current.iter().find(|order| order.field == *field)?;
+        if order.by.as_deref() != Some(measure) || direction.is_some_and(|d| d != order.descending)
+        {
+            return None;
+        }
+        direction = Some(order.descending);
+    }
+    direction
+}
+
+/// `aria-sort` of a row dimension's header: its level's order by its values
+/// — ascending unless said otherwise — or `none` while a measure orders it.
+fn dimension_aria_sort(sort: &[PivotOrder], field: &str) -> &'static str {
+    match sort.iter().find(|order| order.field == field) {
+        None => "ascending",
+        Some(PivotOrder { by: Some(_), .. }) => "none",
+        Some(PivotOrder {
+            descending: true, ..
+        }) => "descending",
+        Some(_) => "ascending",
+    }
 }
 
 /// The pivot's view (issue #106): what it pivots by and what it measures.
@@ -104,6 +266,8 @@ pub struct PivotView {
     pub columns: Vec<String>,
     /// The measures, as the contract's own JSON: `[{ field?, fn, as }]`.
     pub values: Vec<Value>,
+    /// Rule P9's orders; empty is every level ascending by its values.
+    pub sort: Vec<PivotOrder>,
 }
 
 impl PivotView {
@@ -113,6 +277,7 @@ impl PivotView {
         rows: Option<&str>,
         columns: Option<&str>,
         values: Option<&str>,
+        sort: Option<&str>,
     ) -> Self {
         Self {
             rows: parse_dimensions(rows),
@@ -121,15 +286,21 @@ impl PivotView {
                 .and_then(|raw| opengrid_json::from_str::<Value>(raw.trim()).ok())
                 .and_then(|values| values.as_array().cloned())
                 .unwrap_or_default(),
+            sort: parse_sort(sort).unwrap_or_default(),
         }
     }
 
-    /// The three attributes, in the order `rows`, `columns`, `values`.
-    pub fn attributes(&self) -> [String; 3] {
+    /// The attributes, in the order `rows`, `columns`, `values`, `sort`.
+    pub fn attributes(&self) -> [String; 4] {
         [
             self.rows.join(","),
             self.columns.join(","),
             Value::Array(self.values.clone()).to_string(),
+            if self.sort.is_empty() {
+                String::new()
+            } else {
+                Value::Array(self.sort.iter().map(PivotOrder::to_json).collect()).to_string()
+            },
         ]
     }
 
@@ -138,6 +309,7 @@ impl PivotView {
             "rows": self.rows,
             "columns": self.columns,
             "values": Value::Array(self.values.clone()),
+            "sort": Value::Array(self.sort.iter().map(PivotOrder::to_json).collect()),
         })
     }
 
@@ -176,11 +348,25 @@ impl PivotView {
                 }
             },
         };
+        let sort = match object.get("sort") {
+            None => Vec::new(),
+            Some(list) => match list
+                .as_array()
+                .and_then(|list| list.iter().map(PivotOrder::from_json).collect())
+            {
+                Some(sort) => sort,
+                None => {
+                    problems.push("sort is not a list of { field, by?, direction }".to_owned());
+                    Vec::new()
+                }
+            },
+        };
         if problems.is_empty() {
             Ok(Self {
                 rows,
                 columns,
                 values,
+                sort,
             })
         } else {
             Err(problems)
@@ -246,6 +432,8 @@ pub struct PivotModel {
     /// The column dimensions, as the request named them — the answer does not
     /// carry them, and a format of a column dimension needs its name.
     pub column_dimensions: Vec<String>,
+    /// The orders the request asked for (rule P9): what the headers say.
+    pub sort: Vec<PivotOrder>,
     pub columns: Vec<ColumnHeader>,
     /// Per row: how many row dimensions are set. See
     /// [`opengrid_pivot::PivotResult::row_levels`] — a subtotal is marked by
@@ -328,6 +516,7 @@ pub fn parse_result(json: &str) -> Result<PivotModel, String> {
     Ok(PivotModel {
         row_dimensions,
         column_dimensions: Vec::new(),
+        sort: Vec::new(),
         columns,
         levels,
         rows,
@@ -428,10 +617,15 @@ pub fn build_pivot(
                 // holds only the measures.
                 attribute(buffer, th, "rowspan", "2");
             }
-            buffer.push(Patch::SetText {
-                node: th,
-                text: look.title(name),
-            });
+            let aria_sort = dimension_aria_sort(&model.sort, name);
+            sort_button(
+                buffer,
+                nodes,
+                th,
+                &look.title(name),
+                aria_sort,
+                ("data-sort-field", name),
+            );
         }
 
         if nested {
@@ -456,6 +650,9 @@ pub fn build_pivot(
                         .join(" · "),
                 });
             }
+            // Not sort buttons: a cell here is one column value's, and a
+            // measure orders by the whole row (P9) — the order would not be
+            // the one these cells show.
             let second_row = element(buffer, nodes, Some(thead), "tr");
             for column in &model.columns {
                 let th = element(buffer, nodes, Some(second_row), "th");
@@ -467,14 +664,26 @@ pub fn build_pivot(
                 });
             }
         } else {
+            // Without a column dimension a measure's cells are the whole row,
+            // so its header sorts by exactly what it shows.
             for column in &model.columns {
                 let th = element(buffer, nodes, Some(first_row), "th");
                 attribute(buffer, th, "part", "header");
                 attribute(buffer, th, "scope", "col");
-                buffer.push(Patch::SetText {
-                    node: th,
-                    text: look.title(&column.measure),
-                });
+                let aria_sort =
+                    match measure_order(&model.sort, &model.row_dimensions, &column.measure) {
+                        Some(true) => "descending",
+                        Some(false) => "ascending",
+                        None => "none",
+                    };
+                sort_button(
+                    buffer,
+                    nodes,
+                    th,
+                    &look.title(&column.measure),
+                    aria_sort,
+                    ("data-sort-by", &column.measure),
+                );
             }
         }
 
@@ -540,6 +749,34 @@ pub fn build_pivot(
     }
 }
 
+/// A header's sort button, as the table has it (issue #108): `aria-sort` on
+/// the `<th>`, the name in its own span, the direction mark beside it and out
+/// of the accessible name — the `<th>` already says the direction.
+fn sort_button(
+    buffer: &mut PatchBuffer,
+    nodes: &mut NodeAllocator,
+    th: NodeId,
+    title: &str,
+    aria_sort: &str,
+    (key, value): (&str, &str),
+) {
+    attribute(buffer, th, "aria-sort", aria_sort);
+    let button = element(buffer, nodes, Some(th), "button");
+    attribute(buffer, button, "part", "sort-button");
+    attribute(buffer, button, "type", "button");
+    attribute(buffer, button, key, value);
+    let name = element(buffer, nodes, Some(button), "span");
+    buffer.push(Patch::SetText {
+        node: name,
+        text: title.to_owned(),
+    });
+    let mark = crate::shared::marker(buffer, nodes, button, "sort-direction");
+    buffer.push(Patch::SetText {
+        node: mark,
+        text: crate::table::direction_mark(aria_sort),
+    });
+}
+
 fn attribute(buffer: &mut PatchBuffer, node: NodeId, name: &str, value: &str) {
     buffer.push(Patch::SetAttribute {
         node,
@@ -596,11 +833,20 @@ mod tests {
     #[test]
     fn a_measure_list_must_be_json() {
         let rows = vec!["country".to_owned()];
-        assert!(pivot_json("orders", &rows, &[], Some(r#"[{"fn":"count","as":"n"}]"#)).is_ok());
-        assert!(pivot_json("orders", &rows, &[], None).is_err());
-        assert!(pivot_json("orders", &rows, &[], Some("count(qty)")).is_err());
         assert!(
-            pivot_json("orders", &rows, &[], Some(r#"{"fn":"count"}"#)).is_err(),
+            pivot_json(
+                "orders",
+                &rows,
+                &[],
+                Some(r#"[{"fn":"count","as":"n"}]"#),
+                &[]
+            )
+            .is_ok()
+        );
+        assert!(pivot_json("orders", &rows, &[], None, &[]).is_err());
+        assert!(pivot_json("orders", &rows, &[], Some("count(qty)"), &[]).is_err());
+        assert!(
+            pivot_json("orders", &rows, &[], Some(r#"{"fn":"count"}"#), &[]).is_err(),
             "an object is not a list of measures"
         );
     }
@@ -750,22 +996,131 @@ mod tests {
             Some("country, customer"),
             Some("ordered_year"),
             Some(r#"[{"field":"qty","fn":"sum","as":"total"}]"#),
+            Some(r#"[{"field":"country","by":"total","direction":"desc"}]"#),
         );
         assert_eq!(view.rows, vec!["country".to_owned(), "customer".to_owned()]);
-        let [rows, columns, values] = view.attributes();
+        assert_eq!(view.sort.len(), 1);
+        let [rows, columns, values, sort] = view.attributes();
         assert_eq!(rows, "country,customer");
         assert_eq!(columns, "ordered_year");
         assert_eq!(
-            PivotView::from_attributes(Some(&rows), Some(&columns), Some(&values)),
+            PivotView::from_attributes(Some(&rows), Some(&columns), Some(&values), Some(&sort)),
             view
         );
         assert_eq!(PivotView::from_json(&view.to_json()), Ok(view));
         // Unreadable measures are none — the status line says why.
         assert!(
-            PivotView::from_attributes(None, None, Some("sum(qty)"))
+            PivotView::from_attributes(None, None, Some("sum(qty)"), None)
                 .values
                 .is_empty()
         );
+    }
+
+    /// The reader's presses (issue #108): a dimension toggles its level, and
+    /// ascending — the default — is no entry; a measure orders every level.
+    #[test]
+    fn a_press_toggles_the_order() {
+        let rows = vec!["country".to_owned(), "customer".to_owned()];
+        let desc = |field: &str| PivotOrder {
+            field: field.to_owned(),
+            by: None,
+            descending: true,
+        };
+        let country = SortTarget::Dimension("country");
+        assert_eq!(next_sort(&[], &rows, country), vec![desc("country")]);
+        assert_eq!(next_sort(&[desc("country")], &rows, country), vec![]);
+        // The other level keeps its order.
+        assert_eq!(
+            next_sort(&[desc("customer")], &rows, country),
+            vec![desc("customer"), desc("country")]
+        );
+
+        let by_n = next_sort(&[], &rows, SortTarget::Measure("n"));
+        assert_eq!(by_n.len(), 2);
+        assert!(
+            by_n.iter()
+                .all(|order| order.by.as_deref() == Some("n") && !order.descending)
+        );
+        let again = next_sort(&by_n, &rows, SortTarget::Measure("n"));
+        assert!(
+            again.iter().all(|order| order.descending),
+            "then descending"
+        );
+        assert!(
+            next_sort(&again, &rows, SortTarget::Measure("n"))
+                .iter()
+                .all(|order| !order.descending),
+            "and back"
+        );
+        // A level a measure orders starts again ascending by its values.
+        assert_eq!(next_sort(&by_n, &rows, country).len(), 1);
+    }
+
+    /// The attribute is the wire's JSON; anything else is said.
+    #[test]
+    fn the_sort_attribute_is_the_wires_json() {
+        assert_eq!(parse_sort(None), Ok(vec![]));
+        assert_eq!(parse_sort(Some(" ")), Ok(vec![]));
+        let sort = parse_sort(Some(r#"[{"field":"country","by":"n","direction":"desc"}]"#))
+            .expect("the wire form");
+        assert_eq!(sort[0].by.as_deref(), Some("n"));
+        assert!(parse_sort(Some(r#"[{"field":"country","direction":"down"}]"#)).is_err());
+        assert!(parse_sort(Some("country")).is_err());
+        let request: Value = opengrid_json::from_str(
+            &pivot_json(
+                "orders",
+                &["country".to_owned()],
+                &[],
+                Some(r#"[{"fn":"count","as":"n"}]"#),
+                &sort,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(request["sort"][0]["direction"].as_str(), Some("desc"));
+        let unsorted = pivot_json(
+            "orders",
+            &["country".to_owned()],
+            &[],
+            Some(r#"[{"fn":"count","as":"n"}]"#),
+            &[],
+        )
+        .unwrap();
+        assert!(!unsorted.contains("sort"), "no key without an order");
+    }
+
+    /// The headers say the order: a dimension ascending by default, a
+    /// measure only when it orders every level — and without a column
+    /// dimension alone is a measure header a button.
+    #[test]
+    fn the_headers_say_the_order() {
+        let answer = r#"{"row_dimensions":["country"],"columns":[{"path":[],"measure":"n"}],
+            "levels":[1,0],"result":{"total_count":2,"row_count":2,"columns":[
+            {"name":"country","type":"utf8","nullable":true,"values":["DE",null]},
+            {"name":"n_0","type":"int64","nullable":true,"values":[1,1]}]}}"#;
+        let mut flat = parse_result(answer).unwrap();
+        let sorts = |model: &PivotModel| {
+            let markup = markup(Some(model));
+            (
+                markup.matches("value: \"sort-button\"").count(),
+                markup
+                    .match_indices("name: \"aria-sort\", value: \"")
+                    .map(|(at, found)| {
+                        let rest = &markup[at + found.len()..];
+                        rest[..rest.find('"').unwrap()].to_owned()
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        };
+        assert_eq!(sorts(&flat), (2, vec!["ascending".into(), "none".into()]));
+        flat.sort = vec![PivotOrder {
+            field: "country".to_owned(),
+            by: Some("n".to_owned()),
+            descending: true,
+        }];
+        assert_eq!(sorts(&flat), (2, vec!["none".into(), "descending".into()]));
+        // With a column dimension only the dimension header sorts.
+        assert_eq!(sorts(&model()).0, 1);
     }
 
     /// A view that does not hold is refused whole, with every reason.
@@ -779,7 +1134,7 @@ mod tests {
         assert!(read(r#"{"columns":[1]}"#).is_err());
         assert!(read(r#"{"values":[{"field":1,"fn":"sum","as":"n"}]}"#).is_err());
         // Left out is empty; an unknown key is a later version's.
-        let view = read(r#"{"rows":["country"],"sort":[]}"#).unwrap();
+        let view = read(r#"{"rows":["country"],"collapsed":[]}"#).unwrap();
         assert!(view.columns.is_empty() && view.values.is_empty());
         assert!(read(r#"{"values":[{"fn":"count","as":"n"}]}"#).is_ok());
     }

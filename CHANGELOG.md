@@ -32,6 +32,14 @@ Two things belong in every release entry and are easy to leave out:
   `defaultView` and `onViewChange` are typed `PivotView` in React, Vue and Svelte;
   `get_view<PivotView>(pivot)` in TypeScript. `ViewChangeDetail` and `Connection` take a type
   parameter whose default is the grid's, so existing code compiles unchanged.
+- **Sorting in `<opengrid-pivot>`** ([#108](https://github.com/casoon/opengrid/issues/108)).
+  Each level is ordered by its own values or by a measure over the whole row, ascending or
+  descending; subtotals stay after their group (new rule P9, with conformance cases on the local
+  engine, WebAssembly, PostgreSQL and the export). The pivot query takes `sort:
+  [{ field, by?, direction }]` — sent only when there is one — and the element a `sort` attribute
+  that is part of its view. Row-dimension headers, and measure headers without a column
+  dimension, are sort buttons with `aria-sort`. On PostgreSQL a sorted pivot runs one query per
+  level instead of one `GROUPING SETS` statement.
 
 ## [0.7.2] — 2026-09-30
 

@@ -34,7 +34,7 @@ export const pivotView: ComponentProps<typeof OpengridPivot> = {
   onviewchange: (view: PivotView) => view.values,
 };
 // @ts-expect-error — a pivot's view is its rows, columns and values
-export const pivotRefused: ComponentProps<typeof OpengridPivot> = { view: { sort: [] } };
+export const pivotRefused: ComponentProps<typeof OpengridPivot> = { view: { density: "compact" } };
 
 export const refused: GridProps[] = [
   // @ts-expect-error — a density is one of three

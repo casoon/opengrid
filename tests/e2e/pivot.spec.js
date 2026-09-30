@@ -72,7 +72,8 @@ test.describe("pivot", () => {
     expect(settled).toEqual([2, 1]);
     const shown = await page.evaluate(() =>
       [...document.querySelector("opengrid-pivot").shadowRoot.querySelectorAll("thead th")].map(
-        (th) => th.textContent,
+        // The name, without the direction mark beside it.
+        (th) => th.querySelector("button > span:first-child")?.textContent ?? th.textContent,
       ),
     );
     expect(shown).toContain("customer");
@@ -181,7 +182,7 @@ test.describe("pivot", () => {
     const shown = await page.evaluate(() => {
       const root = document.querySelector("opengrid-pivot").shadowRoot;
       return {
-        dimension: root.querySelector('thead th[rowspan="2"]').textContent,
+        dimension: root.querySelector('thead th[rowspan="2"] button > span').textContent,
         total: [...root.querySelectorAll("tbody tr:last-child td")].map((td) => td.textContent),
       };
     });
@@ -228,6 +229,7 @@ test.describe("pivot view", () => {
       { field: "qty", fn: "sum", as: "total" },
       { fn: "count", as: "n" },
     ],
+    sort: [],
   };
 
   /** Counts the events on the pivot from here on. */
@@ -265,7 +267,7 @@ test.describe("pivot view", () => {
   test("set_view writes all three at once, in one query, and says so once", async ({ page }) => {
     await open(page);
     await listen(page);
-    const next = { rows: ["customer"], columns: [], values: [{ fn: "count", as: "n" }] };
+    const next = { rows: ["customer"], columns: [], values: [{ fn: "count", as: "n" }], sort: [] };
     await setView(page, next);
 
     // The event is the report of the change, there as set_view returns.
@@ -279,7 +281,9 @@ test.describe("pivot view", () => {
     ).toEqual(["customer", "", '[{"fn":"count","as":"n"}]']);
     await expect.poll(async () => (await facts(page)).state).toBe("ready");
     const header = await page.evaluate(
-      () => document.querySelector("opengrid-pivot").shadowRoot.querySelector("thead th").textContent,
+      () =>
+        document.querySelector("opengrid-pivot").shadowRoot.querySelector("thead th button > span")
+          .textContent,
     );
     expect(header).toBe("customer");
     // One query, not one per attribute.
@@ -371,6 +375,97 @@ test.describe("pivot view", () => {
     expect(query.bytes).toBeGreaterThan(0);
     expect(query.ms).toBeGreaterThanOrEqual(0);
     expect(query.memory).toBeGreaterThan(0);
+  });
+});
+
+// Issue #108: sorting — each level among its siblings (rule P9), from the
+// headers, with the keyboard, and the focus kept on the pressed button.
+test.describe("pivot sorting", () => {
+  const shadowOf = (page, fn) =>
+    page.evaluate(
+      (fn) => new Function("root", `return (${fn})(root)`)(document.querySelector("opengrid-pivot").shadowRoot),
+      fn.toString(),
+    );
+  const countries = (page) =>
+    shadowOf(page, (root) =>
+      [...root.querySelectorAll('tbody tr[data-level="1"] th')].map((th) => th.textContent),
+    );
+  const ariaSort = (page) =>
+    shadowOf(page, (root) =>
+      [...root.querySelectorAll("thead th[aria-sort]")].map((th) => [
+        th.querySelector("button")?.textContent.replace(/[\u00a0▲▼]/g, ""),
+        th.getAttribute("aria-sort"),
+      ]),
+    );
+  const focused = (page) =>
+    shadowOf(page, (root) => root.activeElement?.dataset.sortField ?? root.activeElement?.dataset.sortBy ?? null);
+
+  test("a row-dimension header orders its level, from the keyboard", async ({ page }) => {
+    await open(page);
+    // Ascending by value is the default, and the header says so. With a
+    // column dimension a measure header is no sort button.
+    expect(await ariaSort(page)).toEqual([["country", "ascending"]]);
+    expect(await countries(page)).toEqual(["(empty)", "DE", "FR", "GB", "US", "(no value)"]);
+
+    await shadowOf(page, (root) => root.querySelector('button[data-sort-field="country"]').focus());
+    await page.keyboard.press("Enter");
+    // NULL stays last either way (S3).
+    await expect.poll(() => countries(page)).toEqual(["US", "GB", "FR", "DE", "(empty)", "(no value)"]);
+    expect(await ariaSort(page)).toEqual([["country", "descending"]]);
+    // The answer replaced every node; the reader is still on the button.
+    expect(await focused(page)).toBe("country");
+    expect((await facts(page)).rowHeaders.at(-1)).toBe("Total");
+    expect(
+      await page.evaluate(() => window.__opengridModule.get_view(document.querySelector("opengrid-pivot")).sort),
+    ).toEqual([{ field: "country", direction: "desc" }]);
+
+    await page.keyboard.press("Space");
+    await expect.poll(() => countries(page)).toEqual(["(empty)", "DE", "FR", "GB", "US", "(no value)"]);
+    // Ascending is the default: the attribute goes.
+    expect(await page.evaluate(() => document.querySelector("opengrid-pivot").hasAttribute("sort"))).toBe(false);
+  });
+
+  test("without a column dimension a measure header orders every level", async ({ page }) => {
+    await open(page);
+    await page.evaluate(() => document.querySelector("opengrid-pivot").setAttribute("columns", ""));
+    await expect.poll(() => ariaSort(page)).toEqual([
+      ["country", "ascending"],
+      ["total", "none"],
+      ["n", "none"],
+    ]);
+    await shadowOf(page, (root) => root.querySelector('button[data-sort-by="n"]').click());
+    await expect.poll(() => ariaSort(page)).toEqual([
+      ["country", "none"],
+      ["total", "none"],
+      ["n", "ascending"],
+    ]);
+    const counts = await shadowOf(page, (root) =>
+      [...root.querySelectorAll('tbody tr[data-level="1"]')].map((tr) => Number(tr.querySelectorAll("td")[1].textContent)),
+    );
+    expect(counts).toEqual([...counts].sort((a, b) => a - b));
+    expect(await focused(page)).toBe("n");
+    expect((await facts(page)).rowHeaders.at(-1)).toBe("Total");
+
+    await shadowOf(page, (root) => root.querySelector('button[data-sort-by="n"]').click());
+    await expect.poll(() => ariaSort(page)).toContainEqual(["n", "descending"]);
+    const descending = await shadowOf(page, (root) =>
+      [...root.querySelectorAll('tbody tr[data-level="1"]')].map((tr) => Number(tr.querySelectorAll("td")[1].textContent)),
+    );
+    expect(descending).toEqual([...descending].sort((a, b) => b - a));
+  });
+
+  test("a sort that is not the wire's JSON is said", async ({ page }) => {
+    await open(page);
+    await page.evaluate(() => document.querySelector("opengrid-pivot").setAttribute("sort", "country desc"));
+    await expect.poll(async () => (await facts(page)).state).toBe("error");
+    expect((await facts(page)).status).toContain("sort");
+  });
+
+  test("a sorted pivot has no axe violations", async ({ page }) => {
+    await open(page);
+    await shadowOf(page, (root) => root.querySelector('button[data-sort-field="country"]').click());
+    await expect.poll(() => ariaSort(page)).toEqual([["country", "descending"]]);
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   });
 });
 

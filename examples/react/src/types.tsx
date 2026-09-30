@@ -39,7 +39,7 @@ export function Page() {
         onViewChange={(view) => view.columns satisfies string[]}
       />
       {/* @ts-expect-error — a pivot's view is its rows, columns and values */}
-      <OpengridPivot view={{ sort: [] }} />
+      <OpengridPivot view={{ density: "compact" }} />
       {/* @ts-expect-error — a pivot has no `groupBy` */}
       <OpengridPivot groupBy="country" />
       {/* @ts-expect-error — the callback gets the view, not an event */}

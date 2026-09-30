@@ -53,8 +53,12 @@ pub async fn execute<S: DataSource>(
     source: &S,
     pivot: &ValidatedPivotQuery,
 ) -> Result<PivotResult, ExecuteError> {
-    let mut levels = Vec::with_capacity(pivot.sets.len());
-    for set in &pivot.sets {
+    let mut levels = Vec::with_capacity(pivot.sets.len() + pivot.orders.len());
+    for set in pivot
+        .sets
+        .iter()
+        .chain(pivot.orders.iter().map(|(_, set)| set))
+    {
         levels.push(source.execute(set.clone()).await?);
     }
     assemble(pivot, &levels).map_err(ExecuteError::Pivot)
@@ -106,6 +110,25 @@ impl<'a> Level<'a> {
     }
 }
 
+/// Emits the groups below `parent`, each followed by its subtotal (P6).
+fn place(
+    children: &[HashMap<Key, Vec<Vec<Value>>>],
+    parent: &[Value],
+    depth: usize,
+    paths: &mut Vec<(Vec<Value>, u16)>,
+) {
+    let level = parent.len() + 1;
+    let Some(groups) = children[level].get(&same_key(parent)) else {
+        return;
+    };
+    for path in groups {
+        if level < depth {
+            place(children, path, depth, paths);
+        }
+        paths.push((path.clone(), level as u16));
+    }
+}
+
 /// What a cell holds when no row falls into it (P4 through S11).
 ///
 /// `count` of an empty set is 0; `sum`, `avg`, `min` and `max` of an empty set
@@ -125,6 +148,8 @@ fn empty_cell(value: &Aggregate) -> Value {
 /// pushdown (plan point 31) runs one `GROUPING SETS` statement and splits the
 /// answer back into the same levels. Two assemblers would mean the differential
 /// test compared two reshapers instead of the database.
+///
+/// `results` holds the answers to `pivot.sets`, then to `pivot.orders`.
 pub fn assemble(
     pivot: &ValidatedPivotQuery,
     results: &[QueryResult],
@@ -136,7 +161,7 @@ pub fn assemble(
     // `sets` is deepest first, so `results[0]` is the detail level and the last
     // one is the grand total — which doubles as the catalogue of columns.
     let detail = &results[0];
-    let catalogue = results.last().expect("a pivot has at least one level");
+    let catalogue = &results[pivot.sets.len() - 1];
 
     // The columns, in the order the source sorted them (S3/S4).
     let mut columns = Vec::new();
@@ -167,42 +192,41 @@ pub fn assemble(
         })
         .collect();
 
-    let levels: Vec<Level> = results
+    let levels: Vec<Level> = results[..pivot.sets.len()]
         .iter()
         .enumerate()
         .map(|(index, result)| Level::of(depth - index, across, result))
         .collect();
 
-    // Walk the detail level in its own order and emit a subtotal whenever a
-    // prefix ends. That is rule P6 — the subtotal follows the rows it sums —
-    // and it falls out of the source's ordering instead of being sorted here.
-    let mut paths: Vec<(Vec<Value>, u16)> = Vec::new();
-    let mut previous: Vec<Value> = Vec::new();
-    for row in 0..detail.row_count() {
-        let path: Vec<Value> = (0..depth)
-            .map(|index| detail.columns[index][row].clone())
-            .collect();
-        if path == previous {
-            continue;
-        }
-        // Close every prefix the new path does not share, deepest first.
-        let shared = path
+    // Each level's groups, in the order the source named them: its order set
+    // when rule P9 needs one, else its own set. Placing each level's groups
+    // under their parent in that order is P9 — siblings ordered among
+    // themselves — and a subtotal after its group is P6. Only equality is
+    // used; the order is the source's.
+    let sets = pivot.sets.len();
+    let mut children: Vec<HashMap<Key, Vec<Vec<Value>>>> = vec![HashMap::new(); depth + 1];
+    for level in 1..=depth {
+        let ordering = pivot
+            .orders
             .iter()
-            .zip(&previous)
-            .take_while(|(left, right)| left == right)
-            .count();
-        if !previous.is_empty() {
-            for level in ((shared + 1)..depth).rev() {
-                paths.push((previous[..level].to_vec(), level as u16));
+            .position(|(of, _)| *of == level)
+            .map_or(&results[depth - level], |index| &results[sets + index]);
+        let mut seen: std::collections::HashSet<Key> = std::collections::HashSet::new();
+        for row in 0..ordering.row_count() {
+            let path: Vec<Value> = (0..level)
+                .map(|index| ordering.columns[index][row].clone())
+                .collect();
+            if seen.insert(same_key(&path)) {
+                children[level]
+                    .entry(same_key(&path[..level - 1]))
+                    .or_default()
+                    .push(path);
             }
         }
-        paths.push((path.clone(), depth as u16));
-        previous = path;
     }
-    if !previous.is_empty() {
-        for level in (1..depth).rev() {
-            paths.push((previous[..level].to_vec(), level as u16));
-        }
+    let mut paths: Vec<(Vec<Value>, u16)> = Vec::new();
+    if depth > 0 {
+        place(&children, &[], depth, &mut paths);
     }
     // The grand total is the level that groups by nothing but the columns.
     paths.push((Vec::new(), 0));
