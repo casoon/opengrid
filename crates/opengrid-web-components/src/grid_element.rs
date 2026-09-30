@@ -84,7 +84,7 @@ use crate::formats::{CellFormat, Formatter, formats};
 use crate::grid_element_events::{CELL_EVENT, SELECTION_EVENT, VIEW_EVENT};
 use opengrid_web_core::renderer::{Dom, WebRenderer};
 
-use crate::element::{answer_size, clear_root, describe, dispatch_query, now};
+use crate::element::{answer_size, clear_root, describe, dispatch_query, now, place_under};
 use crate::grid::{
     self, ActiveCell, COLUMNS_ATTRIBUTE, DATASOURCE_ATTRIBUTE, FilterEntry, GRID_TAG, GridKey,
     GridNodes, GridSkeleton, MODE_ATTRIBUTE, PAGE_SIZE_ATTRIBUTE, ROW_HEIGHT_PROPERTY,
@@ -5996,25 +5996,6 @@ fn quick_button(root: &ShadowRoot, key: &str) -> Option<HtmlElement> {
         .ok()
         .flatten()
         .and_then(|button| button.dyn_into::<HtmlElement>().ok())
-}
-
-/// Places a popup under its button, right-aligned when it would run off.
-fn place_under(popup: &HtmlElement, button: &HtmlElement) {
-    let anchor = button.get_bounding_client_rect();
-    let own = popup.get_bounding_client_rect();
-    let width = web_sys::window()
-        .and_then(|window| window.inner_width().ok())
-        .and_then(|value| value.as_f64())
-        .unwrap_or(1024.0);
-    const GAP: f64 = 4.0;
-    let mut left = anchor.left();
-    if left + own.width() > width - GAP {
-        left = (anchor.right() - own.width()).max(GAP);
-    }
-    let _ = popup.style().set_property("left", &format!("{left}px"));
-    let _ = popup
-        .style()
-        .set_property("top", &format!("{}px", anchor.bottom() + GAP));
 }
 
 /// Shows a popup built for `key`'s button, and keeps `aria-expanded` true to

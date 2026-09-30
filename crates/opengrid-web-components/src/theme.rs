@@ -173,10 +173,28 @@ pub fn table_css() -> String {
          td[data-mono] {{ font-family: var(--og-font-mono); }}\n\
          td[data-emphasis] {{ font-weight: 600; }}\n\
          td[data-muted] {{ color: var(--og-ink-muted); }}\n\
-         @media (forced-colors: active) {{ :host {{ --og-ink: CanvasText; --og-ink-muted: CanvasText; }} }}\n",
-        host_rules()
+         @media (forced-colors: active) {{ :host {{ --og-ink: CanvasText; --og-ink-muted: CanvasText; }} }}\n{}",
+        host_rules(),
+        PIVOT_TOOLBAR_CSS
     )
 }
+
+/// The pivot's field toolbar (issue #112): its parts only, so a table is
+/// untouched. A menu is a popover and needs its place; the rest is the least
+/// that makes the controls look like controls — the page styles the parts.
+const PIVOT_TOOLBAR_CSS: &str = "\
+[part~=\"toolbar\"] { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; align-items: center; margin-block-end: 0.5rem; }
+[part~=\"field-group\"] { display: flex; flex-wrap: wrap; gap: 0.25rem; align-items: center; }
+[part~=\"menu-label\"] { color: var(--og-ink-muted); margin-inline-end: 0.25rem; }
+[part~=\"chip\"] { display: inline-flex; align-items: center; gap: 0.125rem; padding-inline: 0.5rem 0.125rem; border: 1px solid var(--og-line-strong); border-radius: 999px; }
+[part~=\"chip-move\"], [part~=\"chip-remove\"] { min-inline-size: 24px; min-block-size: 24px; border: 0; border-radius: 999px; background: none; color: inherit; font: inherit; cursor: pointer; }
+[part~=\"add-field\"] { min-block-size: 24px; padding-inline: 0.625rem; border: 1px dashed var(--og-line-strong); border-radius: 999px; background: none; color: inherit; font: inherit; cursor: pointer; }
+[part~=\"add-field\"][aria-disabled=\"true\"] { color: var(--og-ink-muted); cursor: not-allowed; }
+:is([part~=\"chip-move\"], [part~=\"chip-remove\"], [part~=\"add-field\"]):focus-visible { outline: 2px solid var(--og-accent); outline-offset: 2px; }
+[part~=\"field-menu\"] { position: fixed; inset: auto; margin: 0; padding: 0.25rem; min-inline-size: 10rem; border: 1px solid var(--og-line-strong); border-radius: var(--og-radius); background: var(--og-surface); color: var(--og-ink); box-shadow: 0 8px 24px rgb(0 0 0 / 0.12); }
+[part~=\"field-menu\"] [role=\"menuitem\"] { padding: 0.375rem 0.625rem; border-radius: 4px; cursor: pointer; }
+[part~=\"field-menu\"] [role=\"menuitem\"]:is(:hover, :focus) { background: var(--og-surface-2); outline: 2px solid var(--og-accent); outline-offset: -2px; }
+";
 
 /// Adopts [`table_css`] into a table's or pivot's shadow root, once per root.
 ///

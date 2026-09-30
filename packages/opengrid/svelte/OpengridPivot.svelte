@@ -2,12 +2,15 @@
 <script>
   import Opengrid from "./Opengrid.svelte";
 
-  let { label, datasource, rows, columns, values, sort, collapsed, theme, view = $bindable(), element = $bindable(), ...rest } = $props();
+  let { label, datasource, rows, columns, values, sort, collapsed, toolbar = false, fields, measures, theme, view = $bindable(), element = $bindable(), ...rest } = $props();
+
+  /** A boolean attribute is present or absent; `false` is absent. */
+  const flag = (on) => (on ? "" : undefined);
 </script>
 
 <Opengrid
   tag="opengrid-pivot"
-  attributes={{ label, datasource, rows, columns, values, sort, collapsed, theme }}
+  attributes={{ label, datasource, rows, columns, values, sort, collapsed, toolbar: flag(toolbar), fields, measures, theme }}
   bind:view
   bind:element
   {...rest}

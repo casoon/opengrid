@@ -798,3 +798,22 @@ pub(crate) fn dispatch(host: &HtmlElement, name: &str, detail: &JsValue) {
 fn linear_memory() -> usize {
     core::arch::wasm32::memory_size(0) * 65_536
 }
+
+/// Places a popup under its button, right-aligned when it would run off.
+pub(crate) fn place_under(popup: &HtmlElement, button: &HtmlElement) {
+    let anchor = button.get_bounding_client_rect();
+    let own = popup.get_bounding_client_rect();
+    let width = web_sys::window()
+        .and_then(|window| window.inner_width().ok())
+        .and_then(|value| value.as_f64())
+        .unwrap_or(1024.0);
+    const GAP: f64 = 4.0;
+    let mut left = anchor.left();
+    if left + own.width() > width - GAP {
+        left = (anchor.right() - own.width()).max(GAP);
+    }
+    let _ = popup.style().set_property("left", &format!("{left}px"));
+    let _ = popup
+        .style()
+        .set_property("top", &format!("{}px", anchor.bottom() + GAP));
+}

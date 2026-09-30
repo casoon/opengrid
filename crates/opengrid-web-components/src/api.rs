@@ -212,6 +212,18 @@ fn parts() -> Vec<String> {
         "ready",
         &texts,
         &pivot::PlainLook,
+        // The field toolbar (issue #112), with two row fields so a chip has
+        // its move buttons.
+        Some((
+            &pivot::PivotView::from_attributes(
+                Some("country,customer"),
+                None,
+                Some(r#"[{"fn":"count","as":"n"}]"#),
+                None,
+                None,
+            ),
+            &pivot::Offer::default(),
+        )),
     );
 
     let mut parts: Vec<String> = buffer
@@ -243,6 +255,8 @@ fn parts() -> Vec<String> {
     // The quick doors of issue #34 open popups built when they open.
     parts.push("filter-dialog".to_owned());
     parts.push("grouping-menu".to_owned());
+    // The pivot's add menus are built when they open (issue #112).
+    parts.push("field-menu".to_owned());
     // The filter row's operator menu is built when it opens (issue #96).
     parts.push("operator-menu".to_owned());
     // The facet sidebar's contents are drawn from the configuration (point 66),
@@ -285,7 +299,7 @@ attributes
   opengrid-table: columns datasource label theme
   opengrid-grid: column-menu columns datasource density facets group-by label mode page-size \
 search selection theme toolbar window-size
-  opengrid-pivot: collapsed columns datasource label rows sort theme values
+  opengrid-pivot: collapsed columns datasource fields label measures rows sort theme toolbar values
 
 events
   opengrid-selection-change
@@ -338,26 +352,26 @@ custom properties (computed)
   --og-accent-soft --og-accent-ink --og-selected --og-hover
 
 parts
-  add-filter add-grouping body caption cell chip chip-remove chips chips-clear column-menu \
+  add-field add-filter add-grouping body caption cell chip chip-move chip-remove chips chips-clear column-menu \
 column-menu-button column-toggle columns columns-toggle density editor empty empty-reset \
 empty-text facet facet-bounds facet-cost facet-count facet-pill facet-pills facet-value \
-facets facets-head facets-toggle filter filter-clear filter-dialog filter-operator \
+facets facets-head facets-toggle field-group field-menu filter filter-clear filter-dialog filter-operator \
 filter-row-toggle filter-value footer group-mark group-toggle grouping-menu header layout menu-label operator-menu \
 page-first page-label page-last page-next page-previous pager row row-header search search-hint \
 search-input search-list select select-all select-mark sort-button sort-direction \
 sort-index source status table toolbar total-row viewport
 
 text keys
-  addFilter addFilterTitle addGrouping aggregateAvg aggregateCell aggregateCount aggregateGroup aggregateMax aggregateMin \
+  addColumn addFilter addFilterTitle addGrouping addMeasure addRow aggregateAvg aggregateCell aggregateCount aggregateGroup aggregateMax aggregateMin \
 aggregateNone aggregateRange aggregateSum apply booleanFalse booleanTrue cancel cellRequired chipRemove chipsClear chipsGroup clear columnAtEdge \
-columnHidden columnMenu columnMoved columnShown columnWidth columnsGroup densityComfortable \
+columnFull columnHidden columnMenu columnMoved columnShown columnWidth columnsGroup densityComfortable \
 densityCompact densityGroup densityNormal empty emptyFiltered emptyReset emptySource emptyValue \
 error errorUnknown facetChipValues facetFrom facetQueries facetTo facetsGroup facetsReset \
-facetsToggle filterAny filterColumn filterColumnLabel filterConditionLabel filterGroup filterInvalid \
+facetsToggle fieldEarlier fieldLater fieldRemove filterAny filterColumn filterColumnLabel filterConditionLabel filterGroup filterInvalid \
 filterRemoved filterRowToggle filterValueLabel filtersCleared groupByColumn groupChip \
 groupCollapsed groupExpanded groupInvalid groupRow groupSecondLevel \
-groupingFull hideColumn lang loading matchesOne matchesOther noValue operatorLabel \
-operators pageFirst pageLast pageNext pageOf pagePrevious queriesOne queriesOther queryAnd \
+groupingFull hideColumn lang loading matchesOne matchesOther noValue nothingToAdd operatorLabel \
+operators pageFirst pageLast pageNext pageOf pagePrevious pivotColumns pivotMeasures pivotRows pivotToolbar queriesOne queriesOther queryAnd \
 queryMissingValue queryUnknownColumn queryWrongOperator rowsOne rowsOther searchChip searchHint \
 searchLabel searchPlaceholder searchSuggestions selectAll selectedAll selectionCleared sortAscending \
 sortDescending sourceHybrid sourceLocal sourceRemote sourceWorker subtotal toolbarGroup total \
