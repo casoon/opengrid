@@ -81,10 +81,10 @@ use opengrid_web_core::provider::provider;
 
 use crate::columns::{self, WIDTH_STEP};
 use crate::formats::{CellFormat, Formatter, formats};
-use crate::grid_element_events::{CELL_EVENT, QUERY_EVENT, SELECTION_EVENT, VIEW_EVENT};
+use crate::grid_element_events::{CELL_EVENT, SELECTION_EVENT, VIEW_EVENT};
 use opengrid_web_core::renderer::{Dom, WebRenderer};
 
-use crate::element::{clear_root, describe};
+use crate::element::{answer_size, clear_root, describe, dispatch_query, now};
 use crate::grid::{
     self, ActiveCell, COLUMNS_ATTRIBUTE, DATASOURCE_ATTRIBUTE, FilterEntry, GRID_TAG, GridKey,
     GridNodes, GridSkeleton, MODE_ATTRIBUTE, PAGE_SIZE_ATTRIBUTE, ROW_HEIGHT_PROPERTY,
@@ -3940,78 +3940,18 @@ fn measured(
         Err(value) => return Err(describe(&value)),
     };
     let ms = now() - started;
-    // Read off the value as it arrived, without copying it once more.
-    let (bytes, form) = match value.as_string() {
-        Some(json) => (json.len(), "json"),
-        None => (
-            js_sys::Reflect::get(&value, &JsValue::from_str("byteLength"))
-                .ok()
-                .and_then(|length| length.as_f64())
-                .unwrap_or(0.0) as usize,
-            "binary",
-        ),
-    };
+    let (bytes, form) = answer_size(&value);
     let result = read_answer(&value)?;
-    dispatch_query(host, kind, ms, &result, bytes, form);
-    Ok(result)
-}
-
-/// Milliseconds on the page's clock: `performance.now()`, finer than
-/// `Date.now()` and never set back.
-fn now() -> f64 {
-    let global = js_sys::global();
-    js_sys::Reflect::get(&global, &JsValue::from_str("performance"))
-        .ok()
-        .and_then(|performance| {
-            let clock = js_sys::Reflect::get(&performance, &JsValue::from_str("now")).ok()?;
-            clock
-                .dyn_into::<js_sys::Function>()
-                .ok()?
-                .call0(&performance)
-                .ok()?
-                .as_f64()
-        })
-        .unwrap_or_else(js_sys::Date::now)
-}
-
-/// `opengrid-query` (issue #70): where the query ran, how long it took, how
-/// much came back — and what the element module holds.
-fn dispatch_query(
-    host: &HtmlElement,
-    kind: Option<String>,
-    ms: f64,
-    result: &opengrid_datasource::QueryResult,
-    bytes: usize,
-    form: &str,
-) {
-    let detail = js_sys::Object::new();
-    let set = |key: &str, value: JsValue| {
-        let _ = js_sys::Reflect::set(&detail, &JsValue::from_str(key), &value);
-    };
-    set(
-        "kind",
-        kind.map_or(JsValue::NULL, |kind| JsValue::from_str(&kind)),
+    dispatch_query(
+        host,
+        kind,
+        ms,
+        result.row_count() as u64,
+        result.total_count,
+        bytes,
+        form,
     );
-    set("ms", JsValue::from_f64((ms * 100.0).round() / 100.0));
-    set("rows", JsValue::from_f64(result.row_count() as f64));
-    set("total", JsValue::from_f64(result.total_count as f64));
-    set("bytes", JsValue::from_f64(bytes as f64));
-    set("form", JsValue::from_str(form));
-    set("memory", JsValue::from_f64(linear_memory() as f64));
-
-    let init = web_sys::CustomEventInit::new();
-    init.set_bubbles(true);
-    init.set_composed(true);
-    init.set_cancelable(false);
-    init.set_detail(&detail);
-    if let Ok(event) = web_sys::CustomEvent::new_with_event_init_dict(QUERY_EVENT, &init) {
-        let _ = host.dispatch_event(&event);
-    }
-}
-
-/// This module's linear memory in bytes.
-fn linear_memory() -> usize {
-    core::arch::wasm32::memory_size(0) * 65_536
+    Ok(result)
 }
 
 /// The grouped counterpart of [`run_query`]: several queries, one result.

@@ -185,10 +185,19 @@ pub fn set_columns(host: &HtmlElement, columns: JsValue) {
 /// A "saved view" is this value with a name on it, which is why the element has
 /// no view management of its own: naming, storing and deleting are the page's,
 /// the same line `docs/api.md` draws for editing.
-#[cfg(feature = "grid")]
+///
+/// A pivot's view is what it pivots by and measures (issue #106):
+/// `{ rows, columns, values }`.
+#[cfg(any(feature = "grid", feature = "pivot"))]
 #[wasm_bindgen(js_name = get_view)]
 pub fn get_view(host: &HtmlElement) -> JsValue {
-    crate::grid_element::read_view(host)
+    match host.tag_name().to_ascii_lowercase().as_str() {
+        #[cfg(feature = "grid")]
+        "opengrid-grid" => crate::grid_element::read_view(host),
+        #[cfg(feature = "pivot")]
+        "opengrid-pivot" => crate::pivot_element::read_view(host),
+        _ => JsValue::NULL,
+    }
 }
 
 /// The query of the current view, without a window (plan point 82).
@@ -242,10 +251,19 @@ pub fn get_pivot(host: &HtmlElement, options: JsValue) -> Result<JsValue, JsErro
 /// A view that names a column this grid does not have is reported in the status
 /// line and **not** applied in part — a grid that looks restored and is not is
 /// the worse failure (point 56 §Das Modell §2).
-#[cfg(feature = "grid")]
+///
+/// A pivot takes `{ rows, columns, values }` and writes them to its attributes
+/// at once (issue #106).
+#[cfg(any(feature = "grid", feature = "pivot"))]
 #[wasm_bindgen(js_name = set_view)]
 pub fn set_view(host: &HtmlElement, view: JsValue) {
-    crate::grid_element::write_view(host, &view);
+    match host.tag_name().to_ascii_lowercase().as_str() {
+        #[cfg(feature = "grid")]
+        "opengrid-grid" => crate::grid_element::write_view(host, &view),
+        #[cfg(feature = "pivot")]
+        "opengrid-pivot" => crate::pivot_element::write_view(host, &view),
+        _ => {}
+    }
 }
 
 #[wasm_bindgen(js_name = set_texts)]
@@ -695,4 +713,88 @@ fn update_label(root: &ShadowRoot, label: Option<&str>) {
     if let Ok(Some(caption)) = table.query_selector("caption") {
         caption.set_text_content(Some(label.unwrap_or_default()));
     }
+}
+
+// ---------------------------------------------------------------------------
+// The query report (issue #70), shared by the grid and the pivot (#106)
+// ---------------------------------------------------------------------------
+
+/// Milliseconds on the page's clock: `performance.now()`, finer than
+/// `Date.now()` and never set back.
+pub(crate) fn now() -> f64 {
+    let global = js_sys::global();
+    js_sys::Reflect::get(&global, &JsValue::from_str("performance"))
+        .ok()
+        .and_then(|performance| {
+            let clock = js_sys::Reflect::get(&performance, &JsValue::from_str("now")).ok()?;
+            clock
+                .dyn_into::<js_sys::Function>()
+                .ok()?
+                .call0(&performance)
+                .ok()?
+                .as_f64()
+        })
+        .unwrap_or_else(js_sys::Date::now)
+}
+
+/// An answer's size as it arrived, and its form — read off the value without
+/// copying it once more.
+pub(crate) fn answer_size(value: &JsValue) -> (usize, &'static str) {
+    match value.as_string() {
+        Some(json) => (json.len(), "json"),
+        None => (
+            js_sys::Reflect::get(value, &JsValue::from_str("byteLength"))
+                .ok()
+                .and_then(|length| length.as_f64())
+                .unwrap_or(0.0) as usize,
+            "binary",
+        ),
+    }
+}
+
+/// `opengrid-query` (issue #70): where the query ran, how long it took, how
+/// much came back — and what the element module holds.
+pub(crate) fn dispatch_query(
+    host: &HtmlElement,
+    kind: Option<String>,
+    ms: f64,
+    rows: u64,
+    total: u64,
+    bytes: usize,
+    form: &str,
+) {
+    let detail = js_sys::Object::new();
+    let set = |key: &str, value: JsValue| {
+        let _ = js_sys::Reflect::set(&detail, &JsValue::from_str(key), &value);
+    };
+    set(
+        "kind",
+        kind.map_or(JsValue::NULL, |kind| JsValue::from_str(&kind)),
+    );
+    set("ms", JsValue::from_f64((ms * 100.0).round() / 100.0));
+    set("rows", JsValue::from_f64(rows as f64));
+    set("total", JsValue::from_f64(total as f64));
+    set("bytes", JsValue::from_f64(bytes as f64));
+    set("form", JsValue::from_str(form));
+    set("memory", JsValue::from_f64(linear_memory() as f64));
+    dispatch(host, crate::grid_element_events::QUERY_EVENT, &detail);
+}
+
+/// Fires `name` with `detail` on the host: `bubbles` and `composed` — without
+/// `composed` it would not leave a shadow root the page wrapped the element
+/// in — and not `cancelable`, because it reports what has already happened.
+pub(crate) fn dispatch(host: &HtmlElement, name: &str, detail: &JsValue) {
+    let init = web_sys::CustomEventInit::new();
+    init.set_bubbles(true);
+    init.set_composed(true);
+    init.set_cancelable(false);
+    init.set_detail(detail);
+    if let Ok(event) = web_sys::CustomEvent::new_with_event_init_dict(name, &init) {
+        let _ = host.dispatch_event(&event);
+    }
+}
+
+/// This module's linear memory in bytes.
+fn linear_memory() -> usize {
+    core::arch::wasm32::memory_size(0) * 65_536
 }

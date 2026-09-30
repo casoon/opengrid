@@ -4,7 +4,7 @@
 
 import { h } from "vue";
 import { OpengridGrid, OpengridPivot, OpengridTable } from "@casoon/opengrid/vue";
-import type { View } from "@casoon/opengrid";
+import type { PivotView, View } from "@casoon/opengrid";
 
 let view: View | null = null;
 
@@ -26,6 +26,12 @@ export const nodes = [
   }),
   h(OpengridTable, { label: "Orders", datasource: "orders", columns: "id", defaultView: { density: "compact" } }),
   h(OpengridPivot, { datasource: "orders", rows: "country", columns: "ordered_year", values: "[]" }),
+  h(OpengridPivot, {
+    view: { rows: ["country"], values: [{ fn: "count", as: "n" }] },
+    "onUpdate:view": (next: PivotView) => next.rows,
+  }),
+  // @ts-expect-error — a pivot's view is its rows, columns and values
+  h(OpengridPivot, { view: { density: "compact" } }),
   // @ts-expect-error — a density is one of three
   h(OpengridGrid, { density: "tight" }),
   // @ts-expect-error — the size is a number

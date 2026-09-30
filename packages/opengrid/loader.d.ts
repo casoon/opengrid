@@ -44,10 +44,15 @@ export interface OpengridModule {
   set_formats(host: HTMLElement, formats: Formats): void;
   /** Per-column editor choices: `{ customer: ["Alpha", "Beta"] }`. */
   set_choices(host: HTMLElement, choices: Choices): void;
-  /** The whole view as one value; `null` before the grid is connected. */
-  get_view(host: HTMLElement): View | null;
+  /**
+   * The whole view as one value; `null` before the element is connected. A
+   * pivot's is a {@link PivotView}: `get_view<PivotView>(pivot)`.
+   */
+  get_view<V extends View | PivotView = View>(host: HTMLElement): V | null;
   /** Applies a view in one step and one query. Parts left out keep their default. */
   set_view(host: HTMLElement, view: ViewInput): void;
+  /** A pivot's view: `rows`, `columns` and `values` at once, one query. */
+  set_view(host: HTMLElement, view: PivotViewInput): void;
   /** Per-column presentation; narrows what the schema allows, never widens it. */
   set_columns(host: HTMLElement, columns: Columns): void;
   /**
@@ -100,7 +105,14 @@ export interface ConnectOptions {
   onCellChange?: (detail: CellChangeDetail) => void;
 }
 
-export interface Connection {
+/** `connect`'s options for `<opengrid-pivot>`: its view is a {@link PivotView}. */
+export type PivotConnectOptions = Omit<ConnectOptions, "view" | "defaultView" | "onViewChange"> & {
+  view?: PivotViewInput | null;
+  defaultView?: PivotViewInput;
+  onViewChange?: (view: PivotView) => void;
+};
+
+export interface Connection<O = ConnectOptions> {
   /** Settles once the module is loaded and the options are applied. */
   ready: Promise<LoadResult>;
   /**
@@ -108,7 +120,7 @@ export interface Connection {
    * `undefined` resets it — except `provider`, and `view`, where it means the
    * grid leads.
    */
-  update(options?: ConnectOptions): void;
+  update(options?: O): void;
   /** Removes the listeners. The element keeps its state. */
   disconnect(): void;
 }
@@ -121,6 +133,10 @@ export interface Connection {
  * a page that needs its own URLs calls `loadOpengrid(options)` first.
  */
 export function connect(host: HTMLElement, options?: ConnectOptions): Connection;
+export function connect(
+  host: HTMLElement,
+  options: PivotConnectOptions,
+): Connection<PivotConnectOptions>;
 
 // ---------------------------------------------------------------------------
 // Providers
@@ -512,6 +528,28 @@ export interface View {
   facets: Record<string, FacetSelection>;
 }
 
+/** A pivot measure, as the contract writes it: `{ field: "qty", fn: "sum", as: "total" }`. */
+export interface PivotMeasure {
+  /** Absent for `count`. */
+  field?: string;
+  fn: string;
+  as: string;
+}
+
+/**
+ * The view of `<opengrid-pivot>`: what it pivots by and what it measures — its
+ * `rows`, `columns` and `values` attributes as one value. `sort`, `collapsed`
+ * and `filters` join it later.
+ */
+export interface PivotView {
+  rows: string[];
+  columns: string[];
+  values: PivotMeasure[];
+}
+
+/** What `set_view` takes for a pivot: a part left out is empty. */
+export type PivotViewInput = Partial<PivotView>;
+
 /** The query of a view, as `get_query` gives it: every match, no window. */
 export interface ViewQuery {
   source: string;
@@ -702,8 +740,9 @@ export interface QueryDetail {
 }
 
 /** `opengrid-view-change`: the whole view after the change. */
-export interface ViewChangeDetail {
-  view: View;
+export interface ViewChangeDetail<V = View> {
+  /** A pivot's is a {@link PivotView}. */
+  view: V;
 }
 
 /** The events, by name. All bubble, all are composed, none is cancelable. */

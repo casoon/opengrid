@@ -92,6 +92,116 @@ pub fn pivot_json(
     .to_string())
 }
 
+/// The pivot's view (issue #106): what it pivots by and what it measures.
+///
+/// **The attributes are the view.** `rows`, `columns` and `values` say it on
+/// the element, so the view is read from them and written to them — there is
+/// no second copy to fall out of step. `sort`, `collapsed` and `filters` join
+/// it later (plan points 103, 104, 106).
+#[derive(Clone, Debug, PartialEq)]
+pub struct PivotView {
+    pub rows: Vec<String>,
+    pub columns: Vec<String>,
+    /// The measures, as the contract's own JSON: `[{ field?, fn, as }]`.
+    pub values: Vec<Value>,
+}
+
+impl PivotView {
+    /// The view the attributes say. A `values` that does not read as a list
+    /// is no measures — the status line already says why.
+    pub fn from_attributes(
+        rows: Option<&str>,
+        columns: Option<&str>,
+        values: Option<&str>,
+    ) -> Self {
+        Self {
+            rows: parse_dimensions(rows),
+            columns: parse_dimensions(columns),
+            values: values
+                .and_then(|raw| opengrid_json::from_str::<Value>(raw.trim()).ok())
+                .and_then(|values| values.as_array().cloned())
+                .unwrap_or_default(),
+        }
+    }
+
+    /// The three attributes, in the order `rows`, `columns`, `values`.
+    pub fn attributes(&self) -> [String; 3] {
+        [
+            self.rows.join(","),
+            self.columns.join(","),
+            Value::Array(self.values.clone()).to_string(),
+        ]
+    }
+
+    pub fn to_json(&self) -> Value {
+        json!({
+            "rows": self.rows,
+            "columns": self.columns,
+            "values": Value::Array(self.values.clone()),
+        })
+    }
+
+    /// Reads a view, refusing it whole when any part does not hold — a pivot
+    /// that looks restored and is not is the worse failure. A part left out
+    /// is empty; a key the pivot does not know yet is ignored.
+    pub fn from_json(value: &Value) -> Result<Self, Vec<String>> {
+        let Some(object) = value.as_object() else {
+            return Err(vec!["the view is not an object".to_owned()]);
+        };
+        let mut problems = Vec::new();
+        let mut names = |key: &str| -> Vec<String> {
+            let Some(list) = object.get(key) else {
+                return Vec::new();
+            };
+            let names: Option<Vec<String>> = list.as_array().and_then(|list| {
+                list.iter()
+                    .map(|name| name.as_str().filter(|name| !name.trim().is_empty()))
+                    .map(|name| name.map(str::to_owned))
+                    .collect()
+            });
+            names.unwrap_or_else(|| {
+                problems.push(format!("{key} is not a list of field names"));
+                Vec::new()
+            })
+        };
+        let rows = names("rows");
+        let columns = names("columns");
+        let values = match object.get("values") {
+            None => Vec::new(),
+            Some(list) => match list.as_array() {
+                Some(list) if list.iter().all(is_measure) => list.clone(),
+                _ => {
+                    problems.push("values is not a list of measures { field?, fn, as }".to_owned());
+                    Vec::new()
+                }
+            },
+        };
+        if problems.is_empty() {
+            Ok(Self {
+                rows,
+                columns,
+                values,
+            })
+        } else {
+            Err(problems)
+        }
+    }
+}
+
+/// A measure as the contract writes it: `fn` and `as` are names, `field` is
+/// one when it is there. Whether the source has it is the engine's to say.
+fn is_measure(value: &Value) -> bool {
+    let Some(measure) = value.as_object() else {
+        return false;
+    };
+    let name = |key: &str| measure.get(key).and_then(Value::as_str).is_some();
+    name("fn")
+        && name("as")
+        && measure
+            .get("field")
+            .is_none_or(|field| field.as_str().is_some())
+}
+
 /// How the page wants the pivot to read (issue #104): its titles for fields
 /// and measures, and its formats for their values.
 ///
@@ -631,6 +741,47 @@ mod tests {
         assert!(texts.iter().any(|text| text == "(no value)"), "{texts:?}");
         assert!(texts.iter().any(|text| text == "(empty)"), "{texts:?}");
         assert!(!texts.iter().any(|text| text.ends_with('=')), "{texts:?}");
+    }
+
+    /// The view is the attributes, and reads back as it was written.
+    #[test]
+    fn a_view_is_the_attributes_and_reads_back() {
+        let view = PivotView::from_attributes(
+            Some("country, customer"),
+            Some("ordered_year"),
+            Some(r#"[{"field":"qty","fn":"sum","as":"total"}]"#),
+        );
+        assert_eq!(view.rows, vec!["country".to_owned(), "customer".to_owned()]);
+        let [rows, columns, values] = view.attributes();
+        assert_eq!(rows, "country,customer");
+        assert_eq!(columns, "ordered_year");
+        assert_eq!(
+            PivotView::from_attributes(Some(&rows), Some(&columns), Some(&values)),
+            view
+        );
+        assert_eq!(PivotView::from_json(&view.to_json()), Ok(view));
+        // Unreadable measures are none — the status line says why.
+        assert!(
+            PivotView::from_attributes(None, None, Some("sum(qty)"))
+                .values
+                .is_empty()
+        );
+    }
+
+    /// A view that does not hold is refused whole, with every reason.
+    #[test]
+    fn a_view_that_does_not_hold_is_refused_whole() {
+        let read = |text: &str| PivotView::from_json(&opengrid_json::from_str(text).unwrap());
+        assert!(read("[]").is_err());
+        let problems = read(r#"{"rows":"country","values":[{"fn":"sum"}]}"#).unwrap_err();
+        assert_eq!(problems.len(), 2, "{problems:?}");
+        assert!(read(r#"{"rows":["country",""]}"#).is_err(), "an empty name");
+        assert!(read(r#"{"columns":[1]}"#).is_err());
+        assert!(read(r#"{"values":[{"field":1,"fn":"sum","as":"n"}]}"#).is_err());
+        // Left out is empty; an unknown key is a later version's.
+        let view = read(r#"{"rows":["country"],"sort":[]}"#).unwrap();
+        assert!(view.columns.is_empty() && view.values.is_empty());
+        assert!(read(r#"{"values":[{"fn":"count","as":"n"}]}"#).is_ok());
     }
 
     /// Without a model there is a status line and an empty table — the state

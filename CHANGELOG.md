@@ -25,6 +25,13 @@ Two things belong in every release entry and are easy to leave out:
   dimension values in the headers and measure cells, by field name or measure alias — as at the
   grid and the table. NULL and the empty string keep their words in a header. Any option but
   `title` is reported in the status line. `get_pivot` still exports raw names and values.
+- **A view and events for `<opengrid-pivot>`** ([#106](https://github.com/casoon/opengrid/issues/106)).
+  `get_view`/`set_view` read and write `{ rows, columns, values }` — the three attributes as one
+  value, set in one query — and `opengrid-view-change` reports every change of them.
+  `opengrid-query` now fires after every pivot answer too. `OpengridPivot`'s `view`,
+  `defaultView` and `onViewChange` are typed `PivotView` in React, Vue and Svelte;
+  `get_view<PivotView>(pivot)` in TypeScript. `ViewChangeDetail` and `Connection` take a type
+  parameter whose default is the grid's, so existing code compiles unchanged.
 
 ## [0.7.2] — 2026-09-30
 
