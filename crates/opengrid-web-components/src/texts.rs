@@ -158,6 +158,21 @@ pub struct GridTexts {
     pub add_grouping: String,
     /// Its name while no further level can be added.
     pub grouping_full: String,
+    /// The pivot's field toolbar (issue #112): its name, its three groups,
+    /// their add buttons, and the names of an add button with nothing to add.
+    pub pivot_toolbar: String,
+    pub pivot_rows: String,
+    pub pivot_columns: String,
+    pub pivot_measures: String,
+    pub add_row: String,
+    pub add_column: String,
+    pub add_measure: String,
+    pub column_full: String,
+    pub nothing_to_add: String,
+    /// A field chip's buttons, `{field}` its title.
+    pub field_remove: String,
+    pub field_earlier: String,
+    pub field_later: String,
     /// A boolean column's filter choice (issue #60): no filter, `true`,
     /// `false`.
     pub filter_any: String,
@@ -322,6 +337,18 @@ pub(crate) const KEYS: &[&str] = &[
     "apply",
     "addGrouping",
     "groupingFull",
+    "pivotToolbar",
+    "pivotRows",
+    "pivotColumns",
+    "pivotMeasures",
+    "addRow",
+    "addColumn",
+    "addMeasure",
+    "columnFull",
+    "nothingToAdd",
+    "fieldRemove",
+    "fieldEarlier",
+    "fieldLater",
     "filterAny",
     "booleanTrue",
     "booleanFalse",
@@ -464,6 +491,18 @@ impl Default for GridTexts {
             apply: "Apply".to_owned(),
             add_grouping: "+ Group".to_owned(),
             grouping_full: "Grouped by two columns already".to_owned(),
+            pivot_toolbar: "Pivot fields".to_owned(),
+            pivot_rows: "Rows".to_owned(),
+            pivot_columns: "Columns".to_owned(),
+            pivot_measures: "Measures".to_owned(),
+            add_row: "+ Row".to_owned(),
+            add_column: "+ Column".to_owned(),
+            add_measure: "+ Measure".to_owned(),
+            column_full: "One column field already".to_owned(),
+            nothing_to_add: "Nothing left to add".to_owned(),
+            field_remove: "Remove {field}".to_owned(),
+            field_earlier: "Move {field} earlier".to_owned(),
+            field_later: "Move {field} later".to_owned(),
             filter_any: "any".to_owned(),
             boolean_true: "yes".to_owned(),
             boolean_false: "no".to_owned(),
@@ -615,6 +654,19 @@ impl GridTexts {
     /// A chip's remove button (point 65).
     pub fn chip_remove(&self, filter: &str) -> String {
         fill(&self.chip_remove, "filter", filter)
+    }
+
+    /// A pivot field chip's buttons (issue #112).
+    pub fn field_remove(&self, field: &str) -> String {
+        fill(&self.field_remove, "field", field)
+    }
+
+    pub fn field_earlier(&self, field: &str) -> String {
+        fill(&self.field_earlier, "field", field)
+    }
+
+    pub fn field_later(&self, field: &str) -> String {
+        fill(&self.field_later, "field", field)
     }
 
     /// What is said when a chip was removed (point 65).
@@ -973,6 +1025,18 @@ mod host {
         overwrite(&mut texts.apply, string("apply"));
         overwrite(&mut texts.add_grouping, string("addGrouping"));
         overwrite(&mut texts.grouping_full, string("groupingFull"));
+        overwrite(&mut texts.pivot_toolbar, string("pivotToolbar"));
+        overwrite(&mut texts.pivot_rows, string("pivotRows"));
+        overwrite(&mut texts.pivot_columns, string("pivotColumns"));
+        overwrite(&mut texts.pivot_measures, string("pivotMeasures"));
+        overwrite(&mut texts.add_row, string("addRow"));
+        overwrite(&mut texts.add_column, string("addColumn"));
+        overwrite(&mut texts.add_measure, string("addMeasure"));
+        overwrite(&mut texts.column_full, string("columnFull"));
+        overwrite(&mut texts.nothing_to_add, string("nothingToAdd"));
+        overwrite(&mut texts.field_remove, string("fieldRemove"));
+        overwrite(&mut texts.field_earlier, string("fieldEarlier"));
+        overwrite(&mut texts.field_later, string("fieldLater"));
         overwrite(&mut texts.filter_any, string("filterAny"));
         overwrite(&mut texts.boolean_true, string("booleanTrue"));
         overwrite(&mut texts.boolean_false, string("booleanFalse"));

@@ -51,6 +51,15 @@ pub const SORT_ATTRIBUTE: &str = "sort";
 /// of group paths, `[["DE"], ["FR", "Beta"]]`, NULL as `null`. Display only.
 pub const COLLAPSED_ATTRIBUTE: &str = "collapsed";
 
+/// The boolean host attribute that shows the field toolbar (issue #112).
+pub const TOOLBAR_ATTRIBUTE: &str = "toolbar";
+
+/// The fields a reader may pivot by, comma-separated (issue #112).
+pub const FIELDS_ATTRIBUTE: &str = "fields";
+
+/// The measures a reader may add, as the contract's JSON (issue #112).
+pub const MEASURES_ATTRIBUTE: &str = "measures";
+
 /// The marks of a group's fold button, beside its name and out of it.
 const EXPANDED_MARK: &str = "▾";
 const COLLAPSED_MARK: &str = "▸";
@@ -64,6 +73,9 @@ pub const OBSERVED: &[&str] = &[
     VALUES_ATTRIBUTE,
     SORT_ATTRIBUTE,
     COLLAPSED_ATTRIBUTE,
+    TOOLBAR_ATTRIBUTE,
+    FIELDS_ATTRIBUTE,
+    MEASURES_ATTRIBUTE,
     // CSS alone: the look is `:host([theme=…])` rules (issue #32).
     crate::theme::THEME_ATTRIBUTE,
 ];
@@ -219,6 +231,293 @@ pub fn toggle_collapsed(paths: &[Vec<Value>], path: &[Value]) -> Vec<Vec<Value>>
         next.push(path.to_vec());
         next
     }
+}
+
+/// One of the pivot's three axes, as the toolbar names them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Axis {
+    Rows,
+    Columns,
+    Values,
+}
+
+impl Axis {
+    pub const ALL: [Axis; 3] = [Axis::Rows, Axis::Columns, Axis::Values];
+
+    /// The token in `data-axis`.
+    pub fn token(self) -> &'static str {
+        match self {
+            Axis::Rows => "rows",
+            Axis::Columns => "columns",
+            Axis::Values => "values",
+        }
+    }
+
+    pub fn from_token(token: &str) -> Option<Self> {
+        Axis::ALL.into_iter().find(|axis| axis.token() == token)
+    }
+}
+
+/// What the page offers the reader (issue #112): fields to pivot by and
+/// measures to add, whole.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Offer {
+    pub fields: Vec<String>,
+    pub measures: Vec<Value>,
+}
+
+impl Offer {
+    /// The `fields` and `measures` attributes. `measures` that is not a list
+    /// of measures is an error the page can fix.
+    pub fn from_attributes(fields: Option<&str>, measures: Option<&str>) -> Result<Self, String> {
+        let raw = measures.unwrap_or_default().trim();
+        let measures = if raw.is_empty() {
+            Vec::new()
+        } else {
+            opengrid_json::from_str::<Value>(raw)
+                .ok()
+                .and_then(|value| value.as_array().cloned())
+                .filter(|list| list.iter().all(is_measure))
+                .ok_or_else(|| {
+                    "the measures attribute must be a JSON list of { field?, fn, as }".to_owned()
+                })?
+        };
+        Ok(Self {
+            fields: parse_dimensions(fields),
+            measures,
+        })
+    }
+
+    /// What the add button of `axis` would offer now: offered, and not in use.
+    pub fn open(&self, view: &PivotView, axis: Axis) -> Vec<String> {
+        match axis {
+            Axis::Values => self
+                .measures
+                .iter()
+                .filter_map(|measure| measure["as"].as_str())
+                .filter(|alias| {
+                    !view
+                        .values
+                        .iter()
+                        .any(|value| value["as"].as_str() == Some(*alias))
+                })
+                .map(str::to_owned)
+                .collect(),
+            Axis::Rows | Axis::Columns => self
+                .fields
+                .iter()
+                .filter(|field| !view.rows.contains(field) && !view.columns.contains(field))
+                .cloned()
+                .collect(),
+        }
+    }
+}
+
+/// What a reader does in the toolbar.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum FieldAction {
+    Add(Axis, String),
+    Remove(Axis, String),
+    /// Moves a field one place, later or earlier.
+    Move(Axis, String, bool),
+}
+
+/// The names on `axis` of `view`: dimensions, or measure aliases.
+pub fn names(view: &PivotView, axis: Axis) -> Vec<String> {
+    match axis {
+        Axis::Rows => view.rows.clone(),
+        Axis::Columns => view.columns.clone(),
+        Axis::Values => view
+            .values
+            .iter()
+            .filter_map(|value| value["as"].as_str().map(str::to_owned))
+            .collect(),
+    }
+}
+
+/// The view after `action`, cleaned: a sort that names what is gone goes,
+/// and the folded groups go when the rows change — their paths would name
+/// other groups.
+pub fn apply_field(view: &PivotView, offer: &Offer, action: &FieldAction) -> PivotView {
+    let mut next = view.clone();
+    let alias_of = |value: &Value| value["as"].as_str().map(str::to_owned);
+    match action {
+        FieldAction::Add(Axis::Rows, field) => next.rows.push(field.clone()),
+        FieldAction::Add(Axis::Columns, field) => next.columns.push(field.clone()),
+        FieldAction::Add(Axis::Values, alias) => {
+            if let Some(measure) = offer
+                .measures
+                .iter()
+                .find(|measure| alias_of(measure).as_deref() == Some(alias))
+            {
+                next.values.push(measure.clone());
+            }
+        }
+        FieldAction::Remove(Axis::Rows, field) => next.rows.retain(|name| name != field),
+        FieldAction::Remove(Axis::Columns, field) => next.columns.retain(|name| name != field),
+        FieldAction::Remove(Axis::Values, alias) => next
+            .values
+            .retain(|value| alias_of(value).as_deref() != Some(alias)),
+        FieldAction::Move(axis, name, later) => {
+            let position = names(&next, *axis).iter().position(|other| other == name);
+            if let Some(from) = position {
+                let to = if *later {
+                    from + 1
+                } else {
+                    from.wrapping_sub(1)
+                };
+                let length = names(&next, *axis).len();
+                if to < length {
+                    match axis {
+                        Axis::Rows => next.rows.swap(from, to),
+                        Axis::Columns => next.columns.swap(from, to),
+                        Axis::Values => next.values.swap(from, to),
+                    }
+                }
+            }
+        }
+    }
+    let aliases = names(&next, Axis::Values);
+    next.sort.retain(|order| {
+        next.rows.contains(&order.field) && order.by.as_ref().is_none_or(|by| aliases.contains(by))
+    });
+    if next.rows != view.rows {
+        next.collapsed.clear();
+    }
+    next
+}
+
+/// The field toolbar (issue #112), before the status line: per axis a
+/// labelled group with its chips and its add button. The menus are built when
+/// they open.
+pub fn build_toolbar(
+    buffer: &mut PatchBuffer,
+    nodes: &mut NodeAllocator,
+    parent: NodeId,
+    view: &PivotView,
+    offer: &Offer,
+    texts: &GridTexts,
+    look: &dyn PivotLook,
+) {
+    let toolbar = element(buffer, nodes, Some(parent), "div");
+    attribute(buffer, toolbar, "part", "toolbar");
+    attribute(buffer, toolbar, "role", "group");
+    attribute(buffer, toolbar, "aria-label", &texts.pivot_toolbar);
+    if !texts.lang.is_empty() {
+        attribute(buffer, toolbar, "lang", &texts.lang);
+    }
+    for axis in Axis::ALL {
+        let (label, add) = match axis {
+            Axis::Rows => (&texts.pivot_rows, &texts.add_row),
+            Axis::Columns => (&texts.pivot_columns, &texts.add_column),
+            Axis::Values => (&texts.pivot_measures, &texts.add_measure),
+        };
+        let group = element(buffer, nodes, Some(toolbar), "div");
+        attribute(buffer, group, "part", "field-group");
+        attribute(buffer, group, "role", "group");
+        attribute(buffer, group, "aria-label", label);
+        attribute(buffer, group, "data-axis", axis.token());
+        let caption = element(buffer, nodes, Some(group), "span");
+        attribute(buffer, caption, "part", "menu-label");
+        attribute(buffer, caption, "aria-hidden", "true");
+        buffer.push(Patch::SetText {
+            node: caption,
+            text: label.clone(),
+        });
+
+        let chosen = names(view, axis);
+        for (index, name) in chosen.iter().enumerate() {
+            let title = look.title(name);
+            let chip = element(buffer, nodes, Some(group), "span");
+            attribute(buffer, chip, "part", "chip");
+            attribute(buffer, chip, "data-field", name);
+            let handle = format!("{}|{name}", axis.token());
+            if index > 0 {
+                chip_button(
+                    buffer,
+                    nodes,
+                    chip,
+                    "chip-move",
+                    &texts.field_earlier(&title),
+                    "◂",
+                    ("data-move", &format!("{handle}|earlier")),
+                );
+            }
+            let text = element(buffer, nodes, Some(chip), "span");
+            buffer.push(Patch::SetText {
+                node: text,
+                text: title.clone(),
+            });
+            if index + 1 < chosen.len() {
+                chip_button(
+                    buffer,
+                    nodes,
+                    chip,
+                    "chip-move",
+                    &texts.field_later(&title),
+                    "▸",
+                    ("data-move", &format!("{handle}|later")),
+                );
+            }
+            chip_button(
+                buffer,
+                nodes,
+                chip,
+                "chip-remove",
+                &texts.field_remove(&title),
+                "×",
+                ("data-remove", &handle),
+            );
+        }
+
+        let button = element(buffer, nodes, Some(group), "button");
+        attribute(buffer, button, "part", "add-field");
+        attribute(buffer, button, "type", "button");
+        attribute(buffer, button, "data-add", axis.token());
+        attribute(buffer, button, "aria-haspopup", "menu");
+        attribute(buffer, button, "aria-expanded", "false");
+        // V1 allows one column dimension (E20); and a menu with nothing in it
+        // is not opened. Either way the button says why, in its name.
+        let full = axis == Axis::Columns && !view.columns.is_empty();
+        if full || offer.open(view, axis).is_empty() {
+            attribute(buffer, button, "aria-disabled", "true");
+            attribute(
+                buffer,
+                button,
+                "aria-label",
+                if full {
+                    &texts.column_full
+                } else {
+                    &texts.nothing_to_add
+                },
+            );
+        }
+        buffer.push(Patch::SetText {
+            node: button,
+            text: add.clone(),
+        });
+    }
+}
+
+/// A chip's small button: its name in `aria-label`, its sign for the eye.
+fn chip_button(
+    buffer: &mut PatchBuffer,
+    nodes: &mut NodeAllocator,
+    chip: NodeId,
+    part: &str,
+    name: &str,
+    sign: &str,
+    (key, value): (&str, &str),
+) {
+    let button = element(buffer, nodes, Some(chip), "button");
+    attribute(buffer, button, "part", part);
+    attribute(buffer, button, "type", "button");
+    attribute(buffer, button, "aria-label", name);
+    attribute(buffer, button, key, value);
+    buffer.push(Patch::SetText {
+        node: button,
+        text: sign.to_owned(),
+    });
 }
 
 /// What a header sorts by when the reader presses it.
@@ -683,9 +982,13 @@ pub fn build_pivot(
     state: &str,
     texts: &GridTexts,
     look: &dyn PivotLook,
+    toolbar: Option<(&PivotView, &Offer)>,
 ) {
     let layout = element(buffer, nodes, Some(NodeId::ROOT), "div");
     attribute(buffer, layout, "part", "layout");
+    if let Some((view, offer)) = toolbar {
+        build_toolbar(buffer, nodes, layout, view, offer, texts, look);
+    }
 
     let status_node = element(buffer, nodes, Some(layout), "p");
     attribute(buffer, status_node, "part", "status");
@@ -970,6 +1273,7 @@ mod tests {
             "ready",
             &GridTexts::default(),
             &PlainLook,
+            None,
         );
         format!("{:?}", buffer.patches())
     }
@@ -1106,6 +1410,7 @@ mod tests {
             "ready",
             &GridTexts::default(),
             &Page,
+            None,
         );
         let texts: Vec<String> = buffer
             .patches()
@@ -1323,6 +1628,118 @@ mod tests {
         );
         assert!(parse_collapsed(Some(r#"["DE"]"#)).is_err());
         assert_eq!(collapsed_attribute(&[]), "");
+    }
+
+    /// The toolbar's actions (issue #112): an add offers what is offered and
+    /// not in use; a change takes along the sort and the folds it breaks.
+    #[test]
+    fn a_field_action_is_one_clean_view() {
+        let offer = Offer::from_attributes(
+            Some("country,customer,ordered_year"),
+            Some(r#"[{"fn":"count","as":"n"},{"field":"qty","fn":"sum","as":"total"}]"#),
+        )
+        .unwrap();
+        assert!(Offer::from_attributes(None, Some(r#"[{"fn":"count"}]"#)).is_err());
+        let view = PivotView::from_attributes(
+            Some("country,customer"),
+            None,
+            Some(r#"[{"fn":"count","as":"n"}]"#),
+            Some(r#"[{"field":"customer","by":"n","direction":"desc"}]"#),
+            Some(r#"[["DE"]]"#),
+        );
+        assert_eq!(
+            offer.open(&view, Axis::Rows),
+            vec!["ordered_year".to_owned()]
+        );
+        assert_eq!(offer.open(&view, Axis::Values), vec!["total".to_owned()]);
+
+        let added = apply_field(
+            &view,
+            &offer,
+            &FieldAction::Add(Axis::Values, "total".into()),
+        );
+        assert_eq!(
+            names(&added, Axis::Values),
+            vec!["n".to_owned(), "total".to_owned()]
+        );
+        assert_eq!(
+            added.values[1]["fn"].as_str(),
+            Some("sum"),
+            "the offered measure, whole"
+        );
+        assert_eq!(added.collapsed.len(), 1, "the rows did not change");
+
+        let moved = apply_field(
+            &view,
+            &offer,
+            &FieldAction::Move(Axis::Rows, "country".into(), true),
+        );
+        assert_eq!(
+            moved.rows,
+            vec!["customer".to_owned(), "country".to_owned()]
+        );
+        assert!(
+            moved.collapsed.is_empty(),
+            "the paths would name other groups"
+        );
+        let edge = apply_field(
+            &view,
+            &offer,
+            &FieldAction::Move(Axis::Rows, "country".into(), false),
+        );
+        assert_eq!(edge.rows, view.rows, "nothing before the first");
+
+        let removed = apply_field(
+            &view,
+            &offer,
+            &FieldAction::Remove(Axis::Rows, "customer".into()),
+        );
+        assert!(removed.sort.is_empty(), "its sort went with it");
+        let no_measure = apply_field(
+            &view,
+            &offer,
+            &FieldAction::Remove(Axis::Values, "n".into()),
+        );
+        assert!(
+            no_measure.sort.is_empty(),
+            "a sort by a measure that went, went"
+        );
+    }
+
+    /// The toolbar: a group per axis, a chip per field with its buttons, and
+    /// an add button that says why when it cannot add.
+    #[test]
+    fn the_toolbar_says_what_it_can_do() {
+        let view = PivotView::from_attributes(
+            Some("country,customer"),
+            Some("ordered_year"),
+            Some(r#"[{"fn":"count","as":"n"}]"#),
+            None,
+            None,
+        );
+        let offer = Offer::from_attributes(Some("country,customer,ordered_year"), None).unwrap();
+        let mut nodes = NodeAllocator::new();
+        let mut buffer = PatchBuffer::new();
+        build_toolbar(
+            &mut buffer,
+            &mut nodes,
+            NodeId::ROOT,
+            &view,
+            &offer,
+            &GridTexts::default(),
+            &PlainLook,
+        );
+        let markup = format!("{:?}", buffer.patches());
+        assert_eq!(markup.matches("value: \"field-group\"").count(), 3);
+        assert!(markup.contains("Move country later") && markup.contains("Move customer earlier"));
+        assert!(
+            !markup.contains("Move country earlier"),
+            "nothing before the first"
+        );
+        assert!(markup.contains("Remove ordered_year"));
+        // A column is there (one in V1), and every field is in use.
+        assert!(markup.contains("One column field already"));
+        assert_eq!(markup.matches("Nothing left to add").count(), 2);
     }
 
     /// A view that does not hold is refused whole, with every reason.

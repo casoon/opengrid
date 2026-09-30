@@ -81,6 +81,12 @@ export interface OpengridPivotProps
   sort?: string;
   /** The folded groups, as a JSON list of group paths; part of the view. */
   collapsed?: string;
+  /** Shows the field toolbar. */
+  toolbar?: boolean;
+  /** The fields a reader may pivot by, comma-separated. */
+  fields?: string;
+  /** The measures a reader may add, as the contract's JSON. */
+  measures?: string;
   theme?: Theme;
 }
 
