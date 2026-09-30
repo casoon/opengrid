@@ -18,6 +18,11 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+## [0.7.1] — 2026-09-30
+
+**Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).
+**Browsers:** Chromium, the whole e2e suite. A fix to the filter row of 0.7.0; nothing breaks.
+
 ### Fixed
 
 - **An unfiltered column keeps its default comparison after a view** (#96). Applying a view
