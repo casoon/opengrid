@@ -538,8 +538,8 @@ export interface PivotMeasure {
 
 /**
  * The view of `<opengrid-pivot>`: what it pivots by and what it measures — its
- * `rows`, `columns`, `values`, `sort` and `collapsed` attributes as one value.
- * `filters` joins it later.
+ * `rows`, `columns`, `values`, `sort`, `collapsed` and `filter` attributes as
+ * one value.
  */
 export interface PivotView {
   rows: string[];
@@ -549,6 +549,8 @@ export interface PivotView {
   sort: PivotSort[];
   /** The folded groups, each as its path of keys; a NULL key is `null`. */
   collapsed: WireValue[][];
+  /** The filter on the raw rows, as the wire writes it; `null` for none. */
+  filter: Record<string, unknown> | null;
 }
 
 /**
@@ -677,6 +679,9 @@ export type TextKey =
   | "fieldRemove"
   | "fieldEarlier"
   | "fieldLater"
+  | "pivotFilters"
+  | "pivotFilterLabel"
+  | "pivotFilterHint"
   | "filterAny"
   | "booleanTrue"
   | "booleanFalse"
@@ -834,6 +839,8 @@ export interface OpengridPivotAttributes {
   fields?: string;
   /** The measures a reader may add, as the contract's JSON. */
   measures?: string;
+  /** The filter on the raw rows, as the wire's JSON: `{"field":"country","op":"eq","value":"DE"}`. */
+  filter?: string;
   theme?: Theme;
 }
 

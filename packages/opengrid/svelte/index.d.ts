@@ -101,6 +101,8 @@ export interface OpengridPivotProps extends PivotOptions, ElementProps {
   fields?: string;
   /** The measures a reader may add, as the contract's JSON. */
   measures?: string;
+  /** The filter on the raw rows, as the wire's JSON; part of the view. */
+  filter?: string;
   theme?: Theme;
 }
 

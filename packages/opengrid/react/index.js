@@ -175,6 +175,7 @@ export const OpengridPivot = component(
     toolbar: "toolbar",
     fields: "fields",
     measures: "measures",
+    filter: "filter",
     theme: "theme",
   },
   ["toolbar"],

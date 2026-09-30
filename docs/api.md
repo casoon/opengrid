@@ -513,6 +513,7 @@ and the row and column limits are what make rendering the whole thing safe.
 | `toolbar` | Shows the field toolbar — see below. Presence is what counts. |
 | `fields` | The fields a reader may pivot by, comma-separated. |
 | `measures` | The measures a reader may add, as the contract's JSON: `[{"field":"amount","fn":"sum","as":"revenue"}]`. |
+| `filter` | The filter on the raw rows, as the wire's JSON: `{"field":"country","op":"eq","value":"DE"}`, `{"and":[…]}`. The reader's filter field and chips write it. |
 
 `rows`/`columns` are the two **axes** here, as in every pivot; in the grid
 `columns` is the projection. The words are standard in their own context, so
@@ -543,18 +544,18 @@ attributes as one value, `get_view`/`set_view` as at the grid:
 ```js
 const view = loader.module.get_view(pivot);
 // { rows: ["country"], columns: ["ordered_year"],
-//   values: [{ field: "qty", fn: "sum", as: "total" }], sort: [], collapsed: [] }
+//   values: [{ field: "qty", fn: "sum", as: "total" }], sort: [], collapsed: [],
+//   filter: null }
 loader.module.set_view(pivot, { ...view, rows: ["customer"] });
 ```
 
 The attributes **are** the view, so there is no second copy to fall out of step:
-`set_view` writes all five at once and costs one query, and every change of
+`set_view` writes all six at once and costs one query, and every change of
 them — by `set_view`, a sort button or the page setting an attribute — fires
 `opengrid-view-change`. Setting what it has says nothing. A view whose `rows` or
 `columns` is not a list of names, whose `values` is not a list of measures or
-whose `sort` is not a list of orders or `collapsed` not a list of paths is reported in the status line and applied
-not at all. A part left out is empty; a key the pivot does not know is ignored —
-`filters` joins the view later. In TypeScript, `get_view<PivotView>(pivot)`; the adapters' `view`
+whose `sort` is not a list of orders or `collapsed` not a list of paths or `filter` not a filter object is reported in the status line and applied
+not at all. A part left out is empty; a key the pivot does not know is ignored. In TypeScript, `get_view<PivotView>(pivot)`; the adapters' `view`
 on `OpengridPivot` is a `PivotView`. `opengrid-query` fires after every answer,
 as at the grid.
 
@@ -597,6 +598,19 @@ go with it. The focus comes back to the control pressed.
   fields="country,status,order_year"
   measures='[{"fn":"count","as":"orders"},{"field":"amount","fn":"sum","as":"revenue"}]'></opengrid-pivot>
 ```
+
+**Filtering.** The filter acts on the raw rows, before the pivot, so every
+subtotal is still computed from what passes it. A page sets it with `filter`;
+with `toolbar` the reader has a "Filters" group: a field for an expression in
+the grid's language — `country = DE and qty ≥ 3`, `and` or the page's word for
+it — and a chip per clause of the filter ("country is DE"), each removable, and
+"Remove all". Enter adds the clauses — one view, one query — and empties the
+field. The pivot has no schema of its own, so it asks for one (a query with
+`limit` 0) over the fields it knows: `fields`, its rows and columns, and the
+measures' fields. What does not parse, and free text without an operator, is
+said in the status line with the grid's sentences, and nothing changes. The
+field needs the grid's parser, so it is in the default module; a pivot-only
+build keeps the attribute.
 
 `get_pivot(host)` exports the table as it is shown, as CSV — see
 [exporting a pivot](#exporting-a-pivot). Its headers and values stay the raw
@@ -1027,6 +1041,7 @@ loader.module.set_texts(host, { lang: "de", loading: "Wird geladen …" });
 | `addRow` / `addColumn` / `addMeasure` | `+ Row` / `+ Column` / `+ Measure` | |
 | `columnFull` / `nothingToAdd` | `One column field already` / `Nothing left to add` — an add button's name when it cannot add | |
 | `fieldRemove` / `fieldEarlier` / `fieldLater` | `Remove {field}` / `Move {field} earlier` / `Move {field} later` | `{field}` |
+| `pivotFilters` / `pivotFilterLabel` / `pivotFilterHint` | `Filters` / `Add a filter` / `field = value · Enter` — the pivot's filter group, its field's name and hint | |
 | `filterAny` / `booleanTrue` / `booleanFalse` | `any` / `yes` / `no` — the filter row's choice for a boolean column | |
 | `sourceLocal` / `sourceWorker` / `sourceRemote` / `sourceHybrid` | `local · wasm` / `worker · wasm` / `server` / `hybrid` — the footer's source, by the provider's `kind` | |
 | `queriesOne` / `queriesOther` | `{count} query` / `{count} queries` — the footer's count | `{count}` |

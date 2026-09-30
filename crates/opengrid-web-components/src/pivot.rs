@@ -51,6 +51,10 @@ pub const SORT_ATTRIBUTE: &str = "sort";
 /// of group paths, `[["DE"], ["FR", "Beta"]]`, NULL as `null`. Display only.
 pub const COLLAPSED_ATTRIBUTE: &str = "collapsed";
 
+/// The host attribute filtering the raw rows (issue #114): the wire's own
+/// filter JSON, as the pivot request takes it.
+pub const FILTER_ATTRIBUTE: &str = "filter";
+
 /// The boolean host attribute that shows the field toolbar (issue #112).
 pub const TOOLBAR_ATTRIBUTE: &str = "toolbar";
 
@@ -76,6 +80,7 @@ pub const OBSERVED: &[&str] = &[
     TOOLBAR_ATTRIBUTE,
     FIELDS_ATTRIBUTE,
     MEASURES_ATTRIBUTE,
+    FILTER_ATTRIBUTE,
     // CSS alone: the look is `:host([theme=…])` rules (issue #32).
     crate::theme::THEME_ATTRIBUTE,
 ];
@@ -101,6 +106,7 @@ pub fn pivot_json(
     columns: &[String],
     values: Option<&str>,
     sort: &[PivotOrder],
+    filter: Option<&Value>,
 ) -> Result<String, String> {
     let raw = values.unwrap_or_default().trim();
     if raw.is_empty() {
@@ -117,16 +123,76 @@ pub fn pivot_json(
         "columns": columns,
         "values": values,
     });
-    // Only when there is one: a server from before rule P9 reads the rest.
-    if !sort.is_empty()
-        && let Value::Object(object) = &mut request
-    {
-        object.insert(
-            "sort".to_owned(),
-            Value::Array(sort.iter().map(PivotOrder::to_json).collect()),
-        );
+    if let Value::Object(object) = &mut request {
+        // Only when there is one: a server from before rule P9 reads the rest.
+        if !sort.is_empty() {
+            object.insert(
+                "sort".to_owned(),
+                Value::Array(sort.iter().map(PivotOrder::to_json).collect()),
+            );
+        }
+        if let Some(filter) = filter {
+            object.insert("filter".to_owned(), filter.clone());
+        }
     }
     Ok(request.to_string())
+}
+
+/// The `filter` attribute: absent or empty is none; anything but a JSON object
+/// is an error the page can fix. What the object says is the engine's to check.
+pub fn parse_filter(raw: Option<&str>) -> Result<Option<Value>, String> {
+    let raw = raw.unwrap_or_default().trim();
+    if raw.is_empty() {
+        return Ok(None);
+    }
+    opengrid_json::from_str::<Value>(raw)
+        .ok()
+        .filter(Value::is_object)
+        .map(Some)
+        .ok_or_else(|| "the filter attribute must be a JSON filter object".to_owned())
+}
+
+/// The clauses a filter's chips show: the parts of a top-level `and`, or the
+/// filter whole.
+pub fn clauses(filter: Option<&Value>) -> Vec<Value> {
+    match filter {
+        None => Vec::new(),
+        Some(filter) => match filter["and"].as_array() {
+            Some(parts) => parts.clone(),
+            None => vec![filter.clone()],
+        },
+    }
+}
+
+/// The filter of `clauses`: none, the one, or their `and`.
+pub fn join_clauses(mut clauses: Vec<Value>) -> Option<Value> {
+    match clauses.len() {
+        0 => None,
+        1 => clauses.pop(),
+        _ => Some(json!({ "and": Value::Array(clauses) })),
+    }
+}
+
+/// A clause as a chip says it: `country is DE`, the field by its title and
+/// the operator in the page's words. Anything else — an `or`, a `not` — is
+/// shown as the page wrote it.
+pub fn clause_text(clause: &Value, texts: &GridTexts, look: &dyn PivotLook) -> String {
+    let (Some(field), Some(op)) = (clause["field"].as_str(), clause["op"].as_str()) else {
+        return clause.to_string();
+    };
+    let index = crate::shared::FILTER_OPERATORS
+        .iter()
+        .position(|known| *known == op)
+        .unwrap_or(usize::MAX);
+    let operator = texts.operator(index, op);
+    match &clause["value"] {
+        Value::Null => format!("{} {operator}", look.title(field)),
+        value => format!(
+            "{} {operator} {}",
+            look.title(field),
+            plain(value).unwrap_or_default()
+        ),
+    }
 }
 
 /// One level's order (rule P9): by its own values, or `by` a measure.
@@ -497,6 +563,63 @@ pub fn build_toolbar(
             text: add.clone(),
         });
     }
+
+    // The filter (issue #114): a chip per clause, and a field for more.
+    let group = element(buffer, nodes, Some(toolbar), "div");
+    attribute(buffer, group, "part", "field-group");
+    attribute(buffer, group, "role", "group");
+    attribute(buffer, group, "aria-label", &texts.pivot_filters);
+    attribute(buffer, group, "data-axis", "filter");
+    let caption = element(buffer, nodes, Some(group), "span");
+    attribute(buffer, caption, "part", "menu-label");
+    attribute(buffer, caption, "aria-hidden", "true");
+    buffer.push(Patch::SetText {
+        node: caption,
+        text: texts.pivot_filters.clone(),
+    });
+    let parts = clauses(view.filter.as_ref());
+    for (index, clause) in parts.iter().enumerate() {
+        let text = clause_text(clause, texts, look);
+        let chip = element(buffer, nodes, Some(group), "span");
+        attribute(buffer, chip, "part", "chip");
+        let label = element(buffer, nodes, Some(chip), "span");
+        buffer.push(Patch::SetText {
+            node: label,
+            text: text.clone(),
+        });
+        chip_button(
+            buffer,
+            nodes,
+            chip,
+            "chip-remove",
+            &texts.chip_remove(&text),
+            "×",
+            ("data-filter-remove", &index.to_string()),
+        );
+    }
+    // The field reads the grid's expression language, so it comes with the
+    // grid's parser; a pivot-only build keeps the `filter` attribute.
+    #[cfg(feature = "grid")]
+    {
+        let input = element(buffer, nodes, Some(group), "input");
+        attribute(buffer, input, "part", "search-input");
+        attribute(buffer, input, "type", "text");
+        attribute(buffer, input, "data-filter-input", "");
+        attribute(buffer, input, "aria-label", &texts.pivot_filter_label);
+        attribute(buffer, input, "placeholder", &texts.pivot_filter_hint);
+        attribute(buffer, input, "autocomplete", "off");
+        attribute(buffer, input, "spellcheck", "false");
+    }
+    if !parts.is_empty() {
+        let clear = element(buffer, nodes, Some(group), "button");
+        attribute(buffer, clear, "part", "chips-clear");
+        attribute(buffer, clear, "type", "button");
+        attribute(buffer, clear, "data-filter-clear", "");
+        buffer.push(Patch::SetText {
+            node: clear,
+            text: texts.chips_clear.clone(),
+        });
+    }
 }
 
 /// A chip's small button: its name in `aria-label`, its sign for the eye.
@@ -604,6 +727,17 @@ fn dimension_aria_sort(sort: &[PivotOrder], field: &str) -> &'static str {
     }
 }
 
+/// The attributes the view is, in the order [`PivotView::attributes`] writes
+/// them. The ones that may be absent are removed rather than written empty.
+pub const VIEW_ATTRIBUTES: [(&str, bool); 6] = [
+    (ROWS_ATTRIBUTE, false),
+    (COLUMNS_ATTRIBUTE, false),
+    (VALUES_ATTRIBUTE, false),
+    (SORT_ATTRIBUTE, true),
+    (COLLAPSED_ATTRIBUTE, true),
+    (FILTER_ATTRIBUTE, true),
+];
+
 /// The pivot's view (issue #106): what it pivots by and what it measures.
 ///
 /// **The attributes are the view.** `rows`, `columns` and `values` say it on
@@ -620,6 +754,8 @@ pub struct PivotView {
     pub sort: Vec<PivotOrder>,
     /// The folded groups, as their paths (issue #110).
     pub collapsed: Vec<Vec<Value>>,
+    /// The filter on the raw rows, as the wire writes it (issue #114).
+    pub filter: Option<Value>,
 }
 
 impl PivotView {
@@ -631,6 +767,7 @@ impl PivotView {
         values: Option<&str>,
         sort: Option<&str>,
         collapsed: Option<&str>,
+        filter: Option<&str>,
     ) -> Self {
         Self {
             rows: parse_dimensions(rows),
@@ -641,12 +778,12 @@ impl PivotView {
                 .unwrap_or_default(),
             sort: parse_sort(sort).unwrap_or_default(),
             collapsed: parse_collapsed(collapsed).unwrap_or_default(),
+            filter: parse_filter(filter).unwrap_or_default(),
         }
     }
 
-    /// The attributes, in the order `rows`, `columns`, `values`, `sort`,
-    /// `collapsed`.
-    pub fn attributes(&self) -> [String; 5] {
+    /// The attributes, in the order of [`VIEW_ATTRIBUTES`].
+    pub fn attributes(&self) -> [String; 6] {
         [
             self.rows.join(","),
             self.columns.join(","),
@@ -657,6 +794,10 @@ impl PivotView {
                 Value::Array(self.sort.iter().map(PivotOrder::to_json).collect()).to_string()
             },
             collapsed_attribute(&self.collapsed),
+            self.filter
+                .as_ref()
+                .map(Value::to_string)
+                .unwrap_or_default(),
         ]
     }
 
@@ -667,6 +808,7 @@ impl PivotView {
             "values": Value::Array(self.values.clone()),
             "sort": Value::Array(self.sort.iter().map(PivotOrder::to_json).collect()),
             "collapsed": Value::Array(self.collapsed.iter().cloned().map(Value::Array).collect()),
+            "filter": self.filter.clone().unwrap_or(Value::Null),
         })
     }
 
@@ -731,6 +873,14 @@ impl PivotView {
                 }
             },
         };
+        let filter = match object.get("filter") {
+            None | Some(Value::Null) => None,
+            Some(filter) if filter.is_object() => Some(filter.clone()),
+            Some(_) => {
+                problems.push("filter is not a filter object".to_owned());
+                None
+            }
+        };
         if problems.is_empty() {
             Ok(Self {
                 rows,
@@ -738,6 +888,7 @@ impl PivotView {
                 values,
                 sort,
                 collapsed,
+                filter,
             })
         } else {
             Err(problems)
@@ -1287,14 +1438,15 @@ mod tests {
                 &rows,
                 &[],
                 Some(r#"[{"fn":"count","as":"n"}]"#),
-                &[]
+                &[],
+                None
             )
             .is_ok()
         );
-        assert!(pivot_json("orders", &rows, &[], None, &[]).is_err());
-        assert!(pivot_json("orders", &rows, &[], Some("count(qty)"), &[]).is_err());
+        assert!(pivot_json("orders", &rows, &[], None, &[], None).is_err());
+        assert!(pivot_json("orders", &rows, &[], Some("count(qty)"), &[], None).is_err());
         assert!(
-            pivot_json("orders", &rows, &[], Some(r#"{"fn":"count"}"#), &[]).is_err(),
+            pivot_json("orders", &rows, &[], Some(r#"{"fn":"count"}"#), &[], None).is_err(),
             "an object is not a list of measures"
         );
     }
@@ -1447,11 +1599,12 @@ mod tests {
             Some(r#"[{"field":"qty","fn":"sum","as":"total"}]"#),
             Some(r#"[{"field":"country","by":"total","direction":"desc"}]"#),
             Some(r#"[["DE"],[null]]"#),
+            Some(r#"{"field":"qty","op":"gte","value":3}"#),
         );
         assert_eq!(view.rows, vec!["country".to_owned(), "customer".to_owned()]);
         assert_eq!(view.sort.len(), 1);
         assert_eq!(view.collapsed, vec![vec![json!("DE")], vec![Value::Null]]);
-        let [rows, columns, values, sort, collapsed] = view.attributes();
+        let [rows, columns, values, sort, collapsed, filter] = view.attributes();
         assert_eq!(rows, "country,customer");
         assert_eq!(columns, "ordered_year");
         assert_eq!(
@@ -1460,14 +1613,15 @@ mod tests {
                 Some(&columns),
                 Some(&values),
                 Some(&sort),
-                Some(&collapsed)
+                Some(&collapsed),
+                Some(&filter)
             ),
             view
         );
         assert_eq!(PivotView::from_json(&view.to_json()), Ok(view));
         // Unreadable measures are none — the status line says why.
         assert!(
-            PivotView::from_attributes(None, None, Some("sum(qty)"), None, None)
+            PivotView::from_attributes(None, None, Some("sum(qty)"), None, None, None)
                 .values
                 .is_empty()
         );
@@ -1530,20 +1684,28 @@ mod tests {
                 &[],
                 Some(r#"[{"fn":"count","as":"n"}]"#),
                 &sort,
+                Some(&json!({ "field": "qty", "op": "gte", "value": 3 })),
             )
             .unwrap(),
         )
         .unwrap();
         assert_eq!(request["sort"][0]["direction"].as_str(), Some("desc"));
+        assert_eq!(
+            request["filter"]["op"].as_str(),
+            Some("gte"),
+            "the filter goes along"
+        );
         let unsorted = pivot_json(
             "orders",
             &["country".to_owned()],
             &[],
             Some(r#"[{"fn":"count","as":"n"}]"#),
             &[],
+            None,
         )
         .unwrap();
         assert!(!unsorted.contains("sort"), "no key without an order");
+        assert!(!unsorted.contains("filter"));
     }
 
     /// The headers say the order: a dimension ascending by default, a
@@ -1646,6 +1808,7 @@ mod tests {
             Some(r#"[{"fn":"count","as":"n"}]"#),
             Some(r#"[{"field":"customer","by":"n","direction":"desc"}]"#),
             Some(r#"[["DE"]]"#),
+            None,
         );
         assert_eq!(
             offer.open(&view, Axis::Rows),
@@ -1716,6 +1879,7 @@ mod tests {
             Some(r#"[{"fn":"count","as":"n"}]"#),
             None,
             None,
+            None,
         );
         let offer = Offer::from_attributes(Some("country,customer,ordered_year"), None).unwrap();
         let mut nodes = NodeAllocator::new();
@@ -1730,7 +1894,13 @@ mod tests {
             &PlainLook,
         );
         let markup = format!("{:?}", buffer.patches());
-        assert_eq!(markup.matches("value: \"field-group\"").count(), 3);
+        // Rows, columns, measures — and the filter (issue #114).
+        assert_eq!(markup.matches("value: \"field-group\"").count(), 4);
+        assert!(markup.contains("data-filter-input"), "the expression field");
+        assert!(
+            !markup.contains("data-filter-clear"),
+            "nothing to remove yet"
+        );
         assert!(markup.contains("Move country later") && markup.contains("Move customer earlier"));
         assert!(
             !markup.contains("Move country earlier"),
@@ -1740,6 +1910,32 @@ mod tests {
         // A column is there (one in V1), and every field is in use.
         assert!(markup.contains("One column field already"));
         assert_eq!(markup.matches("Nothing left to add").count(), 2);
+    }
+
+    /// A filter's chips are its clauses, said in words; they join back to one
+    /// filter (issue #114).
+    #[test]
+    fn a_filter_is_its_clauses() {
+        assert_eq!(parse_filter(None), Ok(None));
+        assert!(parse_filter(Some("country = DE")).is_err());
+        assert!(parse_filter(Some("[]")).is_err(), "a list is not a filter");
+        let filter = parse_filter(Some(
+            r#"{"and":[{"field":"country","op":"eq","value":"DE"},{"field":"note","op":"is_null"}]}"#,
+        ))
+        .unwrap();
+        let parts = clauses(filter.as_ref());
+        assert_eq!(parts.len(), 2);
+        let texts = GridTexts::default();
+        assert_eq!(clause_text(&parts[0], &texts, &PlainLook), "country is DE");
+        assert_eq!(
+            clause_text(&parts[1], &texts, &PlainLook),
+            "note has no value"
+        );
+        assert_eq!(join_clauses(parts.clone()), filter);
+        assert_eq!(join_clauses(parts[..1].to_vec()), Some(parts[0].clone()));
+        assert_eq!(join_clauses(Vec::new()), None);
+        // A filter that is not an `and` is one clause.
+        assert_eq!(clauses(Some(&parts[0])).len(), 1);
     }
 
     /// A view that does not hold is refused whole, with every reason.
