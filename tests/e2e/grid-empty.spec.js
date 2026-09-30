@@ -29,9 +29,9 @@ async function status(page) {
 async function filterToNothing(page) {
   await page.evaluate(() => {
     const root = document.querySelector("opengrid-grid").shadowRoot;
-    const select = root.querySelector('select[data-col="2"]');
-    select.value = "eq";
-    select.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+    // The comparison is a menu behind the button in the field (issue #96).
+    root.querySelector(`[part="filter-operator"][data-col="2"]`).click();
+    root.querySelector(`[part="operator-menu"] [data-op="eq"]`).click();
     const input = root.querySelector('input[data-col="2"]');
     input.value = "XX";
     input.focus();

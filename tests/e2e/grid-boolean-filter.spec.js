@@ -80,9 +80,9 @@ test("yes and no filter, any takes the filter away", async ({ page }) => {
 
 test("a filter on another column does not bring a boolean filter with it", async ({ page }) => {
   await shadow(page, (root) => {
-    const operator = root.querySelector('select[data-col="1"]');
-    operator.value = "contains";
-    operator.dispatchEvent(new Event("change", { bubbles: true }));
+    // The comparison is a menu behind the button in the field (issue #96).
+    root.querySelector(`[part="filter-operator"][data-col="1"]`).click();
+    root.querySelector(`[part="operator-menu"] [data-op="contains"]`).click();
     const input = root.querySelector('input[data-col="1"]');
     input.value = "Alpha";
     input.focus();

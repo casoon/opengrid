@@ -17,7 +17,7 @@ const layout = (page) =>
       columns: [...root.querySelectorAll("th[data-col]")].map((th) => {
         const col = th.dataset.col;
         const header = th.getBoundingClientRect();
-        const group = root.querySelector(`select[data-col="${col}"]`).parentElement.getBoundingClientRect();
+        const group = root.querySelector(`[part="filter-operator"][data-col="${col}"]`).parentElement.getBoundingClientRect();
         return { col, header: [Math.round(header.left), Math.round(header.width)], group: [Math.round(group.left), Math.round(group.width)] };
       }),
     };

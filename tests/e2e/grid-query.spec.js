@@ -79,7 +79,9 @@ test("every kind of restriction is in it, and nothing else", async ({ page }) =>
   // …a typed filter through the filter row (qty is the fifth shown column)…
   await page.evaluate(() => {
     const root = document.querySelector("opengrid-grid").shadowRoot;
-    root.querySelector('select[data-col="4"]').value = "gte";
+    // The comparison is a menu behind the button in the field (issue #96).
+    root.querySelector(`[part="filter-operator"][data-col="4"]`).click();
+    root.querySelector(`[part="operator-menu"] [data-op="gte"]`).click();
     const input = root.querySelector('input[data-col="4"]');
     input.focus();
     input.value = "2";

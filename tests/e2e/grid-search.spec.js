@@ -116,7 +116,7 @@ test("an expression becomes the filter row's own entries", async ({ page }) => {
   const row = await page.evaluate(() => {
     const root = document.querySelector("opengrid-grid").shadowRoot;
     return {
-      op: root.querySelector('select[data-col="2"]').value,
+      op: root.querySelector('[part="filter-operator"][data-col="2"]').dataset.op,
       value: root.querySelector('input[data-col="2"]').value,
     };
   });
