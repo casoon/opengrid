@@ -173,6 +173,11 @@ pub struct GridTexts {
     pub field_remove: String,
     pub field_earlier: String,
     pub field_later: String,
+    /// The pivot's filter group, its expression field and the field's hint
+    /// (issue #114).
+    pub pivot_filters: String,
+    pub pivot_filter_label: String,
+    pub pivot_filter_hint: String,
     /// A boolean column's filter choice (issue #60): no filter, `true`,
     /// `false`.
     pub filter_any: String,
@@ -349,6 +354,9 @@ pub(crate) const KEYS: &[&str] = &[
     "fieldRemove",
     "fieldEarlier",
     "fieldLater",
+    "pivotFilters",
+    "pivotFilterLabel",
+    "pivotFilterHint",
     "filterAny",
     "booleanTrue",
     "booleanFalse",
@@ -503,6 +511,9 @@ impl Default for GridTexts {
             field_remove: "Remove {field}".to_owned(),
             field_earlier: "Move {field} earlier".to_owned(),
             field_later: "Move {field} later".to_owned(),
+            pivot_filters: "Filters".to_owned(),
+            pivot_filter_label: "Add a filter".to_owned(),
+            pivot_filter_hint: "field = value \u{00B7} Enter".to_owned(),
             filter_any: "any".to_owned(),
             boolean_true: "yes".to_owned(),
             boolean_false: "no".to_owned(),
@@ -1037,6 +1048,9 @@ mod host {
         overwrite(&mut texts.field_remove, string("fieldRemove"));
         overwrite(&mut texts.field_earlier, string("fieldEarlier"));
         overwrite(&mut texts.field_later, string("fieldLater"));
+        overwrite(&mut texts.pivot_filters, string("pivotFilters"));
+        overwrite(&mut texts.pivot_filter_label, string("pivotFilterLabel"));
+        overwrite(&mut texts.pivot_filter_hint, string("pivotFilterHint"));
         overwrite(&mut texts.filter_any, string("filterAny"));
         overwrite(&mut texts.boolean_true, string("booleanTrue"));
         overwrite(&mut texts.boolean_false, string("booleanFalse"));

@@ -37,8 +37,9 @@ use crate::element::{
 use crate::grid_element_events::VIEW_EVENT;
 use crate::pivot::{
     self, Axis, COLLAPSED_ATTRIBUTE, COLUMNS_ATTRIBUTE, DATASOURCE_ATTRIBUTE, FIELDS_ATTRIBUTE,
-    FieldAction, MEASURES_ATTRIBUTE, Offer, PIVOT_TAG, PivotLook, PivotModel, PivotView, PlainLook,
-    ROWS_ATTRIBUTE, SORT_ATTRIBUTE, SortTarget, TOOLBAR_ATTRIBUTE, VALUES_ATTRIBUTE,
+    FILTER_ATTRIBUTE, FieldAction, MEASURES_ATTRIBUTE, Offer, PIVOT_TAG, PivotLook, PivotModel,
+    PivotView, PlainLook, ROWS_ATTRIBUTE, SORT_ATTRIBUTE, SortTarget, TOOLBAR_ATTRIBUTE,
+    VALUES_ATTRIBUTE, VIEW_ATTRIBUTES,
 };
 use crate::texts;
 
@@ -87,7 +88,8 @@ fn on_attribute_changed(
             redraw(&host);
             report_view(&host, true);
         }
-        ROWS_ATTRIBUTE | COLUMNS_ATTRIBUTE | VALUES_ATTRIBUTE | SORT_ATTRIBUTE => {
+        ROWS_ATTRIBUTE | COLUMNS_ATTRIBUTE | VALUES_ATTRIBUTE | SORT_ATTRIBUTE
+        | FILTER_ATTRIBUTE => {
             // `write_view` sets all three and owns the one query after.
             if APPLYING.get() {
                 return;
@@ -116,17 +118,20 @@ pub(crate) fn run(host: &HtmlElement) {
     let rows = pivot::parse_dimensions(host.get_attribute(ROWS_ATTRIBUTE).as_deref());
     let columns = pivot::parse_dimensions(host.get_attribute(COLUMNS_ATTRIBUTE).as_deref());
 
+    let filter = pivot::parse_filter(host.get_attribute(FILTER_ATTRIBUTE).as_deref());
     let request_json = match offer(host)
         .and(pivot::parse_sort(
             host.get_attribute(SORT_ATTRIBUTE).as_deref(),
         ))
-        .and_then(|sort| {
+        .and_then(|sort| Ok((sort, filter?)))
+        .and_then(|(sort, filter)| {
             pivot::pivot_json(
                 &source,
                 &rows,
                 &columns,
                 host.get_attribute(VALUES_ATTRIBUTE).as_deref(),
                 &sort,
+                filter.as_ref(),
             )
             .map(|json| (json, sort))
         }) {
@@ -382,6 +387,7 @@ fn view_of(host: &HtmlElement) -> PivotView {
         host.get_attribute(VALUES_ATTRIBUTE).as_deref(),
         host.get_attribute(SORT_ATTRIBUTE).as_deref(),
         host.get_attribute(COLLAPSED_ATTRIBUTE).as_deref(),
+        host.get_attribute(FILTER_ATTRIBUTE).as_deref(),
     )
 }
 
@@ -451,17 +457,7 @@ fn apply_view(host: &HtmlElement, view: &PivotView) {
         return;
     }
     APPLYING.set(true);
-    for (name, value) in [
-        ROWS_ATTRIBUTE,
-        COLUMNS_ATTRIBUTE,
-        VALUES_ATTRIBUTE,
-        SORT_ATTRIBUTE,
-        COLLAPSED_ATTRIBUTE,
-    ]
-    .into_iter()
-    .zip(view.attributes())
-    {
-        let optional = name == SORT_ATTRIBUTE || name == COLLAPSED_ATTRIBUTE;
+    for ((name, optional), value) in VIEW_ATTRIBUTES.into_iter().zip(view.attributes()) {
         let _ = if optional && value.is_empty() {
             host.remove_attribute(name)
         } else {
@@ -498,7 +494,7 @@ fn on_header_click(event: Event) {
         .target()
         .and_then(|target| target.dyn_into::<Element>().ok());
     if let Some(target) = &target
-        && on_toolbar_click(&host, target)
+        && (on_filter_click(&host, target) || on_toolbar_click(&host, target))
     {
         return;
     }
@@ -542,7 +538,7 @@ fn on_header_click(event: Event) {
         map.borrow_mut()
             .insert(id, vec![(key.to_owned(), value.clone())])
     });
-    let [_, _, _, sort, _] = next.attributes();
+    let sort = view_attribute(&next, SORT_ATTRIBUTE);
     let _ = if sort.is_empty() {
         host.remove_attribute(SORT_ATTRIBUTE)
     } else {
@@ -837,6 +833,21 @@ fn on_menu_key(event: Event) {
     let Ok(event) = event.dyn_into::<web_sys::KeyboardEvent>() else {
         return;
     };
+    #[cfg(feature = "grid")]
+    if event.key() == "Enter"
+        && let Some(input) = event
+            .target()
+            .and_then(|target| target.dyn_into::<web_sys::HtmlInputElement>().ok())
+            .filter(|input| input.has_attribute("data-filter-input"))
+        && let Some(host) = event
+            .current_target()
+            .and_then(|target| target.dyn_into::<web_sys::ShadowRoot>().ok())
+            .and_then(|root| root.host().dyn_into::<HtmlElement>().ok())
+    {
+        event.prevent_default();
+        submit_filter(&host, input.value());
+        return;
+    }
     let Some(item) = event
         .target()
         .and_then(|target| target.dyn_into::<Element>().ok())
@@ -894,6 +905,184 @@ fn on_menu_key(event: Event) {
     event.prevent_default();
 }
 
+/// One attribute of `view`, as [`PivotView::attributes`] writes it.
+fn view_attribute(view: &PivotView, name: &str) -> String {
+    VIEW_ATTRIBUTES
+        .iter()
+        .zip(view.attributes())
+        .find(|((attribute, _), _)| *attribute == name)
+        .map(|(_, value)| value)
+        .unwrap_or_default()
+}
+
+// ---------------------------------------------------------------------------
+// The filter (issue #114)
+// ---------------------------------------------------------------------------
+
+/// The expression field, as the focus goes back to it.
+fn filter_input() -> (String, String) {
+    ("data-filter-input".to_owned(), String::new())
+}
+
+/// A filter chip's remove button, or "Remove all": the filter without it.
+fn on_filter_click(host: &HtmlElement, target: &Element) -> bool {
+    let closest = |selector: &str| target.closest(selector).ok().flatten();
+    let view = view_of(host);
+    let parts = pivot::clauses(view.filter.as_ref());
+    let (next, focus) = if let Some(button) = closest("button[data-filter-remove]") {
+        let Some(index) = button
+            .get_attribute("data-filter-remove")
+            .and_then(|index| index.parse::<usize>().ok())
+        else {
+            return true;
+        };
+        let mut rest = parts;
+        if index < rest.len() {
+            rest.remove(index);
+        }
+        // The chip that takes its place, else the one before, else the field.
+        let mut focus = Vec::new();
+        for at in [Some(index), index.checked_sub(1)].into_iter().flatten() {
+            if at < rest.len() {
+                focus.push(("data-filter-remove".to_owned(), at.to_string()));
+            }
+        }
+        focus.push(filter_input());
+        (pivot::join_clauses(rest), focus)
+    } else if closest("button[data-filter-clear]").is_some() {
+        (None, vec![filter_input()])
+    } else {
+        return false;
+    };
+    set_filter(host, next, focus);
+    true
+}
+
+/// Writes `filter` into the view — one query, one report — and says where
+/// the focus goes back.
+fn set_filter(
+    host: &HtmlElement,
+    filter: Option<opengrid_json::Json>,
+    focus: Vec<(String, String)>,
+) {
+    let next = PivotView {
+        filter,
+        ..view_of(host)
+    };
+    on_release(|id| {
+        PRESSED.with(|map| map.borrow_mut().remove(&id));
+    });
+    let id = host_id(host);
+    PRESSED.with(|map| map.borrow_mut().insert(id, focus));
+    apply_view(host, &next);
+}
+
+/// Enter in the expression field: the clauses join the filter.
+///
+/// The pivot has no schema of its own, and an expression needs the types of
+/// the fields it names. They are asked of the provider the pivot has — every
+/// one answers a pivot, not every one a query: a pivot over the fields the
+/// pivot knows, as rows, under a filter nothing passes. Its answer is the
+/// grand total alone, and its columns carry the types. What does not parse is
+/// said, and nothing changes.
+#[cfg(feature = "grid")]
+fn submit_filter(host: &HtmlElement, text: String) {
+    if text.trim().is_empty() {
+        return;
+    }
+    let Some(provider) = provider(host) else {
+        return;
+    };
+    let Some(source) = host.get_attribute(DATASOURCE_ATTRIBUTE) else {
+        return;
+    };
+    let view = view_of(host);
+    let offer = offer(host).unwrap_or_default();
+    let mut fields: Vec<String> = Vec::new();
+    let measured = view
+        .values
+        .iter()
+        .chain(&offer.measures)
+        .filter_map(|measure| measure["field"].as_str().map(str::to_owned));
+    for field in offer
+        .fields
+        .iter()
+        .chain(&view.rows)
+        .chain(&view.columns)
+        .cloned()
+        .chain(measured)
+    {
+        if !fields.contains(&field) {
+            fields.push(field);
+        }
+    }
+    let Some(first) = fields.first().cloned() else {
+        say(
+            host,
+            &texts::texts(host).query_problem(&crate::search::Problem::UnknownColumn(
+                text.split_whitespace()
+                    .next()
+                    .unwrap_or_default()
+                    .to_owned(),
+            )),
+        );
+        return;
+    };
+    let probe = opengrid_json::json!({
+        "source": source,
+        "rows": fields,
+        "columns": [],
+        "values": [{ "fn": "count", "as": "opengrid_probe" }],
+        "filter": { "and": [
+            { "field": first, "op": "is_null" },
+            { "field": first, "op": "is_not_null" },
+        ] },
+    });
+    let promise = provider.pivot(&probe.to_string(), "");
+    let host = host.clone();
+    spawn_local(async move {
+        let texts = texts::texts(&host);
+        let schema = match JsFuture::from(promise).await {
+            Ok(value) => pivot_json(&value).and_then(|json| {
+                let body: opengrid_json::Json =
+                    opengrid_json::from_str(&json).map_err(|error| error.to_string())?;
+                crate::table::parse_result(&body["result"].to_string()).map(|result| result.schema)
+            }),
+            Err(value) => Err(describe(&value)),
+        };
+        let schema = match schema {
+            Ok(schema) => schema,
+            Err(message) => {
+                say(&host, &texts.error(&message));
+                return;
+            }
+        };
+        let entries = match crate::search::parse(&text, &texts.query_and, &schema) {
+            Ok(entries) => entries,
+            Err(problem) => {
+                say(&host, &texts.query_problem(&problem));
+                return;
+            }
+        };
+        let added = match crate::grid::filter_expr(&entries, &schema) {
+            Ok(Some(expr)) => opengrid_json::ToJson::to_json(&expr),
+            Ok(None) => return,
+            Err(problems) => {
+                if let Some(problem) = problems.first() {
+                    say(
+                        &host,
+                        &texts.filter_invalid(&problem.column, &problem.value),
+                    );
+                }
+                return;
+            }
+        };
+        let mut parts = pivot::clauses(view_of(&host).filter.as_ref());
+        parts.extend(pivot::clauses(Some(&added)));
+        set_filter(&host, pivot::join_clauses(parts), vec![filter_input()]);
+    });
+}
+
 /// Gives the pressed sort button the focus back, once there is one again.
 fn refocus(host: &HtmlElement) {
     let Some(id) = existing_id(host) else {
@@ -908,7 +1097,7 @@ fn refocus(host: &HtmlElement) {
     // The first that is there: a move button at an edge is gone, its
     // opposite is not.
     for (key, value) in candidates {
-        let selector = format!(r#"button[{key}="{}"]"#, value.replace('"', "\\\""));
+        let selector = format!(r#"[{key}="{}"]"#, value.replace('"', "\\\""));
         if let Ok(Some(button)) = root.query_selector(&selector)
             && let Ok(button) = button.dyn_into::<HtmlElement>()
         {
