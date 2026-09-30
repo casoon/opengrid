@@ -36,8 +36,8 @@ use crate::element::{
 };
 use crate::grid_element_events::VIEW_EVENT;
 use crate::pivot::{
-    self, COLUMNS_ATTRIBUTE, DATASOURCE_ATTRIBUTE, PIVOT_TAG, PivotLook, PivotModel, PivotView,
-    PlainLook, ROWS_ATTRIBUTE, SORT_ATTRIBUTE, SortTarget, VALUES_ATTRIBUTE,
+    self, COLLAPSED_ATTRIBUTE, COLUMNS_ATTRIBUTE, DATASOURCE_ATTRIBUTE, PIVOT_TAG, PivotLook,
+    PivotModel, PivotView, PlainLook, ROWS_ATTRIBUTE, SORT_ATTRIBUTE, SortTarget, VALUES_ATTRIBUTE,
 };
 use crate::texts;
 
@@ -74,6 +74,14 @@ fn on_attribute_changed(
 ) {
     match name.as_str() {
         LABEL_ATTRIBUTE | DATASOURCE_ATTRIBUTE => run(&host),
+        // Display only: drawn again from what the pivot holds, nothing asked.
+        COLLAPSED_ATTRIBUTE => {
+            if APPLYING.get() {
+                return;
+            }
+            redraw(&host);
+            report_view(&host, true);
+        }
         ROWS_ATTRIBUTE | COLUMNS_ATTRIBUTE | VALUES_ATTRIBUTE | SORT_ATTRIBUTE => {
             // `write_view` sets all three and owns the one query after.
             if APPLYING.get() {
@@ -225,8 +233,17 @@ fn render(
     clear_root(&root);
     // Kept and dropped with what is drawn, never apart from it: while a new
     // answer loads, or after an error, the table is empty and so is the export.
-    remember(host, shown.map(|(_, answer)| answer));
-    let model = shown.map(|(model, _)| model);
+    remember(
+        host,
+        shown.map(|(model, answer)| (model, answer, status, state)),
+    );
+    // The folded groups are the attribute's, whenever it is drawn (#110).
+    let folded = shown.map(|(model, _)| PivotModel {
+        collapsed: pivot::parse_collapsed(host.get_attribute(COLLAPSED_ATTRIBUTE).as_deref())
+            .unwrap_or_default(),
+        ..model.clone()
+    });
+    let model = folded.as_ref();
 
     let label = host.get_attribute(LABEL_ATTRIBUTE);
     let texts = texts::texts(host);
@@ -336,6 +353,7 @@ fn view_of(host: &HtmlElement) -> PivotView {
         host.get_attribute(COLUMNS_ATTRIBUTE).as_deref(),
         host.get_attribute(VALUES_ATTRIBUTE).as_deref(),
         host.get_attribute(SORT_ATTRIBUTE).as_deref(),
+        host.get_attribute(COLLAPSED_ATTRIBUTE).as_deref(),
     )
 }
 
@@ -404,11 +422,13 @@ pub(crate) fn write_view(host: &HtmlElement, value: &JsValue) {
         COLUMNS_ATTRIBUTE,
         VALUES_ATTRIBUTE,
         SORT_ATTRIBUTE,
+        COLLAPSED_ATTRIBUTE,
     ]
     .into_iter()
     .zip(view.attributes())
     {
-        let _ = if name == SORT_ATTRIBUTE && value.is_empty() {
+        let optional = name == SORT_ATTRIBUTE || name == COLLAPSED_ATTRIBUTE;
+        let _ = if optional && value.is_empty() {
             host.remove_attribute(name)
         } else {
             host.set_attribute(name, &value)
@@ -424,7 +444,7 @@ pub(crate) fn write_view(host: &HtmlElement, value: &JsValue) {
 // ---------------------------------------------------------------------------
 
 thread_local! {
-    /// The sort button each pivot's reader pressed, by host id, as its
+    /// The sort or fold button each pivot's reader pressed, by host id, as its
     /// `(data attribute, value)`: it gets the focus back once the answer is
     /// drawn, since drawing replaces every node.
     static PRESSED: RefCell<HashMap<u32, (String, String)>> = RefCell::new(HashMap::new());
@@ -433,23 +453,31 @@ thread_local! {
 /// A sort button: its target goes into the `sort` attribute, and the
 /// attribute's change runs the query and reports the view.
 fn on_header_click(event: Event) {
-    let Some(button) = event
-        .target()
-        .and_then(|target| target.dyn_into::<Element>().ok())
-        .and_then(|target| {
-            target
-                .closest(r#"button[part="sort-button"]"#)
-                .ok()
-                .flatten()
-        })
-    else {
-        return;
-    };
     let Some(host) = event
         .current_target()
         .and_then(|target| target.dyn_into::<web_sys::ShadowRoot>().ok())
         .and_then(|root| root.host().dyn_into::<HtmlElement>().ok())
     else {
+        return;
+    };
+    let target = event
+        .target()
+        .and_then(|target| target.dyn_into::<Element>().ok());
+    if let Some(toggle) = target.as_ref().and_then(|target| {
+        target
+            .closest(r#"button[part="group-toggle"]"#)
+            .ok()
+            .flatten()
+    }) {
+        on_group_toggle(&host, &toggle);
+        return;
+    }
+    let Some(button) = target.and_then(|target| {
+        target
+            .closest(r#"button[part="sort-button"]"#)
+            .ok()
+            .flatten()
+    }) else {
         return;
     };
     let (key, value) = if let Some(field) = button.get_attribute("data-sort-field") {
@@ -472,11 +500,103 @@ fn on_header_click(event: Event) {
     });
     let id = host_id(&host);
     PRESSED.with(|map| map.borrow_mut().insert(id, (key.to_owned(), value.clone())));
-    let [.., sort] = next.attributes();
+    let [_, _, _, sort, _] = next.attributes();
     let _ = if sort.is_empty() {
         host.remove_attribute(SORT_ATTRIBUTE)
     } else {
         host.set_attribute(SORT_ATTRIBUTE, &sort)
+    };
+}
+
+// ---------------------------------------------------------------------------
+// Folding (issue #110)
+// ---------------------------------------------------------------------------
+
+thread_local! {
+    /// What the status line says after a fold, by host id — the sentence of
+    /// the press that caused it, said once when the pivot is drawn again.
+    static SAY: RefCell<HashMap<u32, String>> = RefCell::new(HashMap::new());
+}
+
+fn shown(host: &HtmlElement) -> Option<Shown> {
+    existing_id(host).and_then(|id| SHOWN.with(|map| map.borrow().get(&id).cloned()))
+}
+
+/// Draws what the pivot holds again, with the folded groups as they are now.
+fn redraw(host: &HtmlElement) {
+    let Some(shown) = shown(host) else {
+        return;
+    };
+    let said = existing_id(host).and_then(|id| SAY.with(|map| map.borrow_mut().remove(&id)));
+    let status = said.unwrap_or_else(|| shown.status.clone());
+    match HostLook::new(host) {
+        Ok(look) => render(
+            host,
+            Some((&shown.model, &shown.answer)),
+            &status,
+            &shown.state,
+            &look,
+        ),
+        Err(_) => render(
+            host,
+            Some((&shown.model, &shown.answer)),
+            &status,
+            &shown.state,
+            &PlainLook,
+        ),
+    }
+    // The status line the next redraw keeps is the answer's, not the press's.
+    if let Some(id) = existing_id(host) {
+        SHOWN.with(|map| {
+            if let Some(entry) = map.borrow_mut().get_mut(&id) {
+                entry.status = shown.status.clone();
+            }
+        });
+    }
+    refocus(host);
+}
+
+/// A fold button: the group's path goes in or out of `collapsed`, and the
+/// status line says what happened, in the grid's words.
+fn on_group_toggle(host: &HtmlElement, button: &Element) {
+    let Some(raw) = button.get_attribute("data-path") else {
+        return;
+    };
+    let Some(path) = opengrid_json::from_str::<opengrid_json::Json>(&raw)
+        .ok()
+        .and_then(|path| path.as_array().cloned())
+    else {
+        return;
+    };
+    let Some(shown) = shown(host) else {
+        return;
+    };
+    let folded = pivot::parse_collapsed(host.get_attribute(COLLAPSED_ATTRIBUTE).as_deref())
+        .unwrap_or_default();
+    let next = pivot::toggle_collapsed(&folded, &path);
+    let open = !next.contains(&path);
+    let model = PivotModel {
+        collapsed: next.clone(),
+        ..(*shown.model).clone()
+    };
+    let texts = texts::texts(host);
+    let name = match HostLook::new(host) {
+        Ok(look) => pivot::group_label(&model, &look, &texts, &path),
+        Err(_) => pivot::group_label(&model, &PlainLook, &texts, &path),
+    };
+    let sentence = texts.group_toggled(&name, model.shown_below(&path), open);
+    on_release(|id| {
+        SAY.with(|map| map.borrow_mut().remove(&id));
+        PRESSED.with(|map| map.borrow_mut().remove(&id));
+    });
+    let id = host_id(host);
+    SAY.with(|map| map.borrow_mut().insert(id, sentence));
+    PRESSED.with(|map| map.borrow_mut().insert(id, ("data-path".to_owned(), raw)));
+    let value = pivot::collapsed_attribute(&next);
+    let _ = if value.is_empty() {
+        host.remove_attribute(COLLAPSED_ATTRIBUTE)
+    } else {
+        host.set_attribute(COLLAPSED_ATTRIBUTE, &value)
     };
 }
 
@@ -513,20 +633,36 @@ fn say(host: &HtmlElement, text: &str) {
 thread_local! {
     /// The answer each pivot shows, by host id: the pivot wire form, as the
     /// provider sent it.
-    static SHOWN: RefCell<HashMap<u32, Rc<str>>> = RefCell::new(HashMap::new());
+    static SHOWN: RefCell<HashMap<u32, Shown>> = RefCell::new(HashMap::new());
+}
+
+/// What a pivot shows: the answer as it came, the model drawn from it, and
+/// its status line — enough to draw it again without asking (issue #110).
+#[derive(Clone)]
+struct Shown {
+    answer: Rc<str>,
+    model: Rc<PivotModel>,
+    status: String,
+    state: String,
 }
 
 fn forget(id: u32) {
     SHOWN.with(|map| map.borrow_mut().remove(&id));
 }
 
-/// Keeps `answer` as what `host` shows, or forgets what it showed.
-fn remember(host: &HtmlElement, answer: Option<&str>) {
-    match answer {
-        Some(answer) => {
+/// Keeps what `host` shows, or forgets what it showed.
+fn remember(host: &HtmlElement, shown: Option<(&PivotModel, &str, &str, &str)>) {
+    match shown {
+        Some((model, answer, status, state)) => {
             on_release(forget);
             let id = host_id(host);
-            SHOWN.with(|map| map.borrow_mut().insert(id, Rc::from(answer)));
+            let shown = Shown {
+                answer: Rc::from(answer),
+                model: Rc::new(model.clone()),
+                status: status.to_owned(),
+                state: state.to_owned(),
+            };
+            SHOWN.with(|map| map.borrow_mut().insert(id, shown));
         }
         None => {
             if let Some(id) = existing_id(host) {
@@ -542,8 +678,8 @@ fn remember(host: &HtmlElement, answer: Option<&str>) {
 /// pivot is shown yet.
 pub(crate) fn read_pivot(host: &HtmlElement, options: &JsValue) -> Result<JsValue, JsError> {
     let options = crate::export::pivot_options(options)?;
-    let Some(answer) =
-        existing_id(host).and_then(|id| SHOWN.with(|map| map.borrow().get(&id).cloned()))
+    let Some(answer) = existing_id(host)
+        .and_then(|id| SHOWN.with(|map| map.borrow().get(&id).map(|shown| shown.answer.clone())))
     else {
         return Ok(JsValue::NULL);
     };
