@@ -34,6 +34,12 @@ export function Page() {
       <OpengridGrid windowSize="forty" />
       {/* @ts-expect-error — `presentation`, not an object on `columns` */}
       <OpengridGrid columns={{ amount: { aggregate: "sum" } }} />
+      <OpengridPivot
+        view={{ rows: ["country"], values: [{ fn: "count", as: "n" }] }}
+        onViewChange={(view) => view.columns satisfies string[]}
+      />
+      {/* @ts-expect-error — a pivot's view is its rows, columns and values */}
+      <OpengridPivot view={{ sort: [] }} />
       {/* @ts-expect-error — a pivot has no `groupBy` */}
       <OpengridPivot groupBy="country" />
       {/* @ts-expect-error — the callback gets the view, not an event */}

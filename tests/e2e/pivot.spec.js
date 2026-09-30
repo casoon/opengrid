@@ -217,6 +217,163 @@ test.describe("pivot", () => {
   });
 });
 
+// Issue #106: the pivot's view is its rows, columns and values — read and set
+// as one value, reported as `opengrid-view-change`, and every answer measured
+// as `opengrid-query`, as at the grid.
+test.describe("pivot view", () => {
+  const FIRST = {
+    rows: ["country"],
+    columns: ["ordered_year"],
+    values: [
+      { field: "qty", fn: "sum", as: "total" },
+      { fn: "count", as: "n" },
+    ],
+  };
+
+  /** Counts the events on the pivot from here on. */
+  async function listen(page) {
+    await page.evaluate(() => {
+      const pivot = document.querySelector("opengrid-pivot");
+      window.__views = [];
+      window.__queries = [];
+      pivot.addEventListener("opengrid-view-change", (event) => window.__views.push(event.detail.view));
+      pivot.addEventListener("opengrid-query", (event) => window.__queries.push(event.detail));
+    });
+  }
+
+  const views = (page) => page.evaluate(() => window.__views);
+  const queries = (page) => page.evaluate(() => window.__queries);
+  const getView = (page) =>
+    page.evaluate(() => window.__opengridModule.get_view(document.querySelector("opengrid-pivot")));
+  const setView = (page, view) =>
+    page.evaluate(
+      (view) => window.__opengridModule.set_view(document.querySelector("opengrid-pivot"), view),
+      view,
+    );
+
+  test("the view is the attributes", async ({ page }) => {
+    await open(page);
+    expect(await getView(page)).toEqual(FIRST);
+    // A pivot not in the document has no view.
+    expect(
+      await page.evaluate(() =>
+        window.__opengridModule.get_view(document.createElement("opengrid-pivot")),
+      ),
+    ).toBeNull();
+  });
+
+  test("set_view writes all three at once, in one query, and says so once", async ({ page }) => {
+    await open(page);
+    await listen(page);
+    const next = { rows: ["customer"], columns: [], values: [{ fn: "count", as: "n" }] };
+    await setView(page, next);
+
+    // The event is the report of the change, there as set_view returns.
+    expect(await views(page)).toEqual([next]);
+    expect(await getView(page)).toEqual(next);
+    expect(
+      await page.evaluate(() => {
+        const pivot = document.querySelector("opengrid-pivot");
+        return ["rows", "columns", "values"].map((name) => pivot.getAttribute(name));
+      }),
+    ).toEqual(["customer", "", '[{"fn":"count","as":"n"}]']);
+    await expect.poll(async () => (await facts(page)).state).toBe("ready");
+    const header = await page.evaluate(
+      () => document.querySelector("opengrid-pivot").shadowRoot.querySelector("thead th").textContent,
+    );
+    expect(header).toBe("customer");
+    // One query, not one per attribute.
+    expect((await queries(page)).length).toBe(1);
+
+    // Setting what it has costs nothing and says nothing.
+    await setView(page, next);
+    await page.waitForTimeout(200);
+    expect((await views(page)).length).toBe(1);
+    expect((await queries(page)).length).toBe(1);
+  });
+
+  test("a view that does not hold is refused whole", async ({ page }) => {
+    await open(page);
+    await listen(page);
+    await setView(page, { rows: "customer", columns: ["ordered_year"], values: [{ fn: "count" }] });
+    const seen = await facts(page);
+    expect(seen.status).toContain("rows");
+    expect(seen.status).toContain("values");
+    // Nothing of it applied: the pivot shown stays, and nothing changed.
+    expect(await getView(page)).toEqual(FIRST);
+    expect(seen.measureHeaders.length).toBe(6);
+    expect(await views(page)).toEqual([]);
+  });
+
+  test("an attribute the page sets is a view change", async ({ page }) => {
+    await open(page);
+    await listen(page);
+    await page.evaluate(() =>
+      document.querySelector("opengrid-pivot").setAttribute("columns", ""),
+    );
+    expect(await views(page)).toEqual([{ ...FIRST, columns: [] }]);
+    // The same value again is no change.
+    await page.evaluate(() =>
+      document.querySelector("opengrid-pivot").setAttribute("columns", ""),
+    );
+    expect((await views(page)).length).toBe(1);
+  });
+
+  // The adapters hand the view to `connect`, which is the same for every
+  // element: a controlled view is written, the reader's change reported, and
+  // writing back what was reported asks nothing.
+  test("connect controls a pivot's view like a grid's", async ({ page }) => {
+    await open(page);
+    await listen(page);
+    await page.evaluate(async () => {
+      const { connect } = await import("/packages/opengrid/loader.js");
+      const pivot = document.querySelector("opengrid-pivot");
+      window.__reported = [];
+      window.__connection = connect(pivot, {
+        view: { rows: ["customer"], columns: [], values: [{ fn: "count", as: "n" }] },
+        onViewChange: (view) => {
+          window.__reported.push(view);
+          // Written back, as a framework's controlled prop is.
+          window.__connection.update({ view });
+        },
+      });
+      await window.__connection.ready;
+    });
+    expect((await getView(page)).rows).toEqual(["customer"]);
+    // connect's own write is not the reader's change.
+    expect(await page.evaluate(() => window.__reported)).toEqual([]);
+    await expect.poll(async () => (await queries(page)).length).toBe(1);
+
+    await page.evaluate(() =>
+      document.querySelector("opengrid-pivot").setAttribute("rows", "country"),
+    );
+    expect(await page.evaluate(() => window.__reported.map((view) => view.rows))).toEqual([
+      ["country"],
+    ]);
+    await expect.poll(async () => (await queries(page)).length).toBe(2);
+    await page.waitForTimeout(200);
+    expect((await queries(page)).length).toBe(2);
+  });
+
+  test("every answer is measured as opengrid-query", async ({ page }) => {
+    await open(page);
+    await listen(page);
+    await page.evaluate(() =>
+      document.querySelector("opengrid-pivot").setAttribute("rows", "customer"),
+    );
+    await expect.poll(async () => (await queries(page)).length).toBe(1);
+    const [query] = await queries(page);
+    const rows = await page.evaluate(
+      () => document.querySelector("opengrid-pivot").shadowRoot.querySelectorAll("tbody tr").length,
+    );
+    expect(query).toMatchObject({ rows, total: rows });
+    expect(["json", "binary"]).toContain(query.form);
+    expect(query.bytes).toBeGreaterThan(0);
+    expect(query.ms).toBeGreaterThanOrEqual(0);
+    expect(query.memory).toBeGreaterThan(0);
+  });
+});
+
 // Issue #28: the pivot in the browser. The engine in a worker answers the very
 // pivot the server answers — same data, same element — so the two tables have
 // to be the same, cell for cell.

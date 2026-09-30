@@ -241,8 +241,10 @@ mod host {
     }
 }
 
+#[cfg(all(target_arch = "wasm32", feature = "pivot"))]
+pub use host::ColumnFormats;
 #[cfg(target_arch = "wasm32")]
-pub use host::{ColumnFormats, Formatter};
+pub use host::Formatter;
 
 #[cfg(test)]
 mod tests {

@@ -444,6 +444,8 @@ totalRow typeBool typeDate typeInteger typeNumber typeText typeTime ungroupColum
                 format!("\"{name}\""),
                 format!("{name}?:"),
                 format!("{name}("),
+                // A generic method: `get_view<V …>(`.
+                format!("{name}<"),
             ]
             .iter()
             .any(|form| types.contains(form.as_str()))

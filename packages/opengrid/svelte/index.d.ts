@@ -21,6 +21,8 @@ import type {
   Density,
   Theme,
   Mode,
+  PivotConnectOptions,
+  PivotView,
   SelectionChangeDetail,
   View,
 } from "../loader.js";
@@ -69,7 +71,18 @@ export interface OpengridTableProps extends Options, ElementProps {
   theme?: Theme;
 }
 
-export interface OpengridPivotProps extends Options, ElementProps {
+/** The pivot's options: its view is a `PivotView`. */
+type PivotOptions = Omit<
+  PivotConnectOptions,
+  "onViewChange" | "onSelectionChange" | "onCellChange"
+> & {
+  element?: HTMLElement;
+  onviewchange?: (view: PivotView) => void;
+  onselectionchange?: (detail: SelectionChangeDetail) => void;
+  oncellchange?: (detail: CellChangeDetail) => void;
+};
+
+export interface OpengridPivotProps extends PivotOptions, ElementProps {
   label?: string;
   datasource?: string;
   /** Comma-separated row dimensions, outermost first. */
