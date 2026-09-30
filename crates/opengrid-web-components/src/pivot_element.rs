@@ -10,8 +10,12 @@
 //!
 //! The answer the element shows is kept beside it, so that `get_pivot` exports
 //! exactly that (issue #3).
+//!
+//! The view (issue #106) is the `rows`, `columns` and `values` attributes:
+//! `set_view` writes them at once and runs one query, and every change of them
+//! is reported as `opengrid-view-change`.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -25,10 +29,14 @@ use opengrid_web_core::host::{existing_id, id as host_id, on_release};
 use opengrid_web_core::patch::{NodeAllocator, PatchBuffer};
 use opengrid_web_core::provider::provider;
 
-use crate::element::{apply, clear_root, describe, is_latest, next_request};
+use crate::element::{
+    answer_size, apply, clear_root, describe, dispatch, dispatch_query, is_latest, next_request,
+    now,
+};
+use crate::grid_element_events::VIEW_EVENT;
 use crate::pivot::{
-    self, COLUMNS_ATTRIBUTE, DATASOURCE_ATTRIBUTE, PIVOT_TAG, PivotLook, PivotModel, PlainLook,
-    ROWS_ATTRIBUTE, VALUES_ATTRIBUTE,
+    self, COLUMNS_ATTRIBUTE, DATASOURCE_ATTRIBUTE, PIVOT_TAG, PivotLook, PivotModel, PivotView,
+    PlainLook, ROWS_ATTRIBUTE, VALUES_ATTRIBUTE,
 };
 use crate::texts;
 
@@ -50,6 +58,8 @@ fn on_connected(host: HtmlElement) {
         crate::theme::adopt_table_look(&root);
         render(&host, None, "", "loading", &PlainLook);
     }
+    // The view it starts with is not a change.
+    report_view(&host, false);
     run(&host);
 }
 
@@ -60,8 +70,15 @@ fn on_attribute_changed(
     _new: Option<String>,
 ) {
     match name.as_str() {
-        LABEL_ATTRIBUTE | DATASOURCE_ATTRIBUTE | ROWS_ATTRIBUTE | COLUMNS_ATTRIBUTE
-        | VALUES_ATTRIBUTE => run(&host),
+        LABEL_ATTRIBUTE | DATASOURCE_ATTRIBUTE => run(&host),
+        ROWS_ATTRIBUTE | COLUMNS_ATTRIBUTE | VALUES_ATTRIBUTE => {
+            // `write_view` sets all three and owns the one query after.
+            if APPLYING.get() {
+                return;
+            }
+            run(&host);
+            report_view(&host, true);
+        }
         _ => {}
     }
 }
@@ -105,10 +122,13 @@ pub(crate) fn run(host: &HtmlElement) {
     let texts = texts::texts(host);
     render(host, None, &texts.loading, "loading", &PlainLook);
 
+    let kind = provider.kind();
+    let started = now();
     let promise = provider.pivot(&request_json, "");
     let host = host.clone();
     spawn_local(async move {
         let outcome = JsFuture::from(promise).await;
+        let ms = now() - started;
         // A newer request was made since (an attribute changed again): its
         // answer is the one to draw, whenever it comes.
         if !is_latest(&host, request) {
@@ -120,6 +140,11 @@ pub(crate) fn run(host: &HtmlElement) {
                 Ok(json) => match pivot::parse_result(&json) {
                     Ok(mut model) => {
                         model.column_dimensions = columns;
+                        // Measured like the grid's queries (issue #70); a
+                        // pivot's rows are all it answers, subtotals included.
+                        let (bytes, form) = answer_size(&value);
+                        let rows = model.rows.len() as u64;
+                        dispatch_query(&host, kind, ms, rows, rows, bytes, form);
                         // The grand total is always a row, so "no matches" means
                         // nothing but the total came back.
                         let (status, state) = if model.rows.len() <= 1 {
@@ -278,6 +303,107 @@ impl PivotLook for HostLook {
             // A formatter that throws or answers nothing must not blank the
             // cell: the value is still there.
             .unwrap_or(plain)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The view (issue #106)
+// ---------------------------------------------------------------------------
+
+thread_local! {
+    /// True while `write_view` sets the attributes: it runs the one query.
+    static APPLYING: Cell<bool> = const { Cell::new(false) };
+    /// The view each pivot last reported, by host id, as JSON text.
+    static REPORTED: RefCell<HashMap<u32, String>> = RefCell::new(HashMap::new());
+}
+
+fn view_of(host: &HtmlElement) -> PivotView {
+    PivotView::from_attributes(
+        host.get_attribute(ROWS_ATTRIBUTE).as_deref(),
+        host.get_attribute(COLUMNS_ATTRIBUTE).as_deref(),
+        host.get_attribute(VALUES_ATTRIBUTE).as_deref(),
+    )
+}
+
+/// Remembers the view, and fires `opengrid-view-change` when `announce` and it
+/// differs from the one last reported — setting what it has says nothing.
+fn report_view(host: &HtmlElement, announce: bool) {
+    if host.shadow_root().is_none() {
+        // Upgrading: the attributes arrive before the element is connected,
+        // and the view they make is the first one, not a change.
+        return;
+    }
+    let view = view_of(host).to_json();
+    let text = view.to_string();
+    on_release(|id| {
+        REPORTED.with(|map| map.borrow_mut().remove(&id));
+    });
+    let id = host_id(host);
+    let changed = REPORTED.with(|map| map.borrow_mut().insert(id, text.clone())) != Some(text);
+    if announce && changed {
+        let detail = js_sys::Object::new();
+        let _ = js_sys::Reflect::set(&detail, &JsValue::from_str("view"), &to_js(&view));
+        dispatch(host, VIEW_EVENT, &detail);
+    }
+}
+
+fn to_js(value: &opengrid_json::Json) -> JsValue {
+    js_sys::JSON::parse(&value.to_string()).unwrap_or(JsValue::NULL)
+}
+
+/// [`crate::element::get_view`] for a pivot: `null` before it is connected.
+pub(crate) fn read_view(host: &HtmlElement) -> JsValue {
+    if host.shadow_root().is_none() {
+        return JsValue::NULL;
+    }
+    to_js(&view_of(host).to_json())
+}
+
+/// [`crate::element::set_view`] for a pivot: all three attributes, one query.
+///
+/// A view that does not hold is said in the status line and applied not at
+/// all; the pivot shown stays.
+pub(crate) fn write_view(host: &HtmlElement, value: &JsValue) {
+    if host.shadow_root().is_none() {
+        return;
+    }
+    let text = js_sys::JSON::stringify(value)
+        .ok()
+        .and_then(|text| text.as_string())
+        .unwrap_or_default();
+    let view = opengrid_json::from_str(&text)
+        .map_err(|_| vec!["the view is not an object".to_owned()])
+        .and_then(|value| PivotView::from_json(&value));
+    let view = match view {
+        Ok(view) => view,
+        Err(problems) => {
+            say(host, &texts::texts(host).error(&problems.join(" ")));
+            return;
+        }
+    };
+    if view == view_of(host) {
+        return;
+    }
+    APPLYING.set(true);
+    for (name, value) in [ROWS_ATTRIBUTE, COLUMNS_ATTRIBUTE, VALUES_ATTRIBUTE]
+        .into_iter()
+        .zip(view.attributes())
+    {
+        let _ = host.set_attribute(name, &value);
+    }
+    APPLYING.set(false);
+    run(host);
+    report_view(host, true);
+}
+
+/// Puts `text` in the status line without touching what is shown.
+fn say(host: &HtmlElement, text: &str) {
+    if let Some(status) = host
+        .shadow_root()
+        .and_then(|root| root.query_selector(r#"[part="status"]"#).ok().flatten())
+    {
+        status.set_text_content(Some(text));
+        let _ = status.set_attribute("data-state", "error");
     }
 }
 

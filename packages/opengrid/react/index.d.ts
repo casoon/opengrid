@@ -27,6 +27,7 @@ import type {
   OpengridGridElement,
   OpengridPivotElement,
   OpengridTableElement,
+  PivotConnectOptions,
 } from "../loader.js";
 
 /** What the element itself takes from React, minus what the component owns. */
@@ -66,7 +67,8 @@ export interface OpengridTableProps extends ConnectOptions, ElementProps {
   theme?: Theme;
 }
 
-export interface OpengridPivotProps extends ConnectOptions, ElementProps {
+/** A pivot's view is a `PivotView`: its `rows`, `columns` and `values`. */
+export interface OpengridPivotProps extends PivotConnectOptions, ElementProps {
   label?: string;
   datasource?: string;
   /** Comma-separated row dimensions, outermost first. */
