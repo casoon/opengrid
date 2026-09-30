@@ -23,6 +23,7 @@ import {
   type Provider,
   type SelectionChangeDetail,
   type View,
+  type ViewInput,
 } from "@casoon/opengrid";
 
 declare const engine: Engine;
@@ -136,6 +137,12 @@ export async function page(): Promise<void> {
     columns: { order: [], hidden: [], widths: [120] },
   };
   void wrongShape;
+
+  // A grid's view flows into a place that takes a view, unwidened: the
+  // pivot's overload must not turn it into `View | PivotView` (0.8.0 did).
+  let current: ViewInput | undefined;
+  current ??= module.get_view(grid) ?? undefined;
+  void current;
 
   // The pivot's view (issue #106): what it pivots by and measures.
   const pivotView = module.get_view<PivotView>(pivot);
