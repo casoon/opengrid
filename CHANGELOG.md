@@ -18,6 +18,13 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+### Fixed
+
+- **`get_view` no longer widens a grid's view** ([#117](https://github.com/casoon/opengrid/issues/117)).
+  0.8.0 made it generic, and where its result flowed into a typed place TypeScript inferred
+  `View | PivotView`. It is two overloads now: without a type argument the grid's `View`,
+  with one (`get_view<PivotView>(pivot)`) the pivot's.
+
 ## [0.8.0] — 2026-09-30
 
 **Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).

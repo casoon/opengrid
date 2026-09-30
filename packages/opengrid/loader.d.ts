@@ -44,11 +44,13 @@ export interface OpengridModule {
   set_formats(host: HTMLElement, formats: Formats): void;
   /** Per-column editor choices: `{ customer: ["Alpha", "Beta"] }`. */
   set_choices(host: HTMLElement, choices: Choices): void;
+  /** The whole view as one value; `null` before the element is connected. */
+  get_view(host: HTMLElement): View | null;
   /**
-   * The whole view as one value; `null` before the element is connected. A
-   * pivot's is a {@link PivotView}: `get_view<PivotView>(pivot)`.
+   * A pivot's view: `get_view<PivotView>(pivot)`. An overload of its own, so
+   * a grid's view is never widened to either kind.
    */
-  get_view<V extends View | PivotView = View>(host: HTMLElement): V | null;
+  get_view<V extends PivotView>(host: HTMLElement): V | null;
   /** Applies a view in one step and one query. Parts left out keep their default. */
   set_view(host: HTMLElement, view: ViewInput): void;
   /** A pivot's view: `rows`, `columns` and `values` at once, one query. */
