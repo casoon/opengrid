@@ -52,6 +52,12 @@ Two things belong in every release entry and are easy to leave out:
   dragging; the menu has the grid's keyboard. Each change is one view, one query. New parts
   `field-group`, `add-field`, `field-menu`, `chip-move`, and twelve text keys (`pivotToolbar`,
   `addRow`, `fieldRemove`, …).
+- **Filtering `<opengrid-pivot>`** ([#114](https://github.com/casoon/opengrid/issues/114)).
+  A `filter` attribute takes the wire's filter JSON and is part of the view; the filter acts on
+  the raw rows, before the pivot. With `toolbar` the reader gets a "Filters" group: a field for an
+  expression in the grid's language (`country = DE and qty ≥ 3`) and a removable chip per clause,
+  plus "Remove all". The types come from a pivot the provider already answers (the pivot has no
+  schema of its own). Three new text keys: `pivotFilters`, `pivotFilterLabel`, `pivotFilterHint`.
 
 ## [0.7.2] — 2026-09-30
 

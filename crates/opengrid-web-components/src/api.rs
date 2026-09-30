@@ -221,6 +221,7 @@ fn parts() -> Vec<String> {
                 Some(r#"[{"fn":"count","as":"n"}]"#),
                 None,
                 None,
+                None,
             ),
             &pivot::Offer::default(),
         )),
@@ -299,7 +300,7 @@ attributes
   opengrid-table: columns datasource label theme
   opengrid-grid: column-menu columns datasource density facets group-by label mode page-size \
 search selection theme toolbar window-size
-  opengrid-pivot: collapsed columns datasource fields label measures rows sort theme toolbar values
+  opengrid-pivot: collapsed columns datasource fields filter label measures rows sort theme toolbar values
 
 events
   opengrid-selection-change
@@ -371,7 +372,7 @@ facetsToggle fieldEarlier fieldLater fieldRemove filterAny filterColumn filterCo
 filterRemoved filterRowToggle filterValueLabel filtersCleared groupByColumn groupChip \
 groupCollapsed groupExpanded groupInvalid groupRow groupSecondLevel \
 groupingFull hideColumn lang loading matchesOne matchesOther noValue nothingToAdd operatorLabel \
-operators pageFirst pageLast pageNext pageOf pagePrevious pivotColumns pivotMeasures pivotRows pivotToolbar queriesOne queriesOther queryAnd \
+operators pageFirst pageLast pageNext pageOf pagePrevious pivotColumns pivotFilterHint pivotFilterLabel pivotFilters pivotMeasures pivotRows pivotToolbar queriesOne queriesOther queryAnd \
 queryMissingValue queryUnknownColumn queryWrongOperator rowsOne rowsOther searchChip searchHint \
 searchLabel searchPlaceholder searchSuggestions selectAll selectedAll selectionCleared sortAscending \
 sortDescending sourceHybrid sourceLocal sourceRemote sourceWorker subtotal toolbarGroup total \
