@@ -189,10 +189,6 @@ is tested and what is not: [Accessibility](https://github.com/casoon/opengrid/bl
 Pre-1.0: a minor version may change the API, a patch version does not
 ([CHANGELOG](https://github.com/casoon/opengrid/blob/main/CHANGELOG.md)).
 
-This page describes `main`. The pivot in the browser, XLSX export, the table's parts and
-formats, and data without JavaScript are in it but not yet on npm: they come with the next
-release ([Unreleased](https://github.com/casoon/opengrid/blob/main/CHANGELOG.md#unreleased)).
-
 ## Licence
 
 MIT OR Apache-2.0.
