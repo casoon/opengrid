@@ -238,8 +238,11 @@ carry `aria-checked` — and it is tri-state: empty, `mixed`, checked. The
 per-row mark is decoration; the row itself says `aria-selected`, and a second
 voice per row would double every announcement.
 
-Column visibility is a disclosure in the filter row: a checkbox per column,
-including the hidden ones — otherwise there would be no way back.
+Column visibility is a panel under its button (*Columns*, in the filter row, or in
+the toolbar when there is one): a checkbox per column, including the hidden ones —
+otherwise there would be no way back. It stays open while columns are ticked, each
+tick takes effect at once and the focus stays on the checkbox; `Escape` closes it and
+returns the focus to the button, and so does a click outside (without the focus).
 
 **The filter row** is one field per column, as wide as the column (issue #96).
 Typing filters with a comparison that fits the type: *contains* for text,

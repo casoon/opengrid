@@ -18,6 +18,15 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+### Fixed
+
+- **"Columns" stays open while columns are ticked** ([#101](https://github.com/casoon/opengrid/issues/101)).
+  Unticking one column closed the list and put the focus into the table header, because each
+  tick rebuilds the grid. The list is now a panel under its button, like "+ Filter": it stays
+  open across the rebuild with the focus on the ticked checkbox, and closes on `Escape` (focus
+  back to the button), a click outside or the button. It no longer opens inline and pushes the
+  toolbar aside.
+
 ## [0.7.1] — 2026-09-30
 
 **Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).
