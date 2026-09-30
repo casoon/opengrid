@@ -45,6 +45,13 @@ Two things belong in every release entry and are easy to leave out:
   `aria-expanded` that folds the group's rows away and opens them again, without a new query.
   The status line says it (`groupCollapsed` / `groupExpanded`); the folded groups are a
   `collapsed` attribute, part of the view. New parts `group-toggle` and `group-mark`.
+- **Choosing the fields of `<opengrid-pivot>`** ([#112](https://github.com/casoon/opengrid/issues/112)).
+  With the `toolbar` attribute the reader chooses rows, the column and measures: per axis a
+  group of chips — move earlier/later, remove — and an add menu ("+ Row", "+ Column",
+  "+ Measure") offering what the page offers in the new `fields` and `measures` attributes. No
+  dragging; the menu has the grid's keyboard. Each change is one view, one query. New parts
+  `field-group`, `add-field`, `field-menu`, `chip-move`, and twelve text keys (`pivotToolbar`,
+  `addRow`, `fieldRemove`, …).
 
 ## [0.7.2] — 2026-09-30
 
