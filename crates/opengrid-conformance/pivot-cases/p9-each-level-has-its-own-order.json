@@ -1,0 +1,191 @@
+{
+  "id": "p9-each-level-has-its-own-order",
+  "rule": "P9",
+  "pivot": {
+    "source": "orders",
+    "rows": [
+      "country",
+      "customer"
+    ],
+    "columns": [
+      "ordered_year"
+    ],
+    "values": [
+      {
+        "field": "qty",
+        "fn": "sum",
+        "as": "total"
+      }
+    ],
+    "filter": {
+      "field": "id",
+      "op": "lte",
+      "value": 12
+    },
+    "sort": [
+      {
+        "field": "country",
+        "by": "total",
+        "direction": "asc"
+      },
+      {
+        "field": "customer",
+        "direction": "desc"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      {
+        "path": [
+          2025
+        ],
+        "measure": "total"
+      },
+      {
+        "path": [
+          2026
+        ],
+        "measure": "total"
+      },
+      {
+        "path": [
+          null
+        ],
+        "measure": "total"
+      }
+    ],
+    "rows": [
+      [
+        "GB",
+        null,
+        null,
+        8,
+        null
+      ],
+      [
+        "GB",
+        null,
+        null,
+        8,
+        null
+      ],
+      [
+        "FR",
+        "Gamma",
+        null,
+        null,
+        5
+      ],
+      [
+        "FR",
+        "Beta",
+        null,
+        4,
+        null
+      ],
+      [
+        "FR",
+        null,
+        null,
+        4,
+        5
+      ],
+      [
+        null,
+        "Epsilon",
+        null,
+        9,
+        null
+      ],
+      [
+        null,
+        null,
+        null,
+        9,
+        null
+      ],
+      [
+        "US",
+        "Gamma",
+        null,
+        6,
+        null
+      ],
+      [
+        "US",
+        "Delta",
+        null,
+        7,
+        null
+      ],
+      [
+        "US",
+        null,
+        null,
+        13,
+        null
+      ],
+      [
+        "DE",
+        "Epsilon",
+        null,
+        10,
+        null
+      ],
+      [
+        "DE",
+        "Beta",
+        null,
+        null,
+        null
+      ],
+      [
+        "DE",
+        "Alpha",
+        1,
+        14,
+        null
+      ],
+      [
+        "DE",
+        "",
+        null,
+        11,
+        null
+      ],
+      [
+        "DE",
+        null,
+        1,
+        35,
+        null
+      ],
+      [
+        null,
+        null,
+        1,
+        69,
+        5
+      ]
+    ],
+    "levels": [
+      2,
+      1,
+      2,
+      2,
+      1,
+      2,
+      1,
+      2,
+      2,
+      1,
+      2,
+      2,
+      2,
+      2,
+      1,
+      0
+    ]
+  }
+}

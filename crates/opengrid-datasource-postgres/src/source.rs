@@ -288,6 +288,19 @@ impl PostgresDataSource {
         &self,
         pivot: &ValidatedPivotQuery,
     ) -> Result<PivotResult, DataSourceError> {
+        // One statement has one `ORDER BY`, and rule P9 orders each level by
+        // its own key. A sorted pivot takes the generic path: one query per
+        // level, each still computed and sorted by the database.
+        if !pivot.sort.is_empty() {
+            return opengrid_pivot::execute(self, pivot)
+                .await
+                .map_err(|error| match error {
+                    opengrid_pivot::ExecuteError::Source(error) => error,
+                    other => DataSourceError::Backend {
+                        message: other.to_string(),
+                    },
+                });
+        }
         let deepest = pivot.sets.first().ok_or_else(|| DataSourceError::Backend {
             message: "a pivot has at least one level".to_owned(),
         })?;

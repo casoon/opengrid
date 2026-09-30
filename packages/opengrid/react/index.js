@@ -170,6 +170,7 @@ export const OpengridPivot = component(
     rows: "rows",
     columns: "columns",
     values: "values",
+    sort: "sort",
     theme: "theme",
   },
   [],

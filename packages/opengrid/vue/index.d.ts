@@ -77,6 +77,8 @@ export interface OpengridPivotProps
   columns?: string;
   /** The measures as the contract's JSON. */
   values?: string;
+  /** How each level is ordered, as the wire's JSON; part of the view. */
+  sort?: string;
   theme?: Theme;
 }
 

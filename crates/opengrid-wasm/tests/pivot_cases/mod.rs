@@ -11,7 +11,7 @@ pub const ORDERS_SCHEMA: &str =
     include_str!("../../../opengrid-conformance/data/orders.schema.json");
 
 /// Every committed pivot case, embedded: a browser test has no filesystem.
-pub const CASES: [&str; 5] = [
+pub const CASES: [&str; 9] = [
     include_str!(
         "../../../opengrid-conformance/pivot-cases/p1-a-pivot-is-rows-crossed-with-columns.json"
     ),
@@ -25,6 +25,14 @@ pub const CASES: [&str; 5] = [
     include_str!(
         "../../../opengrid-conformance/pivot-cases/p6-a-subtotal-follows-the-rows-it-sums.json"
     ),
+    include_str!("../../../opengrid-conformance/pivot-cases/p9-a-level-sorted-by-a-measure.json"),
+    include_str!(
+        "../../../opengrid-conformance/pivot-cases/p9-a-level-sorted-by-its-values-descending.json"
+    ),
+    include_str!(
+        "../../../opengrid-conformance/pivot-cases/p9-a-measure-sorts-by-the-whole-row.json"
+    ),
+    include_str!("../../../opengrid-conformance/pivot-cases/p9-each-level-has-its-own-order.json"),
 ];
 
 pub fn engine() -> Engine {
