@@ -18,6 +18,26 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-09-30
+
+**Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).
+**Browsers:** Chromium (the whole e2e suite, 1047 passed) and WebKit (Playwright's, not Safari:
+516 passed, 10 skipped). Firefox: **not run**.
+
+The pivot on the grid's level: titles and formats, a view and events, sorting, folding, choosing
+the fields and filtering — each from the keyboard, each part of the view.
+
+**What breaks:**
+- `<opengrid-pivot>`'s row-dimension headers — and its measure headers without a column
+  dimension — hold a sort button now, and a group's subtotal header a fold button; the direction
+  and fold marks are `aria-hidden` text beside the names. A page that read a header's
+  `textContent` reads the mark too; read the button's first `span`, or what a reader hears.
+- Rust: `PivotQuery` and `ValidatedPivotQuery` have new fields (`sort`; `orders`, `sort`), so a
+  struct literal needs them. The JSON form is unchanged for a pivot without `sort`.
+
+**Module sizes** (brotli, `just measure-modules`): the elements 206.2 → 224.0 KiB, the engine
+115.2 → 118.8 KiB; both bounds raised with their reasons in `scripts/module-budget.txt`.
+
 ### Added
 
 - **Titles and formats in `<opengrid-pivot>`** ([#104](https://github.com/casoon/opengrid/issues/104)).
