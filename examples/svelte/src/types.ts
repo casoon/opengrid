@@ -5,7 +5,7 @@
 
 import type { ComponentProps } from "svelte";
 import { OpengridGrid, OpengridPivot, OpengridTable } from "@casoon/opengrid/svelte";
-import type { View } from "@casoon/opengrid";
+import type { PivotView, View } from "@casoon/opengrid";
 
 type GridProps = ComponentProps<typeof OpengridGrid>;
 
@@ -29,6 +29,12 @@ export const table: ComponentProps<typeof OpengridTable> = {
   defaultView: { density: "compact" },
 };
 export const pivot: ComponentProps<typeof OpengridPivot> = { rows: "country", values: "[]" };
+export const pivotView: ComponentProps<typeof OpengridPivot> = {
+  view: { rows: ["country"], values: [{ fn: "count", as: "n" }] },
+  onviewchange: (view: PivotView) => view.values,
+};
+// @ts-expect-error — a pivot's view is its rows, columns and values
+export const pivotRefused: ComponentProps<typeof OpengridPivot> = { view: { sort: [] } };
 
 export const refused: GridProps[] = [
   // @ts-expect-error — a density is one of three

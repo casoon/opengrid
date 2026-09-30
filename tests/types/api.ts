@@ -18,6 +18,7 @@ import {
   type CodedError,
   type Engine,
   type ErrorCode,
+  type PivotView,
   type PlannerLike,
   type Provider,
   type SelectionChangeDetail,
@@ -135,6 +136,23 @@ export async function page(): Promise<void> {
     columns: { order: [], hidden: [], widths: [120] },
   };
   void wrongShape;
+
+  // The pivot's view (issue #106): what it pivots by and measures.
+  const pivotView = module.get_view<PivotView>(pivot);
+  if (pivotView) {
+    pivotView.rows satisfies string[];
+    pivotView.values[0]?.fn satisfies string | undefined;
+    module.set_view(pivot, pivotView);
+  }
+  module.set_view(pivot, { rows: ["country"], values: [{ fn: "count", as: "n" }] });
+  // @ts-expect-error — a measure has a name
+  module.set_view(pivot, { values: [{ fn: "count" }] });
+  // @ts-expect-error — the rows are a list, not the attribute's text
+  module.set_view(pivot, { rows: "country" });
+  connect(pivot, {
+    view: { rows: ["country"], columns: [], values: [{ field: "qty", fn: "sum", as: "total" }] },
+    onViewChange: (next) => next.columns satisfies string[],
+  }).update({ view: null });
 
   // Events: the detail is typed on the element and on the document.
   grid.addEventListener("opengrid-selection-change", (event) => {

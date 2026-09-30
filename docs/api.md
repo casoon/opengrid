@@ -532,6 +532,27 @@ loader.module.set_columns(pivot, { country: { title: "Country" }, total: { title
 loader.module.set_formats(pivot, { total: { kind: "number", locale: "de-DE" } });
 ```
 
+**The view of a pivot** is what it pivots by and measures — its three
+attributes as one value, `get_view`/`set_view` as at the grid:
+
+```js
+const view = loader.module.get_view(pivot);
+// { rows: ["country"], columns: ["ordered_year"],
+//   values: [{ field: "qty", fn: "sum", as: "total" }] }
+loader.module.set_view(pivot, { ...view, rows: ["customer"] });
+```
+
+The attributes **are** the view, so there is no second copy to fall out of step:
+`set_view` writes all three at once and costs one query, and every change of
+them — by `set_view` or by the page setting an attribute — fires
+`opengrid-view-change`. Setting what it has says nothing. A view whose `rows` or
+`columns` is not a list of names, or whose `values` is not a list of measures, is
+reported in the status line and applied not at all. A part left out is empty; a
+key the pivot does not know is ignored — `sort`, `collapsed` and `filters` join
+the view later. In TypeScript, `get_view<PivotView>(pivot)`; the adapters' `view`
+on `OpengridPivot` is a `PivotView`. `opengrid-query` fires after every answer,
+as at the grid.
+
 `get_pivot(host)` exports the table as it is shown, as CSV — see
 [exporting a pivot](#exporting-a-pivot). Its headers and values stay the raw
 names and values: titles and formats are display.
@@ -770,8 +791,8 @@ not leave a shadow root the page wrapped the element in), and neither is
 |---|---|
 | `opengrid-selection-change` | `{ rows: number[], count: number }` — logical row numbers, ascending. |
 | `opengrid-cell-change` | `{ row, column, value, previous }` — everything needed to persist it. |
-| `opengrid-view-change` | `{ view }` — the whole [view](#the-view) after the change. Scrolling and selecting are not view changes. |
-| `opengrid-query` | `{ kind, ms, rows, total, bytes, form, memory }` after **every** answer of the provider (issue #70): where it ran (the provider's `kind`), the round trip in milliseconds measured in the tab, rows answered and matches before paging, the answer's size as it arrived and its form (`binary` or `json`), and the element module's WASM memory. Measured always, sent nowhere — what the page does with it is the page's. |
+| `opengrid-view-change` | `{ view }` — the whole [view](#the-view) after the change. Scrolling and selecting are not view changes. On `<opengrid-pivot>` the view is its `rows`, `columns` and `values`. |
+| `opengrid-query` | `{ kind, ms, rows, total, bytes, form, memory }` after **every** answer of the provider, on the grid and the pivot (issue #70): where it ran (the provider's `kind`), the round trip in milliseconds measured in the tab, rows answered and matches before paging, the answer's size as it arrived and its form (`binary` or `json`), and the element module's WASM memory. Measured always, sent nowhere — what the page does with it is the page's. |
 
 **The component edits; the page saves.** There is no write path: the engine's
 contract is a query. An edited value is shown at once and marked unsaved; a
