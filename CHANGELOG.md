@@ -18,6 +18,11 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+## [0.8.1] — 2026-09-30
+
+**Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).
+**Browsers:** Chromium, the whole e2e suite. A fix to the types; nothing breaks.
+
 ### Fixed
 
 - **`get_view` no longer widens a grid's view** ([#117](https://github.com/casoon/opengrid/issues/117)).
