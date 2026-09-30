@@ -18,6 +18,18 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-09-30
+
+**Screen-reader pairings tested: none yet** — the VoiceOver pass is prepared and not yet run
+([issue #5](https://github.com/casoon/opengrid/issues/5)). **Browsers:** Chromium and
+WebKit (Playwright's, not Safari), the whole e2e suite each. Firefox: **not run**: Playwright's
+Firefox does not start on the release machine.
+
+**What breaks:** the filter row's `filter-operator` is a `<button>` now, not a `<select>` (#96).
+
+**Module sizes** (brotli, `just measure-modules`): the elements 204.1 → 206.2 KiB (the operator
+menu), the engine unchanged at 115.2 KiB.
+
 ### Changed
 
 - **The filter row is one field per column** ([#96](https://github.com/casoon/opengrid/issues/96)).
