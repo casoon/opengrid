@@ -19,13 +19,13 @@ async function filterFacts(page) {
   return page.evaluate(() => {
     const root = document.querySelector("opengrid-grid").shadowRoot;
     const filter = root.querySelector('[part="filter"]');
-    const labels = [...root.querySelectorAll("select[data-col], input[data-col]")].map(
+    const labels = [...root.querySelectorAll('[part="filter-operator"][data-col], input[data-col]')].map(
       (control) => control.getAttribute("aria-label"),
     );
     return {
       present: !!filter,
       outsideGrid: !filter?.closest('table[role="grid"]'),
-      operators: [...root.querySelectorAll("select[data-col]")].length,
+      operators: [...root.querySelectorAll('[part="filter-operator"][data-col]')].length,
       values: [...root.querySelectorAll("input[data-col]")].length,
       labels,
       clear: root.querySelector('[part="filter-clear"]')?.textContent ?? null,
@@ -65,13 +65,18 @@ async function innerActive(page) {
   });
 }
 
-/** Selects an operator by index using only the keyboard (Home + ArrowDown). */
+/**
+ * Selects an operator by index using only the keyboard: the button inside the
+ * field opens its menu (issue #96), Home, ArrowDown, Enter.
+ */
 async function chooseOperator(page, column, index) {
-  await focusIn(page, `select[data-col="${column}"]`);
+  await focusIn(page, `[part="filter-operator"][data-col="${column}"]`);
+  await page.keyboard.press("ArrowDown");
   await page.keyboard.press("Home");
   for (let step = 0; step < index; step += 1) {
     await page.keyboard.press("ArrowDown");
   }
+  await page.keyboard.press("Enter");
 }
 
 /** Replaces the value input's text and applies the filter with Enter. */
@@ -142,17 +147,18 @@ test("renders a labelled, keyboard-focusable filter row above the grid", async (
   expect(rendered.outsideGrid).toBe(true);
   expect(rendered.operators).toBe(4);
   expect(rendered.values).toBe(4);
-  expect(rendered.labels).toContain("id operator");
+  // The operator button names the column and the comparison (issue #96).
+  expect(rendered.labels).toContain("id operator: is");
   expect(rendered.labels).toContain("id value");
-  expect(rendered.labels).toContain("customer operator");
+  expect(rendered.labels).toContain("customer operator: contains");
   expect(rendered.clear).toBe("Clear");
   // The count comes from `total_count` (all five rows).
   expect(rendered.status).toBe("5 matches");
 
   // The controls are ordinary focusables reached with Tab, not part of the
   // roving-tabindex grid.
-  await focusIn(page, 'select[data-col="0"]');
-  expect(await innerActive(page)).toMatchObject({ tag: "select", part: "filter-operator" });
+  await focusIn(page, '[part="filter-operator"][data-col="0"]');
+  expect(await innerActive(page)).toMatchObject({ tag: "button", part: "filter-operator" });
 });
 
 test("filters by every operator with the keyboard", async ({ page }) => {

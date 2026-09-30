@@ -240,6 +240,8 @@ fn parts() -> Vec<String> {
     // The quick doors of issue #34 open popups built when they open.
     parts.push("filter-dialog".to_owned());
     parts.push("grouping-menu".to_owned());
+    // The filter row's operator menu is built when it opens (issue #96).
+    parts.push("operator-menu".to_owned());
     // The facet sidebar's contents are drawn from the configuration (point 66),
     // and the toolbar's facet switch exists only once facets are configured.
     for part in [
@@ -337,8 +339,8 @@ parts
 column-menu-button column-toggle columns columns-toggle density editor empty empty-reset \
 empty-text facet facet-bounds facet-cost facet-count facet-pill facet-pills facet-value \
 facets facets-head facets-toggle filter filter-clear filter-dialog filter-operator \
-filter-row-toggle filter-value footer grouping-menu header layout menu-label page-first \
-page-label page-last page-next page-previous pager row row-header search search-hint \
+filter-row-toggle filter-value footer grouping-menu header layout menu-label operator-menu \
+page-first page-label page-last page-next page-previous pager row row-header search search-hint \
 search-input search-list select select-all select-mark sort-button sort-direction \
 sort-index source status table toolbar total-row viewport
 

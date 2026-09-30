@@ -261,7 +261,7 @@ test("Tab leaves the grid forwards and Shift+Tab backwards", async ({ page, brow
   await page.keyboard.press(`Shift+${tab}`);
   expect(await innerActive(page)).toMatchObject({ tag: "button" });
 
-  await focusCell(page, 'select[data-col="0"]');
+  await focusCell(page, '[part="filter-operator"][data-col="0"]');
   await page.keyboard.press(`Shift+${tab}`);
   expect(await page.evaluate(() => document.activeElement?.id)).toBe("before");
 });
