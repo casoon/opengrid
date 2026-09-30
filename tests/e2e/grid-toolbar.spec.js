@@ -261,3 +261,20 @@ test("has no axe violations with toolbar and chips", async ({ page }) => {
   await expect.poll(async () => (await chips(page)).length).toBe(1);
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 });
+
+// Issue #96: a view writes the whole filter row. A column it does not filter
+// keeps its type's default comparison — "contains" over text — and not the
+// `eq` every unfiltered entry carries.
+test("a view leaves an unfiltered text column on its default comparison", async ({ page }) => {
+  await page.evaluate(() => {
+    const host = document.querySelector("opengrid-grid");
+    const module = window.__opengridModule;
+    module.set_view(host, { ...module.get_view(host), filters: [{ column: "country", op: "eq", value: "DE" }] });
+  });
+  await expect.poll(() => status(page)).not.toBe("200 matches");
+  const ops = await page.evaluate(() => {
+    const root = document.querySelector("opengrid-grid").shadowRoot;
+    return [1, 2].map((col) => root.querySelector(`[part="filter-operator"][data-col="${col}"]`).dataset.op);
+  });
+  expect(ops).toEqual(["contains", "eq"]);
+});
