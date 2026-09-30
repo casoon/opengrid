@@ -567,11 +567,150 @@ test.describe("pivot folding", () => {
       const view = window.__opengridModule.get_view(pivot);
       window.__opengridModule.set_view(pivot, { ...view, collapsed: [["DE"]] });
     });
-    await expect.poll(() => deRows(page)).toBe(0);
+    // Zero rows of DE is also what a pivot shows while it loads.
+    await expect.poll(async () => (await facts(page)).state).toBe("ready");
+    expect(await deRows(page)).toBe(0);
     expect((await toggle(page)).expanded).toBe("false");
     expect(
       await page.evaluate(() => window.__opengridModule.get_pivot(document.querySelector("opengrid-pivot"))),
     ).toBe(before);
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  });
+});
+
+// Issue #112: the reader chooses the fields from a toolbar — menus, chips,
+// moving and removing, all from the keyboard, each change one view.
+test.describe("pivot field toolbar", () => {
+  const inside = (page, fn, arg) =>
+    page.evaluate(
+      ({ fn, arg }) =>
+        new Function("root", "arg", `return (${fn})(root, arg)`)(
+          document.querySelector("opengrid-pivot").shadowRoot,
+          arg,
+        ),
+      { fn: fn.toString(), arg },
+    );
+  const chips = (page) =>
+    inside(page, (root) =>
+      Object.fromEntries(
+        [...root.querySelectorAll('[part="field-group"]')].map((group) => [
+          group.dataset.axis,
+          [...group.querySelectorAll('[part="chip"]')].map((chip) => chip.dataset.field),
+        ]),
+      ),
+    );
+  const focused = (page) =>
+    inside(page, (root) => {
+      const active = root.activeElement;
+      return active
+        ? {
+            part: active.getAttribute("part"),
+            role: active.getAttribute("role"),
+            name: active.getAttribute("aria-label") ?? active.textContent,
+          }
+        : null;
+    });
+  const focus = (page, selector) => inside(page, (root, selector) => root.querySelector(selector).focus(), selector);
+
+  async function withToolbar(page) {
+    await open(page);
+    await page.evaluate(() => {
+      const pivot = document.querySelector("opengrid-pivot");
+      pivot.setAttribute("fields", "country,customer,ordered_year");
+      pivot.setAttribute(
+        "measures",
+        '[{"fn":"count","as":"n"},{"field":"qty","fn":"sum","as":"total"},{"field":"qty","fn":"max","as":"most"}]',
+      );
+      pivot.setAttribute("toolbar", "");
+    });
+    await expect.poll(() => chips(page)).toEqual({
+      rows: ["country"],
+      columns: ["ordered_year"],
+      values: ["total", "n"],
+    });
+    await expect.poll(async () => (await facts(page)).state).toBe("ready");
+    await page.evaluate(() => {
+      window.__views = [];
+      document
+        .querySelector("opengrid-pivot")
+        .addEventListener("opengrid-view-change", (event) => window.__views.push(event.detail.view));
+    });
+  }
+
+  test("the add buttons say what they can do", async ({ page }) => {
+    await withToolbar(page);
+    const buttons = await inside(page, (root) =>
+      [...root.querySelectorAll('button[part="add-field"]')].map((button) => [
+        button.textContent,
+        button.getAttribute("aria-haspopup"),
+        button.getAttribute("aria-disabled"),
+        button.getAttribute("aria-label"),
+      ]),
+    );
+    expect(buttons).toEqual([
+      ["+ Row", "menu", null, null],
+      // One column field in V1, and there is one.
+      ["+ Column", "menu", "true", "One column field already"],
+      ["+ Measure", "menu", null, null],
+    ]);
+  });
+
+  test("a field is added from the menu, from the keyboard", async ({ page }) => {
+    await withToolbar(page);
+    await focus(page, 'button[data-add="rows"]');
+    await page.keyboard.press("Enter");
+    // The menu offers what is offered and not in use, and has the focus.
+    const menu = await inside(page, (root) => {
+      const menu = root.querySelector('[part="field-menu"]');
+      return {
+        role: menu.getAttribute("role"),
+        items: [...menu.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent),
+        expanded: root.querySelector('button[data-add="rows"]').getAttribute("aria-expanded"),
+      };
+    });
+    expect(menu).toEqual({ role: "menu", items: ["customer"], expanded: "true" });
+    expect(await focused(page)).toMatchObject({ role: "menuitem", name: "customer" });
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+
+    // Escape closes and goes back to the button.
+    await page.keyboard.press("Escape");
+    expect(await focused(page)).toMatchObject({ part: "add-field", name: "+ Row" });
+    expect(await inside(page, (root) => root.querySelector('[part="field-menu"]'))).toBeNull();
+
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Enter");
+    await expect.poll(() => chips(page)).toMatchObject({ rows: ["country", "customer"] });
+    await expect.poll(async () => (await facts(page)).state).toBe("ready");
+    expect(await page.evaluate(() => document.querySelector("opengrid-pivot").getAttribute("rows"))).toBe(
+      "country,customer",
+    );
+    // One change, one report; the focus is back on the button — which says
+    // now that every field is in use.
+    expect(await page.evaluate(() => window.__views.map((view) => view.rows))).toEqual([["country", "customer"]]);
+    await expect.poll(() => focused(page)).toMatchObject({ part: "add-field", name: "Nothing left to add" });
+  });
+
+  test("a field moves and goes, and the focus stays with it", async ({ page }) => {
+    await withToolbar(page);
+    await page.evaluate(() => document.querySelector("opengrid-pivot").setAttribute("rows", "country,customer"));
+    await expect.poll(() => chips(page)).toMatchObject({ rows: ["country", "customer"] });
+
+    await focus(page, 'button[aria-label="Move country later"]');
+    await page.keyboard.press("Enter");
+    await expect.poll(() => chips(page)).toMatchObject({ rows: ["customer", "country"] });
+    // At the edge now, so the move back has the focus.
+    await expect.poll(() => focused(page)).toMatchObject({ part: "chip-move", name: "Move country earlier" });
+
+    await focus(page, 'button[aria-label="Remove customer"]');
+    await page.keyboard.press("Enter");
+    await expect.poll(() => chips(page)).toMatchObject({ rows: ["country"] });
+    await expect.poll(() => focused(page)).toMatchObject({ part: "add-field", name: "+ Row" });
+
+    // A measure goes the same way, and its column with it.
+    await focus(page, 'button[aria-label="Remove total"]');
+    await page.keyboard.press("Space");
+    await expect.poll(() => chips(page)).toMatchObject({ values: ["n"] });
+    await expect.poll(async () => (await facts(page)).measureHeaders).toEqual(["n", "n", "n"]);
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   });
 });

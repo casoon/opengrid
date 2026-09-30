@@ -36,8 +36,9 @@ use crate::element::{
 };
 use crate::grid_element_events::VIEW_EVENT;
 use crate::pivot::{
-    self, COLLAPSED_ATTRIBUTE, COLUMNS_ATTRIBUTE, DATASOURCE_ATTRIBUTE, PIVOT_TAG, PivotLook,
-    PivotModel, PivotView, PlainLook, ROWS_ATTRIBUTE, SORT_ATTRIBUTE, SortTarget, VALUES_ATTRIBUTE,
+    self, Axis, COLLAPSED_ATTRIBUTE, COLUMNS_ATTRIBUTE, DATASOURCE_ATTRIBUTE, FIELDS_ATTRIBUTE,
+    FieldAction, MEASURES_ATTRIBUTE, Offer, PIVOT_TAG, PivotLook, PivotModel, PivotView, PlainLook,
+    ROWS_ATTRIBUTE, SORT_ATTRIBUTE, SortTarget, TOOLBAR_ATTRIBUTE, VALUES_ATTRIBUTE,
 };
 use crate::texts;
 
@@ -60,6 +61,8 @@ fn on_connected(host: HtmlElement) {
         render(&host, None, "", "loading", &PlainLook);
         let callback = Closure::<dyn FnMut(Event)>::new(on_header_click).into_js_value();
         let _ = root.add_event_listener_with_callback("click", callback.unchecked_ref());
+        let keys = Closure::<dyn FnMut(Event)>::new(on_menu_key).into_js_value();
+        let _ = root.add_event_listener_with_callback("keydown", keys.unchecked_ref());
     }
     // The view it starts with is not a change.
     report_view(&host, false);
@@ -74,6 +77,8 @@ fn on_attribute_changed(
 ) {
     match name.as_str() {
         LABEL_ATTRIBUTE | DATASOURCE_ATTRIBUTE => run(&host),
+        // What the toolbar shows and offers (issue #112).
+        TOOLBAR_ATTRIBUTE | FIELDS_ATTRIBUTE | MEASURES_ATTRIBUTE => run(&host),
         // Display only: drawn again from what the pivot holds, nothing asked.
         COLLAPSED_ATTRIBUTE => {
             if APPLYING.get() {
@@ -111,7 +116,10 @@ pub(crate) fn run(host: &HtmlElement) {
     let rows = pivot::parse_dimensions(host.get_attribute(ROWS_ATTRIBUTE).as_deref());
     let columns = pivot::parse_dimensions(host.get_attribute(COLUMNS_ATTRIBUTE).as_deref());
 
-    let request_json = match pivot::parse_sort(host.get_attribute(SORT_ATTRIBUTE).as_deref())
+    let request_json = match offer(host)
+        .and(pivot::parse_sort(
+            host.get_attribute(SORT_ATTRIBUTE).as_deref(),
+        ))
         .and_then(|sort| {
             pivot::pivot_json(
                 &source,
@@ -194,6 +202,9 @@ pub(crate) fn run(host: &HtmlElement) {
                 &PlainLook,
             ),
         }
+        // An answer that is an error draws the toolbar too: the reader who
+        // pressed something there gets the focus back all the same.
+        refocus(&host);
     });
 }
 
@@ -249,6 +260,11 @@ fn render(
     let texts = texts::texts(host);
     let mut nodes = NodeAllocator::new();
     let mut buffer = PatchBuffer::new();
+    // The toolbar is drawn in every state — loading, empty, an error — so a
+    // reader can always take back the field that caused it.
+    let toolbar = host
+        .has_attribute(TOOLBAR_ATTRIBUTE)
+        .then(|| (view_of(host), offer(host).unwrap_or_default()));
     pivot::build_pivot(
         &mut buffer,
         &mut nodes,
@@ -258,8 +274,20 @@ fn render(
         state,
         &texts,
         look,
+        toolbar.as_ref().map(|(view, offer)| (view, offer)),
     );
     apply(&root, document, &buffer);
+}
+
+/// What the page offers the reader (issue #112); only read with a toolbar.
+fn offer(host: &HtmlElement) -> Result<Offer, String> {
+    if !host.has_attribute(TOOLBAR_ATTRIBUTE) {
+        return Ok(Offer::default());
+    }
+    Offer::from_attributes(
+        host.get_attribute(FIELDS_ATTRIBUTE).as_deref(),
+        host.get_attribute(MEASURES_ATTRIBUTE).as_deref(),
+    )
 }
 
 /// The page's look for a pivot (issue #104): its `set_formats`, by field or
@@ -413,7 +441,13 @@ pub(crate) fn write_view(host: &HtmlElement, value: &JsValue) {
             return;
         }
     };
-    if view == view_of(host) {
+    apply_view(host, &view);
+}
+
+/// Writes every attribute of `view` at once: one query, one report. Setting
+/// what it has costs nothing and says nothing.
+fn apply_view(host: &HtmlElement, view: &PivotView) {
+    if *view == view_of(host) {
         return;
     }
     APPLYING.set(true);
@@ -447,7 +481,7 @@ thread_local! {
     /// The sort or fold button each pivot's reader pressed, by host id, as its
     /// `(data attribute, value)`: it gets the focus back once the answer is
     /// drawn, since drawing replaces every node.
-    static PRESSED: RefCell<HashMap<u32, (String, String)>> = RefCell::new(HashMap::new());
+    static PRESSED: RefCell<HashMap<u32, Vec<(String, String)>>> = RefCell::new(HashMap::new());
 }
 
 /// A sort button: its target goes into the `sort` attribute, and the
@@ -463,6 +497,11 @@ fn on_header_click(event: Event) {
     let target = event
         .target()
         .and_then(|target| target.dyn_into::<Element>().ok());
+    if let Some(target) = &target
+        && on_toolbar_click(&host, target)
+    {
+        return;
+    }
     if let Some(toggle) = target.as_ref().and_then(|target| {
         target
             .closest(r#"button[part="group-toggle"]"#)
@@ -499,7 +538,10 @@ fn on_header_click(event: Event) {
         PRESSED.with(|map| map.borrow_mut().remove(&id));
     });
     let id = host_id(&host);
-    PRESSED.with(|map| map.borrow_mut().insert(id, (key.to_owned(), value.clone())));
+    PRESSED.with(|map| {
+        map.borrow_mut()
+            .insert(id, vec![(key.to_owned(), value.clone())])
+    });
     let [_, _, _, sort, _] = next.attributes();
     let _ = if sort.is_empty() {
         host.remove_attribute(SORT_ATTRIBUTE)
@@ -591,7 +633,10 @@ fn on_group_toggle(host: &HtmlElement, button: &Element) {
     });
     let id = host_id(host);
     SAY.with(|map| map.borrow_mut().insert(id, sentence));
-    PRESSED.with(|map| map.borrow_mut().insert(id, ("data-path".to_owned(), raw)));
+    PRESSED.with(|map| {
+        map.borrow_mut()
+            .insert(id, vec![("data-path".to_owned(), raw)])
+    });
     let value = pivot::collapsed_attribute(&next);
     let _ = if value.is_empty() {
         host.remove_attribute(COLLAPSED_ATTRIBUTE)
@@ -600,22 +645,276 @@ fn on_group_toggle(host: &HtmlElement, button: &Element) {
     };
 }
 
+// ---------------------------------------------------------------------------
+// The field toolbar (issue #112)
+// ---------------------------------------------------------------------------
+
+/// Routes a click inside the toolbar or its menu; `true` when it was one.
+fn on_toolbar_click(host: &HtmlElement, target: &Element) -> bool {
+    let closest = |selector: &str| target.closest(selector).ok().flatten();
+    if let Some(item) = closest(r#"[part="field-menu"] [role="menuitem"]"#) {
+        pick_field(host, &item);
+    } else if let Some(button) = closest("button[data-add]") {
+        if button.get_attribute("aria-disabled").as_deref() != Some("true") {
+            open_field_menu(host, &button);
+        }
+    } else if let Some(button) = closest("button[data-remove]") {
+        let raw = button.get_attribute("data-remove").unwrap_or_default();
+        if let Some((axis, name)) = handle(&raw) {
+            act(
+                host,
+                FieldAction::Remove(axis, name),
+                vec![add_button(axis)],
+            );
+        }
+    } else if let Some(button) = closest("button[data-move]") {
+        let raw = button.get_attribute("data-move").unwrap_or_default();
+        let Some((rest, direction)) = raw.rsplit_once('|') else {
+            return true;
+        };
+        if let Some((axis, name)) = handle(rest) {
+            let later = direction == "later";
+            let opposite = if later { "earlier" } else { "later" };
+            act(
+                host,
+                FieldAction::Move(axis, name, later),
+                vec![
+                    ("data-move".to_owned(), raw.clone()),
+                    ("data-move".to_owned(), format!("{rest}|{opposite}")),
+                ],
+            );
+        }
+    } else {
+        return false;
+    }
+    true
+}
+
+/// `axis|name` as written on a chip's buttons.
+fn handle(raw: &str) -> Option<(Axis, String)> {
+    let (axis, name) = raw.split_once('|')?;
+    Some((Axis::from_token(axis)?, name.to_owned()))
+}
+
+fn add_button(axis: Axis) -> (String, String) {
+    ("data-add".to_owned(), axis.token().to_owned())
+}
+
+/// Applies a toolbar action as one view, and says where the focus goes back.
+fn act(host: &HtmlElement, action: FieldAction, focus: Vec<(String, String)>) {
+    let Ok(offer) = offer(host) else {
+        return;
+    };
+    let next = pivot::apply_field(&view_of(host), &offer, &action);
+    on_release(|id| {
+        PRESSED.with(|map| map.borrow_mut().remove(&id));
+    });
+    let id = host_id(host);
+    PRESSED.with(|map| map.borrow_mut().insert(id, focus));
+    apply_view(host, &next);
+}
+
+/// Opens the add menu under `button`: what is offered and not in use.
+fn open_field_menu(host: &HtmlElement, button: &Element) {
+    let Some(root) = host.shadow_root() else {
+        return;
+    };
+    close_field_menu(host, false);
+    let Some(axis) = button
+        .get_attribute("data-add")
+        .and_then(|token| Axis::from_token(&token))
+    else {
+        return;
+    };
+    let Ok(offer) = offer(host) else {
+        return;
+    };
+    let Some(document) = host.owner_document() else {
+        return;
+    };
+    let Ok(menu) = document.create_element("div") else {
+        return;
+    };
+    let texts = texts::texts(host);
+    let look: Box<dyn PivotLook> = match HostLook::new(host) {
+        Ok(look) => Box::new(look),
+        Err(_) => Box::new(PlainLook),
+    };
+    let _ = menu.set_attribute("part", "field-menu");
+    let _ = menu.set_attribute("role", "menu");
+    let _ = menu.set_attribute("popover", "auto");
+    let _ = menu.set_attribute("data-axis", axis.token());
+    let _ = menu.set_attribute(
+        "aria-label",
+        button
+            .text_content()
+            .unwrap_or_default()
+            .trim_start_matches('+')
+            .trim(),
+    );
+    if !texts.lang.is_empty() {
+        let _ = menu.set_attribute("lang", &texts.lang);
+    }
+    for name in offer.open(&view_of(host), axis) {
+        if let Ok(item) = document.create_element("div") {
+            let _ = item.set_attribute("role", "menuitem");
+            let _ = item.set_attribute("tabindex", "-1");
+            let _ = item.set_attribute("data-field", &name);
+            item.set_text_content(Some(&look.title(&name)));
+            let _ = menu.append_child(&item);
+        }
+    }
+    let Ok(menu) = menu.dyn_into::<HtmlElement>() else {
+        return;
+    };
+    let _ = root.append_child(&menu);
+    let _ = menu.show_popover();
+    let _ = button.set_attribute("aria-expanded", "true");
+    if let Ok(button) = button.clone().dyn_into::<HtmlElement>() {
+        crate::element::place_under(&menu, &button);
+    }
+    // Light dismiss (a click outside) closes it; the button says so.
+    let owner = host.clone();
+    let toggle = Closure::<dyn FnMut(Event)>::new(move |event: Event| {
+        let open = js_sys::Reflect::get(&event, &JsValue::from_str("newState"))
+            .ok()
+            .and_then(|state| state.as_string());
+        if open.as_deref() == Some("closed") {
+            close_field_menu(&owner, false);
+        }
+    })
+    .into_js_value();
+    let _ = menu.add_event_listener_with_callback("toggle", toggle.unchecked_ref());
+    if let Ok(Some(first)) = menu.query_selector(r#"[role="menuitem"]"#)
+        && let Ok(first) = first.dyn_into::<HtmlElement>()
+    {
+        let _ = first.focus();
+    }
+}
+
+/// Closes the open add menu, and gives its button the focus when asked.
+fn close_field_menu(host: &HtmlElement, refocus: bool) {
+    let Some(root) = host.shadow_root() else {
+        return;
+    };
+    let Ok(Some(menu)) = root.query_selector(r#"[part="field-menu"]"#) else {
+        return;
+    };
+    let axis = menu.get_attribute("data-axis").unwrap_or_default();
+    if let Ok(menu) = menu.clone().dyn_into::<HtmlElement>() {
+        let _ = menu.hide_popover();
+    }
+    menu.remove();
+    if let Ok(Some(button)) = root.query_selector(&format!(r#"button[data-add="{axis}"]"#)) {
+        let _ = button.set_attribute("aria-expanded", "false");
+        if refocus && let Ok(button) = button.dyn_into::<HtmlElement>() {
+            let _ = button.focus();
+        }
+    }
+}
+
+/// A menu item: its field goes on the menu's axis.
+fn pick_field(host: &HtmlElement, item: &Element) {
+    let Some(name) = item.get_attribute("data-field") else {
+        return;
+    };
+    let Some(axis) = item
+        .closest(r#"[part="field-menu"]"#)
+        .ok()
+        .flatten()
+        .and_then(|menu| menu.get_attribute("data-axis"))
+        .and_then(|token| Axis::from_token(&token))
+    else {
+        return;
+    };
+    close_field_menu(host, true);
+    act(host, FieldAction::Add(axis, name), vec![add_button(axis)]);
+}
+
+/// The add menu's keys: arrows and Home/End move, Enter and Space pick,
+/// Escape closes and returns to the button, Tab closes.
+fn on_menu_key(event: Event) {
+    let Ok(event) = event.dyn_into::<web_sys::KeyboardEvent>() else {
+        return;
+    };
+    let Some(item) = event
+        .target()
+        .and_then(|target| target.dyn_into::<Element>().ok())
+        .filter(|target| {
+            target
+                .closest(r#"[part="field-menu"]"#)
+                .ok()
+                .flatten()
+                .is_some()
+        })
+    else {
+        return;
+    };
+    let Some(host) = event
+        .current_target()
+        .and_then(|target| target.dyn_into::<web_sys::ShadowRoot>().ok())
+        .and_then(|root| root.host().dyn_into::<HtmlElement>().ok())
+    else {
+        return;
+    };
+    let Some(menu) = item.closest(r#"[part="field-menu"]"#).ok().flatten() else {
+        return;
+    };
+    let items: Vec<HtmlElement> = menu
+        .query_selector_all(r#"[role="menuitem"]"#)
+        .map(|list| {
+            (0..list.length())
+                .filter_map(|index| list.item(index))
+                .filter_map(|node| node.dyn_into::<HtmlElement>().ok())
+                .collect()
+        })
+        .unwrap_or_default();
+    let at = items
+        .iter()
+        .position(|other| other.is_same_node(Some(&item)))
+        .unwrap_or(0);
+    let go = |index: usize| {
+        if let Some(target) = items.get(index) {
+            let _ = target.focus();
+        }
+    };
+    match event.key().as_str() {
+        "ArrowDown" => go((at + 1) % items.len().max(1)),
+        "ArrowUp" => go((at + items.len().max(1) - 1) % items.len().max(1)),
+        "Home" => go(0),
+        "End" => go(items.len().saturating_sub(1)),
+        "Enter" | " " => pick_field(&host, &item),
+        "Escape" => close_field_menu(&host, true),
+        "Tab" => {
+            close_field_menu(&host, false);
+            return;
+        }
+        _ => return,
+    }
+    event.prevent_default();
+}
+
 /// Gives the pressed sort button the focus back, once there is one again.
 fn refocus(host: &HtmlElement) {
     let Some(id) = existing_id(host) else {
         return;
     };
-    let Some((key, value)) = PRESSED.with(|map| map.borrow_mut().remove(&id)) else {
+    let Some(candidates) = PRESSED.with(|map| map.borrow_mut().remove(&id)) else {
         return;
     };
     let Some(root) = host.shadow_root() else {
         return;
     };
-    let selector = format!(r#"button[{key}="{}"]"#, value.replace('"', "\\\""));
-    if let Ok(Some(button)) = root.query_selector(&selector)
-        && let Ok(button) = button.dyn_into::<HtmlElement>()
-    {
-        let _ = button.focus();
+    // The first that is there: a move button at an edge is gone, its
+    // opposite is not.
+    for (key, value) in candidates {
+        let selector = format!(r#"button[{key}="{}"]"#, value.replace('"', "\\\""));
+        if let Ok(Some(button)) = root.query_selector(&selector)
+            && let Ok(button) = button.dyn_into::<HtmlElement>()
+        {
+            let _ = button.focus();
+            return;
+        }
     }
 }
 

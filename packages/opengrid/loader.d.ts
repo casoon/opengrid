@@ -665,6 +665,18 @@ export type TextKey =
   | "apply"
   | "addGrouping"
   | "groupingFull"
+  | "pivotToolbar"
+  | "pivotRows"
+  | "pivotColumns"
+  | "pivotMeasures"
+  | "addRow"
+  | "addColumn"
+  | "addMeasure"
+  | "columnFull"
+  | "nothingToAdd"
+  | "fieldRemove"
+  | "fieldEarlier"
+  | "fieldLater"
   | "filterAny"
   | "booleanTrue"
   | "booleanFalse"
@@ -816,6 +828,12 @@ export interface OpengridPivotAttributes {
   sort?: string;
   /** The folded groups, as a JSON list of group paths: `[["DE"],[null]]`. */
   collapsed?: string;
+  /** Shows the field toolbar; presence is what counts. */
+  toolbar?: string;
+  /** The fields a reader may pivot by, comma-separated. */
+  fields?: string;
+  /** The measures a reader may add, as the contract's JSON. */
+  measures?: string;
   theme?: Theme;
 }
 

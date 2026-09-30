@@ -510,6 +510,9 @@ and the row and column limits are what make rendering the whole thing safe.
 | `values` | The measures, as the contract's own JSON — not an invented shorthand. |
 | `sort` | How each level is ordered, as the wire's JSON: `[{"field":"country","by":"total","direction":"desc"}]`. The reader's sort buttons write it. |
 | `collapsed` | The folded groups, a JSON list of group paths: `[["DE"],["FR","Beta"]]`, NULL as `null`. The reader's fold buttons write it. |
+| `toolbar` | Shows the field toolbar — see below. Presence is what counts. |
+| `fields` | The fields a reader may pivot by, comma-separated. |
+| `measures` | The measures a reader may add, as the contract's JSON: `[{"field":"amount","fn":"sum","as":"revenue"}]`. |
 
 `rows`/`columns` are the two **axes** here, as in every pivot; in the grid
 `columns` is the projection. The words are standard in their own context, so
@@ -574,6 +577,26 @@ says it with the grid's texts `groupCollapsed` / `groupExpanded`. The focus stay
 on the button. The folded groups are the `collapsed` attribute and part of the
 view; a path that matches no group folds nothing. The export stays the whole
 pivot, as the grid's export ignores its open groups.
+
+**Choosing the fields.** With `toolbar`, the reader chooses the rows, the
+column and the measures — without dragging, from the keyboard. Per axis a
+labelled group holds the chosen fields as chips — each with "Move … earlier" and
+"Move … later" where it has a neighbour, and "Remove …" — and an add button
+("+ Row", "+ Column", "+ Measure") whose menu offers what the page offers and
+the pivot does not use yet: `fields` for the dimensions, `measures` for the
+measures, whole. The pivot does not know the source's schema, and a measure
+needs a function the page chooses. "+ Column" is `aria-disabled` while there is
+a column field (one in V1), and so is an add button with nothing left; its name
+then says why. The menu is the grid's: arrows, Home/End, Enter or Space to pick,
+Escape back to the button. Every change is one write of the view — one query,
+one `opengrid-view-change` — and a sort or folded groups that name what went
+go with it. The focus comes back to the control pressed.
+
+```html
+<opengrid-pivot toolbar datasource="orders" rows="country" values='[{"fn":"count","as":"orders"}]'
+  fields="country,status,order_year"
+  measures='[{"fn":"count","as":"orders"},{"field":"amount","fn":"sum","as":"revenue"}]'></opengrid-pivot>
+```
 
 `get_pivot(host)` exports the table as it is shown, as CSV — see
 [exporting a pivot](#exporting-a-pivot). Its headers and values stay the raw
@@ -910,12 +933,12 @@ would make it invisible), a **selected row** carries an inset accent bar as well
 as the tint (colour alone would be 1.4.1), and `prefers-reduced-motion` beats a
 theme that animates a part.
 
-**Parts:** `add-filter`, `add-grouping`, `body`, `caption`, `cell`, `chip`, `chip-remove`, `chips`,
+**Parts:** `add-field`, `add-filter`, `add-grouping`, `body`, `caption`, `cell`, `chip`, `chip-move`, `chip-remove`, `chips`,
 `chips-clear`, `column-menu`, `column-menu-button`, `column-toggle`, `columns`, `columns-toggle`, `density`,
 `editor`, `empty`, `empty-reset`, `empty-text`, `facet`, `facet-bounds`, `facet-cost`, `facet-count`,
 `facet-pill`, `facet-pills`, `facet-value`, `facets`, `facets-head`, `facets-toggle`, `filter`,
 `filter-clear`, `filter-dialog`, `filter-operator`, `filter-row-toggle`, `filter-value`, `footer`,
-`group-mark`, `group-toggle`, `grouping-menu`, `header`, `layout`, `menu-label`, `operator-menu`, `page-first`, `page-label`, `page-last`, `page-next`,
+`field-group`, `field-menu`, `group-mark`, `group-toggle`, `grouping-menu`, `header`, `layout`, `menu-label`, `operator-menu`, `page-first`, `page-label`, `page-last`, `page-next`,
 `page-previous`, `pager`, `row`, `row-header`, `search`, `search-hint`, `search-input`, `search-list`,
 `select`, `select-all`, `select-mark`, `sort-button`, `sort-direction`, `sort-index`, `source`, `status`,
 `table`, `toolbar`, `total-row`, `viewport`.
@@ -931,6 +954,9 @@ rest of their look is the page's, through their parts (issue #29):
 | `sort-button`, `sort-direction` | the button in a header, its mark | the same, in a row-dimension header, and in a measure header without a column dimension |
 | `row-header` | — | a row's header cell, the total rows' included |
 | `group-toggle`, `group-mark` | — | a group's fold button in its subtotal's row header, and its mark |
+| `toolbar`, `field-group`, `menu-label` | — | the field toolbar, one axis's group, its visible name |
+| `chip`, `chip-move`, `chip-remove` | — | a chosen field, its move buttons, its remove button |
+| `add-field`, `field-menu` | — | an axis's add button, and its menu |
 | `row`, `total-row` | a body row | a body row; `total-row` a subtotal or the grand total |
 | `cell` | a value | a value |
 
@@ -997,6 +1023,10 @@ loader.module.set_texts(host, { lang: "de", loading: "Wird geladen …" });
 | `filterColumnLabel` / `filterConditionLabel` / `filterValueLabel` | `Column` / `Condition` / `Value` | |
 | `cancel` / `apply` | `Cancel` / `Apply` | |
 | `addGrouping` / `groupingFull` | `+ Group` / `Grouped by two columns already` — the button, and its name when no level can be added | |
+| `pivotToolbar` / `pivotRows` / `pivotColumns` / `pivotMeasures` | `Pivot fields` / `Rows` / `Columns` / `Measures` — the pivot's field toolbar and its three groups | |
+| `addRow` / `addColumn` / `addMeasure` | `+ Row` / `+ Column` / `+ Measure` | |
+| `columnFull` / `nothingToAdd` | `One column field already` / `Nothing left to add` — an add button's name when it cannot add | |
+| `fieldRemove` / `fieldEarlier` / `fieldLater` | `Remove {field}` / `Move {field} earlier` / `Move {field} later` | `{field}` |
 | `filterAny` / `booleanTrue` / `booleanFalse` | `any` / `yes` / `no` — the filter row's choice for a boolean column | |
 | `sourceLocal` / `sourceWorker` / `sourceRemote` / `sourceHybrid` | `local · wasm` / `worker · wasm` / `server` / `hybrid` — the footer's source, by the provider's `kind` | |
 | `queriesOne` / `queriesOther` | `{count} query` / `{count} queries` — the footer's count | `{count}` |
