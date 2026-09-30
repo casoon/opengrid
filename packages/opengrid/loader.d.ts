@@ -538,8 +538,8 @@ export interface PivotMeasure {
 
 /**
  * The view of `<opengrid-pivot>`: what it pivots by and what it measures — its
- * `rows`, `columns`, `values` and `sort` attributes as one value. `collapsed`
- * and `filters` join it later.
+ * `rows`, `columns`, `values`, `sort` and `collapsed` attributes as one value.
+ * `filters` joins it later.
  */
 export interface PivotView {
   rows: string[];
@@ -547,6 +547,8 @@ export interface PivotView {
   values: PivotMeasure[];
   /** How each level is ordered; empty is every level ascending by its values. */
   sort: PivotSort[];
+  /** The folded groups, each as its path of keys; a NULL key is `null`. */
+  collapsed: WireValue[][];
 }
 
 /**
@@ -812,6 +814,8 @@ export interface OpengridPivotAttributes {
   values?: string;
   /** How each level is ordered, as the wire's JSON: `[{"field":"country","by":"total","direction":"desc"}]`. */
   sort?: string;
+  /** The folded groups, as a JSON list of group paths: `[["DE"],[null]]`. */
+  collapsed?: string;
   theme?: Theme;
 }
 

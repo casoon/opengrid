@@ -2,12 +2,12 @@
 <script>
   import Opengrid from "./Opengrid.svelte";
 
-  let { label, datasource, rows, columns, values, sort, theme, view = $bindable(), element = $bindable(), ...rest } = $props();
+  let { label, datasource, rows, columns, values, sort, collapsed, theme, view = $bindable(), element = $bindable(), ...rest } = $props();
 </script>
 
 <Opengrid
   tag="opengrid-pivot"
-  attributes={{ label, datasource, rows, columns, values, sort, theme }}
+  attributes={{ label, datasource, rows, columns, values, sort, collapsed, theme }}
   bind:view
   bind:element
   {...rest}

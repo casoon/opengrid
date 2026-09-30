@@ -93,6 +93,8 @@ export interface OpengridPivotProps extends PivotOptions, ElementProps {
   values?: string;
   /** How each level is ordered, as the wire's JSON; part of the view. */
   sort?: string;
+  /** The folded groups, as a JSON list of group paths; part of the view. */
+  collapsed?: string;
   theme?: Theme;
 }
 

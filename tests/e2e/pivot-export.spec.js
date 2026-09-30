@@ -58,7 +58,7 @@ function exported(page, options) {
     }
     const rows = [...root.querySelectorAll("tbody tr")].map((tr) =>
       [...tr.children].flatMap((cell) => [
-        cell.textContent,
+        said(cell),
         ...Array(Number(cell.getAttribute("colspan") ?? 1) - 1).fill(""),
       ]),
     );
@@ -167,7 +167,7 @@ test("the page's texts are the export's labels", async ({ page }) => {
   });
   await page.waitForFunction(() =>
     [...document.querySelector("opengrid-pivot").shadowRoot.querySelectorAll("tbody th")].some(
-      (th) => th.textContent === "Summe (ohne Wert)",
+      (th) => th.textContent.endsWith("Summe (ohne Wert)"),
     ),
   );
   const { csv, table } = await exported(page, { bom: false });
