@@ -18,6 +18,12 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+### Fixed
+
+- **An unfiltered column keeps its default comparison after a view** (#96). Applying a view
+  wrote the placeholder `is` into every column it did not filter, so a text column showed
+  *is* instead of *contains*. It is back on its type's default now, as after a reset.
+
 ## [0.7.0] — 2026-09-30
 
 **Screen-reader pairings tested: none yet** — the VoiceOver pass is prepared and not yet run
