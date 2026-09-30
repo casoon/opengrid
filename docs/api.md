@@ -518,8 +518,23 @@ in words. A group whose dimension value is NULL is named `(no value)`, and one
 whose value is the empty string `(empty)` — they are different groups, and an
 empty header cell is silence to a screen reader.
 
+**Titles and formats** are the page's, as at the grid and the table.
+`set_columns` gives a row dimension or a measure (by its alias) its `title`; a
+title for a name the pivot does not show now is fine, since its dimensions change
+with its attributes. A pivot takes nothing but a `title` — `width`, `align` and
+the rest are reported in the status line. `set_formats` formats a dimension's
+values in the row, subtotal and column-group headers and a measure's cells, keyed
+by the field name or the measure alias. NULL and the empty string keep their
+words: a format never blanks a header.
+
+```js
+loader.module.set_columns(pivot, { country: { title: "Country" }, total: { title: "Quantity" } });
+loader.module.set_formats(pivot, { total: { kind: "number", locale: "de-DE" } });
+```
+
 `get_pivot(host)` exports the table as it is shown, as CSV — see
-[exporting a pivot](#exporting-a-pivot).
+[exporting a pivot](#exporting-a-pivot). Its headers and values stay the raw
+names and values: titles and formats are display.
 
 ## The view
 

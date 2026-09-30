@@ -135,7 +135,7 @@ mod host {
             Self { by_name }
         }
 
-        fn function(&self, name: &str) -> Option<&js_sys::Function> {
+        pub fn function(&self, name: &str) -> Option<&js_sys::Function> {
             self.by_name.get(name)
         }
     }
@@ -242,7 +242,7 @@ mod host {
 }
 
 #[cfg(target_arch = "wasm32")]
-pub use host::Formatter;
+pub use host::{ColumnFormats, Formatter};
 
 #[cfg(test)]
 mod tests {

@@ -146,6 +146,75 @@ test.describe("pivot", () => {
     const results = await new AxeBuilder({ page }).analyze();
     expect(results.violations).toEqual([]);
   });
+
+  // Issue #104: the page's titles and formats, as at the grid and the table.
+  test("titles and formats are the page's, and the export stays raw", async ({ page }) => {
+    await open(page);
+    await page.evaluate(() => {
+      const pivot = document.querySelector("opengrid-pivot");
+      window.__opengridModule.set_formats(pivot, {
+        ordered_year: (text) => `FY ${text}`,
+        n: { kind: "number", locale: "de-DE", minimumFractionDigits: 1 },
+      });
+    });
+    await expect
+      .poll(async () => (await facts(page)).colgroups.map((group) => group.text))
+      .toEqual(["FY 2025", "FY 2026", "(no value)"]);
+    // Once the formats show, so that its own rerun is what shows the titles.
+    await page.evaluate(() => {
+      const pivot = document.querySelector("opengrid-pivot");
+      window.__opengridModule.set_columns(pivot, {
+        country: { title: "Country of order" },
+        total: { title: "Quantity" },
+        n: { title: "Orders" },
+        // Not shown now — the dimensions change with the attributes.
+        customer: { title: "Customer" },
+      });
+    });
+    await expect
+      .poll(async () => (await facts(page)).measureHeaders)
+      .toEqual(["Quantity", "Orders", "Quantity", "Orders", "Quantity", "Orders"]);
+    const seen = await facts(page);
+    expect(seen.state).toBe("ready");
+    // NULL keeps its word: a format never blanks a header.
+    expect(seen.colgroups.map((group) => group.text)).toEqual(["FY 2025", "FY 2026", "(no value)"]);
+    const shown = await page.evaluate(() => {
+      const root = document.querySelector("opengrid-pivot").shadowRoot;
+      return {
+        dimension: root.querySelector('thead th[rowspan="2"]').textContent,
+        total: [...root.querySelectorAll("tbody tr:last-child td")].map((td) => td.textContent),
+      };
+    });
+    expect(shown.dimension).toBe("Country of order");
+    // `n` is formatted, `total` is not.
+    expect(shown.total[1]).toMatch(/^\d+,0$/);
+    expect(shown.total[0]).toMatch(/^\d+$/);
+
+    const csv = await page.evaluate(() =>
+      window.__opengridModule.get_pivot(document.querySelector("opengrid-pivot")),
+    );
+    const header = csv.split(/\r?\n/)[0];
+    expect(header).toContain("country");
+    expect(header).toContain("2025");
+    expect(header).not.toContain("Quantity");
+    expect(csv).not.toContain("FY ");
+
+    const results = await new AxeBuilder({ page }).analyze();
+    expect(results.violations).toEqual([]);
+  });
+
+  test("an option a pivot cannot honour is reported", async ({ page }) => {
+    await open(page);
+    await page.evaluate(() =>
+      window.__opengridModule.set_columns(document.querySelector("opengrid-pivot"), {
+        country: { title: "Country", width: 120 },
+      }),
+    );
+    await expect
+      .poll(async () => (await facts(page)).state)
+      .toBe("error");
+    expect((await facts(page)).status).toContain("width");
+  });
 });
 
 // Issue #28: the pivot in the browser. The engine in a worker answers the very

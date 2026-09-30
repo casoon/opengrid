@@ -167,6 +167,9 @@ pub fn set_columns(host: &HtmlElement, columns: JsValue) {
         "opengrid-grid" => crate::grid_element::recolumn(host),
         // The table checks it against the next answer (issue #29).
         TABLE_TAG => run_query(host, None, None),
+        // The pivot reads its titles with the next answer (issue #104).
+        #[cfg(feature = "pivot")]
+        "opengrid-pivot" => crate::pivot_element::run(host),
         _ => {}
     }
 }

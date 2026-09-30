@@ -92,30 +92,59 @@ pub fn pivot_json(
     .to_string())
 }
 
+/// How the page wants the pivot to read (issue #104): its titles for fields
+/// and measures, and its formats for their values.
+///
+/// Display only — `get_pivot` exports names and raw values.
+pub trait PivotLook {
+    /// What the dimension or measure called `name` is called where a reader
+    /// reads it.
+    fn title(&self, name: &str) -> String;
+    /// The text of `value`, a value of the dimension or measure `name`. Never
+    /// asked for NULL: a header has its own word for it, a cell is empty.
+    fn text(&self, name: &str, value: &Value) -> String;
+}
+
+/// Field names and the values' own notation: the look without a page.
+pub struct PlainLook;
+
+impl PivotLook for PlainLook {
+    fn title(&self, name: &str) -> String {
+        name.to_owned()
+    }
+
+    fn text(&self, _name: &str, value: &Value) -> String {
+        plain(value).unwrap_or_default()
+    }
+}
+
 /// One generated column: what it stands for, and the measure it holds.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ColumnHeader {
-    /// The column-dimension values; `None` is NULL. Empty when the pivot has
-    /// no column dimension.
-    pub path: Vec<Option<String>>,
+    /// The column-dimension values, as JSON. Empty when the pivot has no
+    /// column dimension.
+    pub path: Vec<Value>,
     /// The measure alias.
     pub measure: String,
 }
 
 /// A pivot answer, ready to render.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PivotModel {
     /// The row dimensions, outermost first.
     pub row_dimensions: Vec<String>,
+    /// The column dimensions, as the request named them — the answer does not
+    /// carry them, and a format of a column dimension needs its name.
+    pub column_dimensions: Vec<String>,
     pub columns: Vec<ColumnHeader>,
     /// Per row: how many row dimensions are set. See
     /// [`opengrid_pivot::PivotResult::row_levels`] — a subtotal is marked by
     /// this number, never by a NULL.
     pub levels: Vec<u16>,
-    /// Per row, one cell per row dimension and then per column. `None` is
-    /// NULL — which a **header** must not render as nothing (see
+    /// Per row, one cell per row dimension and then per column, as JSON.
+    /// NULL is a value a **header** must not render as nothing (see
     /// [`GridTexts::dimension`]).
-    pub rows: Vec<Vec<Option<String>>>,
+    pub rows: Vec<Vec<Value>>,
 }
 
 impl PivotModel {
@@ -132,8 +161,8 @@ impl PivotModel {
     }
 
     /// The distinct column-dimension values, in order.
-    pub fn groups(&self) -> Vec<&[Option<String>]> {
-        let mut groups: Vec<&[Option<String>]> = Vec::new();
+    pub fn groups(&self) -> Vec<&[Value]> {
+        let mut groups: Vec<&[Value]> = Vec::new();
         for column in &self.columns {
             if groups.last() != Some(&column.path.as_slice()) {
                 groups.push(&column.path);
@@ -159,10 +188,7 @@ pub fn parse_result(json: &str) -> Result<PivotModel, String> {
         .ok_or("result has no columns")?
         .iter()
         .map(|column| ColumnHeader {
-            path: column["path"]
-                .as_array()
-                .map(|path| path.iter().map(render).collect())
-                .unwrap_or_default(),
+            path: column["path"].as_array().cloned().unwrap_or_default(),
             measure: column["measure"].as_str().unwrap_or_default().to_owned(),
         })
         .collect();
@@ -184,24 +210,25 @@ pub fn parse_result(json: &str) -> Result<PivotModel, String> {
         rows.push(
             cells
                 .iter()
-                .map(|column| column["values"].get(index).and_then(render))
+                .map(|column| column["values"].get(index).cloned().unwrap_or(Value::Null))
                 .collect(),
         );
     }
 
     Ok(PivotModel {
         row_dimensions,
+        column_dimensions: Vec::new(),
         columns,
         levels,
         rows,
     })
 }
 
-/// A JSON scalar as a cell, keeping NULL apart from the empty string.
+/// A JSON scalar in its own notation, keeping NULL apart from the empty string.
 ///
 /// A data cell renders both as nothing; a **header** must not (S14 —
 /// `""` is not NULL, and an empty header cell is announced as silence).
-fn render(value: &Value) -> Option<String> {
+pub fn plain(value: &Value) -> Option<String> {
     match value {
         Value::Null => None,
         Value::String(text) => Some(text.clone()),
@@ -209,10 +236,22 @@ fn render(value: &Value) -> Option<String> {
     }
 }
 
-/// A data cell as text. NULL and the empty string both render as nothing —
-/// there is a value or there is not, and the column header says which column.
-fn cell(value: &Option<String>) -> String {
-    value.clone().unwrap_or_default()
+/// A dimension value as a header: NULL and the empty string keep their words,
+/// so a format never blanks a header; every other value is the page's.
+fn header(look: &dyn PivotLook, texts: &GridTexts, name: &str, value: &Value) -> String {
+    match plain(value).as_deref() {
+        None | Some("") => texts.dimension(plain(value).as_deref()),
+        Some(_) => look.text(name, value),
+    }
+}
+
+/// A data cell as text. NULL renders as nothing — there is a value or there
+/// is not, and the column header says which column.
+fn cell(look: &dyn PivotLook, measure: &str, value: &Value) -> String {
+    match value {
+        Value::Null => String::new(),
+        value => look.text(measure, value),
+    }
 }
 
 /// Builds the whole pivot as one patch list.
@@ -221,6 +260,7 @@ fn cell(value: &Option<String>) -> String {
 /// `scope="colgroup"`, measures under them with `scope="col"` — and one when
 /// there is not. Every data row starts with `<th scope="row">`, so each cell is
 /// announced with the row it is in and the column it is under.
+#[allow(clippy::too_many_arguments)]
 pub fn build_pivot(
     buffer: &mut PatchBuffer,
     nodes: &mut NodeAllocator,
@@ -229,6 +269,7 @@ pub fn build_pivot(
     status: &str,
     state: &str,
     texts: &GridTexts,
+    look: &dyn PivotLook,
 ) {
     let layout = element(buffer, nodes, Some(NodeId::ROOT), "div");
     attribute(buffer, layout, "part", "layout");
@@ -279,7 +320,7 @@ pub fn build_pivot(
             }
             buffer.push(Patch::SetText {
                 node: th,
-                text: name.clone(),
+                text: look.title(name),
             });
         }
 
@@ -296,7 +337,11 @@ pub fn build_pivot(
                     node: th,
                     text: group
                         .iter()
-                        .map(|value| texts.dimension(value.as_deref()))
+                        .enumerate()
+                        .map(|(depth, value)| {
+                            let name = model.column_dimensions.get(depth);
+                            header(look, texts, name.map_or("", String::as_str), value)
+                        })
                         .collect::<Vec<_>>()
                         .join(" · "),
                 });
@@ -308,7 +353,7 @@ pub fn build_pivot(
                 attribute(buffer, th, "scope", "col");
                 buffer.push(Patch::SetText {
                     node: th,
-                    text: column.measure.clone(),
+                    text: look.title(&column.measure),
                 });
             }
         } else {
@@ -318,7 +363,7 @@ pub fn build_pivot(
                 attribute(buffer, th, "scope", "col");
                 buffer.push(Patch::SetText {
                     node: th,
-                    text: column.measure.clone(),
+                    text: look.title(&column.measure),
                 });
             }
         }
@@ -357,28 +402,28 @@ pub fn build_pivot(
                 let text = if level == 0 {
                     texts.total.clone()
                 } else {
-                    texts
-                        .subtotal(&texts.dimension(cells.get(level - 1).and_then(|c| c.as_deref())))
+                    let name = &model.row_dimensions[level - 1];
+                    texts.subtotal(&header(look, texts, name, &cells[level - 1]))
                 };
                 buffer.push(Patch::SetText { node: th, text });
             } else {
-                for value in cells.iter().take(dimensions) {
+                for (value, name) in cells.iter().zip(&model.row_dimensions) {
                     let th = element(buffer, nodes, Some(tr), "th");
                     attribute(buffer, th, "part", "row-header");
                     attribute(buffer, th, "scope", "row");
                     buffer.push(Patch::SetText {
                         node: th,
-                        text: texts.dimension(value.as_deref()),
+                        text: header(look, texts, name, value),
                     });
                 }
             }
 
-            for value in cells.iter().skip(dimensions) {
+            for (value, column) in cells.iter().skip(dimensions).zip(&model.columns) {
                 let td = element(buffer, nodes, Some(tr), "td");
                 attribute(buffer, td, "part", "cell");
                 buffer.push(Patch::SetText {
                     node: td,
-                    text: cell(value),
+                    text: cell(look, &column.measure, value),
                 });
             }
         }
@@ -433,6 +478,7 @@ mod tests {
             "3 matches",
             "ready",
             &GridTexts::default(),
+            &PlainLook,
         );
         format!("{:?}", buffer.patches())
     }
@@ -470,8 +516,8 @@ mod tests {
         // NULL in the dimension column; only the level tells them apart (P2).
         assert_eq!(model.levels[2], 1);
         assert_eq!(model.levels[3], 0);
-        assert_eq!(model.rows[2][0], None);
-        assert_eq!(model.rows[3][0], None);
+        assert_eq!(model.rows[2][0], Value::Null);
+        assert_eq!(model.rows[3][0], Value::Null);
     }
 
     /// The two-level column header: values with `colspan`, measures below.
@@ -526,6 +572,65 @@ mod tests {
             markup.contains("(no value)"),
             "the NULL group needs a name, and the total is not it"
         );
+    }
+
+    /// The page's look (issue #104): titles on the dimension and measure
+    /// headers, formats on every value by its own name — and never on NULL.
+    #[test]
+    fn titles_and_formats_are_the_pages() {
+        struct Page;
+        impl PivotLook for Page {
+            fn title(&self, name: &str) -> String {
+                match name {
+                    "country" => "Land".to_owned(),
+                    "total" => "Umsatz".to_owned(),
+                    other => other.to_owned(),
+                }
+            }
+            fn text(&self, name: &str, value: &Value) -> String {
+                format!("{name}={}", plain(value).unwrap_or_default())
+            }
+        }
+        let mut model = model();
+        model.column_dimensions = vec!["year".to_owned()];
+        // The empty-string group, beside the NULL one.
+        model.rows[1][0] = Value::String(String::new());
+        let mut nodes = NodeAllocator::new();
+        let mut buffer = PatchBuffer::new();
+        build_pivot(
+            &mut buffer,
+            &mut nodes,
+            None,
+            Some(&model),
+            "",
+            "ready",
+            &GridTexts::default(),
+            &Page,
+        );
+        let texts: Vec<String> = buffer
+            .patches()
+            .iter()
+            .filter_map(|patch| match patch {
+                Patch::SetText { text, .. } => Some(text.clone()),
+                _ => None,
+            })
+            .collect();
+        for expected in ["Land", "Umsatz", "year=2025", "country=DE"] {
+            assert!(
+                texts.iter().any(|text| text == expected),
+                "{expected}: {texts:?}"
+            );
+        }
+        // The measure's alias names its format, not the result column's name.
+        assert!(texts.iter().any(|text| text == "total=258"), "{texts:?}");
+        assert!(
+            !texts.iter().any(|text| text == "country"),
+            "titled: {texts:?}"
+        );
+        // NULL and "" keep their words in a header; NULL stays empty in a cell.
+        assert!(texts.iter().any(|text| text == "(no value)"), "{texts:?}");
+        assert!(texts.iter().any(|text| text == "(empty)"), "{texts:?}");
+        assert!(!texts.iter().any(|text| text.ends_with('=')), "{texts:?}");
     }
 
     /// Without a model there is a status line and an empty table — the state
