@@ -241,9 +241,19 @@ voice per row would double every announcement.
 Column visibility is a disclosure in the filter row: a checkbox per column,
 including the hidden ones — otherwise there would be no way back.
 
+**The filter row** is one field per column, as wide as the column (issue #96).
+Typing filters with a comparison that fits the type: *contains* for text,
+*is* for numbers and dates. A small button inside the field (`filter-operator`)
+shows the comparison as a sign and names it in words (`customer operator:
+contains`); it opens a menu (`operator-menu`, `menuitemradio` items) of the
+comparisons the type allows, with the column menu's keys — `↓`/`↑` also open it
+from the button, `Escape` closes it and returns the focus. A comparison picked
+while the field has a value, or one that takes none (*has no value*), filters at
+once. `Enter` in the field applies as before.
+
 **The filter row's fields** follow the column's type: text for text, a number
 field for numbers, a date field for dates (a timestamp is typed as text), a
-choice of *any / yes / no* for booleans. The date field is the browser's own `<input type="date">`, so it
+choice of *any / yes / no* for booleans, which has no comparison button. The date field is the browser's own `<input type="date">`, so it
 shows dates the way the **reader's** system writes them (`dd.mm.yyyy` on a
 German one), whatever the page's language, and it brings the browser's picker
 and its keyboard and screen-reader support. The value it gives the query is
@@ -844,7 +854,7 @@ theme that animates a part.
 `editor`, `empty`, `empty-reset`, `empty-text`, `facet`, `facet-bounds`, `facet-cost`, `facet-count`,
 `facet-pill`, `facet-pills`, `facet-value`, `facets`, `facets-head`, `facets-toggle`, `filter`,
 `filter-clear`, `filter-dialog`, `filter-operator`, `filter-row-toggle`, `filter-value`, `footer`,
-`grouping-menu`, `header`, `layout`, `menu-label`, `page-first`, `page-label`, `page-last`, `page-next`,
+`grouping-menu`, `header`, `layout`, `menu-label`, `operator-menu`, `page-first`, `page-label`, `page-last`, `page-next`,
 `page-previous`, `pager`, `row`, `row-header`, `search`, `search-hint`, `search-input`, `search-list`,
 `select`, `select-all`, `select-mark`, `sort-button`, `sort-direction`, `sort-index`, `source`, `status`,
 `table`, `toolbar`, `total-row`, `viewport`.

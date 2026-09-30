@@ -9,15 +9,17 @@ import AxeBuilder from "@axe-core/playwright";
 // on text. The fixture's columns are `id` (int64, required), `customer` (utf8),
 // `amount` (decimal 10,2) and `qty` (int64).
 
-/** The operator options a column actually offers (hidden ones excluded). */
+/** The comparisons a column's operator menu offers (issue #96). */
 async function operators(page, column) {
   return page.evaluate((column) => {
-    const select = document
-      .querySelector("opengrid-grid")
-      .shadowRoot.querySelector(`select[data-col="${column}"]`);
-    return [...select.options]
-      .filter((option) => !option.hidden && !option.disabled)
-      .map((option) => option.value);
+    const root = document.querySelector("opengrid-grid").shadowRoot;
+    const button = root.querySelector(`[part="filter-operator"][data-col="${column}"]`);
+    button.click();
+    const ops = [...root.querySelectorAll('[part="operator-menu"] [role="menuitemradio"]')].map(
+      (item) => item.dataset.op,
+    );
+    button.click();
+    return ops;
   }, column);
 }
 
@@ -63,9 +65,9 @@ async function chooseOperator(page, column, token) {
   await page.evaluate(
     ({ column, token }) => {
       const root = document.querySelector("opengrid-grid").shadowRoot;
-      const select = root.querySelector(`select[data-col="${column}"]`);
-      select.value = token;
-      select.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+      // The comparison is a menu behind the button in the field (issue #96).
+      root.querySelector(`[part="filter-operator"][data-col="${column}"]`).click();
+      root.querySelector(`[part="operator-menu"] [data-op="${token}"]`).click();
     },
     { column, token },
   );
@@ -134,15 +136,8 @@ test("an operator without a value disables its input", async ({ page }) => {
   await chooseOperator(page, 1, "is_null");
   await expect.poll(() => valueInput(page, 1).then((input) => input.disabled)).toBe(true);
 
-  // Enter applies the filter from whichever control holds the focus — and the
-  // value field is disabled now, so it has to be the operator control.
-  await page.evaluate(() =>
-    document
-      .querySelector("opengrid-grid")
-      .shadowRoot.querySelector('select[data-col="1"]')
-      .focus(),
-  );
-  await page.keyboard.press("Enter");
+  // A comparison that takes no value runs as soon as it is picked (issue #96):
+  // there is nothing more to give.
   // Nothing in the fixture is null, so the filter holds and finds nothing.
   await expect.poll(() => status(page)).toBe("No matches");
 });

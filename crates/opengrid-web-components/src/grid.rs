@@ -497,6 +497,25 @@ pub fn takes_value(op: &str) -> bool {
     !matches!(op, "is_null" | "is_not_null")
 }
 
+/// What the operator button shows for `op` (issue #96): a sign, since the
+/// button is small. It is not read — the button's name says the comparison in
+/// words.
+pub fn operator_glyph(op: &str) -> &'static str {
+    match op {
+        "contains" => "\u{2217}",
+        "starts_with" => "a\u{2026}",
+        "eq" => "=",
+        "ne" => "\u{2260}",
+        "gt" => ">",
+        "gte" => "\u{2265}",
+        "lt" => "<",
+        "lte" => "\u{2264}",
+        "is_null" => "\u{2205}",
+        "is_not_null" => "!\u{2205}",
+        _ => "=",
+    }
+}
+
 /// The narrowest a column is drawn, whatever width the page or the reader
 /// gave it (issue #61): the header's padding (2 × 12 px), two characters of
 /// its name, the sort direction and order (about 13 px each) and, with the
@@ -791,22 +810,18 @@ pub struct FilterNodes {
     pub container: NodeId,
     /// The "Clear" button (`part="filter-clear"`).
     pub clear: NodeId,
-    /// One operator `select` + value `input` per column.
+    /// One field per column: an operator button inside a value `input`.
     pub columns: Vec<FilterColumnNodes>,
 }
 
-/// The controls of one column's filter group.
+/// The controls of one column's filter field (issue #96).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FilterColumnNodes {
-    /// The operator `<select>`.
-    pub select: NodeId,
-    /// One `<option>` per entry of [`FILTER_OPERATORS`], in that order.
-    ///
-    /// All of them are built once — the patch language can set attributes but
-    /// not remove children, and the column's **type** only arrives with the
-    /// first result (point 23). Which of them apply is therefore an attribute on
-    /// each option, updated per frame, not a different set of nodes.
-    pub options: Vec<NodeId>,
+    /// The operator button inside the field. It opens a menu of the
+    /// comparisons the column's type allows; which those are is written onto
+    /// it per frame (`data-ops`), because the type only arrives with the first
+    /// result (point 23). The chosen one is its `data-op`.
+    pub operator: NodeId,
     /// The value `<input>`; hidden for a boolean column.
     pub input: NodeId,
     /// The value `<select>` of a boolean column — *any*, *yes*, *no*
@@ -1571,11 +1586,43 @@ pub fn build_grid(
                              background: var({SURFACE_2_PROPERTY});
                              border-bottom: 1px solid var({LINE_STRONG_PROPERTY});
                              overflow-x: auto; overflow-y: hidden; white-space: nowrap; }}
-         /* Each group is as wide as its column (issue #62); its two controls
-            share that width. */
+         /* Each group is as wide as its column (issue #62) and holds one field
+            (issue #96): the value control takes the width, the operator button
+            sits inside it, at its start. */
          [part=\"filter\"] > span > select, [part=\"filter\"] > span > input {{
                              flex: 1 1 0; min-width: 0; }}
-         [part=\"filter\"] > span > select[part=\"filter-operator\"] {{ flex-grow: 1.2; }}
+         [part=\"filter\"] > span[data-filter-field] {{ position: relative; }}
+         [part=\"filter\"] > span > [part=\"filter-operator\"] {{ position: absolute;
+                             left: 4px; top: 50%; transform: translateY(-50%); z-index: 1;
+                             min-width: {MIN_TARGET_SIZE}px; min-height: {MIN_TARGET_SIZE}px;
+                             padding: 0 4px; border: 0; background: transparent;
+                             color: var({INK_MUTED_PROPERTY}); font-weight: 600; line-height: 1;
+                             cursor: pointer; }}
+         [part=\"filter\"] > span > [part=\"filter-operator\"]:hover {{
+                             background: var({HOVER_PROPERTY}); color: var({INK_PROPERTY}); }}
+         [part=\"filter\"] > span > [part=\"filter-operator\"][hidden] {{ display: none; }}
+         [part=\"filter\"] > span > [part=\"filter-operator\"]:not([hidden]) + input {{
+                             padding-left: calc({MIN_TARGET_SIZE}px + 10px); }}
+         /* The operator menu (issue #96): a popover like the grouping menu. */
+         [part=\"operator-menu\"] {{ position: fixed; inset: auto; margin: 0; padding: 6px;
+                             min-width: 11rem; box-sizing: border-box;
+                             background: var({SURFACE_PROPERTY}); color: var({INK_PROPERTY});
+                             border: 1px solid var({LINE_STRONG_PROPERTY});
+                             border-radius: min(var({RADIUS_PROPERTY}), 10px);
+                             box-shadow: 0 12px 32px rgb(0 0 0 / 0.16);
+                             font-family: var({FONT_PROPERTY}); font-size: var({FONT_SIZE_PROPERTY}); }}
+         [part=\"operator-menu\"] [role=\"menuitemradio\"] {{ display: flex; align-items: center;
+                             gap: 0.5rem; min-height: 32px; padding: 0 8px; cursor: pointer;
+                             border-radius: min(var({RADIUS_PROPERTY}), 6px); }}
+         [part=\"operator-menu\"] [role=\"menuitemradio\"]:hover {{ background: var({HOVER_PROPERTY}); }}
+         [part=\"operator-menu\"] [role=\"menuitemradio\"]:focus {{
+                             outline: var({FOCUS_WIDTH_PROPERTY}) solid Highlight;
+                             outline-offset: calc(-1 * var({FOCUS_WIDTH_PROPERTY})); }}
+         [part=\"operator-menu\"] [role=\"menuitemradio\"] > span:first-child {{
+                             display: inline-block; min-width: 1.5em; text-align: center;
+                             color: var({INK_MUTED_PROPERTY}); font-weight: 600; }}
+         [part=\"operator-menu\"] [role=\"menuitemradio\"][aria-checked=\"true\"] {{
+                             background: var({ACCENT_SOFT_PROPERTY}); color: var({ACCENT_INK_PROPERTY}); }}
          [part=\"filter\"] select, [part=\"filter\"] input, [part=\"filter\"] button {{
                              font: inherit; min-height: 32px; box-sizing: border-box;
                              padding: 0 8px;
@@ -2884,56 +2931,40 @@ fn build_filter(
     let mut columns = Vec::with_capacity(fields.len());
     for (col, field) in fields.iter().enumerate() {
         let group = element(buffer, nodes, Some(container), "span");
+        buffer.push(Patch::SetAttribute {
+            node: group,
+            name: "data-filter-field".to_owned(),
+            value: String::new(),
+        });
         set_style(
             buffer,
             group,
             "display: inline-flex; align-items: center; gap: 0.25rem;",
         );
 
-        let select = element(buffer, nodes, Some(group), "select");
-        buffer.push(Patch::SetAttribute {
-            node: select,
-            name: "part".to_owned(),
-            value: "filter-operator".to_owned(),
-        });
-        buffer.push(Patch::SetAttribute {
-            node: select,
-            name: "data-col".to_owned(),
-            value: col.to_string(),
-        });
-        buffer.push(Patch::SetAttribute {
-            node: select,
-            name: "aria-label".to_owned(),
-            value: texts.operator_label(field.name.as_str()),
-        });
-        // The options below are our words, so the language sits here and not on
-        // the filter row, which also holds the column disclosure (see
-        // `set_lang`). The `aria-label` above mixes our word with a column name
-        // and is the one place no `lang` can be right for both.
-        set_lang(buffer, select, texts);
-        let mut options = Vec::with_capacity(FILTER_OPERATORS.len());
-        for (option_index, op) in FILTER_OPERATORS.iter().enumerate() {
-            let option = element(buffer, nodes, Some(select), "option");
+        // The comparison sits inside the field, as a button (issue #96): one
+        // field per column, as wide as the column, with a sensible default
+        // per type. The button opens a menu of what the type allows; its name
+        // says the column and the comparison, the element keeps it current.
+        let operator = element(buffer, nodes, Some(group), "button");
+        for (name, value) in [
+            ("type", "button".to_owned()),
+            ("part", "filter-operator".to_owned()),
+            ("data-col", col.to_string()),
+            ("aria-haspopup", "menu".to_owned()),
+            ("aria-expanded", "false".to_owned()),
+            ("aria-label", texts.operator_label(field.name.as_str())),
+        ] {
             buffer.push(Patch::SetAttribute {
-                node: option,
-                name: "value".to_owned(),
-                value: (*op).to_owned(),
+                node: operator,
+                name: name.to_owned(),
+                value,
             });
-            if option_index == 0 {
-                buffer.push(Patch::SetAttribute {
-                    node: option,
-                    name: "selected".to_owned(),
-                    value: String::new(),
-                });
-            }
-            // The `value` above is the wire token the query needs; what the
-            // user reads is a word (point 48).
-            buffer.push(Patch::SetText {
-                node: option,
-                text: texts.operator(option_index, op),
-            });
-            options.push(option);
         }
+        // Its name is our word with the column's, the one place no `lang` can
+        // be right for both (as for the `select` it replaces); ours wins, so a
+        // reader hears the comparison in the language it is written in.
+        set_lang(buffer, operator, texts);
 
         let input = element(buffer, nodes, Some(group), "input");
         buffer.push(Patch::SetAttribute {
@@ -2992,8 +3023,7 @@ fn build_filter(
             });
         }
         columns.push(FilterColumnNodes {
-            select,
-            options,
+            operator,
             input,
             choice,
         });
@@ -3129,27 +3159,24 @@ pub fn patch_grid(
         let Some(field) = fields.get(col) else {
             continue;
         };
-        let allowed = operators_for(field.data_type, field.nullable);
-        for (index, option) in column.options.iter().enumerate() {
-            let fits = FILTER_OPERATORS
-                .get(index)
-                .is_some_and(|op| allowed.contains(op));
-            // Hidden *and* disabled: hidden keeps it out of the list, disabled
-            // keeps it out of reach for anything that ignores `hidden`.
-            for name in ["hidden", "disabled"] {
-                if fits {
-                    buffer.push(Patch::RemoveAttribute {
-                        node: *option,
-                        name: name.to_owned(),
-                    });
-                } else {
-                    buffer.push(Patch::SetAttribute {
-                        node: *option,
-                        name: name.to_owned(),
-                        value: String::new(),
-                    });
-                }
-            }
+        // What the operator menu offers; a boolean has its choice of any /
+        // yes / no instead, and no button (issue #96).
+        buffer.push(Patch::SetAttribute {
+            node: column.operator,
+            name: "data-ops".to_owned(),
+            value: operators_for(field.data_type, field.nullable).join(" "),
+        });
+        if field.data_type == DataType::Bool {
+            buffer.push(Patch::SetAttribute {
+                node: column.operator,
+                name: "hidden".to_owned(),
+                value: String::new(),
+            });
+        } else {
+            buffer.push(Patch::RemoveAttribute {
+                node: column.operator,
+                name: "hidden".to_owned(),
+            });
         }
         buffer.push(Patch::SetAttribute {
             node: column.input,
@@ -4674,8 +4701,9 @@ mod tests {
             .collect();
         // Tagged: every node whose whole subtree is our own wording — the
         // status line, the pager (it writes words too, point 38), the
-        // disclosure's toggle, each operator `select` and each boolean choice
-        // (their options are our words) and the clear button.
+        // disclosure's toggle, each operator button (its name says our word
+        // for the comparison, issue #96) and each boolean choice (its options
+        // are our words) and the clear button.
         // And the empty state of point 68: its sentence and its button are
         // ours, and it holds no data of the page's.
         let mut expected = vec![
@@ -4687,7 +4715,7 @@ mod tests {
         ];
         expected.push(view.filter.clear);
         for column in &view.filter.columns {
-            expected.push(column.select);
+            expected.push(column.operator);
             // A boolean's choice — any, yes, no — is our words too (#60).
             expected.push(column.choice);
         }

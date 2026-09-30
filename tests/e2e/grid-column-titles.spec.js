@@ -37,7 +37,7 @@ test("the header, the column list and the filter row name the column by its titl
   const named = await shadow(page, (root) => ({
     headers: [...root.querySelectorAll("th[data-col] > span:first-child")].map((span) => span.textContent),
     list: [...root.querySelectorAll('[part="column-toggle"]')].map((label) => label.textContent.trim()),
-    operator: root.querySelector('select[data-col="1"]').getAttribute("aria-label"),
+    operator: root.querySelector('[part="filter-operator"][data-col="1"]').getAttribute("aria-label"),
     value: root.querySelector('input[data-col="1"]').getAttribute("aria-label"),
     menu: root.querySelector('th[data-col="2"]').textContent,
   }));
