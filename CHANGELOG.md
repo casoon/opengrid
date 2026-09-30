@@ -18,6 +18,11 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+## [0.7.2] — 2026-09-30
+
+**Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).
+**Browsers:** Chromium, the whole e2e suite. A fix to the toolbar's column list; nothing breaks.
+
 ### Fixed
 
 - **"Columns" stays open while columns are ticked** ([#101](https://github.com/casoon/opengrid/issues/101)).
