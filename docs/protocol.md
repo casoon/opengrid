@@ -51,7 +51,16 @@ The body's `source` must equal the path's; a mismatch is a `422` at `source`.
   [Query semantics](guides/query-semantics.md). A server that answers differently gives the
   browser different results from the engine in the tab.
 
-The pivot query is `{ source, rows, columns, values: [{ field, fn, as }], filter? }`.
+The pivot query is `{ source, rows, columns, values: [{ field, fn, as }], filter?, sort? }`.
+
+`sort` orders the rows of a level among their siblings: `[{ field, by?, direction }]`, where
+`field` names a row dimension — the level — and `direction` is `asc` or `desc`. Without `by`
+the level is ordered by its own values; `by` names a measure alias, and the level is ordered by
+that measure over the whole row, across every column value, computed from the raw rows. A
+subtotal stays after its group and the grand total last; NULL sorts last in either direction;
+ties are broken by the level's values, ascending. A level without an entry is ascending by its
+values — so a pivot without `sort` answers as it always did, and a client sends the key only
+when there is one.
 
 ## Results
 

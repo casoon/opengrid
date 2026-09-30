@@ -1,0 +1,101 @@
+{
+  "id": "p9-a-measure-sorts-by-the-whole-row",
+  "rule": "P9",
+  "pivot": {
+    "source": "orders",
+    "rows": [
+      "country"
+    ],
+    "columns": [
+      "ordered_year"
+    ],
+    "values": [
+      {
+        "fn": "count",
+        "as": "n"
+      }
+    ],
+    "sort": [
+      {
+        "field": "country",
+        "by": "n",
+        "direction": "asc"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      {
+        "path": [
+          2025
+        ],
+        "measure": "n"
+      },
+      {
+        "path": [
+          2026
+        ],
+        "measure": "n"
+      },
+      {
+        "path": [
+          null
+        ],
+        "measure": "n"
+      }
+    ],
+    "rows": [
+      [
+        "",
+        0,
+        3,
+        0
+      ],
+      [
+        "GB",
+        0,
+        6,
+        0
+      ],
+      [
+        null,
+        0,
+        7,
+        0
+      ],
+      [
+        "US",
+        0,
+        8,
+        0
+      ],
+      [
+        "FR",
+        0,
+        9,
+        1
+      ],
+      [
+        "DE",
+        1,
+        15,
+        0
+      ],
+      [
+        null,
+        1,
+        48,
+        1
+      ]
+    ],
+    "levels": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      0
+    ]
+  }
+}

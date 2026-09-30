@@ -283,7 +283,7 @@ attributes
   opengrid-table: columns datasource label theme
   opengrid-grid: column-menu columns datasource density facets group-by label mode page-size \
 search selection theme toolbar window-size
-  opengrid-pivot: columns datasource label rows theme values
+  opengrid-pivot: columns datasource label rows sort theme values
 
 events
   opengrid-selection-change

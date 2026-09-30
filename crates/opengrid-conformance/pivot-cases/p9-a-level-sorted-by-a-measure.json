@@ -1,0 +1,85 @@
+{
+  "id": "p9-a-level-sorted-by-a-measure",
+  "rule": "P9",
+  "pivot": {
+    "source": "orders",
+    "rows": [
+      "country"
+    ],
+    "values": [
+      {
+        "field": "qty",
+        "fn": "sum",
+        "as": "total"
+      },
+      {
+        "fn": "count",
+        "as": "n"
+      }
+    ],
+    "filter": {
+      "field": "id",
+      "op": "lte",
+      "value": 12
+    },
+    "sort": [
+      {
+        "field": "country",
+        "by": "n",
+        "direction": "desc"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      {
+        "path": [],
+        "measure": "total"
+      },
+      {
+        "path": [],
+        "measure": "n"
+      }
+    ],
+    "rows": [
+      [
+        "DE",
+        36,
+        6
+      ],
+      [
+        "FR",
+        9,
+        2
+      ],
+      [
+        "US",
+        13,
+        2
+      ],
+      [
+        "GB",
+        8,
+        1
+      ],
+      [
+        null,
+        9,
+        1
+      ],
+      [
+        null,
+        75,
+        12
+      ]
+    ],
+    "levels": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      0
+    ]
+  }
+}
