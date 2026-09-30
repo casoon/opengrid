@@ -113,9 +113,9 @@ test("a column is hidden and brought back from the checkbox list", async ({ page
       document
         .querySelector("opengrid-grid")
         .shadowRoot.querySelector('[part="columns"]')
-        .hasAttribute("hidden"),
+        .matches(":popover-open"),
     ),
-  ).toBe(false);
+  ).toBe(true);
 
   const toggle = (name) =>
     page.evaluate((name) => {
@@ -168,4 +168,67 @@ test("has no axe violations", async ({ page }) => {
   await open(page);
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);
+});
+
+// Issue #101: the column list is a panel under its button that stays open
+// while columns are ticked — the one control of the toolbar that takes several
+// choices in a row. Each tick rebuilds the grid; the panel and the focus on the
+// ticked box come back with it.
+test.describe("the column list as a panel", () => {
+  const panel = (page) =>
+    page.evaluate(() => {
+      const root = document.querySelector("opengrid-grid").shadowRoot;
+      const list = root.querySelector('[part="columns"]');
+      const button = root.querySelector('[part="columns-toggle"]');
+      const active = root.activeElement;
+      return {
+        open: list.matches(":popover-open"),
+        expanded: button.getAttribute("aria-expanded"),
+        focus: active?.dataset.column ?? active?.getAttribute("part") ?? null,
+      };
+    });
+  const openList = (page) =>
+    page.evaluate(() =>
+      document.querySelector("opengrid-grid").shadowRoot.querySelector('[part="columns-toggle"]').click(),
+    );
+
+  test("stays open while several columns are ticked, the focus on the box", async ({ page }) => {
+    await open(page);
+    const before = await headers(page);
+    await openList(page);
+    expect(await panel(page)).toMatchObject({ open: true, expanded: "true" });
+
+    for (const name of [before[1], before[2]]) {
+      await page.evaluate((name) => {
+        const box = document
+          .querySelector("opengrid-grid")
+          .shadowRoot.querySelector(`[part="columns"] input[data-column="${name}"]`);
+        box.focus();
+      }, name);
+      await page.keyboard.press("Space");
+      await expect.poll(() => headers(page)).not.toContain(name);
+      // Still open, the button says so, and the focus is where the reader was.
+      await expect.poll(() => panel(page)).toEqual({ open: true, expanded: "true", focus: name });
+    }
+  });
+
+  test("Escape closes it and gives the focus back to its button", async ({ page }) => {
+    await open(page);
+    await openList(page);
+    await page.keyboard.press("Escape");
+    expect(await panel(page)).toEqual({ open: false, expanded: "false", focus: "columns-toggle" });
+  });
+
+  test("a click outside closes it, and the button says so", async ({ page }) => {
+    await open(page);
+    await openList(page);
+    await page.mouse.click(5, 5);
+    await expect.poll(() => panel(page).then((state) => [state.open, state.expanded])).toEqual([false, "false"]);
+  });
+
+  test("has no axe violations while open", async ({ page }) => {
+    await open(page);
+    await openList(page);
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  });
 });
