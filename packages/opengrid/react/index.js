@@ -171,6 +171,7 @@ export const OpengridPivot = component(
     columns: "columns",
     values: "values",
     sort: "sort",
+    collapsed: "collapsed",
     theme: "theme",
   },
   [],

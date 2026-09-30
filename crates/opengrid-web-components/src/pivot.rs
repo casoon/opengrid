@@ -47,6 +47,14 @@ pub const VALUES_ATTRIBUTE: &str = "values";
 /// the view stays "the attributes".
 pub const SORT_ATTRIBUTE: &str = "sort";
 
+/// The host attribute listing the folded groups (issue #110), as JSON: a list
+/// of group paths, `[["DE"], ["FR", "Beta"]]`, NULL as `null`. Display only.
+pub const COLLAPSED_ATTRIBUTE: &str = "collapsed";
+
+/// The marks of a group's fold button, beside its name and out of it.
+const EXPANDED_MARK: &str = "▾";
+const COLLAPSED_MARK: &str = "▸";
+
 /// The host attributes the element reacts to.
 pub const OBSERVED: &[&str] = &[
     LABEL_ATTRIBUTE,
@@ -55,6 +63,7 @@ pub const OBSERVED: &[&str] = &[
     COLUMNS_ATTRIBUTE,
     VALUES_ATTRIBUTE,
     SORT_ATTRIBUTE,
+    COLLAPSED_ATTRIBUTE,
     // CSS alone: the look is `:host([theme=…])` rules (issue #32).
     crate::theme::THEME_ATTRIBUTE,
 ];
@@ -170,6 +179,48 @@ pub fn parse_sort(raw: Option<&str>) -> Result<Vec<PivotOrder>, String> {
         })
 }
 
+/// The `collapsed` attribute as group paths. Absent or empty is none; anything
+/// that is not a list of lists is an error the page can fix.
+pub fn parse_collapsed(raw: Option<&str>) -> Result<Vec<Vec<Value>>, String> {
+    let raw = raw.unwrap_or_default().trim();
+    if raw.is_empty() {
+        return Ok(Vec::new());
+    }
+    opengrid_json::from_str::<Value>(raw)
+        .ok()
+        .and_then(|value| {
+            value
+                .as_array()?
+                .iter()
+                .map(|path| path.as_array().cloned())
+                .collect::<Option<Vec<_>>>()
+        })
+        .ok_or_else(|| "the collapsed attribute must be a JSON list of group paths".to_owned())
+}
+
+/// The `collapsed` attribute for `paths`; empty when nothing is folded.
+pub fn collapsed_attribute(paths: &[Vec<Value>]) -> String {
+    if paths.is_empty() {
+        return String::new();
+    }
+    Value::Array(paths.iter().cloned().map(Value::Array).collect()).to_string()
+}
+
+/// `paths` with `path` folded if it was open, opened if it was folded.
+pub fn toggle_collapsed(paths: &[Vec<Value>], path: &[Value]) -> Vec<Vec<Value>> {
+    if paths.iter().any(|folded| folded == path) {
+        paths
+            .iter()
+            .filter(|folded| *folded != path)
+            .cloned()
+            .collect()
+    } else {
+        let mut next = paths.to_vec();
+        next.push(path.to_vec());
+        next
+    }
+}
+
 /// What a header sorts by when the reader presses it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SortTarget<'a> {
@@ -268,6 +319,8 @@ pub struct PivotView {
     pub values: Vec<Value>,
     /// Rule P9's orders; empty is every level ascending by its values.
     pub sort: Vec<PivotOrder>,
+    /// The folded groups, as their paths (issue #110).
+    pub collapsed: Vec<Vec<Value>>,
 }
 
 impl PivotView {
@@ -278,6 +331,7 @@ impl PivotView {
         columns: Option<&str>,
         values: Option<&str>,
         sort: Option<&str>,
+        collapsed: Option<&str>,
     ) -> Self {
         Self {
             rows: parse_dimensions(rows),
@@ -287,11 +341,13 @@ impl PivotView {
                 .and_then(|values| values.as_array().cloned())
                 .unwrap_or_default(),
             sort: parse_sort(sort).unwrap_or_default(),
+            collapsed: parse_collapsed(collapsed).unwrap_or_default(),
         }
     }
 
-    /// The attributes, in the order `rows`, `columns`, `values`, `sort`.
-    pub fn attributes(&self) -> [String; 4] {
+    /// The attributes, in the order `rows`, `columns`, `values`, `sort`,
+    /// `collapsed`.
+    pub fn attributes(&self) -> [String; 5] {
         [
             self.rows.join(","),
             self.columns.join(","),
@@ -301,6 +357,7 @@ impl PivotView {
             } else {
                 Value::Array(self.sort.iter().map(PivotOrder::to_json).collect()).to_string()
             },
+            collapsed_attribute(&self.collapsed),
         ]
     }
 
@@ -310,6 +367,7 @@ impl PivotView {
             "columns": self.columns,
             "values": Value::Array(self.values.clone()),
             "sort": Value::Array(self.sort.iter().map(PivotOrder::to_json).collect()),
+            "collapsed": Value::Array(self.collapsed.iter().cloned().map(Value::Array).collect()),
         })
     }
 
@@ -361,12 +419,26 @@ impl PivotView {
                 }
             },
         };
+        let collapsed = match object.get("collapsed") {
+            None => Vec::new(),
+            Some(list) => match list
+                .as_array()
+                .and_then(|list| list.iter().map(|path| path.as_array().cloned()).collect())
+            {
+                Some(paths) => paths,
+                None => {
+                    problems.push("collapsed is not a list of group paths".to_owned());
+                    Vec::new()
+                }
+            },
+        };
         if problems.is_empty() {
             Ok(Self {
                 rows,
                 columns,
                 values,
                 sort,
+                collapsed,
             })
         } else {
             Err(problems)
@@ -434,6 +506,8 @@ pub struct PivotModel {
     pub column_dimensions: Vec<String>,
     /// The orders the request asked for (rule P9): what the headers say.
     pub sort: Vec<PivotOrder>,
+    /// The folded groups (issue #110): their rows below are not drawn.
+    pub collapsed: Vec<Vec<Value>>,
     pub columns: Vec<ColumnHeader>,
     /// Per row: how many row dimensions are set. See
     /// [`opengrid_pivot::PivotResult::row_levels`] — a subtotal is marked by
@@ -446,6 +520,31 @@ pub struct PivotModel {
 }
 
 impl PivotModel {
+    /// The group path of row `index`: its dimension values down to its level.
+    pub fn path(&self, index: usize) -> &[Value] {
+        let level = usize::from(self.levels[index]).min(self.row_dimensions.len());
+        &self.rows[index][..level]
+    }
+
+    /// Whether row `index` lies inside a folded group — below it, not its
+    /// own subtotal, which is what stays.
+    pub fn folded(&self, index: usize) -> bool {
+        let path = self.path(index);
+        self.collapsed
+            .iter()
+            .any(|folded| folded.len() < path.len() && path[..folded.len()] == folded[..])
+    }
+
+    /// How many rows are drawn inside the group at `path`, its subtotal aside.
+    pub fn shown_below(&self, path: &[Value]) -> u64 {
+        (0..self.rows.len())
+            .filter(|&index| {
+                let row = self.path(index);
+                row.len() > path.len() && row[..path.len()] == *path && !self.folded(index)
+            })
+            .count() as u64
+    }
+
     /// How many measures repeat under each column value.
     pub fn measures(&self) -> usize {
         if self.columns.is_empty() {
@@ -517,6 +616,7 @@ pub fn parse_result(json: &str) -> Result<PivotModel, String> {
         row_dimensions,
         column_dimensions: Vec::new(),
         sort: Vec::new(),
+        collapsed: Vec::new(),
         columns,
         levels,
         rows,
@@ -541,6 +641,20 @@ fn header(look: &dyn PivotLook, texts: &GridTexts, name: &str, value: &Value) ->
     match plain(value).as_deref() {
         None | Some("") => texts.dimension(plain(value).as_deref()),
         Some(_) => look.text(name, value),
+    }
+}
+
+/// The name of the group at `path`, as its header says it: formatted, and
+/// NULL and the empty string in their words.
+pub fn group_label(
+    model: &PivotModel,
+    look: &dyn PivotLook,
+    texts: &GridTexts,
+    path: &[Value],
+) -> String {
+    match (path.len().checked_sub(1), path.last()) {
+        (Some(level), Some(value)) => header(look, texts, &model.row_dimensions[level], value),
+        _ => texts.total.clone(),
     }
 }
 
@@ -690,6 +804,9 @@ pub fn build_pivot(
         let tbody = element(buffer, nodes, Some(table), "tbody");
         let dimensions = model.row_dimensions.len();
         for (index, cells) in model.rows.iter().enumerate() {
+            if model.folded(index) {
+                continue;
+            }
             let level = usize::from(*model.levels.get(index).unwrap_or(&0));
             let tr = element(buffer, nodes, Some(tbody), "tr");
             attribute(buffer, tr, "data-level", &level.to_string());
@@ -718,13 +835,40 @@ pub fn build_pivot(
                 if dimensions > 1 {
                     attribute(buffer, th, "colspan", &dimensions.to_string());
                 }
-                let text = if level == 0 {
-                    texts.total.clone()
+                if level == 0 {
+                    buffer.push(Patch::SetText {
+                        node: th,
+                        text: texts.total.clone(),
+                    });
                 } else {
+                    // The group's own row stays when it is folded, so its
+                    // header holds the fold button (issue #110), named by the
+                    // header's own words; the mark is beside the name.
                     let name = &model.row_dimensions[level - 1];
-                    texts.subtotal(&header(look, texts, name, &cells[level - 1]))
-                };
-                buffer.push(Patch::SetText { node: th, text });
+                    let text = texts.subtotal(&header(look, texts, name, &cells[level - 1]));
+                    let path = &cells[..level];
+                    let open = !model.collapsed.iter().any(|folded| folded == path);
+                    let button = element(buffer, nodes, Some(th), "button");
+                    attribute(buffer, button, "part", "group-toggle");
+                    attribute(buffer, button, "type", "button");
+                    attribute(buffer, button, "aria-expanded", &open.to_string());
+                    attribute(
+                        buffer,
+                        button,
+                        "data-path",
+                        &Value::Array(path.to_vec()).to_string(),
+                    );
+                    let mark = crate::shared::marker(buffer, nodes, button, "group-mark");
+                    buffer.push(Patch::SetText {
+                        node: mark,
+                        text: format!(
+                            "{}\u{a0}",
+                            if open { EXPANDED_MARK } else { COLLAPSED_MARK }
+                        ),
+                    });
+                    let label = element(buffer, nodes, Some(button), "span");
+                    buffer.push(Patch::SetText { node: label, text });
+                }
             } else {
                 for (value, name) in cells.iter().zip(&model.row_dimensions) {
                     let th = element(buffer, nodes, Some(tr), "th");
@@ -997,20 +1141,28 @@ mod tests {
             Some("ordered_year"),
             Some(r#"[{"field":"qty","fn":"sum","as":"total"}]"#),
             Some(r#"[{"field":"country","by":"total","direction":"desc"}]"#),
+            Some(r#"[["DE"],[null]]"#),
         );
         assert_eq!(view.rows, vec!["country".to_owned(), "customer".to_owned()]);
         assert_eq!(view.sort.len(), 1);
-        let [rows, columns, values, sort] = view.attributes();
+        assert_eq!(view.collapsed, vec![vec![json!("DE")], vec![Value::Null]]);
+        let [rows, columns, values, sort, collapsed] = view.attributes();
         assert_eq!(rows, "country,customer");
         assert_eq!(columns, "ordered_year");
         assert_eq!(
-            PivotView::from_attributes(Some(&rows), Some(&columns), Some(&values), Some(&sort)),
+            PivotView::from_attributes(
+                Some(&rows),
+                Some(&columns),
+                Some(&values),
+                Some(&sort),
+                Some(&collapsed)
+            ),
             view
         );
         assert_eq!(PivotView::from_json(&view.to_json()), Ok(view));
         // Unreadable measures are none — the status line says why.
         assert!(
-            PivotView::from_attributes(None, None, Some("sum(qty)"), None)
+            PivotView::from_attributes(None, None, Some("sum(qty)"), None, None)
                 .values
                 .is_empty()
         );
@@ -1121,6 +1273,56 @@ mod tests {
         assert_eq!(sorts(&flat), (2, vec!["none".into(), "descending".into()]));
         // With a column dimension only the dimension header sorts.
         assert_eq!(sorts(&model()).0, 1);
+    }
+
+    /// A folded group keeps its own row, now closed, and draws nothing below
+    /// it (issue #110). The grand total and the innermost level fold nothing.
+    #[test]
+    fn a_folded_group_keeps_its_subtotal_alone() {
+        let answer = r#"{"row_dimensions":["country","customer"],
+            "columns":[{"path":[],"measure":"n"}],
+            "levels":[2,2,1,2,1,0],"result":{"total_count":6,"row_count":6,"columns":[
+            {"name":"country","type":"utf8","nullable":true,
+             "values":["DE","DE","DE","FR","FR",null]},
+            {"name":"customer","type":"utf8","nullable":true,
+             "values":["Alpha","Beta",null,"Gamma",null,null]},
+            {"name":"n_0","type":"int64","nullable":true,"values":[1,2,3,4,4,7]}]}}"#;
+        let mut model = parse_result(answer).unwrap();
+        let rows = |model: &PivotModel| markup(Some(model)).matches("data-level").count();
+        let toggles = |model: &PivotModel| {
+            let markup = markup(Some(model));
+            (
+                markup.matches("value: \"group-toggle\"").count(),
+                markup
+                    .matches("name: \"aria-expanded\", value: \"false\"")
+                    .count(),
+            )
+        };
+        assert_eq!(rows(&model), 6);
+        assert_eq!(toggles(&model), (2, 0), "one per group, none for the total");
+        assert_eq!(model.shown_below(&[json!("DE")]), 2);
+
+        model.collapsed = toggle_collapsed(&[], &[json!("DE")]);
+        assert_eq!(rows(&model), 4, "DE's two customers are not drawn");
+        assert_eq!(toggles(&model), (2, 1));
+        assert!(
+            markup(Some(&model)).contains("Total DE"),
+            "its subtotal stays"
+        );
+        assert_eq!(model.shown_below(&[json!("DE")]), 0);
+
+        model.collapsed = toggle_collapsed(&model.collapsed, &[json!("DE")]);
+        assert!(model.collapsed.is_empty(), "pressed again, open again");
+        // A path that matches no group folds nothing.
+        model.collapsed = vec![vec![json!("XX")]];
+        assert_eq!(rows(&model), 6);
+
+        assert_eq!(
+            parse_collapsed(Some(r#"[["DE"],[null]]"#)).unwrap().len(),
+            2
+        );
+        assert!(parse_collapsed(Some(r#"["DE"]"#)).is_err());
+        assert_eq!(collapsed_attribute(&[]), "");
     }
 
     /// A view that does not hold is refused whole, with every reason.
