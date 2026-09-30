@@ -508,6 +508,7 @@ and the row and column limits are what make rendering the whole thing safe.
 | `rows` | Comma-separated row dimensions, outermost first. |
 | `columns` | Comma-separated column dimensions. V1 allows **one**. |
 | `values` | The measures, as the contract's own JSON — not an invented shorthand. |
+| `sort` | How each level is ordered, as the wire's JSON: `[{"field":"country","by":"total","direction":"desc"}]`. The reader's sort buttons write it. |
 
 `rows`/`columns` are the two **axes** here, as in every pivot; in the grid
 `columns` is the projection. The words are standard in their own context, so
@@ -538,20 +539,31 @@ attributes as one value, `get_view`/`set_view` as at the grid:
 ```js
 const view = loader.module.get_view(pivot);
 // { rows: ["country"], columns: ["ordered_year"],
-//   values: [{ field: "qty", fn: "sum", as: "total" }] }
+//   values: [{ field: "qty", fn: "sum", as: "total" }], sort: [] }
 loader.module.set_view(pivot, { ...view, rows: ["customer"] });
 ```
 
 The attributes **are** the view, so there is no second copy to fall out of step:
-`set_view` writes all three at once and costs one query, and every change of
-them — by `set_view` or by the page setting an attribute — fires
+`set_view` writes all four at once and costs one query, and every change of
+them — by `set_view`, a sort button or the page setting an attribute — fires
 `opengrid-view-change`. Setting what it has says nothing. A view whose `rows` or
-`columns` is not a list of names, or whose `values` is not a list of measures, is
-reported in the status line and applied not at all. A part left out is empty; a
-key the pivot does not know is ignored — `sort`, `collapsed` and `filters` join
-the view later. In TypeScript, `get_view<PivotView>(pivot)`; the adapters' `view`
+`columns` is not a list of names, whose `values` is not a list of measures or
+whose `sort` is not a list of orders is reported in the status line and applied
+not at all. A part left out is empty; a key the pivot does not know is ignored —
+`collapsed` and `filters` join the view later. In TypeScript, `get_view<PivotView>(pivot)`; the adapters' `view`
 on `OpengridPivot` is a `PivotView`. `opengrid-query` fires after every answer,
 as at the grid.
+
+**Sorting** orders each level's rows among their siblings; a subtotal stays after
+its group and the grand total last. Every row-dimension header is a sort button:
+it toggles its level between ascending — the default — and descending by its
+values, with `aria-sort` on the `<th>`. Without a column dimension a measure's
+header is a sort button too and orders every level by that measure. With one it
+is not: a measure orders by the whole row, across every column value, and a
+header over one column value would promise an order its cells do not have. NULL
+sorts last either way. The pivot keeps the focus on the pressed button once the
+new answer is drawn. See the [protocol](protocol.md) for the `sort` a server
+takes.
 
 `get_pivot(host)` exports the table as it is shown, as CSV — see
 [exporting a pivot](#exporting-a-pivot). Its headers and values stay the raw
@@ -906,7 +918,7 @@ rest of their look is the page's, through their parts (issue #29):
 |---|---|---|
 | `table`, `caption` | the table and its caption | the same |
 | `header` | a column header cell | a column header cell, both header rows |
-| `sort-button`, `sort-direction` | the button in a header, its mark | — |
+| `sort-button`, `sort-direction` | the button in a header, its mark | the same, in a row-dimension header, and in a measure header without a column dimension |
 | `row-header` | — | a row's header cell, the total rows' included |
 | `row`, `total-row` | a body row | a body row; `total-row` a subtotal or the grand total |
 | `cell` | a value | a value |

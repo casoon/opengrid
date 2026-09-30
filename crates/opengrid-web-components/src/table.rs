@@ -210,7 +210,7 @@ pub fn parse_result_bytes(bytes: &[u8]) -> Result<opengrid_datasource::QueryResu
 /// there is nowhere to put a margin without making the table's first shadow
 /// rule a default every page would have to override. The space sits inside the
 /// `aria-hidden` span, so nothing reads it.
-fn direction_mark(aria_sort: &str) -> String {
+pub(crate) fn direction_mark(aria_sort: &str) -> String {
     let glyph = match aria_sort {
         "ascending" => crate::shared::ASCENDING_GLYPH,
         "descending" => crate::shared::DESCENDING_GLYPH,

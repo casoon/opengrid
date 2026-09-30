@@ -22,16 +22,59 @@ pub struct PivotQuery {
     /// The measures in each cell, in display order.
     pub values: Vec<Aggregate>,
     pub filter: Option<FilterExpr>,
+    /// How the rows of a level are ordered among their siblings (rule P9).
+    /// A level without an entry is ascending by its own values.
+    pub sort: Vec<PivotSort>,
+}
+
+/// The order of one level's rows among their siblings (rule P9).
+///
+/// `field` names the row dimension — the level. Without `by` the level is
+/// ordered by its own values; `by` names a measure alias, and the level is
+/// ordered by that measure **over the whole row**: across every column value,
+/// computed from the raw rows (P5).
+#[derive(Clone, Debug, PartialEq)]
+pub struct PivotSort {
+    pub field: FieldName,
+    pub by: Option<FieldName>,
+    pub direction: SortDirection,
+}
+
+impl FromJson for PivotSort {
+    fn from_json(json: &Json) -> Result<Self, Error> {
+        let fields = Fields::of(json, "struct PivotSort", &["field", "by", "direction"])?;
+        Ok(PivotSort {
+            field: fields.read("field")?,
+            by: fields.read_optional("by")?,
+            direction: fields.read_or_default("direction")?,
+        })
+    }
+}
+
+impl ToJson for PivotSort {
+    fn to_json(&self) -> Json {
+        match &self.by {
+            Some(by) => opengrid_json::json!({
+                "field": self.field,
+                "by": by,
+                "direction": self.direction,
+            }),
+            None => opengrid_json::json!({
+                "field": self.field,
+                "direction": self.direction,
+            }),
+        }
+    }
 }
 
 impl FromJson for PivotQuery {
-    /// `{ "source", "rows", "columns", "values", "filter" }`; only `source`
-    /// and `values` are required.
+    /// `{ "source", "rows", "columns", "values", "filter", "sort" }`; only
+    /// `source` and `values` are required.
     fn from_json(json: &Json) -> Result<Self, Error> {
         let fields = Fields::of(
             json,
             "struct PivotQuery",
-            &["source", "rows", "columns", "values", "filter"],
+            &["source", "rows", "columns", "values", "filter", "sort"],
         )?;
         Ok(PivotQuery {
             source: fields.read("source")?,
@@ -39,19 +82,28 @@ impl FromJson for PivotQuery {
             columns: fields.read_or_default("columns")?,
             values: fields.read("values")?,
             filter: fields.read_optional("filter")?,
+            sort: fields.read_or_default("sort")?,
         })
     }
 }
 
 impl ToJson for PivotQuery {
+    /// `sort` only when there is one: a server from before rule P9 reads a
+    /// pivot without it as it always did.
     fn to_json(&self) -> Json {
-        opengrid_json::json!({
+        let mut json = opengrid_json::json!({
             "source": self.source,
             "rows": self.rows,
             "columns": self.columns,
             "values": self.values,
             "filter": self.filter,
-        })
+        });
+        if !self.sort.is_empty()
+            && let Json::Object(object) = &mut json
+        {
+            object.insert("sort".to_owned(), self.sort.to_json());
+        }
+        json
     }
 }
 
@@ -92,6 +144,13 @@ pub struct ValidatedPivotQuery {
     pub values: Vec<Aggregate>,
     /// One query per level, **deepest first**: `[r1..rn, c]`, …, `[c]`.
     pub sets: Vec<ValidatedQuery>,
+    /// The levels ordered by a measure while there is a column dimension:
+    /// `(depth, query)`, the query grouped by `r1..r_depth` alone and sorted
+    /// by the measure — the row's value over every column (rule P9). Their
+    /// answers follow the sets' in [`crate::assemble`]'s input.
+    pub orders: Vec<(usize, ValidatedQuery)>,
+    /// Rule P9 as asked; empty is every level ascending by its values.
+    pub sort: Vec<PivotSort>,
     pub limits: PivotLimits,
 }
 
@@ -111,6 +170,9 @@ pub enum PivotError {
     TooManyColumns { found: usize, maximum: usize },
     /// The answer would be longer than [`PivotLimits::max_rows`].
     TooManyRows { found: usize, maximum: usize },
+    /// A sort that names no row dimension, a level twice, or a measure the
+    /// pivot does not have.
+    Sort { reason: String },
 }
 
 impl std::fmt::Display for PivotError {
@@ -134,6 +196,7 @@ impl std::fmt::Display for PivotError {
                 "the pivot would have {found} rows, the maximum is {maximum} — \
                  narrow the filter"
             ),
+            PivotError::Sort { reason } => write!(f, "sort: {reason}"),
         }
     }
 }
@@ -177,13 +240,35 @@ impl PivotQuery {
             seen.push(field);
         }
 
+        for (index, sort) in self.sort.iter().enumerate() {
+            let problem = if !self.rows.contains(&sort.field) {
+                Some(format!("{} is not a row dimension", sort.field))
+            } else if self.sort[..index]
+                .iter()
+                .any(|earlier| earlier.field == sort.field)
+            {
+                Some(format!("{} is sorted twice", sort.field))
+            } else {
+                sort.by
+                    .as_ref()
+                    .filter(|by| !self.values.iter().any(|value| value.alias == **by))
+                    .map(|by| format!("{by} is not a measure of this pivot"))
+            };
+            if let Some(reason) = problem {
+                return Err(PivotError::Sort { reason });
+            }
+        }
+
         let sets = grouping_sets(self, schema, query_limits)?;
+        let orders = order_sets(self, schema, query_limits)?;
         Ok(ValidatedPivotQuery {
             source: self.source.clone(),
             rows: self.rows.clone(),
             columns: self.columns.clone(),
             values: self.values.clone(),
             sets,
+            orders,
+            sort: self.sort.clone(),
             limits: *limits,
         })
     }
@@ -197,7 +282,11 @@ impl PivotQuery {
 /// also the catalogue of column values in S3/S4 order. That is why the pivot
 /// engine never has to sort anything itself.
 ///
-/// Every set is sorted by its own group keys, ascending, `NULLS LAST` (S3).
+/// Every set is sorted by its own group keys, ascending, `NULLS LAST` (S3) —
+/// except where rule P9 orders a level: its own dimension descending, or its
+/// measure first when there is no column dimension. The order of the siblings
+/// of a level is the order in which its set names them, so this is all the
+/// sorting a pivot needs.
 pub fn grouping_sets(
     pivot: &PivotQuery,
     schema: &Schema,
@@ -218,15 +307,28 @@ pub fn grouping_sets(
             .cloned()
             .chain(pivot.values.iter().map(|value| value.alias.clone()))
             .collect();
-        let sort: Vec<Sort> = group
-            .iter()
-            .map(|field| Sort {
-                field: field.clone(),
-                direction: SortDirection::Asc,
-                nulls: NullsOrder::default(),
-                collation: Collation::default(),
-            })
-            .collect();
+        let level = depth.checked_sub(1).and_then(|last| sort_of(pivot, last));
+        let mut sort: Vec<Sort> = Vec::new();
+        if let Some(PivotSort {
+            by: Some(by),
+            direction,
+            ..
+        }) = level
+            && pivot.columns.is_empty()
+        {
+            sort.push(key(by, *direction));
+        }
+        sort.extend(group.iter().enumerate().map(|(index, field)| {
+            let direction = match level {
+                Some(PivotSort {
+                    by: None,
+                    direction,
+                    ..
+                }) if index + 1 == depth => *direction,
+                _ => SortDirection::Asc,
+            };
+            key(field, direction)
+        }));
 
         let query = Query {
             source: pivot.source.clone(),
@@ -241,6 +343,65 @@ pub fn grouping_sets(
         sets.push(query.validate(schema, limits)?);
     }
     Ok(sets)
+}
+
+/// The entry of rule P9 for the level at `index` (0 is the outermost).
+fn sort_of(pivot: &PivotQuery, index: usize) -> Option<&PivotSort> {
+    let field = pivot.rows.get(index)?;
+    pivot.sort.iter().find(|sort| sort.field == *field)
+}
+
+fn key(field: &FieldName, direction: SortDirection) -> Sort {
+    Sort {
+        field: field.clone(),
+        direction,
+        nulls: NullsOrder::default(),
+        collation: Collation::default(),
+    }
+}
+
+/// The extra queries of rule P9: a level ordered by a measure while there is
+/// a column dimension. Its set holds one row per column value, so the order
+/// of the row **as a whole** needs the level grouped by its row dimensions
+/// alone — sorted by the measure, ties by the dimensions ascending.
+fn order_sets(
+    pivot: &PivotQuery,
+    schema: &Schema,
+    limits: &Limits,
+) -> Result<Vec<(usize, ValidatedQuery)>, PivotError> {
+    if pivot.columns.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut orders = Vec::new();
+    for depth in 1..=pivot.rows.len() {
+        let Some(PivotSort {
+            by: Some(by),
+            direction,
+            ..
+        }) = sort_of(pivot, depth - 1)
+        else {
+            continue;
+        };
+        let group: Vec<FieldName> = pivot.rows[..depth].to_vec();
+        let query = Query {
+            source: pivot.source.clone(),
+            select: group
+                .iter()
+                .cloned()
+                .chain(pivot.values.iter().map(|value| value.alias.clone()))
+                .collect(),
+            filter: pivot.filter.clone(),
+            group: group.clone(),
+            aggregate: pivot.values.clone(),
+            sort: std::iter::once(key(by, *direction))
+                .chain(group.iter().map(|field| key(field, SortDirection::Asc)))
+                .collect(),
+            offset: None,
+            limit: None,
+        };
+        orders.push((depth, query.validate(schema, limits)?));
+    }
+    Ok(orders)
 }
 
 #[cfg(test)]
@@ -354,6 +515,72 @@ mod tests {
         assert!(
             error.to_string().contains("nope"),
             "the diagnosis names it: {error}"
+        );
+    }
+
+    /// Rule P9 names a row dimension once, and a measure the pivot has.
+    #[test]
+    fn a_sort_names_a_level_and_a_measure_of_this_pivot() {
+        let sorted = |sort: &str| {
+            validate(&format!(
+                r#"{{"source":"orders","rows":["country","customer"],
+                    "values":[{{"fn":"count","as":"n"}}],"sort":{sort}}}"#
+            ))
+        };
+        assert!(sorted(r#"[{"field":"country","by":"n","direction":"desc"}]"#).is_ok());
+        assert!(
+            sorted(r#"[{"field":"customer"}]"#).is_ok(),
+            "ascending by default"
+        );
+        for (sort, says) in [
+            (r#"[{"field":"qty"}]"#, "not a row dimension"),
+            (
+                r#"[{"field":"country"},{"field":"country"}]"#,
+                "sorted twice",
+            ),
+            (r#"[{"field":"country","by":"total"}]"#, "not a measure"),
+        ] {
+            let error = sorted(sort).unwrap_err();
+            assert!(
+                matches!(&error, PivotError::Sort { reason } if reason.contains(says)),
+                "{sort}: {error}"
+            );
+        }
+    }
+
+    /// A measure sort with a column dimension asks the level once more, by
+    /// its row dimensions alone; without one the level's own set is enough.
+    #[test]
+    fn a_measure_sort_across_columns_costs_one_query() {
+        let with_columns = validate(
+            r#"{"source":"orders","rows":["country","customer"],"columns":["qty"],
+                "values":[{"fn":"count","as":"n"}],
+                "sort":[{"field":"customer","by":"n","direction":"desc"}]}"#,
+        )
+        .expect("valid");
+        assert_eq!(with_columns.orders.len(), 1);
+        assert_eq!(with_columns.orders[0].0, 2);
+        assert_eq!(with_columns.orders[0].1.group.len(), 2);
+        let without = validate(
+            r#"{"source":"orders","rows":["country"],"values":[{"fn":"count","as":"n"}],
+                "sort":[{"field":"country","by":"n","direction":"desc"}]}"#,
+        )
+        .expect("valid");
+        assert!(without.orders.is_empty());
+    }
+
+    /// A pivot without `sort` writes none, so a server from before P9 reads it.
+    #[test]
+    fn an_unsorted_pivot_writes_no_sort() {
+        assert!(!opengrid_json::to_string(&pivot(SIMPLE)).contains("sort"));
+        let sorted = pivot(
+            r#"{"source":"orders","rows":["country"],"values":[{"fn":"count","as":"n"}],
+                "sort":[{"field":"country","by":"n","direction":"desc"}]}"#,
+        );
+        let json = opengrid_json::to_string(&sorted);
+        assert_eq!(
+            opengrid_json::from_str::<PivotQuery>(&json).unwrap(),
+            sorted
         );
     }
 

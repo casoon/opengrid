@@ -19,10 +19,11 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use wasm_bindgen::JsValue;
+use wasm_bindgen::closure::Closure;
 use wasm_bindgen::prelude::JsError;
+use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::{JsFuture, spawn_local};
-use web_sys::HtmlElement;
+use web_sys::{Element, Event, HtmlElement};
 
 use opengrid_web_core::element::{LABEL_ATTRIBUTE, attach_open_shadow_root, define};
 use opengrid_web_core::host::{existing_id, id as host_id, on_release};
@@ -36,7 +37,7 @@ use crate::element::{
 use crate::grid_element_events::VIEW_EVENT;
 use crate::pivot::{
     self, COLUMNS_ATTRIBUTE, DATASOURCE_ATTRIBUTE, PIVOT_TAG, PivotLook, PivotModel, PivotView,
-    PlainLook, ROWS_ATTRIBUTE, VALUES_ATTRIBUTE,
+    PlainLook, ROWS_ATTRIBUTE, SORT_ATTRIBUTE, SortTarget, VALUES_ATTRIBUTE,
 };
 use crate::texts;
 
@@ -57,6 +58,8 @@ fn on_connected(host: HtmlElement) {
     {
         crate::theme::adopt_table_look(&root);
         render(&host, None, "", "loading", &PlainLook);
+        let callback = Closure::<dyn FnMut(Event)>::new(on_header_click).into_js_value();
+        let _ = root.add_event_listener_with_callback("click", callback.unchecked_ref());
     }
     // The view it starts with is not a change.
     report_view(&host, false);
@@ -71,7 +74,7 @@ fn on_attribute_changed(
 ) {
     match name.as_str() {
         LABEL_ATTRIBUTE | DATASOURCE_ATTRIBUTE => run(&host),
-        ROWS_ATTRIBUTE | COLUMNS_ATTRIBUTE | VALUES_ATTRIBUTE => {
+        ROWS_ATTRIBUTE | COLUMNS_ATTRIBUTE | VALUES_ATTRIBUTE | SORT_ATTRIBUTE => {
             // `write_view` sets all three and owns the one query after.
             if APPLYING.get() {
                 return;
@@ -100,13 +103,18 @@ pub(crate) fn run(host: &HtmlElement) {
     let rows = pivot::parse_dimensions(host.get_attribute(ROWS_ATTRIBUTE).as_deref());
     let columns = pivot::parse_dimensions(host.get_attribute(COLUMNS_ATTRIBUTE).as_deref());
 
-    let request_json = match pivot::pivot_json(
-        &source,
-        &rows,
-        &columns,
-        host.get_attribute(VALUES_ATTRIBUTE).as_deref(),
-    ) {
-        Ok(request_json) => request_json,
+    let request_json = match pivot::parse_sort(host.get_attribute(SORT_ATTRIBUTE).as_deref())
+        .and_then(|sort| {
+            pivot::pivot_json(
+                &source,
+                &rows,
+                &columns,
+                host.get_attribute(VALUES_ATTRIBUTE).as_deref(),
+                &sort,
+            )
+            .map(|json| (json, sort))
+        }) {
+        Ok(request) => request,
         Err(message) => {
             // A request that cannot be built supersedes an earlier one as
             // well: its error is what the element shows, not an answer that
@@ -118,6 +126,7 @@ pub(crate) fn run(host: &HtmlElement) {
         }
     };
 
+    let (request_json, sort) = request_json;
     let request = next_request(host);
     let texts = texts::texts(host);
     render(host, None, &texts.loading, "loading", &PlainLook);
@@ -140,6 +149,7 @@ pub(crate) fn run(host: &HtmlElement) {
                 Ok(json) => match pivot::parse_result(&json) {
                     Ok(mut model) => {
                         model.column_dimensions = columns;
+                        model.sort = sort;
                         // Measured like the grid's queries (issue #70); a
                         // pivot's rows are all it answers, subtotals included.
                         let (bytes, form) = answer_size(&value);
@@ -153,7 +163,10 @@ pub(crate) fn run(host: &HtmlElement) {
                             (texts.matches(model.rows.len() as u64), "ready")
                         };
                         match HostLook::new(&host) {
-                            Ok(look) => render(&host, Some((&model, &json)), &status, state, &look),
+                            Ok(look) => {
+                                render(&host, Some((&model, &json)), &status, state, &look);
+                                refocus(&host);
+                            }
                             Err(message) => {
                                 render(&host, None, &texts.error(&message), "error", &PlainLook)
                             }
@@ -322,6 +335,7 @@ fn view_of(host: &HtmlElement) -> PivotView {
         host.get_attribute(ROWS_ATTRIBUTE).as_deref(),
         host.get_attribute(COLUMNS_ATTRIBUTE).as_deref(),
         host.get_attribute(VALUES_ATTRIBUTE).as_deref(),
+        host.get_attribute(SORT_ATTRIBUTE).as_deref(),
     )
 }
 
@@ -385,15 +399,104 @@ pub(crate) fn write_view(host: &HtmlElement, value: &JsValue) {
         return;
     }
     APPLYING.set(true);
-    for (name, value) in [ROWS_ATTRIBUTE, COLUMNS_ATTRIBUTE, VALUES_ATTRIBUTE]
-        .into_iter()
-        .zip(view.attributes())
+    for (name, value) in [
+        ROWS_ATTRIBUTE,
+        COLUMNS_ATTRIBUTE,
+        VALUES_ATTRIBUTE,
+        SORT_ATTRIBUTE,
+    ]
+    .into_iter()
+    .zip(view.attributes())
     {
-        let _ = host.set_attribute(name, &value);
+        let _ = if name == SORT_ATTRIBUTE && value.is_empty() {
+            host.remove_attribute(name)
+        } else {
+            host.set_attribute(name, &value)
+        };
     }
     APPLYING.set(false);
     run(host);
     report_view(host, true);
+}
+
+// ---------------------------------------------------------------------------
+// Sorting (issue #108)
+// ---------------------------------------------------------------------------
+
+thread_local! {
+    /// The sort button each pivot's reader pressed, by host id, as its
+    /// `(data attribute, value)`: it gets the focus back once the answer is
+    /// drawn, since drawing replaces every node.
+    static PRESSED: RefCell<HashMap<u32, (String, String)>> = RefCell::new(HashMap::new());
+}
+
+/// A sort button: its target goes into the `sort` attribute, and the
+/// attribute's change runs the query and reports the view.
+fn on_header_click(event: Event) {
+    let Some(button) = event
+        .target()
+        .and_then(|target| target.dyn_into::<Element>().ok())
+        .and_then(|target| {
+            target
+                .closest(r#"button[part="sort-button"]"#)
+                .ok()
+                .flatten()
+        })
+    else {
+        return;
+    };
+    let Some(host) = event
+        .current_target()
+        .and_then(|target| target.dyn_into::<web_sys::ShadowRoot>().ok())
+        .and_then(|root| root.host().dyn_into::<HtmlElement>().ok())
+    else {
+        return;
+    };
+    let (key, value) = if let Some(field) = button.get_attribute("data-sort-field") {
+        ("data-sort-field", field)
+    } else if let Some(measure) = button.get_attribute("data-sort-by") {
+        ("data-sort-by", measure)
+    } else {
+        return;
+    };
+    let target = if key == "data-sort-field" {
+        SortTarget::Dimension(&value)
+    } else {
+        SortTarget::Measure(&value)
+    };
+    let view = view_of(&host);
+    let sort = pivot::next_sort(&view.sort, &view.rows, target);
+    let next = PivotView { sort, ..view };
+    on_release(|id| {
+        PRESSED.with(|map| map.borrow_mut().remove(&id));
+    });
+    let id = host_id(&host);
+    PRESSED.with(|map| map.borrow_mut().insert(id, (key.to_owned(), value.clone())));
+    let [.., sort] = next.attributes();
+    let _ = if sort.is_empty() {
+        host.remove_attribute(SORT_ATTRIBUTE)
+    } else {
+        host.set_attribute(SORT_ATTRIBUTE, &sort)
+    };
+}
+
+/// Gives the pressed sort button the focus back, once there is one again.
+fn refocus(host: &HtmlElement) {
+    let Some(id) = existing_id(host) else {
+        return;
+    };
+    let Some((key, value)) = PRESSED.with(|map| map.borrow_mut().remove(&id)) else {
+        return;
+    };
+    let Some(root) = host.shadow_root() else {
+        return;
+    };
+    let selector = format!(r#"button[{key}="{}"]"#, value.replace('"', "\\\""));
+    if let Ok(Some(button)) = root.query_selector(&selector)
+        && let Ok(button) = button.dyn_into::<HtmlElement>()
+    {
+        let _ = button.focus();
+    }
 }
 
 /// Puts `text` in the status line without touching what is shown.
