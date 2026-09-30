@@ -1216,6 +1216,19 @@ fn on_key_down(event: KeyboardEvent) {
     let Some(root) = current_shadow_root(&event) else {
         return;
     };
+    // The column list (issue #101): `Escape` closes it and the focus goes back
+    // to its button, which a light-dismissed popover would not do by itself.
+    if event.key() == "Escape"
+        && event
+            .target()
+            .and_then(|node| node.dyn_into::<Element>().ok())
+            .and_then(|target| target.closest("[part=\"columns\"]").ok().flatten())
+            .is_some()
+    {
+        event.prevent_default();
+        close_columns(&root, true);
+        return;
+    }
     if let Some(target) = event
         .target()
         .and_then(|node| node.dyn_into::<Element>().ok())
@@ -1665,7 +1678,7 @@ fn move_column(host: &HtmlElement, col: usize, by: i32) {
     let position = order.iter().position(|column| *column == name).unwrap_or(0);
     // Rebuild **first**: it replaces the runtime, so anything set before — the
     // active cell, a notice — would be thrown away with the old one.
-    rebuild(host);
+    rebuild(host, true);
     // The focus follows the column, not the place it left. The query that the
     // rebuild started focuses the active cell when its result lands.
     if let Some(runtime) = runtime(host) {
@@ -1686,9 +1699,18 @@ fn set_column_hidden(host: &HtmlElement, name: &str, hidden: bool) {
     let visible = columns_of(host).len() as u64;
     let declared =
         grid::parse_columns(host.get_attribute(COLUMNS_ATTRIBUTE).as_deref()).len() as u64;
+    // The column list stays open across the rebuild (issue #101): ticked
+    // there, the focus stays on the checkbox, not on the grid's active cell.
+    let panel_open = host
+        .shadow_root()
+        .and_then(|root| root.query_selector("[part=\"columns\"]").ok().flatten())
+        .is_some_and(|panel| panel.matches(":popover-open").unwrap_or(false));
     // Rebuild **first**: it replaces the runtime, and a notice set before would
     // be thrown away with the old state.
-    rebuild(host);
+    rebuild(host, !panel_open);
+    if panel_open {
+        reopen_columns(host, name);
+    }
     announce(
         host,
         &texts(host).column_visibility(name, hidden, visible, declared),
@@ -1696,8 +1718,9 @@ fn set_column_hidden(host: &HtmlElement, name: &str, hidden: bool) {
     dispatch_view(host);
 }
 
-/// Rebuilds the skeleton because the set or order of columns changed.
-fn rebuild(host: &HtmlElement) {
+/// Rebuilds the skeleton because the set or order of columns changed;
+/// `focus_after` gives the focus back to the active cell once it is drawn.
+fn rebuild(host: &HtmlElement, focus_after: bool) {
     let Some(root) = host.shadow_root() else {
         return;
     };
@@ -1705,7 +1728,80 @@ fn rebuild(host: &HtmlElement) {
     reset_runtime(host);
     ensure_skeleton(host);
     render(host, false);
-    run_query(host, QueryKind::Data, true);
+    run_query(host, QueryKind::Data, focus_after);
+}
+
+/// Opens the column list under its button (issue #101). A click outside and
+/// `Escape` close it; the button's `aria-expanded` follows either way.
+fn open_columns(root: &ShadowRoot, focus_first: bool) {
+    let (Ok(Some(panel)), Ok(Some(button))) = (
+        root.query_selector("[part=\"columns\"]"),
+        root.query_selector("[part=\"columns-toggle\"]"),
+    ) else {
+        return;
+    };
+    let (Ok(panel), Ok(button)) = (
+        panel.dyn_into::<HtmlElement>(),
+        button.dyn_into::<HtmlElement>(),
+    ) else {
+        return;
+    };
+    let _ = panel.show_popover();
+    let _ = button.set_attribute("aria-expanded", "true");
+    place_under(&panel, &button);
+    if !panel.has_attribute("data-watched") {
+        let _ = panel.set_attribute("data-watched", "");
+        let owner = root.clone();
+        let closed = Closure::<dyn FnMut(Event)>::new(move |event: Event| {
+            let open = js_sys::Reflect::get(&event, &JsValue::from_str("newState"))
+                .ok()
+                .and_then(|state| state.as_string())
+                .is_some_and(|state| state == "open");
+            if !open && let Ok(Some(button)) = owner.query_selector("[part=\"columns-toggle\"]") {
+                let _ = button.set_attribute("aria-expanded", "false");
+            }
+        });
+        let _ = panel.add_event_listener_with_callback("toggle", closed.as_ref().unchecked_ref());
+        closed.forget();
+    }
+    if focus_first
+        && let Ok(Some(first)) = panel.query_selector("input[type=\"checkbox\"]")
+        && let Ok(first) = first.dyn_into::<HtmlElement>()
+    {
+        let _ = first.focus();
+    }
+}
+
+/// Closes the column list; with `refocus`, the focus goes back to its button.
+fn close_columns(root: &ShadowRoot, refocus: bool) {
+    if let Ok(Some(panel)) = root.query_selector("[part=\"columns\"]")
+        && let Ok(panel) = panel.dyn_into::<HtmlElement>()
+    {
+        let _ = panel.hide_popover();
+    }
+    if let Ok(Some(button)) = root.query_selector("[part=\"columns-toggle\"]")
+        && let Ok(button) = button.dyn_into::<HtmlElement>()
+    {
+        let _ = button.set_attribute("aria-expanded", "false");
+        if refocus {
+            let _ = button.focus();
+        }
+    }
+}
+
+/// After a rebuild the list is a new one: open again, the focus on `column`'s
+/// checkbox, where the reader left it.
+fn reopen_columns(host: &HtmlElement, column: &str) {
+    let Some(root) = host.shadow_root() else {
+        return;
+    };
+    open_columns(&root, false);
+    if let Ok(Some(input)) = root.query_selector(&format!(
+        "[part=\"columns\"] input[data-column=\"{column}\"]"
+    )) && let Ok(input) = input.dyn_into::<HtmlElement>()
+    {
+        let _ = input.focus();
+    }
 }
 
 /// Puts a one-off sentence into the status line.
@@ -2722,17 +2818,15 @@ fn on_filter_clear(event: Event) {
     else {
         return;
     };
-    // The column list opens and closes from its own button (point 36).
+    // The column list opens and closes from its own button (point 36), as a
+    // panel under it (issue #101).
     if let Ok(Some(button)) = target.closest("button[part=\"columns-toggle\"]")
         && let Some(root) = current_shadow_root(&event)
-        && let Ok(Some(list)) = root.query_selector("[part=\"columns\"]")
     {
-        let open = button.get_attribute("aria-expanded").as_deref() == Some("true");
-        let _ = button.set_attribute("aria-expanded", if open { "false" } else { "true" });
-        if open {
-            let _ = list.set_attribute("hidden", "");
+        if button.get_attribute("aria-expanded").as_deref() == Some("true") {
+            close_columns(&root, false);
         } else {
-            let _ = list.remove_attribute("hidden");
+            open_columns(&root, true);
         }
         return;
     }
