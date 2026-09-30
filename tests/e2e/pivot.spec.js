@@ -231,6 +231,7 @@ test.describe("pivot view", () => {
     ],
     sort: [],
     collapsed: [],
+    filter: null,
   };
 
   /** Counts the events on the pivot from here on. */
@@ -274,6 +275,7 @@ test.describe("pivot view", () => {
       values: [{ fn: "count", as: "n" }],
       sort: [],
       collapsed: [],
+      filter: null,
     };
     await setView(page, next);
 
@@ -593,7 +595,7 @@ test.describe("pivot field toolbar", () => {
   const chips = (page) =>
     inside(page, (root) =>
       Object.fromEntries(
-        [...root.querySelectorAll('[part="field-group"]')].map((group) => [
+        [...root.querySelectorAll('[part="field-group"]:not([data-axis="filter"])')].map((group) => [
           group.dataset.axis,
           [...group.querySelectorAll('[part="chip"]')].map((chip) => chip.dataset.field),
         ]),
@@ -712,6 +714,120 @@ test.describe("pivot field toolbar", () => {
     await expect.poll(() => chips(page)).toMatchObject({ values: ["n"] });
     await expect.poll(async () => (await facts(page)).measureHeaders).toEqual(["n", "n", "n"]);
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  });
+});
+
+// Issue #114: filtering — an expression in the grid's language becomes the
+// wire filter on the raw rows; its clauses are chips.
+test.describe("pivot filter", () => {
+  const inside = (page, fn, arg) =>
+    page.evaluate(
+      ({ fn, arg }) =>
+        new Function("root", "arg", `return (${fn})(root, arg)`)(
+          document.querySelector("opengrid-pivot").shadowRoot,
+          arg,
+        ),
+      { fn: fn.toString(), arg },
+    );
+  const filterChips = (page) =>
+    inside(page, (root) =>
+      [...root.querySelectorAll('[data-axis="filter"] [part="chip"] > span')].map((span) => span.textContent),
+    );
+  // The grand total's `n` over every year: the measures alternate `total`, `n`.
+  const orders = (page) =>
+    inside(page, (root) =>
+      [...root.querySelectorAll("tbody tr:last-child td")]
+        .filter((_, index) => index % 2 === 1)
+        .reduce((sum, td) => sum + Number(td.textContent || 0), 0),
+    );
+  const focused = (page) =>
+    inside(page, (root) => {
+      const active = root.activeElement;
+      return active ? { part: active.getAttribute("part"), name: active.getAttribute("aria-label") } : null;
+    });
+  const attribute = (page) => page.evaluate(() => document.querySelector("opengrid-pivot").getAttribute("filter"));
+
+  async function withToolbar(page) {
+    await open(page);
+    await page.evaluate(() => {
+      const pivot = document.querySelector("opengrid-pivot");
+      pivot.setAttribute("fields", "country,customer,ordered_year");
+      pivot.setAttribute("toolbar", "");
+    });
+    await expect.poll(() => inside(page, (root) => !!root.querySelector("[data-filter-input]"))).toBe(true);
+    await expect.poll(async () => (await facts(page)).state).toBe("ready");
+  }
+
+  async function enter(page, text) {
+    await inside(page, (root) => root.querySelector("[data-filter-input]").focus());
+    await page.keyboard.type(text);
+    await page.keyboard.press("Enter");
+  }
+
+  test("an expression becomes the filter and its chips", async ({ page }) => {
+    await withToolbar(page);
+    const all = await orders(page);
+    await enter(page, "country = DE and qty >= 3");
+    await expect.poll(() => filterChips(page)).toEqual(["country is DE", "qty greater or equal 3"]);
+    await expect.poll(async () => (await facts(page)).state).toBe("ready");
+    expect(JSON.parse(await attribute(page))).toEqual({
+      and: [
+        { field: "country", op: "eq", value: "DE" },
+        { field: "qty", op: "gte", value: 3 },
+      ],
+    });
+    // On the raw rows: the grand total counts only what passes.
+    expect(await orders(page)).toBeLessThan(all);
+    expect(
+      await page.evaluate(() => window.__opengridModule.get_view(document.querySelector("opengrid-pivot")).filter),
+    ).toEqual(JSON.parse(await attribute(page)));
+    // The field is empty again, and the reader is still in it.
+    await expect.poll(() => focused(page)).toMatchObject({ part: "search-input" });
+    expect(await inside(page, (root) => root.querySelector("[data-filter-input]").value)).toBe("");
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  });
+
+  test("what does not parse is said, and nothing changes", async ({ page }) => {
+    await withToolbar(page);
+    await enter(page, "colour = red");
+    await expect.poll(async () => (await facts(page)).status).toContain("colour");
+    expect(await attribute(page)).toBeNull();
+    await inside(page, (root) => (root.querySelector("[data-filter-input]").value = ""));
+    await enter(page, "qty >= many");
+    await expect.poll(async () => (await facts(page)).status).toContain("many");
+    expect(await attribute(page)).toBeNull();
+  });
+
+  test("a chip goes, then all of them, and the focus stays near", async ({ page }) => {
+    await withToolbar(page);
+    await page.evaluate(() =>
+      document
+        .querySelector("opengrid-pivot")
+        .setAttribute(
+          "filter",
+          '{"and":[{"field":"country","op":"eq","value":"DE"},{"field":"qty","op":"gte","value":3}]}',
+        ),
+    );
+    await expect.poll(() => filterChips(page)).toEqual(["country is DE", "qty greater or equal 3"]);
+    await inside(page, (root) => root.querySelector('button[data-filter-remove="0"]').focus());
+    await page.keyboard.press("Enter");
+    await expect.poll(() => filterChips(page)).toEqual(["qty greater or equal 3"]);
+    expect(JSON.parse(await attribute(page))).toEqual({ field: "qty", op: "gte", value: 3 });
+    // The chip that took its place has the focus.
+    await expect.poll(() => focused(page)).toEqual({ part: "chip-remove", name: "Remove qty greater or equal 3" });
+
+    await inside(page, (root) => root.querySelector("button[data-filter-clear]").focus());
+    await page.keyboard.press("Enter");
+    await expect.poll(() => filterChips(page)).toEqual([]);
+    expect(await attribute(page)).toBeNull();
+    await expect.poll(() => focused(page)).toMatchObject({ part: "search-input" });
+  });
+
+  test("a filter that is not a filter object is said", async ({ page }) => {
+    await open(page);
+    await page.evaluate(() => document.querySelector("opengrid-pivot").setAttribute("filter", "country = DE"));
+    await expect.poll(async () => (await facts(page)).state).toBe("error");
+    expect((await facts(page)).status).toContain("filter");
   });
 });
 
