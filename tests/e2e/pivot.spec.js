@@ -230,6 +230,7 @@ test.describe("pivot view", () => {
       { fn: "count", as: "n" },
     ],
     sort: [],
+    collapsed: [],
   };
 
   /** Counts the events on the pivot from here on. */
@@ -267,7 +268,13 @@ test.describe("pivot view", () => {
   test("set_view writes all three at once, in one query, and says so once", async ({ page }) => {
     await open(page);
     await listen(page);
-    const next = { rows: ["customer"], columns: [], values: [{ fn: "count", as: "n" }], sort: [] };
+    const next = {
+      rows: ["customer"],
+      columns: [],
+      values: [{ fn: "count", as: "n" }],
+      sort: [],
+      collapsed: [],
+    };
     await setView(page, next);
 
     // The event is the report of the change, there as set_view returns.
@@ -465,6 +472,106 @@ test.describe("pivot sorting", () => {
     await open(page);
     await shadowOf(page, (root) => root.querySelector('button[data-sort-field="country"]').click());
     await expect.poll(() => ariaSort(page)).toEqual([["country", "descending"]]);
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  });
+});
+
+// Issue #110: folding a group to its subtotal and opening it again — a button
+// with `aria-expanded`, no new query, said in the status line.
+test.describe("pivot folding", () => {
+  const inside = (page, fn, arg) =>
+    page.evaluate(
+      ({ fn, arg }) =>
+        new Function("root", "arg", `return (${fn})(root, arg)`)(
+          document.querySelector("opengrid-pivot").shadowRoot,
+          arg,
+        ),
+      { fn: fn.toString(), arg },
+    );
+  const deRows = (page) =>
+    inside(page, (root) =>
+      [...root.querySelectorAll('tbody tr[data-level="2"]')].filter(
+        (tr) => tr.querySelector("th").textContent === "DE",
+      ).length,
+    );
+  const toggle = (page) =>
+    inside(page, (root) => {
+      const button = root.querySelector('button[part="group-toggle"][data-path=\'["DE"]\']');
+      return {
+        name: [...button.childNodes]
+          .filter((node) => node.getAttribute?.("aria-hidden") !== "true")
+          .map((node) => node.textContent)
+          .join(""),
+        expanded: button.getAttribute("aria-expanded"),
+        focused: root.activeElement === button,
+      };
+    });
+
+  async function twoLevels(page) {
+    await open(page);
+    await page.evaluate(() => {
+      const pivot = document.querySelector("opengrid-pivot");
+      pivot.setAttribute("columns", "");
+      pivot.setAttribute("rows", "country,customer");
+    });
+    await expect.poll(() => deRows(page)).toBeGreaterThan(1);
+    await page.evaluate(() => {
+      window.__queries = 0;
+      document
+        .querySelector("opengrid-pivot")
+        .addEventListener("opengrid-query", () => (window.__queries += 1));
+    });
+  }
+
+  test("a group folds to its subtotal and opens again, from the keyboard", async ({ page }) => {
+    await twoLevels(page);
+    const open = await deRows(page);
+    expect(await toggle(page)).toEqual({ name: "Total DE", expanded: "true", focused: false });
+    // The grand total and the innermost level have no fold button.
+    expect(
+      await inside(page, (root) =>
+        [...root.querySelectorAll('button[part="group-toggle"]')].every(
+          (button) => button.closest("tr").dataset.level === "1",
+        ),
+      ),
+    ).toBe(true);
+
+    await inside(page, (root) =>
+      root.querySelector('button[part="group-toggle"][data-path=\'["DE"]\']').focus(),
+    );
+    await page.keyboard.press("Enter");
+    expect(await deRows(page)).toBe(0);
+    expect(await toggle(page)).toEqual({ name: "Total DE", expanded: "false", focused: true });
+    expect((await facts(page)).status).toBe("DE collapsed");
+    expect(
+      await page.evaluate(() => window.__opengridModule.get_view(document.querySelector("opengrid-pivot")).collapsed),
+    ).toEqual([["DE"]]);
+
+    await page.keyboard.press("Enter");
+    expect(await deRows(page)).toBe(open);
+    expect(await toggle(page)).toMatchObject({ expanded: "true", focused: true });
+    expect((await facts(page)).status).toBe(`DE expanded, ${open} rows`);
+    expect(await page.evaluate(() => document.querySelector("opengrid-pivot").hasAttribute("collapsed"))).toBe(false);
+    // Folding asks nothing: the pivot draws what it holds.
+    await page.waitForTimeout(200);
+    expect(await page.evaluate(() => window.__queries)).toBe(0);
+  });
+
+  test("a folded view comes back, and the export stays whole", async ({ page }) => {
+    await twoLevels(page);
+    const before = await page.evaluate(() =>
+      window.__opengridModule.get_pivot(document.querySelector("opengrid-pivot")),
+    );
+    await page.evaluate(() => {
+      const pivot = document.querySelector("opengrid-pivot");
+      const view = window.__opengridModule.get_view(pivot);
+      window.__opengridModule.set_view(pivot, { ...view, collapsed: [["DE"]] });
+    });
+    await expect.poll(() => deRows(page)).toBe(0);
+    expect((await toggle(page)).expanded).toBe("false");
+    expect(
+      await page.evaluate(() => window.__opengridModule.get_pivot(document.querySelector("opengrid-pivot"))),
+    ).toBe(before);
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   });
 });

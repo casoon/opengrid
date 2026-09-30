@@ -509,6 +509,7 @@ and the row and column limits are what make rendering the whole thing safe.
 | `columns` | Comma-separated column dimensions. V1 allows **one**. |
 | `values` | The measures, as the contract's own JSON — not an invented shorthand. |
 | `sort` | How each level is ordered, as the wire's JSON: `[{"field":"country","by":"total","direction":"desc"}]`. The reader's sort buttons write it. |
+| `collapsed` | The folded groups, a JSON list of group paths: `[["DE"],["FR","Beta"]]`, NULL as `null`. The reader's fold buttons write it. |
 
 `rows`/`columns` are the two **axes** here, as in every pivot; in the grid
 `columns` is the projection. The words are standard in their own context, so
@@ -539,18 +540,18 @@ attributes as one value, `get_view`/`set_view` as at the grid:
 ```js
 const view = loader.module.get_view(pivot);
 // { rows: ["country"], columns: ["ordered_year"],
-//   values: [{ field: "qty", fn: "sum", as: "total" }], sort: [] }
+//   values: [{ field: "qty", fn: "sum", as: "total" }], sort: [], collapsed: [] }
 loader.module.set_view(pivot, { ...view, rows: ["customer"] });
 ```
 
 The attributes **are** the view, so there is no second copy to fall out of step:
-`set_view` writes all four at once and costs one query, and every change of
+`set_view` writes all five at once and costs one query, and every change of
 them — by `set_view`, a sort button or the page setting an attribute — fires
 `opengrid-view-change`. Setting what it has says nothing. A view whose `rows` or
 `columns` is not a list of names, whose `values` is not a list of measures or
-whose `sort` is not a list of orders is reported in the status line and applied
+whose `sort` is not a list of orders or `collapsed` not a list of paths is reported in the status line and applied
 not at all. A part left out is empty; a key the pivot does not know is ignored —
-`collapsed` and `filters` join the view later. In TypeScript, `get_view<PivotView>(pivot)`; the adapters' `view`
+`filters` joins the view later. In TypeScript, `get_view<PivotView>(pivot)`; the adapters' `view`
 on `OpengridPivot` is a `PivotView`. `opengrid-query` fires after every answer,
 as at the grid.
 
@@ -564,6 +565,15 @@ header over one column value would promise an order its cells do not have. NULL
 sorts last either way. The pivot keeps the focus on the pressed button once the
 new answer is drawn. See the [protocol](protocol.md) for the `sort` a server
 takes.
+
+**Folding.** With two row dimensions or more, a group's subtotal row header is a
+button with `aria-expanded`, named by the header's own words ("Total DE"): it
+folds the group's rows away, so only its subtotal stays, and opens them again.
+Folding asks nothing — the pivot draws what it holds again — and the status line
+says it with the grid's texts `groupCollapsed` / `groupExpanded`. The focus stays
+on the button. The folded groups are the `collapsed` attribute and part of the
+view; a path that matches no group folds nothing. The export stays the whole
+pivot, as the grid's export ignores its open groups.
 
 `get_pivot(host)` exports the table as it is shown, as CSV — see
 [exporting a pivot](#exporting-a-pivot). Its headers and values stay the raw
@@ -905,7 +915,7 @@ theme that animates a part.
 `editor`, `empty`, `empty-reset`, `empty-text`, `facet`, `facet-bounds`, `facet-cost`, `facet-count`,
 `facet-pill`, `facet-pills`, `facet-value`, `facets`, `facets-head`, `facets-toggle`, `filter`,
 `filter-clear`, `filter-dialog`, `filter-operator`, `filter-row-toggle`, `filter-value`, `footer`,
-`grouping-menu`, `header`, `layout`, `menu-label`, `operator-menu`, `page-first`, `page-label`, `page-last`, `page-next`,
+`group-mark`, `group-toggle`, `grouping-menu`, `header`, `layout`, `menu-label`, `operator-menu`, `page-first`, `page-label`, `page-last`, `page-next`,
 `page-previous`, `pager`, `row`, `row-header`, `search`, `search-hint`, `search-input`, `search-list`,
 `select`, `select-all`, `select-mark`, `sort-button`, `sort-direction`, `sort-index`, `source`, `status`,
 `table`, `toolbar`, `total-row`, `viewport`.
@@ -920,6 +930,7 @@ rest of their look is the page's, through their parts (issue #29):
 | `header` | a column header cell | a column header cell, both header rows |
 | `sort-button`, `sort-direction` | the button in a header, its mark | the same, in a row-dimension header, and in a measure header without a column dimension |
 | `row-header` | — | a row's header cell, the total rows' included |
+| `group-toggle`, `group-mark` | — | a group's fold button in its subtotal's row header, and its mark |
 | `row`, `total-row` | a body row | a body row; `total-row` a subtotal or the grand total |
 | `cell` | a value | a value |
 

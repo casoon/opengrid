@@ -195,10 +195,12 @@ fn parts() -> Vec<String> {
     );
     table::build_table(&mut buffer, &mut nodes, Some("x"), Some(&table_model), None);
     let pivot_model = pivot::parse_result(
-        r#"{"row_dimensions":["country"],"columns":[{"path":[2025],"measure":"n"}],
-            "levels":[1,0],"result":{"total_count":2,"row_count":2,"columns":[
-            {"name":"country","type":"utf8","nullable":true,"values":["DE",null]},
-            {"name":"n_0","type":"int64","nullable":true,"values":[1,1]}]}}"#,
+        // Two row dimensions, so a group's subtotal carries its fold button.
+        r#"{"row_dimensions":["country","customer"],"columns":[{"path":[2025],"measure":"n"}],
+            "levels":[2,1,0],"result":{"total_count":3,"row_count":3,"columns":[
+            {"name":"country","type":"utf8","nullable":true,"values":["DE","DE",null]},
+            {"name":"customer","type":"utf8","nullable":true,"values":["Alpha",null,null]},
+            {"name":"n_0","type":"int64","nullable":true,"values":[1,1,1]}]}}"#,
     )
     .expect("a pivot");
     pivot::build_pivot(
@@ -283,7 +285,7 @@ attributes
   opengrid-table: columns datasource label theme
   opengrid-grid: column-menu columns datasource density facets group-by label mode page-size \
 search selection theme toolbar window-size
-  opengrid-pivot: columns datasource label rows sort theme values
+  opengrid-pivot: collapsed columns datasource label rows sort theme values
 
 events
   opengrid-selection-change
@@ -340,7 +342,7 @@ parts
 column-menu-button column-toggle columns columns-toggle density editor empty empty-reset \
 empty-text facet facet-bounds facet-cost facet-count facet-pill facet-pills facet-value \
 facets facets-head facets-toggle filter filter-clear filter-dialog filter-operator \
-filter-row-toggle filter-value footer grouping-menu header layout menu-label operator-menu \
+filter-row-toggle filter-value footer group-mark group-toggle grouping-menu header layout menu-label operator-menu \
 page-first page-label page-last page-next page-previous pager row row-header search search-hint \
 search-input search-list select select-all select-mark sort-button sort-direction \
 sort-index source status table toolbar total-row viewport

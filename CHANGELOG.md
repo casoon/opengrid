@@ -40,6 +40,11 @@ Two things belong in every release entry and are easy to leave out:
   that is part of its view. Row-dimension headers, and measure headers without a column
   dimension, are sort buttons with `aria-sort`. On PostgreSQL a sorted pivot runs one query per
   level instead of one `GROUPING SETS` statement.
+- **Folding groups in `<opengrid-pivot>`** ([#110](https://github.com/casoon/opengrid/issues/110)).
+  With two row dimensions or more, a group's subtotal row header is a button with
+  `aria-expanded` that folds the group's rows away and opens them again, without a new query.
+  The status line says it (`groupCollapsed` / `groupExpanded`); the folded groups are a
+  `collapsed` attribute, part of the view. New parts `group-toggle` and `group-mark`.
 
 ## [0.7.2] — 2026-09-30
 
