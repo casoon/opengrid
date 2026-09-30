@@ -18,6 +18,14 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+### Added
+
+- **Titles and formats in `<opengrid-pivot>`** ([#104](https://github.com/casoon/opengrid/issues/104)).
+  `set_columns` gives a row dimension or a measure its `title`, and `set_formats` formats
+  dimension values in the headers and measure cells, by field name or measure alias — as at the
+  grid and the table. NULL and the empty string keep their words in a header. Any option but
+  `title` is reported in the status line. `get_pivot` still exports raw names and values.
+
 ## [0.7.2] — 2026-09-30
 
 **Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).
