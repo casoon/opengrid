@@ -540,7 +540,14 @@ fn reskeleton(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>) -> bool {
 fn write_filter_entries(root: &ShadowRoot, entries: &[FilterEntry]) {
     for (col, entry) in entries.iter().enumerate() {
         if let Some(operator) = OperatorControl::of(root, col) {
-            operator.set_value(entry.op.as_str());
+            // A column without a filter shows its type's default comparison,
+            // not the entry's placeholder `eq` — "is" over a text column
+            // that nobody filtered (issue #96).
+            if grid::takes_value(entry.op.as_str()) && entry.value.trim().is_empty() {
+                operator.reset();
+            } else {
+                operator.set_value(entry.op.as_str());
+            }
         }
         if let Some(control) = ValueControl::of(&root, col) {
             control.set_value(&entry.value);
@@ -2495,6 +2502,17 @@ impl OperatorControl {
             && let Ok(Some(input)) = root.query_selector(&format!("input[data-col=\"{col}\"]"))
         {
             let _ = input.set_attribute("placeholder", &word);
+        }
+    }
+
+    /// Back to the type's default: the first comparison it allows, or — while
+    /// the type is not known yet — none chosen, so the first result picks it.
+    fn reset(&self) {
+        match self.allowed().into_iter().next() {
+            Some(first) => self.set_value(&first),
+            None => {
+                let _ = self.button.remove_attribute("data-op");
+            }
         }
     }
 
@@ -4874,10 +4892,8 @@ fn toggle_filter_row(host: &HtmlElement) {
 /// would leave it standing. The operator goes back to the column's first
 /// offered one.
 fn reset_filter_column(root: &ShadowRoot, col: usize) {
-    if let Some(operator) = OperatorControl::of(root, col)
-        && let Some(first) = operator.allowed().into_iter().next()
-    {
-        operator.set_value(&first);
+    if let Some(operator) = OperatorControl::of(root, col) {
+        operator.reset();
     }
     if let Some(control) = ValueControl::of(&root, col) {
         control.set_value("");
