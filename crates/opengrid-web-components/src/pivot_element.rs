@@ -27,8 +27,8 @@ use opengrid_web_core::provider::provider;
 
 use crate::element::{apply, clear_root, describe, is_latest, next_request};
 use crate::pivot::{
-    self, COLUMNS_ATTRIBUTE, DATASOURCE_ATTRIBUTE, PIVOT_TAG, PivotModel, ROWS_ATTRIBUTE,
-    VALUES_ATTRIBUTE,
+    self, COLUMNS_ATTRIBUTE, DATASOURCE_ATTRIBUTE, PIVOT_TAG, PivotLook, PivotModel, PlainLook,
+    ROWS_ATTRIBUTE, VALUES_ATTRIBUTE,
 };
 use crate::texts;
 
@@ -48,7 +48,7 @@ fn on_connected(host: HtmlElement) {
         && root.child_element_count() == 0
     {
         crate::theme::adopt_table_look(&root);
-        render(&host, None, "", "loading");
+        render(&host, None, "", "loading", &PlainLook);
     }
     run(&host);
 }
@@ -96,14 +96,14 @@ pub(crate) fn run(host: &HtmlElement) {
             // arrives after it.
             next_request(host);
             let texts = texts::texts(host);
-            render(host, None, &texts.error(&message), "error");
+            render(host, None, &texts.error(&message), "error", &PlainLook);
             return;
         }
     };
 
     let request = next_request(host);
     let texts = texts::texts(host);
-    render(host, None, &texts.loading, "loading");
+    render(host, None, &texts.loading, "loading", &PlainLook);
 
     let promise = provider.pivot(&request_json, "");
     let host = host.clone();
@@ -118,7 +118,8 @@ pub(crate) fn run(host: &HtmlElement) {
         match outcome {
             Ok(value) => match pivot_json(&value) {
                 Ok(json) => match pivot::parse_result(&json) {
-                    Ok(model) => {
+                    Ok(mut model) => {
+                        model.column_dimensions = columns;
                         // The grand total is always a row, so "no matches" means
                         // nothing but the total came back.
                         let (status, state) = if model.rows.len() <= 1 {
@@ -126,13 +127,26 @@ pub(crate) fn run(host: &HtmlElement) {
                         } else {
                             (texts.matches(model.rows.len() as u64), "ready")
                         };
-                        render(&host, Some((&model, &json)), &status, state);
+                        match HostLook::new(&host) {
+                            Ok(look) => render(&host, Some((&model, &json)), &status, state, &look),
+                            Err(message) => {
+                                render(&host, None, &texts.error(&message), "error", &PlainLook)
+                            }
+                        }
                     }
-                    Err(message) => render(&host, None, &texts.error(&message), "error"),
+                    Err(message) => {
+                        render(&host, None, &texts.error(&message), "error", &PlainLook)
+                    }
                 },
-                Err(message) => render(&host, None, &texts.error(&message), "error"),
+                Err(message) => render(&host, None, &texts.error(&message), "error", &PlainLook),
             },
-            Err(value) => render(&host, None, &texts.error(&describe(&value)), "error"),
+            Err(value) => render(
+                &host,
+                None,
+                &texts.error(&describe(&value)),
+                "error",
+                &PlainLook,
+            ),
         }
     });
 }
@@ -157,7 +171,13 @@ fn pivot_json(value: &JsValue) -> Result<String, String> {
 
 /// Clears the root and renders the whole pivot as one patch list: the model,
 /// and the answer it was read from, which is what `get_pivot` exports.
-fn render(host: &HtmlElement, shown: Option<(&PivotModel, &str)>, status: &str, state: &str) {
+fn render(
+    host: &HtmlElement,
+    shown: Option<(&PivotModel, &str)>,
+    status: &str,
+    state: &str,
+    look: &dyn PivotLook,
+) {
     let Some(root) = host.shadow_root() else {
         return;
     };
@@ -182,8 +202,83 @@ fn render(host: &HtmlElement, shown: Option<(&PivotModel, &str)>, status: &str, 
         status,
         state,
         &texts,
+        look,
     );
     apply(&root, document, &buffer);
+}
+
+/// The page's look for a pivot (issue #104): its `set_formats`, by field or
+/// measure name, and — with the grid's `set_columns` — its titles.
+struct HostLook {
+    formats: Rc<crate::formats::ColumnFormats>,
+    #[cfg(feature = "grid")]
+    titles: Vec<(String, String)>,
+}
+
+impl HostLook {
+    /// A pivot takes a `title` and nothing else: an option that silently did
+    /// nothing would hide the mistake, as it would at the table. A title for a
+    /// name the pivot does not show now is fine — its dimensions change with
+    /// its attributes.
+    fn new(host: &HtmlElement) -> Result<Self, String> {
+        #[cfg(feature = "grid")]
+        let titles = {
+            let raw = crate::presentation::raw(host);
+            let mut problems = Vec::new();
+            for (name, entry) in raw.iter() {
+                for (given, option) in [
+                    (entry.width.is_some(), "width"),
+                    (entry.align.is_some(), "align"),
+                    (entry.mono.is_some(), "mono"),
+                    (entry.emphasis.is_some(), "emphasis"),
+                    (entry.muted.is_some(), "muted"),
+                    (entry.aggregate.is_some(), "aggregate"),
+                    (entry.facet.is_some(), "facet"),
+                ] {
+                    if given {
+                        problems.push(format!("{name}: a pivot takes a title, not {option}"));
+                    }
+                }
+            }
+            if !problems.is_empty() {
+                return Err(problems.join(" "));
+            }
+            raw.iter()
+                .filter_map(|(name, entry)| entry.title.clone().map(|title| (name.clone(), title)))
+                .collect()
+        };
+        Ok(Self {
+            formats: crate::formats::formats(host),
+            #[cfg(feature = "grid")]
+            titles,
+        })
+    }
+}
+
+impl PivotLook for HostLook {
+    fn title(&self, name: &str) -> String {
+        #[cfg(feature = "grid")]
+        if let Some((_, title)) = self.titles.iter().find(|(field, _)| field == name) {
+            return title.clone();
+        }
+        name.to_owned()
+    }
+
+    fn text(&self, name: &str, value: &opengrid_json::Json) -> String {
+        let plain = pivot::plain(value).unwrap_or_default();
+        let Some(function) = self.formats.function(name) else {
+            // No format for this name: no boundary crossing (R1).
+            return plain;
+        };
+        let json = js_sys::JSON::parse(&value.to_string()).unwrap_or(JsValue::NULL);
+        function
+            .call2(&JsValue::NULL, &JsValue::from_str(&plain), &json)
+            .ok()
+            .and_then(|text| text.as_string())
+            // A formatter that throws or answers nothing must not blank the
+            // cell: the value is still there.
+            .unwrap_or(plain)
+    }
 }
 
 thread_local! {

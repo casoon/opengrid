@@ -209,6 +209,7 @@ fn parts() -> Vec<String> {
         "",
         "ready",
         &texts,
+        &pivot::PlainLook,
     );
 
     let mut parts: Vec<String> = buffer
