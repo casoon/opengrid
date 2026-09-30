@@ -50,13 +50,18 @@ async function focusIn(page, selector) {
   }, selector);
 }
 
-/** Selects an operator by index using only the keyboard (Home + ArrowDown). */
+/**
+ * Selects an operator by index using only the keyboard: the button inside the
+ * field opens its menu (issue #96), Home, ArrowDown, Enter.
+ */
 async function chooseOperator(page, column, index) {
-  await focusIn(page, `select[data-col="${column}"]`);
+  await focusIn(page, `[part="filter-operator"][data-col="${column}"]`);
+  await page.keyboard.press("ArrowDown");
   await page.keyboard.press("Home");
   for (let step = 0; step < index; step += 1) {
     await page.keyboard.press("ArrowDown");
   }
+  await page.keyboard.press("Enter");
 }
 
 /** Replaces the value input's text and applies the filter with Enter. */

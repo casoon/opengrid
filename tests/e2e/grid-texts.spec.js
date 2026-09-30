@@ -13,23 +13,24 @@ import AxeBuilder from "@axe-core/playwright";
 async function texts(page) {
   return page.evaluate(() => {
     const root = document.querySelector("opengrid-grid").shadowRoot;
-    const select = root.querySelector('select[data-col="1"]');
+    // The comparison is a button in the field (issue #96); its words are in
+    // the menu behind it, read by `operatorWords` below.
+    const operator = root.querySelector('[part="filter-operator"][data-col="1"]');
     return {
       status: root.querySelector('[part="status"]').textContent,
       clear: root.querySelector('[part="filter-clear"]').textContent,
       // Named by reference (F9): the name is ours, the group holds the page's
       // column names, so the name sits in its own element with its own `lang`.
       filterGroup: root.getElementById(root.querySelector('[part="filter"]').getAttribute("aria-labelledby")).textContent,
-      operatorLabel: select.getAttribute("aria-label"),
+      operatorLabel: operator.getAttribute("aria-label"),
       valueLabel: root.querySelector('input[data-col="1"]').getAttribute("aria-label"),
       // What the user reads, and what the query actually sends.
-      operatorTexts: [...select.options].map((option) => option.textContent),
-      operatorValues: [...select.options].map((option) => option.value),
+
       // Only the component's own texts claim a language, and only on nodes
       // whose whole subtree is ours — `lang` is inherited, so a container that
       // also holds column names must not carry it.
       statusLang: root.querySelector('[part="status"]').getAttribute("lang"),
-      operatorLang: select.getAttribute("lang"),
+      operatorLang: operator.getAttribute("lang"),
       clearLang: root.querySelector('[part="filter-clear"]').getAttribute("lang"),
       columnsToggleLang: root.querySelector('[part="columns-toggle"]').getAttribute("lang"),
       // The filter row holds the column disclosure (point 37), so it is a
@@ -50,6 +51,27 @@ async function texts(page) {
   });
 }
 
+/**
+ * The words of the operator menu and the tokens behind them: the menu is
+ * opened to read them and closed again, without moving the focus.
+ */
+async function operatorWords(page) {
+  return page.evaluate(() => {
+    const root = document.querySelector("opengrid-grid").shadowRoot;
+    const before = [document.activeElement, root.activeElement];
+    root.querySelector('[part="filter-operator"][data-col="1"]').click();
+    const menu = root.querySelector('[part="operator-menu"]');
+    const items = [...menu.querySelectorAll('[role="menuitemradio"]')];
+    const words = {
+      operatorTexts: items.map((item) => item.lastElementChild.textContent),
+      operatorValues: items.map((item) => item.dataset.op),
+    };
+    menu.hidePopover();
+    (before[1] ?? before[0])?.focus();
+    return words;
+  });
+}
+
 test.beforeEach(async ({ page }) => {
   await page.goto("/tests/e2e/fixtures/grid-texts.html");
   await page.waitForFunction(() => window.__opengridReady);
@@ -65,7 +87,7 @@ test("the built-in texts are English, in one language", async ({ page }) => {
     status: "5 matches",
     clear: "Clear",
     filterGroup: "Filter",
-    operatorLabel: "customer operator",
+    operatorLabel: "customer operator: contains",
     valueLabel: "customer value",
     statusLang: "en",
     operatorLang: "en",
@@ -88,7 +110,7 @@ test("the built-in texts are English, in one language", async ({ page }) => {
 test("the operator names are words, the query keeps the wire tokens", async ({
   page,
 }) => {
-  const { operatorTexts, operatorValues } = await texts(page);
+  const { operatorTexts, operatorValues } = await operatorWords(page);
   // `gte` is not a word; the user reads one and the query sends the token.
   expect(operatorTexts).toEqual([
     "contains",
@@ -131,7 +153,7 @@ test("set_texts overrides a subset and carries its language", async ({ page }) =
   );
   await expect.poll(() => texts(page).then((t) => t.status)).toBe("5 Treffer");
 
-  const german = await texts(page);
+  const german = { ...(await texts(page)), ...(await operatorWords(page)) };
   expect(german).toMatchObject({
     clear: "Leeren",
     // The announcement is now spoken German, although the document is English —
@@ -155,7 +177,8 @@ test("set_texts overrides a subset and carries its language", async ({ page }) =
   expect(german.operatorValues[5]).toBe("gte");
   expect(german.operatorValues[1]).toBe("starts_with");
   // Keys the page did not mention keep their English default.
-  expect(german.operatorLabel).toBe("customer operator");
+  // The name of the button says the comparison in the new words.
+  expect(german.operatorLabel).toBe("customer operator: enthält");
   expect(german.valueLabel).toBe("customer value");
 });
 
@@ -243,7 +266,9 @@ test("a rebuild keeps the filter row, the scroll position and the focus", async 
   // back with it, or they find an empty filter row above filtered data.
   await page.evaluate(() => {
     const root = document.querySelector("opengrid-grid").shadowRoot;
-    root.querySelector('select[data-col="1"]').value = "eq";
+    // The comparison is a menu behind the button in the field (issue #96).
+    root.querySelector('[part="filter-operator"][data-col="1"]').click();
+    root.querySelector('[part="operator-menu"] [data-op="eq"]').click();
     const input = root.querySelector('input[data-col="1"]');
     input.focus();
     input.value = "Beta";
@@ -264,7 +289,7 @@ test("a rebuild keeps the filter row, the scroll position and the focus", async 
   const after = await page.evaluate(() => {
     const root = document.querySelector("opengrid-grid").shadowRoot;
     return {
-      operator: root.querySelector('select[data-col="1"]').value,
+      operator: root.querySelector('[part="filter-operator"][data-col="1"]').dataset.op,
       value: root.querySelector('input[data-col="1"]').value,
       focused: root.activeElement?.getAttribute("data-row") ?? null,
       status: root.querySelector('[part="status"]').textContent,

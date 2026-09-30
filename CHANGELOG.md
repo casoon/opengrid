@@ -18,6 +18,19 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+### Changed
+
+- **The filter row is one field per column** ([#96](https://github.com/casoon/opengrid/issues/96)).
+  It had two controls per column, a comparison `<select>` and a value field, and at ordinary
+  widths both were cut off. Now the value field takes the column's width and the comparison is
+  a small button inside it: it shows the comparison as a sign (`∗`, `=`, `≥`, …), names it in
+  words (`customer operator: contains`) and opens a menu (`operator-menu`) of what the type
+  allows, with the column menu's keys. Typing filters with the type's default — *contains* for
+  text, *is* for numbers and dates; a comparison picked while the field has a value filters at
+  once. A boolean keeps its *any / yes / no* choice, without a button.
+  **What breaks:** `filter-operator` is a `<button>` now, not a `<select>`; a page script that
+  set its `value` sets nothing. The new part `operator-menu` is the menu.
+
 ## [0.6.0] — 2026-09-29
 
 **Screen-reader pairings tested: none yet** — the VoiceOver pass is prepared and not yet run

@@ -539,10 +539,8 @@ fn reskeleton(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>) -> bool {
 /// filtered data is a lie.
 fn write_filter_entries(root: &ShadowRoot, entries: &[FilterEntry]) {
     for (col, entry) in entries.iter().enumerate() {
-        if let Ok(Some(node)) = root.query_selector(&format!("select[data-col=\"{col}\"]"))
-            && let Ok(select) = node.dyn_into::<HtmlSelectElement>()
-        {
-            select.set_value(entry.op.as_str());
+        if let Some(operator) = OperatorControl::of(root, col) {
+            operator.set_value(entry.op.as_str());
         }
         if let Some(control) = ValueControl::of(&root, col) {
             control.set_value(&entry.value);
@@ -1245,6 +1243,19 @@ fn on_key_down(event: KeyboardEvent) {
                 _ => {}
             }
         }
+        // The operator button is a menu button (issue #96): the arrows open
+        // its menu, Enter and Space are its native click.
+        if target.get_attribute("part").as_deref() == Some("filter-operator")
+            && matches!(event.key().as_str(), "ArrowDown" | "ArrowUp")
+            && let Some(col) = target
+                .get_attribute("data-col")
+                .and_then(|col| col.parse::<usize>().ok())
+            && let Ok(host) = root.host().dyn_into::<HtmlElement>()
+        {
+            event.prevent_default();
+            open_operator_menu(&host, col, event.key() == "ArrowUp");
+            return;
+        }
         // A button (the clear control) keeps its native Enter/Space activation.
         if event.key() == "Enter" && !target.tag_name().eq_ignore_ascii_case("button") {
             event.prevent_default();
@@ -1329,6 +1340,15 @@ fn on_key_down(event: KeyboardEvent) {
             .is_some()
         {
             on_group_menu_key(&host, &event, &target);
+            return;
+        }
+        if target
+            .closest("[part=\"operator-menu\"]")
+            .ok()
+            .flatten()
+            .is_some()
+        {
+            on_operator_menu_key(&host, &event, &target);
             return;
         }
     }
@@ -1725,7 +1745,8 @@ fn align_filter(host: &HtmlElement) {
         };
         let rect = header.get_bounding_client_rect();
         first.get_or_insert(rect.left() - table_left);
-        if let Ok(Some(operator)) = root.query_selector(&format!("select[data-col=\"{col}\"]"))
+        if let Ok(Some(operator)) =
+            root.query_selector(&format!("[part=\"filter-operator\"][data-col=\"{col}\"]"))
             && let Some(group) = operator.parent_element()
         {
             let _ = group.set_attribute(
@@ -2408,6 +2429,89 @@ impl ValueControl {
     }
 }
 
+/// A column's operator in the filter row: the button inside its field
+/// (issue #96). Every read and write of a filter's comparison goes through
+/// here, like the value through [`ValueControl`].
+struct OperatorControl {
+    button: HtmlElement,
+}
+
+impl OperatorControl {
+    fn of(root: &ShadowRoot, col: usize) -> Option<Self> {
+        root.query_selector(&format!("[part=\"filter-operator\"][data-col=\"{col}\"]"))
+            .ok()
+            .flatten()
+            .and_then(|node| node.dyn_into::<HtmlElement>().ok())
+            .map(|button| Self { button })
+    }
+
+    /// The comparisons the column's type allows, in the menu's order.
+    fn allowed(&self) -> Vec<String> {
+        self.button
+            .get_attribute("data-ops")
+            .map(|ops| ops.split_whitespace().map(str::to_owned).collect())
+            .unwrap_or_default()
+    }
+
+    /// The chosen comparison; before one is chosen, the type's first.
+    fn value(&self) -> String {
+        self.button
+            .get_attribute("data-op")
+            .filter(|op| !op.is_empty())
+            .or_else(|| self.allowed().into_iter().next())
+            .unwrap_or_default()
+    }
+
+    /// Chooses `op`, and says so: the sign on the button, the words in its
+    /// name.
+    fn set_value(&self, op: &str) {
+        let _ = self.button.set_attribute("data-op", op);
+        self.button.set_text_content(Some(grid::operator_glyph(op)));
+        let Some(host) = self
+            .button
+            .get_root_node()
+            .dyn_into::<ShadowRoot>()
+            .ok()
+            .and_then(|root| root.host().dyn_into::<HtmlElement>().ok())
+        else {
+            return;
+        };
+        let texts = texts(&host);
+        let column = self
+            .button
+            .get_attribute("data-col")
+            .and_then(|col| col.parse::<usize>().ok())
+            .and_then(|col| columns_of(&host).get(col).cloned())
+            .unwrap_or_default();
+        let word = operator_word(&texts, op);
+        let _ = self.button.set_attribute(
+            "aria-label",
+            &format!("{}: {}", texts.operator_label(&column), word),
+        );
+        // The sign alone is terse: the empty field says the comparison in
+        // words too. Not a label — the field has its name — a hint.
+        if let Some(col) = self.button.get_attribute("data-col")
+            && let Some(root) = host.shadow_root()
+            && let Ok(Some(input)) = root.query_selector(&format!("input[data-col=\"{col}\"]"))
+        {
+            let _ = input.set_attribute("placeholder", &word);
+        }
+    }
+
+    fn element(&self) -> &HtmlElement {
+        &self.button
+    }
+}
+
+/// The word for `op`, as the menu and the button's name say it.
+fn operator_word(texts: &crate::texts::GridTexts, op: &str) -> String {
+    let index = crate::shared::FILTER_OPERATORS
+        .iter()
+        .position(|candidate| *candidate == op)
+        .unwrap_or(0);
+    texts.operator(index, op)
+}
+
 /// The operator `select` and value `input` are ordinary form controls; a missing
 /// control (should not happen after the skeleton) falls back to `eq`/empty.
 fn read_filter_entries(root: &ShadowRoot, columns: &[String]) -> Vec<FilterEntry> {
@@ -2415,12 +2519,8 @@ fn read_filter_entries(root: &ShadowRoot, columns: &[String]) -> Vec<FilterEntry
         .iter()
         .enumerate()
         .map(|(col, column)| {
-            let op = root
-                .query_selector(&format!("select[data-col=\"{col}\"]"))
-                .ok()
-                .flatten()
-                .and_then(|node| node.dyn_into::<HtmlSelectElement>().ok())
-                .map(|select| select.value())
+            let op = OperatorControl::of(root, col)
+                .map(|operator| operator.value())
                 .unwrap_or_default();
             let value = ValueControl::of(root, col)
                 .map(|control| control.value())
@@ -2572,24 +2672,23 @@ fn fix_presentation(
 
 fn fix_operator_choices(root: &ShadowRoot, schema: &opengrid_types::Schema) {
     for (col, field) in schema.fields().iter().enumerate() {
-        let Ok(Some(node)) = root.query_selector(&format!("select[data-col=\"{col}\"]")) else {
-            continue;
-        };
-        let Ok(select) = node.dyn_into::<HtmlSelectElement>() else {
+        let Some(operator) = OperatorControl::of(root, col) else {
             continue;
         };
         let allowed = grid::operators_for(field.data_type, field.nullable);
-        let current = select.value();
-        if !allowed.contains(&current.as_str())
-            && let Some(first) = allowed.first()
-        {
-            select.set_value(first);
-        }
+        let chosen = operator
+            .element()
+            .get_attribute("data-op")
+            .filter(|op| allowed.contains(&op.as_str()));
+        // Written every time, not only on a change: the button's sign and name
+        // come from here, and the first result is when its type is known.
+        let op = chosen.unwrap_or_else(|| allowed.first().copied().unwrap_or("eq").to_owned());
+        operator.set_value(&op);
 
         // The two operators that take no value say so: their input is disabled
         // rather than silently ignored.
         if let Some(control) = ValueControl::of(&root, col) {
-            control.set_disabled(!grid::takes_value(&select.value()));
+            control.set_disabled(!grid::takes_value(&op));
         }
     }
 }
@@ -2689,6 +2788,27 @@ fn on_filter_clear(event: Event) {
             .is_some()
         {
             reset_facets(&host);
+            return;
+        }
+    }
+
+    // The filter row's operator button and its menu (issue #96).
+    if let Ok(host) = root.host().dyn_into::<HtmlElement>() {
+        if let Ok(Some(item)) = target.closest("[part=\"operator-menu\"] [role=\"menuitemradio\"]")
+        {
+            pick_operator(&host, &item);
+            return;
+        }
+        if let Ok(Some(button)) = target.closest("[part=\"filter-operator\"]")
+            && let Some(col) = button
+                .get_attribute("data-col")
+                .and_then(|col| col.parse::<usize>().ok())
+        {
+            if button.get_attribute("aria-expanded").as_deref() == Some("true") {
+                close_operator_menu(&host, true);
+            } else {
+                open_operator_menu(&host, col, false);
+            }
             return;
         }
     }
@@ -3057,7 +3177,15 @@ fn on_focus_in(event: Event) {
         let options = ScrollIntoViewOptions::new();
         options.set_block(ScrollLogicalPosition::Nearest);
         options.set_inline(ScrollLogicalPosition::Nearest);
-        target.scroll_into_view_with_scroll_into_view_options(&options);
+        // The operator button sits inside its field (issue #96): the whole
+        // field comes into view, so the Tab from the button to the value lands
+        // on a control that is already in sight.
+        let into = if target.get_attribute("part").as_deref() == Some("filter-operator") {
+            target.parent_element().unwrap_or_else(|| target.clone())
+        } else {
+            target.clone()
+        };
+        into.scroll_into_view_with_scroll_into_view_options(&options);
         return;
     }
     let Some(active) = active_from_element(&target) else {
@@ -4468,9 +4596,8 @@ fn activate_menu_item(host: &HtmlElement, item: &Element) {
                     .filter(|control| !control.is_disabled())
                     .map(|control| Element::from(control.element().clone()))
                     .or_else(|| {
-                        root.query_selector(&format!("select[data-col=\"{col}\"]"))
-                            .ok()
-                            .flatten()
+                        OperatorControl::of(&root, col)
+                            .map(|operator| Element::from(operator.element().clone()))
                     });
                 if let Some(field) = field.and_then(|field| field.dyn_into::<HtmlElement>().ok()) {
                     let _ = field.focus();
@@ -4747,21 +4874,10 @@ fn toggle_filter_row(host: &HtmlElement) {
 /// would leave it standing. The operator goes back to the column's first
 /// offered one.
 fn reset_filter_column(root: &ShadowRoot, col: usize) {
-    if let Ok(Some(node)) = root.query_selector(&format!("select[data-col=\"{col}\"]"))
-        && let Ok(select) = node.dyn_into::<HtmlSelectElement>()
-        && let Ok(options) = select.query_selector_all("option")
+    if let Some(operator) = OperatorControl::of(root, col)
+        && let Some(first) = operator.allowed().into_iter().next()
     {
-        for index in 0..options.length() {
-            if let Some(option) = options
-                .item(index)
-                .and_then(|node| node.dyn_into::<Element>().ok())
-                && !option.has_attribute("hidden")
-                && let Some(value) = option.get_attribute("value")
-            {
-                select.set_value(&value);
-                break;
-            }
-        }
+        operator.set_value(&first);
     }
     if let Some(control) = ValueControl::of(&root, col) {
         control.set_value("");
@@ -5745,11 +5861,8 @@ fn apply_search(host: &HtmlElement) {
                     let Some(col) = columns.iter().position(|name| name == &entry.column) else {
                         continue;
                     };
-                    if let Ok(Some(node)) =
-                        root.query_selector(&format!("select[data-col=\"{col}\"]"))
-                        && let Ok(select) = node.dyn_into::<HtmlSelectElement>()
-                    {
-                        select.set_value(entry.op.as_str());
+                    if let Some(operator) = OperatorControl::of(&root, col) {
+                        operator.set_value(entry.op.as_str());
                     }
                     if let Some(field) = ValueControl::of(&root, col) {
                         field.set_disabled(false);
@@ -6139,10 +6252,8 @@ fn apply_filter_dialog(host: &HtmlElement) {
     let Some(col) = columns.iter().position(|name| name == &column) else {
         return;
     };
-    if let Ok(Some(node)) = root.query_selector(&format!("select[data-col=\"{col}\"]"))
-        && let Ok(select) = node.dyn_into::<HtmlSelectElement>()
-    {
-        select.set_value(&op);
+    if let Some(operator) = OperatorControl::of(&root, col) {
+        operator.set_value(&op);
     }
     if let Some(field) = ValueControl::of(&root, col) {
         field.set_disabled(!grid::takes_value(&op));
@@ -6326,6 +6437,224 @@ fn pick_grouping(host: &HtmlElement, item: &Element) {
     }
     next.push(column);
     let _ = host.set_attribute(grid::GROUP_BY_ATTRIBUTE, &next.join(","));
+}
+
+/// Opens a column's operator menu (issue #96): the comparisons its type
+/// allows, the chosen one checked and focused — or the last one, with `last`
+/// (`ArrowUp` on the button, as the menu-button pattern has it).
+fn open_operator_menu(host: &HtmlElement, col: usize, last: bool) {
+    let (Some(root), Some(document)) = (
+        host.shadow_root(),
+        web_sys::window().and_then(|window| window.document()),
+    ) else {
+        return;
+    };
+    close_operator_menu(host, false);
+    let Some(operator) = OperatorControl::of(&root, col) else {
+        return;
+    };
+    let allowed = operator.allowed();
+    if allowed.is_empty() {
+        return;
+    }
+    let current = operator.value();
+    let texts = texts(host);
+    let column = columns_of(host).get(col).cloned().unwrap_or_default();
+    let Ok(menu) = document.create_element("div") else {
+        return;
+    };
+    for (name, value) in [
+        ("part", "operator-menu".to_owned()),
+        ("role", "menu".to_owned()),
+        ("popover", "auto".to_owned()),
+        ("data-col", col.to_string()),
+        ("aria-label", texts.operator_label(&column)),
+    ] {
+        let _ = menu.set_attribute(name, &value);
+    }
+    if !texts.lang.trim().is_empty() {
+        let _ = menu.set_attribute("lang", &texts.lang);
+    }
+    for op in &allowed {
+        let Ok(item) = document.create_element("div") else {
+            continue;
+        };
+        let _ = item.set_attribute("role", "menuitemradio");
+        let _ = item.set_attribute("tabindex", "-1");
+        let _ = item.set_attribute("data-op", op);
+        let _ = item.set_attribute(
+            "aria-checked",
+            if *op == current { "true" } else { "false" },
+        );
+        if let Ok(sign) = document.create_element("span") {
+            let _ = sign.set_attribute("aria-hidden", "true");
+            sign.set_text_content(Some(grid::operator_glyph(op)));
+            let _ = item.append_child(&sign);
+        }
+        if let Ok(word) = document.create_element("span") {
+            word.set_text_content(Some(&operator_word(&texts, op)));
+            let _ = item.append_child(&word);
+        }
+        let _ = menu.append_child(&item);
+    }
+    let Ok(menu) = menu.dyn_into::<HtmlElement>() else {
+        return;
+    };
+    let _ = root.append_child(&menu);
+    let _ = menu.show_popover();
+    let button = operator.element().clone();
+    let _ = button.set_attribute("aria-expanded", "true");
+    place_under(&menu, &button);
+    // A click outside closes the popover by itself; the button must say so.
+    let owner = button.clone();
+    let closed = Closure::<dyn FnMut(Event)>::new(move |event: Event| {
+        let open = js_sys::Reflect::get(&event, &JsValue::from_str("newState"))
+            .ok()
+            .and_then(|state| state.as_string())
+            .is_some_and(|state| state == "open");
+        if !open {
+            let _ = owner.set_attribute("aria-expanded", "false");
+            if let Some(popup) = event
+                .target()
+                .and_then(|target| target.dyn_into::<Element>().ok())
+            {
+                popup.remove();
+            }
+        }
+    });
+    let _ = menu.add_event_listener_with_callback("toggle", closed.as_ref().unchecked_ref());
+    closed.forget();
+
+    let selector = if last {
+        "[role=\"menuitemradio\"]:last-child"
+    } else {
+        "[role=\"menuitemradio\"][aria-checked=\"true\"]"
+    };
+    if let Ok(Some(item)) = menu.query_selector(selector)
+        && let Ok(item) = item.dyn_into::<HtmlElement>()
+    {
+        let _ = item.focus();
+    }
+}
+
+/// Closes the open operator menu; with `refocus`, the focus goes back to its
+/// button.
+fn close_operator_menu(host: &HtmlElement, refocus: bool) {
+    let Some(root) = host.shadow_root() else {
+        return;
+    };
+    let Ok(Some(menu)) = root.query_selector("[part=\"operator-menu\"]") else {
+        return;
+    };
+    let col = menu
+        .get_attribute("data-col")
+        .and_then(|col| col.parse::<usize>().ok());
+    if let Ok(menu) = menu.dyn_into::<HtmlElement>() {
+        let _ = menu.hide_popover();
+        menu.remove();
+    }
+    if let Some(operator) = col.and_then(|col| OperatorControl::of(&root, col)) {
+        let _ = operator.element().set_attribute("aria-expanded", "false");
+        if refocus {
+            let _ = operator.element().focus();
+        }
+    }
+}
+
+/// The column menu's keys, for the operator menu.
+fn on_operator_menu_key(host: &HtmlElement, event: &KeyboardEvent, target: &Element) {
+    let Ok(Some(menu)) = target.closest("[part=\"operator-menu\"]") else {
+        return;
+    };
+    let Ok(items) = menu.query_selector_all("[role=\"menuitemradio\"]") else {
+        return;
+    };
+    let items: Vec<HtmlElement> = (0..items.length())
+        .filter_map(|index| items.item(index))
+        .filter_map(|node| node.dyn_into::<HtmlElement>().ok())
+        .collect();
+    if items.is_empty() {
+        return;
+    }
+    let at = items
+        .iter()
+        .position(|item| item.is_same_node(Some(target)))
+        .unwrap_or(0);
+    let go = |index: usize| {
+        let _ = items[index].focus();
+    };
+    match event.key().as_str() {
+        "ArrowDown" => {
+            event.prevent_default();
+            go((at + 1) % items.len());
+        }
+        "ArrowUp" => {
+            event.prevent_default();
+            go((at + items.len() - 1) % items.len());
+        }
+        "Home" => {
+            event.prevent_default();
+            go(0);
+        }
+        "End" => {
+            event.prevent_default();
+            go(items.len() - 1);
+        }
+        "Enter" | " " => {
+            event.prevent_default();
+            pick_operator(host, &items[at]);
+        }
+        "Escape" => {
+            event.prevent_default();
+            close_operator_menu(host, true);
+        }
+        "Tab" => close_operator_menu(host, true),
+        _ => {}
+    }
+}
+
+/// Chooses the item's comparison for its column. A filter that can run —
+/// a value in the field, or a comparison that takes none — runs at once; the
+/// focus goes to the value, where the reader goes next, or back to the button
+/// when there is no value to give.
+fn pick_operator(host: &HtmlElement, item: &Element) {
+    let Some(root) = host.shadow_root() else {
+        return;
+    };
+    let (Some(op), Some(col)) = (
+        item.get_attribute("data-op"),
+        item.closest("[part=\"operator-menu\"]")
+            .ok()
+            .flatten()
+            .and_then(|menu| menu.get_attribute("data-col"))
+            .and_then(|col| col.parse::<usize>().ok()),
+    ) else {
+        return;
+    };
+    close_operator_menu(host, false);
+    let Some(operator) = OperatorControl::of(&root, col) else {
+        return;
+    };
+    operator.set_value(&op);
+    let takes = grid::takes_value(&op);
+    let field = ValueControl::of(&root, col);
+    if let Some(field) = &field {
+        field.set_disabled(!takes);
+    }
+    let has_value = field
+        .as_ref()
+        .is_some_and(|field| !field.value().trim().is_empty());
+    match (&field, takes) {
+        (Some(field), true) => {
+            let _ = field.element().focus();
+        }
+        _ => {
+            let _ = operator.element().focus();
+        }
+    }
+    if !takes || has_value {
+        apply_filters(host);
+    }
 }
 
 /// *Group* says when there is nothing more to add (issue #34).
