@@ -100,7 +100,7 @@ test("Tab reaches every button of the row, and each comes into view", async ({ p
   for (const focus of seen) expect(focus.visible, focus.name).toBe(true);
 });
 
-test("the column list opens on a line of its own, below the row", async ({ page }) => {
+test("the column list opens under its button, not in the row", async ({ page }) => {
   await open(page, 375);
   const place = await page.evaluate(() => {
     const root = document.querySelector("opengrid-grid").shadowRoot;
@@ -108,7 +108,7 @@ test("the column list opens on a line of its own, below the row", async ({ page 
     const panel = root.querySelector('[part="columns"]');
     const row = root.querySelector("[data-toolbar-row]");
     return {
-      open: !panel.hidden,
+      open: panel.matches(":popover-open"),
       inRow: row.contains(panel),
       below: panel.getBoundingClientRect().top >= row.getBoundingClientRect().bottom - 4,
     };

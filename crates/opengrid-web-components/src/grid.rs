@@ -1650,8 +1650,20 @@ pub fn build_grid(
                              background-position: calc(100% - 0.9em) 55%, calc(100% - 0.55em) 55%;
                              background-size: 0.35em 0.35em; }}
          }}
-         [part=\"columns\"] {{ display: flex; gap: 0.5rem; align-items: center; }}
-         [part=\"columns\"][hidden] {{ display: none; }}
+         /* The column list: a panel under its button (issue #101), like the
+            filter dialog. */
+         [part=\"columns\"] {{ position: fixed; inset: auto; margin: 0; padding: 8px;
+                   min-width: 12rem; max-height: 60vh; overflow: auto; box-sizing: border-box;
+                   background: var({SURFACE_PROPERTY}); color: var({INK_PROPERTY});
+                   border: 1px solid var({LINE_STRONG_PROPERTY});
+                   border-radius: min(var({RADIUS_PROPERTY}), 10px);
+                   box-shadow: 0 12px 32px rgb(0 0 0 / 0.16);
+                   font-family: var({FONT_PROPERTY}); font-size: var({FONT_SIZE_PROPERTY}); }}
+         [part=\"columns\"]:popover-open {{ display: flex; flex-direction: column; gap: 2px; }}
+         [part=\"columns\"] [part=\"column-toggle\"] {{ display: flex; align-items: center;
+                   gap: 0.5rem; min-height: 32px; padding: 0 6px; cursor: pointer;
+                   border-radius: min(var({RADIUS_PROPERTY}), 6px); }}
+         [part=\"columns\"] [part=\"column-toggle\"]:hover {{ background: var({HOVER_PROPERTY}); }}
          [part=\"column-toggle\"] {{ display: inline-flex; gap: 0.25rem; align-items: center;
                              min-height: {MIN_TARGET_SIZE}px; }}
          [part=\"column-toggle\"] input {{ min-width: {MIN_TARGET_SIZE}px;
@@ -1828,7 +1840,7 @@ pub fn build_grid(
             field as wide as the grid, where wrapping took four rows from the
             data. Not at a 320 px viewport, the reflow case (1.4.10): there it
             wraps as before. Its padding keeps the focus rings unclipped; the
-            column list opens on a line of its own below it. */
+            column list is a panel under its button (issue #101). */
          [part=\"toolbar\"] {{ container-type: inline-size; }}
          [data-toolbar-row] {{ display: contents; }}
          @media (min-width: 321px) {{ @container (max-width: {NARROW_TOOLBAR}px) {{
@@ -1838,7 +1850,6 @@ pub fn build_grid(
                    min-width: 0; overflow-x: auto; scrollbar-width: thin;
                    padding: 4px; margin: -4px; }}
            [data-toolbar-row] > * {{ flex: 0 0 auto; }}
-           [part=\"toolbar\"] > [part=\"columns\"] {{ flex: 1 1 100%; flex-wrap: wrap; }}
          }} }}
          [part=\"toolbar\"] button, [part=\"chips\"] button {{ font: inherit; font-size: 0.8125rem;
                    font-weight: 500; min-height: 32px; min-width: {MIN_TARGET_SIZE}px;
@@ -2694,13 +2705,16 @@ fn build_columns(
     declared: &[(String, bool)],
     texts: &GridTexts,
 ) -> ColumnsNodes {
-    // A disclosure, not a permanent list: a grid with twenty columns would
-    // otherwise carry twenty checkboxes above its data forever.
+    // A panel under its button (issue #101), not a permanent list: a grid with
+    // twenty columns would otherwise carry twenty checkboxes above its data
+    // forever. It stays open while columns are ticked — the one control of the
+    // toolbar that takes several choices in a row.
     let toggle = element(buffer, nodes, Some(parent), "button");
     for (name, value) in [
         ("type", "button"),
         ("part", "columns-toggle"),
         ("aria-expanded", "false"),
+        ("aria-controls", "og-columns"),
     ] {
         buffer.push(Patch::SetAttribute {
             node: toggle,
@@ -2717,7 +2731,12 @@ fn build_columns(
     set_lang(buffer, toggle, texts);
 
     let container = element(buffer, nodes, Some(panel_parent), "div");
-    for (name, value) in [("part", "columns"), ("role", "group"), ("hidden", "")] {
+    for (name, value) in [
+        ("part", "columns"),
+        ("id", "og-columns"),
+        ("role", "group"),
+        ("popover", "auto"),
+    ] {
         buffer.push(Patch::SetAttribute {
             node: container,
             name: name.to_owned(),
