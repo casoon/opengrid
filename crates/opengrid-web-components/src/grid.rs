@@ -328,6 +328,13 @@ pub const DENSITY_ATTRIBUTE: &str = "density";
 /// for, and a `grid` with buttons in it would describe the structure worse.
 pub const GROUP_BY_ATTRIBUTE: &str = "group-by";
 
+/// The parent field of a tree (plan point 123, E38): `tree="parent_id"` shows
+/// the rows as a tree, a level at a time.
+pub const TREE_ATTRIBUTE: &str = "tree";
+
+/// The key a tree's parent field refers to; `id` when absent.
+pub const TREE_KEY_ATTRIBUTE: &str = "tree-key";
+
 /// The boolean attribute that puts a toolbar above the grid (point 65): the
 /// active filters as chips, a switch for the filter row, the column list and
 /// the density.
@@ -576,6 +583,8 @@ pub const OBSERVED: &[&str] = &[
     DENSITY_ATTRIBUTE,
     SELECTION_ATTRIBUTE,
     GROUP_BY_ATTRIBUTE,
+    TREE_ATTRIBUTE,
+    TREE_KEY_ATTRIBUTE,
     COLUMN_MENU_ATTRIBUTE,
     TOOLBAR_ATTRIBUTE,
     FACETS_ATTRIBUTE,
@@ -1212,6 +1221,28 @@ fn query_object(
     query
 }
 
+/// The query of one level of a tree (issue #135): the rows of `select` —
+/// the shown columns, and the key when they do not hold it — at the level
+/// `tree` names, under the grid's filter and order, at most `limit` of them.
+pub fn tree_query_json(
+    source: &str,
+    select: &[String],
+    sorts: &[(String, &str)],
+    filter: Option<&FilterExpr>,
+    tree: opengrid_json::Json,
+    limit: u64,
+) -> String {
+    use opengrid_json::{Json, json};
+    let sort = sorts
+        .iter()
+        .map(|(field, direction)| json!({ "field": field, "direction": direction }))
+        .collect();
+    let mut query = query_object(source, select, sort, filter);
+    query.insert("tree".to_owned(), tree);
+    query.insert("limit".to_owned(), json!(limit));
+    Json::Object(query).to_string()
+}
+
 /// Parses a result in the wire form of point 23 into a [`QueryResult`].
 ///
 /// The reading itself lives in [`opengrid_datasource::wire`], because server and
@@ -1780,8 +1811,19 @@ pub fn build_grid(
                    display: inline-block; width: 1.25em; color: var({INK_MUTED_PROPERTY}); }}
          tr[data-kind=\"group\"][aria-expanded=\"true\"] td[data-col=\"0\"]::before {{
                    content: \"\\25BE\" / \"\"; }}
-         tr[data-kind=\"group\"][data-level=\"2\"] td[data-col=\"0\"] {{
+                  tr[data-kind=\"group\"][data-level=\"2\"] td[data-col=\"0\"] {{
                    padding-left: calc(var({PAD_PROPERTY}) + 1.25em); }}
+         /* A tree's node (issue #135): the first column indented by depth,
+            a chevron where it opens — drawn from `aria-expanded` with an
+            empty alternative, like a group's — and room for one on a leaf so
+            the names line up. Context rows (T5) are muted. */
+         tr[data-tree] td[data-col=\"0\"] {{
+                   padding-left: calc(var({PAD_PROPERTY}) + (var(--og-depth, 1) - 1) * 1.25em); }}
+         tr[data-tree] td[data-col=\"0\"]::before {{ content: \"\" / \"\";
+                   display: inline-block; width: 1.25em; color: var({INK_MUTED_PROPERTY}); }}
+         tr[data-tree][aria-expanded=\"false\"] td[data-col=\"0\"]::before {{ content: \"\\25B8\" / \"\"; }}
+         tr[data-tree][aria-expanded=\"true\"] td[data-col=\"0\"]::before {{ content: \"\\25BE\" / \"\"; }}
+         tr[data-tree][data-context] td {{ color: var({INK_MUTED_PROPERTY}); }}
          /* Aggregates (point 63): the glyph is drawn, with an empty
             alternative — the cell's `aria-label` says the word. */
          tr[data-kind=\"total\"] {{ background: var({SURFACE_2_PROPERTY}); font-weight: 600;
@@ -3107,6 +3149,7 @@ pub fn patch_grid(
     format: &dyn CellFormat,
     paging: Paging,
     grouping: Option<&crate::grouping::Grouping>,
+    tree: Option<&crate::tree::Tree>,
 ) {
     let fields = state.schema().fields();
     let total_count = state.total_count();
@@ -3118,7 +3161,7 @@ pub fn patch_grid(
     buffer.push(Patch::SetAttribute {
         node: nodes.table,
         name: "role".to_owned(),
-        value: if grouping.is_some() {
+        value: if grouping.is_some() || tree.is_some() {
             "treegrid"
         } else {
             "grid"
@@ -3167,11 +3210,13 @@ pub fn patch_grid(
     });
     buffer.push(Patch::SetText {
         node: nodes.status,
-        text: match grouping {
+        text: match (grouping, tree) {
             // "57 matches" for 52 rows and five group headers would be false:
             // under grouping the display list is longer than the result.
-            Some(grouping) => status_line_counting(texts, state, grouping.row_count()),
-            None => status_line(texts, state),
+            (Some(grouping), _) => status_line_counting(texts, state, grouping.row_count()),
+            // A tree counts its matches (T5), not the rows it shows.
+            (None, Some(tree)) => status_line_counting(texts, state, tree.matches()),
+            (None, None) => status_line(texts, state),
         },
     });
 
@@ -3315,6 +3360,12 @@ pub fn patch_grid(
                     patch_group_row(buffer, row_nodes, &item, grouping, fields, texts, format);
                     continue;
                 }
+                // A tree's node the focus stands on — the one just opened or
+                // closed: its state is rewritten, its place is not.
+                if let Some(entry) = tree.and_then(|tree| tree.entry_at(row)) {
+                    let local = row.saturating_sub(paging.base);
+                    patch_tree_row(buffer, row_nodes, entry, local, row_height, texts);
+                }
                 let selected = state.is_selected(row);
                 selection_attributes(buffer, row_nodes.row, selected);
                 if let (Some(cell), Some(mark)) = (row_nodes.select, row_nodes.select_mark) {
@@ -3409,6 +3460,11 @@ pub fn patch_grid(
                         node: row_nodes.row,
                         name: name.to_owned(),
                     });
+                }
+                // A tree's node (issue #135): its depth, its place among its
+                // siblings, whether it opens — the treegrid's own words.
+                if let Some(entry) = tree.and_then(|tree| tree.entry_at(row)) {
+                    patch_tree_row(buffer, row_nodes, entry, local, row_height, texts);
                 }
                 // A slot that showed the total carried our `lang` on its label;
                 // a value in it is the page's word again.
@@ -3870,6 +3926,78 @@ fn patch_pager(
 /// the logical offset is per-row.
 fn row_style(row: u64, row_height: u64) -> String {
     format!("transform: translateY({}px);", row * row_height)
+}
+
+/// The attributes a tree's node carries (issue #135, plan point 123):
+/// `aria-level` (its depth), `aria-posinset`/`aria-setsize` (its place among
+/// its siblings), `aria-expanded` when it has children — absent on a leaf, so
+/// a screen reader does not offer to open it — and `aria-busy` while its
+/// children load. The depth also indents the first column, through a custom
+/// property beside the row's position. A node that only leads to a match is
+/// context (T5): marked for the eye and named for the ear.
+fn patch_tree_row(
+    buffer: &mut PatchBuffer,
+    row_nodes: &GridRowNodes,
+    entry: &crate::tree::Entry,
+    local: u64,
+    row_height: u64,
+    texts: &GridTexts,
+) {
+    let row = row_nodes.row;
+    let set = |buffer: &mut PatchBuffer, name: &str, value: String| {
+        buffer.push(Patch::SetAttribute {
+            node: row,
+            name: name.to_owned(),
+            value,
+        });
+    };
+    let unset = |buffer: &mut PatchBuffer, name: &str| {
+        buffer.push(Patch::RemoveAttribute {
+            node: row,
+            name: name.to_owned(),
+        });
+    };
+    set(buffer, "aria-level", entry.depth.to_string());
+    set(buffer, "aria-posinset", entry.position.to_string());
+    set(buffer, "aria-setsize", entry.siblings.to_string());
+    set(buffer, "data-tree", String::new());
+    set_style(
+        buffer,
+        row,
+        &format!(
+            "{} --og-depth: {};",
+            row_style(local, row_height),
+            entry.depth
+        ),
+    );
+    if entry.children > 0 {
+        set(buffer, "aria-expanded", entry.expanded.to_string());
+    } else {
+        unset(buffer, "aria-expanded");
+    }
+    if entry.loading {
+        set(buffer, "aria-busy", "true".to_owned());
+    } else {
+        unset(buffer, "aria-busy");
+    }
+    if entry.matched {
+        unset(buffer, "data-context");
+        if let Some(first) = row_nodes.cells.first() {
+            buffer.push(Patch::RemoveAttribute {
+                node: *first,
+                name: "aria-description".to_owned(),
+            });
+        }
+    } else {
+        set(buffer, "data-context", String::new());
+        if let Some(first) = row_nodes.cells.first() {
+            buffer.push(Patch::SetAttribute {
+                node: *first,
+                name: "aria-description".to_owned(),
+                value: texts.tree_context.clone(),
+            });
+        }
+    }
 }
 
 /// Hides a pool slot that holds no logical row in the current window.
@@ -4533,6 +4661,7 @@ mod tests {
             &crate::formats::Plain,
             Paging::whole(state.total_count()),
             None,
+            None,
         );
 
         let attributes = |name: &str| -> Vec<String> {
@@ -4603,6 +4732,7 @@ mod tests {
             &crate::formats::Plain,
             Paging::whole(state.total_count()),
             None,
+            None,
         );
         let sorts: Vec<&str> = buffer
             .patches()
@@ -4656,6 +4786,7 @@ mod tests {
             &GridTexts::default(),
             &crate::formats::Plain,
             Paging::whole(state.total_count()),
+            None,
             None,
         );
 
@@ -4850,6 +4981,7 @@ mod tests {
                 &GridTexts::default(),
                 &crate::formats::Plain,
                 Paging::whole(state.total_count()),
+                None,
                 None,
             );
             view.header_cells
@@ -5251,6 +5383,7 @@ mod tests {
             &crate::formats::Plain,
             Paging::whole(state.total_count()),
             None,
+            None,
         );
         let indexes: Vec<&str> = buffer
             .patches()
@@ -5305,6 +5438,7 @@ mod tests {
             &crate::formats::Plain,
             Paging::whole(state.total_count()),
             None,
+            None,
         );
         assert!(buffer.patches().iter().any(|patch| matches!(
             patch,
@@ -5353,6 +5487,7 @@ mod tests {
             &GridTexts::default(),
             &crate::formats::Plain,
             Paging::whole(state.total_count()),
+            None,
             None,
         );
 
@@ -5413,6 +5548,7 @@ mod tests {
             &GridTexts::default(),
             &crate::formats::Plain,
             Paging::whole(100),
+            None,
             None,
         );
 
@@ -5751,6 +5887,7 @@ mod tests {
                 &GridTexts::default(),
                 &crate::formats::Plain,
                 Paging::whole(state.total_count()),
+                None,
                 None,
             );
 

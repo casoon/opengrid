@@ -143,6 +143,8 @@ export const OpengridGrid = component(
     pageSize: "page-size",
     mode: "mode",
     groupBy: "group-by",
+    tree: "tree",
+    treeKey: "tree-key",
     search: "search",
     facets: "facets",
     toolbar: "toolbar",

@@ -684,6 +684,11 @@ export type TextKey =
   | "pivotFilters"
   | "pivotFilterLabel"
   | "pivotFilterHint"
+  | "treeContext"
+  | "treeOrphans"
+  | "treeLevelTooLarge"
+  | "treeRefused"
+  | "treeGroupIgnored"
   | "filterAny"
   | "booleanTrue"
   | "booleanFalse"
@@ -805,6 +810,10 @@ export interface OpengridGridAttributes {
   "page-size"?: string;
   mode?: Mode;
   "group-by"?: string;
+  /** The field holding a row's parent key: the rows show as a tree. */
+  tree?: string;
+  /** The field the parent key refers to; `id` when absent. */
+  "tree-key"?: string;
   search?: string;
   facets?: string;
   toolbar?: string;

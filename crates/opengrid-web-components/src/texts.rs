@@ -178,6 +178,14 @@ pub struct GridTexts {
     pub pivot_filters: String,
     pub pivot_filter_label: String,
     pub pivot_filter_hint: String,
+    /// The tree mode of the grid (issue #135): how a context row (T5) is
+    /// described, the orphans (T2), a level too large to load, and why a
+    /// tree is not shown beside `page-size` or grouped.
+    pub tree_context: String,
+    pub tree_orphans: String,
+    pub tree_level_too_large: String,
+    pub tree_refused: String,
+    pub tree_group_ignored: String,
     /// A boolean column's filter choice (issue #60): no filter, `true`,
     /// `false`.
     pub filter_any: String,
@@ -357,6 +365,11 @@ pub(crate) const KEYS: &[&str] = &[
     "pivotFilters",
     "pivotFilterLabel",
     "pivotFilterHint",
+    "treeContext",
+    "treeOrphans",
+    "treeLevelTooLarge",
+    "treeRefused",
+    "treeGroupIgnored",
     "filterAny",
     "booleanTrue",
     "booleanFalse",
@@ -514,6 +527,13 @@ impl Default for GridTexts {
             pivot_filters: "Filters".to_owned(),
             pivot_filter_label: "Add a filter".to_owned(),
             pivot_filter_hint: "field = value \u{00B7} Enter".to_owned(),
+            tree_context: "context".to_owned(),
+            tree_orphans: "Without a parent, shown at the top: {count}".to_owned(),
+            tree_level_too_large:
+                "{count} rows at one level; a level holds at most {max} \u{2014} choose a filter"
+                    .to_owned(),
+            tree_refused: "no tree with page-size: a tree scrolls".to_owned(),
+            tree_group_ignored: "group-by is not used in a tree".to_owned(),
             filter_any: "any".to_owned(),
             boolean_true: "yes".to_owned(),
             boolean_false: "no".to_owned(),
@@ -678,6 +698,20 @@ impl GridTexts {
 
     pub fn field_later(&self, field: &str) -> String {
         fill(&self.field_later, "field", field)
+    }
+
+    /// The orphans of a tree (T2), said once.
+    pub fn tree_orphans(&self, count: u64) -> String {
+        fill(&self.tree_orphans, "count", &count.to_string())
+    }
+
+    /// A level of a tree larger than one load (issue #135).
+    pub fn tree_level_too_large(&self, count: u64, max: u64) -> String {
+        fill(
+            &fill(&self.tree_level_too_large, "count", &count.to_string()),
+            "max",
+            &max.to_string(),
+        )
     }
 
     /// What is said when a chip was removed (point 65).
@@ -1051,6 +1085,11 @@ mod host {
         overwrite(&mut texts.pivot_filters, string("pivotFilters"));
         overwrite(&mut texts.pivot_filter_label, string("pivotFilterLabel"));
         overwrite(&mut texts.pivot_filter_hint, string("pivotFilterHint"));
+        overwrite(&mut texts.tree_context, string("treeContext"));
+        overwrite(&mut texts.tree_orphans, string("treeOrphans"));
+        overwrite(&mut texts.tree_level_too_large, string("treeLevelTooLarge"));
+        overwrite(&mut texts.tree_refused, string("treeRefused"));
+        overwrite(&mut texts.tree_group_ignored, string("treeGroupIgnored"));
         overwrite(&mut texts.filter_any, string("filterAny"));
         overwrite(&mut texts.boolean_true, string("booleanTrue"));
         overwrite(&mut texts.boolean_false, string("booleanFalse"));
