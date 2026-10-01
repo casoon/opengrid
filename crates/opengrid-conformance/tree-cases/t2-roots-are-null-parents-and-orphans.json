@@ -1,0 +1,53 @@
+{
+  "id": "t2-roots-are-null-parents-and-orphans",
+  "rule": "T2",
+  "query": {
+    "source": "tree",
+    "select": [
+      "id",
+      "name"
+    ],
+    "tree": {
+      "parent": "parent_id"
+    },
+    "sort": [
+      {
+        "field": "id"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "id",
+      "name"
+    ],
+    "rows": [
+      [
+        1,
+        "Sales"
+      ],
+      [
+        7,
+        "Partners"
+      ],
+      [
+        9,
+        "Orphan"
+      ]
+    ],
+    "tree": {
+      "children": [
+        2,
+        1,
+        0
+      ],
+      "match": [
+        true,
+        true,
+        true
+      ],
+      "matches": 10,
+      "orphans": 1
+    }
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "id": "t4-a-level-is-the-children-of-a-node-with-their-counts",
+  "rule": "T4",
+  "query": {
+    "source": "tree",
+    "select": [
+      "id",
+      "name"
+    ],
+    "tree": {
+      "parent": "parent_id",
+      "under": 2
+    },
+    "sort": [
+      {
+        "field": "id"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "id",
+      "name"
+    ],
+    "rows": [
+      [
+        4,
+        "Alice"
+      ],
+      [
+        5,
+        "Bob"
+      ]
+    ],
+    "tree": {
+      "children": [
+        1,
+        0
+      ],
+      "match": [
+        true,
+        true
+      ],
+      "matches": 10,
+      "orphans": 1
+    }
+  }
+}

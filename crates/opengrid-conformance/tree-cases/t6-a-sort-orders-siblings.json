@@ -1,0 +1,49 @@
+{
+  "id": "t6-a-sort-orders-siblings",
+  "rule": "T6",
+  "query": {
+    "source": "tree",
+    "select": [
+      "id",
+      "name"
+    ],
+    "tree": {
+      "parent": "parent_id",
+      "under": 1
+    },
+    "sort": [
+      {
+        "field": "name",
+        "direction": "desc"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "id",
+      "name"
+    ],
+    "rows": [
+      [
+        3,
+        "South"
+      ],
+      [
+        2,
+        "North"
+      ]
+    ],
+    "tree": {
+      "children": [
+        1,
+        2
+      ],
+      "match": [
+        true,
+        true
+      ],
+      "matches": 10,
+      "orphans": 1
+    }
+  }
+}

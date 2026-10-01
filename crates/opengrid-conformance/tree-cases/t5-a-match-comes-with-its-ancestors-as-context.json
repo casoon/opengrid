@@ -1,0 +1,46 @@
+{
+  "id": "t5-a-match-comes-with-its-ancestors-as-context",
+  "rule": "T5",
+  "query": {
+    "source": "tree",
+    "select": [
+      "id",
+      "name"
+    ],
+    "tree": {
+      "parent": "parent_id"
+    },
+    "filter": {
+      "field": "name",
+      "op": "eq",
+      "value": "Eve"
+    },
+    "sort": [
+      {
+        "field": "id"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "id",
+      "name"
+    ],
+    "rows": [
+      [
+        1,
+        "Sales"
+      ]
+    ],
+    "tree": {
+      "children": [
+        1
+      ],
+      "match": [
+        false
+      ],
+      "matches": 1,
+      "orphans": 1
+    }
+  }
+}
