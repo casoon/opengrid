@@ -1489,11 +1489,11 @@ fn on_key_down(event: KeyboardEvent) {
             return;
         }
     }
-    // A tree's node (issue #135): `Enter` opens and closes it, on its first
-    // cell `→` opens and `←` closes — and `←` on a closed node or a leaf goes
-    // to its parent, so the reader climbs back up without counting rows. `→`
-    // on an open node falls through to moving, as on a group. `Space` selects
-    // the node, as it selects a row.
+    // A tree's node (issue #135), the WAI-ARIA treegrid keys on its first
+    // cell: `→` opens a closed node and goes to the first child of an open
+    // one; `←` closes an open node and goes to the parent of a closed one or a
+    // leaf — so the reader climbs without counting rows. `Enter` and `Space`
+    // keep their grid meaning; `Space` selects the node.
     if let Some((position, entry)) = active_tree(&host)
         && !event.ctrl_key()
         && !event.meta_key()
@@ -1501,14 +1501,22 @@ fn on_key_down(event: KeyboardEvent) {
         let on_first = matches!(active, ActiveCell::Data(cell) if cell.col == 0);
         let opens = entry.children > 0;
         match event.key().as_str() {
-            "Enter" if opens && matches!(active, ActiveCell::Data(_)) => {
+            "ArrowRight" if on_first && opens && !entry.expanded => {
                 event.prevent_default();
                 toggle_tree(&host, position);
                 return;
             }
-            "ArrowRight" if on_first && opens && !entry.expanded => {
+            "ArrowRight" if on_first && entry.expanded => {
                 event.prevent_default();
-                toggle_tree(&host, position);
+                let child = runtime
+                    .borrow()
+                    .tree
+                    .as_ref()
+                    .and_then(|tree| tree.first_child_of(position));
+                // Still loading: the key waits for the children, not moves on.
+                if let Some(child) = child {
+                    move_to_row(&host, &runtime, child);
+                }
                 return;
             }
             "ArrowLeft" if on_first && entry.expanded => {
@@ -7195,7 +7203,11 @@ fn sync_quick_buttons(host: &HtmlElement, root: &ShadowRoot) {
             .is_some_and(|grouping| grouping.by().len() >= 2)
     });
     let texts = texts(host);
-    if full {
+    if is_tree(host) {
+        // A tree is its own hierarchy (issue #135): the button says why not.
+        let _ = button.set_attribute("aria-disabled", "true");
+        let _ = button.set_attribute("aria-label", &texts.tree_group_ignored);
+    } else if full {
         let _ = button.set_attribute("aria-disabled", "true");
         let _ = button.set_attribute("aria-label", &texts.grouping_full);
     } else if button.has_attribute("aria-disabled") {
