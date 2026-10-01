@@ -1,0 +1,3 @@
+# Built by `just mcp-elements` (wasm2js) and `pnpm run build` (esbuild).
+build/
+dist/
