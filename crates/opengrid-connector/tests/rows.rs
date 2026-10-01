@@ -28,9 +28,17 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
-        let schema = load_schema(&data().join("data/orders.schema.json")).expect("schema");
+        Self::of(
+            &data().join("data/orders.csv"),
+            &data().join("data/orders.schema.json"),
+        )
+    }
+
+    /// Any dataset of the suite — the tree's, say.
+    fn of(csv: &std::path::Path, schema: &std::path::Path) -> Self {
+        let schema = load_schema(schema).expect("schema");
         let stored = schema.stored();
-        let csv = std::fs::read(data().join("data/orders.csv")).expect("orders.csv");
+        let csv = std::fs::read(csv).expect("the CSV");
         let columns = load_csv(&csv, &stored, CsvOptions::default())
             .expect("the fixture")
             .to_values();
@@ -138,4 +146,30 @@ fn the_bound_counts_what_is_held_not_what_is_read() {
     .expect("a page of 5 fits a bound of 20");
     assert_eq!(page.total_count, 50, "every match is counted");
     assert_eq!(page.columns[0].first(), Some(&Value::Int64(50)));
+}
+
+/// Every tree case (E38) through the rows tier (plan point 122): the rows of
+/// the tree's scope come in pieces of seven, and the engine answers the level
+/// once all of them are in.
+#[test]
+fn a_rows_only_source_answers_every_tree_case() {
+    use opengrid_conformance::{check_tree_case, tree_cases, tree_dataset};
+    use opengrid_json::FromJson;
+    let mut failures = Vec::new();
+    for (id, case) in tree_cases() {
+        let query = opengrid_query::Query::from_json(&case["query"]).expect("a query");
+        let (csv, schema_path) = tree_dataset(query.source.as_str());
+        let connector = Rows::new(Fixture::of(&csv, &schema_path));
+        let schema = load_schema(&schema_path).expect("schema");
+        let validated = query
+            .validate(&schema, &opengrid_query::Limits::default())
+            .expect("valid");
+        let answer = block_on(connector.execute(validated)).map_err(|error| error.to_string());
+        failures.extend(
+            check_tree_case(&case, answer)
+                .into_iter()
+                .map(|problem| format!("{id}: {problem}")),
+        );
+    }
+    assert!(failures.is_empty(), "\n{}", failures.join("\n"));
 }

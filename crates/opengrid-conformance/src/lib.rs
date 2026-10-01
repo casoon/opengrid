@@ -24,8 +24,10 @@ use opengrid_types::{FieldName, Schema, Value};
 
 mod case;
 mod endpoint;
+mod tree;
 
 pub use endpoint::check_endpoint;
+pub use tree::{check_tree_case, tree_cases, tree_dataset};
 
 pub use case::{
     Case, CaseError, Checked, ExpectedTable, check_case, check_dir, load_schema, rules_covered,

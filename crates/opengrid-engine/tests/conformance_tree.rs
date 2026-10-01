@@ -11,167 +11,42 @@ mod common;
 
 use std::path::PathBuf;
 
-use opengrid_conformance::{block_on, load_schema};
+use opengrid_conformance::{block_on, check_tree_case, load_schema, tree_cases, tree_dataset};
 use opengrid_datasource::{DataSource, wire};
 use opengrid_engine::datasource::LocalDataSource;
 use opengrid_engine::ingest::{CsvOptions, load_csv};
-use opengrid_json::{FromJson, Json, ToJson};
+use opengrid_json::{FromJson, Json};
 use opengrid_query::{Limits, Query};
 
 fn suite() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../opengrid-conformance")
 }
 
-/// The source a case names, from the dataset of that name (`tree_cycle` is
-/// `tree-cycle.csv`).
-fn source(name: &str) -> (LocalDataSource, opengrid_types::Schema) {
-    let file = name.replace('_', "-");
-    let schema = load_schema(&suite().join(format!("data/{file}.schema.json"))).expect("schema");
-    let table = load_csv(
-        &common::data(&format!("{file}.csv")),
-        &schema,
-        CsvOptions::default(),
-    )
-    .expect("the CSV loads");
-    (LocalDataSource::new(table), schema)
-}
-
-fn cases() -> Vec<(String, Json)> {
-    let mut paths: Vec<PathBuf> = std::fs::read_dir(suite().join("tree-cases"))
-        .expect("the tree cases")
-        .map(|entry| entry.expect("entry").path())
-        .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
-        .collect();
-    paths.sort();
-    paths
-        .into_iter()
-        .map(|path| {
-            let text = std::fs::read_to_string(&path).expect("read");
-            let case = Json::parse(&text).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
-            (case["id"].as_str().expect("an id").to_owned(), case)
-        })
-        .collect()
-}
-
-/// What one case got wrong, or nothing.
-fn run(case: &Json) -> Vec<String> {
-    let query = Query::from_json(&case["query"]).expect("the case's query reads");
-    let (source, schema) = source(query.source.as_str());
+/// The engine's answer to one case, read back from the wire form.
+fn answer(case: &Json) -> Result<opengrid_datasource::QueryResult, String> {
+    let query = Query::from_json(&case["query"]).map_err(|e| e.to_string())?;
+    let (csv, schema_path) = tree_dataset(query.source.as_str());
+    let schema = load_schema(&schema_path).expect("schema");
+    let table = load_csv(&std::fs::read(csv).unwrap(), &schema, CsvOptions::default())
+        .expect("the CSV loads");
     let validated = query
         .validate(&schema, &Limits::default())
-        .expect("the case's query is valid");
-    let answer = block_on(source.execute(validated));
-
-    if let Some(error) = case.get("expected_error") {
-        let Err(error_text) = answer.map(|_| ()).map_err(|e| e.to_string()) else {
-            return vec!["expected an error, got an answer".to_owned()];
-        };
-        return error["contains"]
-            .as_array()
-            .expect("contains")
-            .iter()
-            .filter_map(Json::as_str)
-            .filter(|word| !error_text.contains(word))
-            .map(|word| format!("the error {error_text:?} does not say {word:?}"))
-            .collect();
-    }
-
-    let result = match answer {
-        Ok(result) => result,
-        Err(error) => return vec![format!("failed: {error}")],
-    };
+        .map_err(|e| e.to_string())?;
+    let result =
+        block_on(LocalDataSource::new(table).execute(validated)).map_err(|e| e.to_string())?;
     // Through the wire and back: what a reader of the answer gets.
-    let result = wire::result_from_json(&wire::result_to_json(&result)).expect("reads back");
-    let expected = &case["expected"];
-    let mut problems = Vec::new();
-
-    let columns: Vec<String> = result
-        .schema
-        .fields()
-        .iter()
-        .map(|f| f.name.to_string())
-        .collect();
-    let want_columns: Vec<String> = expected["columns"]
-        .as_array()
-        .expect("columns")
-        .iter()
-        .map(|c| c.as_str().unwrap().to_owned())
-        .collect();
-    if columns != want_columns {
-        problems.push(format!(
-            "columns: expected {want_columns:?}, got {columns:?}"
-        ));
-    }
-    let rows: Vec<Vec<Json>> = (0..result.row_count())
-        .map(|row| {
-            result
-                .columns
-                .iter()
-                .map(|column| column[row].to_json())
-                .collect()
-        })
-        .collect();
-    let want_rows: Vec<Vec<Json>> = expected["rows"]
-        .as_array()
-        .expect("rows")
-        .iter()
-        .map(|row| row.as_array().unwrap().clone())
-        .collect();
-    if rows != want_rows {
-        problems.push(format!("rows: expected {want_rows:?}, got {rows:?}"));
-    }
-    if let Some(total) = expected["total_count"].as_u64()
-        && total != result.total_count
-    {
-        problems.push(format!(
-            "total_count: expected {total}, got {}",
-            result.total_count
-        ));
-    }
-    let Some(tree) = &result.tree else {
-        problems.push("the answer carries no tree part".to_owned());
-        return problems;
-    };
-    let want = &expected["tree"];
-    let numbers = |key: &str| -> Vec<u64> {
-        want[key]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|n| n.as_u64().unwrap())
-            .collect()
-    };
-    let flags: Vec<bool> = want["match"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|b| b.as_bool().unwrap())
-        .collect();
-    for (name, ok) in [
-        ("children", tree.children == numbers("children")),
-        ("match", tree.matched == flags),
-        ("matches", Some(tree.matches) == want["matches"].as_u64()),
-        ("orphans", Some(tree.orphans) == want["orphans"].as_u64()),
-    ] {
-        if !ok {
-            problems.push(format!(
-                "tree.{name}: expected {}, got {tree:?}",
-                want[name]
-            ));
-        }
-    }
-    problems
+    Ok(wire::result_from_json(&wire::result_to_json(&result)).expect("reads back"))
 }
 
 /// Every tree case, answered by the engine and read back from the wire.
 #[test]
 fn the_local_engine_answers_every_tree_case() {
-    let cases = cases();
+    let cases = tree_cases();
     assert!(cases.len() >= 9, "the suite has its cases");
     let failures: Vec<String> = cases
         .iter()
         .flat_map(|(id, case)| {
-            run(case)
+            check_tree_case(case, answer(case))
                 .into_iter()
                 .map(move |problem| format!("{id}: {problem}"))
         })

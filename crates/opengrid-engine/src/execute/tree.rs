@@ -45,6 +45,22 @@ pub(crate) fn execute(
     query: &ValidatedQuery,
     tree: &ValidatedTree,
 ) -> Result<QueryResult, ExecuteError> {
+    // The scope first (plan point 122): a row outside it is not part of the
+    // tree at all, so it can be neither context nor a parent.
+    let scoped;
+    let table = match &tree.scope {
+        None => table,
+        Some(scope) => {
+            let keep: Vec<u32> = filter::evaluate(scope, table)?
+                .iter()
+                .enumerate()
+                .filter(|(_, hit)| **hit == Some(true))
+                .map(|(row, _)| row as u32)
+                .collect();
+            scoped = table.take(&keep);
+            &scoped
+        }
+    };
     let keys = column(table, tree.key.as_str())?;
     let parents = column(table, tree.parent.as_str())?;
     let rows = table.num_rows();

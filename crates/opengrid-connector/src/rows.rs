@@ -121,6 +121,9 @@ impl<R: RowSource> Rows<R> {
     /// Answers `query` from the source's rows, keeping only what it needs.
     async fn stream(&self, query: &ValidatedQuery) -> Result<QueryResult, DataSourceError> {
         let schema = self.full_schema().await?;
+        if query.tree.is_some() {
+            return self.stream_tree(&schema, query).await;
+        }
         if query.group.is_empty() && query.aggregate.is_empty() {
             self.stream_rows(&schema, query).await
         } else {
@@ -215,6 +218,38 @@ impl<R: RowSource> Rows<R> {
             page.table.to_values(),
             matched,
         ))
+    }
+
+    /// One level of a tree (E38): every row of the tree's scope is held — a
+    /// level and its counts depend on all of them (T4, T5) — and the engine
+    /// answers the level once they are in. The scope is the source's hint,
+    /// not the query's filter: the ancestors of T5 do not pass that.
+    async fn stream_tree(
+        &self,
+        schema: &Schema,
+        query: &ValidatedQuery,
+    ) -> Result<QueryResult, DataSourceError> {
+        let table_schema = schema.materialized();
+        let scope = query.tree.as_ref().and_then(|tree| tree.scope.as_ref());
+        let mut held: Vec<Table> = Vec::new();
+        let mut held_rows = 0usize;
+        let mut stream = self.source.scan(scope).await?;
+        while let Some(piece) = stream.next_piece().await? {
+            yield_now().await;
+            let table = table_of(schema, &piece)?;
+            held_rows += table.num_rows();
+            held.push(table);
+            self.check_held(held_rows, "rows of the tree")?;
+        }
+        let all = Table::concat(&table_schema, &held).map_err(backend)?;
+        let level = run(&all, query).map_err(engine)?;
+        let mut answer = QueryResult::new(
+            query.output_schema.clone(),
+            level.table.to_values(),
+            level.total_count,
+        );
+        answer.tree = level.tree;
+        Ok(answer)
     }
 
     /// A query with grouping or aggregates: partial aggregates per piece,

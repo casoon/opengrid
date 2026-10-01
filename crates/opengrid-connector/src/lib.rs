@@ -90,6 +90,56 @@ pub trait Connector: Send + Sync {
         })
     }
 
+    /// Answers one level of a tree (E38) for a source that cannot by itself
+    /// (`capabilities().tree` is false): the rows of the tree's scope — the
+    /// mandatory row filter is in it — are asked for in one query, and the
+    /// engine answers the level over them (plan point 122). A source that
+    /// answers trees gets the query through [`execute`](Self::execute).
+    fn tree<'a>(
+        &'a self,
+        query: &'a ValidatedQuery,
+    ) -> BoxFuture<'a, Result<QueryResult, DataSourceError>> {
+        Box::pin(async move {
+            let Some(tree) = &query.tree else {
+                return self.execute(query.clone()).await;
+            };
+            let schema = self.schema().await?.materialized();
+            let rows = ValidatedQuery {
+                source: query.source.clone(),
+                select: schema
+                    .fields()
+                    .iter()
+                    .map(|field| field.name.clone())
+                    .collect(),
+                // Only the scope here: the ancestors of T5 do not pass the
+                // filter and still belong to the answer.
+                filter: tree.scope.clone(),
+                group: Vec::new(),
+                aggregate: Vec::new(),
+                sort: Vec::new(),
+                offset: None,
+                limit: None,
+                tree: None,
+                output_schema: schema.clone(),
+            };
+            let answer = self.execute(rows).await?;
+            let table = opengrid_columns::Table::from_values(&answer.schema, &answer.columns)
+                .map_err(|message| DataSourceError::Backend { message })?;
+            let result = opengrid_engine::execute::execute(&table, query).map_err(|error| {
+                DataSourceError::Backend {
+                    message: error.to_string(),
+                }
+            })?;
+            let mut level = QueryResult::new(
+                query.output_schema.clone(),
+                result.table.to_values(),
+                result.total_count,
+            );
+            level.tree = result.tree;
+            Ok(level)
+        })
+    }
+
     /// Starts an export of `query`: every row of the answer, a piece at a time.
     /// Nothing heavy may have run when this returns — the server holds the
     /// [`ExportRows::canceller`] before it asks for the count.

@@ -1,0 +1,70 @@
+{
+  "id": "t2-a-parent-outside-the-scope-makes-an-orphan",
+  "rule": "T2",
+  "query": {
+    "source": "tree",
+    "select": [
+      "id",
+      "name"
+    ],
+    "tree": {
+      "parent": "parent_id",
+      "scope": {
+        "field": "name",
+        "op": "ne",
+        "value": "North"
+      }
+    },
+    "sort": [
+      {
+        "field": "id"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "id",
+      "name"
+    ],
+    "rows": [
+      [
+        1,
+        "Sales"
+      ],
+      [
+        4,
+        "Alice"
+      ],
+      [
+        5,
+        "Bob"
+      ],
+      [
+        7,
+        "Partners"
+      ],
+      [
+        9,
+        "Orphan"
+      ]
+    ],
+    "tree": {
+      "children": [
+        1,
+        1,
+        0,
+        1,
+        0
+      ],
+      "match": [
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "matches": 9,
+      "orphans": 3
+    }
+  }
+}

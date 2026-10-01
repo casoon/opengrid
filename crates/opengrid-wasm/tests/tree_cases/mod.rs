@@ -13,7 +13,10 @@ const CYCLE_SCHEMA: &str =
     include_str!("../../../opengrid-conformance/data/tree-cycle.schema.json");
 
 /// Every committed tree case, embedded: a browser test has no filesystem.
-pub const CASES: [&str; 9] = [
+pub const CASES: [&str; 12] = [
+    include_str!(
+        "../../../opengrid-conformance/tree-cases/t2-a-parent-outside-the-scope-makes-an-orphan.json"
+    ),
     include_str!(
         "../../../opengrid-conformance/tree-cases/t2-roots-are-null-parents-and-orphans.json"
     ),
@@ -28,10 +31,16 @@ pub const CASES: [&str; 9] = [
         "../../../opengrid-conformance/tree-cases/t5-a-match-comes-with-its-ancestors-as-context.json"
     ),
     include_str!(
+        "../../../opengrid-conformance/tree-cases/t5-a-match-inside-the-scope-keeps-its-context.json"
+    ),
+    include_str!(
         "../../../opengrid-conformance/tree-cases/t5-a-matching-parent-keeps-only-matching-children.json"
     ),
     include_str!(
         "../../../opengrid-conformance/tree-cases/t5-context-leads-down-to-the-match.json"
+    ),
+    include_str!(
+        "../../../opengrid-conformance/tree-cases/t5-context-never-crosses-the-scope.json"
     ),
     include_str!("../../../opengrid-conformance/tree-cases/t6-a-sort-orders-siblings.json"),
     include_str!("../../../opengrid-conformance/tree-cases/t6-siblings-page-among-themselves.json"),
