@@ -159,6 +159,8 @@ shown with `get_pivot`. See [Export](https://github.com/casoon/opengrid/blob/mai
   attributes, events, the view, styling, texts, errors
 - [Guides](https://github.com/casoon/opengrid/tree/main/docs/guides) and the
   [project page](https://casoon.github.io/opengrid/)
+- [In a chat client](https://github.com/casoon/opengrid/blob/main/docs/guides/mcp.md) —
+  the grid as an MCP App, `@casoon/opengrid-mcp` (not released yet)
 
 ## Accessible and machine-readable: the aim
 
