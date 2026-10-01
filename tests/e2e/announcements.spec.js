@@ -268,3 +268,27 @@ test.describe("the view as a value (point 59)", () => {
     expect(await announced(page)).toEqual(before);
   });
 });
+
+test.describe("tree", () => {
+  test("opening a node is said once, without a loading line between", async ({ page }) => {
+    // Issue #135: the children of a node are a query, and the reader hears the
+    // node open — not the machinery. The row is `aria-busy` while they load;
+    // the line says "expanded" once, with the result.
+    await open(page, "grid-tree.html");
+    await expect(page.locator('opengrid-grid tbody tr[aria-level="1"]')).toHaveCount(3);
+    const before = (await announced(page)).length;
+    await focusCell(page, 'td[data-row="2"][data-col="0"]');
+    await page.keyboard.press("ArrowRight");
+    await expect.poll(() => announced(page).then((a) => a.join("|"))).toContain("Sales expanded");
+
+    const said = (await announcedStates(page)).slice(before);
+    expect(said.filter(([text]) => text.includes("expanded"))).toHaveLength(1);
+    expect(said.map(([, state]) => state)).not.toContain("loading");
+
+    // Closing it again: one sentence, the other way round.
+    await page.keyboard.press("ArrowLeft");
+    await expect.poll(() => announced(page).then((a) => a.join("|"))).toContain("Sales collapsed");
+    const after = (await announced(page)).filter((text) => text.includes("collapsed"));
+    expect(after).toHaveLength(1);
+  });
+});

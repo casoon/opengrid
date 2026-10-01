@@ -208,6 +208,8 @@ An interactive `<table role="grid">`: virtualized, keyboard-driven, filterable.
 | `page-size` | Switches from scrolling to **paging**. Mutually exclusive with virtualization. |
 | `mode` | `local`, `remote`, `hybrid` or `auto`, handed to the provider unchanged. Only a provider with more than one place to run a query reads it. |
 | `group-by` | Groups the rows by up to **two** columns, outermost first: `group-by="country,customer"`. See [Grouping](#grouping). |
+| `tree` | Shows the rows as a **tree**: the field that holds a row's parent key, `tree="parent_id"`. See [Tree](#tree). |
+| `tree-key` | The field the parent key refers to. `id` when absent. |
 | `search` | Puts a **search field** above the grid: free text, or a filter written out. See [Search](#search). |
 | `facets` | Shows the **facet sidebar** — the facets a page configured with `set_columns`. See [Facets](#facets). |
 | `toolbar` | Puts a **toolbar** above the grid: the active filters and the grouping as chips, a switch for the filter row, the column list, the density. Opt-in. See [Toolbar](#toolbar). |
@@ -468,6 +470,34 @@ which leads) — there is no default, because "sum every number" would sum the i
 **While grouped, selection and editing are off.** A row number would name
 display positions — headers as well as rows — and would move on every toggle;
 the page could not map a reported change to anything.
+
+### Tree
+
+```html
+<opengrid-grid datasource="staff" columns="name,title,region"
+               tree="parent_id" tree-key="id"></opengrid-grid>
+```
+
+With `tree` set, the rows are a hierarchy — each row names its parent in the
+`tree` field, by the key in `tree-key` — and the grid is a **`treegrid`** that
+loads a level at a time: the roots first, a node's children when it is opened.
+Each level comes with every node's child count, so a leaf shows no chevron and
+offers nothing to open. Rows are indented by depth in the first column.
+
+| | |
+|---|---|
+| Keys | `Enter` / `Space` open and close a node; on its first cell `→` opens and `←` closes. `←` on a closed node or a leaf goes to its parent. |
+| Pointer | A click on a node's first cell opens or closes it. |
+| Spoken | `aria-level` (depth), `aria-posinset` / `aria-setsize` (its place among its siblings), `aria-expanded` only where there is something to open, `aria-busy` while the children load. Opening and closing is said once, with the result, as `groupExpanded` / `groupCollapsed`. |
+| Filter | A match keeps the path to it: its ancestors are shown as **context**, muted and described with `treeContext`. The status line counts matches, not the context. |
+| Orphans | A row whose parent does not exist is a root, and the status line says how many there are (`treeOrphans`). |
+| Order | Siblings are sorted by the grid's sort; the hierarchy is never broken by it. |
+| Size | A level holds at most 10 000 nodes — a larger one is refused with `treeLevelTooLarge`; narrow it with a filter. |
+| Refused | `page-size` alongside: a tree scrolls (`treeRefused`). `group-by` alongside is not used (`treeGroupIgnored`). |
+| View | `expanded` holds the open nodes, each as `[key]`, and travels in the [view](#the-view). |
+
+**In a tree, selection and editing are off** for now: a row number would name a
+display position, which moves on every toggle.
 
 ## `<opengrid-table>`
 
@@ -1058,6 +1088,10 @@ loader.module.set_texts(host, { lang: "de", loading: "Wird geladen …" });
 | `columnFull` / `nothingToAdd` | `Two column fields already` / `Nothing left to add` — an add button's name when it cannot add | |
 | `fieldRemove` / `fieldEarlier` / `fieldLater` | `Remove {field}` / `Move {field} earlier` / `Move {field} later` | `{field}` |
 | `pivotFilters` / `pivotFilterLabel` / `pivotFilterHint` | `Filters` / `Add a filter` / `field = value · Enter` — the pivot's filter group, its field's name and hint | |
+| `treeContext` | `context` — a tree's row shown only because a match is below it | |
+| `treeOrphans` | `Without a parent, shown at the top: {count}` | `{count}` |
+| `treeLevelTooLarge` | `{count} rows at one level; a level holds at most {max} — choose a filter` | `{count}`, `{max}` |
+| `treeRefused` / `treeGroupIgnored` | `no tree with page-size: a tree scrolls` / `group-by is not used in a tree` | |
 | `filterAny` / `booleanTrue` / `booleanFalse` | `any` / `yes` / `no` — the filter row's choice for a boolean column | |
 | `sourceLocal` / `sourceWorker` / `sourceRemote` / `sourceHybrid` | `local · wasm` / `worker · wasm` / `server` / `hybrid` — the footer's source, by the provider's `kind` | |
 | `queriesOne` / `queriesOther` | `{count} query` / `{count} queries` — the footer's count | `{count}` |

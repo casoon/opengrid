@@ -93,6 +93,7 @@ use crate::grid::{
 use crate::grouping::{self, Grouping};
 use crate::presentation;
 use crate::texts::texts;
+use crate::tree::{self, Tree};
 use crate::view::GridView;
 
 /// Registers `<opengrid-grid>`; safe to call more than once.
@@ -154,6 +155,11 @@ struct GridRuntime {
     /// The filter the loaded groups were counted under — a different one means
     /// the counts are stale and the group query has to run again.
     groups_filter: Option<Option<FilterExpr>>,
+    /// The tree, while `tree` is set and allowed (plan point 123, E38).
+    tree: Option<Tree>,
+    /// The filter and order the loaded levels were asked under: another one
+    /// makes them stale.
+    tree_asked: Option<String>,
     /// The reader's choice of aggregate per column, from the view (point 63).
     /// Leads over what `set_columns` configured.
     aggregate_choice: std::collections::BTreeMap<String, presentation::Summary>,
@@ -263,6 +269,8 @@ fn fresh_runtime(
         generation: 0,
         grouping: grouping_of(host).ok().flatten(),
         groups_filter: None,
+        tree: tree_of(host).ok().flatten(),
+        tree_asked: None,
         aggregate_choice: Default::default(),
         filter_row: true,
         facets: Vec::new(),
@@ -331,6 +339,19 @@ fn reset_runtime(host: &HtmlElement) {
             runtime.grouping = fresh.grouping;
         }
         runtime.groups_filter = None;
+        // A tree the same way: the same key and parent keep what is open.
+        let keep = matches!(
+            (&runtime.tree, &fresh.tree),
+            (Some(old), Some(new)) if old.key() == new.key() && old.parent() == new.parent()
+        );
+        if keep {
+            if let Some(tree) = runtime.tree.as_mut() {
+                tree.invalidate();
+            }
+        } else {
+            runtime.tree = fresh.tree;
+        }
+        runtime.tree_asked = None;
         // `filter_row` and `aggregate_choice` are the reader's, not the
         // skeleton's: a rebuild keeps them, like it keeps the column layout.
     }
@@ -357,9 +378,7 @@ fn on_connected(host: HtmlElement) {
         runtime.borrow_mut().row_height = height;
         // A `group-by` in the markup is read before anything else happens; one
         // the grid refuses is said with the first result, and it runs ungrouped.
-        if let Err(message) = grouping_of(&host) {
-            runtime.borrow_mut().state.set_notice(message);
-        }
+        announce_refusals(&host, &runtime);
         ensure_skeleton(&host);
         render(&host, false);
         run_query(&host, QueryKind::Data, false);
@@ -568,6 +587,9 @@ fn on_attribute_changed(
                 update_label(&root, new_value.as_deref());
             }
         }
+        // A tree refuses `page-size`: either way round, it is asked again.
+        PAGE_SIZE_ATTRIBUTE if host.has_attribute(grid::TREE_ATTRIBUTE) => retree(&host),
+        grid::TREE_ATTRIBUTE | grid::TREE_KEY_ATTRIBUTE => retree(&host),
         PAGE_SIZE_ATTRIBUTE => {
             // Switching between paging and scrolling changes what the window
             // means, so the grid starts at the first page either way.
@@ -804,6 +826,7 @@ fn render(host: &HtmlElement, focus_after: bool) {
             &Formatter::new(&formats(host), borrowed.state.schema()),
             paging,
             borrowed.grouping.as_ref(),
+            borrowed.tree.as_ref(),
         );
         if let Some(dom) = borrowed.dom.as_mut() {
             dom.apply_buffer(&buffer);
@@ -882,6 +905,10 @@ pub(crate) fn run_query(host: &HtmlElement, kind: QueryKind, focus: bool) {
     }
     if grid_runtime.borrow().grouping.is_some() {
         run_grouped(host, &grid_runtime, kind, focus);
+        return;
+    }
+    if grid_runtime.borrow().tree.is_some() {
+        run_tree(host, &grid_runtime, kind, focus);
         return;
     }
     let pool = pool_of(host);
@@ -1462,10 +1489,53 @@ fn on_key_down(event: KeyboardEvent) {
             return;
         }
     }
+    // A tree's node (issue #135): the keys of a group header — `Enter` and
+    // `Space` open and close it, on its first cell `→` opens and `←` closes —
+    // and `←` on a closed node or a leaf goes to its parent, so the reader
+    // climbs back up without counting rows. `→` on an open node falls through
+    // to moving, as on a group.
+    if let Some((position, entry)) = active_tree(&host)
+        && !event.ctrl_key()
+        && !event.meta_key()
+    {
+        let on_first = matches!(active, ActiveCell::Data(cell) if cell.col == 0);
+        let opens = entry.children > 0;
+        match event.key().as_str() {
+            "Enter" | " " if opens => {
+                event.prevent_default();
+                toggle_tree(&host, position);
+                return;
+            }
+            "ArrowRight" if on_first && opens && !entry.expanded => {
+                event.prevent_default();
+                toggle_tree(&host, position);
+                return;
+            }
+            "ArrowLeft" if on_first && entry.expanded => {
+                event.prevent_default();
+                toggle_tree(&host, position);
+                return;
+            }
+            "ArrowLeft" if on_first => {
+                let parent = runtime
+                    .borrow()
+                    .tree
+                    .as_ref()
+                    .and_then(|tree| tree.parent_of(position));
+                if let Some(parent) = parent {
+                    event.prevent_default();
+                    move_to_row(&host, &runtime, parent);
+                    return;
+                }
+            }
+            _ => {}
+        }
+    }
     // Grouped, a position is a display position: a selection would name
     // headers as well as rows and move on every toggle, and an edit would be
     // reported against a row number the page cannot map to anything. Both are
-    // off while `group-by` is set — recorded as an open question of point 62.
+    // off while `group-by` is set — recorded as an open question of point 62 —
+    // and in a tree until a selection names nodes by their key (issue #135).
     if is_grouped(&host)
         && (matches!(event.key().as_str(), "Enter" | " ")
             || (event.key().eq_ignore_ascii_case("a") && (event.ctrl_key() || event.meta_key())))
@@ -1715,6 +1785,33 @@ fn set_column_hidden(host: &HtmlElement, name: &str, hidden: bool) {
         host,
         &texts(host).column_visibility(name, hidden, visible, declared),
     );
+    dispatch_view(host);
+}
+
+/// Says what the attributes ask for and the grid will not do — a grouping
+/// it refuses, a tree beside `page-size` — once, riding with the next result.
+fn announce_refusals(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>) {
+    let refused = tree_of(host).err().or_else(|| grouping_of(host).err());
+    if let Some(message) = refused {
+        runtime.borrow_mut().state.set_notice(message);
+    }
+}
+
+/// Takes a new `tree` or `tree-key`: a new skeleton, from the top, nothing
+/// selected — the rows mean other things now.
+fn retree(host: &HtmlElement) {
+    let Some(root) = host.shadow_root() else {
+        return;
+    };
+    let Some(runtime) = runtime(host) else {
+        return;
+    };
+    clear_root(&root);
+    reset_runtime(host);
+    announce_refusals(host, &runtime);
+    ensure_skeleton(host);
+    render(host, false);
+    run_query(host, QueryKind::Data, false);
     dispatch_view(host);
 }
 
@@ -3021,6 +3118,18 @@ fn on_filter_clear(event: Event) {
         return;
     }
 
+    // A tree's node (issue #135): a click on its first cell — where the
+    // chevron is — opens or closes it; a leaf has nothing to open.
+    if let Ok(Some(cell)) = target.closest("tr[data-tree][aria-expanded] td[data-col=\"0\"]")
+        && let Ok(host) = root.host().dyn_into::<HtmlElement>()
+        && let Some(position) = cell
+            .get_attribute("data-row")
+            .and_then(|row| row.parse::<u64>().ok())
+    {
+        toggle_tree(&host, position);
+        return;
+    }
+
     // The selection column (point 61). The mouse path only: the keys already
     // reach it through the grid matrix, and a `click` here would otherwise fire
     // a second time for the keyboard activation.
@@ -3385,9 +3494,11 @@ pub(crate) fn current_view(host: &HtmlElement) -> Option<GridView> {
 
     let (group, expanded) = {
         let borrowed = runtime.borrow();
-        match borrowed.grouping.as_ref() {
-            Some(grouping) => (grouping.by().to_vec(), grouping.expanded()),
-            None => (Vec::new(), Vec::new()),
+        match (borrowed.grouping.as_ref(), borrowed.tree.as_ref()) {
+            (Some(grouping), _) => (grouping.by().to_vec(), grouping.expanded()),
+            // A tree's open nodes, each `[key]` (issue #135).
+            (None, Some(tree)) => (Vec::new(), tree.expanded()),
+            (None, None) => (Vec::new(), Vec::new()),
         }
     };
 
@@ -3594,6 +3705,11 @@ pub(crate) fn write_view(host: &HtmlElement, value: &JsValue) {
         borrowed.groups_filter = None;
         if let Some(grouping) = borrowed.grouping.as_mut() {
             grouping.set_expanded(&view.expanded);
+        }
+        borrowed.tree = tree_of(host).ok().flatten();
+        borrowed.tree_asked = None;
+        if let Some(tree) = borrowed.tree.as_mut() {
+            tree.set_expanded(&view.expanded);
         }
         borrowed.filter_row = view.filter_row;
         // The search is not part of a view — the prototype's views leave it out
@@ -3803,6 +3919,10 @@ fn grouping_of(host: &HtmlElement) -> Result<Option<Grouping>, String> {
     if by.is_empty() {
         return Ok(None);
     }
+    // A tree is its own hierarchy: grouping beside it is not used, and said.
+    if tree_of(host).is_ok_and(|tree| tree.is_some()) {
+        return Err(texts.tree_group_ignored.clone());
+    }
     let shown = columns_of(host);
     if let Some(missing) = by.iter().find(|name| !shown.contains(name)) {
         return Err(texts.group_invalid(missing));
@@ -3816,9 +3936,34 @@ fn grouping_of(host: &HtmlElement) -> Result<Option<Grouping>, String> {
     Ok(Some(Grouping::new(by)))
 }
 
-/// Whether the grid is grouped right now.
+/// Whether the grid is grouped, or a tree, right now: its positions are
+/// display positions, not rows.
 fn is_grouped(host: &HtmlElement) -> bool {
-    runtime(host).is_some_and(|runtime| runtime.borrow().grouping.is_some())
+    runtime(host).is_some_and(|runtime| {
+        let runtime = runtime.borrow();
+        runtime.grouping.is_some() || runtime.tree.is_some()
+    })
+}
+
+/// The tree the attributes ask for, or why it cannot be had.
+///
+/// `Ok(None)`: no `tree`. `Err`: beside `page-size` — a level is loaded whole
+/// and the display list scrolls, so there is no page to cut (issue #135).
+fn tree_of(host: &HtmlElement) -> Result<Option<Tree>, String> {
+    let Some(parent) = host
+        .get_attribute(grid::TREE_ATTRIBUTE)
+        .filter(|parent| !parent.trim().is_empty())
+    else {
+        return Ok(None);
+    };
+    if host.has_attribute(PAGE_SIZE_ATTRIBUTE) {
+        return Err(texts(host).tree_refused.clone());
+    }
+    let key = host
+        .get_attribute(grid::TREE_KEY_ATTRIBUTE)
+        .filter(|key| !key.trim().is_empty())
+        .unwrap_or_else(|| "id".to_owned());
+    Ok(Some(Tree::new(key.trim(), parent.trim())))
 }
 
 /// Takes a new `group-by`: starts at the top, drops the selection, and says it
@@ -4289,6 +4434,271 @@ fn active_group(host: &HtmlElement) -> Option<(u64, bool)> {
         grouping::Item::Group { expanded, .. } => Some((row, expanded)),
         // The total opens nothing; `Enter` on it is simply not a toggle.
         grouping::Item::Row { .. } | grouping::Item::Total { .. } => None,
+    }
+}
+
+/// The tree's counterpart of [`run_grouped`] (issue #135, plan point 123).
+///
+/// 1. the roots, when they are not loaded or the filter or order changed;
+/// 2. the children of every open node that is shown and has none yet — a
+///    level at a time until nothing open is missing, so a restored view opens
+///    nodes deep down;
+/// 3. no query for the window: every shown row is in a loaded level, and the
+///    page is cut from them.
+///
+/// Each level is asked whole, at most [`tree::MAX_LEVEL`] siblings; a larger
+/// one is a filter's job and said so. The result goes the way of every other
+/// one: [`settle`], one render.
+fn run_tree(
+    host: &HtmlElement,
+    grid_runtime: &Rc<RefCell<GridRuntime>>,
+    kind: QueryKind,
+    focus: bool,
+) {
+    let Some(provider) = provider(host) else {
+        return;
+    };
+    let Some(source) = host.get_attribute(DATASOURCE_ATTRIBUTE) else {
+        return;
+    };
+    let columns = columns_of(host);
+    let pool = pool_of(host);
+    let mode = host.get_attribute(MODE_ATTRIBUTE).unwrap_or_default();
+
+    let effective = effective_filter(host, &grid_runtime.borrow(), None);
+    let filter = match effective {
+        Ok(filter) => filter,
+        Err(message) => {
+            grid_runtime
+                .borrow_mut()
+                .state
+                .set_status(GridStatus::Error(message));
+            render(host, false);
+            return;
+        }
+    };
+    let (sorts, offset, generation, key, parent) = {
+        let mut runtime = grid_runtime.borrow_mut();
+        let generation = runtime.generation + 1;
+        runtime.generation = generation;
+        let sorts = runtime.state.sort_keys();
+        // The levels hold the rows of one filter in one order; under another
+        // they are asked again, and what is open stays open.
+        let asked = format!(
+            "{} {sorts:?}",
+            filter
+                .as_ref()
+                .map(|filter| opengrid_json::ToJson::to_json(filter).to_string())
+                .unwrap_or_default()
+        );
+        if runtime.tree_asked.as_ref() != Some(&asked) {
+            if let Some(tree) = runtime.tree.as_mut() {
+                tree.invalidate();
+            }
+            runtime.tree_asked = Some(asked);
+        }
+        let Some(tree) = runtime.tree.as_ref() else {
+            return;
+        };
+        let (key, parent) = (tree.key().to_owned(), tree.parent().to_owned());
+        (
+            sorts,
+            runtime.state.window().offset,
+            generation,
+            key,
+            parent,
+        )
+    };
+    if kind == QueryKind::Data {
+        grid_runtime
+            .borrow_mut()
+            .state
+            .set_status(GridStatus::Loading);
+        render(host, false);
+        refresh_facets(host);
+    }
+    grid_runtime.borrow_mut().queries = 0;
+
+    // The key rides along when the grid does not show it: a node is named by
+    // it, and its children are asked with it.
+    let width = columns.len();
+    let mut select = columns.clone();
+    let key_column = match select.iter().position(|column| *column == key) {
+        Some(at) => at,
+        None => {
+            select.push(key.clone());
+            width
+        }
+    };
+
+    let host = host.clone();
+    let grid_runtime = grid_runtime.clone();
+    spawn_local(async move {
+        let stale = |runtime: &Rc<RefCell<GridRuntime>>| runtime.borrow().generation != generation;
+        let fail = |message: String| settle(&host, generation, Err(message), focus);
+
+        let mut schema: Option<opengrid_types::Schema> = None;
+        loop {
+            // The roots first; then the first open node still missing.
+            let under = {
+                let runtime = grid_runtime.borrow();
+                let Some(tree) = runtime.tree.as_ref() else {
+                    return;
+                };
+                if !tree.is_loaded() {
+                    None
+                } else {
+                    match tree.missing().into_iter().next() {
+                        Some(key) => Some(key),
+                        None => break,
+                    }
+                }
+            };
+            let query = grid::tree_query_json(
+                &source,
+                &select,
+                &sorts,
+                filter.as_ref(),
+                tree::tree_part(&key, &parent, under.as_ref()),
+                tree::MAX_LEVEL,
+            );
+            let result = match ask(&host, &provider, &grid_runtime, &query, &mode).await {
+                Ok(result) => result,
+                Err(message) => return fail(message),
+            };
+            if stale(&grid_runtime) {
+                return;
+            }
+            if result.total_count > tree::MAX_LEVEL {
+                return fail(
+                    texts(&host).tree_level_too_large(result.total_count, tree::MAX_LEVEL),
+                );
+            }
+            let level = match tree::Level::from_result(&result, width, key_column) {
+                Ok(level) => level,
+                Err(message) => return fail(message),
+            };
+            schema.get_or_insert_with(|| {
+                opengrid_types::Schema::new(
+                    result.schema.fields().iter().take(width).cloned().collect(),
+                )
+            });
+            let (matches, orphans) = result
+                .tree
+                .as_ref()
+                .map_or((0, 0), |tree| (tree.matches, tree.orphans));
+            let mut runtime = grid_runtime.borrow_mut();
+            let runtime = &mut *runtime;
+            let Some(tree) = runtime.tree.as_mut() else {
+                return;
+            };
+            // Orphans stand at the top (T2): said when there are some, and
+            // not again for the same count under the next filter.
+            if under.is_none() && orphans > 0 && orphans != tree.orphans() {
+                runtime.state.set_notice(texts(&host).tree_orphans(orphans));
+            }
+            tree.set_level(
+                under.as_ref().map(|key| key.to_string()),
+                level,
+                matches,
+                orphans,
+            );
+        }
+
+        // The window, cut from the loaded levels.
+        let result = {
+            let mut runtime = grid_runtime.borrow_mut();
+            let schema = schema.unwrap_or_else(|| runtime.state.schema().clone());
+            let Some(tree) = runtime.tree.as_ref() else {
+                return;
+            };
+            let total = tree.len();
+            // A node closed under the window shortens the list; the window
+            // stays inside it, as with a group.
+            let offset = grid::window_offset_for_row(offset.min(total), total, pool);
+            let page = tree.page(offset, pool, width);
+            runtime.state.set_window(Window::new(offset, pool));
+            opengrid_datasource::QueryResult::new(schema, page, total)
+        };
+        settle(&host, generation, Ok(result), focus);
+    });
+}
+
+/// Opens or closes the tree's node at `position` — the counterpart of
+/// [`toggle_group`]: the focus stays, the change is said once with the
+/// result, and only what is missing is asked.
+fn toggle_tree(host: &HtmlElement, position: u64) {
+    let Some(runtime) = runtime(host) else {
+        return;
+    };
+    let message = {
+        let mut borrowed = runtime.borrow_mut();
+        let schema = borrowed.state.schema().clone();
+        let Some(tree) = borrowed.tree.as_mut() else {
+            return;
+        };
+        let Some(open) = tree.toggle(position) else {
+            return;
+        };
+        let Some(count) = tree.entry_at(position).map(|entry| entry.children) else {
+            return;
+        };
+        let value = tree
+            .page(position, 1, 1)
+            .into_iter()
+            .next()
+            .and_then(|values| values.into_iter().next())
+            .unwrap_or(Value::Null);
+        let column = columns_of(host).first().cloned().unwrap_or_default();
+        let texts = texts(host);
+        let label = grid::group_value_text(
+            &value,
+            &column,
+            schema.fields(),
+            &texts,
+            &Formatter::new(&formats(host), &schema),
+        );
+        texts.group_toggled(&label, count, open)
+    };
+    runtime.borrow_mut().state.set_notice(message);
+    run_query(host, QueryKind::Window, true);
+    dispatch_view(host);
+}
+
+/// The display position of the tree's node the active cell stands on, and
+/// what it is.
+fn active_tree(host: &HtmlElement) -> Option<(u64, tree::Entry)> {
+    let runtime = runtime(host)?;
+    let borrowed = runtime.borrow();
+    let row = borrowed.active.row()?;
+    let entry = borrowed.tree.as_ref()?.entry_at(row)?.clone();
+    Some((row, entry))
+}
+
+/// Moves the focus to the first cell of the row at `row` — a node's parent
+/// (issue #135) — loading the window around it when it is not in view.
+fn move_to_row(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>, row: u64) {
+    let (from, window, total) = {
+        let runtime = runtime.borrow();
+        (
+            runtime.active,
+            runtime.state.window(),
+            runtime.state.total_count(),
+        )
+    };
+    let next = ActiveCell::Data(CellRef { row, col: 0 });
+    runtime.borrow_mut().set_active(next);
+    if row < window.offset || row >= window.offset + window.count {
+        let pool = pool_of(host);
+        let offset = grid::window_offset_for_row(row, total, pool);
+        runtime
+            .borrow_mut()
+            .state
+            .set_window(Window::new(offset, pool));
+        run_query(host, QueryKind::Window, true);
+    } else if let Some(root) = host.shadow_root() {
+        let viewport = runtime.borrow().viewport.clone();
+        focus_from(&root, viewport.as_ref(), from, next);
     }
 }
 
