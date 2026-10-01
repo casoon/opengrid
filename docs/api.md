@@ -37,7 +37,7 @@ instead.
 | `set_texts(host, texts)` | Overrides any subset of the [texts](#texts). Call it **before** `set_provider` and the component renders the right words from its first paint. |
 | `set_formats(host, formats)` | Per-column display formatting — see [`<opengrid-grid>`](#opengrid-grid). |
 | `set_choices(host, choices)` | Per-column editor choices: `{ customer: ["Alpha", "Beta"] }` turns that column's editor into a `<select>`. |
-| `get_view(host)` / `set_view(host, view)` | Reads and applies the whole [view](#the-view) in one step. |
+| `get_view(host)` / `set_view(host, view, options?)` | Reads and applies the whole [view](#the-view) in one step; `options.notice` is said with the result. |
 | `set_columns(host, columns)` | Per-column presentation — see [`<opengrid-grid>`](#opengrid-grid). |
 | `get_query(host)` | The query of the current view, without a window — what an [export](#exporting-the-view) sends. |
 | `get_pivot(host, options)` | The pivot as it is shown, as CSV — see [exporting a pivot](#exporting-a-pivot). |
@@ -695,6 +695,7 @@ whenever the reader changes any of it.
 | Nothing partial | A view naming a column this grid does not have is reported in the status line and applied **not at all**. A grid that looks restored and is not is the worse failure. |
 | The focus | Stays where it is. A page applies a view from its own control — a tab, a menu — and keeps the focus there; only a grid that had the focus gets it back, on its active cell. |
 | Setting what it has | Costs nothing and says nothing — a page that writes the view back on every event must not make the grid talk to itself. |
+| Why it changed | `set_view(host, view, { notice })`: the page's sentence — "Saved view Q3 applied", "Filtered by the assistant" — is said **once, with the result**, in the one live region: `17 matches · Filtered by the assistant`. A second live region of the page would be a second utterance. A view the element already has says nothing, notice or not. The same on `<opengrid-pivot>`. |
 | `group`, `expanded` | The grouping and its open groups. A path of keys that matches no group opens nothing. |
 | `aggregates` | The reader's aggregate per column, `{ amount: "sum" }`. Leads over `set_columns`. |
 | `filterRow` | Whether the filter row shows. `true` unless turned off. |
