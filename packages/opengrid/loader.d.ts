@@ -51,10 +51,13 @@ export interface OpengridModule {
    * a grid's view is never widened to either kind.
    */
   get_view<V extends PivotView>(host: HTMLElement): V | null;
-  /** Applies a view in one step and one query. Parts left out keep their default. */
-  set_view(host: HTMLElement, view: ViewInput): void;
+  /**
+   * Applies a view in one step and one query. Parts left out keep their default.
+   * `options.notice` is said once, with the result (issue #146).
+   */
+  set_view(host: HTMLElement, view: ViewInput, options?: SetViewOptions): void;
   /** A pivot's view: `rows`, `columns` and `values` at once, one query. */
-  set_view(host: HTMLElement, view: PivotViewInput): void;
+  set_view(host: HTMLElement, view: PivotViewInput, options?: SetViewOptions): void;
   /** Per-column presentation; narrows what the schema allows, never widens it. */
   set_columns(host: HTMLElement, columns: Columns): void;
   /**
@@ -570,6 +573,16 @@ export interface PivotSort {
   field: string;
   by?: string;
   direction: "asc" | "desc";
+}
+
+/** The second argument of `set_view` (issue #146). */
+export interface SetViewOptions {
+  /**
+   * A sentence of the page — "Saved view Q3 applied", "Filtered by the
+   * assistant" — said once in the status line together with the result that
+   * follows. A view the element already has says nothing, notice or not.
+   */
+  notice?: string;
 }
 
 /** What `set_view` takes for a pivot: a part left out is empty. */

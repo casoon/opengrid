@@ -250,6 +250,43 @@ test.describe("the view as a value (point 59)", () => {
     expect(ready, "one query, so one result").toHaveLength(1);
   });
 
+  test("a view with a notice says it once, with the result (issue #146)", async ({ page }) => {
+    // The page says why the grid changed — a saved view, an assistant — in the
+    // same utterance as the new result, not in a second live region.
+    await open(page, "grid-view.html");
+    await page.waitForFunction(() => window.__opengridModule);
+    await expect.poll(() => announced(page).then((said) => said.length)).toBeGreaterThan(0);
+    const alreadySaid = (await announcedStates(page)).length;
+
+    await page.evaluate(() => {
+      window.__opengridModule.set_view(
+        document.querySelector("opengrid-grid"),
+        { filters: [{ column: "country", op: "eq", value: "DE" }] },
+        { notice: "Filtered by the assistant" },
+      );
+    });
+    await expect
+      .poll(() => announced(page).then((said) => said.at(-1)))
+      .toMatch(/matches.*Filtered by the assistant/);
+    await page.waitForTimeout(250);
+
+    const said = (await announcedStates(page)).slice(alreadySaid);
+    const ready = said.filter(([, state]) => state === "ready");
+    expect(ready, "one result").toHaveLength(1);
+    expect(said.filter(([text]) => text.includes("Filtered by the assistant"))).toHaveLength(1);
+    expect(ready[0][0]).toMatch(/^52 matches · Filtered by the assistant$/);
+
+    // The view the grid already has, notice or not: nothing.
+    const before = (await announced(page)).length;
+    await page.evaluate(() => {
+      const host = document.querySelector("opengrid-grid");
+      const module = window.__opengridModule;
+      module.set_view(host, module.get_view(host), { notice: "Filtered by the assistant" });
+    });
+    await page.waitForTimeout(250);
+    expect((await announced(page)).length).toBe(before);
+  });
+
   test("setting the view a grid already has says nothing at all", async ({ page }) => {
     // A no-op has to be silent. A page that writes the view back on every
     // event — which is exactly what a "saved views" bar does — would otherwise
