@@ -24,6 +24,9 @@ pub struct DataSourceCapabilities {
     pub pivot: bool,
     pub calculated_fields: bool,
     pub streaming: bool,
+    /// Answers one level of a tree (E38): the children of a node with their
+    /// counts, matches with their ancestors.
+    pub tree: bool,
 }
 
 impl DataSourceCapabilities {
@@ -37,10 +40,11 @@ impl DataSourceCapabilities {
         pivot: true,
         calculated_fields: true,
         streaming: true,
+        tree: true,
     };
 }
 
-const FLAGS: [&str; 8] = [
+const FLAGS: [&str; 9] = [
     "filter",
     "sort",
     "group",
@@ -49,6 +53,7 @@ const FLAGS: [&str; 8] = [
     "pivot",
     "calculated_fields",
     "streaming",
+    "tree",
 ];
 
 impl FromJson for DataSourceCapabilities {
@@ -63,13 +68,16 @@ impl FromJson for DataSourceCapabilities {
             pivot: fields.read_or_default("pivot")?,
             calculated_fields: fields.read_or_default("calculated_fields")?,
             streaming: fields.read_or_default("streaming")?,
+            tree: fields.read_or_default("tree")?,
         })
     }
 }
 
 impl ToJson for DataSourceCapabilities {
+    /// `tree` only when the source has it: a reader from before E38 rejects
+    /// a key it does not know, and a source without trees says nothing new.
     fn to_json(&self) -> Json {
-        opengrid_json::json!({
+        let mut json = opengrid_json::json!({
             "filter": self.filter,
             "sort": self.sort,
             "group": self.group,
@@ -78,6 +86,32 @@ impl ToJson for DataSourceCapabilities {
             "pivot": self.pivot,
             "calculated_fields": self.calculated_fields,
             "streaming": self.streaming,
-        })
+        });
+        if self.tree
+            && let Json::Object(object) = &mut json
+        {
+            object.insert("tree".to_owned(), Json::Bool(true));
+        }
+        json
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `tree` is written only when a source has it, so a reader from before
+    /// E38 still reads every other declaration (#129).
+    #[test]
+    fn tree_travels_only_when_true() {
+        let without = DataSourceCapabilities {
+            tree: false,
+            ..DataSourceCapabilities::ALL
+        };
+        assert!(!opengrid_json::to_string(&without).contains("tree"));
+        let with = opengrid_json::to_string(&DataSourceCapabilities::ALL);
+        assert!(with.contains("\"tree\":true"));
+        let read: DataSourceCapabilities = opengrid_json::from_str(&with).unwrap();
+        assert_eq!(read, DataSourceCapabilities::ALL);
     }
 }

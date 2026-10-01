@@ -362,6 +362,7 @@ pub fn grouping_sets(
             sort,
             offset: None,
             limit: None,
+            tree: None,
         };
         sets.push(query.validate(schema, limits)?);
     }
@@ -421,6 +422,7 @@ fn order_sets(
                 .collect(),
             offset: None,
             limit: None,
+            tree: None,
         };
         orders.push((depth, query.validate(schema, limits)?));
     }

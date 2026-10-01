@@ -51,6 +51,18 @@ The body's `source` must equal the path's; a mismatch is a `422` at `source`.
   [Query semantics](guides/query-semantics.md). A server that answers differently gives the
   browser different results from the engine in the tab.
 
+A query may ask for **one level of a tree** (E38): `tree: { key?, parent, under? }` — `key`
+(default `"id"`) and `parent` name the hierarchy, `under` the node whose children are asked
+for; without it, the roots. A root is a node whose parent is NULL or names no node (an
+orphan); a key twice or a cycle is an error. With a filter the level shows the matches **and
+their ancestors**, the ancestors that do not match as context. A sort orders siblings, ties by
+the key; paging is among siblings. The answer is the ordinary result of that level plus
+`tree: { children, match, matches, orphans }` — per row its visible children and whether it
+matches, and for the whole tree the matches and the orphans. A tree query cannot also group.
+Sources that answer trees say so with the capability `tree`; the server refuses a tree query
+for any other source, and — until the mandatory row filter is applied before the ancestors are
+added — for a source that has one.
+
 The pivot query is `{ source, rows, columns, values: [{ field, fn, as }], filter?, sort? }`.
 
 `sort` orders the rows of a level among their siblings: `[{ field, by?, direction }]`, where

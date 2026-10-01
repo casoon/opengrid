@@ -19,6 +19,21 @@ pub struct QueryResult {
     /// Rows that matched the filter, **before** `offset`/`limit` — the number the
     /// grid shows next to the page (`aria-rowcount`, "showing 1–50 of 312").
     pub total_count: u64,
+    /// For one level of a tree (E38): what each row is, beyond its values.
+    pub tree: Option<TreeLevel>,
+}
+
+/// What a tree query answers beside the rows of its level (E38, T2–T5).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct TreeLevel {
+    /// Per row of the page: how many visible children it has (T4).
+    pub children: Vec<u64>,
+    /// Per row of the page: a match, or an ancestor shown as context (T5).
+    pub matched: Vec<bool>,
+    /// Matches in the whole tree — the count a reader is told (T5).
+    pub matches: u64,
+    /// Nodes whose parent does not exist, shown as roots (T2).
+    pub orphans: u64,
 }
 
 impl QueryResult {
@@ -28,6 +43,7 @@ impl QueryResult {
             schema,
             columns,
             total_count,
+            tree: None,
         }
     }
 

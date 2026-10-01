@@ -1,0 +1,8 @@
+{
+  "expect": "TreeParentTypeMismatch",
+  "query": {
+    "source": "orders",
+    "select": ["customer"],
+    "tree": { "key": "customer", "parent": "amount" }
+  }
+}

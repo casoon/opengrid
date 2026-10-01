@@ -1,0 +1,8 @@
+{
+  "expect": "ValueTypeMismatch",
+  "query": {
+    "source": "orders",
+    "select": ["amount"],
+    "tree": { "key": "amount", "parent": "amount", "under": "ten" }
+  }
+}
