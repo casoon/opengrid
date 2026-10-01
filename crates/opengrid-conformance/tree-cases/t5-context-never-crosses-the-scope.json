@@ -1,0 +1,40 @@
+{
+  "id": "t5-context-never-crosses-the-scope",
+  "rule": "T5",
+  "query": {
+    "source": "tree",
+    "select": [
+      "id"
+    ],
+    "tree": {
+      "parent": "parent_id",
+      "scope": {
+        "field": "region",
+        "op": "eq",
+        "value": "US"
+      }
+    },
+    "filter": {
+      "field": "name",
+      "op": "eq",
+      "value": "Eve"
+    },
+    "sort": [
+      {
+        "field": "id"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "id"
+    ],
+    "rows": [],
+    "tree": {
+      "children": [],
+      "match": [],
+      "matches": 0,
+      "orphans": 1
+    }
+  }
+}

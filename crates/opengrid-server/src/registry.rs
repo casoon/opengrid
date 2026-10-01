@@ -221,20 +221,17 @@ pub enum PrepareError {
     Pivot(PivotError),
     /// The server's own configuration and the caller's context do not fit.
     Context(String),
-    /// A tree query (E38) this source cannot answer as it is configured.
-    Tree(String),
 }
 
 impl Source {
-    /// What this source answers, as the server will answer it: the
-    /// connector's capabilities, less a tree past a mandatory row filter,
-    /// which [`prepare`](Self::prepare) refuses (#129).
+    /// What this source answers, as the server answers it: the connector's
+    /// capabilities, and a tree whatever the connector — one that cannot
+    /// answers it through [`Connector::tree`] (plan point 122).
     pub fn capabilities(&self) -> opengrid_datasource::DataSourceCapabilities {
-        let mut capabilities = self.data.capabilities();
-        if self.row_filter.is_some() {
-            capabilities.tree = false;
+        opengrid_datasource::DataSourceCapabilities {
+            tree: true,
+            ..self.data.capabilities()
         }
-        capabilities
     }
 
     /// Turns a client's query into the query that actually runs.
@@ -252,29 +249,25 @@ impl Source {
             .validate(&self.client_schema, limits)
             .map_err(PrepareError::Validation)?;
 
-        // A tree goes only to a source that answers one — another would drop
-        // the part and answer the whole table. And not past a mandatory row
-        // filter yet: T5 shows ancestors as context whether they pass the
-        // filter or not, so another tenant's node could appear as one. Plan
-        // point 122 applies the row filter before the ancestors are added.
-        if query.tree.is_some() {
-            if !self.data.capabilities().tree {
-                return Err(PrepareError::Tree(format!(
-                    "tree: source {:?} answers no tree query",
-                    self.name
-                )));
-            }
-            if self.row_filter.is_some() {
-                return Err(PrepareError::Tree(format!(
-                    "tree: source {:?} has a mandatory row filter, and a tree past one \
-                     is not answered yet",
-                    self.name
-                )));
-            }
-        }
-
         let query = match &self.row_filter {
             None => query,
+            // A tree (plan point 122): the row filter decides which rows the
+            // tree consists of — not which rows match. Another tenant's row is
+            // then neither a match nor context nor a child, and a node whose
+            // parent belongs to one is an orphan. On the query's filter it
+            // would only stop matches, and T5 would show such a row as context.
+            Some(filter) if query.tree.is_some() => {
+                let clause = build_row_filter(filter, context)?;
+                let mut tree = query.tree.clone().expect("a tree");
+                tree.scope = Some(match tree.scope {
+                    None => clause,
+                    Some(existing) => FilterExpr::And(vec![existing, clause]),
+                });
+                Query {
+                    tree: Some(tree),
+                    ..query
+                }
+            }
             Some(filter) => {
                 let clause = build_row_filter(filter, context)?;
                 let combined = match query.filter {
