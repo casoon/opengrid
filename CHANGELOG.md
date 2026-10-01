@@ -18,6 +18,23 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-10-01
+
+**Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).
+**Browsers:** Chromium (the whole e2e suite, 1053 passed) and WebKit (Playwright's, not Safari:
+519 passed, 10 skipped). Firefox: **not run**.
+
+The pivot grows: two column dimensions with a named header, and limits set by a measurement of
+what a browser draws as a table in about a second.
+
+**What breaks:**
+- A pivot over the new budget of 131 072 cells is an error now, though its rows and columns are
+  each inside their limits — 2 000 rows × 256 columns was allowed before (E39).
+- Rust: `PivotLimits` has a new field, `max_cells`.
+
+**Module sizes** (brotli, `just measure-modules`): the elements 224.0 → 224.8 KiB, the engine
+118.8 KiB, both inside their bounds.
+
 ### Fixed
 
 - **An answer no longer takes the focus away in `<opengrid-pivot>`** ([#124](https://github.com/casoon/opengrid/issues/124)).
