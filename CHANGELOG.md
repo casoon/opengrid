@@ -20,6 +20,18 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Added
 
+- **The tree on the server, and the tenant rule** ([#131](https://github.com/casoon/opengrid/issues/131), plan point 122).
+  The tree part takes `scope`, a filter that decides which rows the tree consists of; the server
+  puts its mandatory row filter there, so another tenant's row is never a match, context or child
+  and a node under one becomes an orphan. Every connector answers a tree: the file and rows tiers
+  through the engine, SQLite, PostgreSQL and any other through `Connector::tree`, which asks for
+  the rows of the scope and lets the engine answer the level. `GET /source` reports `tree` for
+  every source. A tree answers in JSON even where the binary form is preferred. The tree
+  conformance cases (now twelve, three on `scope`) pass against a file, the rows tier, SQLite and
+  PostgreSQL through `POST /query`.
+
+### Added
+
 - **One level of a tree, in the engine** ([#129](https://github.com/casoon/opengrid/issues/129), E38).
   A query takes `tree: { key?, parent, under? }` and answers the children of `under` (or the
   roots) with `tree: { children, match, matches, orphans }` beside the rows: orphans are roots,

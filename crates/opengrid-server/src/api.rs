@@ -170,7 +170,17 @@ async fn query(
         &state.registry.limits,
     )?;
 
-    let executed = tokio::time::timeout(state.timeout, source.data.execute(validated))
+    // A tree goes to a connector that answers trees as it is, and to any
+    // other through its tree path (plan point 122).
+    let tree = validated.tree.is_some();
+    let answering = async {
+        if tree && !source.data.capabilities().tree {
+            source.data.tree(&validated).await
+        } else {
+            source.data.execute(validated.clone()).await
+        }
+    };
+    let executed = tokio::time::timeout(state.timeout, answering)
         .await
         .map_err(|_| {
             WireError::new(
@@ -184,7 +194,9 @@ async fn query(
 
     let result = executed.map_err(source_failed)?;
 
-    if wants_columns(&headers) {
+    // The binary form has no place for a tree's part yet: a tree answers in
+    // JSON whatever was preferred, which every client reads.
+    if wants_columns(&headers) && result.tree.is_none() {
         let table = opengrid_columns::Table::from_values(&result.schema, &result.columns)
             .map_err(|message| WireError::new(ErrorCode::Backend, message))?;
         return Ok(columns_response(opengrid_columns::wire::encode_result(
@@ -325,7 +337,6 @@ fn prepare_failed(error: PrepareError) -> Failure {
         // A configuration that does not fit the caller: never fall back to
         // running without the mandatory filter.
         PrepareError::Context(message) => WireError::new(ErrorCode::Backend, message),
-        PrepareError::Tree(message) => WireError::new(ErrorCode::Validation, message),
     }
     .into()
 }

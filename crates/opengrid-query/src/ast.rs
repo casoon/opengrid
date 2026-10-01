@@ -39,12 +39,21 @@ pub struct TreeSpec {
     pub key: FieldName,
     pub parent: FieldName,
     pub under: Option<Json>,
+    /// Which rows the tree consists of (plan point 122): a row outside the
+    /// scope does not exist — not as a match, not as context, not as a child —
+    /// and a node whose parent is outside is an orphan. The server puts the
+    /// mandatory row filter (E16) here, so no other tenant's row shows.
+    pub scope: Option<FilterExpr>,
 }
 
 impl FromJson for TreeSpec {
-    /// `{ "key"?, "parent", "under"? }`; `key` defaults to `id`.
+    /// `{ "key"?, "parent", "under"?, "scope"? }`; `key` defaults to `id`.
     fn from_json(json: &Json) -> Result<Self, Error> {
-        let fields = Fields::of(json, "struct TreeSpec", &["key", "parent", "under"])?;
+        let fields = Fields::of(
+            json,
+            "struct TreeSpec",
+            &["key", "parent", "under", "scope"],
+        )?;
         Ok(TreeSpec {
             key: match fields.read_optional("key")? {
                 Some(key) => key,
@@ -55,17 +64,22 @@ impl FromJson for TreeSpec {
                 .optional("under")
                 .filter(|under| !under.is_null())
                 .cloned(),
+            scope: fields.read_optional("scope")?,
         })
     }
 }
 
 impl ToJson for TreeSpec {
     fn to_json(&self) -> Json {
-        opengrid_json::json!({
+        let mut json = opengrid_json::json!({
             "key": self.key,
             "parent": self.parent,
             "under": self.under.clone().unwrap_or(Json::Null),
-        })
+        });
+        if let (Some(scope), Json::Object(object)) = (&self.scope, &mut json) {
+            object.insert("scope".to_owned(), scope.to_json());
+        }
+        json
     }
 }
 

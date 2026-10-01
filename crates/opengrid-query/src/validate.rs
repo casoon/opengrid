@@ -63,6 +63,8 @@ pub struct ValidatedTree {
     pub key: FieldName,
     pub parent: FieldName,
     pub under: Option<GridValue>,
+    /// The rows the tree consists of (see [`TreeSpec::scope`]).
+    pub scope: Option<ValidatedFilter>,
 }
 
 /// A filter whose literals have been read against the field types.
@@ -206,6 +208,10 @@ impl Query {
                     parent: tree.parent.clone(),
                     under: match &tree.under {
                         Some(under) => Some(coerce(under, key, "tree.under")?),
+                        None => None,
+                    },
+                    scope: match &tree.scope {
+                        Some(scope) => Some(validate_filter(scope, schema, "tree.scope")?),
                         None => None,
                     },
                 })
@@ -442,6 +448,7 @@ impl From<&ValidatedQuery> for Query {
                 key: tree.key.clone(),
                 parent: tree.parent.clone(),
                 under: tree.under.as_ref().map(opengrid_json::ToJson::to_json),
+                scope: tree.scope.as_ref().map(FilterExpr::from),
             }),
         }
     }
