@@ -1096,6 +1096,7 @@ dependencies = [
  "opengrid-columns",
  "opengrid-conformance",
  "opengrid-connector",
+ "opengrid-connector-sqlite",
  "opengrid-datasource",
  "opengrid-datasource-postgres",
  "opengrid-engine",
