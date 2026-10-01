@@ -121,6 +121,11 @@ pub struct PivotLimits {
     pub max_columns: usize,
     /// How many rows the answer may have, subtotals included.
     pub max_rows: usize,
+    /// How many cells — rows times generated columns — the answer may have
+    /// (E39, issue #122). A browser draws a native table in time proportional
+    /// to its cells, whatever their shape; this is the budget that keeps a
+    /// pivot drawn in about a second.
+    pub max_cells: usize,
 }
 
 impl Default for PivotLimits {
@@ -128,7 +133,8 @@ impl Default for PivotLimits {
         Self {
             max_column_dimensions: 2,
             max_columns: 256,
-            max_rows: 2000,
+            max_rows: 10_000,
+            max_cells: 131_072,
         }
     }
 }
@@ -171,6 +177,12 @@ pub enum PivotError {
     TooManyColumns { found: usize, maximum: usize },
     /// The answer would be longer than [`PivotLimits::max_rows`].
     TooManyRows { found: usize, maximum: usize },
+    /// The answer would have more cells than [`PivotLimits::max_cells`].
+    TooManyCells {
+        rows: usize,
+        columns: usize,
+        maximum: usize,
+    },
     /// A sort that names no row dimension, a level twice, or a measure the
     /// pivot does not have.
     Sort { reason: String },
@@ -196,6 +208,16 @@ impl std::fmt::Display for PivotError {
                 f,
                 "the pivot would have {found} rows, the maximum is {maximum} — \
                  narrow the filter"
+            ),
+            PivotError::TooManyCells {
+                rows,
+                columns,
+                maximum,
+            } => write!(
+                f,
+                "the pivot would have {rows} rows by {columns} columns, {} cells; the \
+                 maximum is {maximum} — narrow the filter, or choose fewer dimensions",
+                rows * columns
             ),
             PivotError::Sort { reason } => write!(f, "sort: {reason}"),
         }

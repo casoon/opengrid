@@ -457,5 +457,6 @@ async fn a_source_describes_its_pivot_limits() {
     let described: opengrid_json::Json = opengrid_json::from_str(&body).expect("JSON");
     assert_eq!(described["pivot_limits"]["max_column_dimensions"], 2);
     assert_eq!(described["pivot_limits"]["max_columns"], 256);
-    assert_eq!(described["pivot_limits"]["max_rows"], 2000);
+    assert_eq!(described["pivot_limits"]["max_rows"], 10000);
+    assert_eq!(described["pivot_limits"]["max_cells"], 131072);
 }
