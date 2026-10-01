@@ -157,28 +157,42 @@ async fn ask(app: axum::Router, token: &str, query: &str) -> Result<QueryResult,
         .method("POST")
         .uri(format!("/query/{source}"))
         .header(header::CONTENT_TYPE, "application/json")
-        // A tree answers in JSON even where the binary form is preferred.
+        // The binary form: it carries the tree's part too (#135).
         .header(header::ACCEPT, "application/vnd.opengrid.columns")
         .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::from(query.to_owned()))
         .unwrap();
     let response = app.oneshot(request).await.expect("the router answers");
     let status = response.status();
-    let body = String::from_utf8(
-        response
-            .into_body()
-            .collect()
-            .await
-            .unwrap()
-            .to_bytes()
-            .to_vec(),
-    )
-    .unwrap();
-    if status == StatusCode::OK {
-        result_from_json(&body).map_err(|error| format!("{error}: {body}"))
-    } else {
-        Err(body)
+    let binary = response
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .is_some_and(|kind| kind.as_bytes() == opengrid_columns::wire::MEDIA_TYPE.as_bytes());
+    let bytes = response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes()
+        .to_vec();
+    if status != StatusCode::OK {
+        return Err(String::from_utf8(bytes).unwrap());
     }
+    if binary {
+        // The binary form carries a tree's part as well (E38, #135).
+        let (table, total, tree) =
+            opengrid_columns::wire::decode_answer(&bytes).map_err(|e| e.to_string())?;
+        let mut result = QueryResult::new(table.schema().clone(), table.to_values(), total);
+        result.tree = tree.map(|tree| opengrid_datasource::TreeLevel {
+            children: tree.children,
+            matched: tree.matched,
+            matches: tree.matches,
+            orphans: tree.orphans,
+        });
+        return Ok(result);
+    }
+    let body = String::from_utf8(bytes).unwrap();
+    result_from_json(&body).map_err(|error| format!("{error}: {body}"))
 }
 
 /// Every tree case against one kind of connector.
