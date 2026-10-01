@@ -70,48 +70,16 @@ impl Align {
     }
 }
 
-/// How a column is offered as a facet (used by point 66).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum FacetKind {
-    /// Checkboxes with counts.
-    List,
-    /// Toggle buttons, for a handful of values.
-    Pills,
-    /// A minimum and a maximum.
-    Range,
-    /// A from and a to date.
-    Period,
-}
+pub use opengrid_grid::facets::FacetKind;
 
-impl FacetKind {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            FacetKind::List => "list",
-            FacetKind::Pills => "pills",
-            FacetKind::Range => "range",
-            FacetKind::Period => "period",
+/// Whether a facet kind makes sense for a column of this type.
+fn facet_fits(kind: FacetKind, data_type: DataType) -> bool {
+    match kind {
+        FacetKind::List | FacetKind::Pills => {
+            matches!(data_type, DataType::Utf8 | DataType::Bool)
         }
-    }
-
-    fn parse(token: &str) -> Option<Self> {
-        Some(match token {
-            "list" => FacetKind::List,
-            "pills" => FacetKind::Pills,
-            "range" => FacetKind::Range,
-            "period" => FacetKind::Period,
-            _ => return None,
-        })
-    }
-
-    /// Whether this facet makes sense for this type.
-    fn fits(&self, data_type: DataType) -> bool {
-        match self {
-            FacetKind::List | FacetKind::Pills => {
-                matches!(data_type, DataType::Utf8 | DataType::Bool)
-            }
-            FacetKind::Range => is_numeric(data_type),
-            FacetKind::Period => matches!(data_type, DataType::Date | DataType::Timestamp),
-        }
+        FacetKind::Range => is_numeric(data_type),
+        FacetKind::Period => matches!(data_type, DataType::Date | DataType::Timestamp),
     }
 }
 
@@ -123,39 +91,7 @@ pub fn is_numeric(data_type: DataType) -> bool {
     )
 }
 
-/// What a group row shows for a column (points 63 and F7).
-///
-/// One of the query model's aggregates, or a **range**: the smallest and the
-/// largest value, shown as "from – to" (F7, decided 2026-09-24 — the prototype
-/// shows the dates a group spans). A range is not a new aggregate of the query
-/// model: it is asked as `min` and `max`, and only the grid puts them together.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Summary {
-    Fn(AggregateFn),
-    Range,
-}
-
-impl Summary {
-    /// The token a page and a view use.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Summary::Fn(function) => function.as_str(),
-            Summary::Range => "range",
-        }
-    }
-
-    /// The query aggregates it is asked as, in order.
-    pub fn functions(self) -> &'static [AggregateFn] {
-        match self {
-            Summary::Fn(AggregateFn::Count) => &[AggregateFn::Count],
-            Summary::Fn(AggregateFn::Sum) => &[AggregateFn::Sum],
-            Summary::Fn(AggregateFn::Avg) => &[AggregateFn::Avg],
-            Summary::Fn(AggregateFn::Min) => &[AggregateFn::Min],
-            Summary::Fn(AggregateFn::Max) => &[AggregateFn::Max],
-            Summary::Range => &[AggregateFn::Min, AggregateFn::Max],
-        }
-    }
-}
+pub use opengrid_grid::summary::{Summary, aggregate_from};
 
 /// The aggregates a type allows (used by point 63).
 ///
@@ -175,18 +111,6 @@ pub fn aggregates_for(data_type: DataType) -> Vec<Summary> {
         out.push(Summary::Range);
     }
     out
-}
-
-pub fn aggregate_from(token: &str) -> Option<Summary> {
-    Some(match token {
-        "sum" => Summary::Fn(AggregateFn::Sum),
-        "avg" => Summary::Fn(AggregateFn::Avg),
-        "count" => Summary::Fn(AggregateFn::Count),
-        "min" => Summary::Fn(AggregateFn::Min),
-        "max" => Summary::Fn(AggregateFn::Max),
-        "range" => Summary::Range,
-        _ => return None,
-    })
 }
 
 /// Everything a page may say about one column.
@@ -320,7 +244,7 @@ pub fn validate(
 
         if let Some(token) = &entry.facet {
             match FacetKind::parse(token) {
-                Some(facet) if data_type.is_none_or(|data_type| facet.fits(data_type)) => {
+                Some(facet) if data_type.is_none_or(|data_type| facet_fits(facet, data_type)) => {
                     column.facet = Some(facet)
                 }
                 Some(_) => problems.push(PresentationProblem::new(

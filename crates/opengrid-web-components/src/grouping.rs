@@ -41,9 +41,8 @@ use crate::presentation::Summary;
 use opengrid_json::Json;
 use opengrid_types::{DataType, FieldName, Value};
 
-/// The most levels a grid groups by. The prototype has two, and a third would
-/// need a tree in the UI that nobody has designed (point 62 §Nicht Teil).
-pub const MAX_LEVELS: usize = 2;
+/// The most levels a grid groups by (point 62) — the view checks the same.
+pub const MAX_LEVELS: usize = opengrid_grid::grid_view::MAX_GROUP_LEVELS;
 
 /// The alias the group queries count rows under.
 ///

@@ -12,3 +12,4 @@ workspace = true
 opengrid-types = { path = "../opengrid-types" }
 opengrid-query = { path = "../opengrid-query" }
 opengrid-datasource = { path = "../opengrid-datasource" }
+opengrid-json = { path = "../opengrid-json" }
