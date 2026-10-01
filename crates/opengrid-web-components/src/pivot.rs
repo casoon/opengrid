@@ -1000,6 +1000,7 @@ impl PivotModel {
     }
 
     /// How many measures repeat under each column value.
+    #[cfg(test)]
     pub fn measures(&self) -> usize {
         if self.columns.is_empty() {
             return 0;
