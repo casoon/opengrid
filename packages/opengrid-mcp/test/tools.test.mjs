@@ -4,9 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
-import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
-
-import { createServer } from "../src/server.mjs";
+import { openClient } from "./serve.mjs";
 
 const repo = (path) => fileURLToPath(new URL(`../../../${path}`, import.meta.url));
 const CONFIG = {
@@ -22,11 +20,7 @@ const CONFIG = {
 };
 
 async function connect() {
-  const factory = createServer(CONFIG);
-  const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
-  await factory().connect(serverSide);
-  const client = new Client({ name: "test", version: "0" });
-  await client.connect(clientSide);
+  const client = await openClient(CONFIG);
   const call = async (name, args) => client.callTool({ name, arguments: args });
   return { client, call };
 }
@@ -127,7 +121,7 @@ test("sync takes the reader's change and hands out the model's view", async () =
   const reader = { sort: [{ field: "qty", direction: "asc" }] };
   const query = { source: "orders", select: ["id", "qty"], sort: [{ field: "qty", direction: "asc" }] };
   const changed = (
-    await call("opengrid_sync", { sessionId, revision: 1, change: { view: reader, query, total: 200, selected: [0, 1, 2] } })
+        await call("opengrid_sync", { sessionId, revision: 1, change: { view: reader, query, selected: [0, 1, 2] } })
   ).structuredContent;
   assert.equal(changed.revision, 2);
   assert.equal(changed.origin, "reader");
@@ -145,7 +139,7 @@ test("selection reads the selected positions under the grid's query, cut at the 
   const { call } = await connect();
   const { sessionId } = (await call("opengrid_open", { source: "orders" })).structuredContent;
   const query = { source: "orders", select: ["id", "qty"], sort: [{ field: "id", direction: "desc" }] };
-  await call("opengrid_sync", { sessionId, revision: 1, change: { query, total: 200, selected: [0, 1, 7] } });
+    await call("opengrid_sync", { sessionId, revision: 1, change: { query, selected: [0, 1, 7] } });
 
   const all = (await call("opengrid_selection", { sessionId })).structuredContent;
   assert.deepEqual(
@@ -163,4 +157,24 @@ test("selection reads the selected positions under the grid's query, cut at the 
 
   const tooMany = await call("opengrid_selection", { sessionId, limit: 501 });
   assert.equal(tooMany.isError, true, "500 at most");
+});
+
+test("the count of the reader's query is the server's", async () => {
+  const { call } = await connect();
+  const { sessionId } = (await call("opengrid_open", { source: "orders" })).structuredContent;
+  const query = {
+    source: "orders",
+    select: ["id", "country"],
+    filter: { field: "country", op: "eq", value: "DE" },
+    sort: [{ field: "id", direction: "asc" }],
+  };
+  const synced = (await call("opengrid_sync", { sessionId, revision: 1, change: { query } })).structuredContent;
+  assert.equal(synced.total, 52);
+  // A query outside the allow-list is not taken.
+  const refused = await call("opengrid_sync", {
+    sessionId,
+    revision: 2,
+    change: { query: { source: "orders", select: ["note"] } },
+  });
+  assert.equal(refused.isError, true);
 });
