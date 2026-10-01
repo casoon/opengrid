@@ -237,6 +237,15 @@ pub fn assemble(
             maximum: pivot.limits.max_rows,
         });
     }
+    // E39: what a browser draws in about a second is a number of cells,
+    // whatever their shape (issue #122).
+    if paths.len() * columns.len() > pivot.limits.max_cells {
+        return Err(PivotError::TooManyCells {
+            rows: paths.len(),
+            columns: columns.len(),
+            maximum: pivot.limits.max_cells,
+        });
+    }
 
     // The output schema: the row dimensions as they are, then one column per
     // generated leaf. A dimension column is nullable here even when the source

@@ -108,6 +108,12 @@ e2e: wasm-build-components wasm-build package
     just types
     pnpm exec playwright test --config tests/e2e/playwright.config.js
 
+# Wie groß ein Pivot als native Tabelle flüssig gezeichnet wird (Punkt 108):
+# Zeit bis zum ersten Bild, Neuzeichnen nach dem Sortieren, DOM-Größe — in
+# Chromium und WebKit. Messwerte, kein Test; die Grenzen stehen in E39.
+measure-pivot: wasm-build-components
+    node scripts/measure-pivot.mjs
+
 # Dieselbe Suite in Firefox und WebKit (Release-Checkliste, docs/releasing.md).
 # Opt-in: `just e2e` und CI bleiben bei Chromium. Ohne Screenshot-Baselines —
 # die gehören Chromium. Die Browser einmal holen:
