@@ -748,10 +748,16 @@ export type Texts = Partial<Record<TextKey, string>> & {
 // Events
 // ---------------------------------------------------------------------------
 
-/** `opengrid-selection-change`: logical row numbers, ascending. */
+/**
+ * `opengrid-selection-change`: logical row numbers, ascending. In a tree
+ * (`tree` set) `rows` are the display positions of the selected nodes shown,
+ * `keys` names every selected node by its key and `count` counts them.
+ */
 export interface SelectionChangeDetail {
   rows: number[];
   count: number;
+  /** In a tree only: the selected nodes' keys, the shown ones first. */
+  keys?: unknown[];
 }
 
 /** `opengrid-cell-change`: everything a page needs to persist an edit. */
