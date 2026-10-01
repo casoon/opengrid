@@ -275,6 +275,12 @@ async fn a_source_describes_its_schema_and_capabilities() {
     // reads them all, and a missing one would silently mean "cannot".
     let flags = described["capabilities"].as_object().expect("capabilities");
     assert_eq!(flags.len(), 8, "the declaration is complete: {flags:?}");
+    // A tree is not answered past the row filter yet (#129), and the source
+    // says so — `tree` is written only when true.
+    assert!(described["capabilities"].get("tree").is_none());
+    let (_, open) = describe(app(false).await, "orders", Some(TOKEN)).await;
+    let open: opengrid_json::Json = opengrid_json::from_str(&open).expect("JSON");
+    assert_eq!(open["capabilities"]["tree"], true);
 
     let fields: Vec<String> = described["schema"]["fields"]
         .as_array()
@@ -459,4 +465,29 @@ async fn a_source_describes_its_pivot_limits() {
     assert_eq!(described["pivot_limits"]["max_columns"], 256);
     assert_eq!(described["pivot_limits"]["max_rows"], 10000);
     assert_eq!(described["pivot_limits"]["max_cells"], 131072);
+}
+
+/// A tree query (E38, #129): answered with its tree part by a source that can,
+/// and refused past a mandatory row filter — T5's context could show another
+/// tenant's row, so it waits for plan point 122 to apply the filter first.
+#[tokio::test]
+async fn a_tree_is_answered_and_kept_behind_the_row_filter() {
+    let body = r#"{"source":"orders","select":["id"],"sort":[{"field":"id"}],"limit":5,
+        "tree":{"key":"id","parent":"ordered_year"}}"#;
+    let (status, answer) = post(app(false).await, "orders", Some(TOKEN), body).await;
+    assert_eq!(status, StatusCode::OK, "{answer}");
+    let result = result_from_json(&answer).expect("a result");
+    let tree = result.tree.clone().expect("the tree part travels");
+    assert_eq!(tree.children.len(), result.row_count());
+    // No id is a year: every order is an orphan, so a root (T2).
+    assert_eq!(
+        result.total_count,
+        tree.orphans + 1,
+        "the order without a date is a NULL parent"
+    );
+
+    let (status, answer) = post(app(true).await, "orders", Some(TOKEN), body).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(error_of(&answer).code, ErrorCode::Validation);
+    assert!(error_of(&answer).message.contains("row filter"), "{answer}");
 }

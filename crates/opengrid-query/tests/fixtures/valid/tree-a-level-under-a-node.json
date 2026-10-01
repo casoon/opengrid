@@ -1,0 +1,8 @@
+{
+  "source": "orders",
+  "select": ["customer", "amount"],
+  "filter": { "field": "amount", "op": "gt", "value": 10 },
+  "sort": [{ "field": "amount", "direction": "desc" }],
+  "limit": 40,
+  "tree": { "key": "customer", "parent": "note", "under": "Alpha" }
+}

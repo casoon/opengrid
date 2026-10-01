@@ -21,6 +21,7 @@
 mod aggregate;
 mod filter;
 mod order;
+mod tree;
 
 use opengrid_columns::Table;
 use opengrid_query::ValidatedQuery;
@@ -37,6 +38,8 @@ pub struct QueryResult {
     pub table: Table,
     /// Rows that matched the filter, **before** `offset`/`limit`.
     pub total_count: u64,
+    /// For one level of a tree (E38): what each row is beyond its values.
+    pub tree: Option<opengrid_datasource::TreeLevel>,
 }
 
 /// What the executor refuses to do.
@@ -54,6 +57,8 @@ pub enum ExecuteError {
     Value { field: String, message: String },
     /// The data is too large for a kernel.
     TooLarge { message: String },
+    /// A tree that breaks its rules — a key twice, a cycle (E38, T1/T3).
+    Tree { message: String },
 }
 
 impl std::fmt::Display for ExecuteError {
@@ -73,7 +78,9 @@ impl std::fmt::Display for ExecuteError {
             ExecuteError::Value { field, message } => {
                 write!(f, "column {field:?}: {message}")
             }
-            ExecuteError::TooLarge { message } => f.write_str(message),
+            ExecuteError::TooLarge { message } | ExecuteError::Tree { message } => {
+                f.write_str(message)
+            }
         }
     }
 }
@@ -86,6 +93,11 @@ impl std::error::Error for ExecuteError {}
 /// (the grid asks for it through `limit`/`offset`, the export path through
 /// [`crate::datasource::LocalPieces`]).
 pub fn execute(table: &Table, query: &ValidatedQuery) -> Result<QueryResult, ExecuteError> {
+    // A tree's level depends on every row and on the filter over all of them
+    // (T5), so it runs on its own path.
+    if let Some(tree) = &query.tree {
+        return tree::execute(table, query, tree);
+    }
     let filtered;
     let mut table = table;
     if let Some(filter) = &query.filter {
@@ -129,7 +141,11 @@ pub fn execute(table: &Table, query: &ValidatedQuery) -> Result<QueryResult, Exe
         order::sort_page(&projected, &query.sort, offset, limit)?
     };
 
-    Ok(QueryResult { table, total_count })
+    Ok(QueryResult {
+        table,
+        total_count,
+        tree: None,
+    })
 }
 
 /// Keeps the output columns, in the order the query declares them.

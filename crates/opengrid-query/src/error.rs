@@ -57,6 +57,10 @@ pub enum QueryError {
     OffsetWithoutSort,
     /// `limit` exceeds `Limits::max_limit`.
     LimitTooLarge { limit: u64, max_limit: u64 },
+    /// A tree query that also groups or aggregates (rule T10).
+    TreeWithGroup,
+    /// The parent field's type is not the key's: a parent could never be found.
+    TreeParentTypeMismatch { key: DataType, parent: DataType },
 }
 
 impl QueryError {
@@ -79,6 +83,8 @@ impl QueryError {
             QueryError::SortUnknownColumn { .. } => "SortUnknownColumn",
             QueryError::OffsetWithoutSort => "OffsetWithoutSort",
             QueryError::LimitTooLarge { .. } => "LimitTooLarge",
+            QueryError::TreeWithGroup => "TreeWithGroup",
+            QueryError::TreeParentTypeMismatch { .. } => "TreeParentTypeMismatch",
         }
     }
 
@@ -101,6 +107,8 @@ impl QueryError {
             | QueryError::FilterTooDeep { .. }
             | QueryError::OffsetWithoutSort
             | QueryError::LimitTooLarge { .. } => None,
+            QueryError::TreeWithGroup => Some("tree"),
+            QueryError::TreeParentTypeMismatch { .. } => Some("tree.parent"),
         }
     }
 }
@@ -167,6 +175,14 @@ impl fmt::Display for QueryError {
             QueryError::LimitTooLarge { limit, max_limit } => {
                 write!(f, "limit {limit} exceeds the maximum of {max_limit}")
             }
+            QueryError::TreeWithGroup => {
+                f.write_str("tree: a tree is not grouped or aggregated (rule T10)")
+            }
+            QueryError::TreeParentTypeMismatch { key, parent } => write!(
+                f,
+                "tree.parent: the parent field is {parent:?} and the key {key:?} — a parent \
+                 is found by its key, so both need the same type"
+            ),
         }
     }
 }

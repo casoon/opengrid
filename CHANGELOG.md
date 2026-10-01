@@ -18,6 +18,19 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+### Added
+
+- **One level of a tree, in the engine** ([#129](https://github.com/casoon/opengrid/issues/129), E38).
+  A query takes `tree: { key?, parent, under? }` and answers the children of `under` (or the
+  roots) with `tree: { children, match, matches, orphans }` beside the rows: orphans are roots,
+  a key twice or a cycle is an error with a sentence, a filter shows matches with their
+  ancestors as context, a sort orders siblings. The local engine answers it in the tab and the
+  worker (JSON; the binary form follows with the grid's tree), the planner keeps a tree with its
+  filter on one side, and sources say whether they can with the new capability `tree` (written
+  only when true). The server refuses a tree query for sources without it, and for sources with
+  a mandatory row filter until plan point 122 applies that filter first. Nine conformance cases (T2–T6) pass
+  natively and in the browser.
+
 ## [0.9.0] — 2026-10-01
 
 **Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).

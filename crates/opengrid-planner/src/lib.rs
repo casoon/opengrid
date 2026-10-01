@@ -37,6 +37,8 @@ use opengrid_types::{FieldName, Schema};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ClientStep {
     Filter,
+    /// One level of a tree (E38), over every row the source sent.
+    Tree,
     Group,
     Aggregate,
     Sort,
@@ -48,6 +50,7 @@ impl ClientStep {
     pub fn as_str(self) -> &'static str {
         match self {
             ClientStep::Filter => "filter",
+            ClientStep::Tree => "tree",
             ClientStep::Group => "group",
             ClientStep::Aggregate => "aggregate",
             ClientStep::Sort => "sort",
@@ -197,6 +200,7 @@ pub fn plan(
         for (wanted, can, name) in [
             (query.filter.is_some(), capabilities.filter, "filter"),
             (!query.group.is_empty(), capabilities.group, "group"),
+            (query.tree.is_some(), capabilities.tree, "tree"),
             (
                 !query.aggregate.is_empty(),
                 capabilities.aggregate,
@@ -221,6 +225,17 @@ pub fn plan(
     if query.filter.is_some() && !effective.filter {
         source_query.filter = None;
         client_steps.push(ClientStep::Filter);
+    }
+    // A tree's level depends on every row and the filter over all of them
+    // (T5): where the source cannot do both, the client does both, over the
+    // rows the source sends.
+    if query.tree.is_some() && (!effective.tree || client_steps.contains(&ClientStep::Filter)) {
+        source_query.tree = None;
+        client_steps.push(ClientStep::Tree);
+        if query.filter.is_some() && !client_steps.contains(&ClientStep::Filter) {
+            source_query.filter = None;
+            client_steps.push(ClientStep::Filter);
+        }
     }
     if !query.group.is_empty() && !effective.group {
         source_query.group = Vec::new();
@@ -274,10 +289,11 @@ pub fn plan(
     // Client steps run in pipeline order, whatever order they were found in.
     client_steps.sort_by_key(|step| match step {
         ClientStep::Filter => 0,
-        ClientStep::Group => 1,
-        ClientStep::Aggregate => 2,
-        ClientStep::Sort => 3,
-        ClientStep::Page => 4,
+        ClientStep::Tree => 1,
+        ClientStep::Group => 2,
+        ClientStep::Aggregate => 3,
+        ClientStep::Sort => 4,
+        ClientStep::Page => 5,
     });
 
     if client_steps.is_empty() {
@@ -319,6 +335,12 @@ pub fn plan(
             push_unique(&mut needed, field);
         }
     }
+    if client_steps.contains(&ClientStep::Tree)
+        && let Some(tree) = &query.tree
+    {
+        push_unique(&mut needed, tree.key.clone());
+        push_unique(&mut needed, tree.parent.clone());
+    }
     // The projection is rewritten exactly when the source is no longer the one
     // aggregating: its output is then plain columns of `schema`. While the
     // source does keep the grouping, its output schema is the query's own —
@@ -358,6 +380,10 @@ pub fn plan(
         },
         offset: pages_locally.then_some(query.offset).flatten(),
         limit: pages_locally.then_some(query.limit).flatten(),
+        tree: client_steps
+            .contains(&ClientStep::Tree)
+            .then(|| query.tree.clone())
+            .flatten(),
         output_schema: query.output_schema.clone(),
     };
 
@@ -457,9 +483,59 @@ mod tests {
             "group" => caps.group = false,
             "aggregate" => caps.aggregate = false,
             "paging" => caps.paging = false,
+            "tree" => caps.tree = false,
             other => panic!("unknown capability {other}"),
         }
         caps
+    }
+
+    /// A tree (E38) stays where its filter is: a source without trees sends
+    /// rows — with the key and the parent — and the client answers the level,
+    /// filter and all, since the context of T5 needs every row (#129).
+    #[test]
+    fn a_tree_runs_where_its_filter_runs() {
+        let tree = query(
+            r#"{"source":"orders","select":["country"],
+                "filter":{"field":"country","op":"eq","value":"DE"},
+                "sort":[{"field":"country"}],"limit":10,
+                "tree":{"key":"id","parent":"amount"}}"#,
+        );
+        let pushed = plan(
+            &tree,
+            &schema(),
+            DataSourceCapabilities::ALL,
+            ExecutionMode::Auto,
+        )
+        .expect("plans");
+        assert!(
+            pushed.client_steps.is_empty(),
+            "a capable source answers it all"
+        );
+        assert!(pushed.source_query.tree.is_some());
+
+        let local = plan(&tree, &schema(), without("tree"), ExecutionMode::Auto).expect("plans");
+        assert!(local.client_steps.contains(&ClientStep::Tree));
+        assert!(
+            local.client_steps.contains(&ClientStep::Filter),
+            "the filter comes along"
+        );
+        assert!(local.source_query.tree.is_none() && local.source_query.filter.is_none());
+        let names: Vec<&str> = local
+            .source_query
+            .select
+            .iter()
+            .map(|f| f.as_str())
+            .collect();
+        assert!(
+            names.contains(&"id") && names.contains(&"amount"),
+            "{names:?}"
+        );
+        assert!(local.client_query.as_ref().unwrap().tree.is_some());
+
+        assert!(matches!(
+            plan(&tree, &schema(), without("tree"), ExecutionMode::Remote),
+            Err(PlanError::NotPushable { operation: "tree" })
+        ));
     }
 
     /// A source that can do everything gets everything — that is what `auto`
