@@ -44,9 +44,15 @@
 //!   loaded page, so focus and selection survive scrolling. The 1-based,
 //!   header-counting `aria-rowindex` is derived by the renderer, not here.
 
+pub mod facets;
+pub mod filter_row;
+pub mod grid_view;
+pub mod layout;
 mod patch;
 mod state;
+pub mod summary;
 mod view;
+pub mod view_query;
 
 pub use patch::Patch;
 pub use state::{GridState, GridStatus};

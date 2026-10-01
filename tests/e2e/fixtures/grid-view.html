@@ -54,6 +54,8 @@
         });
         // The module itself, so the tests can call `get_view`/`set_view`.
         window.__opengridModule = loader.module;
+        // The engine, so a test can ask it for a view's query (issue #144).
+        window.__engine = engine;
         return { fallback: loader.fallback };
       }
 
