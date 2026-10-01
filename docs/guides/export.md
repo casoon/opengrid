@@ -208,7 +208,7 @@ if (csv) {
 ```
 
 `get_pivot` is synchronous and asks nothing: the element holds the whole pivot — at most 256
-columns and 2 000 rows — so there is no window and nothing a second request could add. It
+columns, 10 000 rows and 131 072 cells — so there is no window and nothing a second request could add. It
 answers text, not a `Blob`, and CSV only. It takes the same CSV options, and answers `null`
 before the first answer, while one loads, and after an error.
 

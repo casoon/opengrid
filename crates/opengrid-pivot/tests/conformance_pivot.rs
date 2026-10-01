@@ -341,4 +341,31 @@ fn a_pivot_that_is_too_big_is_an_error_not_a_short_answer() {
         .validate(&schema(), &short, &Limits::default())
         .expect("valid");
     assert!(block_on(execute(&source(), &validated)).is_err());
+
+    // E39 (#122): rows and columns each inside their limits, their cells not.
+    let cramped = PivotLimits {
+        max_cells: 5,
+        ..PivotLimits::default()
+    };
+    let validated = pivot
+        .validate(&schema(), &cramped, &Limits::default())
+        .expect("valid");
+    let message = block_on(execute(&source(), &validated))
+        .expect_err("more cells than the budget")
+        .to_string();
+    assert!(
+        message.contains("cells") && message.contains("narrow"),
+        "{message}"
+    );
+    let roomy = PivotLimits {
+        max_cells: 1_000,
+        ..PivotLimits::default()
+    };
+    let validated = pivot
+        .validate(&schema(), &roomy, &Limits::default())
+        .expect("valid");
+    assert!(
+        block_on(execute(&source(), &validated)).is_ok(),
+        "inside the budget"
+    );
 }

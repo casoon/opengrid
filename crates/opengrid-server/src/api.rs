@@ -442,6 +442,7 @@ async fn describe(
             "max_column_dimensions": state.registry.pivot_limits.max_column_dimensions,
             "max_columns": state.registry.pivot_limits.max_columns,
             "max_rows": state.registry.pivot_limits.max_rows,
+            "max_cells": state.registry.pivot_limits.max_cells,
         },
     });
 
