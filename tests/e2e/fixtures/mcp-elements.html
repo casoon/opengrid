@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <!-- #140: the CSP an MCP Apps host gives a view by default — scripts from
+         the view itself and inline, no network, and no WebAssembly (no
+         'wasm-unsafe-eval'). The elements come as the wasm2js bundle. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+    />
+    <title>opengrid MCP elements fixture</title>
+    <style>
+      opengrid-grid {
+        display: block;
+        height: 300px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid MCP elements fixture</h1>
+      <opengrid-grid
+        label="Orders"
+        datasource="orders"
+        columns="id,customer,country,amount"
+        window-size="10"
+      ></opengrid-grid>
+    </main>
+    <script type="module">
+      import { register, set_provider } from "/packages/opengrid-mcp/dist/elements.js";
+
+      window.__violations = [];
+      document.addEventListener("securitypolicyviolation", (event) =>
+        window.__violations.push(`${event.violatedDirective} ${event.blockedURI}`),
+      );
+      register();
+      // The engine is not in the page: the test answers from Node, as the MCP
+      // server will (`window.askServer`, exposed by the test).
+      set_provider(document.querySelector("opengrid-grid"), {
+        execute: (queryJson) => window.askServer(queryJson),
+      });
+      window.__ready = true;
+    </script>
+  </body>
+</html>
