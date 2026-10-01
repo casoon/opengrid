@@ -356,6 +356,14 @@ impl Tree {
             .find(|at| self.entry_at(*at).is_some_and(|entry| entry.depth < depth))
     }
 
+    /// The position of the first child of the open node at `position` (→ on
+    /// an open node), once its children are shown.
+    pub fn first_child_of(&self, position: u64) -> Option<u64> {
+        let entry = self.entry_at(position)?;
+        let next = self.entry_at(position + 1)?;
+        (entry.expanded && next.depth == entry.depth + 1).then_some(position + 1)
+    }
+
     /// The rows of `count` positions from `start`, column-major in `width`
     /// columns — the page the grid draws.
     pub fn page(&self, start: u64, count: u64, width: usize) -> Vec<Vec<Value>> {
@@ -435,8 +443,10 @@ mod tests {
             "7",
             "Partners after Sales' subtree"
         );
-        // ← from North goes to Sales.
+        // ← from North goes to Sales; → from Sales to North.
         assert_eq!(tree.parent_of(1), Some(0));
+        assert_eq!(tree.first_child_of(0), Some(1));
+        assert_eq!(tree.first_child_of(1), None, "North is closed");
         assert_eq!(tree.parent_of(0), None);
         // A leaf does not toggle.
         assert_eq!(tree.toggle(4), None);
