@@ -22,6 +22,9 @@ opengrid-columns = { path = "../opengrid-columns" }
 opengrid-pivot = { path = "../opengrid-pivot" }
 opengrid-planner = { path = "../opengrid-planner" }
 opengrid-json = { path = "../opengrid-json" }
+# The query of a view without an element (issue #144): the same translation
+# the grid element uses.
+opengrid-grid = { path = "../opengrid-grid" }
 # Pinned to the CLI that builds the module (`just wasm-build`): the glue the
 # crate generates and the CLI that post-processes the .wasm have to be the same
 # release (plan/spezifikation/14-entscheidungen.md E4, risk R7).

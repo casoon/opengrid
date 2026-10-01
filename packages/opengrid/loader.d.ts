@@ -221,6 +221,12 @@ export interface Engine {
   pivot(pivotJson: string): string;
   /** The same pivot in the binary form — what the tab and worker providers answer. */
   pivot_columns(pivotJson: string): Uint8Array;
+  /**
+   * The query of a view on a grid with these `columns` (a JSON array), as
+   * JSON — what `get_query()` answers once the view is applied (issue #144).
+   * Throws for a view naming an unknown column or a value its column cannot hold.
+   */
+  view_query(source: string, columnsJson: string, viewJson: string): string;
 }
 
 /** What a server says a source is. */

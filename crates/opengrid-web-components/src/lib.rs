@@ -32,7 +32,7 @@
 // code below. Point 39 made that visible by closing the module surface; the
 // alternative was to leave the modules `pub` and call unreachable code an API,
 // which is the promise this point exists to stop making.
-#![cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+#![cfg_attr(not(target_arch = "wasm32"), allow(dead_code, unused_imports))]
 
 // Nothing here is public API: the surface of this crate is the **DOM** — the
 // elements, their attributes, their events and their parts — plus the four

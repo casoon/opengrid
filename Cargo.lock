@@ -1044,6 +1044,7 @@ name = "opengrid-grid"
 version = "0.9.0"
 dependencies = [
  "opengrid-datasource",
+ "opengrid-json",
  "opengrid-query",
  "opengrid-types",
 ]
@@ -1126,6 +1127,7 @@ dependencies = [
  "opengrid-conformance",
  "opengrid-datasource",
  "opengrid-engine",
+ "opengrid-grid",
  "opengrid-json",
  "opengrid-pivot",
  "opengrid-planner",
