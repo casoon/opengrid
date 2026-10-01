@@ -486,7 +486,7 @@ offers nothing to open. Rows are indented by depth in the first column.
 
 | | |
 |---|---|
-| Keys | `Enter` / `Space` open and close a node; on its first cell `→` opens and `←` closes. `←` on a closed node or a leaf goes to its parent. |
+| Keys | `Enter` opens and closes a node; on its first cell `→` opens and `←` closes. `←` on a closed node or a leaf goes to its parent. `Space` selects the node. |
 | Pointer | A click on a node's first cell opens or closes it. |
 | Spoken | `aria-level` (depth), `aria-posinset` / `aria-setsize` (its place among its siblings), `aria-expanded` only where there is something to open, `aria-busy` while the children load. Opening and closing is said once, with the result, as `groupExpanded` / `groupCollapsed`. |
 | Filter | A match keeps the path to it: its ancestors are shown as **context**, muted and described with `treeContext`. The status line counts matches, not the context. |
@@ -496,8 +496,17 @@ offers nothing to open. Rows are indented by depth in the first column.
 | Refused | `page-size` alongside: a tree scrolls (`treeRefused`). `group-by` alongside is not used (`treeGroupIgnored`). |
 | View | `expanded` holds the open nodes, each as `[key]`, and travels in the [view](#the-view). |
 
-**In a tree, selection and editing are off** for now: a row number would name a
-display position, which moves on every toggle.
+**In a tree, the selection names nodes by their key** (`tree-key`), so it
+stays when nodes close over it and when the grid is sorted or filtered — a key
+names a record, not a position. A node is selected by itself, never with its
+children. `Shift` extends over the nodes shown; `Ctrl`/`Cmd`+`A` and the
+selection header select **every node shown**, since a closed level was never
+loaded. `opengrid-selection-change` carries `keys` — the selected nodes, the
+shown ones first — and `count` counts them; `rows` are the display positions of
+those shown. Applying a view drops the selection, as everywhere.
+
+**Editing is off in a tree**: an edit would be reported against a display
+position, which moves on every toggle.
 
 ## `<opengrid-table>`
 
@@ -894,7 +903,7 @@ not leave a shadow root the page wrapped the element in), and neither is
 
 | Event | `detail` |
 |---|---|
-| `opengrid-selection-change` | `{ rows: number[], count: number }` — logical row numbers, ascending. |
+| `opengrid-selection-change` | `{ rows: number[], count: number }` — logical row numbers, ascending. In a [tree](#tree) also `keys`: the selected nodes by key, and `count` counts them. |
 | `opengrid-cell-change` | `{ row, column, value, previous }` — everything needed to persist it. |
 | `opengrid-view-change` | `{ view }` — the whole [view](#the-view) after the change. Scrolling and selecting are not view changes. On `<opengrid-pivot>` the view is its `rows`, `columns` and `values`. |
 | `opengrid-query` | `{ kind, ms, rows, total, bytes, form, memory }` after **every** answer of the provider, on the grid and the pivot (issue #70): where it ran (the provider's `kind`), the round trip in milliseconds measured in the tab, rows answered and matches before paging, the answer's size as it arrived and its form (`binary` or `json`), and the element module's WASM memory. Measured always, sent nowhere — what the page does with it is the page's. |

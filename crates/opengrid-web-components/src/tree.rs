@@ -104,6 +104,11 @@ pub struct Tree {
     /// Loaded levels, by the id of the node they belong to (`None`: roots).
     levels: HashMap<Option<String>, Level>,
     expanded: BTreeSet<String>,
+    /// The selected nodes, by id (issue #135): a key names a record, so the
+    /// selection survives a sort, a filter and a node closing over it.
+    selected: BTreeSet<String>,
+    /// Where a range selection starts: the node of the last plain toggle.
+    anchor: Option<String>,
     flat: Vec<Entry>,
     matches: u64,
     orphans: u64,
@@ -243,6 +248,96 @@ impl Tree {
         }
     }
 
+    /// Selects or deselects the node at `position`, and makes it the anchor.
+    /// Answers whether anything changed.
+    pub fn toggle_selected(&mut self, position: u64) -> bool {
+        let Some(id) = self.entry_at(position).map(|entry| entry.id.clone()) else {
+            return false;
+        };
+        if !self.selected.remove(&id) {
+            self.selected.insert(id.clone());
+        }
+        self.anchor = Some(id);
+        true
+    }
+
+    /// Selects the shown nodes from the anchor to `position`, keeping what is
+    /// selected. Without an anchor in view, a plain toggle.
+    pub fn extend_selected(&mut self, position: u64) -> bool {
+        let anchor = self
+            .anchor
+            .as_ref()
+            .and_then(|anchor| self.flat.iter().position(|entry| entry.id == *anchor));
+        let Some(anchor) = anchor else {
+            return self.toggle_selected(position);
+        };
+        let Ok(position) = usize::try_from(position) else {
+            return false;
+        };
+        let (low, high) = (anchor.min(position), anchor.max(position));
+        let before = self.selected.len();
+        for entry in self.flat.iter().skip(low).take(high + 1 - low) {
+            self.selected.insert(entry.id.clone());
+        }
+        self.selected.len() != before
+    }
+
+    /// Selects every node shown — "select all" in a tree, whose closed levels
+    /// were never loaded.
+    pub fn select_shown(&mut self) -> bool {
+        let before = self.selected.len();
+        self.selected
+            .extend(self.flat.iter().map(|entry| entry.id.clone()));
+        self.selected.len() != before
+    }
+
+    /// Whether every node shown is selected (and some are shown).
+    pub fn all_shown_selected(&self) -> bool {
+        !self.flat.is_empty()
+            && self
+                .flat
+                .iter()
+                .all(|entry| self.selected.contains(&entry.id))
+    }
+
+    /// Drops the whole selection, shown or not.
+    pub fn clear_selected(&mut self) -> bool {
+        self.anchor = None;
+        let changed = !self.selected.is_empty();
+        self.selected.clear();
+        changed
+    }
+
+    /// The display positions of the selected nodes that are shown, ascending.
+    pub fn selected_positions(&self) -> Vec<u64> {
+        (0..self.len())
+            .filter(|position| self.selected.contains(&self.flat[*position as usize].id))
+            .collect()
+    }
+
+    /// The keys of the selected nodes: the shown ones in display order, then
+    /// those under a closed node or outside the filter.
+    pub fn selected_keys(&self) -> Vec<Json> {
+        let shown: BTreeSet<&String> = self
+            .flat
+            .iter()
+            .filter(|entry| self.selected.contains(&entry.id))
+            .map(|entry| &entry.id)
+            .collect();
+        self.flat
+            .iter()
+            .filter(|entry| self.selected.contains(&entry.id))
+            .map(|entry| entry.id.as_str())
+            .chain(
+                self.selected
+                    .iter()
+                    .filter(|id| !shown.contains(id))
+                    .map(String::as_str),
+            )
+            .map(|id| opengrid_json::from_str(id).unwrap_or(Json::Null))
+            .collect()
+    }
+
     /// Length of the display list — what `aria-rowcount` is computed from.
     pub fn len(&self) -> u64 {
         self.flat.len() as u64
@@ -376,6 +471,32 @@ mod tests {
             tree.expanded(),
             vec![vec![Json::from(7)], vec![Json::from(99)]]
         );
+    }
+
+    /// The selection is the nodes' keys: it stays when they close over it,
+    /// and a range runs over what is shown.
+    #[test]
+    fn the_selection_names_nodes() {
+        let mut tree = chart();
+        tree.toggle(0);
+        tree.set_level(Some("1".into()), level(&[2, 3], &[2, 1]), 0, 0);
+        // Shown: 1, 2, 3, 7, 9 — select North, then extend to Partners.
+        assert!(tree.toggle_selected(1));
+        assert!(tree.extend_selected(3));
+        assert_eq!(tree.selected_positions(), vec![1, 2, 3]);
+        // Closing Sales hides North and South; they stay selected.
+        tree.toggle(0);
+        assert_eq!(tree.selected_positions(), vec![1]);
+        assert_eq!(
+            tree.selected_keys(),
+            vec![Json::from(7), Json::from(2), Json::from(3)],
+            "the shown first, then the hidden"
+        );
+        assert!(!tree.all_shown_selected());
+        assert!(tree.select_shown());
+        assert!(tree.all_shown_selected());
+        assert!(tree.clear_selected());
+        assert!(tree.selected_keys().is_empty());
     }
 
     #[test]

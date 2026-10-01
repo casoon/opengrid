@@ -336,6 +336,18 @@ impl GridState {
         self.announce_selection_cleared
     }
 
+    /// Sets the selected rows from outside — a tree names its selection by
+    /// key and shows it at the positions the keys sit at now (issue #135).
+    /// Such a selection survives a sort or a filter, so the drop a sort
+    /// recorded is not said.
+    pub fn set_selection(&mut self, mut rows: Vec<u64>) {
+        rows.sort_unstable();
+        rows.dedup();
+        self.selection = rows;
+        self.anchor = None;
+        self.selection_dropped = false;
+    }
+
     /// Clears the selection.
     pub fn clear_selection(&mut self) -> Vec<Patch> {
         if self.selection.is_empty() {
