@@ -63,6 +63,34 @@ the file:
 The model names a source. It never names a path, writes SQL or reaches a
 network, and a query naming a field outside `fields` is refused.
 
+### A source on an opengrid-server
+
+A source can also live on an [`opengrid-server`](https://github.com/casoon/opengrid/blob/main/docs/guides/connectors.md),
+reached by URL and token:
+
+```json
+{
+  "sources": {
+    "orders": {
+      "server": { "url": "https://grid.example.com", "source": "orders", "tokenEnv": "ORDERS_TOKEN" },
+      "columns": ["id", "customer", "country", "amount"],
+      "title": "Orders"
+    }
+  }
+}
+```
+
+| Key | |
+|---|---|
+| `server.url` | the server; only the operator names it, never the model |
+| `server.source` | the source's name there; absent, the name it has here |
+| `server.tokenEnv` / `server.token` | the bearer token — preferably from an environment variable, so it is not in the file |
+
+The server's rules hold as they are: its token, its allowed fields, its row
+filter. There is no `fields` for such a source; the server narrows. The source
+is described once when the MCP server starts — a server that cannot be reached
+or refuses the token stops the start with a sentence.
+
 ## Tools
 
 | Tool | Called by | |

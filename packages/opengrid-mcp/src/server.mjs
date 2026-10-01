@@ -14,8 +14,8 @@ import { registerTools } from "./tools.mjs";
 const VERSION = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
 
 /** A server over the configured sources — the factory the transports use. */
-export function createServer(config) {
-  const data = new Data(config);
+export async function createServer(config) {
+  const data = await Data.load(config);
   const sessions = new Sessions();
   return () => {
     const server = new McpServer({ name: "opengrid", version: VERSION }, { capabilities: { tools: {}, resources: {} } });
@@ -33,6 +33,6 @@ function configPath(args) {
 // Run as the bin (also through npx's symlink), not when imported by a test.
 const main = process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
 if (main) {
-  const factory = createServer(loadConfig(configPath(process.argv.slice(2))));
+  const factory = await createServer(loadConfig(configPath(process.argv.slice(2))));
   serveStdio(factory);
 }
