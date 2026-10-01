@@ -9,13 +9,16 @@
 // Paths are relative to the configuration file. `columns` are the grid's
 // columns (its `columns` attribute); `fields` is the allow-list of fields a
 // query may name — absent, every field of the schema.
+//
+// A source may also be one of an opengrid-server (#150):
+//   "remote": { "server": { "url": "https://…", "source": "orders", "tokenEnv": "ORDERS_TOKEN" } }
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { z } from "zod";
 
 const NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
-const Source = z
+const File = z
   .object({
     csv: z.string().min(1),
     schema: z.string().min(1),
@@ -24,6 +27,26 @@ const Source = z
     title: z.string().optional(),
   })
   .strict();
+
+// A source of an opengrid-server (#150): its rules are the server's, so there
+// is no `fields` here — the server narrows.
+const OnServer = z
+  .object({
+    server: z
+      .object({
+        url: z.string().url(),
+        source: z.string().regex(NAME).optional(),
+        tokenEnv: z.string().min(1).optional(),
+        token: z.string().min(1).optional(),
+      })
+      .strict()
+      .refine((server) => !(server.token && server.tokenEnv), { message: "token or tokenEnv, not both" }),
+    columns: z.array(z.string().regex(NAME)).min(1).optional(),
+    title: z.string().optional(),
+  })
+  .strict();
+
+const Source = z.union([File, OnServer]);
 
 const Config = z
   .object({
@@ -50,7 +73,9 @@ export function loadConfig(path) {
   const base = dirname(file);
   const sources = {};
   for (const [name, source] of Object.entries(parsed.data.sources)) {
-    sources[name] = { ...source, csv: resolve(base, source.csv), schema: resolve(base, source.schema) };
+    sources[name] = source.server
+      ? source
+      : { ...source, csv: resolve(base, source.csv), schema: resolve(base, source.schema) };
   }
   return { sources };
 }
