@@ -221,9 +221,22 @@ pub enum PrepareError {
     Pivot(PivotError),
     /// The server's own configuration and the caller's context do not fit.
     Context(String),
+    /// A tree query (E38) this source cannot answer as it is configured.
+    Tree(String),
 }
 
 impl Source {
+    /// What this source answers, as the server will answer it: the
+    /// connector's capabilities, less a tree past a mandatory row filter,
+    /// which [`prepare`](Self::prepare) refuses (#129).
+    pub fn capabilities(&self) -> opengrid_datasource::DataSourceCapabilities {
+        let mut capabilities = self.data.capabilities();
+        if self.row_filter.is_some() {
+            capabilities.tree = false;
+        }
+        capabilities
+    }
+
     /// Turns a client's query into the query that actually runs.
     ///
     /// Two validations on purpose (see the module docs): the first decides
@@ -238,6 +251,27 @@ impl Source {
         query
             .validate(&self.client_schema, limits)
             .map_err(PrepareError::Validation)?;
+
+        // A tree goes only to a source that answers one — another would drop
+        // the part and answer the whole table. And not past a mandatory row
+        // filter yet: T5 shows ancestors as context whether they pass the
+        // filter or not, so another tenant's node could appear as one. Plan
+        // point 122 applies the row filter before the ancestors are added.
+        if query.tree.is_some() {
+            if !self.data.capabilities().tree {
+                return Err(PrepareError::Tree(format!(
+                    "tree: source {:?} answers no tree query",
+                    self.name
+                )));
+            }
+            if self.row_filter.is_some() {
+                return Err(PrepareError::Tree(format!(
+                    "tree: source {:?} has a mandatory row filter, and a tree past one \
+                     is not answered yet",
+                    self.name
+                )));
+            }
+        }
 
         let query = match &self.row_filter {
             None => query,

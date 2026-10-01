@@ -1,0 +1,9 @@
+{
+  "expect": "TreeWithGroup",
+  "query": {
+    "source": "orders",
+    "select": ["country"],
+    "group": ["country"],
+    "tree": { "key": "customer", "parent": "note" }
+  }
+}
