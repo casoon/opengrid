@@ -50,6 +50,10 @@ export interface OpengridGridProps extends ConnectOptions, ElementProps {
   mode?: Mode;
   /** Up to two columns, outermost first: `"country,customer"`. */
   groupBy?: string;
+  /** The field holding a row's parent key: the rows show as a tree. */
+  tree?: string;
+  /** The field the parent key refers to; `id` when absent. */
+  treeKey?: string;
   search?: boolean;
   facets?: boolean;
   toolbar?: boolean;

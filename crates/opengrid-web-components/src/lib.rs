@@ -63,6 +63,8 @@ pub(crate) mod table;
 pub(crate) mod texts;
 pub(crate) mod theme;
 #[cfg(feature = "grid")]
+pub(crate) mod tree;
+#[cfg(feature = "grid")]
 pub(crate) mod view;
 
 #[cfg(target_arch = "wasm32")]

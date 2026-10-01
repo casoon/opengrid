@@ -299,7 +299,7 @@ elements
 attributes
   opengrid-table: columns datasource label theme
   opengrid-grid: column-menu columns datasource density facets group-by label mode page-size \
-search selection theme toolbar window-size
+search selection theme toolbar tree tree-key window-size
   opengrid-pivot: collapsed columns datasource fields filter label measures rows sort theme toolbar values
 
 events
@@ -376,7 +376,7 @@ operators pageFirst pageLast pageNext pageOf pagePrevious pivotColumns pivotFilt
 queryMissingValue queryUnknownColumn queryWrongOperator rowsOne rowsOther searchChip searchHint \
 searchLabel searchPlaceholder searchSuggestions selectAll selectedAll selectionCleared sortAscending \
 sortDescending sourceHybrid sourceLocal sourceRemote sourceWorker subtotal toolbarGroup total \
-totalRow typeBool typeDate typeInteger typeNumber typeText typeTime ungroupColumn valueLabel
+totalRow treeContext treeGroupIgnored treeLevelTooLarge treeOrphans treeRefused typeBool typeDate typeInteger typeNumber typeText typeTime ungroupColumn valueLabel
 ";
         assert_eq!(surface(), expected);
     }
