@@ -1,0 +1,41 @@
+{
+  "id": "t6-siblings-page-among-themselves",
+  "rule": "T6",
+  "query": {
+    "source": "tree",
+    "select": [
+      "id"
+    ],
+    "tree": {
+      "parent": "parent_id"
+    },
+    "sort": [
+      {
+        "field": "id"
+      }
+    ],
+    "offset": 1,
+    "limit": 1
+  },
+  "expected": {
+    "columns": [
+      "id"
+    ],
+    "rows": [
+      [
+        7
+      ]
+    ],
+    "total_count": 3,
+    "tree": {
+      "children": [
+        1
+      ],
+      "match": [
+        true
+      ],
+      "matches": 10,
+      "orphans": 1
+    }
+  }
+}

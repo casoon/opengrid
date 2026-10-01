@@ -1,0 +1,7 @@
+{
+  "fields": [
+    { "name": "id", "type": "int64", "nullable": false },
+    { "name": "parent_id", "type": "int64", "nullable": true },
+    { "name": "name", "type": "utf8", "nullable": false }
+  ]
+}

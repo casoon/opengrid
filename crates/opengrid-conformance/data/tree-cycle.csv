@@ -1,0 +1,5 @@
+id,parent_id,name
+1,\N,Root
+2,3,A
+3,2,B
+4,1,Child

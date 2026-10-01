@@ -1,0 +1,53 @@
+{
+  "id": "t5-a-matching-parent-keeps-only-matching-children",
+  "rule": "T5",
+  "query": {
+    "source": "tree",
+    "select": [
+      "id",
+      "name"
+    ],
+    "tree": {
+      "parent": "parent_id",
+      "under": 1
+    },
+    "filter": {
+      "field": "region",
+      "op": "eq",
+      "value": "EU"
+    },
+    "sort": [
+      {
+        "field": "id"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "id",
+      "name"
+    ],
+    "rows": [
+      [
+        2,
+        "North"
+      ],
+      [
+        3,
+        "South"
+      ]
+    ],
+    "tree": {
+      "children": [
+        2,
+        1
+      ],
+      "match": [
+        true,
+        true
+      ],
+      "matches": 7,
+      "orphans": 1
+    }
+  }
+}
