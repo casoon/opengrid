@@ -18,7 +18,7 @@ Every request carries `Authorization: Bearer <token>`. Bodies are JSON
 |---|---|---|
 | `POST /query/{source}` | a query | a result |
 | `POST /pivot/{source}` | a pivot query | a pivot result |
-| `GET /source/{source}` | — | `{ name, schema, capabilities, pivot_limits }` |
+| `GET /source/{source}` | — | `{ name, schema, capabilities, pivot_limits }` — `pivot_limits` is `{ max_column_dimensions, max_columns, max_rows, max_cells }` |
 | `POST /export/{source}` | a query | every row as a file, streamed |
 
 The body's `source` must equal the path's; a mismatch is a `422` at `source`.

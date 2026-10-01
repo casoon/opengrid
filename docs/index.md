@@ -37,7 +37,8 @@ only one. In React, Vue and Svelte they come as components — see
 
 - **No calculated fields.** A column is stored or derived from a date part (year, month); there
   is no expression language.
-- **At most two column dimensions in a pivot**, 256 generated columns and 2 000 rows. Over a
+- **A pivot is bounded**: two column dimensions, 256 generated columns, 10 000 rows, and
+  131 072 cells (rows × columns — what a browser draws as a table in about a second). Over a
   limit you get an error with a sentence, never a silently truncated result.
 - **Paging and virtualization are exclusive**, not combined.
 - **No CDN build.** Adapters exist for React, Vue and Svelte; Angular, Lit and the rest use

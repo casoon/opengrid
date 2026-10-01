@@ -18,6 +18,17 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+### Changed
+
+- **The pivot's limits follow a measurement** ([#122](https://github.com/casoon/opengrid/issues/122), E39).
+  A browser draws a native table in time proportional to its cells, whatever their shape
+  (`just measure-pivot`: 128 000 cells in 0.7 s in Chromium, 1.0 s in WebKit; 512 000 in 3.1 s
+  and 4.7 s). So a pivot now has a budget of **131 072 cells** (rows × generated columns,
+  `PivotLimits::max_cells`, reported by `GET /source`), the row limit rises from 2 000 to
+  **10 000** and the column limit stays 256. **What breaks:** a pivot wider than the budget —
+  2 000 rows × 256 columns was allowed — is an error with a sentence now. Rust: `PivotLimits` has
+  a new field.
+
 ### Added
 
 - **Two column dimensions in `<opengrid-pivot>`** ([#120](https://github.com/casoon/opengrid/issues/120)).

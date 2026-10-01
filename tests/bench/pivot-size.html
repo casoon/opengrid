@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>opengrid pivot size bench</title>
+  </head>
+  <body>
+    <opengrid-pivot label="Bench" datasource="bench" rows="r" columns="c"></opengrid-pivot>
+    <script type="module">
+      // Plan point 108: how large a pivot a browser draws as a native table.
+      // The provider answers at once with a synthetic pivot of `rows` leaf
+      // rows (plus the grand total) and `columns` generated columns, so what
+      // is measured is the element — parse, patch, layout, paint — and not a
+      // query.
+      import { loadOpengrid } from "/packages/opengrid/loader.js";
+
+      function answer(rows, columns) {
+        const keys = Array.from({ length: rows }, (_, i) => `R${String(i).padStart(6, "0")}`);
+        const cells = Array.from({ length: columns }, (_, c) => ({
+          name: `n_${c}`,
+          type: "int64",
+          nullable: true,
+          values: Array.from({ length: rows + 1 }, (_, r) => (r * 7 + c * 13) % 1000),
+        }));
+        return JSON.stringify({
+          row_dimensions: ["r"],
+          columns: Array.from({ length: columns }, (_, c) => ({ path: [c], measure: "n" })),
+          levels: [...Array(rows).fill(1), 0],
+          result: {
+            total_count: rows + 1,
+            row_count: rows + 1,
+            columns: [
+              { name: "r", type: "utf8", nullable: true, values: [...keys, null] },
+              ...cells,
+            ],
+          },
+        });
+      }
+
+      const frames = () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+
+      /** Resolves once the pivot says `ready` again after `act`. */
+      function drawn(pivot, act) {
+        return new Promise((done) => {
+          const root = pivot.shadowRoot;
+          const start = performance.now();
+          const observer = new MutationObserver(async () => {
+            const status = root.querySelector('[part="status"]');
+            if (status?.dataset.state === "ready") {
+              observer.disconnect();
+              await frames();
+              done(performance.now() - start);
+            }
+          });
+          observer.observe(root, { childList: true, subtree: true, attributes: true });
+          act();
+        });
+      }
+
+      const loader = await loadOpengrid();
+      const pivot = document.querySelector("opengrid-pivot");
+
+      /** One measurement: first draw, a sort's redraw, and the DOM it made. */
+      window.measure = async (rows, columns) => {
+        const json = answer(rows, columns);
+        loader.module.set_provider(pivot, { pivot: async () => json, execute: async () => json });
+        // A fresh request: `values` was removed after the last measurement.
+        const first = await drawn(pivot, () =>
+          pivot.setAttribute("values", '[{"fn":"count","as":"n"}]'),
+        );
+        const sort = await drawn(pivot, () =>
+          pivot.shadowRoot.querySelector('button[data-sort-field="r"]').click(),
+        );
+        const nodes = pivot.shadowRoot.querySelectorAll("*").length;
+        // Reset for the next measurement.
+        pivot.removeAttribute("sort");
+        pivot.removeAttribute("values");
+        await frames();
+        return { rows, columns, cells: rows * columns, first: Math.round(first), sort: Math.round(sort), nodes };
+      };
+      window.ready = true;
+    </script>
+  </body>
+</html>

@@ -612,6 +612,14 @@ said in the status line with the grid's sentences, and nothing changes. The
 field needs the grid's parser, so it is in the default module; a pivot-only
 build keeps the attribute.
 
+**How large a pivot gets.** It is drawn whole — no paging, no virtualization, since
+an accessible virtual pivot is the highest risk in this project — so it is bounded by what
+a browser draws as a table in about a second: **131 072 cells** (rows × generated columns),
+at most 10 000 rows and 256 columns. The time to draw grows with the cells alone, not with
+their shape (`just measure-pivot` measures it: about 6 µs a cell in Chromium, 10 µs in
+WebKit). Above a limit the pivot says so in its status line and what to narrow; it never
+shows part of an answer.
+
 **Two column dimensions** (`columns="ordered_year,status"`) give a header row per
 dimension, outermost first, then the measures: a year spans all its statuses,
 a status its measures. That makes the pivot a complex table, so every header
@@ -776,7 +784,7 @@ const blob = csv && new Blob([csv], { type: "text/csv;charset=utf-8" }); // the 
 | Errors | A wrong option, and an answer the export cannot read — one whose cells do not match its row dimensions and columns, as a page's own provider could send. Both throw with a sentence. |
 | `null` | Before the first answer, while one loads, after an error, and for the grid and the table. |
 
-**Why the element, not a query.** A pivot is bounded — 256 columns, 2 000 rows — and the
+**Why the element, not a query.** A pivot is bounded — 256 columns, 10 000 rows, 131 072 cells — and the
 element holds all of it, so there is no window and nothing a second request could add. It could
 only answer differently, if the data moved since the table was drawn, and it would need the
 element's texts handed to it. So `get_query` stays `null` for a pivot, and `get_pivot` is
