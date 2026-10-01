@@ -63,6 +63,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # The MCP view's elements (#140, E40): wasm2js needs a module without
+      # reference-types, which only a std built for it has — nightly with
+      # rust-src, pinned like the justfile's NIGHTLY. Installed before stable,
+      # because the action makes the toolchain it installs the default.
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-06-02
+          components: rust-src
+          targets: wasm32-unknown-unknown
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
