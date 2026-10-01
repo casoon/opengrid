@@ -178,11 +178,16 @@ pub(crate) fn run(host: &HtmlElement) {
                         dispatch_query(&host, kind, ms, rows, rows, bytes, form);
                         // The grand total is always a row, so "no matches" means
                         // nothing but the total came back.
-                        let (status, state) = if model.rows.len() <= 1 {
+                        let (mut status, state) = if model.rows.len() <= 1 {
                             (texts.empty.clone(), "empty")
                         } else {
                             (texts.matches(model.rows.len() as u64), "ready")
                         };
+                        let notice =
+                            NOTICES.with(|notices| notices.borrow_mut().remove(&host_id(&host)));
+                        if let Some(notice) = notice {
+                            status = format!("{status} \u{00B7} {notice}");
+                        }
                         match HostLook::new(&host) {
                             Ok(look) => {
                                 render(&host, Some((&model, &json)), &status, state, &look);
@@ -474,7 +479,7 @@ pub(crate) fn read_view(host: &HtmlElement) -> JsValue {
 ///
 /// A view that does not hold is said in the status line and applied not at
 /// all; the pivot shown stays.
-pub(crate) fn write_view(host: &HtmlElement, value: &JsValue) {
+pub(crate) fn write_view(host: &HtmlElement, value: &JsValue, notice: Option<String>) {
     if host.shadow_root().is_none() {
         return;
     }
@@ -492,7 +497,20 @@ pub(crate) fn write_view(host: &HtmlElement, value: &JsValue) {
             return;
         }
     };
+    if view == view_of(host) {
+        return;
+    }
+    // The page's reason, said with the result that follows (issue #146).
+    if let Some(notice) = notice {
+        NOTICES.with(|notices| notices.borrow_mut().insert(host_id(host), notice));
+    }
     apply_view(host, &view);
+}
+
+thread_local! {
+    /// The page's sentence for the next result of each pivot, by host id
+    /// (issue #146): set with a view, said once.
+    static NOTICES: RefCell<HashMap<u32, String>> = RefCell::new(HashMap::new());
 }
 
 /// Writes every attribute of `view` at once: one query, one report. Setting

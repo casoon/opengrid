@@ -315,6 +315,21 @@ test.describe("pivot view", () => {
     ).toBeNull();
   });
 
+  test("a view with a notice says it with the result (issue #146)", async ({ page }) => {
+    await open(page);
+    await page.evaluate(() =>
+      window.__opengridModule.set_view(
+        document.querySelector("opengrid-pivot"),
+        { rows: ["customer"], columns: [], values: [{ fn: "count", as: "n" }] },
+        { notice: "Saved view applied" },
+      ),
+    );
+    await expect.poll(async () => (await facts(page)).status).toMatch(/ · Saved view applied$/);
+    // Said once: the next result says only itself.
+    await setView(page, { rows: ["country"], columns: [], values: [{ fn: "count", as: "n" }] });
+    await expect.poll(async () => (await facts(page)).status).not.toContain("Saved view applied");
+  });
+
   test("set_view writes all three at once, in one query, and says so once", async ({ page }) => {
     await open(page);
     await listen(page);
