@@ -17,7 +17,7 @@ pub struct PivotQuery {
     pub source: DataSourceId,
     /// Dimensions down the side, outermost first.
     pub rows: Vec<FieldName>,
-    /// Dimensions across the top. V1 allows at most one (see [`PivotLimits`]).
+    /// Dimensions across the top. V1 allows at most two (see [`PivotLimits`]).
     pub columns: Vec<FieldName>,
     /// The measures in each cell, in display order.
     pub values: Vec<Aggregate>,
@@ -114,7 +114,8 @@ impl ToJson for PivotQuery {
 /// missing anything.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PivotLimits {
-    /// How many dimensions may go across the top. V1: one.
+    /// How many dimensions may go across the top. V1: two (E20, revised by
+    /// issue #120 — the header stays two levels of values).
     pub max_column_dimensions: usize,
     /// How many generated leaf columns the answer may have.
     pub max_columns: usize,
@@ -125,7 +126,7 @@ pub struct PivotLimits {
 impl Default for PivotLimits {
     fn default() -> Self {
         Self {
-            max_column_dimensions: 1,
+            max_column_dimensions: 2,
             max_columns: 256,
             max_rows: 2000,
         }
@@ -454,20 +455,28 @@ mod tests {
         assert!(plan.sets.iter().all(|set| set.limit.is_none()));
     }
 
-    /// V1 allows one dimension across the top. The engine is generic; this is a
-    /// limit, so lifting it later is a number, not a rewrite.
+    /// V1 allows two dimensions across the top (#120). The engine is generic;
+    /// this is a limit, so lifting it was a number, not a rewrite.
     #[test]
-    fn more_than_one_column_dimension_is_refused() {
+    fn more_than_two_column_dimensions_are_refused() {
+        assert!(
+            validate(
+                r#"{"source":"orders","rows":["id"],"columns":["customer","qty"],
+                    "values":[{"fn":"count","as":"n"}]}"#,
+            )
+            .is_ok(),
+            "two are fine"
+        );
         let error = validate(
-            r#"{"source":"orders","rows":["country"],"columns":["customer","qty"],
+            r#"{"source":"orders","columns":["country","customer","qty"],
                 "values":[{"fn":"count","as":"n"}]}"#,
         )
         .unwrap_err();
         assert!(matches!(
             error,
             PivotError::TooManyColumnDimensions {
-                found: 2,
-                maximum: 1
+                found: 3,
+                maximum: 2
             }
         ));
     }

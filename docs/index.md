@@ -27,7 +27,7 @@ That freezes the list, not the design: it may still change before 1.0.
 |---|---|
 | `<opengrid-table>` | The answer is **read**: a plain native `<table>`, ordinary copy and paste, browser find. |
 | `<opengrid-grid>` | The answer is **worked with**: selection, editing, filtering, sorting, column control, virtualization or paging. |
-| `<opengrid-pivot>` | Rows crossed with one column dimension, with subtotals. |
+| `<opengrid-pivot>` | Rows crossed with up to two column dimensions, with subtotals. |
 
 All three ship in one module. The Cargo features `grid` and `pivot` exist for anyone who wants
 only one. In React, Vue and Svelte they come as components — see
@@ -37,7 +37,7 @@ only one. In React, Vue and Svelte they come as components — see
 
 - **No calculated fields.** A column is stored or derived from a date part (year, month); there
   is no expression language.
-- **One column dimension in a pivot**, at most 256 generated columns and 2 000 rows. Over a
+- **At most two column dimensions in a pivot**, 256 generated columns and 2 000 rows. Over a
   limit you get an error with a sentence, never a silently truncated result.
 - **Paging and virtualization are exclusive**, not combined.
 - **No CDN build.** Adapters exist for React, Vue and Svelte; Angular, Lit and the rest use

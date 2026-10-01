@@ -1,0 +1,394 @@
+{
+  "id": "p3-two-column-dimensions-under-two-row-dimensions",
+  "rule": "P3",
+  "pivot": {
+    "source": "orders",
+    "rows": [
+      "country",
+      "customer"
+    ],
+    "columns": [
+      "ordered_year",
+      "flag"
+    ],
+    "values": [
+      {
+        "field": "qty",
+        "fn": "sum",
+        "as": "total"
+      },
+      {
+        "fn": "count",
+        "as": "n"
+      }
+    ],
+    "filter": {
+      "field": "id",
+      "op": "lte",
+      "value": 20
+    }
+  },
+  "expected": {
+    "columns": [
+      {
+        "path": [
+          2025,
+          true
+        ],
+        "measure": "total"
+      },
+      {
+        "path": [
+          2025,
+          true
+        ],
+        "measure": "n"
+      },
+      {
+        "path": [
+          2026,
+          false
+        ],
+        "measure": "total"
+      },
+      {
+        "path": [
+          2026,
+          false
+        ],
+        "measure": "n"
+      },
+      {
+        "path": [
+          2026,
+          true
+        ],
+        "measure": "total"
+      },
+      {
+        "path": [
+          2026,
+          true
+        ],
+        "measure": "n"
+      },
+      {
+        "path": [
+          2026,
+          null
+        ],
+        "measure": "total"
+      },
+      {
+        "path": [
+          2026,
+          null
+        ],
+        "measure": "n"
+      },
+      {
+        "path": [
+          null,
+          false
+        ],
+        "measure": "total"
+      },
+      {
+        "path": [
+          null,
+          false
+        ],
+        "measure": "n"
+      }
+    ],
+    "rows": [
+      [
+        "DE",
+        "",
+        null,
+        0,
+        null,
+        0,
+        11,
+        1,
+        null,
+        0,
+        null,
+        0
+      ],
+      [
+        "DE",
+        "Alpha",
+        1,
+        1,
+        14,
+        2,
+        13,
+        1,
+        null,
+        0,
+        null,
+        0
+      ],
+      [
+        "DE",
+        "Beta",
+        null,
+        0,
+        14,
+        1,
+        15,
+        2,
+        null,
+        0,
+        null,
+        0
+      ],
+      [
+        "DE",
+        "Delta",
+        null,
+        0,
+        18,
+        1,
+        19,
+        1,
+        null,
+        0,
+        null,
+        0
+      ],
+      [
+        "DE",
+        "Epsilon",
+        null,
+        0,
+        null,
+        0,
+        null,
+        0,
+        10,
+        1,
+        null,
+        0
+      ],
+      [
+        "DE",
+        "Gamma",
+        null,
+        0,
+        16,
+        1,
+        17,
+        1,
+        null,
+        0,
+        null,
+        0
+      ],
+      [
+        "DE",
+        null,
+        null,
+        0,
+        20,
+        1,
+        null,
+        0,
+        null,
+        0,
+        null,
+        0
+      ],
+      [
+        "DE",
+        null,
+        1,
+        1,
+        82,
+        6,
+        75,
+        6,
+        10,
+        1,
+        null,
+        0
+      ],
+      [
+        "FR",
+        "Beta",
+        null,
+        0,
+        null,
+        0,
+        null,
+        0,
+        4,
+        1,
+        null,
+        0
+      ],
+      [
+        "FR",
+        "Gamma",
+        null,
+        0,
+        null,
+        0,
+        null,
+        0,
+        null,
+        0,
+        5,
+        1
+      ],
+      [
+        "FR",
+        null,
+        null,
+        0,
+        null,
+        0,
+        null,
+        0,
+        4,
+        1,
+        5,
+        1
+      ],
+      [
+        "GB",
+        null,
+        null,
+        0,
+        null,
+        0,
+        8,
+        1,
+        null,
+        0,
+        null,
+        0
+      ],
+      [
+        "GB",
+        null,
+        null,
+        0,
+        null,
+        0,
+        8,
+        1,
+        null,
+        0,
+        null,
+        0
+      ],
+      [
+        "US",
+        "Delta",
+        null,
+        0,
+        7,
+        1,
+        null,
+        0,
+        null,
+        0,
+        null,
+        0
+      ],
+      [
+        "US",
+        "Gamma",
+        null,
+        0,
+        null,
+        0,
+        6,
+        1,
+        null,
+        0,
+        null,
+        0
+      ],
+      [
+        "US",
+        null,
+        null,
+        0,
+        7,
+        1,
+        6,
+        1,
+        null,
+        0,
+        null,
+        0
+      ],
+      [
+        null,
+        "Epsilon",
+        null,
+        0,
+        9,
+        1,
+        null,
+        0,
+        null,
+        0,
+        null,
+        0
+      ],
+      [
+        null,
+        null,
+        null,
+        0,
+        9,
+        1,
+        null,
+        0,
+        null,
+        0,
+        null,
+        0
+      ],
+      [
+        null,
+        null,
+        1,
+        1,
+        98,
+        8,
+        89,
+        8,
+        14,
+        2,
+        5,
+        1
+      ]
+    ],
+    "levels": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      1,
+      2,
+      2,
+      1,
+      2,
+      1,
+      2,
+      2,
+      1,
+      2,
+      1,
+      0
+    ]
+  }
+}
