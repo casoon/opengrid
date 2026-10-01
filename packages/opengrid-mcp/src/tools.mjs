@@ -235,7 +235,7 @@ export function registerTools(server, data, sessions) {
           .object({
             view: z.record(z.string(), z.unknown()).optional(),
             query: z.record(z.string(), z.unknown()).nullable().optional(),
-            total: z.number().int().min(0).optional(),
+            
             selected: z.array(z.number().int().min(0)).optional(),
           })
           .optional(),
@@ -244,8 +244,11 @@ export function registerTools(server, data, sessions) {
     },
     guarded(async ({ sessionId, change }) => {
       const session = sessionOf(sessions, sessionId);
-      if (change) {
-        sessions.readerChanged(session, { ...change, query: change.query ?? undefined });
+            if (change) {
+        // The count of a new query is the server's to say, not the view's.
+        const query = change.query ?? undefined;
+        const total = query ? data.count(query) : undefined;
+        sessions.readerChanged(session, { ...change, query, total });
       }
       return answer({
         sessionId,
