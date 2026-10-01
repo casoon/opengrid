@@ -1,0 +1,23 @@
+{
+  "id": "t3-a-cycle-is-an-error-that-names-it",
+  "rule": "T3",
+  "query": {
+    "source": "tree_cycle",
+    "select": [
+      "id"
+    ],
+    "tree": {
+      "parent": "parent_id"
+    },
+    "sort": [
+      {
+        "field": "id"
+      }
+    ]
+  },
+  "expected_error": {
+    "contains": [
+      "cycle"
+    ]
+  }
+}

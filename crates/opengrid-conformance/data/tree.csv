@@ -1,0 +1,11 @@
+id,parent_id,name,region,revenue
+1,\N,Sales,EU,0
+2,1,North,EU,100
+3,1,South,EU,50
+4,2,Alice,EU,30
+5,2,Bob,EU,20
+6,3,Carol,EU,40
+7,\N,Partners,US,10
+8,7,Dave,US,5
+9,99,Orphan,US,7
+10,4,Eve,EU,3
