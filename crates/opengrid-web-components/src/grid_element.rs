@@ -1489,11 +1489,11 @@ fn on_key_down(event: KeyboardEvent) {
             return;
         }
     }
-    // A tree's node (issue #135): the keys of a group header — `Enter` and
-    // `Space` open and close it, on its first cell `→` opens and `←` closes —
-    // and `←` on a closed node or a leaf goes to its parent, so the reader
-    // climbs back up without counting rows. `→` on an open node falls through
-    // to moving, as on a group.
+    // A tree's node (issue #135): `Enter` opens and closes it, on its first
+    // cell `→` opens and `←` closes — and `←` on a closed node or a leaf goes
+    // to its parent, so the reader climbs back up without counting rows. `→`
+    // on an open node falls through to moving, as on a group. `Space` selects
+    // the node, as it selects a row.
     if let Some((position, entry)) = active_tree(&host)
         && !event.ctrl_key()
         && !event.meta_key()
@@ -1501,7 +1501,7 @@ fn on_key_down(event: KeyboardEvent) {
         let on_first = matches!(active, ActiveCell::Data(cell) if cell.col == 0);
         let opens = entry.children > 0;
         match event.key().as_str() {
-            "Enter" | " " if opens => {
+            "Enter" if opens && matches!(active, ActiveCell::Data(_)) => {
                 event.prevent_default();
                 toggle_tree(&host, position);
                 return;
@@ -1534,8 +1534,7 @@ fn on_key_down(event: KeyboardEvent) {
     // Grouped, a position is a display position: a selection would name
     // headers as well as rows and move on every toggle, and an edit would be
     // reported against a row number the page cannot map to anything. Both are
-    // off while `group-by` is set — recorded as an open question of point 62 —
-    // and in a tree until a selection names nodes by their key (issue #135).
+    // off while `group-by` is set — recorded as an open question of point 62.
     if is_grouped(&host)
         && (matches!(event.key().as_str(), "Enter" | " ")
             || (event.key().eq_ignore_ascii_case("a") && (event.ctrl_key() || event.meta_key())))
@@ -1543,10 +1542,21 @@ fn on_key_down(event: KeyboardEvent) {
         event.prevent_default();
         return;
     }
+    // In a tree a node is selected by its key, but an edit would still be
+    // reported against a display position: `Enter` on a leaf opens no editor.
+    if is_tree(&host) && event.key() == "Enter" && matches!(active, ActiveCell::Data(_)) {
+        event.prevent_default();
+        return;
+    }
 
-    // `Ctrl`/`Cmd`+`A` selects every matching row, not only the loaded page.
+    // `Ctrl`/`Cmd`+`A` selects every matching row, not only the loaded page —
+    // in a tree, every node shown.
     if event.key().eq_ignore_ascii_case("a") && (event.ctrl_key() || event.meta_key()) {
         event.prevent_default();
+        if is_tree(&host) {
+            select_in_tree(&host, &runtime, Tree::select_shown);
+            return;
+        }
         let patches = runtime.borrow_mut().state.select_all();
         settle_selection(&host, &runtime, patches);
         return;
@@ -1608,6 +1618,16 @@ fn on_key_down(event: KeyboardEvent) {
 
 /// Selects or deselects one row; `extend` continues a range from the anchor.
 fn toggle_row(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>, row: u64, extend: bool) {
+    if is_tree(host) {
+        select_in_tree(host, runtime, |tree| {
+            if extend {
+                tree.extend_selected(row)
+            } else {
+                tree.toggle_selected(row)
+            }
+        });
+        return;
+    }
     let patches = {
         let mut borrowed = runtime.borrow_mut();
         if extend {
@@ -1626,6 +1646,22 @@ fn toggle_row(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>, row: u64, 
 /// attached: a header that said "all" about the loaded window would be a
 /// different and smaller promise, and the grid holds one window at a time.
 fn toggle_all(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>) {
+    if is_tree(host) {
+        // Every node shown, or — when they all are — nothing at all.
+        let all = runtime
+            .borrow()
+            .tree
+            .as_ref()
+            .is_some_and(Tree::all_shown_selected);
+        if all {
+            select_in_tree(host, runtime, Tree::clear_selected);
+        } else {
+            select_in_tree(host, runtime, Tree::select_shown);
+        }
+        let count = runtime.borrow().state.selection().len() as u64;
+        announce(host, &texts(host).selected_all(count));
+        return;
+    }
     let (patches, count) = {
         let mut borrowed = runtime.borrow_mut();
         let total = borrowed.state.total_count();
@@ -1701,9 +1737,39 @@ fn move_with_key(
 /// Sorting and filtering do it as a side effect, so the page would otherwise
 /// keep acting on rows that are no longer selected.
 fn announce_if_cleared(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>) {
-    if runtime.borrow().state.selection().is_empty() {
-        dispatch_selection(host, &[]);
+    // A tree's selection names keys and stays (issue #135).
+    if runtime.borrow().tree.is_some() {
+        return;
     }
+    if runtime.borrow().state.selection().is_empty() {
+        dispatch_selection(host, &[], None);
+    }
+}
+
+/// Changes a tree's selection (issue #135): the tree keeps it by key, the
+/// state shows it at the positions the keys sit at now, and the page hears it
+/// with the keys.
+fn select_in_tree(
+    host: &HtmlElement,
+    runtime: &Rc<RefCell<GridRuntime>>,
+    change: impl FnOnce(&mut Tree) -> bool,
+) {
+    let (rows, keys) = {
+        let mut borrowed = runtime.borrow_mut();
+        let borrowed = &mut *borrowed;
+        let Some(tree) = borrowed.tree.as_mut() else {
+            return;
+        };
+        if !change(tree) {
+            return;
+        }
+        let rows = tree.selected_positions();
+        let keys = tree.selected_keys();
+        borrowed.state.set_selection(rows.clone());
+        (rows, keys)
+    };
+    render(host, false);
+    dispatch_selection(host, &rows, Some(&keys));
 }
 
 /// Makes a column wider or narrower and says so.
@@ -2209,7 +2275,7 @@ fn settle_selection(
         return;
     };
     render(host, false);
-    dispatch_selection(host, &rows);
+    dispatch_selection(host, &rows, None);
     let _ = runtime;
 }
 
@@ -2494,18 +2560,27 @@ fn dispatch_cell_change(
 ///   none.
 /// * `detail` is plain JSON-ish data — no Rust types, no live references:
 ///   `{ rows: [u64], count: number }`.
-fn dispatch_selection(host: &HtmlElement, rows: &[u64]) {
+fn dispatch_selection(host: &HtmlElement, rows: &[u64], keys: Option<&[opengrid_json::Json]>) {
     let list = js_sys::Array::new();
     for row in rows {
         list.push(&JsValue::from_f64(*row as f64));
     }
     let detail = js_sys::Object::new();
     let _ = js_sys::Reflect::set(&detail, &JsValue::from_str("rows"), &list);
+    // A tree counts its selected nodes — shown or not — and names them by key.
+    let count = keys.map_or(rows.len(), <[_]>::len);
     let _ = js_sys::Reflect::set(
         &detail,
         &JsValue::from_str("count"),
-        &JsValue::from_f64(rows.len() as f64),
+        &JsValue::from_f64(count as f64),
     );
+    if let Some(keys) = keys {
+        let list = js_sys::Array::new();
+        for key in keys {
+            list.push(&to_js(key));
+        }
+        let _ = js_sys::Reflect::set(&detail, &JsValue::from_str("keys"), &list);
+    }
 
     let init = web_sys::CustomEventInit::new();
     init.set_bubbles(true);
@@ -3690,7 +3765,15 @@ pub(crate) fn write_view(host: &HtmlElement, value: &JsValue) {
     // The selection goes with the old state. It is dropped on purpose — a view
     // carries none — but not silently (point 73): the fresh state is told, so
     // the result that follows says "Selection cleared" like a sort would.
-    let had_selection = !runtime.borrow().state.selection().is_empty();
+    // A tree's selection counts with the nodes it hides (issue #135).
+    let had_selection = {
+        let borrowed = runtime.borrow();
+        !borrowed.state.selection().is_empty()
+            || borrowed
+                .tree
+                .as_ref()
+                .is_some_and(|tree| !tree.selected_keys().is_empty())
+    };
     if let Some(root) = host.shadow_root() {
         clear_root(&root);
     }
@@ -3809,7 +3892,8 @@ pub(crate) fn write_view(host: &HtmlElement, value: &JsValue) {
     apply_widths(host);
     if had_selection {
         // The page hears it the same way it hears every other selection change.
-        dispatch_selection(host, &[]);
+        let keys = is_tree(host).then_some(&[][..]);
+        dispatch_selection(host, &[], keys);
     }
     run_query(host, QueryKind::Data, had_focus);
     dispatch_view(host);
@@ -3936,13 +4020,14 @@ fn grouping_of(host: &HtmlElement) -> Result<Option<Grouping>, String> {
     Ok(Some(Grouping::new(by)))
 }
 
-/// Whether the grid is grouped, or a tree, right now: its positions are
-/// display positions, not rows.
+/// Whether the grid is grouped right now.
 fn is_grouped(host: &HtmlElement) -> bool {
-    runtime(host).is_some_and(|runtime| {
-        let runtime = runtime.borrow();
-        runtime.grouping.is_some() || runtime.tree.is_some()
-    })
+    runtime(host).is_some_and(|runtime| runtime.borrow().grouping.is_some())
+}
+
+/// Whether the grid is a tree right now.
+fn is_tree(host: &HtmlElement) -> bool {
+    runtime(host).is_some_and(|runtime| runtime.borrow().tree.is_some())
 }
 
 /// The tree the attributes ask for, or why it cannot be had.
@@ -4617,7 +4702,10 @@ fn run_tree(
             // stays inside it, as with a group.
             let offset = grid::window_offset_for_row(offset.min(total), total, pool);
             let page = tree.page(offset, pool, width);
+            // The selection by key, at the positions its nodes sit at now.
+            let selected = tree.selected_positions();
             runtime.state.set_window(Window::new(offset, pool));
+            runtime.state.set_selection(selected);
             opengrid_datasource::QueryResult::new(schema, page, total)
         };
         settle(&host, generation, Ok(result), focus);
