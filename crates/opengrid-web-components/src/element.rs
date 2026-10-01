@@ -254,14 +254,26 @@ pub fn get_pivot(host: &HtmlElement, options: JsValue) -> Result<JsValue, JsErro
 ///
 /// A pivot takes `{ rows, columns, values }` and writes them to its attributes
 /// at once (issue #106).
+///
+/// `options.notice` is a sentence of the page — "Saved view Q3 applied",
+/// "Filtered by the assistant" — said once, together with the result that
+/// follows (issue #146). A view the element already has says nothing, notice
+/// or not.
 #[cfg(any(feature = "grid", feature = "pivot"))]
 #[wasm_bindgen(js_name = set_view)]
-pub fn set_view(host: &HtmlElement, view: JsValue) {
+pub fn set_view(host: &HtmlElement, view: JsValue, options: JsValue) {
+    let notice = options
+        .is_object()
+        .then(|| js_sys::Reflect::get(&options, &JsValue::from_str("notice")).ok())
+        .flatten()
+        .and_then(|notice| notice.as_string())
+        .map(|notice| notice.trim().to_owned())
+        .filter(|notice| !notice.is_empty());
     match host.tag_name().to_ascii_lowercase().as_str() {
         #[cfg(feature = "grid")]
-        "opengrid-grid" => crate::grid_element::write_view(host, &view),
+        "opengrid-grid" => crate::grid_element::write_view(host, &view, notice),
         #[cfg(feature = "pivot")]
-        "opengrid-pivot" => crate::pivot_element::write_view(host, &view),
+        "opengrid-pivot" => crate::pivot_element::write_view(host, &view, notice),
         _ => {}
     }
 }
