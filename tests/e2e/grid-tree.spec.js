@@ -208,3 +208,47 @@ test("the tree passes axe, open and closed", async ({ page }) => {
   await expect.poll(() => names(page)).toContain("North");
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 });
+
+test("the selection names nodes by key, and stays when they close", async ({ page }) => {
+  await page.evaluate(() => {
+    window.__selections = [];
+    document
+      .querySelector("opengrid-grid")
+      .addEventListener("opengrid-selection-change", (event) => window.__selections.push(event.detail));
+  });
+  const last = () => page.evaluate(() => window.__selections.at(-1));
+  const selected = () =>
+    page.evaluate(() =>
+      [...document.querySelector("opengrid-grid").shadowRoot.querySelectorAll('tbody tr[aria-selected="true"]')]
+        .map((tr) => tr.querySelector('td[data-col="0"]').textContent)
+        .sort(),
+    );
+
+  // Open Sales, select North, and extend down to South.
+  await press(page, 'td[data-row="2"][data-col="0"]', "Enter");
+  await expect.poll(() => names(page)).toContain("North");
+  await press(page, 'td[data-row="3"][data-col="0"]', " ");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Shift+ ");
+  expect(await last()).toEqual({ rows: [3, 4], count: 2, keys: [2, 3] });
+  expect(await selected()).toEqual(["North", "South"]);
+
+  // Closing Sales hides them; they stay selected, by key.
+  await press(page, 'td[data-row="2"][data-col="0"]', "Enter");
+  await expect.poll(() => names(page)).toEqual(["Orphan", "Partners", "Sales"]);
+  expect(await selected()).toEqual([]);
+  await press(page, 'td[data-row="2"][data-col="0"]', "Enter");
+  await expect.poll(() => selected()).toEqual(["North", "South"]);
+
+  // A sort moves the nodes, not the selection; nothing is said dropped.
+  await press(page, 'th[data-col="0"]', "Enter");
+  await expect.poll(() => names(page)).toEqual(["Sales", "South", "North", "Partners", "Orphan"]);
+  expect(await selected()).toEqual(["North", "South"]);
+  expect(await page.evaluate(() =>
+    document.querySelector("opengrid-grid").shadowRoot.querySelector('[part="status"]').textContent,
+  )).not.toContain("Selection cleared");
+
+  // Ctrl+A: every node shown, all five.
+  await press(page, 'td[data-row="0"][data-col="0"]', "Control+a");
+  expect((await last()).count).toBe(5);
+});
