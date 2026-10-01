@@ -60,6 +60,21 @@ wasm-build-components:
     wasm-bindgen --target web --out-dir packages/opengrid/pkg --out-name opengrid_web_components "${CARGO_TARGET_DIR:-target}/wasm32-unknown-unknown/release/opengrid_web_components.wasm"
     wasm-opt -Oz -o packages/opengrid/pkg/opengrid_web_components_bg.wasm packages/opengrid/pkg/opengrid_web_components_bg.wasm
 
+# Die Elemente als JavaScript für MCP-Apps-Hosts (#140, E40): deren CSP erlaubt
+# kein WebAssembly, also wird das Modul mit wasm2js übersetzt. wasm2js kennt nur
+# die WASM-Grundfunktionen; die vorkompilierte std nutzt reference-types, darum
+# nightly mit `-Zbuild-std` (gepinnt, E4). Ausgabe: packages/opengrid-mcp/build/.
+NIGHTLY := "nightly-2026-06-02"
+WASM2JS_FEATURES := "-C target-feature=-reference-types,-multivalue,-bulk-memory,-nontrapping-fptoint,-sign-ext"
+
+mcp-elements:
+    RUSTFLAGS="$REMAP {{WASM2JS_FEATURES}}" CARGO_TARGET_DIR=target/wasm2js cargo +{{NIGHTLY}} build -Zbuild-std=std,panic_abort --release --target wasm32-unknown-unknown -p opengrid-web-components
+    wasm-bindgen --target bundler --out-dir packages/opengrid-mcp/build/elements --out-name opengrid_web_components target/wasm2js/wasm32-unknown-unknown/release/opengrid_web_components.wasm
+    wasm-opt -Oz -o packages/opengrid-mcp/build/elements/opengrid_web_components_bg.wasm packages/opengrid-mcp/build/elements/opengrid_web_components_bg.wasm
+    wasm2js -O2 -o packages/opengrid-mcp/build/elements/opengrid_web_components_bg.wasm.js packages/opengrid-mcp/build/elements/opengrid_web_components_bg.wasm
+    node packages/opengrid-mcp/scripts/patch-glue.mjs packages/opengrid-mcp/build/elements
+    pnpm --filter @casoon/opengrid-mcp run build
+
 # Packt `@casoon/opengrid` wie ein Release und entpackt es nach
 # target/npm-package/package (Punkt 40, E25). Baut das Element-Modul und das
 # Engine-Modul (unter engine/) mit.
@@ -98,7 +113,7 @@ measure-engine:
 # Baut das Element-Modul und das Engine-Modul (die Fixture fährt die echte Engine),
 # packt das npm-Paket (packaged.spec.js prüft das gepackte, nicht das Repository),
 # installiert die gepinnte JS-Toolchain und fährt tests/e2e/.
-e2e: wasm-build-components wasm-build package
+e2e: wasm-build-components wasm-build package mcp-elements
     # Die Hybrid-Specs (Punkt 28) fahren gegen einen echten opengrid-server, den
     # Playwright startet. Hier gebaut, damit dort nur noch gestartet wird — ein
     # Kaltbau innerhalb des webServer-Timeouts wäre ein Glücksspiel.
