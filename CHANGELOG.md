@@ -20,6 +20,14 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Added
 
+- **A tree's level in the binary result form** ([#135](https://github.com/casoon/opengrid/issues/135)).
+  Kind `2`: the result, then the tree part (matches, orphans, the child count per row, matches
+  as a bitmap). The engine's `execute_columns` — what the worker and the local provider call —
+  and the server answer a tree in it; a reader of plain results refuses it instead of losing the
+  part. Before, the worker could not answer a tree at all, and the server fell back to JSON.
+
+### Added
+
 - **The tree on the server, and the tenant rule** ([#131](https://github.com/casoon/opengrid/issues/131), plan point 122).
   The tree part takes `scope`, a filter that decides which rows the tree consists of; the server
   puts its mandatory row filter there, so another tenant's row is never a match, context or child

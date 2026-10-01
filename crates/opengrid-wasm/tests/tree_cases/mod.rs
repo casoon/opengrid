@@ -76,6 +76,19 @@ pub fn check(case_json: &str) {
         return;
     }
     let result = answer.unwrap_or_else(|error| panic!("{id}: {error}"));
+    // The binary form a worker hands the grid carries the same part (#135).
+    let bytes = engine()
+        .execute_columns(&case["query"].to_string())
+        .unwrap_or_else(|error| panic!("{id} (binary): {error}"));
+    let (_, total, part) = opengrid_columns::wire::decode_answer(&bytes).expect("reads");
+    let part = part.unwrap_or_else(|| panic!("{id}: the binary answer carries no tree part"));
+    assert_eq!(total, result.total_count, "{id}: binary total");
+    let json = result.tree.as_ref().expect("a tree part");
+    assert_eq!(
+        (&part.children, &part.matched, part.matches, part.orphans),
+        (&json.children, &json.matched, json.matches, json.orphans),
+        "{id}: the binary part is the JSON part"
+    );
     let expected = &case["expected"];
     let rows: Vec<Json> = (0..result.row_count())
         .map(|row| {
