@@ -325,6 +325,7 @@ fn prepare_failed(error: PrepareError) -> Failure {
         // A configuration that does not fit the caller: never fall back to
         // running without the mandatory filter.
         PrepareError::Context(message) => WireError::new(ErrorCode::Backend, message),
+        PrepareError::Tree(message) => WireError::new(ErrorCode::Validation, message),
     }
     .into()
 }
@@ -436,7 +437,7 @@ async fn describe(
     let body = opengrid_json::json!({
         "name": source.name,
         "schema": source.client_schema,
-        "capabilities": source.data.capabilities(),
+        "capabilities": source.capabilities(),
         // A planner needs the bounds before it asks, not after it is refused.
         "pivot_limits": {
             "max_column_dimensions": state.registry.pivot_limits.max_column_dimensions,

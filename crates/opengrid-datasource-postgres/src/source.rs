@@ -171,6 +171,7 @@ impl SendDataSource for PostgresDataSource {
             pivot: true,
             calculated_fields: false,
             streaming: false,
+            tree: false,
         }
     }
 }

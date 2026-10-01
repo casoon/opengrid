@@ -8,7 +8,7 @@
 use opengrid_json::Json as JsonValue;
 use opengrid_types::{DataSourceId, DataType, Field, FieldName, Schema, Value as GridValue};
 
-use crate::{Aggregate, CmpOp, FilterExpr, Query, QueryError, Sort};
+use crate::{Aggregate, CmpOp, FilterExpr, Query, QueryError, Sort, TreeSpec};
 
 /// Server- and client-side guards applied during validation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -50,8 +50,19 @@ pub struct ValidatedQuery {
     pub sort: Vec<Sort>,
     pub offset: Option<u64>,
     pub limit: Option<u64>,
+    /// One level of a tree (E38), its `under` read as the key's type.
+    pub tree: Option<ValidatedTree>,
     /// Columns the query produces, in order, with resolved types.
     pub output_schema: Schema,
+}
+
+/// The tree part of a validated query: the key and parent fields exist and
+/// share a type, and `under` is a value of it — `None` asks for the roots.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ValidatedTree {
+    pub key: FieldName,
+    pub parent: FieldName,
+    pub under: Option<GridValue>,
 }
 
 /// A filter whose literals have been read against the field types.
@@ -179,6 +190,28 @@ impl Query {
             None => None,
         };
 
+        let tree = match &self.tree {
+            None => None,
+            Some(tree) => {
+                if !self.group.is_empty() || !self.aggregate.is_empty() {
+                    return Err(QueryError::TreeWithGroup);
+                }
+                let key = field_type(schema, &tree.key, "tree.key")?;
+                let parent = field_type(schema, &tree.parent, "tree.parent")?;
+                if key != parent {
+                    return Err(QueryError::TreeParentTypeMismatch { key, parent });
+                }
+                Some(ValidatedTree {
+                    key: tree.key.clone(),
+                    parent: tree.parent.clone(),
+                    under: match &tree.under {
+                        Some(under) => Some(coerce(under, key, "tree.under")?),
+                        None => None,
+                    },
+                })
+            }
+        };
+
         Ok(ValidatedQuery {
             source: self.source.clone(),
             select: self.select.clone(),
@@ -188,6 +221,7 @@ impl Query {
             sort: self.sort.clone(),
             offset: self.offset,
             limit: self.limit,
+            tree,
             output_schema: Schema::new(output),
         })
     }
@@ -404,6 +438,11 @@ impl From<&ValidatedQuery> for Query {
             sort: query.sort.clone(),
             offset: query.offset,
             limit: query.limit,
+            tree: query.tree.as_ref().map(|tree| TreeSpec {
+                key: tree.key.clone(),
+                parent: tree.parent.clone(),
+                under: tree.under.as_ref().map(opengrid_json::ToJson::to_json),
+            }),
         }
     }
 }

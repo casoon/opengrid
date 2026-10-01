@@ -40,7 +40,7 @@
 use opengrid_json::{Error, FromJson, Json, ToJson, json, unknown_variant};
 use opengrid_types::{DataType, Field, FieldName, Schema, Value};
 
-use crate::QueryResult;
+use crate::{QueryResult, TreeLevel};
 
 /// What went wrong, as a closed set (plan point 23).
 ///
@@ -217,12 +217,24 @@ pub fn result_to_json(result: &QueryResult) -> String {
             })
         })
         .collect();
-    json!({
+    let mut body = json!({
         "total_count": result.total_count,
         "row_count": result.row_count(),
         "columns": columns,
-    })
-    .to_string()
+    });
+    // Only for a tree's level (E38): a reader from before it reads the rest.
+    if let (Some(tree), Json::Object(object)) = (&result.tree, &mut body) {
+        object.insert(
+            "tree".to_owned(),
+            json!({
+                "children": tree.children,
+                "match": tree.matched,
+                "matches": tree.matches,
+                "orphans": tree.orphans,
+            }),
+        );
+    }
+    body.to_string()
 }
 
 /// Reads a result from the wire form.
@@ -297,7 +309,44 @@ pub fn result_from_json(json: &str) -> Result<QueryResult, ReadError> {
         }
     }
 
-    Ok(QueryResult::new(Schema::new(fields), columns, total_count))
+    let mut result = QueryResult::new(Schema::new(fields), columns, total_count);
+    if let Some(tree) = body.get("tree") {
+        result.tree = Some(tree_from_json(tree, result.row_count())?);
+    }
+    Ok(result)
+}
+
+/// The tree part of a result (E38), as strict as the rest: one entry per row.
+fn tree_from_json(tree: &Json, rows: usize) -> Result<TreeLevel, ReadError> {
+    let list = |key: &str| {
+        tree.get(key)
+            .and_then(Json::as_array)
+            .filter(|list| list.len() == rows)
+            .ok_or_else(|| ReadError::new(format!("tree.{key} is not one entry per row")))
+    };
+    let count = |key: &str| {
+        tree.get(key)
+            .and_then(Json::as_u64)
+            .ok_or_else(|| ReadError::new(format!("tree has no {key}")))
+    };
+    Ok(TreeLevel {
+        children: list("children")?
+            .iter()
+            .map(|n| {
+                n.as_u64()
+                    .ok_or_else(|| ReadError::new("tree.children holds a non-count"))
+            })
+            .collect::<Result<_, _>>()?,
+        matched: list("match")?
+            .iter()
+            .map(|b| {
+                b.as_bool()
+                    .ok_or_else(|| ReadError::new("tree.match holds a non-boolean"))
+            })
+            .collect::<Result<_, _>>()?,
+        matches: count("matches")?,
+        orphans: count("orphans")?,
+    })
 }
 
 #[cfg(test)]

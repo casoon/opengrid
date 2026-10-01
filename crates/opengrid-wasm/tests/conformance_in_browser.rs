@@ -164,3 +164,14 @@ fn the_wasm_engine_answers_every_pivot_case() {
         pivot_cases::check(case);
     }
 }
+
+#[path = "tree_cases/mod.rs"]
+mod tree_cases;
+
+/// The tree's conformance cases (E38), answered by the engine in the browser.
+#[wasm_bindgen_test]
+fn every_tree_case_in_the_browser() {
+    for case in tree_cases::CASES {
+        tree_cases::check(case);
+    }
+}

@@ -4232,11 +4232,7 @@ fn run_grouped(
                 }
             }
         }
-        let result = opengrid_datasource::QueryResult {
-            schema,
-            columns: page,
-            total_count: total,
-        };
+        let result = opengrid_datasource::QueryResult::new(schema, page, total);
         settle(&host, generation, Ok(result), focus);
     });
 }

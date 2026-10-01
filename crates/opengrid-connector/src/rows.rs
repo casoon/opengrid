@@ -168,6 +168,7 @@ impl<R: RowSource> Rows<R> {
             limit: keep,
             output_schema: table_schema.clone(),
             source: query.source.clone(),
+            tree: None,
         };
         let filtering = ValidatedQuery {
             filter: query.filter.clone(),
@@ -504,6 +505,7 @@ fn grouped(
         sort: Vec::new(),
         offset: None,
         limit: None,
+        tree: None,
     }
     .validate(schema, &Limits::default())
     .map_err(|error| backend(format!("the partial aggregates: {error}")))

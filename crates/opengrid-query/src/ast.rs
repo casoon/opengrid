@@ -26,9 +26,50 @@ pub struct Query {
     pub sort: Vec<Sort>,
     pub offset: Option<u64>,
     pub limit: Option<u64>,
+    /// One level of a tree (E38, rules T1–T10): the rows hang from each other
+    /// through a parent field, and the query asks for the children of one node.
+    pub tree: Option<TreeSpec>,
 }
 
-const QUERY_FIELDS: [&str; 8] = [
+/// The tree part of a query (E38): which field is a node's key, which names
+/// its parent, and whose children are asked for — the roots when `under` is
+/// absent or NULL.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TreeSpec {
+    pub key: FieldName,
+    pub parent: FieldName,
+    pub under: Option<Json>,
+}
+
+impl FromJson for TreeSpec {
+    /// `{ "key"?, "parent", "under"? }`; `key` defaults to `id`.
+    fn from_json(json: &Json) -> Result<Self, Error> {
+        let fields = Fields::of(json, "struct TreeSpec", &["key", "parent", "under"])?;
+        Ok(TreeSpec {
+            key: match fields.read_optional("key")? {
+                Some(key) => key,
+                None => FieldName::new("id").expect("`id` is a field name"),
+            },
+            parent: fields.read("parent")?,
+            under: fields
+                .optional("under")
+                .filter(|under| !under.is_null())
+                .cloned(),
+        })
+    }
+}
+
+impl ToJson for TreeSpec {
+    fn to_json(&self) -> Json {
+        opengrid_json::json!({
+            "key": self.key,
+            "parent": self.parent,
+            "under": self.under.clone().unwrap_or(Json::Null),
+        })
+    }
+}
+
+const QUERY_FIELDS: [&str; 9] = [
     "source",
     "select",
     "filter",
@@ -37,6 +78,7 @@ const QUERY_FIELDS: [&str; 8] = [
     "sort",
     "offset",
     "limit",
+    "tree",
 ];
 
 impl FromJson for Query {
@@ -51,13 +93,15 @@ impl FromJson for Query {
             sort: fields.read_or_default("sort")?,
             offset: fields.read_optional("offset")?,
             limit: fields.read_optional("limit")?,
+            tree: fields.read_optional("tree")?,
         })
     }
 }
 
 impl ToJson for Query {
+    /// `tree` only when there is one: a server from before E38 reads the rest.
     fn to_json(&self) -> Json {
-        opengrid_json::json!({
+        let mut json = opengrid_json::json!({
             "source": self.source,
             "select": self.select,
             "filter": self.filter,
@@ -66,7 +110,11 @@ impl ToJson for Query {
             "sort": self.sort,
             "offset": self.offset,
             "limit": self.limit,
-        })
+        });
+        if let (Some(tree), Json::Object(object)) = (&self.tree, &mut json) {
+            object.insert("tree".to_owned(), tree.to_json());
+        }
+        json
     }
 }
 

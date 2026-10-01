@@ -61,6 +61,14 @@ impl LocalDataSource {
     /// result form (E35), which serialises the columns as they are.
     pub fn run(&self, query: &ValidatedQuery) -> Result<(Table, u64), DataSourceError> {
         let result = execute(&self.table, query).map_err(backend)?;
+        // The binary form (E35) has no place yet for what a tree's rows are;
+        // dropping it would answer a tree as a plain list. Plan point 123.
+        if result.tree.is_some() {
+            return Err(DataSourceError::Backend {
+                message: "tree: a tree query answers in JSON, not yet in the binary form"
+                    .to_owned(),
+            });
+        }
         Ok((result.table, result.total_count))
     }
 
@@ -123,11 +131,13 @@ impl SendDataSource for LocalDataSource {
         let table = &self.table;
         async move {
             let result = execute(table, &query).map_err(backend)?;
-            Ok(QueryResult::new(
+            let mut answer = QueryResult::new(
                 query.output_schema,
                 result.table.to_values(),
                 result.total_count,
-            ))
+            );
+            answer.tree = result.tree;
+            Ok(answer)
         }
     }
 
