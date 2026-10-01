@@ -108,6 +108,25 @@ impl Engine {
         self.stats().to_string()
     }
 
+    /// The query of a view (issue #144): what `get_query()` answers on an
+    /// `<opengrid-grid datasource=source columns=…>` once `view_json` is
+    /// applied — without an element, so a server can count or export a saved
+    /// view. `columns` is the grid's `columns` attribute, as a JSON array.
+    ///
+    /// A view naming a column the grid does not have is refused as a whole,
+    /// every problem named; so is a filter value that is not a value of its
+    /// column.
+    #[wasm_bindgen(js_name = view_query)]
+    pub fn view_query_js(
+        &self,
+        source: &str,
+        columns_json: &str,
+        view_json: &str,
+    ) -> Result<String, JsError> {
+        self.view_query(source, columns_json, view_json)
+            .map_err(|message| JsError::new(&message))
+    }
+
     /// Runs a pivot JSON over the source it names and answers the pivot's JSON
     /// form (issue #28) — what `POST /pivot/{source}` answers, computed here.
     #[wasm_bindgen(js_name = pivot)]
@@ -158,6 +177,41 @@ impl Engine {
         let source = LocalDataSource::new(table);
         self.sources.insert(id.as_str().to_owned(), source);
         Ok(())
+    }
+
+    /// [`view_query`](Engine::view_query_js) without the `JsError` wrapping.
+    pub fn view_query(
+        &self,
+        source: &str,
+        columns_json: &str,
+        view_json: &str,
+    ) -> Result<String, String> {
+        use opengrid_json::Json;
+        let table = self
+            .sources
+            .get(source)
+            .ok_or_else(|| format!("unknown source {source:?}"))?
+            .table();
+        let declared: Vec<String> = match Json::parse(columns_json) {
+            Ok(Json::Array(columns)) => columns
+                .iter()
+                .map(|column| column.as_str().map(str::to_owned))
+                .collect::<Option<_>>()
+                .ok_or("columns: an array of names")?,
+            _ => return Err("columns: an array of names".to_owned()),
+        };
+        let view = Json::parse(view_json).map_err(|error| format!("view: {error}"))?;
+        let view = opengrid_grid::grid_view::GridView::from_json(&view, &declared).map_err(
+            |problems| {
+                problems
+                    .iter()
+                    .map(|problem| format!("{}: {}", problem.field, problem.reason))
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            },
+        )?;
+        opengrid_grid::view_query::view_query(source, &declared, &view, table.schema())
+            .map_err(|problems| problems.join("; "))
     }
 
     /// [`stats`](Engine::stats_js) as a JSON value.

@@ -723,6 +723,20 @@ const query = loader.module.get_query(grid);
 | Hidden columns | are not in `select`; moved ones are in their new place. |
 | Grouped | The rows, not the group or total rows, ordered by their groups first (ascending, NULL last) and then by the sort — the order the reader sees. |
 | The selection | is not in it. It names positions under exactly this query's sort, so an export of the selection is this query plus the positions from `opengrid-selection-change`. |
+
+**Without an element** (issue #144). The engine answers the query of a view it is
+handed: `engine.view_query(source, columns, view)` — `columns` is the grid's
+`columns` attribute as a JSON array, `view` a view as JSON — returns what
+`get_query()` returns on that grid once the view is applied; the free-text
+search, not being part of a view, is not in it. A server can count or export a
+saved view this way, without a browser. A view naming a column the grid does not
+have is refused as a whole, every problem named; so is a filter value that is not
+a value of its column.
+
+```js
+const query = JSON.parse(engine.view_query("orders", JSON.stringify(["id", "country", "amount"]), JSON.stringify(view)));
+const { total_count } = JSON.parse(engine.execute(JSON.stringify({ ...query, limit: 0 })));
+```
 | `null` | A grid without a query yet (not connected, no `datasource`, no columns), one whose filter does not hold — its status line says why — and `<opengrid-table>` and `<opengrid-pivot>`. |
 
 The grid has no export button: what to export, in which format, under which name, is the
