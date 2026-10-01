@@ -246,6 +246,10 @@ fn render(
     let Some(document) = host.owner_document() else {
         return;
     };
+    // Every answer redraws the whole root, so the control a reader is on would
+    // be gone under them: it is found again by what it is, and the text typed
+    // into the filter field stays (#124).
+    let kept = focused_control(&root);
     clear_root(&root);
     // Kept and dropped with what is drawn, never apart from it: while a new
     // answer loads, or after an error, the table is empty and so is the export.
@@ -282,6 +286,47 @@ fn render(
         toolbar.as_ref().map(|(view, offer)| (view, offer)),
     );
     apply(&root, document, &buffer);
+    if let Some((selector, typed)) = kept
+        && let Ok(Some(control)) = root.query_selector(&selector)
+        && let Ok(control) = control.dyn_into::<HtmlElement>()
+    {
+        if let (Some(typed), Some(input)) = (typed, control.dyn_ref::<web_sys::HtmlInputElement>())
+        {
+            input.set_value(&typed);
+        }
+        let _ = control.focus();
+    }
+}
+
+/// The attributes a pivot's controls are known by, in the order they are
+/// tried: every redraw makes them anew, and these say which one is which.
+const CONTROL_KEYS: [&str; 9] = [
+    "data-sort-field",
+    "data-sort-by",
+    "data-path",
+    "data-add",
+    "data-move",
+    "data-remove",
+    "data-filter-remove",
+    "data-filter-clear",
+    "data-filter-input",
+];
+
+/// The control that has the focus, as a selector to find it again — and the
+/// filter field's typed text — or `None` when the focus is not on one.
+fn focused_control(root: &web_sys::ShadowRoot) -> Option<(String, Option<String>)> {
+    let active = root.active_element()?;
+    let key = CONTROL_KEYS
+        .into_iter()
+        .find(|key| active.has_attribute(key))?;
+    let value = active.get_attribute(key).unwrap_or_default();
+    let typed = active
+        .dyn_ref::<web_sys::HtmlInputElement>()
+        .map(web_sys::HtmlInputElement::value);
+    Some((
+        format!(r#"[{key}="{}"]"#, value.replace('"', "\\\"")),
+        typed,
+    ))
 }
 
 /// What the page offers the reader (issue #112); only read with a toolbar.
@@ -1077,6 +1122,15 @@ fn submit_filter(host: &HtmlElement, text: String) {
                 return;
             }
         };
+        // The expression went into the filter: the field empties, and the
+        // redraw keeps it empty (#124 keeps what is still being typed).
+        if let Some(input) = host
+            .shadow_root()
+            .and_then(|root| root.query_selector("[data-filter-input]").ok().flatten())
+            .and_then(|input| input.dyn_into::<web_sys::HtmlInputElement>().ok())
+        {
+            input.set_value("");
+        }
         let mut parts = pivot::clauses(view_of(&host).filter.as_ref());
         parts.extend(pivot::clauses(Some(&added)));
         set_filter(&host, pivot::join_clauses(parts), vec![filter_input()]);
