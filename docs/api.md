@@ -486,14 +486,14 @@ offers nothing to open. Rows are indented by depth in the first column.
 
 | | |
 |---|---|
-| Keys | `Enter` opens and closes a node; on its first cell `→` opens and `←` closes. `←` on a closed node or a leaf goes to its parent. `Space` selects the node. |
-| Pointer | A click on a node's first cell opens or closes it. |
+| Keys | On a node's first cell `→` opens it, and on an open node goes to its first child; `←` closes an open node, and on a closed node or a leaf goes to its parent. `Enter` and `Space` keep their grid meaning — `Space` selects the node. |
+| Pointer | A click on a node's first cell, where the chevron is, opens or closes it. |
 | Spoken | `aria-level` (depth), `aria-posinset` / `aria-setsize` (its place among its siblings), `aria-expanded` only where there is something to open, `aria-busy` while the children load. Opening and closing is said once, with the result, as `groupExpanded` / `groupCollapsed`. |
 | Filter | A match keeps the path to it: its ancestors are shown as **context**, muted and described with `treeContext`. The status line counts matches, not the context. |
 | Orphans | A row whose parent does not exist is a root, and the status line says how many there are (`treeOrphans`). |
 | Order | Siblings are sorted by the grid's sort; the hierarchy is never broken by it. |
 | Size | A level holds at most 10 000 nodes — a larger one is refused with `treeLevelTooLarge`; narrow it with a filter. |
-| Refused | `page-size` alongside: a tree scrolls (`treeRefused`). `group-by` alongside is not used (`treeGroupIgnored`). |
+| Refused | `page-size` alongside: a tree scrolls (`treeRefused`). `group-by` alongside is not used (`treeGroupIgnored`), and the toolbar's + Group is `aria-disabled` and says so. |
 | View | `expanded` holds the open nodes, each as `[key]`, and travels in the [view](#the-view). |
 
 **In a tree, the selection names nodes by their key** (`tree-key`), so it

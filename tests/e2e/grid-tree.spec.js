@@ -110,9 +110,13 @@ test("→ opens a node, ← closes it and climbs to the parent", async ({ page }
   expect(await status(page)).toContain("Sales expanded");
   expect(await focused(page)).toBe("Sales");
 
-  // North, opened by Enter: Alice and Bob at level 3.
-  await page.keyboard.press("ArrowDown");
+  // → on open Sales goes to its first child, North; → again opens it:
+  // Alice and Bob at level 3. Enter keeps its grid meaning and opens nothing.
+  await page.keyboard.press("ArrowRight");
+  await expect.poll(() => focused(page)).toBe("North");
   await page.keyboard.press("Enter");
+  expect(await names(page)).toEqual(["Orphan", "Partners", "Sales", "North", "South"]);
+  await page.keyboard.press("ArrowRight");
   await expect
     .poll(() => names(page))
     .toEqual(["Orphan", "Partners", "Sales", "North", "Alice", "Bob", "South"]);
@@ -170,7 +174,7 @@ test("a filter keeps the path to a match, as context", async ({ page }) => {
 });
 
 test("what is open travels in the view", async ({ page }) => {
-  await press(page, 'td[data-row="2"][data-col="0"]', "Enter");
+  await press(page, 'td[data-row="2"][data-col="0"]', "ArrowRight");
   await expect.poll(() => names(page)).toContain("North");
   const view = await page.evaluate(() =>
     window.__opengridModule.get_view(document.querySelector("opengrid-grid")),
@@ -225,7 +229,7 @@ test("the selection names nodes by key, and stays when they close", async ({ pag
     );
 
   // Open Sales, select North, and extend down to South.
-  await press(page, 'td[data-row="2"][data-col="0"]', "Enter");
+  await press(page, 'td[data-row="2"][data-col="0"]', "ArrowRight");
   await expect.poll(() => names(page)).toContain("North");
   await press(page, 'td[data-row="3"][data-col="0"]', " ");
   await page.keyboard.press("ArrowDown");
@@ -234,10 +238,10 @@ test("the selection names nodes by key, and stays when they close", async ({ pag
   expect(await selected()).toEqual(["North", "South"]);
 
   // Closing Sales hides them; they stay selected, by key.
-  await press(page, 'td[data-row="2"][data-col="0"]', "Enter");
+  await press(page, 'td[data-row="2"][data-col="0"]', "ArrowLeft");
   await expect.poll(() => names(page)).toEqual(["Orphan", "Partners", "Sales"]);
   expect(await selected()).toEqual([]);
-  await press(page, 'td[data-row="2"][data-col="0"]', "Enter");
+  await press(page, 'td[data-row="2"][data-col="0"]', "ArrowRight");
   await expect.poll(() => selected()).toEqual(["North", "South"]);
 
   // A sort moves the nodes, not the selection; nothing is said dropped.
@@ -251,4 +255,29 @@ test("the selection names nodes by key, and stays when they close", async ({ pag
   // Ctrl+A: every node shown, all five.
   await press(page, 'td[data-row="0"][data-col="0"]', "Control+a");
   expect((await last()).count).toBe(5);
+});
+
+test("+ Group is aria-disabled in a tree, and says why", async ({ page }) => {
+  await page.evaluate(() => document.querySelector("opengrid-grid").setAttribute("toolbar", ""));
+  await settled(page);
+  const button = () =>
+    page.evaluate(() => {
+      const button = document
+        .querySelector("opengrid-grid")
+        .shadowRoot.querySelector('[data-toolbar="add-grouping"]');
+      return [button.getAttribute("aria-disabled"), button.getAttribute("aria-label")];
+    });
+  await expect.poll(button).toEqual(["true", "group-by is not used in a tree"]);
+  // Pressing it opens no menu.
+  await page.evaluate(() =>
+    document
+      .querySelector("opengrid-grid")
+      .shadowRoot.querySelector('[data-toolbar="add-grouping"]')
+      .click(),
+  );
+  expect(
+    await page.evaluate(() =>
+      document.querySelector("opengrid-grid").shadowRoot.querySelector('[part="grouping-menu"]:not([hidden])'),
+    ),
+  ).toBeNull();
 });
