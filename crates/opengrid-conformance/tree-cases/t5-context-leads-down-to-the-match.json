@@ -1,0 +1,47 @@
+{
+  "id": "t5-context-leads-down-to-the-match",
+  "rule": "T5",
+  "query": {
+    "source": "tree",
+    "select": [
+      "id",
+      "name"
+    ],
+    "tree": {
+      "parent": "parent_id",
+      "under": 4
+    },
+    "filter": {
+      "field": "name",
+      "op": "eq",
+      "value": "Eve"
+    },
+    "sort": [
+      {
+        "field": "id"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "id",
+      "name"
+    ],
+    "rows": [
+      [
+        10,
+        "Eve"
+      ]
+    ],
+    "tree": {
+      "children": [
+        0
+      ],
+      "match": [
+        true
+      ],
+      "matches": 1,
+      "orphans": 1
+    }
+  }
+}
