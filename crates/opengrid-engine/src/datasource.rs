@@ -59,17 +59,11 @@ impl LocalDataSource {
     /// Runs `query` and answers with the result table and its `total_count`,
     /// without turning a single cell into a value — the path of the binary
     /// result form (E35), which serialises the columns as they are.
-    pub fn run(&self, query: &ValidatedQuery) -> Result<(Table, u64), DataSourceError> {
-        let result = execute(&self.table, query).map_err(backend)?;
-        // The binary form (E35) has no place yet for what a tree's rows are;
-        // dropping it would answer a tree as a plain list. Plan point 123.
-        if result.tree.is_some() {
-            return Err(DataSourceError::Backend {
-                message: "tree: a tree query answers in JSON, not yet in the binary form"
-                    .to_owned(),
-            });
-        }
-        Ok((result.table, result.total_count))
+    pub fn run(
+        &self,
+        query: &ValidatedQuery,
+    ) -> Result<crate::execute::QueryResult, DataSourceError> {
+        execute(&self.table, query).map_err(backend)
     }
 
     /// Runs `query` **once** and hands its rows out in pieces (issue #2, the

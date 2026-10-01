@@ -199,8 +199,8 @@ impl Engine {
     /// the binary form.
     pub fn execute_columns(&self, query_json: &str) -> Result<Vec<u8>, String> {
         let (source, validated) = self.admit(query_json)?;
-        let (table, total_count) = source.run(&validated).map_err(|error| error.to_string())?;
-        Ok(opengrid_columns::wire::encode_result(&table, total_count))
+        let answer = source.run(&validated).map_err(|error| error.to_string())?;
+        Ok(encode_answer(&answer))
     }
 
     /// A pivot over the source it names, validated against that source's schema
@@ -398,16 +398,16 @@ impl Planner {
         client_query_json: &str,
         result: &[u8],
     ) -> Result<Vec<u8>, String> {
-        let (table, _) =
-            opengrid_columns::wire::decode_result(result).map_err(|error| error.to_string())?;
+        let (table, _, _) =
+            opengrid_columns::wire::decode_answer(result).map_err(|error| error.to_string())?;
         let query: Query = opengrid_json::from_str(client_query_json)
             .map_err(|error| format!("client query JSON: {error}"))?;
         let validated = query
             .validate(table.schema(), &Limits::default())
             .map_err(|error| error.to_string())?;
         let source = LocalDataSource::new(table);
-        let (table, total_count) = source.run(&validated).map_err(|error| error.to_string())?;
-        Ok(opengrid_columns::wire::encode_result(&table, total_count))
+        let answer = source.run(&validated).map_err(|error| error.to_string())?;
+        Ok(encode_answer(&answer))
     }
 
     /// Runs the client half over the source's answer.
@@ -444,6 +444,24 @@ fn linear_memory() -> usize {
     #[cfg(not(target_arch = "wasm32"))]
     {
         0
+    }
+}
+
+/// An engine answer in the binary form: a tree's level with its part (E38),
+/// anything else as a plain result.
+fn encode_answer(answer: &opengrid_engine::execute::QueryResult) -> Vec<u8> {
+    match &answer.tree {
+        None => opengrid_columns::wire::encode_result(&answer.table, answer.total_count),
+        Some(tree) => opengrid_columns::wire::encode_tree_result(
+            &answer.table,
+            answer.total_count,
+            &opengrid_columns::wire::TreeSection {
+                children: tree.children.clone(),
+                matched: tree.matched.clone(),
+                matches: tree.matches,
+                orphans: tree.orphans,
+            },
+        ),
     }
 }
 

@@ -12,7 +12,7 @@
 //! `Float64Array` without copying.
 //!
 //! ```text
-//! header   "OGC" · version u8 (1) · kind u8 (0 result, 1 pivot) · 3 × 0
+//! header   "OGC" · version u8 (1) · kind u8 (0 result, 1 pivot, 2 tree) · 3 × 0
 //! table    total_count u64 · row_count u64 · column_count u32 · u32 0
 //! column   name: length u32 + UTF-8, padded
 //!          type u8 · precision u8 · scale u8 · nullable u8 · has_validity u8 · 3 × 0
@@ -28,7 +28,12 @@
 //!
 //! Type codes: 1 bool, 2 int64, 3 float64, 4 decimal, 5 utf8, 6 date,
 //! 7 timestamp. A pivot appends its own section after the table
-//! (`opengrid-pivot`), written with the same [`Writer`] primitives.
+//! (`opengrid-pivot`), written with the same [`Writer`] primitives. A tree's
+//! level (E38) appends its part:
+//!
+//! ```text
+//! tree     matches u64 · orphans u64 · children: rows × u64 · match: ⌈rows / 64⌉ u64 words
+//! ```
 //!
 //! # Reading is strict
 //!
@@ -58,6 +63,8 @@ pub enum Kind {
     Result,
     /// A pivot answer: a result plus the pivot's own section.
     Pivot,
+    /// One level of a tree (E38): a result plus what each row is.
+    Tree,
 }
 
 impl Kind {
@@ -65,6 +72,7 @@ impl Kind {
         match self {
             Kind::Result => 0,
             Kind::Pivot => 1,
+            Kind::Tree => 2,
         }
     }
 }
@@ -100,14 +108,87 @@ pub fn encode_result(table: &Table, total_count: u64) -> Vec<u8> {
 }
 
 /// Bytes back to a result: the table and its `total_count`.
+///
+/// A tree's level is refused, not read as a plain list: what its rows are
+/// would be lost. [`decode_answer`] reads both.
 pub fn decode_result(bytes: &[u8]) -> Result<(Table, u64), WireError> {
     let (mut reader, kind) = Reader::new(bytes)?;
-    if kind != Kind::Result {
-        return Err(WireError::new("this is a pivot answer, not a result"));
+    match kind {
+        Kind::Result => {}
+        Kind::Pivot => return Err(WireError::new("this is a pivot answer, not a result")),
+        Kind::Tree => {
+            return Err(WireError::new(
+                "this is a tree's level; read it with what reads its tree part",
+            ));
+        }
     }
     let result = reader.table()?;
     reader.finish()?;
     Ok(result)
+}
+
+/// What a tree's level carries beside its rows (E38) — the binary twin of
+/// `opengrid_datasource::TreeLevel`, which this crate does not depend on.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct TreeSection {
+    /// Per row: its visible children.
+    pub children: Vec<u64>,
+    /// Per row: a match, or context.
+    pub matched: Vec<bool>,
+    /// Matches in the whole tree.
+    pub matches: u64,
+    /// Nodes without an existing parent.
+    pub orphans: u64,
+}
+
+/// A tree's level as bytes: the result, then its tree part.
+pub fn encode_tree_result(table: &Table, total_count: u64, tree: &TreeSection) -> Vec<u8> {
+    let mut writer = Writer::new(Kind::Tree);
+    writer.table(table, total_count);
+    writer.u64(tree.matches);
+    writer.u64(tree.orphans);
+    for count in &tree.children {
+        writer.u64(*count);
+    }
+    let mut bits = Bitmap::with_capacity(tree.matched.len());
+    for matched in &tree.matched {
+        bits.push(*matched);
+    }
+    writer.words(bits.words());
+    writer.finish()
+}
+
+/// Bytes back to a result — a plain one, or a tree's level with its part.
+pub fn decode_answer(bytes: &[u8]) -> Result<(Table, u64, Option<TreeSection>), WireError> {
+    let (mut reader, kind) = Reader::new(bytes)?;
+    let (table, total_count) = match kind {
+        Kind::Result | Kind::Tree => reader.table()?,
+        Kind::Pivot => return Err(WireError::new("this is a pivot answer, not a result")),
+    };
+    let tree = if kind == Kind::Tree {
+        let rows = table.num_rows();
+        let matches = reader.u64()?;
+        let orphans = reader.u64()?;
+        let children = (0..rows)
+            .map(|_| reader.u64())
+            .collect::<Result<Vec<_>, _>>()?;
+        let words = (0..rows.div_ceil(64))
+            .map(|_| reader.u64())
+            .collect::<Result<Vec<_>, _>>()?;
+        let matched = (0..rows)
+            .map(|row| words[row / 64] >> (row % 64) & 1 == 1)
+            .collect();
+        Some(TreeSection {
+            children,
+            matched,
+            matches,
+            orphans,
+        })
+    } else {
+        None
+    };
+    reader.finish()?;
+    Ok((table, total_count, tree))
 }
 
 /// Writes the binary form, section by section.
@@ -317,6 +398,7 @@ impl<'a> Reader<'a> {
         let kind = match bytes[4] {
             0 => Kind::Result,
             1 => Kind::Pivot,
+            2 => Kind::Tree,
             other => return Err(WireError::new(format!("unknown kind {other}"))),
         };
         Ok((Self { bytes, at: 8 }, kind))
@@ -545,6 +627,36 @@ impl<'a> Reader<'a> {
 
 #[cfg(test)]
 mod tests {
+
+    /// A tree's level (E38, #135): its part comes back as it went, and the
+    /// plain reader refuses it rather than lose that part.
+    #[test]
+    fn a_tree_level_round_trips_with_its_part() {
+        let schema = Schema::new(vec![Field::required(
+            FieldName::new("id").unwrap(),
+            DataType::Int64,
+        )]);
+        let table =
+            Table::from_values(&schema, &[(0..70).map(Value::Int64).collect::<Vec<_>>()]).unwrap();
+        let tree = TreeSection {
+            children: (0..70).map(|n| n % 3).collect(),
+            matched: (0..70).map(|n| n % 5 != 0).collect(),
+            matches: 56,
+            orphans: 2,
+        };
+        let bytes = encode_tree_result(&table, 71, &tree);
+        let (back, total, part) = decode_answer(&bytes).expect("reads");
+        assert_eq!(back.num_rows(), 70);
+        assert_eq!(total, 71);
+        assert_eq!(part, Some(tree));
+        assert!(
+            decode_result(&bytes).is_err(),
+            "a plain reader would lose the part"
+        );
+        let (_, _, none) = decode_answer(&encode_result(&table, 70)).unwrap();
+        assert_eq!(none, None);
+    }
+
     use proptest::prelude::*;
 
     use super::*;
