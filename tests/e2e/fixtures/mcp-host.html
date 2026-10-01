@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>opengrid MCP test host</title>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid MCP test host</h1>
+    </main>
+    <!-- #140: a host for the view, in the shape every MCP Apps host has. -->
+    <script type="module">
+      await import("/packages/opengrid-mcp/dist/test-host.js");
+      window.__hostReady = true;
+    </script>
+  </body>
+</html>
