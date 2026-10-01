@@ -10,8 +10,24 @@
     "url": "git+https://github.com/casoon/opengrid.git",
     "directory": "packages/opengrid-mcp"
   },
+  "bin": {
+    "opengrid-mcp": "src/server.mjs"
+  },
+  "files": [
+    "src",
+    "dist/view.html",
+    "README.md"
+  ],
   "scripts": {
-    "build": "node scripts/build-view.mjs"
+    "build": "node scripts/build-view.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@casoon/opengrid": "workspace:*",
+    "@modelcontextprotocol/client": "^2.2.0",
+    "@modelcontextprotocol/ext-apps": "^2.0.3",
+    "@modelcontextprotocol/server": "^2.2.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "esbuild": "0.28.2"

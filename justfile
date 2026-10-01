@@ -75,6 +75,11 @@ mcp-elements:
     node packages/opengrid-mcp/scripts/patch-glue.mjs packages/opengrid-mcp/build/elements
     pnpm --filter @casoon/opengrid-mcp run build
 
+# Die Tools des MCP-Servers (#140) über einen echten MCP-Client. Braucht das
+# Engine-Modul unter packages/opengrid/engine (`just package`).
+mcp-test:
+    pnpm --filter @casoon/opengrid-mcp test
+
 # Packt `@casoon/opengrid` wie ein Release und entpackt es nach
 # target/npm-package/package (Punkt 40, E25). Baut das Element-Modul und das
 # Engine-Modul (unter engine/) mit.
@@ -113,7 +118,7 @@ measure-engine:
 # Baut das Element-Modul und das Engine-Modul (die Fixture fährt die echte Engine),
 # packt das npm-Paket (packaged.spec.js prüft das gepackte, nicht das Repository),
 # installiert die gepinnte JS-Toolchain und fährt tests/e2e/.
-e2e: wasm-build-components wasm-build package mcp-elements
+e2e: wasm-build-components wasm-build package mcp-elements mcp-test
     # Die Hybrid-Specs (Punkt 28) fahren gegen einen echten opengrid-server, den
     # Playwright startet. Hier gebaut, damit dort nur noch gestartet wird — ein
     # Kaltbau innerhalb des webServer-Timeouts wäre ein Glücksspiel.
