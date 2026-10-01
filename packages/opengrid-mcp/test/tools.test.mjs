@@ -196,3 +196,14 @@ test("without an allow-list every field may be asked, derived ones too", async (
   );
   assert.equal(result.row_count, 1);
 });
+
+test("the grid's resource is one HTML file that loads nothing", async () => {
+  const { client } = await connect();
+  const { resources } = await client.listResources();
+  assert.ok(resources.some((resource) => resource.uri === "ui://opengrid/grid"));
+  const [content] = (await client.readResource({ uri: "ui://opengrid/grid" })).contents;
+  assert.equal(content.mimeType, "text/html;profile=mcp-app");
+  assert.deepEqual(content._meta.ui.csp, {}, "no origin besides itself");
+  assert.ok(!content.text.includes("/*VIEW*/"), "the view is inlined");
+  assert.doesNotMatch(content.text, /<script[^>]+src=/, "no script from a file or an origin");
+});
