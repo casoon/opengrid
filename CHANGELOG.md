@@ -18,6 +18,13 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+### Fixed
+
+- **An answer no longer takes the focus away in `<opengrid-pivot>`** ([#124](https://github.com/casoon/opengrid/issues/124)).
+  Every answer redraws the pivot; a reader on a toolbar control, a sort or fold button, or
+  typing into the filter field lost the focus and the typed text. The focused control is found
+  again after a redraw, and the field keeps its text — until the expression is added.
+
 ### Changed
 
 - **The pivot's limits follow a measurement** ([#122](https://github.com/casoon/opengrid/issues/122), E39).

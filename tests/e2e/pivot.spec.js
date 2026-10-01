@@ -847,6 +847,26 @@ test.describe("pivot filter", () => {
     expect(await attribute(page)).toBeNull();
   });
 
+  // Issue #124: every answer redraws the pivot, and a reader who is in the
+  // filter field — or on a toolbar button — keeps their place and their text.
+  test("an answer drawn while the reader types keeps the field and its text", async ({ page }) => {
+    await withToolbar(page);
+    await inside(page, (root) => root.querySelector("[data-filter-input]").focus());
+    await page.keyboard.type("country = ");
+    // An answer arrives meanwhile: the page changed a field.
+    await page.evaluate(() => document.querySelector("opengrid-pivot").setAttribute("rows", "customer"));
+    await expect.poll(async () => (await facts(page)).state).toBe("ready");
+    expect(await focused(page)).toMatchObject({ part: "search-input" });
+    await page.keyboard.type("DE");
+    expect(await inside(page, (root) => root.querySelector("[data-filter-input]").value)).toBe("country = DE");
+
+    // The same for a button.
+    await inside(page, (root) => root.querySelector('button[data-add="values"]').focus());
+    await page.evaluate(() => document.querySelector("opengrid-pivot").setAttribute("rows", "country"));
+    await expect.poll(async () => (await facts(page)).state).toBe("ready");
+    expect(await focused(page)).toMatchObject({ part: "add-field" });
+  });
+
   test("a chip goes, then all of them, and the focus stays near", async ({ page }) => {
     await withToolbar(page);
     await page.evaluate(() =>
