@@ -178,3 +178,21 @@ test("the count of the reader's query is the server's", async () => {
   });
   assert.equal(refused.isError, true);
 });
+
+test("without an allow-list every field may be asked, derived ones too", async () => {
+  const client = await openClient({
+    sources: { orders: { csv: CONFIG.sources.orders.csv, schema: CONFIG.sources.orders.schema } },
+  });
+  const call = async (name, args) => client.callTool({ name, arguments: args });
+  const { sessionId, columns } = (await call("opengrid_open", { source: "orders" })).structuredContent;
+  assert.ok(columns.some((column) => column.name === "ordered_year"), "a derived field is a column");
+  const result = JSON.parse(
+    (
+      await call("opengrid_query", {
+        sessionId,
+        query: { source: "orders", select: ["note", "ordered_year"], limit: 1 },
+      })
+    ).content[0].text,
+  );
+  assert.equal(result.row_count, 1);
+});

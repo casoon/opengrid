@@ -37,8 +37,16 @@ export class Data {
         throw new Error(`opengrid-mcp: source ${name}: fields not in the schema: ${unknown.join(", ")}`);
       }
       this.engine.load_csv(name, readFileSync(source.csv), JSON.stringify(schema));
-      const narrowed = { ...schema, fields: schema.fields.filter((field) => allowed.includes(field.name)) };
-      const header = `${narrowed.fields.map((field) => csvField(field.name)).join(",")}\n`;
+            // A derived field (`from`) is computed, not read: it is no CSV column,
+      // and it stays only when the field it is derived from is allowed.
+      const narrowed = {
+        ...schema,
+        fields: schema.fields.filter(
+          (field) => allowed.includes(field.name) && (!field.from || allowed.includes(field.from.field)),
+        ),
+      };
+      const stored = narrowed.fields.filter((field) => !field.from);
+      const header = `${stored.map((field) => csvField(field.name)).join(",")}\n`;
       this.checker.load_csv(name, new TextEncoder().encode(header), JSON.stringify(narrowed));
       const columns = (source.columns ?? narrowed.fields.map((field) => field.name)).filter((column) =>
         allowed.includes(column),
