@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>opengrid</title>
+    <style>
+      :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+      body { margin: 0; padding: 8px; background: transparent; }
+      /* No `main`: the landmark is the host's; the view is a part of its page. */
+      .app { display: grid; gap: 8px; }
+      opengrid-grid { display: block; height: 420px; }
+      #analyse {
+        justify-self: start;
+        font: inherit;
+        padding: 6px 12px;
+        border-radius: 6px;
+        border: 1px solid currentColor;
+        background: transparent;
+        color: inherit;
+      }
+      #analyse:focus-visible { outline: 2px solid; outline-offset: 2px; }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <p data-waiting role="status">Waiting for the grid …</p>
+      <button id="analyse" type="button" hidden></button>
+    </div>
+    <script type="module">/*VIEW*/</script>
+  </body>
+</html>
