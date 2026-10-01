@@ -92,10 +92,37 @@ mod host {
     use std::rc::Rc;
 
     use opengrid_types::{Schema, Value};
+    use wasm_bindgen::prelude::wasm_bindgen;
     use wasm_bindgen::{JsCast, JsValue};
     use web_sys::HtmlElement;
 
     use super::{CellFormat, plain_text};
+
+    // A static snippet, not code built at run time: `new Function` throws
+    // under any CSP without `'unsafe-eval'` — a strict page's, and every MCP
+    // Apps host's (issue #139).
+    #[wasm_bindgen(inline_js = "
+export function __opengrid_intl_formatter(kind, locale, options) {
+    const loc = locale || undefined;
+    const format = kind === 'date'
+        ? new Intl.DateTimeFormat(loc, options)
+        : new Intl.NumberFormat(loc, options);
+    return (text, value) => {
+        if (value === null || value === undefined) return '';
+        if (kind === 'date') {
+            const at = Date.parse(typeof value === 'string' && value.length === 10
+                ? value + 'T00:00:00Z' : value);
+            return Number.isNaN(at) ? text : format.format(new Date(at));
+        }
+        const number = Number(value);
+        return Number.isFinite(number) ? format.format(number) : text;
+    };
+}
+")]
+    extern "C" {
+        #[wasm_bindgen(catch, js_name = __opengrid_intl_formatter)]
+        fn intl_formatter(kind: &str, locale: &str, options: &JsValue) -> Result<JsValue, JsValue>;
+    }
 
     /// The global symbol the resolved formats are stored under.
     fn formats_symbol() -> js_sys::Symbol {
@@ -157,30 +184,7 @@ mod host {
 
         // Built in JS so the options object travels as it is; the closure is
         // created once per column and reused for every cell.
-        let factory = js_sys::Function::new_with_args(
-            "kind, locale, options",
-            "const loc = locale || undefined;
-             const format = kind === 'date'
-               ? new Intl.DateTimeFormat(loc, options)
-               : new Intl.NumberFormat(loc, options);
-             return (text, value) => {
-               if (value === null || value === undefined) return '';
-               if (kind === 'date') {
-                 const at = Date.parse(typeof value === 'string' && value.length === 10
-                   ? value + 'T00:00:00Z' : value);
-                 return Number.isNaN(at) ? text : format.format(new Date(at));
-               }
-               const number = Number(value);
-               return Number.isFinite(number) ? format.format(number) : text;
-             };",
-        );
-        factory
-            .call3(
-                &JsValue::NULL,
-                &JsValue::from_str(&kind),
-                &JsValue::from_str(&locale),
-                options,
-            )
+        intl_formatter(&kind, &locale, options)
             .ok()
             .and_then(|value| value.dyn_into::<js_sys::Function>().ok())
     }
