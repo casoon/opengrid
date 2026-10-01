@@ -328,6 +328,13 @@ impl GridState {
         vec![Patch::Status(self.status.clone())]
     }
 
+    /// Says something once, with the result that follows — not before it: the
+    /// page's reason for a new view (issue #146) belongs to the result it
+    /// explains, and a loading line carrying it would say it twice.
+    pub fn notice_with_result(&mut self, text: String) {
+        self.pending_notice = Some(text);
+    }
+
     /// Whether the status line should say that the selection is gone.
     ///
     /// True for exactly one result — the one that followed the sort or the

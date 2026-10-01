@@ -3671,7 +3671,7 @@ fn to_js(value: &opengrid_json::Json) -> JsValue {
 }
 
 /// [`crate::element::set_view`] — applies a whole view in one query.
-pub(crate) fn write_view(host: &HtmlElement, value: &JsValue) {
+pub(crate) fn write_view(host: &HtmlElement, value: &JsValue, notice: Option<String>) {
     let Some(runtime) = runtime(host) else {
         return;
     };
@@ -3788,6 +3788,10 @@ pub(crate) fn write_view(host: &HtmlElement, value: &JsValue) {
     reset_runtime(host);
     if had_selection {
         runtime.borrow_mut().state.note_selection_dropped();
+    }
+    // The page's reason, said with the result (issue #146).
+    if let Some(notice) = notice {
+        runtime.borrow_mut().state.notice_with_result(notice);
     }
     ensure_skeleton(host);
     {
