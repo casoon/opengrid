@@ -1,0 +1,122 @@
+{
+  "id": "p3-two-column-dimensions-cross-in-order",
+  "rule": "P3",
+  "pivot": {
+    "source": "orders",
+    "rows": [
+      "country"
+    ],
+    "columns": [
+      "ordered_year",
+      "flag"
+    ],
+    "values": [
+      {
+        "fn": "count",
+        "as": "n"
+      }
+    ],
+    "filter": {
+      "field": "id",
+      "op": "lte",
+      "value": 12
+    }
+  },
+  "expected": {
+    "columns": [
+      {
+        "path": [
+          2025,
+          true
+        ],
+        "measure": "n"
+      },
+      {
+        "path": [
+          2026,
+          false
+        ],
+        "measure": "n"
+      },
+      {
+        "path": [
+          2026,
+          true
+        ],
+        "measure": "n"
+      },
+      {
+        "path": [
+          2026,
+          null
+        ],
+        "measure": "n"
+      },
+      {
+        "path": [
+          null,
+          false
+        ],
+        "measure": "n"
+      }
+    ],
+    "rows": [
+      [
+        "DE",
+        1,
+        2,
+        2,
+        1,
+        0
+      ],
+      [
+        "FR",
+        0,
+        0,
+        0,
+        1,
+        1
+      ],
+      [
+        "GB",
+        0,
+        0,
+        1,
+        0,
+        0
+      ],
+      [
+        "US",
+        0,
+        1,
+        1,
+        0,
+        0
+      ],
+      [
+        null,
+        0,
+        1,
+        0,
+        0,
+        0
+      ],
+      [
+        null,
+        1,
+        4,
+        4,
+        2,
+        1
+      ]
+    ],
+    "levels": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      0
+    ]
+  }
+}

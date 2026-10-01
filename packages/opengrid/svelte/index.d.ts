@@ -87,7 +87,7 @@ export interface OpengridPivotProps extends PivotOptions, ElementProps {
   datasource?: string;
   /** Comma-separated row dimensions, outermost first. */
   rows?: string;
-  /** Comma-separated column dimensions; V1 allows one. */
+  /** Comma-separated column dimensions, outermost first; V1 allows two. */
   columns?: string;
   /** The measures as the contract's JSON. */
   values?: string;

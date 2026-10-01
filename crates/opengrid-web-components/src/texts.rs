@@ -506,7 +506,7 @@ impl Default for GridTexts {
             add_row: "+ Row".to_owned(),
             add_column: "+ Column".to_owned(),
             add_measure: "+ Measure".to_owned(),
-            column_full: "One column field already".to_owned(),
+            column_full: "Two column fields already".to_owned(),
             nothing_to_add: "Nothing left to add".to_owned(),
             field_remove: "Remove {field}".to_owned(),
             field_earlier: "Move {field} earlier".to_owned(),

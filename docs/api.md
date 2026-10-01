@@ -506,7 +506,7 @@ and the row and column limits are what make rendering the whole thing safe.
 |---|---|
 | `label`, `datasource`, `theme` | As in the grid. |
 | `rows` | Comma-separated row dimensions, outermost first. |
-| `columns` | Comma-separated column dimensions. V1 allows **one**. |
+| `columns` | Comma-separated column dimensions, outermost first. V1 allows **two**. |
 | `values` | The measures, as the contract's own JSON — not an invented shorthand. |
 | `sort` | How each level is ordered, as the wire's JSON: `[{"field":"country","by":"total","direction":"desc"}]`. The reader's sort buttons write it. |
 | `collapsed` | The folded groups, a JSON list of group paths: `[["DE"],["FR","Beta"]]`, NULL as `null`. The reader's fold buttons write it. |
@@ -586,8 +586,8 @@ labelled group holds the chosen fields as chips — each with "Move … earlier"
 ("+ Row", "+ Column", "+ Measure") whose menu offers what the page offers and
 the pivot does not use yet: `fields` for the dimensions, `measures` for the
 measures, whole. The pivot does not know the source's schema, and a measure
-needs a function the page chooses. "+ Column" is `aria-disabled` while there is
-a column field (one in V1), and so is an add button with nothing left; its name
+needs a function the page chooses. "+ Column" is `aria-disabled` while there are
+two column fields (V1's limit), and so is an add button with nothing left; its name
 then says why. The menu is the grid's: arrows, Home/End, Enter or Space to pick,
 Escape back to the button. Every change is one write of the view — one query,
 one `opengrid-view-change` — and a sort or folded groups that name what went
@@ -611,6 +611,14 @@ measures' fields. What does not parse, and free text without an operator, is
 said in the status line with the grid's sentences, and nothing changes. The
 field needs the grid's parser, so it is in the default module; a pivot-only
 build keeps the attribute.
+
+**Two column dimensions** (`columns="ordered_year,status"`) give a header row per
+dimension, outermost first, then the measures: a year spans all its statuses,
+a status its measures. That makes the pivot a complex table, so every header
+cell carries an `id` and every value cell `headers` naming its row and column
+headers — a screen reader reads "DE, 2025, open, revenue" without inferring
+which spanning header is meant. The combinations are the ones that occur (P3);
+there are no column subtotals.
 
 `get_pivot(host)` exports the table as it is shown, as CSV — see
 [exporting a pivot](#exporting-a-pivot). Its headers and values stay the raw
@@ -1039,7 +1047,7 @@ loader.module.set_texts(host, { lang: "de", loading: "Wird geladen …" });
 | `addGrouping` / `groupingFull` | `+ Group` / `Grouped by two columns already` — the button, and its name when no level can be added | |
 | `pivotToolbar` / `pivotRows` / `pivotColumns` / `pivotMeasures` | `Pivot fields` / `Rows` / `Columns` / `Measures` — the pivot's field toolbar and its three groups | |
 | `addRow` / `addColumn` / `addMeasure` | `+ Row` / `+ Column` / `+ Measure` | |
-| `columnFull` / `nothingToAdd` | `One column field already` / `Nothing left to add` — an add button's name when it cannot add | |
+| `columnFull` / `nothingToAdd` | `Two column fields already` / `Nothing left to add` — an add button's name when it cannot add | |
 | `fieldRemove` / `fieldEarlier` / `fieldLater` | `Remove {field}` / `Move {field} earlier` / `Move {field} later` | `{field}` |
 | `pivotFilters` / `pivotFilterLabel` / `pivotFilterHint` | `Filters` / `Add a filter` / `field = value · Enter` — the pivot's filter group, its field's name and hint | |
 | `filterAny` / `booleanTrue` / `booleanFalse` | `any` / `yes` / `no` — the filter row's choice for a boolean column | |

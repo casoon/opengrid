@@ -64,6 +64,10 @@ pub const FIELDS_ATTRIBUTE: &str = "fields";
 /// The measures a reader may add, as the contract's JSON (issue #112).
 pub const MEASURES_ATTRIBUTE: &str = "measures";
 
+/// How many column dimensions the toolbar lets a reader choose — the engine's
+/// limit (E20, raised to two by #120).
+pub const MAX_COLUMN_DIMENSIONS: usize = 2;
+
 /// The marks of a group's fold button, beside its name and out of it.
 const EXPANDED_MARK: &str = "▾";
 const COLLAPSED_MARK: &str = "▸";
@@ -542,9 +546,9 @@ pub fn build_toolbar(
         attribute(buffer, button, "data-add", axis.token());
         attribute(buffer, button, "aria-haspopup", "menu");
         attribute(buffer, button, "aria-expanded", "false");
-        // V1 allows one column dimension (E20); and a menu with nothing in it
-        // is not opened. Either way the button says why, in its name.
-        let full = axis == Axis::Columns && !view.columns.is_empty();
+        // V1 allows two column dimensions (E20, #120); and a menu with
+        // nothing in it is not opened. Either way the button says why.
+        let full = axis == Axis::Columns && view.columns.len() >= MAX_COLUMN_DIMENSIONS;
         if full || offer.open(view, axis).is_empty() {
             attribute(buffer, button, "aria-disabled", "true");
             attribute(
@@ -1170,9 +1174,16 @@ pub fn build_pivot(
     });
 
     if let Some(model) = model {
-        let measures = model.measures();
         let groups = model.groups();
-        let nested = groups.first().is_some_and(|path| !path.is_empty());
+        // How many header rows of values: one per column dimension.
+        let depth = groups.first().map_or(0, |path| path.len());
+        let nested = depth > 0;
+        // Two levels of spanning headers make a complex table (WCAG H43):
+        // every header cell gets an `id` and every data cell names its
+        // headers, so nothing is left for a screen reader to infer (#120).
+        let complex = depth > 1;
+        // Per generated column, the ids of the headers above it.
+        let mut column_ids: Vec<Vec<String>> = vec![Vec::new(); model.columns.len()];
 
         let thead = element(buffer, nodes, Some(table), "thead");
         let first_row = element(buffer, nodes, Some(thead), "tr");
@@ -1181,9 +1192,9 @@ pub fn build_pivot(
             attribute(buffer, th, "part", "header");
             attribute(buffer, th, "scope", "col");
             if nested {
-                // The dimension name spans both header rows, so the row below
-                // holds only the measures.
-                attribute(buffer, th, "rowspan", "2");
+                // The dimension name spans every header row, so the rows
+                // beside it hold only the column values and the measures.
+                attribute(buffer, th, "rowspan", &(depth + 1).to_string());
             }
             let aria_sort = dimension_aria_sort(&model.sort, name);
             sort_button(
@@ -1197,35 +1208,58 @@ pub fn build_pivot(
         }
 
         if nested {
-            for group in &groups {
-                let th = element(buffer, nodes, Some(first_row), "th");
-                attribute(buffer, th, "part", "header");
-                attribute(buffer, th, "scope", "colgroup");
-                attribute(buffer, th, "colspan", &measures.to_string());
-                // The separator is the one `get_pivot`'s CSV header composes
-                // with (`opengrid_export::PATH_SEPARATOR`), so a column is named
-                // in the same words in the table and in its export.
-                buffer.push(Patch::SetText {
-                    node: th,
-                    text: group
-                        .iter()
-                        .enumerate()
-                        .map(|(depth, value)| {
-                            let name = model.column_dimensions.get(depth);
-                            header(look, texts, name.map_or("", String::as_str), value)
-                        })
-                        .collect::<Vec<_>>()
-                        .join(" · "),
-                });
+            // One row per column dimension, outermost first: a value spans
+            // every generated column under it. The columns come sorted by
+            // their path (P3), so the columns of one value are adjacent.
+            for level in 0..depth {
+                let row = if level == 0 {
+                    first_row
+                } else {
+                    element(buffer, nodes, Some(thead), "tr")
+                };
+                let name = model.column_dimensions.get(level);
+                let mut start = 0;
+                for (run, group) in model
+                    .columns
+                    .chunk_by(|left, right| left.path[..=level] == right.path[..=level])
+                    .enumerate()
+                {
+                    let th = element(buffer, nodes, Some(row), "th");
+                    attribute(buffer, th, "part", "header");
+                    attribute(buffer, th, "scope", "colgroup");
+                    attribute(buffer, th, "colspan", &group.len().to_string());
+                    if complex {
+                        let id = format!("og-c{level}-{run}");
+                        attribute(buffer, th, "id", &id);
+                        for ids in &mut column_ids[start..start + group.len()] {
+                            ids.push(id.clone());
+                        }
+                    }
+                    start += group.len();
+                    buffer.push(Patch::SetText {
+                        node: th,
+                        text: header(
+                            look,
+                            texts,
+                            name.map_or("", String::as_str),
+                            &group[0].path[level],
+                        ),
+                    });
+                }
             }
             // Not sort buttons: a cell here is one column value's, and a
             // measure orders by the whole row (P9) — the order would not be
             // the one these cells show.
-            let second_row = element(buffer, nodes, Some(thead), "tr");
-            for column in &model.columns {
-                let th = element(buffer, nodes, Some(second_row), "th");
+            let measure_row = element(buffer, nodes, Some(thead), "tr");
+            for (index, column) in model.columns.iter().enumerate() {
+                let th = element(buffer, nodes, Some(measure_row), "th");
                 attribute(buffer, th, "part", "header");
                 attribute(buffer, th, "scope", "col");
+                if complex {
+                    let id = format!("og-m{index}");
+                    attribute(buffer, th, "id", &id);
+                    column_ids[index].push(id);
+                }
                 buffer.push(Patch::SetText {
                     node: th,
                     text: look.title(&column.measure),
@@ -1279,6 +1313,7 @@ pub fn build_pivot(
                 },
             );
 
+            let mut row_ids: Vec<String> = Vec::new();
             if level < dimensions {
                 // A subtotal: one header spanning the dimension columns, and it
                 // **says** that it is a total (WCAG 1.4.1 — not colour alone).
@@ -1286,6 +1321,11 @@ pub fn build_pivot(
                 let th = element(buffer, nodes, Some(tr), "th");
                 attribute(buffer, th, "part", "row-header");
                 attribute(buffer, th, "scope", "row");
+                if complex {
+                    let id = format!("og-r{index}");
+                    attribute(buffer, th, "id", &id);
+                    row_ids.push(id);
+                }
                 if dimensions > 1 {
                     attribute(buffer, th, "colspan", &dimensions.to_string());
                 }
@@ -1324,10 +1364,15 @@ pub fn build_pivot(
                     buffer.push(Patch::SetText { node: label, text });
                 }
             } else {
-                for (value, name) in cells.iter().zip(&model.row_dimensions) {
+                for (at, (value, name)) in cells.iter().zip(&model.row_dimensions).enumerate() {
                     let th = element(buffer, nodes, Some(tr), "th");
                     attribute(buffer, th, "part", "row-header");
                     attribute(buffer, th, "scope", "row");
+                    if complex {
+                        let id = format!("og-r{index}-{at}");
+                        attribute(buffer, th, "id", &id);
+                        row_ids.push(id);
+                    }
                     buffer.push(Patch::SetText {
                         node: th,
                         text: header(look, texts, name, value),
@@ -1335,9 +1380,19 @@ pub fn build_pivot(
                 }
             }
 
-            for (value, column) in cells.iter().skip(dimensions).zip(&model.columns) {
+            for (at, (value, column)) in cells
+                .iter()
+                .skip(dimensions)
+                .zip(&model.columns)
+                .enumerate()
+            {
                 let td = element(buffer, nodes, Some(tr), "td");
                 attribute(buffer, td, "part", "cell");
+                if complex {
+                    let mut ids = row_ids.clone();
+                    ids.extend(column_ids[at].iter().cloned());
+                    attribute(buffer, td, "headers", &ids.join(" "));
+                }
                 buffer.push(Patch::SetText {
                     node: td,
                     text: cell(look, &column.measure, value),
@@ -1486,6 +1541,46 @@ mod tests {
             "the dimension name spans both rows"
         );
         assert!(markup.contains("\"2025\""), "{markup}");
+    }
+
+    /// Two column dimensions (#120): a header row per dimension, the outer
+    /// value spanning its inner ones, and — a complex table — every value
+    /// cell naming its headers by id.
+    #[test]
+    fn two_column_dimensions_give_a_named_three_row_header() {
+        let mut model = parse_result(
+            r#"{"row_dimensions":["country"],
+            "columns":[{"path":[2025,true],"measure":"n"},{"path":[2025,false],"measure":"n"},
+                       {"path":[2026,true],"measure":"n"}],
+            "levels":[1,0],"result":{"total_count":2,"row_count":2,"columns":[
+            {"name":"country","type":"utf8","nullable":true,"values":["DE",null]},
+            {"name":"n_0","type":"int64","nullable":true,"values":[1,2]},
+            {"name":"n_1","type":"int64","nullable":true,"values":[3,4]},
+            {"name":"n_2","type":"int64","nullable":true,"values":[5,6]}]}}"#,
+        )
+        .unwrap();
+        model.column_dimensions = vec!["year".to_owned(), "flag".to_owned()];
+        let drawn = markup(Some(&model));
+        assert!(drawn.contains("name: \"rowspan\", value: \"3\""), "{drawn}");
+        // 2025 over two columns, 2026 over one; true, false, true below.
+        assert!(drawn.contains("name: \"colspan\", value: \"2\""), "{drawn}");
+        assert_eq!(
+            drawn.matches("value: \"colgroup\"").count(),
+            5,
+            "2 years + 3 flags"
+        );
+        // DE's value under 2025 · false · n names exactly those headers.
+        assert!(
+            drawn.contains("name: \"headers\", value: \"og-r0-0 og-c0-0 og-c1-1 og-m1\""),
+            "{drawn}"
+        );
+        // The grand total's row header is named too.
+        assert!(
+            drawn.contains("value: \"og-r1 og-c0-1 og-c1-2 og-m2\""),
+            "{drawn}"
+        );
+        // With one column dimension nothing is named: scope says it all.
+        assert!(!markup(Some(&self::model())).contains("headers"));
     }
 
     /// A subtotal says that it is one. Colour alone is not information
@@ -1907,9 +2002,29 @@ mod tests {
             "nothing before the first"
         );
         assert!(markup.contains("Remove ordered_year"));
-        // A column is there (one in V1), and every field is in use.
-        assert!(markup.contains("One column field already"));
-        assert_eq!(markup.matches("Nothing left to add").count(), 2);
+        // Every field is in use; one column of two (V1, #120) does not fill
+        // the column axis — nothing left to offer does.
+        assert!(!markup.contains("Two column fields already"));
+        assert_eq!(markup.matches("Nothing left to add").count(), 3);
+
+        let two = PivotView {
+            rows: vec!["country".to_owned()],
+            columns: vec!["customer".to_owned(), "ordered_year".to_owned()],
+            ..view
+        };
+        let mut nodes = NodeAllocator::new();
+        let mut buffer = PatchBuffer::new();
+        build_toolbar(
+            &mut buffer,
+            &mut nodes,
+            NodeId::ROOT,
+            &two,
+            &Offer::from_attributes(Some("country,customer,ordered_year,qty"), None).unwrap(),
+            &GridTexts::default(),
+            &PlainLook,
+        );
+        let markup = format!("{:?}", buffer.patches());
+        assert!(markup.contains("Two column fields already"), "{markup}");
     }
 
     /// A filter's chips are its clauses, said in words; they join back to one
