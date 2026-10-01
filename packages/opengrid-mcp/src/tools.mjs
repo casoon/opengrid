@@ -110,7 +110,7 @@ export function registerTools(server, data, sessions) {
     },
     guarded(async ({ source, view }) => {
       const query = data.viewQuery(source, view ?? {});
-      const total = data.count(query);
+      const total = await data.count(query);
       const session = sessions.open(source, view ?? {}, query, total);
       return answer(
         {
@@ -140,7 +140,7 @@ export function registerTools(server, data, sessions) {
     guarded(async ({ sessionId, view }) => {
       const session = sessionOf(sessions, sessionId);
       const query = data.viewQuery(session.source, view);
-      const total = data.count(query);
+      const total = await data.count(query);
       sessions.setView(session, view, query, total);
       return answer({ sessionId, view, total, revision: session.revision }, `${summary(session)}.`);
     }),
@@ -190,7 +190,7 @@ export function registerTools(server, data, sessions) {
       const wanted = session.selected.slice(0, limit ?? SELECTION_LIMIT);
       const rows = [];
       for (const [offset, count] of runsOf(wanted)) {
-        rows.push(...rowsOf(data.execute({ ...session.query, offset, limit: count })));
+        rows.push(...rowsOf(await data.execute({ ...session.query, offset, limit: count })));
       }
       const cut = session.selected.length - wanted.length;
       return answer(
@@ -217,7 +217,7 @@ export function registerTools(server, data, sessions) {
       if (query.source !== session.source) {
         throw new DataError("validation", `the session's source is ${session.source}`, "query.source");
       }
-      return { content: [{ type: "text", text: data.execute(query) }] };
+      return { content: [{ type: "text", text: await data.execute(query) }] };
     }),
   );
 
@@ -247,7 +247,7 @@ export function registerTools(server, data, sessions) {
             if (change) {
         // The count of a new query is the server's to say, not the view's.
         const query = change.query ?? undefined;
-        const total = query ? data.count(query) : undefined;
+        const total = query ? (await data.count(query)) : undefined;
         sessions.readerChanged(session, { ...change, query, total });
       }
       return answer({

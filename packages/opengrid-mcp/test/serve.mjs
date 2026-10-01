@@ -6,7 +6,7 @@ import { createServer } from "../src/server.mjs";
 
 export async function openClient(config) {
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
-  await createServer(config)().connect(serverSide);
+  await (await createServer(config))().connect(serverSide);
   const client = new Client({ name: "opengrid tests", version: "0" });
   await client.connect(clientSide);
   return client;
