@@ -64,8 +64,10 @@ neither a match nor context nor a child, and a node whose parent is outside is a
 server puts its mandatory row filter (E16) there, not on the query's filter — on the filter it
 would only stop matches, and the ancestors shown as context could be another tenant's rows.
 Every source answers a tree through the server: one that cannot by itself (the capability
-`tree`) is asked for the rows of the scope, and the engine answers the level. A tree answers in
-JSON even where the binary form is preferred — the binary form has no place for its part yet.
+`tree`) is asked for the rows of the scope, and the engine answers the level. In the binary
+form a tree's level is its own kind (`2`), the result followed by `matches`, `orphans`, the child
+count per row and the matches as a bitmap; a reader of plain results refuses it rather than lose
+that part.
 
 The pivot query is `{ source, rows, columns, values: [{ field, fn, as }], filter?, sort? }`.
 

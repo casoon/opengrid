@@ -194,15 +194,23 @@ async fn query(
 
     let result = executed.map_err(source_failed)?;
 
-    // The binary form has no place for a tree's part yet: a tree answers in
-    // JSON whatever was preferred, which every client reads.
-    if wants_columns(&headers) && result.tree.is_none() {
+    if wants_columns(&headers) {
         let table = opengrid_columns::Table::from_values(&result.schema, &result.columns)
             .map_err(|message| WireError::new(ErrorCode::Backend, message))?;
-        return Ok(columns_response(opengrid_columns::wire::encode_result(
-            &table,
-            result.total_count,
-        )));
+        // A tree's level carries its part in the binary form too (E38).
+        return Ok(columns_response(match &result.tree {
+            None => opengrid_columns::wire::encode_result(&table, result.total_count),
+            Some(tree) => opengrid_columns::wire::encode_tree_result(
+                &table,
+                result.total_count,
+                &opengrid_columns::wire::TreeSection {
+                    children: tree.children.clone(),
+                    matched: tree.matched.clone(),
+                    matches: tree.matches,
+                    orphans: tree.orphans,
+                },
+            ),
+        }));
     }
     Ok(json_response(result_to_json(&result)))
 }
