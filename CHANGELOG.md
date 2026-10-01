@@ -18,6 +18,16 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+### Added
+
+- **Two column dimensions in `<opengrid-pivot>`** ([#120](https://github.com/casoon/opengrid/issues/120)).
+  `columns="ordered_year,status"` gives a header row per dimension, the outer value spanning its
+  inner ones, then the measures. With two, the pivot is a complex table: every header cell has an
+  `id` and every value cell `headers` naming its row and column headers. The engine's limit
+  (`PivotLimits::max_column_dimensions`, reported by `GET /source`) is 2 now; three is an error
+  with a sentence. The toolbar offers "+ Column" until there are two; `columnFull` reads "Two
+  column fields already". Conformance cases with two column dimensions run on every path.
+
 ## [0.8.1] — 2026-09-30
 
 **Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).

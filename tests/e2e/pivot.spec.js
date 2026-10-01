@@ -148,6 +148,55 @@ test.describe("pivot", () => {
     expect(results.violations).toEqual([]);
   });
 
+  // Issue #120: two column dimensions — a header row each, and every value
+  // cell names its headers, so a screen reader reads all of them.
+  test("two column dimensions give a named three-row header", async ({ page }) => {
+    await open(page);
+    await page.evaluate(() =>
+      document.querySelector("opengrid-pivot").setAttribute("columns", "ordered_year,customer"),
+    );
+    await expect
+      .poll(async () => (await facts(page)).headerRows)
+      .toBe(3);
+    await expect.poll(async () => (await facts(page)).state).toBe("ready");
+    const seen = await page.evaluate(() => {
+      const root = document.querySelector("opengrid-pivot").shadowRoot;
+      const rows = [...root.querySelectorAll("thead tr")];
+      const said = (cell) =>
+        cell
+          .getAttribute("headers")
+          .split(" ")
+          .map((id) => root.getElementById(id).textContent.replace(/[\u00a0▲▼]/g, ""));
+      return {
+        years: [...rows[0].querySelectorAll('th[scope="colgroup"]')].map((th) => [th.textContent, th.colSpan]),
+        customers: [...rows[1].querySelectorAll("th")].map((th) => th.textContent),
+        span: rows[0].querySelector("th").rowSpan,
+        first: said(root.querySelector("tbody tr td")),
+        // Every value cell names a row header and three column headers.
+        named: [...root.querySelectorAll("tbody td")].every(
+          (td) => (td.getAttribute("headers") ?? "").split(" ").length === 4,
+        ),
+      };
+    });
+    expect(seen.span).toBe(3);
+    expect(seen.years.map(([year]) => year)).toEqual(["2025", "2026", "(no value)"]);
+    // A year spans its customers, each crossed with the two measures.
+    expect(seen.years.reduce((sum, [, span]) => sum + span, 0)).toBe(seen.customers.length * 2);
+    expect(seen.first[0]).toBe("(empty)");
+    expect(seen.first.slice(1)).toEqual(["2025", seen.customers[0], "total"]);
+    expect(seen.named).toBe(true);
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  });
+
+  test("three column dimensions are refused with a sentence", async ({ page }) => {
+    await open(page);
+    await page.evaluate(() =>
+      document.querySelector("opengrid-pivot").setAttribute("columns", "ordered_year,flag,customer"),
+    );
+    await expect.poll(async () => (await facts(page)).state).toBe("error");
+    expect((await facts(page)).status).toContain("column dimensions");
+  });
+
   // Issue #104: the page's titles and formats, as at the grid and the table.
   test("titles and formats are the page's, and the export stays raw", async ({ page }) => {
     await open(page);
@@ -651,8 +700,8 @@ test.describe("pivot field toolbar", () => {
     );
     expect(buttons).toEqual([
       ["+ Row", "menu", null, null],
-      // One column field in V1, and there is one.
-      ["+ Column", "menu", "true", "One column field already"],
+      // Two column fields in V1, and there is one: the other is offered.
+      ["+ Column", "menu", null, null],
       ["+ Measure", "menu", null, null],
     ]);
   });

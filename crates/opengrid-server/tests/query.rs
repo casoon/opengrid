@@ -441,8 +441,9 @@ async fn a_pivot_is_guarded_like_every_other_request() {
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(error_of(&answer).code, ErrorCode::UnknownSource);
 
-    // Two dimensions across the top is more than V1 allows.
-    let wide = r#"{"source":"orders","rows":["country"],"columns":["customer","ordered_year"],
+    // Three dimensions across the top is more than V1 allows (two, #120).
+    let wide = r#"{"source":"orders","rows":["country"],
+        "columns":["customer","ordered_year","flag"],
         "values":[{"fn":"count","as":"n"}]}"#;
     let (status, answer) = post_pivot(app(false).await, "orders", Some(TOKEN), wide).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
@@ -454,7 +455,7 @@ async fn a_pivot_is_guarded_like_every_other_request() {
 async fn a_source_describes_its_pivot_limits() {
     let (_, body) = describe(app(false).await, "orders", Some(TOKEN)).await;
     let described: opengrid_json::Json = opengrid_json::from_str(&body).expect("JSON");
-    assert_eq!(described["pivot_limits"]["max_column_dimensions"], 1);
+    assert_eq!(described["pivot_limits"]["max_column_dimensions"], 2);
     assert_eq!(described["pivot_limits"]["max_columns"], 256);
     assert_eq!(described["pivot_limits"]["max_rows"], 2000);
 }
