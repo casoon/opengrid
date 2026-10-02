@@ -18,38 +18,75 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-10-02
+
+**Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).
+**Browsers:** Chromium (the whole e2e suite: 1116 passed; the 480 px filter test, a known flake, passed on its own rerun). WebKit and Firefox: **not run** for this release.
+
+The grid shows a tree: rows that name their parent, loaded a level at a time, with the treegrid's
+keys and a selection by key. Beside it, the query of a view without an element, a sentence of the
+page said with a new view, and Intl formats under a strict Content Security Policy.
+
+**What breaks:**
+- Rust: `Query` and `QueryResult` have a new public field, `tree`; struct literals need it
+  (`tree: None`). `DataSourceCapabilities` has a new field, `tree`.
+
+**Module sizes** (brotli, `just measure-modules`): the elements 224.8 → 239.8 KiB, the engine
+118.8 → 133.8 KiB — both past their bounds, which this release raises (`scripts/module-budget.txt`):
+the tree in the grid and in the engine is most of it; `view_query`'s share is 5.3 KiB raw.
+
 ### Added
 
-- **A tree's level in the binary result form** ([#135](https://github.com/casoon/opengrid/issues/135)).
-  Kind `2`: the result, then the tree part (matches, orphans, the child count per row, matches
-  as a bitmap). The engine's `execute_columns` — what the worker and the local provider call —
-  and the server answer a tree in it; a reader of plain results refuses it instead of losing the
-  part. Before, the worker could not answer a tree at all, and the server fell back to JSON.
-
-### Added
-
+- **A tree in `<opengrid-grid>`** ([#135](https://github.com/casoon/opengrid/issues/135), E38).
+  `tree="parent_id"` (and `tree-key`, `id` when absent) shows the rows as a `treegrid`, loaded a
+  level at a time with each node's child count, so a leaf offers nothing to open. Rows carry
+  `aria-level`, `aria-posinset`/`aria-setsize`, `aria-expanded` where something opens and
+  `aria-busy` while it loads; the first column is indented by depth. On a node's first cell `→`
+  opens it or goes to its first child, `←` closes it or goes to its parent; a click on the first
+  cell opens or closes it. A filter keeps the path to a match as muted context; the status line
+  counts matches and names orphans once. Open nodes travel in the view's `expanded`, each `[key]`.
+  `page-size` refuses a tree; `group-by` is not used in one and + Group says why. React, Vue and
+  Svelte take `tree` and `treeKey`.
+- **A tree's selection names nodes by key** ([#135](https://github.com/casoon/opengrid/issues/135)).
+  It stays when nodes close over it and when the grid is sorted or filtered;
+  `opengrid-selection-change` carries `keys`, and `count` counts every selected node. Select-all
+  takes the nodes shown. Editing is off in a tree.
+- **The query of a view without an element** ([#144](https://github.com/casoon/opengrid/issues/144)).
+  `engine.view_query(source, columns, view)` answers what `get_query()` answers on a grid with
+  these columns once the view is applied — so a server can count or export a saved view without a
+  browser. A view naming an unknown column, or a value its column cannot hold, is refused with every
+  problem named.
+- **`set_view(host, view, { notice })`** ([#146](https://github.com/casoon/opengrid/issues/146)).
+  The page's sentence — "Saved view Q3 applied" — is said once, with the result:
+  `52 matches · Saved view Q3 applied`. A view the element already has says nothing, notice or not.
+  The pivot takes it too.
+- **One level of a tree, in the engine** ([#129](https://github.com/casoon/opengrid/issues/129), E38).
+  A query takes `tree: { key?, parent, under? }` and answers the children of `under` (or the
+  roots) with `tree: { children, match, matches, orphans }` beside the rows: orphans are roots,
+  a key twice or a cycle is an error with a sentence, a filter shows matches with their
+  ancestors as context, a sort orders siblings. The local engine answers it in the tab and the
+  worker, the planner keeps a tree with its filter on one side, and sources say whether they can
+  with the new capability `tree` (written only when true). The server refuses a tree query for
+  sources without it. Nine conformance cases (T2–T6) pass natively and in the browser.
 - **The tree on the server, and the tenant rule** ([#131](https://github.com/casoon/opengrid/issues/131), plan point 122).
   The tree part takes `scope`, a filter that decides which rows the tree consists of; the server
   puts its mandatory row filter there, so another tenant's row is never a match, context or child
   and a node under one becomes an orphan. Every connector answers a tree: the file and rows tiers
   through the engine, SQLite, PostgreSQL and any other through `Connector::tree`, which asks for
   the rows of the scope and lets the engine answer the level. `GET /source` reports `tree` for
-  every source. A tree answers in JSON even where the binary form is preferred. The tree
-  conformance cases (now twelve, three on `scope`) pass against a file, the rows tier, SQLite and
-  PostgreSQL through `POST /query`.
+  every source. The tree conformance cases (now twelve, three on `scope`) pass against a file,
+  the rows tier, SQLite and PostgreSQL through `POST /query`.
+- **A tree's level in the binary result form** ([#135](https://github.com/casoon/opengrid/issues/135)).
+  Kind `2`: the result, then the tree part (matches, orphans, the child count per row, matches
+  as a bitmap). The engine's `execute_columns` — what the worker and the local provider call —
+  and the server answer a tree in it; a reader of plain results refuses it instead of losing the
+  part. Before, the worker could not answer a tree at all, and the server fell back to JSON.
 
-### Added
+### Fixed
 
-- **One level of a tree, in the engine** ([#129](https://github.com/casoon/opengrid/issues/129), E38).
-  A query takes `tree: { key?, parent, under? }` and answers the children of `under` (or the
-  roots) with `tree: { children, match, matches, orphans }` beside the rows: orphans are roots,
-  a key twice or a cycle is an error with a sentence, a filter shows matches with their
-  ancestors as context, a sort orders siblings. The local engine answers it in the tab and the
-  worker (JSON; the binary form follows with the grid's tree), the planner keeps a tree with its
-  filter on one side, and sources say whether they can with the new capability `tree` (written
-  only when true). The server refuses a tree query for sources without it, and for sources with
-  a mandatory row filter until plan point 122 applies that filter first. Nine conformance cases (T2–T6) pass
-  natively and in the browser.
+- **Intl formats work under a strict Content Security Policy** ([#139](https://github.com/casoon/opengrid/issues/139)).
+  `set_formats` built its formatters with `new Function`, which throws without `'unsafe-eval'`. They
+  come from a static snippet now; no code is built at run time.
 
 ## [0.9.0] — 2026-10-01
 

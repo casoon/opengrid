@@ -14,8 +14,16 @@
 # #108, #110, #112, #114) — titles and formats, its view and events, sort
 # buttons, folding, the field toolbar with its menu and the filter field —
 # grew the element module by 17.8 KiB, to 229378 B.
-grid+pivot    231700  # 229378 B, 2026-09-30, after #114
+# Raised 2026-10-02 from 231700: the tree in the grid (#135: its display list,
+# loading by level, the treegrid's keys, the selection by key), a page's notice
+# with a view (#146) and the Intl snippet (#139) grew the element module by
+# 15.8 KiB, to 245577 B.
+grid+pivot    248000  # 245577 B, 2026-10-02, release 0.10.0
 # Raised 2026-09-30 from 108000: the bound was not raised with 0.7.0, which
 # shipped the engine at 115.2 KiB already (CHANGELOG); rule P9's sorted
 # grouping sets and order sets (#108) added the rest, to 121610 B.
-engine        122900  # 121610 B, 2026-09-30, after #108
+# Raised 2026-10-02 from 122900: one level of a tree in the engine (#129: the
+# levels, matches with their ancestors, orphans, cycles), its binary form
+# (#136) and the query of a view without an element (#144, opengrid-grid,
+# 5.3 KiB raw) grew the engine by 15.0 KiB, to 136993 B.
+engine        138400  # 136993 B, 2026-10-02, release 0.10.0
