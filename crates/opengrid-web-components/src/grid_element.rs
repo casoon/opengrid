@@ -2605,6 +2605,13 @@ fn redraw_cell(host: &HtmlElement, cell: CellRef) {
     } else {
         let _ = td.remove_attribute("data-changed");
     }
+    let _ = td.set_attribute(
+        "part",
+        borrowed
+            .state
+            .cell_state(cell)
+            .map_or("cell", |state| state.part()),
+    );
     match borrowed.state.cell_state(cell) {
         Some(state) => {
             let _ = td.set_attribute("data-state", state.as_str());

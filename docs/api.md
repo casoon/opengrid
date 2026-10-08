@@ -954,9 +954,12 @@ grid.addEventListener("opengrid-cell-change", async ({ detail }) => {
 
 | `state` | What the grid does |
 |---|---|
-| `saving` | The cell shows `data-state="saving"` (the muted ink by default). |
-| `saved` | The unsaved mark goes; the cell shows `data-state="saved"`. |
-| `error` | The value and the unsaved mark stay; the cell shows `data-state="error"` and `aria-invalid="true"`, and `message` is said in the grid's one live region (polite). |
+| `saving` | The cell is `part="cell cell-saving"` (the muted ink by default). |
+| `saved` | The unsaved mark goes; the cell is `part="cell cell-saved"`. |
+| `error` | The value and the unsaved mark stay; the cell is `part="cell cell-error"` with `aria-invalid="true"`, and `message` is said in the grid's one live region (polite). |
+
+A page styles the states through those parts — `opengrid-grid::part(cell-error) { … }`.
+Inside the shadow root the cell also carries `data-state`.
 
 `set_values(grid, [{ key, column, value }])` shows values the page computes — a
 running average, a proposed grade. They are not edits: no unsaved mark, no
@@ -1061,7 +1064,7 @@ would make it invisible), a **selected row** carries an inset accent bar as well
 as the tint (colour alone would be 1.4.1), and `prefers-reduced-motion` beats a
 theme that animates a part.
 
-**Parts:** `add-field`, `add-filter`, `add-grouping`, `body`, `caption`, `cell`, `chip`, `chip-move`, `chip-remove`, `chips`,
+**Parts:** `add-field`, `add-filter`, `add-grouping`, `body`, `caption`, `cell`, `cell-error`, `cell-saved`, `cell-saving`, `chip`, `chip-move`, `chip-remove`, `chips`,
 `chips-clear`, `column-menu`, `column-menu-button`, `column-toggle`, `columns`, `columns-toggle`, `density`,
 `editor`, `empty`, `empty-reset`, `empty-text`, `facet`, `facet-bounds`, `facet-cost`, `facet-count`,
 `facet-pill`, `facet-pills`, `facet-value`, `facets`, `facets-head`, `facets-toggle`, `filter`,

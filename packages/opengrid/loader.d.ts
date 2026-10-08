@@ -79,7 +79,8 @@ export interface OpengridModule {
    * What became of an edit the page saves (issue #153). `key` is the record's
    * `row-key` value as `opengrid-cell-change` gave it. `saved` clears the
    * unsaved mark; `error` keeps the value and says `message` in the live
-   * region. Shown as `data-state` on the cell; the focus never moves.
+   * region. The cell's part is then `cell cell-<state>` (`::part(cell-error)`);
+   * the focus never moves.
    * Requires `row-key`.
    */
   set_cell_state(

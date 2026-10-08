@@ -3169,6 +3169,11 @@ pub fn patch_grid(
                                 name: name.to_owned(),
                             });
                         }
+                        buffer.push(Patch::SetAttribute {
+                            node: *cell,
+                            name: "part".to_owned(),
+                            value: "cell".to_owned(),
+                        });
                     }
                     if let (Some(cell), Some(mark)) = (row_nodes.select, row_nodes.select_mark) {
                         buffer.push(Patch::SetAttribute {
@@ -3282,6 +3287,13 @@ pub fn patch_grid(
                     // What the page said became of the edit (issue #153). A
                     // failure is also said to whoever lands on the cell later.
                     let cell_state = state.cell_state(reference);
+                    buffer.push(Patch::SetAttribute {
+                        node: *cell,
+                        name: "part".to_owned(),
+                        value: cell_state
+                            .map_or("cell", |cell_state| cell_state.part())
+                            .to_owned(),
+                    });
                     match cell_state {
                         Some(cell_state) => buffer.push(Patch::SetAttribute {
                             node: *cell,

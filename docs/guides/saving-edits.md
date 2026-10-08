@@ -61,10 +61,17 @@ wrong with it.
 
 Write the message for someone who is not looking at the cell: name the record and what failed.
 
-**Styling.** The state is on the cell as `data-state`: `saving`, `saved` or `error`. The grid's
-own sheet draws it quietly — the muted ink while saving, a wavy underline on a failure. The
-attribute is inside the shadow root, and `::part(cell)` takes no attribute selector, so a page
-cannot restyle the states from outside yet.
+**Styling.** Each state is a part of its own next to `cell`: `cell-saving`, `cell-saved` and
+`cell-error`. The grid's own sheet draws them quietly — the muted ink while saving, a wavy
+underline on a failure. A page restyles them from outside:
+
+```css
+opengrid-grid::part(cell-saving) { opacity: 0.7; }
+opengrid-grid::part(cell-error) { background: #fde8e8; }
+```
+
+Don't let colour alone carry a failure: the default underline is a shape, and the message and
+`aria-invalid` carry it for a screen reader.
 
 ## Show values the page computes
 
