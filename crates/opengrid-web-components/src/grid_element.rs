@@ -251,6 +251,7 @@ fn fresh_runtime(
     let pool = pool_of(host);
     let row_height = resolve_row_height(host);
     let mut state = GridState::new(grid::known_schema(&columns, known));
+    state.set_row_key(row_key_of(host));
     state.set_window(Window::new(0, pool));
     // Paging needs a total order (rule S6), so the grid starts sorted by its
     // first column; the header shows it as `aria-sort="ascending"`.
@@ -287,6 +288,12 @@ fn fresh_runtime(
     }
 }
 
+/// The `row-key` field, if the attribute names a valid one.
+fn row_key_of(host: &HtmlElement) -> Option<opengrid_types::FieldName> {
+    host.get_attribute(grid::ROW_KEY_ATTRIBUTE)
+        .and_then(|name| opengrid_types::FieldName::new(name.trim()).ok())
+}
+
 /// Resolves the `--og-row-height` custom property on the host.
 ///
 /// Whether this grid shows the selection column (point 61).
@@ -313,8 +320,12 @@ fn resolve_row_height(host: &HtmlElement) -> u64 {
 fn reset_runtime(host: &HtmlElement) {
     if let Some(runtime) = runtime(host) {
         let known = runtime.borrow().known.clone();
-        let fresh = fresh_runtime(host, &known);
+        let mut fresh = fresh_runtime(host, &known);
         let mut runtime = runtime.borrow_mut();
+        // What the page said about cells names records, and a rebuild keeps
+        // the records (issue #153).
+        fresh.state.restore_saves(runtime.state.take_saves());
+        fresh.state.set_row_key(row_key_of(host));
         runtime.state = fresh.state;
         runtime.active = fresh.active;
         runtime.view = None;
@@ -590,6 +601,12 @@ fn on_attribute_changed(
         // A tree refuses `page-size`: either way round, it is asked again.
         PAGE_SIZE_ATTRIBUTE if host.has_attribute(grid::TREE_ATTRIBUTE) => retree(&host),
         grid::TREE_ATTRIBUTE | grid::TREE_KEY_ATTRIBUTE => retree(&host),
+        grid::ROW_KEY_ATTRIBUTE => {
+            if let Some(runtime) = runtime(&host) {
+                runtime.borrow_mut().state.set_row_key(row_key_of(&host));
+                render(&host, false);
+            }
+        }
         PAGE_SIZE_ATTRIBUTE => {
             // Switching between paging and scrolling changes what the window
             // means, so the grid starts at the first page either way.
@@ -645,11 +662,14 @@ fn on_attribute_changed(
             let Some(root) = host.shadow_root() else {
                 return;
             };
-            // Another source: the types this grid learned belong to the old one.
+            // Another source: the types this grid learned belong to the old
+            // one, and so do the records the page said something about.
             if name == DATASOURCE_ATTRIBUTE
                 && let Some(runtime) = runtime(&host)
             {
-                runtime.borrow_mut().known.clear();
+                let mut runtime = runtime.borrow_mut();
+                runtime.known.clear();
+                runtime.state.take_saves();
             }
             clear_root(&root);
             reset_runtime(&host);
@@ -2319,6 +2339,11 @@ fn begin_edit(host: &HtmlElement, cell: CellRef) {
         let Some(field) = borrowed.state.schema().fields().get(cell.col) else {
             return;
         };
+        // The page fills this column; an edit would be overwritten by the
+        // next value it sets (issue #153).
+        if presentation::styles(host).readonly(field.name.as_str()) {
+            return;
+        }
         let current = borrowed
             .state
             .cell(cell)
@@ -2438,6 +2463,9 @@ fn end_edit(host: &HtmlElement, commit: bool) {
         }
     };
 
+    // Read before the commit: an edit of the key field itself still names the
+    // record by the key it had.
+    let key = row_key_js(host, &runtime.borrow().state, cell.row);
     let mut rejected = None;
     // **An empty editor means NULL** — on a column that may hold one. It is the
     // only way to clear a value, and a typed input sanitizes most other
@@ -2460,7 +2488,7 @@ fn end_edit(host: &HtmlElement, commit: bool) {
                 .set_cell(cell, Value::Null)
                 .is_empty()
             {
-                dispatch_cell_change(host, cell, &field_name, "", &previous);
+                dispatch_cell_change(host, cell, key.as_ref(), &field_name, "", &previous);
             }
         } else {
             rejected = Some(String::new());
@@ -2480,7 +2508,7 @@ fn end_edit(host: &HtmlElement, commit: bool) {
                     .map(crate::formats::plain_text)
                     .unwrap_or_default();
                 if !runtime.borrow_mut().state.set_cell(cell, value).is_empty() {
-                    dispatch_cell_change(host, cell, &field_name, text, &previous);
+                    dispatch_cell_change(host, cell, key.as_ref(), &field_name, text, &previous);
                 }
             }
             None => rejected = Some(text.to_owned()),
@@ -2526,15 +2554,156 @@ fn end_edit(host: &HtmlElement, commit: bool) {
     focus_active(host);
 }
 
+/// `key` of `opengrid-cell-change`: the `row-key` field's value in the row,
+/// `null` when the result does not carry the field — and `None`, no `key` at
+/// all, without the attribute.
+fn row_key_js(host: &HtmlElement, state: &GridState, row: u64) -> Option<JsValue> {
+    host.has_attribute(grid::ROW_KEY_ATTRIBUTE).then(|| {
+        state.row_key(row).map_or(JsValue::NULL, |value| {
+            to_js(&opengrid_json::ToJson::to_json(value))
+        })
+    })
+}
+
+/// A key the page gave, read as a value of the `row-key` field's type.
+fn key_from_js(state: &GridState, key: &JsValue) -> Option<Value> {
+    let data_type = state.row_key_type()?;
+    if key.is_undefined() {
+        return None;
+    }
+    let text = js_sys::JSON::stringify(key).ok().map(String::from)?;
+    let json = opengrid_json::Json::parse(&text).ok()?;
+    Value::from_json_typed(&json, &data_type).ok()
+}
+
+/// Redraws one cell in place: the focused row's slot is pinned and the
+/// renderer leaves it alone (point 17), so the page's word on a cell there
+/// would otherwise wait for the focus to move.
+fn redraw_cell(host: &HtmlElement, cell: CellRef) {
+    let (Some(runtime), Some(root)) = (runtime(host), host.shadow_root()) else {
+        return;
+    };
+    let Ok(Some(td)) = root.query_selector(&format!(
+        "td[data-row=\"{}\"][data-col=\"{}\"]",
+        cell.row, cell.col
+    )) else {
+        return;
+    };
+    let borrowed = runtime.borrow();
+    if borrowed.state.editing() != Some(cell) {
+        let text = borrowed
+            .state
+            .cell(cell)
+            .map(|value| {
+                Formatter::new(&formats(host), borrowed.state.schema()).text(cell.col, value)
+            })
+            .unwrap_or_default();
+        td.set_text_content(Some(&text));
+    }
+    if borrowed.state.is_changed(cell) {
+        let _ = td.set_attribute("data-changed", "true");
+    } else {
+        let _ = td.remove_attribute("data-changed");
+    }
+    match borrowed.state.cell_state(cell) {
+        Some(state) => {
+            let _ = td.set_attribute("data-state", state.as_str());
+        }
+        None => {
+            let _ = td.remove_attribute("data-state");
+        }
+    }
+    if borrowed.state.cell_state(cell) == Some(opengrid_grid::CellState::Error) {
+        let _ = td.set_attribute("aria-invalid", "true");
+    } else {
+        let _ = td.remove_attribute("aria-invalid");
+    }
+}
+
+/// [`crate::element::set_cell_state`] (issue #153).
+pub(crate) fn write_cell_state(
+    host: &HtmlElement,
+    key: &JsValue,
+    column: &str,
+    state: opengrid_grid::CellState,
+    message: Option<String>,
+) {
+    let Some(runtime) = runtime(host) else {
+        return;
+    };
+    let Ok(column) = opengrid_types::FieldName::new(column) else {
+        return;
+    };
+    let Some(key) = key_from_js(&runtime.borrow().state, key) else {
+        return;
+    };
+    let cell = runtime
+        .borrow_mut()
+        .state
+        .set_cell_state(key, column, state);
+    // One live region (point 41): a failure is said in the status line,
+    // politely, and the focus stays where the reader is.
+    if state == opengrid_grid::CellState::Error
+        && let Some(message) = message
+    {
+        runtime.borrow_mut().state.set_notice(message);
+    }
+    render(host, false);
+    if let Some(cell) = cell {
+        redraw_cell(host, cell);
+    }
+}
+
+/// [`crate::element::set_values`] (issue #153).
+pub(crate) fn write_values(host: &HtmlElement, values: &JsValue) {
+    let Some(runtime) = runtime(host) else {
+        return;
+    };
+    let Some(list) = values.dyn_ref::<js_sys::Array>() else {
+        return;
+    };
+    let entries: Vec<(Value, opengrid_types::FieldName, Value)> = {
+        let borrowed = runtime.borrow();
+        let schema = borrowed.state.schema();
+        list.iter()
+            .filter_map(|entry| {
+                let field =
+                    |name: &str| js_sys::Reflect::get(&entry, &JsValue::from_str(name)).ok();
+                let key = key_from_js(&borrowed.state, &field("key")?)?;
+                let column = opengrid_types::FieldName::new(field("column")?.as_string()?).ok()?;
+                let data_type = schema
+                    .fields()
+                    .iter()
+                    .find(|candidate| candidate.name == column)?
+                    .data_type;
+                let value = field("value").filter(|value| !value.is_undefined())?;
+                let text = js_sys::JSON::stringify(&value).ok().map(String::from)?;
+                let json = opengrid_json::Json::parse(&text).ok()?;
+                let value = Value::from_json_typed(&json, &data_type).ok()?;
+                Some((key, column, value))
+            })
+            .collect()
+    };
+    let cells = runtime.borrow_mut().state.set_values(entries);
+    render(host, false);
+    for cell in cells {
+        redraw_cell(host, cell);
+    }
+}
+
 /// Fires `opengrid-cell-change` on the host — the contract of point 35.
 fn dispatch_cell_change(
     host: &HtmlElement,
     cell: CellRef,
+    key: Option<&JsValue>,
     column: &str,
     value: &str,
     previous: &str,
 ) {
     let detail = js_sys::Object::new();
+    if let Some(key) = key {
+        let _ = js_sys::Reflect::set(&detail, &JsValue::from_str("key"), key);
+    }
     for (key, value) in [
         ("row", JsValue::from_f64(cell.row as f64)),
         ("column", JsValue::from_str(column)),
@@ -2952,7 +3121,7 @@ fn fix_presentation(
             if !matches!(cell.tag_name().as_str(), "TD" | "TH") {
                 continue;
             }
-            for name in ["data-mono", "data-emphasis", "data-muted"] {
+            for name in ["data-mono", "data-emphasis", "data-muted", "aria-readonly"] {
                 if !markers.iter().any(|(marker, _)| *marker == name) {
                     let _ = cell.remove_attribute(name);
                 }

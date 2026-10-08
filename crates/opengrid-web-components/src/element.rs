@@ -278,6 +278,47 @@ pub fn set_view(host: &HtmlElement, view: JsValue, options: JsValue) {
     }
 }
 
+/// Says what became of an edit the page saves (issue #153).
+///
+/// `key` is the record's `row-key` value, as `opengrid-cell-change` gave it;
+/// `state` is `saving`, `saved` or `error`. `saved` takes the unsaved mark
+/// off; `error` keeps the value and the mark and says `message` in the live
+/// region. The state shows on the cell as `data-state`, stays with the record
+/// through sorting and reloading, and never moves the focus. Nothing happens
+/// without `row-key`, or for a key, column or state the grid does not know.
+#[cfg(feature = "grid")]
+#[wasm_bindgen(js_name = set_cell_state)]
+pub fn set_cell_state(
+    host: &HtmlElement,
+    key: JsValue,
+    column: &str,
+    state: &str,
+    message: Option<String>,
+) {
+    let Some(state) = opengrid_grid::CellState::parse(state) else {
+        return;
+    };
+    let message = message
+        .map(|message| message.trim().to_owned())
+        .filter(|message| !message.is_empty());
+    if host.tag_name().eq_ignore_ascii_case("opengrid-grid") {
+        crate::grid_element::write_cell_state(host, &key, column, state, message);
+    }
+}
+
+/// Shows values the page computes (issue #153): `[{ key, column, value }]`.
+///
+/// Not edits: no unsaved mark, no `opengrid-cell-change`. They stand over the
+/// source's value for that record until the page sets another. A column the
+/// page fills is `readonly` in `set_columns`. Requires `row-key`.
+#[cfg(feature = "grid")]
+#[wasm_bindgen(js_name = set_values)]
+pub fn set_values(host: &HtmlElement, values: JsValue) {
+    if host.tag_name().eq_ignore_ascii_case("opengrid-grid") {
+        crate::grid_element::write_values(host, &values);
+    }
+}
+
 #[wasm_bindgen(js_name = set_texts)]
 pub fn set_texts(host: &HtmlElement, values: JsValue) {
     let mut new = texts::from_js(&values);

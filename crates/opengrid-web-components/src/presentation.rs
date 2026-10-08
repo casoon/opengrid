@@ -135,6 +135,9 @@ pub struct ColumnPresentation {
     pub aggregate: Option<Summary>,
     /// How this column is offered as a facet (point 66).
     pub facet: Option<FacetKind>,
+    /// The page fills this column (`set_values`, issue #153): it never opens
+    /// an editor and is announced as read-only.
+    pub readonly: bool,
 }
 
 /// A configuration this grid refuses, in words.
@@ -164,6 +167,7 @@ pub struct RawColumn {
     pub muted: Option<bool>,
     pub aggregate: Option<String>,
     pub facet: Option<String>,
+    pub readonly: Option<bool>,
 }
 
 /// Checks a whole configuration against the schema.
@@ -202,6 +206,7 @@ pub fn validate(
             mono: entry.mono.unwrap_or(false),
             emphasis: entry.emphasis.unwrap_or(false),
             muted: entry.muted.unwrap_or(false),
+            readonly: entry.readonly.unwrap_or(false),
             ..ColumnPresentation::default()
         };
 
@@ -283,6 +288,7 @@ pub fn validate_for_table(
             (entry.width.is_some(), "width"),
             (entry.aggregate.is_some(), "aggregate"),
             (entry.facet.is_some(), "facet"),
+            (entry.readonly.is_some(), "readonly"),
         ] {
             if given {
                 problems.push(PresentationProblem::new(
@@ -342,6 +348,11 @@ impl ColumnStyles {
             if column.muted {
                 markers.push(("data-muted", "true".to_owned()));
             }
+            // Said, not only drawn: a reader who cannot see that the column
+            // never opens an editor hears it (issue #153).
+            if column.readonly {
+                markers.push(("aria-readonly", "true".to_owned()));
+            }
         }
         markers
     }
@@ -361,6 +372,11 @@ impl ColumnStyles {
             .iter()
             .filter_map(|(name, column)| column.title.clone().map(|title| (name.clone(), title)))
             .collect()
+    }
+
+    /// Whether the page fills this column, so it never opens an editor.
+    pub fn readonly(&self, name: &str) -> bool {
+        self.get(name).is_some_and(|column| column.readonly)
     }
 
     pub fn width(&self, name: &str) -> Option<u32> {
@@ -603,6 +619,29 @@ mod tests {
         }
     }
 
+    /// A column the page fills is said to be read-only, and a table, which
+    /// edits nothing, refuses the option (issue #153).
+    #[test]
+    fn a_readonly_column_is_announced_and_a_table_refuses_it() {
+        let entry = RawColumn {
+            readonly: Some(true),
+            ..RawColumn::default()
+        };
+        let styles = ColumnStyles::new(validate(&raw(entry.clone()), &schema(), &[]).unwrap());
+        assert!(styles.readonly("amount"));
+        assert!(!styles.readonly("id"));
+        assert!(
+            styles
+                .markers("amount", DataType::Float64)
+                .contains(&("aria-readonly", "true".to_owned()))
+        );
+        let problems = validate_for_table(&raw(entry), &schema(), &[]).expect_err("is refused");
+        assert_eq!(
+            problems[0].reason,
+            "readonly belongs to the grid, not to a table"
+        );
+    }
+
     /// A declared column that the result does not carry is hidden, not
     /// unknown. Its configuration survives — otherwise hiding a column would
     /// break the page's configuration of it.
@@ -756,6 +795,7 @@ mod host {
                         muted: flag("muted"),
                         aggregate: text("aggregate"),
                         facet: text("facet"),
+                        readonly: flag("readonly"),
                     },
                 ));
             }
