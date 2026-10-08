@@ -75,6 +75,26 @@ export interface OpengridModule {
    * Values are in the canonical wire notation: a float `2` reads `2.0`.
    */
   get_pivot(host: HTMLElement, options?: CsvOptions): string | null;
+  /**
+   * What became of an edit the page saves (issue #153). `key` is the record's
+   * `row-key` value as `opengrid-cell-change` gave it. `saved` clears the
+   * unsaved mark; `error` keeps the value and says `message` in the live
+   * region. Shown as `data-state` on the cell; the focus never moves.
+   * Requires `row-key`.
+   */
+  set_cell_state(
+    host: HTMLElement,
+    key: WireValue,
+    column: string,
+    state: CellState,
+    message?: string,
+  ): void;
+  /**
+   * Values the page computes, shown in place of the source's — not edits: no
+   * unsaved mark, no event. The column is `readonly` in `set_columns`.
+   * Requires `row-key`.
+   */
+  set_values(host: HTMLElement, values: CellValue[]): void;
   /** Defines the three elements. `loadOpengrid()` calls it. */
   register(): void;
 }
@@ -471,6 +491,21 @@ export interface ColumnConfig {
   muted?: boolean;
   aggregate?: Aggregate;
   facet?: FacetKind;
+  /**
+   * The page fills this column (`set_values`): it never opens an editor and
+   * its cells are announced as read-only. The grid only.
+   */
+  readonly?: boolean;
+}
+
+/** What `set_cell_state` says became of an edit. */
+export type CellState = "saving" | "saved" | "error";
+
+/** One value for `set_values`: the record by its `row-key`, the column, the value. */
+export interface CellValue {
+  key: WireValue;
+  column: string;
+  value: WireValue;
 }
 
 export type Columns = Record<string, ColumnConfig>;
@@ -782,6 +817,11 @@ export interface SelectionChangeDetail {
 /** `opengrid-cell-change`: everything a page needs to persist an edit. */
 export interface CellChangeDetail {
   row: number;
+  /**
+   * With `row-key` only: the edited row's value of that field — `null` when
+   * the result does not carry it. The record, where `row` is a position.
+   */
+  key?: WireValue;
   column: string;
   value: string;
   previous: string;
@@ -839,6 +879,8 @@ export interface OpengridGridAttributes {
   tree?: string;
   /** The field the parent key refers to; `id` when absent. */
   "tree-key"?: string;
+  /** The field that names a record: `key` in `opengrid-cell-change`. */
+  "row-key"?: string;
   search?: string;
   facets?: string;
   toolbar?: string;

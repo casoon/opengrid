@@ -97,6 +97,8 @@ fn surface() -> String {
         "set_columns",
         "get_query",
         "get_pivot",
+        "set_cell_state",
+        "set_values",
     ] {
         out.push_str(&format!("  {name}\n"));
     }
@@ -299,7 +301,7 @@ elements
 attributes
   opengrid-table: columns datasource label theme
   opengrid-grid: column-menu columns datasource density facets group-by label mode page-size \
-search selection theme toolbar tree tree-key window-size
+row-key search selection theme toolbar tree tree-key window-size
   opengrid-pivot: collapsed columns datasource fields filter label measures rows sort theme toolbar values
 
 events
@@ -319,6 +321,8 @@ functions
   set_columns
   get_query
   get_pivot
+  set_cell_state
+  set_values
 
 loader exports
   loadOpengrid

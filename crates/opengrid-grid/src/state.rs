@@ -29,6 +29,7 @@ use opengrid_datasource::QueryResult;
 use opengrid_query::{FilterExpr, Sort, SortDirection};
 use opengrid_types::{Field, FieldName, Schema, Value};
 
+use crate::saving::{CellState, Saves};
 use crate::{CellRef, Patch, Window};
 
 /// What the grid is currently showing (plan point 41).
@@ -97,6 +98,8 @@ pub struct GridState {
     /// Cells the reader changed since the last result, so the renderer can mark
     /// them. **Optimistic, not saved**: the component edits, the page persists.
     changed: Vec<CellRef>,
+    /// What the page that saves said about cells, by record (issue #153).
+    saves: Saves,
 }
 
 impl GridState {
@@ -123,6 +126,7 @@ impl GridState {
             pending_notice: None,
             editing: None,
             changed: Vec::new(),
+            saves: Saves::default(),
         }
     }
 
@@ -313,6 +317,140 @@ impl GridState {
         vec![Patch::Cell { cell, value }]
     }
 
+    /// Names the field whose value identifies a record (`row-key`).
+    ///
+    /// A different field makes every key the page gave meaningless, so what
+    /// was said about cells goes with it.
+    pub fn set_row_key(&mut self, key: Option<FieldName>) {
+        if self.saves.key != key {
+            self.saves = Saves {
+                key,
+                ..Saves::default()
+            };
+        }
+    }
+
+    /// The key of a loaded row: the `row-key` field's value in it.
+    pub fn row_key(&self, row: u64) -> Option<&Value> {
+        let col = self.column_of(self.saves.key.as_ref()?)?;
+        self.value_at(col, row)
+    }
+
+    /// The type of the `row-key` field, once a result has told it.
+    pub fn row_key_type(&self) -> Option<opengrid_types::DataType> {
+        let col = self.column_of(self.saves.key.as_ref()?)?;
+        Some(self.schema.fields()[col].data_type)
+    }
+
+    /// Says what became of the edit of one cell (issue #153).
+    ///
+    /// `Saved` takes the unsaved mark off; `Error` keeps the value and the
+    /// mark — what the reader typed is still not stored. Answers the cell the
+    /// record shows at now, if it is loaded, so the caller can redraw it.
+    pub fn set_cell_state(
+        &mut self,
+        key: Value,
+        column: FieldName,
+        state: CellState,
+    ) -> Option<CellRef> {
+        self.saves.key.as_ref()?;
+        let cell = self.cell_of(&key, &column);
+        if let (Some(cell), CellState::Saved) = (cell, state) {
+            self.changed.retain(|changed| *changed != cell);
+        }
+        self.saves.set_state(key, column, state);
+        cell
+    }
+
+    /// What the page said became of the edit in this cell, if anything.
+    pub fn cell_state(&self, cell: CellRef) -> Option<CellState> {
+        let key = self.row_key(cell.row)?;
+        let field = self.schema.fields().get(cell.col)?;
+        self.saves.state(key, &field.name)
+    }
+
+    /// Sets values the page computes (issue #153). They are shown, not
+    /// edited: no unsaved mark, and they stand over the source's value in
+    /// every result that follows. Answers the loaded cells that changed.
+    pub fn set_values(&mut self, entries: Vec<(Value, FieldName, Value)>) -> Vec<CellRef> {
+        if self.saves.key.is_none() {
+            return Vec::new();
+        }
+        let mut cells = Vec::new();
+        for (key, column, value) in entries {
+            if let Some(cell) = self.cell_of(&key, &column)
+                && let Some(slot) = cell
+                    .row
+                    .checked_sub(self.page_offset)
+                    .and_then(|row| self.page.get_mut(cell.col)?.get_mut(row as usize))
+                && *slot != value
+            {
+                *slot = value.clone();
+                cells.push(cell);
+            }
+            self.saves.set_value(key, column, value);
+        }
+        cells
+    }
+
+    /// Hands what the page said about cells to the state that replaces this
+    /// one — a rebuild of the grid is not a reason to forget it.
+    pub fn take_saves(&mut self) -> Saves {
+        std::mem::take(&mut self.saves)
+    }
+
+    /// Takes over what an earlier state was told (see [`take_saves`](Self::take_saves)).
+    pub fn restore_saves(&mut self, saves: Saves) {
+        self.saves = saves;
+    }
+
+    fn column_of(&self, name: &FieldName) -> Option<usize> {
+        self.schema
+            .fields()
+            .iter()
+            .position(|field| field.name == *name)
+    }
+
+    /// Where a record's cell is in the loaded page.
+    fn cell_of(&self, key: &Value, column: &FieldName) -> Option<CellRef> {
+        let key_col = self.column_of(self.saves.key.as_ref()?)?;
+        let col = self.column_of(column)?;
+        let slot = self
+            .page
+            .get(key_col)?
+            .iter()
+            .position(|value| value == key)?;
+        Some(CellRef::new(self.page_offset + slot as u64, col))
+    }
+
+    /// Writes the page's values into a result's columns.
+    fn overlay(&self, schema: &Schema, columns: &mut [Vec<Value>]) {
+        let Some(key) = &self.saves.key else {
+            return;
+        };
+        if self.saves.values.is_empty() {
+            return;
+        }
+        let position =
+            |name: &FieldName| schema.fields().iter().position(|field| field.name == *name);
+        let Some(key_col) = position(key) else {
+            return;
+        };
+        let keys = columns.get(key_col).cloned().unwrap_or_default();
+        for (key, column, value) in &self.saves.values {
+            let Some(col) = position(column) else {
+                continue;
+            };
+            for (slot, row_key) in keys.iter().enumerate() {
+                if row_key == key
+                    && let Some(cell) = columns.get_mut(col).and_then(|c| c.get_mut(slot))
+                {
+                    *cell = value.clone();
+                }
+            }
+        }
+    }
+
     /// The one-off sentence the status line should carry, if any.
     pub fn notice(&self) -> Option<&str> {
         self.notice.as_deref()
@@ -405,6 +543,11 @@ impl GridState {
         // unsaved marks no longer mean anything (point 37).
         self.changed.clear();
         self.editing = None;
+
+        // The page's values stand over the source's, whatever order the rows
+        // arrive in (issue #153).
+        let mut result = result;
+        self.overlay(&result.schema, &mut result.columns);
 
         if result.schema != self.schema {
             patches.push(Patch::Columns(result.schema.clone()));
@@ -1230,6 +1373,101 @@ mod edit_tests {
         state.apply_result(result(&[(1, "DE", 10), (2, "FR", 20)], 2));
         assert!(!state.is_changed(cell), "the source has spoken");
         assert_eq!(state.editing(), None);
+    }
+
+    fn keyed() -> GridState {
+        let mut state = grid();
+        state.set_row_key(Some(FieldName::new("id").unwrap()));
+        state
+    }
+
+    fn name(text: &str) -> FieldName {
+        FieldName::new(text).unwrap()
+    }
+
+    /// A row is named by its key field's value (issue #153).
+    #[test]
+    fn a_row_is_named_by_its_key() {
+        let state = keyed();
+        assert_eq!(state.row_key(1), Some(&Value::Int64(2)));
+        assert_eq!(grid().row_key(1), None, "no key without `row-key`");
+    }
+
+    /// `saved` takes the unsaved mark off; `error` keeps value and mark.
+    #[test]
+    fn the_page_says_what_became_of_an_edit() {
+        let mut state = keyed();
+        let cell = CellRef::new(1, 1);
+        state.set_cell(cell, Value::Utf8("NL".to_owned()));
+
+        let at = state.set_cell_state(Value::Int64(2), name("country"), CellState::Saving);
+        assert_eq!(at, Some(cell));
+        assert_eq!(state.cell_state(cell), Some(CellState::Saving));
+        assert!(state.is_changed(cell), "saving is not saved");
+
+        state.set_cell_state(Value::Int64(2), name("country"), CellState::Error);
+        assert_eq!(state.cell_state(cell), Some(CellState::Error));
+        assert!(state.is_changed(cell));
+        assert_eq!(state.cell(cell), Some(&Value::Utf8("NL".to_owned())));
+
+        state.set_cell_state(Value::Int64(2), name("country"), CellState::Saved);
+        assert_eq!(state.cell_state(cell), Some(CellState::Saved));
+        assert!(!state.is_changed(cell));
+        assert_eq!(state.cell_state(CellRef::new(0, 1)), None, "another record");
+    }
+
+    /// Without `row-key` there is no record to name.
+    #[test]
+    fn a_state_needs_a_row_key() {
+        let mut state = grid();
+        assert_eq!(
+            state.set_cell_state(Value::Int64(2), name("country"), CellState::Saved),
+            None
+        );
+        assert_eq!(state.cell_state(CellRef::new(1, 1)), None);
+    }
+
+    /// The state stays with the record when a sort moves it.
+    #[test]
+    fn a_state_follows_its_record() {
+        let mut state = keyed();
+        state.set_cell_state(Value::Int64(2), name("country"), CellState::Error);
+        state.apply_result(result(&[(2, "FR", 20), (1, "DE", 10)], 2));
+        assert_eq!(state.cell_state(CellRef::new(0, 1)), Some(CellState::Error));
+        assert_eq!(state.cell_state(CellRef::new(1, 1)), None);
+    }
+
+    /// The page's values show without a mark and outlive a result.
+    #[test]
+    fn the_page_sets_values_that_are_not_edits() {
+        let mut state = keyed();
+        let cells = state.set_values(vec![(Value::Int64(1), name("amount"), Value::Int64(99))]);
+        assert_eq!(cells, vec![CellRef::new(0, 2)]);
+        assert_eq!(state.cell(CellRef::new(0, 2)), Some(&Value::Int64(99)));
+        assert!(!state.is_changed(CellRef::new(0, 2)));
+        assert!(
+            state
+                .set_values(vec![(Value::Int64(1), name("amount"), Value::Int64(99))])
+                .is_empty(),
+            "the same value again changes nothing"
+        );
+
+        // Sorted the other way round: the value is still the record's.
+        state.apply_result(result(&[(2, "FR", 20), (1, "DE", 10)], 2));
+        assert_eq!(state.cell(CellRef::new(1, 2)), Some(&Value::Int64(99)));
+        assert_eq!(state.cell(CellRef::new(0, 2)), Some(&Value::Int64(20)));
+    }
+
+    /// Another key field makes the old keys meaningless.
+    #[test]
+    fn a_new_row_key_forgets_what_was_said() {
+        let mut state = keyed();
+        state.set_cell_state(Value::Int64(2), name("country"), CellState::Error);
+        state.set_row_key(Some(name("id")));
+        assert_eq!(state.cell_state(CellRef::new(1, 1)), Some(CellState::Error));
+        state.set_row_key(Some(name("amount")));
+        state.set_row_key(Some(name("id")));
+        assert_eq!(state.cell_state(CellRef::new(1, 1)), None);
     }
 
     /// A selection dropped before this state existed (a view applied, point 59)
