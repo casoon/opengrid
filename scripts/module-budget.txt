@@ -18,7 +18,11 @@
 # loading by level, the treegrid's keys, the selection by key), a page's notice
 # with a view (#146) and the Intl snippet (#139) grew the element module by
 # 15.8 KiB, to 245577 B.
-grid+pivot    248000  # 245577 B, 2026-10-02, release 0.10.0
+# Raised 2026-10-08 from 248000: saving edits from the page (#153: row-key,
+# set_cell_state and set_values, records keyed by value, the readonly column,
+# the parts per state) grew the element module by 3.7 KiB, to 249327 B; the
+# engine, untouched, measured the same to the byte.
+grid+pivot    252000  # 249327 B, 2026-10-08, release 0.11.0
 # Raised 2026-09-30 from 108000: the bound was not raised with 0.7.0, which
 # shipped the engine at 115.2 KiB already (CHANGELOG); rule P9's sorted
 # grouping sets and order sets (#108) added the rest, to 121610 B.
