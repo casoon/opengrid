@@ -31,6 +31,17 @@ impl CellState {
         }
     }
 
+    /// The cell's `part` attribute in this state: `cell` and a name of its
+    /// own, so a page reaches it with `::part(cell-error)` — `::part()` takes
+    /// no attribute selector, so `data-state` alone is out of its reach.
+    pub fn part(&self) -> &'static str {
+        match self {
+            CellState::Saving => "cell cell-saving",
+            CellState::Saved => "cell cell-saved",
+            CellState::Error => "cell cell-error",
+        }
+    }
+
     pub fn parse(token: &str) -> Option<Self> {
         Some(match token {
             "saving" => CellState::Saving,

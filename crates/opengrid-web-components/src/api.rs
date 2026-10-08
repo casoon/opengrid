@@ -248,6 +248,10 @@ fn parts() -> Vec<String> {
     // the total row of a pivot with data.
     parts.push("editor".to_owned());
     parts.push("total-row".to_owned());
+    // What became of an edit the page saves (issue #153), per frame.
+    for state in ["cell-saving", "cell-saved", "cell-error"] {
+        parts.push(state.to_owned());
+    }
     // The column menu of point 64 is built when it opens, not in the skeleton.
     parts.push("column-menu".to_owned());
     parts.push("menu-label".to_owned());
@@ -357,7 +361,7 @@ custom properties (computed)
   --og-accent-soft --og-accent-ink --og-selected --og-hover
 
 parts
-  add-field add-filter add-grouping body caption cell chip chip-move chip-remove chips chips-clear column-menu \
+  add-field add-filter add-grouping body caption cell cell-error cell-saved cell-saving chip chip-move chip-remove chips chips-clear column-menu \
 column-menu-button column-toggle columns columns-toggle density editor empty empty-reset \
 empty-text facet facet-bounds facet-cost facet-count facet-pill facet-pills facet-value \
 facets facets-head facets-toggle field-group field-menu filter filter-clear filter-dialog filter-operator \

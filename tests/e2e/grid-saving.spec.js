@@ -23,6 +23,7 @@ const cell = (page, row, col) =>
         text: td.textContent,
         changed: td.hasAttribute("data-changed"),
         state: td.getAttribute("data-state"),
+        part: td.getAttribute("part"),
         invalid: td.getAttribute("aria-invalid"),
         readonly: td.getAttribute("aria-readonly"),
         focused: root.activeElement === td,
@@ -68,6 +69,7 @@ test("an edit names its record, and saved takes the mark off without moving the 
     text: "Delta",
     changed: true,
     state: "saving",
+    part: "cell cell-saving",
     focused: true,
   });
 
@@ -76,6 +78,7 @@ test("an edit names its record, and saved takes the mark off without moving the 
     text: "Delta",
     changed: false,
     state: "saved",
+    part: "cell cell-saved",
     invalid: null,
     focused: true,
   });
@@ -90,10 +93,33 @@ test("an error keeps the value, marks the cell and is said in the live region", 
     text: "Omega",
     changed: true,
     state: "error",
+    part: "cell cell-error",
     invalid: "true",
     focused: true,
   });
   await expect.poll(() => status(page)).toContain("Customer of order 2 was not saved.");
+  // An untouched cell is a plain `cell`.
+  expect(await cell(page, 0, 1)).toMatchObject({ part: "cell", state: null });
+});
+
+test("a page styles each state through its own part", async ({ page }) => {
+  await open(page);
+  await page.addStyleTag({
+    content: "opengrid-grid::part(cell-error) { background-color: rgb(253, 232, 232); }",
+  });
+  await edit(page, 1, 1, "Omega");
+  const background = () =>
+    shadow(
+      page,
+      (root, { row, col }) =>
+        getComputedStyle(root.querySelector(`td[data-row="${row}"][data-col="${col}"]`)).backgroundColor,
+      { row: 1, col: 1 },
+    );
+  expect(await background()).not.toBe("rgb(253, 232, 232)");
+  await setState(page, 2, "customer", "error", "Not saved.");
+  await expect.poll(background).toBe("rgb(253, 232, 232)");
+  await setState(page, 2, "customer", "saved");
+  await expect.poll(background).not.toBe("rgb(253, 232, 232)");
 });
 
 test("the page fills a read-only column without an event, and the value stays with its record", async ({
