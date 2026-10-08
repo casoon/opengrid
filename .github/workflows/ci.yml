@@ -197,7 +197,9 @@ jobs:
 
   baselines:
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch'
+    # Not with `browsers`: a run for the other engines is not a request for
+    # new baselines.
+    if: github.event_name == 'workflow_dispatch' && !inputs.browsers
     # Regenerates the **Linux** screenshot baselines and uploads them.
     #
     # They cannot be made on a developer's Mac: the same Chromium renders the

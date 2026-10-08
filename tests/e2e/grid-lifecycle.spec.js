@@ -16,8 +16,6 @@ import { test, expect } from "@playwright/test";
 // broke the first. The garbage collector is the only one who knows which case
 // it is, so the collection tests force it (`--js-flags=--expose-gc`).
 
-test.use({ launchOptions: { args: ["--js-flags=--expose-gc"] } });
-
 // Firefox and WebKit ignore that flag and have no `window.gc`, so there the
 // collection tests are skipped; what they check besides collection still runs.
 const NO_GC = "window.gc is Chromium's (--expose-gc); no other engine can force a collection";

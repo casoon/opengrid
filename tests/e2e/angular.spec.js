@@ -8,8 +8,6 @@ import { readFileSync } from "node:fs";
 // away, and a grid that `@if` takes out and puts back. A development build, so
 // Angular's warnings exist, and every test fails on any of them.
 
-test.use({ launchOptions: { args: ["--js-flags=--expose-gc"] } });
-
 const PAGE = "/examples/angular/dist/browser/index.html";
 
 async function rows(page) {
