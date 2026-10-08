@@ -61,8 +61,10 @@ staged, and what was **not** tested is named in the release notes either way.
       sentence. Silence is not.
 - [ ] **Two engines beyond Chromium**: `just e2e-browsers` runs the whole e2e suite in
       Playwright's Firefox and WebKit (once: `pnpm exec playwright install firefox
-      webkit`), one desktop-sized project per engine. `just e2e` and CI stay
-      Chromium-only. What it does not cover:
+      webkit`), one desktop-sized project per engine. The same on Linux, by hand:
+      `gh workflow run ci.yml -f browsers=true` — the way when an engine does not
+      start locally (Playwright's Firefox did not on macOS 27 for 0.11.0). `just e2e`
+      and CI on PRs stay Chromium-only. What it does not cover:
       - **No narrow viewport.** The 480px project stays Chromium-only; tests that
         set their own size (400% zoom, the narrow filter row) still run everywhere.
       - **No screenshots.** The baselines are Chromium's; the other engines skip
