@@ -104,6 +104,17 @@ export async function page(): Promise<void> {
   // @ts-expect-error — not an aggregate
   module.set_columns(grid, { amount: { aggregate: "median" } });
 
+  // Saving edits from the page (issue #153).
+  module.set_columns(grid, { average: { readonly: true } });
+  module.set_cell_state(grid, 7, "amount", "saving");
+  module.set_cell_state(grid, "s-1", "amount", "error", "Not saved.");
+  // @ts-expect-error — not a state
+  module.set_cell_state(grid, 7, "amount", "failed");
+  module.set_values(grid, [{ key: 7, column: "average", value: 2.5 }]);
+  grid.addEventListener("opengrid-cell-change", (event) => {
+    event.detail.key satisfies string | number | boolean | null | undefined;
+  });
+
   // The view: read whole, written in parts.
   // @ts-expect-error — a grid that was never connected has no view
   void module.get_view(grid).sort;
