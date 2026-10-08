@@ -334,6 +334,10 @@ pub const TREE_ATTRIBUTE: &str = "tree";
 /// The key a tree's parent field refers to; `id` when absent.
 pub const TREE_KEY_ATTRIBUTE: &str = "tree-key";
 
+/// The field that names a record (issue #153): `opengrid-cell-change` carries
+/// its value as `key`, and `set_cell_state` and `set_values` name rows by it.
+pub const ROW_KEY_ATTRIBUTE: &str = "row-key";
+
 /// The boolean attribute that puts a toolbar above the grid (point 65): the
 /// active filters as chips, a switch for the filter row, the column list and
 /// the density.
@@ -584,6 +588,7 @@ pub const OBSERVED: &[&str] = &[
     GROUP_BY_ATTRIBUTE,
     TREE_ATTRIBUTE,
     TREE_KEY_ATTRIBUTE,
+    ROW_KEY_ATTRIBUTE,
     COLUMN_MENU_ATTRIBUTE,
     TOOLBAR_ATTRIBUTE,
     FACETS_ATTRIBUTE,
@@ -1399,6 +1404,8 @@ pub fn build_grid(
                              border-radius: min(var({RADIUS_PROPERTY}), 7px); }}
          td[data-changed] {{ font-style: italic; }}
          td[data-changed]::after {{ content: \" *\"; }}
+         td[data-state=\"saving\"] {{ color: var({INK_MUTED_PROPERTY}); }}
+         td[data-state=\"error\"] {{ text-decoration: underline wavy; text-underline-offset: 3px; }}
          [part=\"editor\"] {{ font: inherit; width: 100%; box-sizing: border-box;
                              min-height: {MIN_TARGET_SIZE}px;
                              color: var({INK_PROPERTY});
@@ -3156,9 +3163,16 @@ pub fn patch_grid(
                             name: "tabindex".to_owned(),
                             value: tabindex_for(is_active).to_owned(),
                         });
-                        buffer.push(Patch::RemoveAttribute {
+                        for name in ["data-changed", "data-state", "aria-invalid"] {
+                            buffer.push(Patch::RemoveAttribute {
+                                node: *cell,
+                                name: name.to_owned(),
+                            });
+                        }
+                        buffer.push(Patch::SetAttribute {
                             node: *cell,
-                            name: "data-changed".to_owned(),
+                            name: "part".to_owned(),
+                            value: "cell".to_owned(),
                         });
                     }
                     if let (Some(cell), Some(mark)) = (row_nodes.select, row_nodes.select_mark) {
@@ -3268,6 +3282,39 @@ pub fn patch_grid(
                         buffer.push(Patch::RemoveAttribute {
                             node: *cell,
                             name: "data-changed".to_owned(),
+                        });
+                    }
+                    // What the page said became of the edit (issue #153). A
+                    // failure is also said to whoever lands on the cell later.
+                    let cell_state = state.cell_state(reference);
+                    buffer.push(Patch::SetAttribute {
+                        node: *cell,
+                        name: "part".to_owned(),
+                        value: cell_state
+                            .map_or("cell", |cell_state| cell_state.part())
+                            .to_owned(),
+                    });
+                    match cell_state {
+                        Some(cell_state) => buffer.push(Patch::SetAttribute {
+                            node: *cell,
+                            name: "data-state".to_owned(),
+                            value: cell_state.as_str().to_owned(),
+                        }),
+                        None => buffer.push(Patch::RemoveAttribute {
+                            node: *cell,
+                            name: "data-state".to_owned(),
+                        }),
+                    }
+                    if cell_state == Some(opengrid_grid::CellState::Error) {
+                        buffer.push(Patch::SetAttribute {
+                            node: *cell,
+                            name: "aria-invalid".to_owned(),
+                            value: "true".to_owned(),
+                        });
+                    } else {
+                        buffer.push(Patch::RemoveAttribute {
+                            node: *cell,
+                            name: "aria-invalid".to_owned(),
                         });
                     }
 

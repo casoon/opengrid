@@ -49,11 +49,13 @@ pub mod filter_row;
 pub mod grid_view;
 pub mod layout;
 mod patch;
+mod saving;
 mod state;
 pub mod summary;
 mod view;
 pub mod view_query;
 
 pub use patch::Patch;
+pub use saving::{CellState, Saves};
 pub use state::{GridState, GridStatus};
 pub use view::{CellRef, Window};

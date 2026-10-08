@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>opengrid saving fixture</title>
+    <style>
+      opengrid-grid {
+        display: block;
+        height: 260px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid saving fixture</h1>
+      <opengrid-grid
+        label="Orders"
+        datasource="orders"
+        columns="id,customer,amount,qty"
+        window-size="10"
+        row-key="id"
+      ></opengrid-grid>
+    </main>
+    <script type="module">
+      // Issue #153: a page that saves every cell on its own. The spec drives
+      // `set_cell_state` and `set_values` itself; here the changes are only
+      // recorded, with the key that names the record.
+      import { loadOpengrid, createLocalProvider } from "/packages/opengrid/loader.js";
+      import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+
+      window.__changes = [];
+      document.addEventListener("opengrid-cell-change", (event) =>
+        window.__changes.push(event.detail),
+      );
+
+      await init();
+      const engine = new Engine();
+      const schema = await (await fetch("/tests/e2e/fixtures/grid-orders.schema.json")).text();
+      const csv = await (await fetch("/tests/e2e/fixtures/grid-orders.csv")).arrayBuffer();
+      engine.load_csv("orders", new Uint8Array(csv), schema);
+
+      const loader = await loadOpengrid();
+      const host = document.querySelector("opengrid-grid");
+      // `qty` is the page's: filled with `set_values`, never edited.
+      loader.module.set_columns(host, { qty: { readonly: true } });
+      window.__module = loader.module;
+      loader.module.set_provider(host, createLocalProvider(engine));
+      window.__ready = true;
+    </script>
+  </body>
+</html>

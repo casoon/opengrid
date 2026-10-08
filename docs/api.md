@@ -41,6 +41,8 @@ instead.
 | `set_columns(host, columns)` | Per-column presentation — see [`<opengrid-grid>`](#opengrid-grid). |
 | `get_query(host)` | The query of the current view, without a window — what an [export](#exporting-the-view) sends. |
 | `get_pivot(host, options)` | The pivot as it is shown, as CSV — see [exporting a pivot](#exporting-a-pivot). |
+| `set_cell_state(host, key, column, state, message?)` | What became of an edit the page saves: `saving`, `saved` or `error` — see [Saving edits](#saving-edits). |
+| `set_values(host, values)` | Values the page computes, `[{ key, column, value }]` — see [Saving edits](#saving-edits). |
 | `register()` | Defines the three elements. `loadOpengrid()` calls it; a page that loads the module itself calls it once. |
 
 **Types.** The package ships `loader.d.ts`: every name on this page is typed —
@@ -210,6 +212,7 @@ An interactive `<table role="grid">`: virtualized, keyboard-driven, filterable.
 | `group-by` | Groups the rows by up to **two** columns, outermost first: `group-by="country,customer"`. See [Grouping](#grouping). |
 | `tree` | Shows the rows as a **tree**: the field that holds a row's parent key, `tree="parent_id"`. See [Tree](#tree). |
 | `tree-key` | The field the parent key refers to. `id` when absent. |
+| `row-key` | The field that names a record: `opengrid-cell-change` carries its value as `key`, and `set_cell_state` and `set_values` name rows by it. See [Saving edits](#saving-edits). |
 | `search` | Puts a **search field** above the grid: free text, or a filter written out. See [Search](#search). |
 | `facets` | Shows the **facet sidebar** — the facets a page configured with `set_columns`. See [Facets](#facets). |
 | `toolbar` | Puts a **toolbar** above the grid: the active filters and the grouping as chips, a switch for the filter row, the column list, the density. Opt-in. See [Toolbar](#toolbar). |
@@ -299,6 +302,7 @@ loader.module.set_columns(host, {
 | `emphasis` / `muted` | Bold, or the muted ink. |
 | `aggregate` | `sum`, `avg`, `count`, `min`, `max` or `range` — the column's aggregate in groups. |
 | `facet` | `list`, `pills`, `range` or `period` — how the column is offered as a facet. |
+| `readonly` | The page fills this column with `set_values`: it never opens an editor, and its cells say `aria-readonly`. The grid only; a table refuses it. |
 
 **The configuration narrows; it never widens.** `sum` over a text column, a
 `range` facet over text, a name the grid does not have — each is reported in the
@@ -919,13 +923,56 @@ not leave a shadow root the page wrapped the element in), and neither is
 | Event | `detail` |
 |---|---|
 | `opengrid-selection-change` | `{ rows: number[], count: number }` — logical row numbers, ascending. In a [tree](#tree) also `keys`: the selected nodes by key, and `count` counts them. |
-| `opengrid-cell-change` | `{ row, column, value, previous }` — everything needed to persist it. |
+| `opengrid-cell-change` | `{ row, column, value, previous }` — everything needed to persist it. With `row-key` also `key`: the record's value of that field, `null` when the result does not carry it. |
 | `opengrid-view-change` | `{ view }` — the whole [view](#the-view) after the change. Scrolling and selecting are not view changes. On `<opengrid-pivot>` the view is its `rows`, `columns` and `values`. |
 | `opengrid-query` | `{ kind, ms, rows, total, bytes, form, memory }` after **every** answer of the provider, on the grid and the pivot (issue #70): where it ran (the provider's `kind`), the round trip in milliseconds measured in the tab, rows answered and matches before paging, the answer's size as it arrived and its form (`binary` or `json`), and the element module's WASM memory. Measured always, sent nowhere — what the page does with it is the page's. |
 
 **The component edits; the page saves.** There is no write path: the engine's
 contract is a query. An edited value is shown at once and marked unsaved; a
 fresh result from the source clears the marks.
+
+### Saving edits
+
+A page that saves each edit on its own says back what became of it (issue #153).
+`row-key` names the field that identifies a record; `opengrid-cell-change` then
+carries its value as `key`, which stays right while the reader sorts, filters or
+the grid reloads — `row` does not.
+
+```js
+grid.setAttribute("row-key", "id");
+grid.addEventListener("opengrid-cell-change", async ({ detail }) => {
+  const { key, column, value } = detail;
+  loader.module.set_cell_state(grid, key, column, "saving");
+  try {
+    await save(key, column, value);
+    loader.module.set_cell_state(grid, key, column, "saved");
+  } catch (error) {
+    loader.module.set_cell_state(grid, key, column, "error", `Grade for ${key} not saved: ${error.message}`);
+  }
+});
+```
+
+| `state` | What the grid does |
+|---|---|
+| `saving` | The cell is `part="cell cell-saving"` (the muted ink by default). |
+| `saved` | The unsaved mark goes; the cell is `part="cell cell-saved"`. |
+| `error` | The value and the unsaved mark stay; the cell is `part="cell cell-error"` with `aria-invalid="true"`, and `message` is said in the grid's one live region (polite). |
+
+A page styles the states through those parts — `opengrid-grid::part(cell-error) { … }`.
+Inside the shadow root the cell also carries `data-state`.
+
+`set_values(grid, [{ key, column, value }])` shows values the page computes — a
+running average, a proposed grade. They are not edits: no unsaved mark, no
+`opengrid-cell-change`. Such a column is `readonly` in `set_columns`, so it never
+opens an editor and is announced as read-only.
+
+Both name **records**: a state or a value stays with its record through sorting,
+filtering and every result that follows, until the page says something else.
+Another `row-key` or another `datasource` forgets them. A fresh result still
+replaces an edited value with the source's, as above — the state stays. Neither
+call moves the focus. Without `row-key`, or for a key that is not the field's
+type, nothing happens. A walk-through is in the guide
+[Saving edits from the page](../guides/saving-edits/).
 
 Sorting and filtering **drop the selection**, and say so. That is not a
 preference: a selection names positions, the grid has no key column, and after a
@@ -1017,7 +1064,7 @@ would make it invisible), a **selected row** carries an inset accent bar as well
 as the tint (colour alone would be 1.4.1), and `prefers-reduced-motion` beats a
 theme that animates a part.
 
-**Parts:** `add-field`, `add-filter`, `add-grouping`, `body`, `caption`, `cell`, `chip`, `chip-move`, `chip-remove`, `chips`,
+**Parts:** `add-field`, `add-filter`, `add-grouping`, `body`, `caption`, `cell`, `cell-error`, `cell-saved`, `cell-saving`, `chip`, `chip-move`, `chip-remove`, `chips`,
 `chips-clear`, `column-menu`, `column-menu-button`, `column-toggle`, `columns`, `columns-toggle`, `density`,
 `editor`, `empty`, `empty-reset`, `empty-text`, `facet`, `facet-bounds`, `facet-cost`, `facet-count`,
 `facet-pill`, `facet-pills`, `facet-value`, `facets`, `facets-head`, `facets-toggle`, `filter`,
