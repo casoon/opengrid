@@ -18,6 +18,11 @@ const baseURL = `http://127.0.0.1:${PORT}`;
 // and the built module under the same tree.
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
+// `window.gc` for the tests that prove a removed grid is collected — a
+// Chromium flag, so on the Chromium projects only: WebKit on Linux refuses an
+// option it does not know and does not start at all.
+const CHROMIUM_LAUNCH = { args: ["--js-flags=--expose-gc"] };
+
 export default defineConfig({
   testDir: ".",
   // One worker: the fixture server is `python3 -m http.server`, which answers
@@ -45,10 +50,14 @@ export default defineConfig({
     trace: "on-first-retry",
   },
   projects: [
-    { name: "desktop", use: { ...devices["Desktop Chrome"] } },
+    { name: "desktop", use: { ...devices["Desktop Chrome"], launchOptions: CHROMIUM_LAUNCH } },
     {
       name: "narrow",
-      use: { ...devices["Desktop Chrome"], viewport: { width: 480, height: 900 } },
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 480, height: 900 },
+        launchOptions: CHROMIUM_LAUNCH,
+      },
       // No element on that page: the viewport changes nothing there, and its
       // 100 000 rows twice would only cost time.
       testIgnore: "**/export.spec.js",
