@@ -18,6 +18,39 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-10-08
+
+**Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).
+**Browsers:** Chromium (the whole e2e suite: 1127 passed), WebKit (`just e2e-browsers`: 556 passed,
+10 skipped by design). Firefox: **not run** — Playwright's Firefox did not start on the release
+machine.
+
+The grid as an editing surface a page saves cell by cell: the edit names its record, the page says
+what became of it, and fills columns of its own. Asked for by a grade entry grid.
+
+**What breaks:** nothing. Every change is an addition.
+
+**Module sizes** (brotli, `just measure-modules`): the elements 239.8 → 243.5 KiB, past their bound,
+which this release raises (`scripts/module-budget.txt`); the engine is unchanged to the byte.
+
+### Added
+
+- **Saving edits from the page** ([#153](https://github.com/casoon/opengrid/issues/153)).
+  - `row-key="<field>"` names the record: `opengrid-cell-change` carries `key`, the edited row's
+    value of that field, next to `row` — which holds only until something sorts or reloads.
+  - `set_cell_state(host, key, column, state, message?)` with `saving`, `saved` or `error`.
+    `saved` takes the unsaved mark off without a reload; `error` keeps the value and the mark,
+    sets `aria-invalid` and says `message` in the grid's one polite live region. The focus never
+    moves.
+  - Each state is a part of its own next to `cell` — `cell-saving`, `cell-saved`, `cell-error` —
+    so a page styles it with `::part(cell-error)`.
+  - `set_values(host, [{ key, column, value }])` shows values the page computes. Not edits: no
+    unsaved mark, no event.
+  - `readonly: true` in `set_columns`: the column never opens an editor and its cells say
+    `aria-readonly`. `<opengrid-table>` refuses the option.
+  - States and values name records, so they outlive sorting, filtering and reloading; another
+    `row-key` or `datasource` forgets them. A guide: *Saving edits from the page*.
+
 ## [0.10.0] — 2026-10-02
 
 **Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).
