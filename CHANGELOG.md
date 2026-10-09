@@ -21,7 +21,11 @@ Two things belong in every release entry and are easy to leave out:
 ## [0.12.0] — 2026-10-09
 
 **Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).
-**Browsers:** BROWSERS
+**Browsers:** Chromium (the whole e2e suite: 1138 passed; a GC test of the Angular example passed on
+its retry). Firefox and WebKit on Linux (`gh workflow run ci.yml -f browsers=true`): 561 passed in
+each; Firefox still has the two failures of [#157](https://github.com/casoon/opengrid/issues/157),
+WebKit failed the new CSP test on a reading of the tbody's position WebKit computes as `static`
+for any grid — the test, not the grid ([#162](https://github.com/casoon/opengrid/pull/162)).
 
 Typing into a cell edits it, as in a spreadsheet, and `<opengrid-grid>` draws under a
 `style-src` without `'unsafe-inline'`.
