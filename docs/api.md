@@ -227,7 +227,8 @@ An interactive `<table role="grid">`: virtualized, keyboard-driven, filterable.
 | Keys | On | Does |
 |---|---|---|
 | `Enter` / `Space` | header cell | sort (`Shift` adds a second key) |
-| `Enter` | data cell | open the editor (`Enter` commits, `Escape` discards) |
+| `Enter` / `F2` | data cell | open the editor (`Enter` commits, `Escape` discards) |
+| a character | data cell | open the editor with it: it replaces the value in a text or number field, and in a select picks the one choice that is it or starts with it (the cell's value when none or several do). `Enter` still commits. A date or a checkbox opens on the cell's value |
 | `Space` | data cell | select the row (`Shift` extends from the last one) |
 | `Space` | selection cell | select the row (`Shift` extends) |
 | `Enter` / `Space` | selection header | select **every matching row**, or clear it |

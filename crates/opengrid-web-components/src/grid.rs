@@ -559,6 +559,43 @@ pub fn input_type(data_type: DataType) -> &'static str {
     }
 }
 
+/// The character a key press types, if it is one that opens the editor on a
+/// data cell — the quick entry of a marks sheet: focus a cell, type `3`.
+///
+/// One printable character (`KeyboardEvent.key` names every other key with a
+/// word: `Enter`, `F2`, `ArrowDown`), with neither `Ctrl` nor `Cmd`, which
+/// make it a shortcut. `Space` is not one: on a data cell it selects the row
+/// (point 35). `Alt` is allowed — on a Mac it is how `@` or `€` are typed.
+pub fn typed_character(key: &str, ctrl: bool, meta: bool) -> Option<&str> {
+    let mut chars = key.chars();
+    let printable = matches!((chars.next(), chars.next()), (Some(c), None) if !c.is_control());
+    (printable && key != " " && !ctrl && !meta).then_some(key)
+}
+
+/// The choice a typed character picks in a `<select>` editor, if exactly one
+/// fits: the option that **is** the character, ignoring case, or else the one
+/// option that starts with it. Grades `1`–`6` pick by equality; `1`, `1+`,
+/// `1-` still pick `1`; a character two options start with picks neither, and
+/// the editor keeps the cell's value.
+pub fn choice_for_typed<'a>(options: &'a [String], typed: &str) -> Option<&'a str> {
+    let typed = typed.to_lowercase();
+    let unique = |mut found: Vec<&'a String>| (found.len() == 1).then(|| found.remove(0).as_str());
+    unique(
+        options
+            .iter()
+            .filter(|option| option.to_lowercase() == typed)
+            .collect(),
+    )
+    .or_else(|| {
+        unique(
+            options
+                .iter()
+                .filter(|option| option.to_lowercase().starts_with(&typed))
+                .collect(),
+        )
+    })
+}
+
 /// The step attribute that lets a number input accept the column's precision.
 ///
 /// Without it a browser rounds a decimal input to whole numbers, and the value
@@ -3904,6 +3941,46 @@ mod tests {
     use super::*;
     use opengrid_grid::Window;
     use opengrid_types::Value;
+
+    #[test]
+    fn a_printable_character_opens_the_editor_and_other_keys_do_not() {
+        assert_eq!(typed_character("3", false, false), Some("3"));
+        assert_eq!(typed_character("a", false, false), Some("a"));
+        assert_eq!(typed_character("ä", false, false), Some("ä"));
+        assert_eq!(typed_character("€", false, false), Some("€"));
+        // Space selects the row; a named key is not a character.
+        assert_eq!(typed_character(" ", false, false), None);
+        for key in [
+            "Enter",
+            "F2",
+            "Tab",
+            "ArrowDown",
+            "Delete",
+            "Backspace",
+            "Dead",
+            "",
+        ] {
+            assert_eq!(typed_character(key, false, false), None, "{key}");
+        }
+        // A shortcut is not typing.
+        assert_eq!(typed_character("a", true, false), None);
+        assert_eq!(typed_character("c", false, true), None);
+    }
+
+    #[test]
+    fn a_typed_character_picks_the_one_choice_that_fits() {
+        let grades: Vec<String> = ["1", "2", "3", "4", "5", "6"].map(String::from).to_vec();
+        assert_eq!(choice_for_typed(&grades, "3"), Some("3"));
+        assert_eq!(choice_for_typed(&grades, "7"), None);
+
+        // Equality first: `1` is a grade of its own beside `1+` and `1-`.
+        let tendencies: Vec<String> = ["1+", "1", "1-", "2+"].map(String::from).to_vec();
+        assert_eq!(choice_for_typed(&tendencies, "1"), Some("1"));
+        // Otherwise the one option that starts with it — and two are none.
+        let names: Vec<String> = ["Alpha", "Beta", "Bravo"].map(String::from).to_vec();
+        assert_eq!(choice_for_typed(&names, "a"), Some("Alpha"));
+        assert_eq!(choice_for_typed(&names, "b"), None);
+    }
 
     fn state_with(rows: &[&str], total: u64, offset: u64, pool: u64) -> GridState {
         let schema = Schema::new(vec![

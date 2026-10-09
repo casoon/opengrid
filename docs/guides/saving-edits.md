@@ -95,6 +95,14 @@ A column the page fills is `readonly`: it never opens an editor (an edit there w
 overwritten by the next value) and its cells say `aria-readonly="true"`. The column still has to
 be one of the grid's `columns`; what the source has in it is shown until the page sets a value.
 
+## Enter values quickly
+
+A reader fills such a grid from the keyboard: focus a cell, type the grade, `Enter`. A typed
+character opens the editor with that character in it; in a column with `set_choices` it picks the
+one choice that is the character or starts with it — `3` picks `3` from `1`–`6` and from `3+`,
+`3`, `3-` alike. `Enter` commits, as it does after `Enter` or `F2` opened the editor; nothing is
+taken without it. The focus stays on the cell afterwards: the reader moves on with the arrows.
+
 ## What stays and what goes
 
 - A state or a value names a **record**, so it outlives sorting, filtering and reloading.
