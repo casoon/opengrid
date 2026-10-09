@@ -5,7 +5,7 @@
 //! (plan/spezifikation/08-rendering.md §DOM-Brücke).
 
 use wasm_bindgen::JsCast;
-use web_sys::{Document, Element, Node};
+use web_sys::{Document, Element, HtmlElement, Node};
 
 use super::Renderer;
 
@@ -48,7 +48,18 @@ impl Renderer for WebRenderer {
             .into()
     }
 
+    /// `style` goes through the CSSOM (`element.style.cssText`), not
+    /// `setAttribute`: a page whose policy has `style-src` without
+    /// 'unsafe-inline' refuses a style attribute set from script, and the grid
+    /// positions its rows with one. The CSSOM is not governed by `style-src`;
+    /// the attribute reads back the same either way.
     fn set_attribute(&mut self, node: &Node, name: &str, value: &str) {
+        if name == "style"
+            && let Some(element) = node.dyn_ref::<HtmlElement>()
+        {
+            element.style().set_css_text(value);
+            return;
+        }
         if let Some(element) = node.dyn_ref::<Element>() {
             element
                 .set_attribute(name, value)
