@@ -138,7 +138,7 @@ measure-pivot: wasm-build-components
 # Opt-in: `just e2e` und CI bleiben bei Chromium. Ohne Screenshot-Baselines —
 # die gehören Chromium. Die Browser einmal holen:
 # `pnpm exec playwright install firefox webkit`.
-e2e-browsers: wasm-build-components wasm-build package
+e2e-browsers: wasm-build-components wasm-build package mcp-elements
     cargo build -p opengrid-example-server
     pnpm install --frozen-lockfile
     pnpm --filter "./examples/*" build

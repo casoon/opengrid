@@ -8,8 +8,6 @@ import { fileURLToPath } from "node:url";
 // and a grid that is taken out for good. A development build, so Vue's
 // warnings exist, and every test fails on any of them.
 
-test.use({ launchOptions: { args: ["--js-flags=--expose-gc"] } });
-
 const PAGE = "/examples/vue/dist/index.html";
 
 async function rows(page) {
