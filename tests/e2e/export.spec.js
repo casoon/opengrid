@@ -432,7 +432,11 @@ test.describe("over a real server", () => {
     if (browserName === "firefox") {
       expect(failed).toEqual(failed.length === 0 ? [] : ["NS_BINDING_ABORTED"]);
     } else {
-      expect(failed).toEqual([browserName === "webkit" ? "cancelled" : "net::ERR_ABORTED"]);
+      // WebKit words it per platform: `cancelled` on macOS, `Load request
+      // cancelled` on Linux.
+      expect(failed).toEqual([
+        browserName === "webkit" ? expect.stringMatching(/cancelled$/) : "net::ERR_ABORTED",
+      ]);
     }
   });
 
