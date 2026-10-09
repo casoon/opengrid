@@ -2420,6 +2420,11 @@ fn build_toolbar(
     // a wide grid, one row that scrolls sideways on a narrow one.
     let row = element(buffer, nodes, Some(bar), "div");
     attribute(buffer, row, "data-toolbar-row", "");
+    // Not a stop of its own (issue #157): Firefox makes a scroll container
+    // keyboard-focusable, which put an unnamed stop before the first button.
+    // Every button is reachable by `Tab` and scrolls into view when focused,
+    // so the row has nothing to offer a keyboard.
+    attribute(buffer, row, "tabindex", "-1");
 
     // The two quick doors of the prototype (issue #34): a filter through a
     // small dialog, a grouping level through a menu. Each opens its popup,
