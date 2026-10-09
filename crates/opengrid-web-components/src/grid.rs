@@ -1298,27 +1298,13 @@ pub struct GridSkeleton<'a> {
     pub search: bool,
 }
 
-pub fn build_grid(
-    buffer: &mut PatchBuffer,
-    nodes: &mut NodeAllocator,
-    skeleton: &GridSkeleton<'_>,
-) -> GridNodes {
-    let GridSkeleton {
-        label,
-        schema,
-        pool,
-        texts,
-        declared,
-        presentation,
-        selection,
-        column_menu,
-        toolbar,
-        facets,
-        search,
-    } = *skeleton;
-    let fields = schema.fields();
-    let ncols = fields.len();
-
+/// The grid's stylesheet: the `--og-*` defaults, the look, and the
+/// positioning rules the virtualized rows need. The same for every grid — it
+/// depends on constants only — so the element builds it once and adopts it
+/// into each shadow root (`grid_element.rs`) instead of writing a
+/// `<style>` element: a page whose `style-src` has no 'unsafe-inline' refuses
+/// that element, and an adopted sheet is not governed by `style-src`.
+pub fn grid_css() -> String {
     // One shadow-root stylesheet: the `--og-row-height` default plus the
     // positioning rules the virtualized rows need. The property is declared on
     // `:host` with the default and can be overridden from the document (or an
@@ -1837,11 +1823,29 @@ pub fn build_grid(
                 transition-duration: 0.01ms !important; scroll-behavior: auto !important; }}
          }}"
     );
-    let style = element(buffer, nodes, Some(NodeId::ROOT), "style");
-    buffer.push(Patch::SetText {
-        node: style,
-        text: styles,
-    });
+    styles
+}
+
+pub fn build_grid(
+    buffer: &mut PatchBuffer,
+    nodes: &mut NodeAllocator,
+    skeleton: &GridSkeleton<'_>,
+) -> GridNodes {
+    let GridSkeleton {
+        label,
+        schema,
+        pool,
+        texts,
+        declared,
+        presentation,
+        selection,
+        column_menu,
+        toolbar,
+        facets,
+        search,
+    } = *skeleton;
+    let fields = schema.fields();
+    let ncols = fields.len();
 
     let layout = element(buffer, nodes, Some(NodeId::ROOT), "div");
     buffer.push(Patch::SetAttribute {
@@ -4938,12 +4942,11 @@ mod tests {
         }
     }
 
-    /// A control that takes its text colour from the theme takes its background
-    /// from it too. Otherwise the background is the system's `ButtonFace` or
-    /// `Field`, which follows the page's `color-scheme` and not the theme: the
-    /// light ink of a dark theme on a mid-grey button read at 4.34:1 (point 69).
+    /// No `<style>` element in the skeleton: a page whose `style-src` lacks
+    /// 'unsafe-inline' refuses it, and the grid would draw without its look.
+    /// The sheet is [`grid_css`], adopted by the element.
     #[test]
-    fn a_themed_control_colour_comes_with_its_background() {
+    fn the_skeleton_writes_no_style_element() {
         let schema = initial_schema(&["customer".to_owned()]);
         let mut nodes = NodeAllocator::new();
         let mut buffer = PatchBuffer::new();
@@ -4964,14 +4967,20 @@ mod tests {
                 search: true,
             },
         );
-        let styles = buffer
-            .patches()
-            .iter()
-            .find_map(|patch| match patch {
-                Patch::SetText { text, .. } if text.contains(":host") => Some(text.clone()),
-                _ => None,
-            })
-            .expect("the skeleton carries a stylesheet");
+        assert!(!buffer.patches().iter().any(|patch| matches!(
+            patch,
+            Patch::CreateElement { tag, .. } if tag == "style"
+        )));
+        assert!(grid_css().contains(":host"));
+    }
+
+    /// A control that takes its text colour from the theme takes its background
+    /// from it too. Otherwise the background is the system's `ButtonFace` or
+    /// `Field`, which follows the page's `color-scheme` and not the theme: the
+    /// light ink of a dark theme on a mid-grey button read at 4.34:1 (point 69).
+    #[test]
+    fn a_themed_control_colour_comes_with_its_background() {
+        let styles = grid_css();
 
         let mut checked = 0;
         for rule in styles.split('}') {
@@ -4997,35 +5006,7 @@ mod tests {
     /// can override one without knowing the others.
     #[test]
     fn the_stylesheet_declares_every_custom_property() {
-        let schema = initial_schema(&["customer".to_owned()]);
-        let mut nodes = NodeAllocator::new();
-        let mut buffer = PatchBuffer::new();
-        build_grid(
-            &mut buffer,
-            &mut nodes,
-            &GridSkeleton {
-                label: None,
-                schema: &schema,
-                pool: 1,
-                texts: &GridTexts::default(),
-                declared: &[],
-                presentation: &Default::default(),
-                selection: false,
-                column_menu: false,
-                toolbar: false,
-                facets: false,
-                search: false,
-            },
-        );
-
-        let styles = buffer
-            .patches()
-            .iter()
-            .find_map(|patch| match patch {
-                Patch::SetText { text, .. } if text.contains(":host") => Some(text.clone()),
-                _ => None,
-            })
-            .expect("the skeleton carries a stylesheet");
+        let styles = grid_css();
 
         for property in SET_TOKENS.iter().chain(COMPUTED_TOKENS) {
             assert!(
@@ -5081,35 +5062,7 @@ mod tests {
     /// opaque row to grow over the ones below.
     #[test]
     fn the_stylesheet_unfolds_the_focused_cell() {
-        let schema = initial_schema(&["customer".to_owned()]);
-        let mut nodes = NodeAllocator::new();
-        let mut buffer = PatchBuffer::new();
-        build_grid(
-            &mut buffer,
-            &mut nodes,
-            &GridSkeleton {
-                label: None,
-                schema: &schema,
-                pool: 1,
-                texts: &GridTexts::default(),
-                declared: &[],
-                presentation: &Default::default(),
-                selection: false,
-                column_menu: false,
-                toolbar: false,
-                facets: false,
-                search: false,
-            },
-        );
-
-        let styles = buffer
-            .patches()
-            .iter()
-            .find_map(|patch| match patch {
-                Patch::SetText { text, .. } if text.contains(":host") => Some(text.clone()),
-                _ => None,
-            })
-            .expect("the skeleton carries a stylesheet");
+        let styles = grid_css();
 
         for rule in [
             "tbody td:focus",

@@ -18,6 +18,20 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+### Fixed
+
+- **`<opengrid-grid>` under a `style-src` without `'unsafe-inline'`.** A page whose policy allows
+  styles only from files and hashes — no `'unsafe-inline'`, no nonce — refused the `<style>`
+  element in the grid's shadow root and every `style` attribute it set: the grid drew without its
+  look, its column widths and its row positions, and the console filled with refusals. The look
+  is now a constructed stylesheet adopted into the shadow root (as table and pivot already did),
+  the column widths a second adopted sheet of each grid's own, and every inline style is written
+  through the CSSOM (`element.style`), which `style-src` does not govern. The shadow root has no
+  `<style>` element any more. Needs `adoptedStyleSheets` — every browser of the baseline (Chrome
+  and Edge 73+, Firefox 101+, Safari 16.4+); there is no fallback. Tested under
+  `script-src 'self' 'wasm-unsafe-eval'; style-src 'self'` with editing, choices, read-only
+  columns, widths and scrolling.
+
 ## [0.11.0] — 2026-10-08
 
 **Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).
