@@ -18,6 +18,20 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-10-09
+
+**Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).
+**Browsers:** BROWSERS
+
+Typing into a cell edits it, as in a spreadsheet, and `<opengrid-grid>` draws under a
+`style-src` without `'unsafe-inline'`.
+
+**What breaks:** nothing in the API. The grid's shadow root has no `<style>` element any more;
+its look needs `adoptedStyleSheets` (see *Fixed*).
+
+**Module sizes** (brotli, `just measure-modules`): the elements 243.5 → 244.1 KiB, inside their
+bound; the engine is unchanged.
+
 ### Added
 
 - **Typing opens the editor.** On a data cell a typed character opens the editor with that
