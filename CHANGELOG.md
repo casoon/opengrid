@@ -18,6 +18,24 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-10-09
+
+**Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).
+**Browsers:** Chromium (the whole e2e suite: 1138 passed; a GC test of the Angular example passed on
+its retry). Firefox and WebKit on Linux (`gh workflow run ci.yml -f browsers=true`): 561 passed in
+each; Firefox still has the two failures of [#157](https://github.com/casoon/opengrid/issues/157),
+WebKit failed the new CSP test on a reading of the tbody's position WebKit computes as `static`
+for any grid — the test, not the grid ([#162](https://github.com/casoon/opengrid/pull/162)).
+
+Typing into a cell edits it, as in a spreadsheet, and `<opengrid-grid>` draws under a
+`style-src` without `'unsafe-inline'`.
+
+**What breaks:** nothing in the API. The grid's shadow root has no `<style>` element any more;
+its look needs `adoptedStyleSheets` (see *Fixed*).
+
+**Module sizes** (brotli, `just measure-modules`): the elements 243.5 → 244.1 KiB, inside their
+bound; the engine is unchanged.
+
 ### Added
 
 - **Typing opens the editor.** On a data cell a typed character opens the editor with that
