@@ -241,6 +241,97 @@ test("keys on the blank space under the rows are the browser's, not the grid's",
   expect(await page.evaluate(() => window.__changes.length)).toBe(0);
 });
 
+// Quick entry, as on a marks sheet: focus a cell and type. The WAI-ARIA grid
+// pattern opens the editor three ways — `Enter`, `F2` and a typed character.
+
+test("a typed character opens the editor and replaces the value", async ({ page }) => {
+  await open(page);
+  await focusCell(page, 0, 2);
+  await page.keyboard.press("7");
+
+  await expect.poll(() => editor(page)).toMatchObject({
+    tag: "input",
+    type: "number",
+    value: "7",
+    focused: true,
+  });
+  // The character went in once, and the next one follows it.
+  await page.keyboard.type("5");
+  expect(await editor(page)).toMatchObject({ value: "75" });
+  await page.keyboard.press("Enter");
+
+  await expect.poll(() => cellText(page, 0, 2)).toContain("75");
+  const changes = await page.evaluate(() => window.__changes);
+  expect(changes).toHaveLength(1);
+  expect(changes[0]).toMatchObject({ row: 0, column: "amount" });
+  expect(changes[0].value).toMatch(/^75(\.00)?$/);
+});
+
+test("a typed character picks the one choice that fits, and Enter takes it", async ({ page }) => {
+  await open(page);
+  const before = await cellText(page, 1, 1);
+
+  await focusCell(page, 1, 1);
+  await page.keyboard.press("g");
+  await expect.poll(() => editor(page)).toMatchObject({ tag: "select", value: "Gamma", focused: true });
+  // Picked, not taken: nothing reached the page yet.
+  expect(await page.evaluate(() => window.__changes.length)).toBe(0);
+  await page.keyboard.press("Escape");
+  await expect.poll(() => editor(page)).toBeNull();
+  expect(await cellText(page, 1, 1)).toBe(before);
+
+  // A character no choice starts with keeps the cell's own value.
+  await focusCell(page, 1, 1);
+  await page.keyboard.press("x");
+  await expect.poll(() => editor(page)).toMatchObject({ tag: "select", value: before });
+  await page.keyboard.press("Escape");
+
+  await focusCell(page, 1, 1);
+  await page.keyboard.press("B");
+  await expect.poll(() => editor(page)).toMatchObject({ value: "Beta" });
+  await page.keyboard.press("Enter");
+  await expect.poll(() => page.evaluate(() => window.__changes)).toEqual([
+    expect.objectContaining({ row: 1, column: "customer", value: "Beta" }),
+  ]);
+});
+
+test("F2 opens the editor on the cell's value, as Enter does", async ({ page }) => {
+  await open(page);
+  const before = await cellText(page, 0, 0);
+  await focusCell(page, 0, 0);
+  await page.keyboard.press("F2");
+  await expect.poll(() => editor(page)).toMatchObject({
+    tag: "input",
+    type: "number",
+    value: before,
+    focused: true,
+  });
+  await page.keyboard.press("Escape");
+  await expect.poll(() => editor(page)).toBeNull();
+});
+
+test("typing on a header, Space and a shortcut open no editor", async ({ page }) => {
+  await open(page);
+  await page.evaluate(() =>
+    document.querySelector("opengrid-grid").shadowRoot.querySelector('th[data-col="1"]').focus(),
+  );
+  await page.keyboard.press("a");
+  expect(await editor(page)).toBeNull();
+
+  await focusCell(page, 0, 1);
+  await page.keyboard.press(" ");
+  await page.keyboard.press("ControlOrMeta+a");
+  expect(await editor(page)).toBeNull();
+  // Space still selected the row, and the shortcut every row.
+  const selected = await page.evaluate(
+    () =>
+      document
+        .querySelector("opengrid-grid")
+        .shadowRoot.querySelectorAll('tbody tr[aria-selected="true"]').length,
+  );
+  expect(selected).toBeGreaterThan(1);
+});
+
 test("has no axe violations with an editor open", async ({ page }) => {
   await open(page);
   await focusCell(page, 0, 1);
