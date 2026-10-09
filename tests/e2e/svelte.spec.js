@@ -8,8 +8,6 @@ import { fileURLToPath } from "node:url";
 // back. A development build, so Svelte's warnings exist, and every test fails
 // on any of them.
 
-test.use({ launchOptions: { args: ["--js-flags=--expose-gc"] } });
-
 const PAGE = "/examples/svelte/dist/index.html";
 
 async function rows(page) {

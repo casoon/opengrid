@@ -10,8 +10,6 @@ import { fileURLToPath } from "node:url";
 // Both builds are development builds, so StrictMode really mounts the grid
 // twice: the tests that count queries count through that.
 
-test.use({ launchOptions: { args: ["--js-flags=--expose-gc"] } });
-
 const BUILDS = [
   { react: "19", path: "/examples/react/dist/index.html" },
   { react: "18", path: "/examples/react/dist-18/index.html" },
