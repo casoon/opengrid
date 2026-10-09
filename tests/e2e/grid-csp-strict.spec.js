@@ -42,10 +42,13 @@ function shadow(page, fn, arg) {
 test("the grid draws, sizes and scrolls without a single refused style", async ({ page }) => {
   const violations = await open(page);
 
-  // The look arrived: the grid's sheet sets the row height on the host.
+  // The look arrived: the grid's sheet sets the row height on the host. The
+  // tbody's position is read from its inline style, which a refused `style`
+  // attribute leaves empty: WebKit computes `static` for a row group whatever
+  // it is given, with or without a policy.
   const look = await shadow(page, (root) => ({
     rowHeight: getComputedStyle(root.host).getPropertyValue("--og-row-height").trim(),
-    position: getComputedStyle(root.querySelector("tbody")).position,
+    position: root.querySelector("tbody").style.position,
   }));
   expect(look).toEqual({ rowHeight: "42px", position: "relative" });
   const row = 42;
