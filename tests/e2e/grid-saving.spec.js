@@ -136,10 +136,13 @@ test("the page fills a read-only column without an event, and the value stays wi
   await expect.poll(() => cell(page, 0, 3)).toMatchObject({ text: "42", changed: false });
   expect(await page.evaluate(() => window.__changes.length)).toBe(0);
 
-  // Enter on a read-only cell opens no editor.
+  // Enter on a read-only cell opens no editor — nor F2, nor a typed digit.
   await shadow(page, (root) => root.querySelector('td[data-row="0"][data-col="3"]').focus());
-  await page.keyboard.press("Enter");
-  expect(await shadow(page, (root) => root.querySelector('[part="editor"]'))).toBeNull();
+  for (const key of ["Enter", "F2", "4"]) {
+    await page.keyboard.press(key);
+    expect(await shadow(page, (root) => root.querySelector('[part="editor"]')), key).toBeNull();
+  }
+  expect(await cell(page, 0, 3)).toMatchObject({ text: "42", focused: true });
 
   // Sorted the other way round, order 1 sits elsewhere — and keeps the value.
   await page.evaluate(() =>

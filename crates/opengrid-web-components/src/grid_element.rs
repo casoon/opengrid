@@ -1576,6 +1576,15 @@ fn on_key_down(event: KeyboardEvent) {
         event.prevent_default();
         return;
     }
+    // `F2` and a typed character open no editor there either; they are left
+    // to the browser, as on any cell that edits nothing.
+    let typed = grid::typed_character(&event.key(), event.ctrl_key(), event.meta_key())
+        .filter(|_| !event.is_composing())
+        .map(str::to_owned);
+    let opens_editor = event.key() == "F2" || typed.is_some();
+    if opens_editor && (is_grouped(&host) || is_tree(&host)) {
+        return;
+    }
 
     // `Ctrl`/`Cmd`+`A` selects every matching row, not only the loaded page —
     // in a tree, every node shown.
@@ -1602,7 +1611,22 @@ fn on_key_down(event: KeyboardEvent) {
                 ActiveCell::SelectAll => toggle_all(&host, &runtime),
                 ActiveCell::Select { row } => toggle_row(&host, &runtime, row, false),
                 ActiveCell::Header { .. } => activate_header(&host, &runtime, event.shift_key()),
-                ActiveCell::Data(cell) => begin_edit(&host, cell),
+                ActiveCell::Data(cell) => begin_edit(&host, cell, None),
+            }
+        }
+        // The other two ways into the editor of the WAI-ARIA grid pattern:
+        // `F2`, as `Enter`, and a typed character, which also goes into it —
+        // a marks sheet is filled by focusing a cell and typing the mark.
+        // Only on a data cell; a header or the selection column takes neither.
+        _ if opens_editor => {
+            if let ActiveCell::Data(cell) = active {
+                begin_edit(&host, cell, typed.as_deref());
+                // Kept only if the editor opened: a read-only cell leaves the
+                // key to the browser. Prevented, the typed character is not
+                // typed a second time into the editor that now has the focus.
+                if runtime.borrow().state.editing().is_some() {
+                    event.prevent_default();
+                }
             }
         }
         (" ", _) => {
@@ -2330,7 +2354,13 @@ fn choices_for(host: &HtmlElement, col: usize) -> Option<Vec<String>> {
 /// column: `text`, `number` with the column's step, `date`, `checkbox`, or a
 /// `<select>` when the page supplied choices. The same derivation as the filter
 /// row (point 51) — one place decides what a column can hold.
-fn begin_edit(host: &HtmlElement, cell: CellRef) {
+///
+/// `typed` is the character that opened it, if a character did: it **replaces**
+/// the value in a text or number field, as in a spreadsheet, and in a select
+/// it picks the one choice that fits ([`grid::choice_for_typed`]) — the reader
+/// still confirms with `Enter`. A date or a checkbox has no place for one
+/// character; it opens on the cell's value.
+fn begin_edit(host: &HtmlElement, cell: CellRef, typed: Option<&str>) {
     let Some(runtime) = runtime(host) else {
         return;
     };
@@ -2376,11 +2406,14 @@ fn begin_edit(host: &HtmlElement, cell: CellRef) {
             let Ok(select) = document.create_element("select") else {
                 return;
             };
+            let chosen = typed
+                .and_then(|typed| grid::choice_for_typed(options, typed))
+                .unwrap_or(&current);
             for option in options {
                 if let Ok(node) = document.create_element("option") {
                     node.set_text_content(Some(option));
                     let _ = node.set_attribute("value", option);
-                    if *option == current {
+                    if option == chosen {
                         let _ = node.set_attribute("selected", "");
                     }
                     let _ = select.append_child(&node);
@@ -2402,7 +2435,10 @@ fn begin_edit(host: &HtmlElement, cell: CellRef) {
                     let _ = input.set_attribute("checked", "");
                 }
             } else if let Ok(field) = input.clone().dyn_into::<HtmlInputElement>() {
-                field.set_value(&current);
+                match typed {
+                    Some(typed) if kind != "date" => field.set_value(typed),
+                    _ => field.set_value(&current),
+                }
             }
             input
         }

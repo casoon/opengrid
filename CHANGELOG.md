@@ -18,6 +18,16 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+### Added
+
+- **Typing opens the editor.** On a data cell a typed character opens the editor with that
+  character in it — replacing the value in a text or number field, as in a spreadsheet — and in a
+  select it picks the one choice that is the character or starts with it; `Enter` still commits,
+  `Escape` still discards. `F2` opens the editor as `Enter` does. Both are the WAI-ARIA grid
+  pattern's; a marks sheet is filled by focusing a cell and typing the mark. `Space` keeps
+  selecting the row, a `Ctrl`/`Cmd` shortcut is not typing, and read-only columns, a grouped grid
+  and a tree open no editor this way either.
+
 ## [0.11.0] — 2026-10-08
 
 **Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).
