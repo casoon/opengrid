@@ -21,9 +21,11 @@ Two things belong in every release entry and are easy to leave out:
 ## [0.11.0] — 2026-10-08
 
 **Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).
-**Browsers:** Chromium (the whole e2e suite: 1127 passed), WebKit (`just e2e-browsers`: 556 passed,
-10 skipped by design). Firefox: **not run** — Playwright's Firefox did not start on the release
-machine.
+**Browsers:** Chromium (the whole e2e suite: 1127 passed), WebKit (`just e2e-browsers` on macOS:
+556 passed, 10 skipped by design). Firefox, on Linux (`gh workflow run ci.yml -f browsers=true`,
+since Playwright's Firefox does not start on the release machine): **two failures** — an unnamed
+tab stop in the narrow toolbar and a scroll area 1 px short after unfolding a cell
+([#157](https://github.com/casoon/opengrid/issues/157)); everything else passed.
 
 The grid as an editing surface a page saves cell by cell: the edit names its record, the page says
 what became of it, and fills columns of its own. Asked for by a grade entry grid.
