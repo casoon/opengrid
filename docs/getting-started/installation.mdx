@@ -70,6 +70,27 @@ opengrid/
 
 The [Quickstart](../quickstart/) assumes this layout.
 
+## Content Security Policy
+
+The elements run under a strict policy. What they need:
+
+- **`script-src 'wasm-unsafe-eval'`** to compile the WebAssembly modules, plus the origin the
+  files are served from (`'self'` when they sit next to the page). Nothing is built at run time:
+  no `'unsafe-eval'`, no inline script.
+- **`style-src` needs nothing of its own.** Every element styles itself with constructed
+  stylesheets adopted into its shadow root and writes the few inline values — row positions,
+  column widths — through the CSSOM. Neither is governed by `style-src`, so a policy of
+  `style-src 'self'` with no `'unsafe-inline'` and no nonce draws the grid whole.
+- **`connect-src`** for a provider that asks a server (`createRestProvider`,
+  `createPivotProvider`), and for `createWorkerProvider` the origin of `worker.js` under
+  `worker-src` — or `script-src`, which it falls back to.
+
+The page's own styling of the element (`opengrid-grid { height: … }`) is the page's: in a file or
+under a hash, like any other style it writes.
+
+Adopted stylesheets are in every browser of the baseline — Chrome and Edge 73+, Firefox 101+,
+Safari 16.4+. There is no fallback to a `<style>` element.
+
 ## Building from the repository
 
 For working on opengrid itself, or for a version that is not released yet.

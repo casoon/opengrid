@@ -385,6 +385,7 @@ fn on_connected(host: HtmlElement) {
     let height = resolve_row_height(&host);
 
     if !returning {
+        adopt_sheets(&root);
         add_listeners(&root);
         runtime.borrow_mut().row_height = height;
         // A `group-by` in the markup is read before anything else happens; one
@@ -2042,15 +2043,15 @@ fn align_filter(host: &HtmlElement) {
         if let Ok(Some(operator)) =
             root.query_selector(&format!("[part=\"filter-operator\"][data-col=\"{col}\"]"))
             && let Some(group) = operator.parent_element()
+            && let Ok(group) = group.dyn_into::<HtmlElement>()
         {
-            let _ = group.set_attribute(
-                "style",
-                &format!(
-                    "display: inline-flex; align-items: center; gap: 0.25rem; flex: none; \
-                     box-sizing: border-box; padding-right: 0.25rem; width: {:.2}px;",
-                    rect.width()
-                ),
-            );
+            // Through the CSSOM, like every style the grid writes: a page
+            // whose `style-src` lacks 'unsafe-inline' refuses the attribute.
+            group.style().set_css_text(&format!(
+                "display: inline-flex; align-items: center; gap: 0.25rem; flex: none; \
+                 box-sizing: border-box; padding-right: 0.25rem; width: {:.2}px;",
+                rect.width()
+            ));
         }
     }
     let Some(first) = first else {
@@ -2156,25 +2157,14 @@ fn apply_widths(host: &HtmlElement) {
         let Ok(Some(cell)) = root.query_selector(&format!("th[data-col=\"{col}\"]")) else {
             continue;
         };
-        match width {
-            Some(width) => {
-                let _ = cell.set_attribute("style", &format!("width: {width}px;"));
-            }
-            None => {
+        match (width, cell.dyn_into::<HtmlElement>()) {
+            (Some(width), Ok(cell)) => cell.style().set_css_text(&format!("width: {width}px;")),
+            (None, Ok(cell)) => {
                 let _ = cell.remove_attribute("style");
             }
+            _ => {}
         }
     }
-    let sheet = match root.query_selector("style[data-widths]") {
-        Ok(Some(sheet)) => Some(sheet),
-        _ => web_sys::window()
-            .and_then(|window| window.document())
-            .and_then(|document| document.create_element("style").ok())
-            .inspect(|sheet| {
-                let _ = sheet.set_attribute("data-widths", "");
-                let _ = root.append_child(sheet);
-            }),
-    };
     // The selection column, when there is one, is 44 px (its own rule).
     if root
         .query_selector("th[data-select]")
@@ -2185,12 +2175,40 @@ fn apply_widths(host: &HtmlElement) {
         least += 44;
     }
     rules.push_str(&format!("table {{ min-width: {least}px; }}\n"));
-    if let Some(sheet) = sheet
-        && sheet.text_content().unwrap_or_default() != rules
-    {
-        sheet.set_text_content(Some(&rules));
+    if let Some(sheet) = widths_sheet(&root) {
+        sheet.replace_sync(&rules).unwrap_or_default();
     }
     align_filter(host);
+}
+
+thread_local! {
+    /// The grid's look ([`grid::grid_css`]), parsed once and shared by every
+    /// grid of the document.
+    static GRID_SHEET: Option<web_sys::CssStyleSheet> = web_sys::CssStyleSheet::new()
+        .ok()
+        .inspect(|sheet| sheet.replace_sync(&grid::grid_css()).unwrap_or_default());
+}
+
+/// Adopts the grid's sheets into a fresh shadow root: the shared look, then a
+/// sheet of this grid's own for its column widths ([`apply_widths`]).
+///
+/// Adopted rather than `<style>` children: a page whose `style-src` lacks
+/// 'unsafe-inline' — no nonce, hashes only — refuses a `<style>` element
+/// written from script, and the grid would draw without its look, its widths
+/// and its row positions. Constructed sheets are not governed by `style-src`.
+/// They also outlive [`clear_root`], so a rebuild keeps them.
+fn adopt_sheets(root: &ShadowRoot) {
+    GRID_SHEET.with(|look| {
+        if let (Some(look), Ok(widths)) = (look, web_sys::CssStyleSheet::new()) {
+            let sheets = js_sys::Array::of2(look, &widths);
+            root.set_adopted_style_sheets(&JsValue::from(sheets));
+        }
+    });
+}
+
+/// The sheet [`adopt_sheets`] gave this grid for its column widths.
+fn widths_sheet(root: &ShadowRoot) -> Option<web_sys::CssStyleSheet> {
+    root.adopted_style_sheets().get(1).dyn_into().ok()
 }
 
 /// The columns the grid actually shows, in the order it shows them.

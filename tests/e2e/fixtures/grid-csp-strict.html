@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <!-- A page with the policy of a careful application: no inline style and
+         no inline script at all — no 'unsafe-inline', no nonce. WebAssembly
+         may compile. The grid has to draw itself with constructed sheets and
+         the CSSOM, which `style-src` does not govern. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'"
+    />
+    <title>opengrid strict style CSP fixture</title>
+    <link rel="stylesheet" href="grid-csp-strict.css" />
+    <script type="module" src="grid-csp-strict.js"></script>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid strict style CSP fixture</h1>
+      <opengrid-grid
+        label="Orders"
+        datasource="orders"
+        columns="id,customer,qty,note"
+        window-size="10"
+        row-key="id"
+      ></opengrid-grid>
+    </main>
+  </body>
+</html>
