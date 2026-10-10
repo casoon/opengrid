@@ -21,11 +21,18 @@ Two things belong in every release entry and are easy to leave out:
 **What breaks:**
 - Rust: `TreeSpec` has a new public field, `aggregate` (`aggregate: Vec::new()` in a struct
   literal); `ValidatedTree` has `aggregate` and `aggregate_schema`; `TreeLevel` has
-  `aggregate_schema` and `aggregates` and is no longer `Eq`; `opengrid_columns::wire::TreeSection`
-  has `aggregates` and is no longer `Eq`.
+  `aggregate_schema`, `aggregates` and `flat` and is no longer `Eq`;
+  `opengrid_columns::wire::TreeSection` has `aggregates` and `flat` and is no longer `Eq`;
+  `TreeSpec` and `ValidatedTree` also have `flat`.
 
 ### Added
 
+- **The whole tree, flat** ([#166](https://github.com/casoon/opengrid/issues/166), rule T8).
+  `tree.flat: true` answers every visible node of a tree depth-first, siblings in the query's
+  order, paged like any query; each row's level, its path of keys and — with a filter — whether
+  it matches come back as `tree.flat`, in JSON and in the binary form. A source field named
+  `level` or `path` (or `match`, with a filter) is refused. Four conformance cases (T8) pass on
+  every path. The export that uses it follows.
 - **Subtree aggregates, in the engine and on the server** ([#165](https://github.com/casoon/opengrid/issues/165), rule T7).
   A tree query takes `tree.aggregate: [{ field?, fn, as }]` and answers, per node of the level,
   the aggregate over the node and all its descendants — from the raw rows, the functions and

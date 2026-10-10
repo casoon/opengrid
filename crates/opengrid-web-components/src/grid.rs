@@ -1054,6 +1054,12 @@ pub fn parse_result_bytes(bytes: &[u8]) -> Result<QueryResult, String> {
             .aggregates
             .map(|table| table.to_values())
             .unwrap_or_default(),
+        flat: tree.flat.map(|flat| opengrid_datasource::FlatTree {
+            levels: flat.levels,
+            paths: flat.paths,
+            key_type: flat.key_type,
+            filtered: flat.filtered,
+        }),
     });
     Ok(result)
 }

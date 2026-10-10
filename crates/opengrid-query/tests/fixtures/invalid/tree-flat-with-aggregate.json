@@ -1,0 +1,13 @@
+{
+  "expect": "TreeFlatWithAggregate",
+  "query": {
+    "source": "orders",
+    "select": ["customer"],
+    "tree": {
+      "key": "customer",
+      "parent": "note",
+      "flat": true,
+      "aggregate": [{ "field": "amount", "fn": "sum", "as": "total" }]
+    }
+  }
+}

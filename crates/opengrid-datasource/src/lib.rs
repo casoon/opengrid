@@ -28,7 +28,7 @@ pub mod wire;
 
 pub use capabilities::DataSourceCapabilities;
 pub use error::DataSourceError;
-pub use result::{QueryResult, TreeLevel};
+pub use result::{FlatTree, QueryResult, TreeLevel};
 pub use source::{DataSource, SendDataSource};
 
 /// Where a query is executed.

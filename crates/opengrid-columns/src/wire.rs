@@ -33,12 +33,16 @@
 //!
 //! ```text
 //! tree     matches u64 · orphans u64 · children: rows × u64 · match: ⌈rows / 64⌉ u64 words
+//! [parts]  u64 flags, only when a part follows: bit 0 aggregates, bit 1 flat
 //! [aggregates]  a table (as above, total_count 0) with one row per row of the level —
-//!               the subtree aggregates of T7, present only when the query asked for them
+//!               the subtree aggregates of T7
+//! [flat]   filtered u64 (0/1) · level: rows × u64 · path length: rows × u64 ·
+//!          a table of one column `key` holding every path's keys in row order (T8)
 //! ```
 //!
-//! A reader from before the aggregates refuses a level that carries them (the
-//! bytes do not end where it expects) rather than dropping them.
+//! A tree without parts is byte for byte what it was before them, and a
+//! reader from before them refuses a level that carries any (the bytes do
+//! not end where it expects) rather than dropping them.
 //!
 //! # Reading is strict
 //!
@@ -147,7 +151,26 @@ pub struct TreeSection {
     /// The subtree aggregates (T7, issue #165): one row per row of the level,
     /// one column per alias. `None` when the query asked for none.
     pub aggregates: Option<Table>,
+    /// Where each row of a flat tree sits (T8, issue #166).
+    pub flat: Option<FlatSection>,
 }
+
+/// Where each row of a flat tree sits (T8) — the binary twin of
+/// `opengrid_datasource::FlatTree`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FlatSection {
+    /// Per row: its depth, 1 for a root.
+    pub levels: Vec<u64>,
+    /// Per row: the keys from its root down to itself.
+    pub paths: Vec<Vec<Value>>,
+    /// The type of the keys.
+    pub key_type: DataType,
+    /// Whether the query had a filter.
+    pub filtered: bool,
+}
+
+const PART_AGGREGATES: u64 = 1;
+const PART_FLAT: u64 = 2;
 
 /// A tree's level as bytes: the result, then its tree part.
 pub fn encode_tree_result(table: &Table, total_count: u64, tree: &TreeSection) -> Vec<u8> {
@@ -163,8 +186,32 @@ pub fn encode_tree_result(table: &Table, total_count: u64, tree: &TreeSection) -
         bits.push(*matched);
     }
     writer.words(bits.words());
+    let flags = if tree.aggregates.is_some() {
+        PART_AGGREGATES
+    } else {
+        0
+    } | if tree.flat.is_some() { PART_FLAT } else { 0 };
+    if flags != 0 {
+        writer.u64(flags);
+    }
     if let Some(aggregates) = &tree.aggregates {
         writer.table(aggregates, 0);
+    }
+    if let Some(flat) = &tree.flat {
+        writer.u64(u64::from(flat.filtered));
+        for level in &flat.levels {
+            writer.u64(*level);
+        }
+        for path in &flat.paths {
+            writer.u64(path.len() as u64);
+        }
+        let key = Schema::new(vec![Field::new(
+            FieldName::new("key").expect("a field name"),
+            flat.key_type,
+        )]);
+        let keys: Vec<Value> = flat.paths.iter().flatten().cloned().collect();
+        let keys = Table::from_values(&key, &[keys]).expect("the keys are of the key's type");
+        writer.table(&keys, 0);
     }
     writer.finish()
 }
@@ -189,9 +236,13 @@ pub fn decode_answer(bytes: &[u8]) -> Result<(Table, u64, Option<TreeSection>), 
         let matched = (0..rows)
             .map(|row| words[row / 64] >> (row % 64) & 1 == 1)
             .collect();
-        let aggregates = if reader.at_end() {
-            None
-        } else {
+        let flags = if reader.at_end() { 0 } else { reader.u64()? };
+        if flags & !(PART_AGGREGATES | PART_FLAT) != 0 {
+            return Err(WireError::new(
+                "the tree carries a part this reader does not know",
+            ));
+        }
+        let aggregates = if flags & PART_AGGREGATES != 0 {
             let (aggregates, _) = reader.table()?;
             if aggregates.num_rows() != rows {
                 return Err(WireError::new(
@@ -199,6 +250,43 @@ pub fn decode_answer(bytes: &[u8]) -> Result<(Table, u64, Option<TreeSection>), 
                 ));
             }
             Some(aggregates)
+        } else {
+            None
+        };
+        let flat = if flags & PART_FLAT != 0 {
+            let filtered = reader.u64()? != 0;
+            let levels = (0..rows)
+                .map(|_| reader.u64())
+                .collect::<Result<Vec<_>, _>>()?;
+            let lengths = (0..rows)
+                .map(|_| reader.u64())
+                .collect::<Result<Vec<_>, _>>()?;
+            let (keys, _) = reader.table()?;
+            let total: u64 = lengths.iter().sum();
+            if keys.schema().len() != 1 || keys.num_rows() as u64 != total {
+                return Err(WireError::new("the flat tree's paths do not add up"));
+            }
+            let key_type = keys.schema().fields()[0].data_type;
+            let column = keys.column_at(0);
+            let mut at = 0;
+            let paths = lengths
+                .iter()
+                .map(|length| {
+                    let path = (at..at + *length as usize)
+                        .map(|row| column.value(row))
+                        .collect();
+                    at += *length as usize;
+                    path
+                })
+                .collect();
+            Some(FlatSection {
+                levels,
+                paths,
+                key_type,
+                filtered,
+            })
+        } else {
+            None
         };
         Some(TreeSection {
             children,
@@ -206,6 +294,7 @@ pub fn decode_answer(bytes: &[u8]) -> Result<(Table, u64, Option<TreeSection>), 
             matches,
             orphans,
             aggregates,
+            flat,
         })
     } else {
         None
@@ -672,6 +761,7 @@ mod tests {
             matches: 56,
             orphans: 2,
             aggregates: None,
+            flat: None,
         };
         let bytes = encode_tree_result(&table, 71, &tree);
         let (back, total, part) = decode_answer(&bytes).expect("reads");
@@ -707,6 +797,7 @@ mod tests {
             matches: 2,
             orphans: 0,
             aggregates: Some(aggregates),
+            flat: None,
         };
         let bytes = encode_tree_result(&table, 2, &tree);
         let (_, _, part) = decode_answer(&bytes).expect("reads");
@@ -730,10 +821,57 @@ mod tests {
             matches: 2,
             orphans: 0,
             aggregates: Some(Table::from_values(&sums, &[vec![Value::Int64(1)]]).unwrap()),
+            flat: None,
         };
         assert!(decode_answer(&encode_tree_result(&table, 2, &short)).is_err());
         short.aggregates = None;
         assert!(decode_answer(&encode_tree_result(&table, 2, &short)).is_ok());
+    }
+
+    /// A flat tree (T8, #166) brings each row's level and path back, and a
+    /// tree without parts is byte for byte what 0.12 wrote.
+    #[test]
+    fn a_flat_tree_carries_levels_and_paths() {
+        let schema = Schema::new(vec![Field::required(
+            FieldName::new("id").unwrap(),
+            DataType::Int64,
+        )]);
+        let table = Table::from_values(
+            &schema,
+            &[vec![Value::Int64(1), Value::Int64(2), Value::Int64(4)]],
+        )
+        .unwrap();
+        let plain = TreeSection {
+            children: vec![1, 1, 0],
+            matched: vec![false, true, true],
+            matches: 2,
+            orphans: 0,
+            aggregates: None,
+            flat: None,
+        };
+        let mut flat = plain.clone();
+        flat.flat = Some(FlatSection {
+            levels: vec![1, 2, 3],
+            paths: vec![
+                vec![Value::Int64(1)],
+                vec![Value::Int64(1), Value::Int64(2)],
+                vec![Value::Int64(1), Value::Int64(2), Value::Int64(4)],
+            ],
+            key_type: DataType::Int64,
+            filtered: true,
+        });
+        let (_, _, part) = decode_answer(&encode_tree_result(&table, 3, &flat)).expect("reads");
+        assert_eq!(part, Some(flat.clone()));
+
+        // Without parts: the result, the four tree fields, nothing after.
+        let bytes = encode_tree_result(&table, 3, &plain);
+        let (mut reader, _) = Reader::new(&bytes).unwrap();
+        reader.table().unwrap();
+        for _ in 0..(2 + 3 + 1) {
+            reader.u64().unwrap();
+        }
+        assert!(reader.finish().is_ok(), "no flags word without a part");
+        assert!(encode_tree_result(&table, 3, &flat).len() > bytes.len());
     }
 
     use proptest::prelude::*;

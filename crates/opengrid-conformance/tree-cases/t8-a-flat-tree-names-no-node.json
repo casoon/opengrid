@@ -1,0 +1,13 @@
+{
+  "id": "t8-a-flat-tree-names-no-node",
+  "rule": "T8",
+  "query": {
+    "source": "tree",
+    "select": ["id", "name"],
+    "tree": { "parent": "parent_id", "under": 1, "flat": true },
+    "sort": [{ "field": "id" }]
+  },
+  "expected_error": {
+    "contains": ["tree.under"]
+  }
+}

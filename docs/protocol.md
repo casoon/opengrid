@@ -51,7 +51,7 @@ The body's `source` must equal the path's; a mismatch is a `422` at `source`.
   [Query semantics](guides/query-semantics.md). A server that answers differently gives the
   browser different results from the engine in the tab.
 
-A query may ask for **one level of a tree** (E38): `tree: { key?, parent, under?, scope?, aggregate? }` — `key`
+A query may ask for **one level of a tree** (E38): `tree: { key?, parent, under?, scope?, aggregate?, flat? }` — `key`
 (default `"id"`) and `parent` name the hierarchy, `under` the node whose children are asked
 for; without it, the roots. A root is a node whose parent is NULL or names no node (an
 orphan); a key twice or a cycle is an error. With a filter the level shows the matches **and
@@ -65,6 +65,14 @@ matches, and for the whole tree the matches and the orphans. A tree query cannot
 subtree's **matches** only; context does not count. The answer carries them beside the rows,
 not as columns of them: `tree.aggregates`, a list of columns in the result's own form (`name` is
 the alias, one value per row of the level). An alias may not be a field's name.
+`flat: true` asks for the **whole tree** instead of one level (rule T8, issue #166): every
+visible node, depth-first, each node's children in the query's sort (ties by the key), paged
+by `offset`/`limit` like any query — so an export reads it in pieces. It names no `under` and
+carries no `aggregate` (both refused). Each row's place comes in `tree.flat: { level, path,
+key_type, filtered }`: its depth (1 for a root), the keys from its root down to it (read as
+`key_type`), and whether the query had a filter — only then does `match` say anything. A
+source field named `level` or `path` — or `match`, with a filter — is refused: those are the
+columns an export of the flat tree adds.
 `scope` is a filter that decides which rows the tree **consists of**: a row outside it is
 neither a match nor context nor a child, and a node whose parent is outside is an orphan. The
 server puts its mandatory row filter (E16) there, not on the query's filter — on the filter it
@@ -73,8 +81,11 @@ Every source answers a tree through the server: one that cannot by itself (the c
 `tree`) is asked for the rows of the scope, and the engine answers the level. In the binary
 form a tree's level is its own kind (`2`), the result followed by `matches`, `orphans`, the child
 count per row and the matches as a bitmap; a reader of plain results refuses it rather than lose
-that part. A level with subtree aggregates appends them as one more table (one row per row of
-the level); a reader from before them refuses those bytes rather than drop the aggregates.
+that part. A level with parts beyond those appends a `u64` of flags (bit 0 subtree aggregates, bit 1 flat)
+and then the parts: the aggregates as one more table (one row per row of the level); the flat
+part as `filtered`, the levels, each path's length, and a one-column table of every path's
+keys. A tree without parts is byte for byte what it was before them; a reader from before
+them refuses those bytes rather than drop a part.
 
 The pivot query is `{ source, rows, columns, values: [{ field, fn, as }], filter?, sort? }`.
 
