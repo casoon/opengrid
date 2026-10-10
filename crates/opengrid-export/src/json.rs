@@ -1,4 +1,5 @@
-//! JSON: an array of row objects, keys in the order of the columns (E33).
+//! JSON: an array of row objects, keys in the order of the columns (E33) —
+//! and for a flat tree its `level`, `path` (an array) and `match` after them.
 //!
 //! The values are the wire form's (E17): a decimal, a date and a timestamp as
 //! strings in their exact notation, a non-finite float spelled out (E13),
@@ -30,6 +31,27 @@ pub fn json_rows(result: &QueryResult, first: bool) -> String {
             out.push_str(&names[col]);
             out.push(':');
             out.push_str(&opengrid_json::to_string(&column[row]));
+        }
+        // A flat tree's place (T8, #166): its level, its path as an array of
+        // keys, and — when the query filtered — whether it matches.
+        if let Some(tree) = &result.tree
+            && let Some(flat) = &tree.flat
+        {
+            let [level, path, matched] = opengrid_datasource::FLAT_COLUMNS;
+            out.push_str(&format!(
+                ",{}:{},{}:{}",
+                opengrid_json::to_string(level),
+                flat.levels[row],
+                opengrid_json::to_string(path),
+                opengrid_json::to_string(&flat.paths[row]),
+            ));
+            if flat.filtered {
+                out.push_str(&format!(
+                    ",{}:{}",
+                    opengrid_json::to_string(matched),
+                    tree.matched[row]
+                ));
+            }
         }
         out.push('}');
     }

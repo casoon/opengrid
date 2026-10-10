@@ -12,7 +12,7 @@
 use opengrid_datasource::wire::result_from_json;
 #[cfg(feature = "pivot")]
 use opengrid_export::PivotLabels;
-use opengrid_export::{CsvOptions, csv_header, csv_rows, json_rows};
+use opengrid_export::{CsvOptions, csv_header, csv_rows, json_rows, with_tree_columns};
 use wasm_bindgen::prelude::*;
 
 #[cfg(feature = "pivot")]
@@ -32,6 +32,8 @@ const CSV_OPTION_KEYS: [&str; 4] = ["delimiter", "bom", "protectFormulas", "null
 #[wasm_bindgen(js_name = export_csv)]
 pub fn export_csv(answer: JsValue, options: JsValue, header: bool) -> Result<String, JsError> {
     let result = read(&answer)?;
+    // A flat tree brings its level, path and match columns (T8, #166).
+    let result = with_tree_columns(&result);
     let options = csv_options(&options)?;
     let mut out = String::new();
     if header {

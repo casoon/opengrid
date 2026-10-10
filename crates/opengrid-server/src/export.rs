@@ -239,7 +239,16 @@ async fn stream(
     // A failure is still a status then, and a clean one hands the connection
     // back (`close`); a step given up on drops it.
     let backstop = timeout * BACKSTOP_FACTOR;
-    let mut rows = match step(source.data.export(&query, backstop), ready.closed(), None).await {
+    // A tree (T8, issue #166) is answered whole, the way `/query` answers it,
+    // and handed out in pieces with their part of the tree.
+    let opened = async {
+        if query.tree.is_some() {
+            Ok(opengrid_connector::tree_export(&*source.data, &query))
+        } else {
+            source.data.export(&query, backstop).await
+        }
+    };
+    let mut rows = match step(opened, ready.closed(), None).await {
         None => return,
         Some(Err(error)) => {
             let _ = ready.send(Err(source_failed(error).into()));
