@@ -383,7 +383,7 @@ groupingFull hideColumn lang loading matchesOne matchesOther noValue nothingToAd
 operators pageFirst pageLast pageNext pageOf pagePrevious pivotColumns pivotFilterHint pivotFilterLabel pivotFilters pivotMeasures pivotRows pivotToolbar queriesOne queriesOther queryAnd \
 queryMissingValue queryUnknownColumn queryWrongOperator rowsOne rowsOther searchChip searchHint \
 searchLabel searchPlaceholder searchSuggestions selectAll selectedAll selectionCleared sortAscending \
-sortDescending sourceHybrid sourceLocal sourceRemote sourceWorker subtotal toolbarGroup total \
+sortDescending sourceHybrid sourceLocal sourceRemote sourceWorker subtotal subtreeCell toolbarGroup total \
 totalRow treeContext treeGroupIgnored treeLevelTooLarge treeOrphans treeRefused typeBool typeDate typeInteger typeNumber typeText typeTime ungroupColumn valueLabel
 ";
         assert_eq!(surface(), expected);
