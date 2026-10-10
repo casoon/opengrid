@@ -186,6 +186,9 @@ pub struct GridTexts {
     /// `{value}` is the node's own, `{aggregate}` the summary's name,
     /// `{total}` the summary — "120. Sum of the subtree: 1,450".
     pub subtree_cell: String,
+    /// The same for a node without a value of its own: `{aggregate}`,
+    /// `{total}` — "Sum of the subtree: 1,450".
+    pub subtree_only: String,
     pub tree_orphans: String,
     pub tree_level_too_large: String,
     pub tree_refused: String,
@@ -371,6 +374,7 @@ pub(crate) const KEYS: &[&str] = &[
     "pivotFilterHint",
     "treeContext",
     "subtreeCell",
+    "subtreeOnly",
     "treeOrphans",
     "treeLevelTooLarge",
     "treeRefused",
@@ -534,6 +538,7 @@ impl Default for GridTexts {
             pivot_filter_hint: "field = value \u{00B7} Enter".to_owned(),
             tree_context: "context".to_owned(),
             subtree_cell: "{value}. {aggregate} of the subtree: {total}".to_owned(),
+            subtree_only: "{aggregate} of the subtree: {total}".to_owned(),
             tree_orphans: "Without a parent, shown at the top: {count}".to_owned(),
             tree_level_too_large:
                 "{count} rows at one level; a level holds at most {max} \u{2014} choose a filter"
@@ -852,6 +857,20 @@ impl GridTexts {
         )
     }
 
+    /// A tree node's cell without a value of its own: only its subtree's summary.
+    #[cfg(feature = "grid")]
+    pub fn subtree_only(&self, summary: crate::presentation::Summary, total: &str) -> String {
+        fill(
+            &fill(
+                &self.subtree_only,
+                "aggregate",
+                self.aggregate_name(summary),
+            ),
+            "total",
+            total,
+        )
+    }
+
     /// A `group-by` the grid refuses (point 62).
     pub fn group_invalid(&self, column: &str) -> String {
         fill(&self.group_invalid, "column", self.column(column))
@@ -1112,6 +1131,7 @@ mod host {
         overwrite(&mut texts.pivot_filter_hint, string("pivotFilterHint"));
         overwrite(&mut texts.tree_context, string("treeContext"));
         overwrite(&mut texts.subtree_cell, string("subtreeCell"));
+        overwrite(&mut texts.subtree_only, string("subtreeOnly"));
         overwrite(&mut texts.tree_orphans, string("treeOrphans"));
         overwrite(&mut texts.tree_level_too_large, string("treeLevelTooLarge"));
         overwrite(&mut texts.tree_refused, string("treeRefused"));
