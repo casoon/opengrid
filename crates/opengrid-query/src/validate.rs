@@ -65,6 +65,10 @@ pub struct ValidatedTree {
     pub under: Option<GridValue>,
     /// The rows the tree consists of (see [`TreeSpec::scope`]).
     pub scope: Option<ValidatedFilter>,
+    /// The subtree aggregates (rule T7), as the query gave them.
+    pub aggregate: Vec<Aggregate>,
+    /// Their aliases with the result types of S12, in query order.
+    pub aggregate_schema: Schema,
 }
 
 /// A filter whose literals have been read against the field types.
@@ -115,53 +119,7 @@ impl Query {
         }
 
         // Resolve aggregates: result type and alias bookkeeping.
-        let mut aliases: Vec<(FieldName, DataType, bool)> = Vec::new();
-        for (i, aggregate) in self.aggregate.iter().enumerate() {
-            let input_type = match &aggregate.field {
-                Some(field) => Some(schema.data_type(field.as_str()).ok_or_else(|| {
-                    QueryError::UnknownField {
-                        path: format!("aggregate[{i}].field"),
-                        field: field.to_string(),
-                    }
-                })?),
-                None => {
-                    if aggregate.function.requires_field() {
-                        return Err(QueryError::AggregateFieldRequired {
-                            path: format!("aggregate[{i}].fn"),
-                            function: aggregate.function,
-                        });
-                    }
-                    None
-                }
-            };
-            let result = match input_type {
-                Some(input) => aggregate.function.result_type(input).ok_or(
-                    QueryError::AggregateTypeMismatch {
-                        path: format!("aggregate[{i}].fn"),
-                        function: aggregate.function,
-                        data_type: input,
-                    },
-                )?,
-                None => DataType::Int64,
-            };
-            if schema.field(aggregate.alias.as_str()).is_some() {
-                return Err(QueryError::AliasConflictsWithField {
-                    path: format!("aggregate[{i}].as"),
-                    alias: aggregate.alias.to_string(),
-                });
-            }
-            if aliases
-                .iter()
-                .any(|(alias, _, _)| alias == &aggregate.alias)
-            {
-                return Err(QueryError::DuplicateAlias {
-                    path: format!("aggregate[{i}].as"),
-                    alias: aggregate.alias.to_string(),
-                });
-            }
-            let nullable = !matches!(aggregate.function, crate::AggregateFn::Count);
-            aliases.push((aggregate.alias.clone(), result, nullable));
-        }
+        let aliases = resolve_aggregates(&self.aggregate, schema, "aggregate")?;
 
         let output = self.output_fields(schema, &aliases)?;
 
@@ -203,9 +161,25 @@ impl Query {
                 if key != parent {
                     return Err(QueryError::TreeParentTypeMismatch { key, parent });
                 }
+                // T7: the subtree's aggregates, typed by the same rules as a
+                // group's (S12), under their own path.
+                let aggregate_schema = Schema::new(
+                    resolve_aggregates(&tree.aggregate, schema, "tree.aggregate")?
+                        .into_iter()
+                        .map(|(alias, data_type, nullable)| {
+                            if nullable {
+                                Field::new(alias, data_type)
+                            } else {
+                                Field::required(alias, data_type)
+                            }
+                        })
+                        .collect(),
+                );
                 Some(ValidatedTree {
                     key: tree.key.clone(),
                     parent: tree.parent.clone(),
+                    aggregate: tree.aggregate.clone(),
+                    aggregate_schema,
                     under: match &tree.under {
                         Some(under) => Some(coerce(under, key, "tree.under")?),
                         None => None,
@@ -409,6 +383,66 @@ fn validate_filter(
     }
 }
 
+/// Resolves a list of aggregates against `schema`: the result type of each
+/// (S12), whether it can be NULL, and its alias — unique, and no field's name.
+/// `path` is where the list sits in the query (`aggregate`, `tree.aggregate`).
+fn resolve_aggregates(
+    aggregates: &[Aggregate],
+    schema: &Schema,
+    path: &str,
+) -> Result<Vec<(FieldName, DataType, bool)>, QueryError> {
+    let mut aliases: Vec<(FieldName, DataType, bool)> = Vec::new();
+    for (i, aggregate) in aggregates.iter().enumerate() {
+        let input_type =
+            match &aggregate.field {
+                Some(field) => Some(schema.data_type(field.as_str()).ok_or_else(|| {
+                    QueryError::UnknownField {
+                        path: format!("{path}[{i}].field"),
+                        field: field.to_string(),
+                    }
+                })?),
+                None => {
+                    if aggregate.function.requires_field() {
+                        return Err(QueryError::AggregateFieldRequired {
+                            path: format!("{path}[{i}].fn"),
+                            function: aggregate.function,
+                        });
+                    }
+                    None
+                }
+            };
+        let result =
+            match input_type {
+                Some(input) => aggregate.function.result_type(input).ok_or(
+                    QueryError::AggregateTypeMismatch {
+                        path: format!("{path}[{i}].fn"),
+                        function: aggregate.function,
+                        data_type: input,
+                    },
+                )?,
+                None => DataType::Int64,
+            };
+        if schema.field(aggregate.alias.as_str()).is_some() {
+            return Err(QueryError::AliasConflictsWithField {
+                path: format!("{path}[{i}].as"),
+                alias: aggregate.alias.to_string(),
+            });
+        }
+        if aliases
+            .iter()
+            .any(|(alias, _, _)| alias == &aggregate.alias)
+        {
+            return Err(QueryError::DuplicateAlias {
+                path: format!("{path}[{i}].as"),
+                alias: aggregate.alias.to_string(),
+            });
+        }
+        let nullable = !matches!(aggregate.function, crate::AggregateFn::Count);
+        aliases.push((aggregate.alias.clone(), result, nullable));
+    }
+    Ok(aliases)
+}
+
 fn field_type(schema: &Schema, field: &FieldName, path: &str) -> Result<DataType, QueryError> {
     schema
         .data_type(field.as_str())
@@ -449,6 +483,7 @@ impl From<&ValidatedQuery> for Query {
                 parent: tree.parent.clone(),
                 under: tree.under.as_ref().map(opengrid_json::ToJson::to_json),
                 scope: tree.scope.as_ref().map(FilterExpr::from),
+                aggregate: tree.aggregate.clone(),
             }),
         }
     }

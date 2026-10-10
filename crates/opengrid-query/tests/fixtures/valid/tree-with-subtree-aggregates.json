@@ -1,0 +1,14 @@
+{
+  "source": "orders",
+  "select": ["customer", "amount"],
+  "sort": [{ "field": "customer", "direction": "asc" }],
+  "limit": 40,
+  "tree": {
+    "key": "customer",
+    "parent": "note",
+    "aggregate": [
+      { "field": "amount", "fn": "sum", "as": "amount_total" },
+      { "fn": "count", "as": "nodes" }
+    ]
+  }
+}

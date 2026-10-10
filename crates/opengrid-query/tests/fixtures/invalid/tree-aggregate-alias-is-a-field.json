@@ -1,0 +1,12 @@
+{
+  "expect": "AliasConflictsWithField",
+  "query": {
+    "source": "orders",
+    "select": ["customer"],
+    "tree": {
+      "key": "customer",
+      "parent": "note",
+      "aggregate": [{ "field": "amount", "fn": "sum", "as": "amount" }]
+    }
+  }
+}

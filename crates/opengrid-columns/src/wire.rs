@@ -33,7 +33,12 @@
 //!
 //! ```text
 //! tree     matches u64 · orphans u64 · children: rows × u64 · match: ⌈rows / 64⌉ u64 words
+//! [aggregates]  a table (as above, total_count 0) with one row per row of the level —
+//!               the subtree aggregates of T7, present only when the query asked for them
 //! ```
+//!
+//! A reader from before the aggregates refuses a level that carries them (the
+//! bytes do not end where it expects) rather than dropping them.
 //!
 //! # Reading is strict
 //!
@@ -129,7 +134,7 @@ pub fn decode_result(bytes: &[u8]) -> Result<(Table, u64), WireError> {
 
 /// What a tree's level carries beside its rows (E38) — the binary twin of
 /// `opengrid_datasource::TreeLevel`, which this crate does not depend on.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct TreeSection {
     /// Per row: its visible children.
     pub children: Vec<u64>,
@@ -139,6 +144,9 @@ pub struct TreeSection {
     pub matches: u64,
     /// Nodes without an existing parent.
     pub orphans: u64,
+    /// The subtree aggregates (T7, issue #165): one row per row of the level,
+    /// one column per alias. `None` when the query asked for none.
+    pub aggregates: Option<Table>,
 }
 
 /// A tree's level as bytes: the result, then its tree part.
@@ -155,6 +163,9 @@ pub fn encode_tree_result(table: &Table, total_count: u64, tree: &TreeSection) -
         bits.push(*matched);
     }
     writer.words(bits.words());
+    if let Some(aggregates) = &tree.aggregates {
+        writer.table(aggregates, 0);
+    }
     writer.finish()
 }
 
@@ -178,11 +189,23 @@ pub fn decode_answer(bytes: &[u8]) -> Result<(Table, u64, Option<TreeSection>), 
         let matched = (0..rows)
             .map(|row| words[row / 64] >> (row % 64) & 1 == 1)
             .collect();
+        let aggregates = if reader.at_end() {
+            None
+        } else {
+            let (aggregates, _) = reader.table()?;
+            if aggregates.num_rows() != rows {
+                return Err(WireError::new(
+                    "the tree's aggregates are not one row per row of the level",
+                ));
+            }
+            Some(aggregates)
+        };
         Some(TreeSection {
             children,
             matched,
             matches,
             orphans,
+            aggregates,
         })
     } else {
         None
@@ -614,6 +637,11 @@ impl<'a> Reader<'a> {
     }
 
     /// Checks that nothing is left over.
+    /// Whether every byte has been read — an optional section follows if not.
+    pub fn at_end(&self) -> bool {
+        self.at == self.bytes.len()
+    }
+
     pub fn finish(self) -> Result<(), WireError> {
         if self.at != self.bytes.len() {
             return Err(WireError::new(format!(
@@ -643,6 +671,7 @@ mod tests {
             matched: (0..70).map(|n| n % 5 != 0).collect(),
             matches: 56,
             orphans: 2,
+            aggregates: None,
         };
         let bytes = encode_tree_result(&table, 71, &tree);
         let (back, total, part) = decode_answer(&bytes).expect("reads");
@@ -655,6 +684,56 @@ mod tests {
         );
         let (_, _, none) = decode_answer(&encode_result(&table, 70)).unwrap();
         assert_eq!(none, None);
+    }
+
+    /// The subtree aggregates (T7, #165) come back with the level, and a
+    /// reader that knows only the tree part refuses them rather than lose them.
+    #[test]
+    fn a_tree_level_carries_its_aggregates() {
+        let schema = Schema::new(vec![Field::required(
+            FieldName::new("id").unwrap(),
+            DataType::Int64,
+        )]);
+        let table = Table::from_values(&schema, &[vec![Value::Int64(1), Value::Int64(2)]]).unwrap();
+        let sums = Schema::new(vec![Field::new(
+            FieldName::new("revenue_sum").unwrap(),
+            DataType::Int64,
+        )]);
+        let aggregates =
+            Table::from_values(&sums, &[vec![Value::Int64(203), Value::Null]]).unwrap();
+        let tree = TreeSection {
+            children: vec![2, 0],
+            matched: vec![true, true],
+            matches: 2,
+            orphans: 0,
+            aggregates: Some(aggregates),
+        };
+        let bytes = encode_tree_result(&table, 2, &tree);
+        let (_, _, part) = decode_answer(&bytes).expect("reads");
+        assert_eq!(part, Some(tree));
+
+        // What a reader from before T7 does: the table, the tree part, the end.
+        let (mut reader, _) = Reader::new(&bytes).unwrap();
+        reader.table().unwrap();
+        for _ in 0..(2 + 2 + 1) {
+            reader.u64().unwrap();
+        }
+        assert!(
+            reader.finish().is_err(),
+            "an older reader refuses the aggregates"
+        );
+
+        // Aggregates that do not match the level's rows are refused.
+        let mut short = TreeSection {
+            children: vec![2, 0],
+            matched: vec![true, true],
+            matches: 2,
+            orphans: 0,
+            aggregates: Some(Table::from_values(&sums, &[vec![Value::Int64(1)]]).unwrap()),
+        };
+        assert!(decode_answer(&encode_tree_result(&table, 2, &short)).is_err());
+        short.aggregates = None;
+        assert!(decode_answer(&encode_tree_result(&table, 2, &short)).is_ok());
     }
 
     use proptest::prelude::*;

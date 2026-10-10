@@ -161,10 +161,13 @@ fn a_rows_only_source_answers_every_tree_case() {
         let (csv, schema_path) = tree_dataset(query.source.as_str());
         let connector = Rows::new(Fixture::of(&csv, &schema_path));
         let schema = load_schema(&schema_path).expect("schema");
-        let validated = query
-            .validate(&schema, &opengrid_query::Limits::default())
-            .expect("valid");
-        let answer = block_on(connector.execute(validated)).map_err(|error| error.to_string());
+        // A case may expect the query itself to be refused (T7's types).
+        let answer = match query.validate(&schema, &opengrid_query::Limits::default()) {
+            Ok(validated) => {
+                block_on(connector.execute(validated)).map_err(|error| error.to_string())
+            }
+            Err(error) => Err(error.to_string()),
+        };
         failures.extend(
             check_tree_case(&case, answer)
                 .into_iter()

@@ -188,6 +188,15 @@ async fn ask(app: axum::Router, token: &str, query: &str) -> Result<QueryResult,
             matched: tree.matched,
             matches: tree.matches,
             orphans: tree.orphans,
+            aggregate_schema: tree
+                .aggregates
+                .as_ref()
+                .map(|table| table.schema().clone())
+                .unwrap_or_default(),
+            aggregates: tree
+                .aggregates
+                .map(|table| table.to_values())
+                .unwrap_or_default(),
         });
         return Ok(result);
     }

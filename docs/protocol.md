@@ -51,7 +51,7 @@ The body's `source` must equal the path's; a mismatch is a `422` at `source`.
   [Query semantics](guides/query-semantics.md). A server that answers differently gives the
   browser different results from the engine in the tab.
 
-A query may ask for **one level of a tree** (E38): `tree: { key?, parent, under?, scope? }` — `key`
+A query may ask for **one level of a tree** (E38): `tree: { key?, parent, under?, scope?, aggregate? }` — `key`
 (default `"id"`) and `parent` name the hierarchy, `under` the node whose children are asked
 for; without it, the roots. A root is a node whose parent is NULL or names no node (an
 orphan); a key twice or a cycle is an error. With a filter the level shows the matches **and
@@ -59,6 +59,12 @@ their ancestors**, the ancestors that do not match as context. A sort orders sib
 the key; paging is among siblings. The answer is the ordinary result of that level plus
 `tree: { children, match, matches, orphans }` — per row its visible children and whether it
 matches, and for the whole tree the matches and the orphans. A tree query cannot also group.
+`aggregate` asks, per node of the level, for aggregates over its **subtree** (rule T7, issue
+#165): `[{ field?, fn, as }]` like a query's `aggregate`, the same functions and result types
+(S12), over the node and all its descendants, from the raw rows — and with a filter over the
+subtree's **matches** only; context does not count. The answer carries them beside the rows,
+not as columns of them: `tree.aggregates`, a list of columns in the result's own form (`name` is
+the alias, one value per row of the level). An alias may not be a field's name.
 `scope` is a filter that decides which rows the tree **consists of**: a row outside it is
 neither a match nor context nor a child, and a node whose parent is outside is an orphan. The
 server puts its mandatory row filter (E16) there, not on the query's filter — on the filter it
@@ -67,7 +73,8 @@ Every source answers a tree through the server: one that cannot by itself (the c
 `tree`) is asked for the rows of the scope, and the engine answers the level. In the binary
 form a tree's level is its own kind (`2`), the result followed by `matches`, `orphans`, the child
 count per row and the matches as a bitmap; a reader of plain results refuses it rather than lose
-that part.
+that part. A level with subtree aggregates appends them as one more table (one row per row of
+the level); a reader from before them refuses those bytes rather than drop the aggregates.
 
 The pivot query is `{ source, rows, columns, values: [{ field, fn, as }], filter?, sort? }`.
 
