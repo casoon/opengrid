@@ -197,19 +197,33 @@ async fn query(
     if wants_columns(&headers) {
         let table = opengrid_columns::Table::from_values(&result.schema, &result.columns)
             .map_err(|message| WireError::new(ErrorCode::Backend, message))?;
-        // A tree's level carries its part in the binary form too (E38).
+        // A tree's level carries its part in the binary form too (E38), and
+        // its subtree aggregates (T7).
         return Ok(columns_response(match &result.tree {
             None => opengrid_columns::wire::encode_result(&table, result.total_count),
-            Some(tree) => opengrid_columns::wire::encode_tree_result(
-                &table,
-                result.total_count,
-                &opengrid_columns::wire::TreeSection {
-                    children: tree.children.clone(),
-                    matched: tree.matched.clone(),
-                    matches: tree.matches,
-                    orphans: tree.orphans,
-                },
-            ),
+            Some(tree) => {
+                let aggregates = match tree.aggregates.is_empty() {
+                    true => None,
+                    false => Some(
+                        opengrid_columns::Table::from_values(
+                            &tree.aggregate_schema,
+                            &tree.aggregates,
+                        )
+                        .map_err(|message| WireError::new(ErrorCode::Backend, message))?,
+                    ),
+                };
+                opengrid_columns::wire::encode_tree_result(
+                    &table,
+                    result.total_count,
+                    &opengrid_columns::wire::TreeSection {
+                        children: tree.children.clone(),
+                        matched: tree.matched.clone(),
+                        matches: tree.matches,
+                        orphans: tree.orphans,
+                        aggregates,
+                    },
+                )
+            }
         }));
     }
     Ok(json_response(result_to_json(&result)))

@@ -1,0 +1,34 @@
+{
+  "id": "t7-a-node-aggregates-its-whole-subtree",
+  "rule": "T7",
+  "query": {
+    "source": "tree",
+    "select": ["id", "name"],
+    "tree": {
+      "parent": "parent_id",
+      "aggregate": [
+        { "field": "revenue", "fn": "sum", "as": "total" },
+        { "fn": "count", "as": "nodes" },
+        { "field": "revenue", "fn": "min", "as": "lowest" },
+        { "field": "revenue", "fn": "max", "as": "highest" }
+      ]
+    },
+    "sort": [{ "field": "id" }]
+  },
+  "expected": {
+    "columns": ["id", "name"],
+    "rows": [[1, "Sales"], [7, "Partners"], [9, "Orphan"]],
+    "tree": {
+      "children": [2, 1, 0],
+      "match": [true, true, true],
+      "matches": 10,
+      "orphans": 1,
+      "aggregates": {
+        "total": [223, 15, 7],
+        "nodes": [7, 2, 1],
+        "lowest": [0, 5, 7],
+        "highest": [100, 10, 7]
+      }
+    }
+  }
+}

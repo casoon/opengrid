@@ -44,15 +44,20 @@ pub struct TreeSpec {
     /// and a node whose parent is outside is an orphan. The server puts the
     /// mandatory row filter (E16) here, so no other tenant's row shows.
     pub scope: Option<FilterExpr>,
+    /// Aggregates over each node's subtree (rule T7, issue #165): the node and
+    /// all its descendants, matches only, from the raw rows. They come back
+    /// beside the level's rows, never as columns of it.
+    pub aggregate: Vec<Aggregate>,
 }
 
 impl FromJson for TreeSpec {
-    /// `{ "key"?, "parent", "under"?, "scope"? }`; `key` defaults to `id`.
+    /// `{ "key"?, "parent", "under"?, "scope"?, "aggregate"? }`; `key`
+    /// defaults to `id`.
     fn from_json(json: &Json) -> Result<Self, Error> {
         let fields = Fields::of(
             json,
             "struct TreeSpec",
-            &["key", "parent", "under", "scope"],
+            &["key", "parent", "under", "scope", "aggregate"],
         )?;
         Ok(TreeSpec {
             key: match fields.read_optional("key")? {
@@ -65,6 +70,7 @@ impl FromJson for TreeSpec {
                 .filter(|under| !under.is_null())
                 .cloned(),
             scope: fields.read_optional("scope")?,
+            aggregate: fields.read_or_default("aggregate")?,
         })
     }
 }
@@ -78,6 +84,10 @@ impl ToJson for TreeSpec {
         });
         if let (Some(scope), Json::Object(object)) = (&self.scope, &mut json) {
             object.insert("scope".to_owned(), scope.to_json());
+        }
+        // Written only when there are any: a reader from before T7 reads the rest.
+        if let (false, Json::Object(object)) = (self.aggregate.is_empty(), &mut json) {
+            object.insert("aggregate".to_owned(), self.aggregate.to_json());
         }
         json
     }

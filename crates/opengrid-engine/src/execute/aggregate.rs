@@ -25,15 +25,15 @@
 use std::collections::HashMap;
 
 use opengrid_columns::{Column, ColumnBuilder, Table, Values};
-use opengrid_query::{AggregateFn, ValidatedQuery};
-use opengrid_types::{DataType, Decimal, FieldName, Value};
+use opengrid_query::{Aggregate, AggregateFn, ValidatedQuery};
+use opengrid_types::{DataType, Decimal, FieldName, Schema, Value};
 
 use super::ExecuteError;
 
 /// Runs `group` + `aggregate` and returns the result table.
 pub(crate) fn run(table: &Table, query: &ValidatedQuery) -> Result<Table, ExecuteError> {
     let groups = GroupColumns::resolve(table, &query.group)?;
-    let aggregates = Aggregates::resolve(table, query)?;
+    let aggregates = Aggregates::resolve(table, &query.aggregate)?;
 
     let mut index: HashMap<Vec<u8>, usize> = HashMap::new();
     let mut state: Vec<Group> = Vec::new();
@@ -63,6 +63,37 @@ pub(crate) fn run(table: &Table, query: &ValidatedQuery) -> Result<Table, Execut
     }
 
     build(query, &groups, &aggregates, &state)
+}
+
+/// The aggregates over groups of rows the caller already formed — a tree's
+/// subtrees (rule T7, issue #165): one column per field of `schema` (the
+/// aliases with their S12 types), one value per group, in group order. The
+/// same accumulators as [`run`], so a subtree's sum is a group's sum.
+pub(crate) fn over_groups(
+    table: &Table,
+    aggregate: &[Aggregate],
+    schema: &Schema,
+    groups: &[Vec<u32>],
+) -> Result<Vec<Column>, ExecuteError> {
+    let aggregates = Aggregates::resolve(table, aggregate)?;
+    let mut state = Vec::with_capacity(groups.len());
+    for rows in groups {
+        let mut group = Group::new(rows.first().map_or(0, |row| *row as usize), &aggregates);
+        for row in rows {
+            for (position, accumulator) in group.accumulated.iter_mut().enumerate() {
+                accumulator.absorb(&aggregates, position, *row as usize)?;
+            }
+        }
+        state.push(group);
+    }
+    schema
+        .fields()
+        .iter()
+        .map(|field| {
+            let position = aggregates.position_of(&field.name)?;
+            aggregates.column_of(position, field.data_type, &field.name, &state)
+        })
+        .collect()
 }
 
 /// One result group: the input row its keys are shown from, plus one
@@ -136,11 +167,11 @@ struct Aggregates<'a> {
 }
 
 impl<'a> Aggregates<'a> {
-    fn resolve(table: &'a Table, query: &ValidatedQuery) -> Result<Self, ExecuteError> {
-        let mut columns = Vec::with_capacity(query.aggregate.len());
-        let mut functions = Vec::with_capacity(query.aggregate.len());
-        let mut aliases = Vec::with_capacity(query.aggregate.len());
-        for aggregate in &query.aggregate {
+    fn resolve(table: &'a Table, aggregate: &[Aggregate]) -> Result<Self, ExecuteError> {
+        let mut columns = Vec::with_capacity(aggregate.len());
+        let mut functions = Vec::with_capacity(aggregate.len());
+        let mut aliases = Vec::with_capacity(aggregate.len());
+        for aggregate in aggregate {
             columns.push(match &aggregate.field {
                 Some(field) => Some(super::column(table, field.as_str())?),
                 None => None,
