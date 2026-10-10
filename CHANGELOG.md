@@ -21,7 +21,7 @@ Two things belong in every release entry and are easy to leave out:
 ## [0.13.0] — 2026-10-10
 
 **Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).
-**Browsers:** Chromium (the whole e2e suite: 1155 passed). Firefox and WebKit on Linux: BROWSERS_PENDING.
+**Browsers:** Chromium (the whole e2e suite: 1155 passed). Firefox and WebKit on Linux (`gh workflow run ci.yml -f browsers=true`): 1141 passed, 19 skipped by design — no failures; the two of [#157](https://github.com/casoon/opengrid/issues/157) are gone.
 
 A tree that sums its subtrees and exports whole: a column's aggregate shows on every node with
 children beside its own value, and `get_query()` on a tree asks for every node, flat, with its
