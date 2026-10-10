@@ -740,6 +740,7 @@ export type TextKey =
   | "pivotFilterLabel"
   | "pivotFilterHint"
   | "treeContext"
+  | "subtreeCell"
   | "treeOrphans"
   | "treeLevelTooLarge"
   | "treeRefused"

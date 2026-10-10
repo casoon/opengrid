@@ -554,20 +554,30 @@ pub fn aggregate_alias(index: usize) -> String {
 
 fn aggregate_list(aggregates: &[(String, Summary)]) -> Vec<Json> {
     let mut list = vec![opengrid_json::json!({ "fn": "count", "as": COUNT_ALIAS })];
-    let functions = aggregates.iter().flat_map(|(column, summary)| {
-        summary
-            .functions()
-            .iter()
-            .map(move |function| (column, function))
-    });
-    for (index, (column, function)) in functions.enumerate() {
-        list.push(opengrid_json::json!({
-            "fn": function.as_str(),
-            "field": column,
-            "as": aggregate_alias(index),
-        }));
-    }
+    list.extend(aggregate_functions(aggregates));
     list
+}
+
+/// The chosen summaries as query aggregates, aliased in order — a range is
+/// two of them. A tree asks for exactly these over each subtree (T7).
+pub fn aggregate_functions(aggregates: &[(String, Summary)]) -> Vec<Json> {
+    aggregates
+        .iter()
+        .flat_map(|(column, summary)| {
+            summary
+                .functions()
+                .iter()
+                .map(move |function| (column, function))
+        })
+        .enumerate()
+        .map(|(index, (column, function))| {
+            opengrid_json::json!({
+                "fn": function.as_str(),
+                "field": column,
+                "as": aggregate_alias(index),
+            })
+        })
+        .collect()
 }
 
 /// How many aggregate columns a query asks for: a range is two.

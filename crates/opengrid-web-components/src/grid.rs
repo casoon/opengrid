@@ -3385,7 +3385,33 @@ pub fn patch_grid(
                         .cell(reference)
                         .map(|value| format.text(col, value))
                         .unwrap_or_default();
-                    buffer.push(Patch::SetText { node: *cell, text });
+                    // A tree's node with children shows its own value and its
+                    // subtree's summary beside it (T7, #165), and says both.
+                    let subtree = tree.and_then(|tree| {
+                        subtree_cell(tree, row, col, fields, &text, texts, format)
+                    });
+                    match subtree {
+                        Some((shown, said)) => {
+                            buffer.push(Patch::SetAttribute {
+                                node: *cell,
+                                name: "aria-label".to_owned(),
+                                value: said,
+                            });
+                            buffer.push(Patch::SetText {
+                                node: *cell,
+                                text: shown,
+                            });
+                        }
+                        None => {
+                            if tree.is_some() {
+                                buffer.push(Patch::RemoveAttribute {
+                                    node: *cell,
+                                    name: "aria-label".to_owned(),
+                                });
+                            }
+                            buffer.push(Patch::SetText { node: *cell, text });
+                        }
+                    }
                 }
             }
             None => {
@@ -3577,6 +3603,69 @@ fn patch_group_row(
 /// A range (F7) is its two ends, "from – to", each in the column's format; a
 /// group whose rows all hold the same value shows it once, since "2.3.2026 –
 /// 2.3.2026" says less than "2.3.2026".
+/// What a tree node's cell shows and says when its column has a summary
+/// and the node has children (T7, issue #165): its own value, then the
+/// summary over its subtree — `120 · Σ 1,450`, said "120. Sum of the
+/// subtree: 1,450". A leaf, or a column without a summary, gets `None`.
+fn subtree_cell(
+    tree: &crate::tree::Tree,
+    row: u64,
+    col: usize,
+    fields: &[opengrid_types::Field],
+    own: &str,
+    texts: &GridTexts,
+    format: &dyn CellFormat,
+) -> Option<(String, String)> {
+    use crate::presentation::Summary;
+    use opengrid_query::AggregateFn;
+    let entry = tree.entry_at(row)?;
+    if entry.children == 0 {
+        return None;
+    }
+    let name = fields.get(col)?.name.as_str();
+    let index = tree
+        .aggregates()
+        .iter()
+        .position(|(column, _)| column == name)?;
+    let function = tree.aggregates()[index].1;
+    let values = crate::grouping::split(tree.aggregates(), tree.aggregate_values(row)?);
+    let total = aggregate_text(
+        function,
+        col,
+        values.get(index).copied().unwrap_or(&[]),
+        format,
+    );
+    // An aggregate over nothing is NULL (S11): the cell shows the node's own
+    // value only, and says that the summary has none.
+    if total.is_empty() {
+        return Some((
+            own.to_owned(),
+            texts.subtree_cell(own, function, &texts.no_value),
+        ));
+    }
+    // The glyph the group rows draw with CSS, written here: it sits between
+    // two values, not before the cell. A range needs none — its dash says it.
+    let glyph = match function {
+        Summary::Fn(AggregateFn::Sum) => "\u{03A3} ",
+        Summary::Fn(AggregateFn::Avg) => "\u{2300} ",
+        Summary::Fn(AggregateFn::Count) => "# ",
+        Summary::Fn(AggregateFn::Min) => "min ",
+        Summary::Fn(AggregateFn::Max) => "max ",
+        Summary::Range => "",
+    };
+    let shown = if own.is_empty() {
+        format!("{glyph}{total}")
+    } else {
+        format!("{own} \u{00B7} {glyph}{total}")
+    };
+    let said_own = if own.is_empty() {
+        texts.no_value.as_str()
+    } else {
+        own
+    };
+    Some((shown, texts.subtree_cell(said_own, function, &total)))
+}
+
 fn aggregate_text(
     summary: crate::presentation::Summary,
     col: usize,
@@ -3957,6 +4046,70 @@ fn label_by(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A tree's node with children shows its own value and its subtree's
+    /// summary, and says both; a leaf shows its own (T7, #165).
+    #[test]
+    fn a_node_with_children_shows_its_subtree_summary() {
+        use crate::presentation::Summary;
+        use crate::tree::{Level, Tree};
+        use opengrid_query::AggregateFn;
+        let fields = vec![
+            opengrid_types::Field::new(
+                opengrid_types::FieldName::new("name").unwrap(),
+                opengrid_types::DataType::Utf8,
+            ),
+            opengrid_types::Field::new(
+                opengrid_types::FieldName::new("revenue").unwrap(),
+                opengrid_types::DataType::Int64,
+            ),
+        ];
+        let mut tree = Tree::new("id", "parent_id");
+        tree.set_aggregates(vec![("revenue".to_owned(), Summary::Fn(AggregateFn::Sum))]);
+        tree.set_level(
+            None,
+            Level {
+                rows: vec![vec![opengrid_types::Value::Utf8("Sales".to_owned())]; 3],
+                keys: vec![1.into(), 7.into(), 9.into()],
+                children: vec![2, 1, 0],
+                matched: vec![true; 3],
+                aggregates: vec![
+                    vec![opengrid_types::Value::Int64(1450)],
+                    vec![opengrid_types::Value::Null],
+                    vec![opengrid_types::Value::Int64(7)],
+                ],
+            },
+            10,
+            1,
+        );
+        let texts = GridTexts::default();
+        let plain = crate::formats::Plain;
+        assert_eq!(
+            subtree_cell(&tree, 0, 1, &fields, "120", &texts, &plain),
+            Some((
+                "120 \u{00B7} \u{03A3} 1450".to_owned(),
+                "120. Sum of the subtree: 1450".to_owned()
+            ))
+        );
+        // NULL over the subtree (S11): the own value, and the word for none.
+        assert_eq!(
+            subtree_cell(&tree, 1, 1, &fields, "10", &texts, &plain),
+            Some((
+                "10".to_owned(),
+                "10. Sum of the subtree: (no value)".to_owned()
+            ))
+        );
+        assert_eq!(
+            subtree_cell(&tree, 2, 1, &fields, "7", &texts, &plain),
+            None,
+            "a leaf"
+        );
+        assert_eq!(
+            subtree_cell(&tree, 0, 0, &fields, "Sales", &texts, &plain),
+            None,
+            "no summary"
+        );
+    }
     use opengrid_grid::Window;
     use opengrid_types::Value;
 
