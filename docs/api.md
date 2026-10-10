@@ -487,7 +487,8 @@ With `tree` set, the rows are a hierarchy — each row names its parent in the
 `tree` field, by the key in `tree-key` — and the grid is a **`treegrid`** that
 loads a level at a time: the roots first, a node's children when it is opened.
 Each level comes with every node's child count, so a leaf shows no chevron and
-offers nothing to open. Rows are indented by depth in the first column.
+offers nothing to open. Rows are indented by depth in the first column. A walk-through is
+the guide [A tree in the grid](../guides/tree/).
 
 | | |
 |---|---|
