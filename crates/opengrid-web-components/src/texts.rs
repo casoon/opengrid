@@ -834,6 +834,7 @@ impl GridTexts {
     }
 
     /// A tree node's cell with its subtree's summary (T7): what it says.
+    #[cfg(feature = "grid")]
     pub fn subtree_cell(
         &self,
         value: &str,
