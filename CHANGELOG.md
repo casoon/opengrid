@@ -32,7 +32,13 @@ Two things belong in every release entry and are easy to leave out:
   order, paged like any query; each row's level, its path of keys and — with a filter — whether
   it matches come back as `tree.flat`, in JSON and in the binary form. A source field named
   `level` or `path` (or `match`, with a filter) is refused. Four conformance cases (T8) pass on
-  every path. The export that uses it follows.
+  every path.
+- **A tree exports whole and flat** ([#166](https://github.com/casoon/opengrid/issues/166)).
+  `get_query()` on a grid with `tree` asks for every node of the reader's view, not only the
+  open ones; `exportRows` and the server's export write it with `level`, `path` and, with a
+  filter, `match` after the query's columns — the path joined (`1 / 2 / 4`) in CSV and XLSX,
+  an array in JSON. The server answers a tree's export the way it answers its query, tenant
+  rule included, and hands it out in pieces.
 - **Subtree aggregates, in the engine and on the server** ([#165](https://github.com/casoon/opengrid/issues/165), rule T7).
   A tree query takes `tree.aggregate: [{ field?, fn, as }]` and answers, per node of the level,
   the aggregate over the node and all its descendants — from the raw rows, the functions and

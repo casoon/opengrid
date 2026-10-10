@@ -85,6 +85,8 @@ impl XlsxWriter {
 
     /// The next piece; the first also writes the header row.
     pub fn write(&mut self, result: &QueryResult) -> Result<(), String> {
+        // A flat tree brings its level, path and match columns (T8).
+        let result = &*crate::with_tree_columns(result);
         if self.row == 0 {
             self.decimals = result
                 .schema

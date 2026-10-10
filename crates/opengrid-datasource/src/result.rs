@@ -58,7 +58,48 @@ pub struct FlatTree {
     pub filtered: bool,
 }
 
+impl TreeLevel {
+    /// The tree part of rows `start..end` — what a piece of an export carries.
+    pub fn slice(&self, start: usize, end: usize) -> TreeLevel {
+        TreeLevel {
+            children: self.children[start..end].to_vec(),
+            matched: self.matched[start..end].to_vec(),
+            matches: self.matches,
+            orphans: self.orphans,
+            aggregate_schema: self.aggregate_schema.clone(),
+            aggregates: self
+                .aggregates
+                .iter()
+                .map(|column| column[start..end].to_vec())
+                .collect(),
+            flat: self.flat.as_ref().map(|flat| FlatTree {
+                levels: flat.levels[start..end].to_vec(),
+                paths: flat.paths[start..end].to_vec(),
+                key_type: flat.key_type,
+                filtered: flat.filtered,
+            }),
+        }
+    }
+}
+
 impl QueryResult {
+    /// Rows `start..end` (clamped to the rows there are), with their part of
+    /// a tree — `total_count` stays the whole answer's.
+    pub fn slice(&self, start: usize, end: usize) -> QueryResult {
+        let end = end.min(self.row_count());
+        let start = start.min(end);
+        QueryResult {
+            schema: self.schema.clone(),
+            columns: self
+                .columns
+                .iter()
+                .map(|column| column[start..end].to_vec())
+                .collect(),
+            total_count: self.total_count,
+            tree: self.tree.as_ref().map(|tree| tree.slice(start, end)),
+        }
+    }
+
     /// Builds a result from typed columns.
     pub fn new(schema: Schema, columns: Vec<Vec<Value>>, total_count: u64) -> Self {
         Self {
