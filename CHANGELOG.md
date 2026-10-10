@@ -18,6 +18,19 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-10-10
+
+**Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).
+**Browsers:** Chromium (the whole e2e suite: 1155 passed). Firefox and WebKit on Linux: BROWSERS_PENDING.
+
+A tree that sums its subtrees and exports whole: a column's aggregate shows on every node with
+children beside its own value, and `get_query()` on a tree asks for every node, flat, with its
+level and path. Beside it, two Firefox fixes the new browser run found.
+
+**Module sizes** (brotli, `just measure-modules`): the elements 244.1 → 249.7 KiB, the engine
+133.8 → 139.9 KiB, measured against v0.12.0 — both past their bounds, which this release raises
+(`scripts/module-budget.txt`).
+
 **What breaks:**
 - Rust: `TreeSpec` has a new public field, `aggregate` (`aggregate: Vec::new()` in a struct
   literal); `ValidatedTree` has `aggregate` and `aggregate_schema`; `TreeLevel` has
@@ -54,6 +67,15 @@ Two things belong in every release entry and are easy to leave out:
   `subtreeCell` ("120. Sum of the subtree: 1,450"); a node without a value of its own says only
   the summary, with `subtreeOnly` ("Sum of the subtree: 1,450"). A leaf shows its own value; a
   summary the column's type cannot take is said once, as in groups.
+- **A guide to the tree** ([#167](https://github.com/casoon/opengrid/issues/167)): *A tree in the
+  grid* — from a parent field to the flat export.
+
+### Fixed
+
+- **Firefox: no unnamed tab stop in the narrow toolbar** ([#157](https://github.com/casoon/opengrid/issues/157)).
+  The toolbar's row scrolls sideways on a narrow grid, and Firefox made the scroll container a
+  stop of its own before the first button. It is out of the tab order now; every button is still
+  reached by `Tab` and scrolls into view.
 
 ## [0.12.0] — 2026-10-09
 
