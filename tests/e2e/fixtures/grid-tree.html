@@ -52,6 +52,10 @@
           },
         };
         loader.module.set_provider(host, window.__provider);
+        // The same engine answering in the binary form, as a worker does.
+        window.__binaryProvider = {
+          execute: (queryJson) => engine.execute_columns(queryJson),
+        };
         window.__opengridModule = loader.module;
         return { fallback: loader.fallback };
       }

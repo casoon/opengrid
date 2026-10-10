@@ -1036,32 +1036,7 @@ pub fn parse_result(result_json: &str) -> Result<QueryResult, String> {
 /// `execute_columns` or of a server asked with `Accept` — into the same
 /// [`QueryResult`] as [`parse_result`]. No text per cell on the way.
 pub fn parse_result_bytes(bytes: &[u8]) -> Result<QueryResult, String> {
-    let (table, total_count, tree) =
-        opengrid_columns::wire::decode_answer(bytes).map_err(|error| error.to_string())?;
-    let mut result = QueryResult::new(table.schema().clone(), table.to_values(), total_count);
-    // A tree's level carries what its rows are (E38).
-    result.tree = tree.map(|tree| opengrid_datasource::TreeLevel {
-        children: tree.children,
-        matched: tree.matched,
-        matches: tree.matches,
-        orphans: tree.orphans,
-        aggregate_schema: tree
-            .aggregates
-            .as_ref()
-            .map(|table| table.schema().clone())
-            .unwrap_or_default(),
-        aggregates: tree
-            .aggregates
-            .map(|table| table.to_values())
-            .unwrap_or_default(),
-        flat: tree.flat.map(|flat| opengrid_datasource::FlatTree {
-            levels: flat.levels,
-            paths: flat.paths,
-            key_type: flat.key_type,
-            filtered: flat.filtered,
-        }),
-    });
-    Ok(result)
+    crate::shared::result_from_bytes(bytes)
 }
 
 /// The first logical row visible at `scroll_top`.

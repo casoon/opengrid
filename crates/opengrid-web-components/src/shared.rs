@@ -89,3 +89,40 @@ pub(crate) fn marker(
     });
     span
 }
+
+/// Reads an answer in the binary form (E35) into a result — a plain one, or a
+/// tree's level with its part (E38): children and matches, the subtree
+/// aggregates (T7) and a flat tree's levels and paths (T8). The grid reads
+/// its answers through it, and so does an export, which may be a tree's
+/// (issue #166) whichever provider answers it.
+pub fn result_from_bytes(bytes: &[u8]) -> Result<opengrid_datasource::QueryResult, String> {
+    let (table, total_count, tree) =
+        opengrid_columns::wire::decode_answer(bytes).map_err(|error| error.to_string())?;
+    let mut result = opengrid_datasource::QueryResult::new(
+        table.schema().clone(),
+        table.to_values(),
+        total_count,
+    );
+    result.tree = tree.map(|tree| opengrid_datasource::TreeLevel {
+        children: tree.children,
+        matched: tree.matched,
+        matches: tree.matches,
+        orphans: tree.orphans,
+        aggregate_schema: tree
+            .aggregates
+            .as_ref()
+            .map(|table| table.schema().clone())
+            .unwrap_or_default(),
+        aggregates: tree
+            .aggregates
+            .map(|table| table.to_values())
+            .unwrap_or_default(),
+        flat: tree.flat.map(|flat| opengrid_datasource::FlatTree {
+            levels: flat.levels,
+            paths: flat.paths,
+            key_type: flat.key_type,
+            filtered: flat.filtered,
+        }),
+    });
+    Ok(result)
+}
