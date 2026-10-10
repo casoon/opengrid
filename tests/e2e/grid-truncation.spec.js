@@ -183,10 +183,23 @@ test("at the end of the data the scroll area grows with the unfolded cell", asyn
   const cellHeight = (await cell(page, 59, 1)).height;
 
   // Deliberate, not an accident: the value has to stay scrollable, or its last
-  // lines would be unreachable. The grid grows by exactly the overshoot, and the
-  // sizer — which the window arithmetic reads — does not move at all.
-  expect(unfolded.height).toBe(resting.height + cellHeight - 32);
+  // lines would be unreachable. The grid grows by the overshoot, and the sizer —
+  // which the window arithmetic reads — does not move at all. Within a pixel:
+  // the cell's height is fractional, and `scrollHeight` is an integer each
+  // engine rounds its own way (Firefox one less than Chromium, issue #157).
+  expect(Math.abs(unfolded.height - (resting.height + cellHeight - 32))).toBeLessThanOrEqual(1);
   expect((await virtualization(page)).sizer).toBe(sizer);
+
+  // What the rounding must never cost: scrolled to the end, the unfolded cell
+  // ends inside the viewport.
+  const reach = await page.evaluate(() => {
+    const root = document.querySelector("opengrid-grid").shadowRoot;
+    const viewport = root.querySelector('[part="viewport"]');
+    viewport.scrollTop = viewport.scrollHeight;
+    const cell = root.querySelector('td[data-row="59"][data-col="1"]').getBoundingClientRect();
+    return { cellBottom: cell.bottom, viewportBottom: viewport.getBoundingClientRect().bottom };
+  });
+  expect(reach.cellBottom).toBeLessThanOrEqual(reach.viewportBottom + 1);
 
   // Folding it back restores the scroll area of the plain grid.
   await page.evaluate(() =>
