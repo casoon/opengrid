@@ -67,7 +67,7 @@ Sales      EU      0 · Σ 223
 
 The summary is over the node and all its descendants, from the raw rows — never from the
 subtotals below it — and with a filter over the **matches** only: context does not count. A
-screen reader hears `subtreeCell`, "100. Sum of the subtree: 133". A leaf shows its own value.
+screen reader hears `subtreeCell`, "100. Sum of the subtree: 133" — or, for a node without a value of its own, `subtreeOnly`, "Sum of the subtree: 133". A leaf shows its own value.
 
 ## Exporting the tree
 

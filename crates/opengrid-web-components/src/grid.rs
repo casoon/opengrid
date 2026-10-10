@@ -3616,13 +3616,19 @@ fn subtree_cell(
         values.get(index).copied().unwrap_or(&[]),
         format,
     );
+    // A node without a value of its own — a team lead who sells nothing —
+    // says only its subtree's summary; "(no value)" first would be noise.
+    let said = |total: &str| {
+        if own.is_empty() {
+            texts.subtree_only(function, total)
+        } else {
+            texts.subtree_cell(own, function, total)
+        }
+    };
     // An aggregate over nothing is NULL (S11): the cell shows the node's own
     // value only, and says that the summary has none.
     if total.is_empty() {
-        return Some((
-            own.to_owned(),
-            texts.subtree_cell(own, function, &texts.no_value),
-        ));
+        return Some((own.to_owned(), said(&texts.no_value)));
     }
     // The glyph the group rows draw with CSS, written here: it sits between
     // two values, not before the cell. A range needs none — its dash says it.
@@ -3639,12 +3645,7 @@ fn subtree_cell(
     } else {
         format!("{own} \u{00B7} {glyph}{total}")
     };
-    let said_own = if own.is_empty() {
-        texts.no_value.as_str()
-    } else {
-        own
-    };
-    Some((shown, texts.subtree_cell(said_own, function, &total)))
+    Some((shown, said(&total)))
 }
 
 fn aggregate_text(
@@ -4078,6 +4079,14 @@ mod tests {
             Some((
                 "10".to_owned(),
                 "10. Sum of the subtree: (no value)".to_owned()
+            ))
+        );
+        // No value of its own: only the summary is said.
+        assert_eq!(
+            subtree_cell(&tree, 0, 1, &fields, "", &texts, &plain),
+            Some((
+                "\u{03A3} 1450".to_owned(),
+                "Sum of the subtree: 1450".to_owned()
             ))
         );
         assert_eq!(

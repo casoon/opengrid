@@ -51,8 +51,9 @@ Two things belong in every release entry and are easy to leave out:
 - **Subtree summaries in the grid's tree** ([#165](https://github.com/casoon/opengrid/issues/165)).
   A column's aggregate — from `set_columns`, the column menu or the view, as in groups — shows on
   every node with children beside its own value, `120 · Σ 1,450`, and is said with the new text
-  `subtreeCell` ("120. Sum of the subtree: 1,450"). A leaf shows its own value; a summary the
-  column's type cannot take is said once, as in groups.
+  `subtreeCell` ("120. Sum of the subtree: 1,450"); a node without a value of its own says only
+  the summary, with `subtreeOnly` ("Sum of the subtree: 1,450"). A leaf shows its own value; a
+  summary the column's type cannot take is said once, as in groups.
 
 ## [0.12.0] — 2026-10-09
 
