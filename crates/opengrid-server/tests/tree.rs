@@ -197,6 +197,12 @@ async fn ask(app: axum::Router, token: &str, query: &str) -> Result<QueryResult,
                 .aggregates
                 .map(|table| table.to_values())
                 .unwrap_or_default(),
+            flat: tree.flat.map(|flat| opengrid_datasource::FlatTree {
+                levels: flat.levels,
+                paths: flat.paths,
+                key_type: flat.key_type,
+                filtered: flat.filtered,
+            }),
         });
         return Ok(result);
     }

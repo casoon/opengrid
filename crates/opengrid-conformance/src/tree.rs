@@ -1,4 +1,4 @@
-//! The tree's conformance cases (E38, rules T1–T7; plan points 121, 122, 125):
+//! The tree's conformance cases (E38, rules T1–T8; plan points 121, 122, 125, 126):
 //! `tree-cases/*.json` over the datasets `tree.csv` and `tree-cycle.csv`.
 //!
 //! Shared by every runner — the engine, and each connector behind the server
@@ -140,6 +140,28 @@ pub fn check_tree_case(case: &Json, answer: Result<QueryResult, String>) -> Vec<
     };
     if got != wanted {
         problems.push(format!("tree.aggregates: expected {wanted:?}, got {got:?}"));
+    }
+    // T8: where each row of a flat tree sits — and nothing of it otherwise.
+    match (&tree.flat, want.get("flat")) {
+        (None, None) => {}
+        (Some(flat), Some(expected)) => {
+            for (name, ok) in [
+                ("level", flat.levels.to_json() == expected["level"]),
+                ("path", flat.paths.to_json() == expected["path"]),
+                (
+                    "filtered",
+                    Some(flat.filtered) == expected["filtered"].as_bool(),
+                ),
+            ] {
+                if !ok {
+                    problems.push(format!(
+                        "tree.flat.{name}: expected {}, got {flat:?}",
+                        expected[name]
+                    ));
+                }
+            }
+        }
+        (got, expected) => problems.push(format!("tree.flat: expected {expected:?}, got {got:?}")),
     }
     problems
 }

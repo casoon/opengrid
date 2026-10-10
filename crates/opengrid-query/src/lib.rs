@@ -27,4 +27,4 @@ pub use ast::{
     TreeSpec,
 };
 pub use error::QueryError;
-pub use validate::{Limits, ValidatedFilter, ValidatedQuery, ValidatedTree};
+pub use validate::{FLAT_COLUMNS, Limits, ValidatedFilter, ValidatedQuery, ValidatedTree};

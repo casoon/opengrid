@@ -9,7 +9,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use opengrid_query::{Limits, Query};
+use opengrid_query::{Limits, Query, QueryError};
 use opengrid_types::{DataType, Field, FieldName, Schema};
 
 fn name(raw: &str) -> FieldName {
@@ -165,5 +165,48 @@ fn a_validated_query_writes_itself_back() {
             "{}: the way back changed the query",
             path.display()
         );
+    }
+}
+
+/// T8 (#166): a source field with the name of a column the flat tree adds is
+/// refused — `match` only when there is a filter, since only then is it added.
+#[test]
+fn a_flat_tree_refuses_a_field_with_the_name_of_its_columns() {
+    let schema = Schema::new(vec![
+        Field::required(name("id"), DataType::Int64),
+        Field::new(name("parent_id"), DataType::Int64),
+        Field::new(name("match"), DataType::Utf8),
+        Field::new(name("level"), DataType::Utf8),
+    ]);
+    let flat = |filter: &str| -> Query {
+        opengrid_json::from_str(&format!(
+            r#"{{"source":"t","select":["id"],{filter}"tree":{{"parent":"parent_id","flat":true}}}}"#
+        ))
+        .unwrap()
+    };
+    let taken = |query: Query| match query.validate(&schema, &Limits::default()) {
+        Err(QueryError::TreeFlatColumnTaken { column }) => column,
+        other => panic!("expected TreeFlatColumnTaken, got {other:?}"),
+    };
+    assert_eq!(taken(flat("")), "level");
+
+    let without_level = Schema::new(
+        schema
+            .fields()
+            .iter()
+            .filter(|field| field.name.as_str() != "level")
+            .cloned()
+            .collect(),
+    );
+    assert!(
+        flat("")
+            .validate(&without_level, &Limits::default())
+            .is_ok(),
+        "no filter, no match column"
+    );
+    let filtered = flat(r#""filter":{"field":"id","op":"gt","value":1},"#);
+    match filtered.validate(&without_level, &Limits::default()) {
+        Err(QueryError::TreeFlatColumnTaken { column }) => assert_eq!(column, "match"),
+        other => panic!("expected TreeFlatColumnTaken, got {other:?}"),
     }
 }

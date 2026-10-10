@@ -40,7 +40,7 @@
 use opengrid_json::{Error, FromJson, Json, ToJson, json, unknown_variant};
 use opengrid_types::{DataType, Field, FieldName, Schema, Value};
 
-use crate::{QueryResult, TreeLevel};
+use crate::{FlatTree, QueryResult, TreeLevel};
 
 /// What went wrong, as a closed set (plan point 23).
 ///
@@ -240,6 +240,18 @@ pub fn result_to_json(result: &QueryResult) -> String {
                 Json::Array(columns_to_json(&tree.aggregate_schema, &tree.aggregates)),
             );
         }
+        // The whole tree, flat (T8): each row's level and path of keys.
+        if let (Some(flat), Json::Object(part)) = (&tree.flat, &mut part) {
+            part.insert(
+                "flat".to_owned(),
+                json!({
+                    "level": flat.levels,
+                    "path": flat.paths,
+                    "key_type": flat.key_type,
+                    "filtered": flat.filtered,
+                }),
+            );
+        }
         object.insert("tree".to_owned(), part);
     }
     body.to_string()
@@ -357,6 +369,10 @@ fn tree_from_json(tree: &Json, rows: usize) -> Result<TreeLevel, ReadError> {
             (schema, columns)
         }
     };
+    let flat = match tree.get("flat") {
+        None => None,
+        Some(flat) => Some(flat_from_json(flat, rows)?),
+    };
     Ok(TreeLevel {
         children: list("children")?
             .iter()
@@ -376,6 +392,54 @@ fn tree_from_json(tree: &Json, rows: usize) -> Result<TreeLevel, ReadError> {
         orphans: count("orphans")?,
         aggregate_schema,
         aggregates,
+        flat,
+    })
+}
+
+/// Where each row of a flat tree sits (T8): one level and one path per row,
+/// every key read as the key's type.
+fn flat_from_json(flat: &Json, rows: usize) -> Result<FlatTree, ReadError> {
+    let list = |key: &str| {
+        flat.get(key)
+            .and_then(Json::as_array)
+            .filter(|list| list.len() == rows)
+            .ok_or_else(|| ReadError::new(format!("tree.flat.{key} is not one entry per row")))
+    };
+    let key_type = flat
+        .get("key_type")
+        .ok_or_else(|| ReadError::new("tree.flat has no key_type"))
+        .and_then(|raw| {
+            DataType::from_json(raw).map_err(|error| ReadError::new(format!("tree.flat: {error}")))
+        })?;
+    let levels = list("level")?
+        .iter()
+        .map(|n| {
+            n.as_u64()
+                .ok_or_else(|| ReadError::new("tree.flat.level holds a non-count"))
+        })
+        .collect::<Result<_, _>>()?;
+    let paths = list("path")?
+        .iter()
+        .map(|path| {
+            path.as_array()
+                .ok_or_else(|| ReadError::new("tree.flat.path holds a non-list"))?
+                .iter()
+                .map(|key| {
+                    Value::from_json_typed(key, &key_type)
+                        .map_err(|error| ReadError::new(format!("tree.flat.path: {error}")))
+                })
+                .collect()
+        })
+        .collect::<Result<_, _>>()?;
+    let filtered = flat
+        .get("filtered")
+        .and_then(Json::as_bool)
+        .ok_or_else(|| ReadError::new("tree.flat has no filtered"))?;
+    Ok(FlatTree {
+        levels,
+        paths,
+        key_type,
+        filtered,
     })
 }
 
