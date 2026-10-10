@@ -1165,6 +1165,7 @@ loader.module.set_texts(host, { lang: "de", loading: "Wird geladen …" });
 | `pivotFilters` / `pivotFilterLabel` / `pivotFilterHint` | `Filters` / `Add a filter` / `field = value · Enter` — the pivot's filter group, its field's name and hint | |
 | `treeContext` | `context` — a tree's row shown only because a match is below it | |
 | `subtreeCell` | `{value}. {aggregate} of the subtree: {total}` — what a node's cell says when it also shows its subtree's summary | `{value}`, `{aggregate}`, `{total}` |
+| `subtreeOnly` | `{aggregate} of the subtree: {total}` — the same for a node without a value of its own | `{aggregate}`, `{total}` |
 | `treeOrphans` | `Without a parent, shown at the top: {count}` | `{count}` |
 | `treeLevelTooLarge` | `{count} rows at one level; a level holds at most {max} — choose a filter` | `{count}`, `{max}` |
 | `treeRefused` / `treeGroupIgnored` | `no tree with page-size: a tree scrolls` / `group-by is not used in a tree` | |
