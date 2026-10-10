@@ -319,3 +319,58 @@ async fn another_tenants_row_is_never_part_of_the_tree() {
         );
     }
 }
+
+/// What `POST /export/{source}` answers with `token` for `query`, as text.
+async fn export(app: axum::Router, token: &str, path: &str, query: &str) -> (StatusCode, String) {
+    let request = Request::builder()
+        .method("POST")
+        .uri(path)
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::from(query.to_owned()))
+        .unwrap();
+    let response = app.oneshot(request).await.unwrap();
+    let status = response.status();
+    let bytes = response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes()
+        .to_vec();
+    (status, String::from_utf8(bytes).unwrap())
+}
+
+/// The whole tree as a file (T8, #166): depth-first, with level and path —
+/// joined in CSV, an array in JSON, `match` only with a filter — over a file
+/// and SQLite alike, and for a tenant only its own rows.
+#[tokio::test]
+async fn a_tree_exports_flat_with_level_and_path() {
+    let eve = r#"{"source":"tree","select":["id","name"],"tree":{"parent":"parent_id","flat":true},
+        "filter":{"field":"name","op":"eq","value":"Eve"},"sort":[{"field":"id"}]}"#;
+    for (kind, connector) in [("file", file("tree")), ("sqlite", sqlite("tree"))] {
+        let app = app(vec![("tree", connector)], false).await;
+        let (status, csv) =
+            export(app.clone(), TOKEN, "/export/tree?format=csv&bom=false", eve).await;
+        assert_eq!(status, StatusCode::OK, "{kind}: {csv}");
+        assert_eq!(
+            csv,
+            "id,name,level,path,match\r\n1,Sales,1,1,false\r\n2,North,2,1 / 2,false\r\n\
+             4,Alice,3,1 / 2 / 4,false\r\n10,Eve,4,1 / 2 / 4 / 10,true\r\n",
+            "{kind}"
+        );
+        let (_, json) = export(app.clone(), TOKEN, "/export/tree?format=json", eve).await;
+        assert!(
+            json.contains(r#"{"id":10,"name":"Eve","level":4,"path":[1,2,4,10],"match":true}"#),
+            "{kind}: {json}"
+        );
+    }
+
+    // The tenant rule holds in an export too: the US sees its two roots and
+    // Dave, nothing of the EU.
+    let app = app(vec![("tree", file("tree"))], true).await;
+    let all = r#"{"source":"tree","select":["id"],"tree":{"parent":"parent_id","flat":true},
+        "sort":[{"field":"id"}]}"#;
+    let (_, csv) = export(app, US, "/export/tree?format=csv&bom=false", all).await;
+    assert_eq!(csv, "id,level,path\r\n7,1,7\r\n8,2,7 / 8\r\n9,1,9\r\n");
+}

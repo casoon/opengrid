@@ -3864,23 +3864,33 @@ fn current_query(host: &HtmlElement) -> Option<String> {
     }
     let borrowed = runtime.borrow();
     let filter = effective_filter(host, &borrowed, None).ok()?;
-    let groups: Vec<String> = borrowed
-        .grouping
-        .as_ref()
-        .map(|grouping| grouping.by().to_vec())
-        .unwrap_or_default();
+    // A tree is not grouped (T10); it is exported whole and flat (T8, #166).
+    let groups: Vec<String> = match borrowed.tree {
+        Some(_) => Vec::new(),
+        None => borrowed
+            .grouping
+            .as_ref()
+            .map(|grouping| grouping.by().to_vec())
+            .unwrap_or_default(),
+    };
     let mut sorts = borrowed.state.sort_keys();
     // A sort key (S6), as the grid itself pages under one.
     if groups.is_empty() && sorts.is_empty() {
         sorts.push((columns[0].clone(), "asc"));
     }
-    Some(grid::view_query_json(
-        &source,
-        &columns,
-        &groups,
-        &sorts,
-        filter.as_ref(),
-    ))
+    let query = grid::view_query_json(&source, &columns, &groups, &sorts, filter.as_ref());
+    let Some(tree) = borrowed.tree.as_ref() else {
+        return Some(query);
+    };
+    // Every node of the reader's tree, depth-first, each with its level and
+    // path — not only the open ones (#166).
+    let mut query = opengrid_json::Json::parse(&query).ok()?;
+    query["tree"] = opengrid_json::json!({
+        "key": tree.key(),
+        "parent": tree.parent(),
+        "flat": true,
+    });
+    Some(query.to_string())
 }
 
 /// [`crate::element::get_view`] — the view as a JS object.

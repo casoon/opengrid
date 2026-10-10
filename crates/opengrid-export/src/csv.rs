@@ -134,11 +134,13 @@ impl CsvWriter {
     /// what it would have held.
     pub fn write(&mut self, result: &QueryResult) -> String {
         let mut out = String::new();
+        // A flat tree brings its level, path and match columns (T8).
+        let result = crate::with_tree_columns(result);
         if !self.started {
             self.started = true;
             out.push_str(&csv_header(&result.schema, &self.options));
         }
-        out.push_str(&csv_rows(result, &self.options));
+        out.push_str(&csv_rows(&result, &self.options));
         out
     }
 }
