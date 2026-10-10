@@ -251,6 +251,61 @@ impl<C: Connector + ?Sized> SendDataSource for AsSource<'_, C> {
 }
 
 /// The default export: counted with `limit` 0, read with one query.
+/// The export of a tree query (T8, issue #166): the answer is asked for
+/// once — a tree's levels and paths depend on every row of it — through the
+/// path `/query` takes (the source's own, or [`Connector::tree`]), and then
+/// handed out in pieces, each with its part of the tree.
+pub fn tree_export<'a, C: Connector + ?Sized>(
+    connector: &'a C,
+    query: &'a ValidatedQuery,
+) -> Box<dyn ExportRows + 'a> {
+    Box::new(TreeExport {
+        connector,
+        query,
+        rows: None,
+        next: 0,
+    })
+}
+
+struct TreeExport<'a, C: ?Sized> {
+    connector: &'a C,
+    query: &'a ValidatedQuery,
+    rows: Option<QueryResult>,
+    next: usize,
+}
+
+impl<C: Connector + ?Sized> TreeExport<'_, C> {
+    async fn answer(&mut self) -> Result<&QueryResult, DataSourceError> {
+        if self.rows.is_none() {
+            let answer = if self.connector.capabilities().tree {
+                self.connector.execute(self.query.clone()).await?
+            } else {
+                self.connector.tree(self.query).await?
+            };
+            self.rows = Some(answer);
+        }
+        Ok(self.rows.as_ref().expect("read above"))
+    }
+}
+
+impl<C: Connector + ?Sized> ExportRows for TreeExport<'_, C> {
+    fn count(&mut self) -> BoxFuture<'_, Result<u64, DataSourceError>> {
+        Box::pin(async move { Ok(self.answer().await?.row_count() as u64) })
+    }
+
+    fn next_piece(&mut self, rows: usize) -> BoxFuture<'_, Result<QueryResult, DataSourceError>> {
+        Box::pin(async move {
+            let start = self.next;
+            let piece = self
+                .answer()
+                .await?
+                .slice(start, start.saturating_add(rows));
+            self.next = start + piece.row_count();
+            Ok(piece)
+        })
+    }
+}
+
 struct PagedExport<'a, C: ?Sized> {
     connector: &'a C,
     query: ValidatedQuery,

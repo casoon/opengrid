@@ -44,12 +44,14 @@
 
         window.__queries = [];
         const host = document.querySelector("opengrid-grid");
-        loader.module.set_provider(host, {
+        // Exposed for the export spec (issue #166), which asks it directly.
+        window.__provider = {
           execute: (queryJson) => {
             window.__queries.push(queryJson);
             return engine.execute(queryJson);
           },
-        });
+        };
+        loader.module.set_provider(host, window.__provider);
         window.__opengridModule = loader.module;
         return { fallback: loader.fallback };
       }

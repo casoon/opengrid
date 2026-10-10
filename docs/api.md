@@ -39,7 +39,7 @@ instead.
 | `set_choices(host, choices)` | Per-column editor choices: `{ customer: ["Alpha", "Beta"] }` turns that column's editor into a `<select>`. |
 | `get_view(host)` / `set_view(host, view, options?)` | Reads and applies the whole [view](#the-view) in one step; `options.notice` is said with the result. |
 | `set_columns(host, columns)` | Per-column presentation — see [`<opengrid-grid>`](#opengrid-grid). |
-| `get_query(host)` | The query of the current view, without a window — what an [export](#exporting-the-view) sends. |
+| `get_query(host)` | The query of the current view, without a window — what an [export](#exporting-the-view) sends. In a [tree](#tree), every node flat (`tree.flat`), with its level and path. |
 | `get_pivot(host, options)` | The pivot as it is shown, as CSV — see [exporting a pivot](#exporting-a-pivot). |
 | `set_cell_state(host, key, column, state, message?)` | What became of an edit the page saves: `saving`, `saved` or `error` — see [Saving edits](#saving-edits). |
 | `set_values(host, values)` | Values the page computes, `[{ key, column, value }]` — see [Saving edits](#saving-edits). |
@@ -501,6 +501,7 @@ offers nothing to open. Rows are indented by depth in the first column.
 | Size | A level holds at most 10 000 nodes — a larger one is refused with `treeLevelTooLarge`; narrow it with a filter. |
 | Refused | `page-size` alongside: a tree scrolls (`treeRefused`). `group-by` alongside is not used (`treeGroupIgnored`), and the toolbar's + Group is `aria-disabled` and says so. |
 | View | `expanded` holds the open nodes, each as `[key]`, and travels in the [view](#the-view). |
+| Export | `get_query` asks for the whole tree, flat: every node depth-first, with `level`, `path` (its keys from the root) and, with a filter, `match` — see [Exporting](../guides/export/). |
 
 **In a tree, the selection names nodes by their key** (`tree-key`), so it
 stays when nodes close over it and when the grid is sorted or filtered — a key

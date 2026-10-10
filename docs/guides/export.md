@@ -36,6 +36,20 @@ Three things are left out, each on purpose:
 - **Group and total rows.** A grouped grid exports its rows, in the order it draws them — by
   their groups first, then by the sort.
 
+**A tree is exported whole and flat** (rule T8, issue #166). `get_query` on a grid with `tree`
+asks for every node of the reader's view — not only the open ones — depth-first, each node's
+children in the grid's sort. Each row gets the columns of the tree after its own:
+
+| Column | CSV, XLSX | JSON |
+|---|---|---|
+| `level` | the depth, 1 for a root | the same, a number |
+| `path` | the keys from the root down, `1 / 2 / 4` | an array, `[1, 2, 4]` |
+| `match` | with a filter only: `true` for a match, `false` for context | the same, a boolean |
+
+The keys name the records, so a path stays right whatever the names say. A source field called
+`level` or `path` — or `match`, with a filter — is refused with a sentence rather than renamed;
+rename the field to export the tree flat. Subtree summaries are not exported (yet).
+
 `get_query` answers `null` when there is nothing to export: a grid that is not connected yet,
 one whose filter does not hold (its status line says why), and the table and the pivot. A page
 checks for it before it exports.
