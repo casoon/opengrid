@@ -4804,7 +4804,7 @@ fn run_tree(
             return;
         }
     };
-    let (sorts, offset, generation, key, parent) = {
+    let (sorts, offset, generation, key, parent, choice) = {
         let mut runtime = grid_runtime.borrow_mut();
         let generation = runtime.generation + 1;
         runtime.generation = generation;
@@ -4834,7 +4834,27 @@ fn run_tree(
             generation,
             key,
             parent,
+            runtime.aggregate_choice.clone(),
         )
+    };
+    // T7: whether any shown column asks for a summary — only then are the
+    // types probed, which the summaries a column allows depend on.
+    let wants_aggregates = !choice.is_empty() || {
+        let configured = presentation::styles(host);
+        columns.iter().any(|column| {
+            configured
+                .get(column)
+                .is_some_and(|c| c.aggregate.is_some())
+        })
+    };
+    // Types this grid already learned from an answer spare the probe — the
+    // tree path runs on every scroll.
+    let learned = {
+        let runtime = grid_runtime.borrow();
+        columns
+            .iter()
+            .all(|column| runtime.known.contains_key(column))
+            .then(|| grid::known_schema(&columns, &runtime.known))
     };
     if kind == QueryKind::Data {
         grid_runtime
@@ -4865,6 +4885,43 @@ fn run_tree(
         let fail = |message: String| settle(&host, generation, Err(message), focus);
 
         let mut schema: Option<opengrid_types::Schema> = None;
+
+        // The subtree summaries (T7), checked against the real types as a
+        // grouping's are: a probe tells them, a summary the type cannot take
+        // is said and left out.
+        let (aggregates, refused) = if wants_aggregates {
+            let typed = match learned {
+                Some(schema) => schema,
+                None => {
+                    let probe = grid::query_json(&source, &columns, &sorts, filter.as_ref(), 0, 0);
+                    let result = match ask(&host, &provider, &grid_runtime, &probe, &mode).await {
+                        Ok(result) => result,
+                        Err(message) => return fail(message),
+                    };
+                    if stale(&grid_runtime) {
+                        return;
+                    }
+                    result.schema
+                }
+            };
+            effective_aggregates(&host, &typed, &choice)
+        } else {
+            (Vec::new(), Vec::new())
+        };
+        {
+            let mut runtime = grid_runtime.borrow_mut();
+            let runtime = &mut *runtime;
+            let Some(tree) = runtime.tree.as_mut() else {
+                return;
+            };
+            // Other summaries than the levels were asked with load them again.
+            tree.set_aggregates(aggregates.clone());
+            // Said with a reload, not with every scroll that runs this path.
+            if !tree.is_loaded() && !refused.is_empty() {
+                runtime.state.set_notice(refused.join(" "));
+            }
+        }
+
         loop {
             // The roots first; then the first open node still missing.
             let under = {
@@ -4886,7 +4943,7 @@ fn run_tree(
                 &select,
                 &sorts,
                 filter.as_ref(),
-                tree::tree_part(&key, &parent, under.as_ref()),
+                tree::tree_part(&key, &parent, under.as_ref(), &aggregates),
                 tree::MAX_LEVEL,
             );
             let result = match ask(&host, &provider, &grid_runtime, &query, &mode).await {

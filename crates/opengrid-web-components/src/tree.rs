@@ -34,6 +34,9 @@ pub struct Level {
     pub children: Vec<u64>,
     /// Whether each node matches, or is context (T5).
     pub matched: Vec<bool>,
+    /// Each node's subtree aggregates (T7), in the order they were asked —
+    /// empty when none were.
+    pub aggregates: Vec<Vec<Value>>,
 }
 
 impl Level {
@@ -65,11 +68,19 @@ impl Level {
                 values[row].push(value.clone());
             }
         }
+        // Column by column on the wire; row by row here, like the values.
+        let mut aggregates = vec![Vec::with_capacity(tree.aggregates.len()); rows];
+        for column in &tree.aggregates {
+            for (row, value) in column.iter().enumerate().take(rows) {
+                aggregates[row].push(value.clone());
+            }
+        }
         Ok(Self {
             rows: values,
             keys,
             children: tree.children.clone(),
             matched: tree.matched.clone(),
+            aggregates,
         })
     }
 }
@@ -112,6 +123,8 @@ pub struct Tree {
     flat: Vec<Entry>,
     matches: u64,
     orphans: u64,
+    /// The summaries each node shows over its subtree (T7), by column.
+    aggregates: Vec<(String, crate::presentation::Summary)>,
 }
 
 impl Tree {
@@ -364,6 +377,31 @@ impl Tree {
         (entry.expanded && next.depth == entry.depth + 1).then_some(position + 1)
     }
 
+    /// Sets the summaries the nodes show over their subtrees (T7). Others
+    /// than before make every loaded level stale: they were asked with the
+    /// old ones.
+    pub fn set_aggregates(&mut self, aggregates: Vec<(String, crate::presentation::Summary)>) {
+        if self.aggregates != aggregates {
+            self.aggregates = aggregates;
+            self.invalidate();
+        }
+    }
+
+    /// The summaries the nodes show over their subtrees.
+    pub fn aggregates(&self) -> &[(String, crate::presentation::Summary)] {
+        &self.aggregates
+    }
+
+    /// The subtree aggregates of the node at `position`, in the order of
+    /// [`aggregates`](Self::aggregates) — a range takes two.
+    pub fn aggregate_values(&self, position: u64) -> Option<&[Value]> {
+        let entry = self.flat.get(position as usize)?;
+        self.levels[&entry.parent]
+            .aggregates
+            .get(entry.index)
+            .map(Vec::as_slice)
+    }
+
     /// The rows of `count` positions from `start`, column-major in `width`
     /// columns — the page the grid draws.
     pub fn page(&self, start: u64, count: u64, width: usize) -> Vec<Vec<Value>> {
@@ -382,12 +420,22 @@ impl Tree {
 
 /// The JSON of a `tree` query part: one level, the children of `under` or
 /// the roots.
-pub fn tree_part(key: &str, parent: &str, under: Option<&Json>) -> Json {
-    opengrid_json::json!({
+pub fn tree_part(
+    key: &str,
+    parent: &str,
+    under: Option<&Json>,
+    aggregates: &[(String, crate::presentation::Summary)],
+) -> Json {
+    let mut part = opengrid_json::json!({
         "key": key,
         "parent": parent,
         "under": under.cloned().unwrap_or(Json::Null),
-    })
+    });
+    // T7: each node's subtree, with the summaries the columns show.
+    if !aggregates.is_empty() {
+        part["aggregate"] = Json::Array(crate::grouping::aggregate_functions(aggregates));
+    }
+    part
 }
 
 #[cfg(test)]
@@ -400,6 +448,7 @@ mod tests {
             keys: keys.iter().map(|key| Json::from(*key)).collect(),
             children: children.to_vec(),
             matched: vec![true; keys.len()],
+            aggregates: Vec::new(),
         }
     }
 
@@ -409,6 +458,41 @@ mod tests {
         let mut tree = Tree::new("id", "parent_id");
         tree.set_level(None, level(&[1, 7, 9], &[2, 1, 0]), 10, 1);
         tree
+    }
+
+    fn summed() -> Vec<(String, crate::presentation::Summary)> {
+        vec![(
+            "revenue".to_owned(),
+            crate::presentation::Summary::Fn(opengrid_query::AggregateFn::Sum),
+        )]
+    }
+
+    /// Each node keeps its own subtree's aggregates (T7, #165), at whatever
+    /// position it is shown.
+    #[test]
+    fn a_node_keeps_its_subtree_aggregates() {
+        let mut tree = Tree::new("id", "parent_id");
+        tree.set_aggregates(summed());
+        let mut roots = level(&[1, 7, 9], &[2, 1, 0]);
+        roots.aggregates = vec![
+            vec![Value::Int64(223)],
+            vec![Value::Int64(15)],
+            vec![Value::Int64(7)],
+        ];
+        tree.set_level(None, roots, 10, 1);
+        assert_eq!(tree.aggregate_values(1), Some(&[Value::Int64(15)][..]));
+        assert_eq!(tree.aggregate_values(3), None, "no such position");
+    }
+
+    /// Other summaries make the loaded levels stale; the same ones do not.
+    #[test]
+    fn other_summaries_ask_the_levels_again() {
+        let mut tree = chart();
+        tree.set_aggregates(summed());
+        assert!(!tree.is_loaded(), "asked with other summaries");
+        tree.set_level(None, level(&[1, 7, 9], &[2, 1, 0]), 10, 1);
+        tree.set_aggregates(summed());
+        assert!(tree.is_loaded(), "the same summaries keep what is loaded");
     }
 
     #[test]
