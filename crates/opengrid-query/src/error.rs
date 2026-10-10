@@ -62,6 +62,13 @@ pub enum QueryError {
     TreeWithGroup,
     /// The parent field's type is not the key's: a parent could never be found.
     TreeParentTypeMismatch { key: DataType, parent: DataType },
+    /// `tree.flat` answers the whole tree, so it names no node to look under (T8).
+    TreeFlatWithUnder,
+    /// `tree.flat` with subtree aggregates: not part of the flat export yet (#166).
+    TreeFlatWithAggregate,
+    /// A source field has the name of a column the flat tree adds (T8):
+    /// renaming either silently would leave an export nobody can read right.
+    TreeFlatColumnTaken { column: String },
 }
 
 impl QueryError {
@@ -86,6 +93,9 @@ impl QueryError {
             QueryError::LimitTooLarge { .. } => "LimitTooLarge",
             QueryError::TreeWithGroup => "TreeWithGroup",
             QueryError::TreeParentTypeMismatch { .. } => "TreeParentTypeMismatch",
+            QueryError::TreeFlatWithUnder => "TreeFlatWithUnder",
+            QueryError::TreeFlatWithAggregate => "TreeFlatWithAggregate",
+            QueryError::TreeFlatColumnTaken { .. } => "TreeFlatColumnTaken",
         }
     }
 
@@ -110,6 +120,9 @@ impl QueryError {
             | QueryError::LimitTooLarge { .. } => None,
             QueryError::TreeWithGroup => Some("tree"),
             QueryError::TreeParentTypeMismatch { .. } => Some("tree.parent"),
+            QueryError::TreeFlatWithUnder => Some("tree.under"),
+            QueryError::TreeFlatWithAggregate => Some("tree.aggregate"),
+            QueryError::TreeFlatColumnTaken { .. } => Some("tree.flat"),
         }
     }
 }
@@ -185,6 +198,17 @@ impl fmt::Display for QueryError {
                 f,
                 "tree.parent: the parent field is {parent:?} and the key {key:?} — a parent \
                  is found by its key, so both need the same type"
+            ),
+            QueryError::TreeFlatWithUnder => f.write_str(
+                "tree.under: a flat tree is the whole tree, so it names no node to look under (rule T8)",
+            ),
+            QueryError::TreeFlatWithAggregate => f.write_str(
+                "tree.aggregate: a flat tree does not carry subtree aggregates yet (rule T8, issue #166)",
+            ),
+            QueryError::TreeFlatColumnTaken { column } => write!(
+                f,
+                "tree.flat: the source has a field named {column:?}, the name of a column the flat \
+                 tree adds (rule T8) — rename the field to export the tree flat"
             ),
         }
     }

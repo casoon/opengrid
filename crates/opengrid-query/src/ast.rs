@@ -48,16 +48,20 @@ pub struct TreeSpec {
     /// all its descendants, matches only, from the raw rows. They come back
     /// beside the level's rows, never as columns of it.
     pub aggregate: Vec<Aggregate>,
+    /// The whole tree instead of one level (rule T8, issue #166): every
+    /// visible node, depth-first with siblings sorted, paged like any query —
+    /// each row with its level, its path and whether it matches.
+    pub flat: bool,
 }
 
 impl FromJson for TreeSpec {
-    /// `{ "key"?, "parent", "under"?, "scope"?, "aggregate"? }`; `key`
-    /// defaults to `id`.
+    /// `{ "key"?, "parent", "under"?, "scope"?, "aggregate"?, "flat"? }`;
+    /// `key` defaults to `id`.
     fn from_json(json: &Json) -> Result<Self, Error> {
         let fields = Fields::of(
             json,
             "struct TreeSpec",
-            &["key", "parent", "under", "scope", "aggregate"],
+            &["key", "parent", "under", "scope", "aggregate", "flat"],
         )?;
         Ok(TreeSpec {
             key: match fields.read_optional("key")? {
@@ -71,6 +75,7 @@ impl FromJson for TreeSpec {
                 .cloned(),
             scope: fields.read_optional("scope")?,
             aggregate: fields.read_or_default("aggregate")?,
+            flat: fields.read_or_default("flat")?,
         })
     }
 }
@@ -88,6 +93,9 @@ impl ToJson for TreeSpec {
         // Written only when there are any: a reader from before T7 reads the rest.
         if let (false, Json::Object(object)) = (self.aggregate.is_empty(), &mut json) {
             object.insert("aggregate".to_owned(), self.aggregate.to_json());
+        }
+        if let (true, Json::Object(object)) = (self.flat, &mut json) {
+            object.insert("flat".to_owned(), Json::Bool(true));
         }
         json
     }

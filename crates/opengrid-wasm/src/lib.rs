@@ -514,6 +514,15 @@ fn encode_answer(answer: &opengrid_engine::execute::QueryResult) -> Vec<u8> {
                 matched: tree.matched.clone(),
                 matches: tree.matches,
                 orphans: tree.orphans,
+                flat: tree
+                    .flat
+                    .as_ref()
+                    .map(|flat| opengrid_columns::wire::FlatSection {
+                        levels: flat.levels.clone(),
+                        paths: flat.paths.clone(),
+                        key_type: flat.key_type,
+                        filtered: flat.filtered,
+                    }),
                 // The subtree aggregates (T7): the engine typed them, so they
                 // fit their schema.
                 aggregates: (!tree.aggregates.is_empty()).then(|| {

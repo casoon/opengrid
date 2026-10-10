@@ -15,7 +15,7 @@ use std::collections::HashMap;
 
 use opengrid_columns::Table;
 use opengrid_columns::sort::{SortKey, order};
-use opengrid_datasource::TreeLevel;
+use opengrid_datasource::{FlatTree, TreeLevel};
 use opengrid_query::{NullsOrder, SortDirection, ValidatedQuery, ValidatedTree};
 use opengrid_types::Value;
 
@@ -174,6 +174,13 @@ pub(crate) fn execute(
         matched: &matched,
     };
 
+    // T8: the whole tree, flat — no level to pick.
+    if tree.flat {
+        return flat(
+            table, query, tree, &parent_of, &visible, &children, &matched, matches, orphans,
+        );
+    }
+
     // T4: the level — the visible children of `under`, or the visible roots.
     let under = match &tree.under {
         None => None,
@@ -200,6 +207,102 @@ pub(crate) fn execute(
     level(
         table, query, tree, members, &children, &walk, matches, orphans,
     )
+}
+
+/// The whole visible tree, flat (T8, issue #166): depth-first, each node's
+/// children in the query's order among siblings (T6, ties by the key), then
+/// paged like any result. Each row carries its level and its path of keys.
+#[allow(clippy::too_many_arguments)]
+fn flat(
+    table: &Table,
+    query: &ValidatedQuery,
+    tree: &ValidatedTree,
+    parent_of: &[Option<u32>],
+    visible: &[bool],
+    children: &[u64],
+    matched: &[bool],
+    matches: u64,
+    orphans: u64,
+) -> Result<QueryResult, ExecuteError> {
+    let shown: Vec<u32> = (0..table.num_rows() as u32)
+        .filter(|row| visible[*row as usize])
+        .collect();
+    let nodes = table.take(&shown);
+
+    // One order over every shown node; siblings keep it among themselves.
+    let mut sort_keys = Vec::with_capacity(query.sort.len() + 1);
+    for key in &query.sort {
+        sort_keys.push(SortKey {
+            column: column(&nodes, key.field.as_str())?,
+            descending: matches!(key.direction, SortDirection::Desc),
+            nulls_first: matches!(key.nulls, NullsOrder::First),
+        });
+    }
+    let key_column = column(&nodes, tree.key.as_str())?;
+    sort_keys.push(SortKey {
+        column: key_column,
+        descending: false,
+        nulls_first: false,
+    });
+    let ranked =
+        order(&sort_keys, shown.len()).map_err(|message| ExecuteError::TooLarge { message })?;
+
+    // Children and roots, in that order: walking the ranking once fills them.
+    let mut kids: Vec<Vec<u32>> = vec![Vec::new(); table.num_rows()];
+    let mut roots = Vec::new();
+    for at in &ranked {
+        let row = shown[*at as usize];
+        match parent_of[row as usize] {
+            Some(parent) => kids[parent as usize].push(row),
+            None => roots.push(row),
+        }
+    }
+
+    // Depth-first; the path is the keys from the root down.
+    let keys = column(table, tree.key.as_str())?;
+    let mut sequence: Vec<(u32, u64, Vec<Value>)> = Vec::with_capacity(shown.len());
+    let mut stack: Vec<(u32, u64, Vec<Value>)> = roots
+        .iter()
+        .rev()
+        .map(|root| (*root, 1, vec![keys.value(*root as usize)]))
+        .collect();
+    while let Some((row, level, path)) = stack.pop() {
+        for child in kids[row as usize].iter().rev() {
+            let mut below = path.clone();
+            below.push(keys.value(*child as usize));
+            stack.push((*child, level + 1, below));
+        }
+        sequence.push((row, level, path));
+    }
+
+    let count = sequence.len();
+    let offset = usize::try_from(query.offset.unwrap_or(0))
+        .unwrap_or(usize::MAX)
+        .min(count);
+    let end = query.limit.map_or(count, |limit| {
+        offset
+            .saturating_add(usize::try_from(limit).unwrap_or(usize::MAX))
+            .min(count)
+    });
+    let page = &sequence[offset..end];
+    let rows: Vec<u32> = page.iter().map(|(row, _, _)| *row).collect();
+    Ok(QueryResult {
+        table: project(&table.take(&rows), &query.output_schema)?,
+        total_count: count as u64,
+        tree: Some(TreeLevel {
+            children: rows.iter().map(|row| children[*row as usize]).collect(),
+            matched: rows.iter().map(|row| matched[*row as usize]).collect(),
+            matches,
+            orphans,
+            flat: Some(FlatTree {
+                levels: page.iter().map(|(_, level, _)| *level).collect(),
+                paths: page.iter().map(|(_, _, path)| path.clone()).collect(),
+                key_type: keys.data_type(),
+                filtered: query.filter.is_some(),
+            }),
+            ..TreeLevel::default()
+        }),
+    })
 }
 
 /// The subtrees of a tree, for the aggregates of T7.
@@ -298,6 +401,7 @@ fn level(
                 tree.aggregate_schema.clone()
             },
             aggregates,
+            flat: None,
         }),
     })
 }

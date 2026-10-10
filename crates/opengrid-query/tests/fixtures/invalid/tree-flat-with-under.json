@@ -1,0 +1,8 @@
+{
+  "expect": "TreeFlatWithUnder",
+  "query": {
+    "source": "orders",
+    "select": ["customer"],
+    "tree": { "key": "customer", "parent": "note", "under": "Alpha", "flat": true }
+  }
+}

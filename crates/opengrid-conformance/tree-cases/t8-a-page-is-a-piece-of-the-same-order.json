@@ -1,0 +1,28 @@
+{
+  "id": "t8-a-page-is-a-piece-of-the-same-order",
+  "rule": "T8",
+  "query": {
+    "source": "tree",
+    "select": ["id", "name"],
+    "tree": { "parent": "parent_id", "flat": true },
+    "sort": [{ "field": "name" }],
+    "offset": 3,
+    "limit": 3
+  },
+  "expected": {
+    "columns": ["id", "name"],
+    "rows": [[1, "Sales"], [2, "North"], [4, "Alice"]],
+    "total_count": 10,
+    "tree": {
+      "children": [2, 2, 1],
+      "match": [true, true, true],
+      "matches": 10,
+      "orphans": 1,
+      "flat": {
+        "level": [1, 2, 3],
+        "path": [[1], [1, 2], [1, 2, 4]],
+        "filtered": false
+      }
+    }
+  }
+}
