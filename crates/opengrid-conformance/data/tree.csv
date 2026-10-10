@@ -3,7 +3,7 @@ id,parent_id,name,region,revenue
 2,1,North,EU,100
 3,1,South,EU,50
 4,2,Alice,EU,30
-5,2,Bob,EU,20
+5,2,Bob,EU,\N
 6,3,Carol,EU,40
 7,\N,Partners,US,10
 8,7,Dave,US,5

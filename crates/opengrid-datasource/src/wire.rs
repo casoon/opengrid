@@ -200,14 +200,12 @@ impl std::fmt::Display for ReadError {
 
 impl std::error::Error for ReadError {}
 
-/// Writes a result in the wire form: `total_count`, `row_count`, then the
-/// columns, each with its name, type, nullability and values.
-pub fn result_to_json(result: &QueryResult) -> String {
-    let columns: Vec<Json> = result
-        .schema
+/// Columns in the wire form: each with its name, type, nullability and values.
+fn columns_to_json(schema: &Schema, columns: &[Vec<Value>]) -> Vec<Json> {
+    schema
         .fields()
         .iter()
-        .zip(&result.columns)
+        .zip(columns)
         .map(|(field, values)| {
             json!({
                 "name": field.name,
@@ -216,23 +214,33 @@ pub fn result_to_json(result: &QueryResult) -> String {
                 "values": values,
             })
         })
-        .collect();
+        .collect()
+}
+
+/// Writes a result in the wire form: `total_count`, `row_count`, then the
+/// columns, each with its name, type, nullability and values.
+pub fn result_to_json(result: &QueryResult) -> String {
     let mut body = json!({
         "total_count": result.total_count,
         "row_count": result.row_count(),
-        "columns": columns,
+        "columns": columns_to_json(&result.schema, &result.columns),
     });
     // Only for a tree's level (E38): a reader from before it reads the rest.
     if let (Some(tree), Json::Object(object)) = (&result.tree, &mut body) {
-        object.insert(
-            "tree".to_owned(),
-            json!({
-                "children": tree.children,
-                "match": tree.matched,
-                "matches": tree.matches,
-                "orphans": tree.orphans,
-            }),
-        );
+        let mut part = json!({
+            "children": tree.children,
+            "match": tree.matched,
+            "matches": tree.matches,
+            "orphans": tree.orphans,
+        });
+        // The subtree aggregates (T7), column by column like the result's.
+        if let (false, Json::Object(part)) = (tree.aggregates.is_empty(), &mut part) {
+            part.insert(
+                "aggregates".to_owned(),
+                Json::Array(columns_to_json(&tree.aggregate_schema, &tree.aggregates)),
+            );
+        }
+        object.insert("tree".to_owned(), part);
     }
     body.to_string()
 }
@@ -254,7 +262,18 @@ pub fn result_from_json(json: &str) -> Result<QueryResult, ReadError> {
         .get("columns")
         .and_then(Json::as_array)
         .ok_or_else(|| ReadError::new("result has no columns"))?;
+    let (schema, columns) = columns_from_json(raw_columns)?;
 
+    let mut result = QueryResult::new(schema, columns, total_count);
+    if let Some(tree) = body.get("tree") {
+        result.tree = Some(tree_from_json(tree, result.row_count())?);
+    }
+    Ok(result)
+}
+
+/// Columns from the wire form, every value read as its column's type, every
+/// column as long as the first.
+fn columns_from_json(raw_columns: &[Json]) -> Result<(Schema, Vec<Vec<Value>>), ReadError> {
     let mut fields = Vec::with_capacity(raw_columns.len());
     let mut columns = Vec::with_capacity(raw_columns.len());
     for column in raw_columns {
@@ -308,12 +327,7 @@ pub fn result_from_json(json: &str) -> Result<QueryResult, ReadError> {
             )));
         }
     }
-
-    let mut result = QueryResult::new(Schema::new(fields), columns, total_count);
-    if let Some(tree) = body.get("tree") {
-        result.tree = Some(tree_from_json(tree, result.row_count())?);
-    }
-    Ok(result)
+    Ok((Schema::new(fields), columns))
 }
 
 /// The tree part of a result (E38), as strict as the rest: one entry per row.
@@ -328,6 +342,20 @@ fn tree_from_json(tree: &Json, rows: usize) -> Result<TreeLevel, ReadError> {
         tree.get(key)
             .and_then(Json::as_u64)
             .ok_or_else(|| ReadError::new(format!("tree has no {key}")))
+    };
+    // The subtree aggregates (T7): columns like the result's, one value per row.
+    let (aggregate_schema, aggregates) = match tree.get("aggregates") {
+        None => (Schema::default(), Vec::new()),
+        Some(raw) => {
+            let raw = raw
+                .as_array()
+                .ok_or_else(|| ReadError::new("tree.aggregates is not a list of columns"))?;
+            let (schema, columns) = columns_from_json(raw)?;
+            if columns.first().is_some_and(|column| column.len() != rows) {
+                return Err(ReadError::new("tree.aggregates is not one value per row"));
+            }
+            (schema, columns)
+        }
     };
     Ok(TreeLevel {
         children: list("children")?
@@ -346,6 +374,8 @@ fn tree_from_json(tree: &Json, rows: usize) -> Result<TreeLevel, ReadError> {
             .collect::<Result<_, _>>()?,
         matches: count("matches")?,
         orphans: count("orphans")?,
+        aggregate_schema,
+        aggregates,
     })
 }
 

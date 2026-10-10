@@ -1045,6 +1045,15 @@ pub fn parse_result_bytes(bytes: &[u8]) -> Result<QueryResult, String> {
         matched: tree.matched,
         matches: tree.matches,
         orphans: tree.orphans,
+        aggregate_schema: tree
+            .aggregates
+            .as_ref()
+            .map(|table| table.schema().clone())
+            .unwrap_or_default(),
+        aggregates: tree
+            .aggregates
+            .map(|table| table.to_values())
+            .unwrap_or_default(),
     });
     Ok(result)
 }

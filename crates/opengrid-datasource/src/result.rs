@@ -23,8 +23,8 @@ pub struct QueryResult {
     pub tree: Option<TreeLevel>,
 }
 
-/// What a tree query answers beside the rows of its level (E38, T2–T5).
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+/// What a tree query answers beside the rows of its level (E38, T2–T5, T7).
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct TreeLevel {
     /// Per row of the page: how many visible children it has (T4).
     pub children: Vec<u64>,
@@ -34,6 +34,12 @@ pub struct TreeLevel {
     pub matches: u64,
     /// Nodes whose parent does not exist, shown as roots (T2).
     pub orphans: u64,
+    /// The subtree aggregates' aliases and result types (T7, issue #165);
+    /// empty when the query asked for none.
+    pub aggregate_schema: Schema,
+    /// Per aggregate, in `aggregate_schema` order: one value per row of the
+    /// page — the aggregate over that node's subtree.
+    pub aggregates: Vec<Vec<Value>>,
 }
 
 impl QueryResult {

@@ -5,6 +5,7 @@
 //! are the matches **and their ancestors**, the ancestors that do not match as
 //! context (T5). Of that, the query asks for one level — the children of
 //! `under`, or the roots (T2, T4) — sorted among themselves and paged (T6).
+//! Asked for, each node of the level carries aggregates over its subtree (T7).
 //!
 //! Keys are compared by equality only (S7, as the pivot's assembly does), and
 //! the order is [`opengrid_columns::sort::order`]'s, so a tree adds no second
@@ -18,7 +19,7 @@ use opengrid_datasource::TreeLevel;
 use opengrid_query::{NullsOrder, SortDirection, ValidatedQuery, ValidatedTree};
 use opengrid_types::Value;
 
-use super::{ExecuteError, QueryResult, column, filter, project};
+use super::{ExecuteError, QueryResult, aggregate, column, filter, project};
 
 /// A key as something to look up: equal keys are equal strings (S7 — `NaN`
 /// is `NaN`, `-0.0` is `0.0`). NULL is no key.
@@ -157,6 +158,21 @@ pub(crate) fn execute(
             children[parent as usize] += 1;
         }
     }
+    // T7: who hangs from whom, for the subtree aggregates — built only when
+    // asked for. Every match is visible, so the visible nodes are enough.
+    let kids: Option<Vec<Vec<u32>>> = (!tree.aggregate.is_empty()).then(|| {
+        let mut kids = vec![Vec::new(); rows];
+        for row in (0..rows).filter(|row| visible[*row]) {
+            if let Some(parent) = parent_of[row] {
+                kids[parent as usize].push(row as u32);
+            }
+        }
+        kids
+    });
+    let walk = Subtrees {
+        kids: kids.as_deref(),
+        matched: &matched,
+    };
 
     // T4: the level — the visible children of `under`, or the visible roots.
     let under = match &tree.under {
@@ -171,7 +187,7 @@ pub(crate) fn execute(
                     tree,
                     Vec::new(),
                     &children,
-                    &matched,
+                    &walk,
                     matches,
                     orphans,
                 );
@@ -182,8 +198,31 @@ pub(crate) fn execute(
         .filter(|row| visible[*row as usize] && parent_of[*row as usize] == under)
         .collect();
     level(
-        table, query, tree, members, &children, &matched, matches, orphans,
+        table, query, tree, members, &children, &walk, matches, orphans,
     )
+}
+
+/// The subtrees of a tree, for the aggregates of T7.
+struct Subtrees<'a> {
+    /// The visible children of each node; `None` when no aggregate was asked for.
+    kids: Option<&'a [Vec<u32>]>,
+    matched: &'a [bool],
+}
+
+impl Subtrees<'_> {
+    /// The matches among `node` and its descendants — context does not count
+    /// (T7), whatever it holds.
+    fn matches_under(&self, node: u32, kids: &[Vec<u32>]) -> Vec<u32> {
+        let mut found = Vec::new();
+        let mut stack = vec![node];
+        while let Some(at) = stack.pop() {
+            if self.matched[at as usize] {
+                found.push(at);
+            }
+            stack.extend_from_slice(&kids[at as usize]);
+        }
+        found
+    }
 }
 
 /// Sorts and pages one level (T6) and says what each of its rows is.
@@ -194,7 +233,7 @@ fn level(
     tree: &ValidatedTree,
     members: Vec<u32>,
     children: &[u64],
-    matched: &[bool],
+    walk: &Subtrees<'_>,
     matches: u64,
     orphans: u64,
 ) -> Result<QueryResult, ExecuteError> {
@@ -230,14 +269,35 @@ fn level(
         .iter()
         .map(|at| members[*at as usize] as usize)
         .collect();
+    // T7: per node of the page, over the matches of its subtree. Siblings'
+    // subtrees are disjoint, so a level costs one pass over the tree at most.
+    let aggregates = match walk.kids {
+        None => Vec::new(),
+        Some(kids) => {
+            let groups: Vec<Vec<u32>> = rows
+                .iter()
+                .map(|row| walk.matches_under(*row as u32, kids))
+                .collect();
+            aggregate::over_groups(table, &tree.aggregate, &tree.aggregate_schema, &groups)?
+                .iter()
+                .map(|column| (0..column.len()).map(|row| column.value(row)).collect())
+                .collect()
+        }
+    };
     Ok(QueryResult {
         table: project(&siblings.take(page), &query.output_schema)?,
         total_count: count as u64,
         tree: Some(TreeLevel {
             children: rows.iter().map(|row| children[*row]).collect(),
-            matched: rows.iter().map(|row| matched[*row]).collect(),
+            matched: rows.iter().map(|row| walk.matched[*row]).collect(),
             matches,
             orphans,
+            aggregate_schema: if aggregates.is_empty() {
+                Default::default()
+            } else {
+                tree.aggregate_schema.clone()
+            },
+            aggregates,
         }),
     })
 }
