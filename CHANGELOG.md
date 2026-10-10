@@ -38,7 +38,8 @@ Two things belong in every release entry and are easy to leave out:
   open ones; `exportRows` and the server's export write it with `level`, `path` and, with a
   filter, `match` after the query's columns — the path joined (`1 / 2 / 4`) in CSV and XLSX,
   an array in JSON. The server answers a tree's export the way it answers its query, tenant
-  rule included, and hands it out in pieces.
+  rule included, and hands it out in pieces. A worker's answers — the binary form — export a
+  tree the same way.
 - **Subtree aggregates, in the engine and on the server** ([#165](https://github.com/casoon/opengrid/issues/165), rule T7).
   A tree query takes `tree.aggregate: [{ field?, fn, as }]` and answers, per node of the level,
   the aggregate over the node and all its descendants — from the raw rows, the functions and
