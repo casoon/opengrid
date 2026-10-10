@@ -58,14 +58,10 @@ fn read(answer: &JsValue) -> Result<opengrid_datasource::QueryResult, JsError> {
         Some(crate::element::Answer::Json(json)) => {
             result_from_json(&json).map_err(|error| JsError::new(&error.to_string()))
         }
+        // A tree's piece carries its part (T8, #166): read it with it, or a
+        // worker's answer to a tree's export is refused.
         Some(crate::element::Answer::Binary(bytes)) => {
-            let (table, total_count) = opengrid_columns::wire::decode_result(&bytes)
-                .map_err(|error| JsError::new(&error.to_string()))?;
-            Ok(opengrid_datasource::QueryResult::new(
-                table.schema().clone(),
-                table.to_values(),
-                total_count,
-            ))
+            crate::shared::result_from_bytes(&bytes).map_err(|error| JsError::new(&error))
         }
         None => Err(JsError::new(crate::element::NOT_AN_ANSWER)),
     }
