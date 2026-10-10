@@ -1,0 +1,37 @@
+{
+  "id": "t7-null-is-not-a-value-in-a-subtree",
+  "rule": "T7",
+  "query": {
+    "source": "tree",
+    "select": ["id", "name"],
+    "tree": {
+      "parent": "parent_id",
+      "under": 2,
+      "aggregate": [
+        { "field": "revenue", "fn": "sum", "as": "total" },
+        { "fn": "count", "as": "nodes" },
+        { "field": "revenue", "fn": "count", "as": "with_revenue" },
+        { "field": "revenue", "fn": "avg", "as": "average" },
+        { "field": "revenue", "fn": "min", "as": "lowest" }
+      ]
+    },
+    "sort": [{ "field": "id" }]
+  },
+  "expected": {
+    "columns": ["id", "name"],
+    "rows": [[4, "Alice"], [5, "Bob"]],
+    "tree": {
+      "children": [1, 0],
+      "match": [true, true],
+      "matches": 10,
+      "orphans": 1,
+      "aggregates": {
+        "total": [33, null],
+        "nodes": [2, 1],
+        "with_revenue": [2, 0],
+        "average": [16.5, null],
+        "lowest": [3, null]
+      }
+    }
+  }
+}

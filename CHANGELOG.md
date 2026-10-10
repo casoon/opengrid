@@ -18,6 +18,23 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+**What breaks:**
+- Rust: `TreeSpec` has a new public field, `aggregate` (`aggregate: Vec::new()` in a struct
+  literal); `ValidatedTree` has `aggregate` and `aggregate_schema`; `TreeLevel` has
+  `aggregate_schema` and `aggregates` and is no longer `Eq`; `opengrid_columns::wire::TreeSection`
+  has `aggregates` and is no longer `Eq`.
+
+### Added
+
+- **Subtree aggregates, in the engine and on the server** ([#165](https://github.com/casoon/opengrid/issues/165), rule T7).
+  A tree query takes `tree.aggregate: [{ field?, fn, as }]` and answers, per node of the level,
+  the aggregate over the node and all its descendants — from the raw rows, the functions and
+  types of grouping (S12); with a filter over the subtree's matches only, context does not
+  count. The values come back beside the rows as `tree.aggregates`, in JSON and as one more
+  table in the binary form, which a reader from before them refuses. Every source answers it:
+  the engine in the tab and the worker, and the server over a file, the rows tier, SQLite and
+  PostgreSQL. Four conformance cases (T7) pass on every path.
+
 ## [0.12.0] — 2026-10-09
 
 **Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).

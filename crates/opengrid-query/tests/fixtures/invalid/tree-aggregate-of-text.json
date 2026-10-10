@@ -1,0 +1,12 @@
+{
+  "expect": "AggregateTypeMismatch",
+  "query": {
+    "source": "orders",
+    "select": ["customer"],
+    "tree": {
+      "key": "customer",
+      "parent": "note",
+      "aggregate": [{ "field": "country", "fn": "sum", "as": "total" }]
+    }
+  }
+}

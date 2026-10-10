@@ -1,4 +1,4 @@
-//! The tree's conformance cases (E38, rules T1–T6; plan points 121 and 122):
+//! The tree's conformance cases (E38, rules T1–T7; plan points 121, 122, 125):
 //! `tree-cases/*.json` over the datasets `tree.csv` and `tree-cycle.csv`.
 //!
 //! Shared by every runner — the engine, and each connector behind the server
@@ -120,6 +120,26 @@ pub fn check_tree_case(case: &Json, answer: Result<QueryResult, String>) -> Vec<
                 want[name]
             ));
         }
+    }
+    // T7: the subtree aggregates, by alias and in the query's order — and none
+    // where none were asked for.
+    let got: Vec<(String, Json)> = tree
+        .aggregate_schema
+        .fields()
+        .iter()
+        .zip(&tree.aggregates)
+        .map(|(field, values)| (field.name.as_str().to_owned(), values.to_json()))
+        .collect();
+    let wanted: Vec<(String, Json)> = match want.get("aggregates") {
+        None => Vec::new(),
+        Some(Json::Object(object)) => object
+            .iter()
+            .map(|(alias, values)| (alias.clone(), values.clone()))
+            .collect(),
+        Some(other) => panic!("tree.aggregates in a case is an object, not {other}"),
+    };
+    if got != wanted {
+        problems.push(format!("tree.aggregates: expected {wanted:?}, got {got:?}"));
     }
     problems
 }

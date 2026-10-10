@@ -57,7 +57,8 @@ pub enum QueryError {
     OffsetWithoutSort,
     /// `limit` exceeds `Limits::max_limit`.
     LimitTooLarge { limit: u64, max_limit: u64 },
-    /// A tree query that also groups or aggregates (rule T10).
+    /// A tree query that also groups or aggregates at the top (rule T10) —
+    /// a subtree's aggregates go in `tree.aggregate` (T7).
     TreeWithGroup,
     /// The parent field's type is not the key's: a parent could never be found.
     TreeParentTypeMismatch { key: DataType, parent: DataType },
@@ -176,7 +177,9 @@ impl fmt::Display for QueryError {
                 write!(f, "limit {limit} exceeds the maximum of {max_limit}")
             }
             QueryError::TreeWithGroup => {
-                f.write_str("tree: a tree is not grouped or aggregated (rule T10)")
+                f.write_str(
+                    "tree: a tree is not grouped (rule T10); its aggregates go in tree.aggregate (rule T7)",
+                )
             }
             QueryError::TreeParentTypeMismatch { key, parent } => write!(
                 f,
