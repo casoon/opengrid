@@ -1,0 +1,8 @@
+{
+  "source": "orders",
+  "select": ["customer", "amount"],
+  "sort": [{ "field": "customer", "direction": "asc" }],
+  "offset": 0,
+  "limit": 500,
+  "tree": { "key": "customer", "parent": "note", "flat": true }
+}

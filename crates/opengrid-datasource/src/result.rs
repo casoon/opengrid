@@ -1,4 +1,4 @@
-use opengrid_types::{Schema, Value};
+use opengrid_types::{DataType, Schema, Value};
 
 /// The result of a query, in the shape the wire format has.
 ///
@@ -40,6 +40,22 @@ pub struct TreeLevel {
     /// Per aggregate, in `aggregate_schema` order: one value per row of the
     /// page — the aggregate over that node's subtree.
     pub aggregates: Vec<Vec<Value>>,
+    /// For the whole tree, flat (T8, issue #166): where each row sits.
+    pub flat: Option<FlatTree>,
+}
+
+/// Where each row of a flat tree sits (T8): the columns an export adds.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FlatTree {
+    /// Per row: its depth, 1 for a root.
+    pub levels: Vec<u64>,
+    /// Per row: the keys from its root down to itself.
+    pub paths: Vec<Vec<Value>>,
+    /// The type of those keys — what the wire reads them as.
+    pub key_type: DataType,
+    /// Whether the query had a filter: only then does `match` say anything,
+    /// and only then is it a column of the export.
+    pub filtered: bool,
 }
 
 impl QueryResult {

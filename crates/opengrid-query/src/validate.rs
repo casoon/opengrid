@@ -69,6 +69,8 @@ pub struct ValidatedTree {
     pub aggregate: Vec<Aggregate>,
     /// Their aliases with the result types of S12, in query order.
     pub aggregate_schema: Schema,
+    /// The whole tree, flat (T8), rather than one level.
+    pub flat: bool,
 }
 
 /// A filter whose literals have been read against the field types.
@@ -175,11 +177,31 @@ impl Query {
                         })
                         .collect(),
                 );
+                // T8: the flat tree is the whole tree, with columns of its own.
+                if tree.flat {
+                    if tree.under.is_some() {
+                        return Err(QueryError::TreeFlatWithUnder);
+                    }
+                    if !tree.aggregate.is_empty() {
+                        return Err(QueryError::TreeFlatWithAggregate);
+                    }
+                    let added: &[&str] = if self.filter.is_some() {
+                        &FLAT_COLUMNS
+                    } else {
+                        &FLAT_COLUMNS[..2]
+                    };
+                    if let Some(column) = added.iter().find(|name| schema.field(name).is_some()) {
+                        return Err(QueryError::TreeFlatColumnTaken {
+                            column: (*column).to_owned(),
+                        });
+                    }
+                }
                 Some(ValidatedTree {
                     key: tree.key.clone(),
                     parent: tree.parent.clone(),
                     aggregate: tree.aggregate.clone(),
                     aggregate_schema,
+                    flat: tree.flat,
                     under: match &tree.under {
                         Some(under) => Some(coerce(under, key, "tree.under")?),
                         None => None,
@@ -383,6 +405,10 @@ fn validate_filter(
     }
 }
 
+/// The columns a flat tree adds after the query's own (T8): its level, its
+/// path of keys, and — with a filter — whether the row matches.
+pub const FLAT_COLUMNS: [&str; 3] = ["level", "path", "match"];
+
 /// Resolves a list of aggregates against `schema`: the result type of each
 /// (S12), whether it can be NULL, and its alias — unique, and no field's name.
 /// `path` is where the list sits in the query (`aggregate`, `tree.aggregate`).
@@ -484,6 +510,7 @@ impl From<&ValidatedQuery> for Query {
                 under: tree.under.as_ref().map(opengrid_json::ToJson::to_json),
                 scope: tree.scope.as_ref().map(FilterExpr::from),
                 aggregate: tree.aggregate.clone(),
+                flat: tree.flat,
             }),
         }
     }

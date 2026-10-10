@@ -1,0 +1,27 @@
+{
+  "id": "t8-a-filter-keeps-its-context-recognisable",
+  "rule": "T8",
+  "query": {
+    "source": "tree",
+    "select": ["id", "name"],
+    "filter": { "field": "name", "op": "eq", "value": "Eve" },
+    "tree": { "parent": "parent_id", "flat": true },
+    "sort": [{ "field": "id" }]
+  },
+  "expected": {
+    "columns": ["id", "name"],
+    "rows": [[1, "Sales"], [2, "North"], [4, "Alice"], [10, "Eve"]],
+    "total_count": 4,
+    "tree": {
+      "children": [1, 1, 1, 0],
+      "match": [false, false, false, true],
+      "matches": 1,
+      "orphans": 1,
+      "flat": {
+        "level": [1, 2, 3, 4],
+        "path": [[1], [1, 2], [1, 2, 4], [1, 2, 4, 10]],
+        "filtered": true
+      }
+    }
+  }
+}
