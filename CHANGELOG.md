@@ -18,6 +18,18 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+### Added
+
+- **A tree's level in SQL, on request** ([#132](https://github.com/casoon/opengrid/issues/132)).
+  `SqliteConnector::with_tree_pushdown(true)` and `PostgresDataSource::with_tree_pushdown(true)`
+  answer a level and its subtree aggregates (T1–T7) with `WITH RECURSIVE` and report the
+  capability `tree`; the flat tree stays the engine's. **Off by default**: measured on 100 000
+  nodes it is slower than the engine's way where the database is close (SQLite about 75 ms
+  against 900 ms, a local PostgreSQL about 170 ms against 365–540 ms) — worth it only for a
+  large tree over a slow link (`docs/guides/connectors.md`). Every tree case passes against
+  both databases either way, and a differential test compares the pushdown with the engine on
+  a generated tree of 100 000 nodes.
+
 ## [0.13.0] — 2026-10-10
 
 **Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).
