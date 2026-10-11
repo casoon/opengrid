@@ -40,7 +40,10 @@ use crate::compiler::{
 pub struct PostgresDataSource {
     pub(crate) pool: Pool,
     pub(crate) compiler: PostgresCompiler,
-    schema: Schema,
+    pub(crate) schema: Schema,
+    /// A tree's level in SQL rather than in the engine (issue #132); off
+    /// unless asked for, see [`PostgresDataSource::with_tree_pushdown`].
+    tree_pushdown: bool,
 }
 
 impl PostgresDataSource {
@@ -61,7 +64,23 @@ impl PostgresDataSource {
             pool,
             compiler: PostgresCompiler::new(table, schema.clone()),
             schema,
+            tree_pushdown: false,
         })
+    }
+
+    /// Answers a tree's level in PostgreSQL itself, with `WITH RECURSIVE`
+    /// (issue #132), instead of handing the scope's rows to the engine.
+    ///
+    /// **Off by default, because it is slower** where the database is close:
+    /// the rules of a tree (T1, T3, T5) need the whole tree for every level,
+    /// and the engine does that in one pass over rows it has read once.
+    /// Measured on 100 000 nodes with a local server, a level takes about
+    /// 170 ms the engine's way and 365–540 ms in SQL
+    /// (`docs/guides/connectors.md`). Worth it only when moving the rows —
+    /// a large tree over a slow link — costs more than that.
+    pub fn with_tree_pushdown(mut self, on: bool) -> Self {
+        self.tree_pushdown = on;
+        self
     }
 
     /// How many connections the pool holds at most — what a server sizes its
@@ -127,6 +146,17 @@ impl SendDataSource for PostgresDataSource {
     }
 
     async fn execute(&self, query: ValidatedQuery) -> Result<QueryResult, DataSourceError> {
+        match &query.tree {
+            // A flat tree is the whole visible tree anyway (T8), and without
+            // the pushdown every tree is the engine's: it answers from the
+            // scope's rows, as for any source.
+            Some(tree) if tree.flat || !self.tree_pushdown => {
+                return opengrid_connector::Connector::tree(self, &query).await;
+            }
+            // One level in SQL (issue #132).
+            Some(tree) => return self.execute_tree(&query, tree).await,
+            None => {}
+        }
         {
             let output: Vec<(String, DataType)> = query
                 .output_schema
@@ -171,7 +201,8 @@ impl SendDataSource for PostgresDataSource {
             pivot: true,
             calculated_fields: false,
             streaming: false,
-            tree: false,
+            // Asked for, a tree's level is `WITH RECURSIVE` (issue #132).
+            tree: self.tree_pushdown,
         }
     }
 }
@@ -230,7 +261,7 @@ fn text_of(value: &Value) -> Option<String> {
 }
 
 /// Reads one cell, through the same parser the wire format uses.
-fn value_from_text(
+pub(crate) fn value_from_text(
     text: Option<&str>,
     data_type: DataType,
     column: &str,
