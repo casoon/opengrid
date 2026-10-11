@@ -45,6 +45,8 @@
 use std::fmt::Write as _;
 use std::sync::Mutex;
 
+mod tree;
+
 use opengrid_connector::{
     BoxFuture, Connector, DataSourceCapabilities, DataSourceError, QueryResult, Schema,
     ValidatedQuery, Value,
@@ -62,6 +64,9 @@ pub struct SqliteConnector {
     connection: Mutex<Connection>,
     table: String,
     schema: Schema,
+    /// A tree's level in SQL rather than in the engine (issue #132); off
+    /// unless asked for, see [`SqliteConnector::with_tree_pushdown`].
+    tree_pushdown: bool,
 }
 
 impl SqliteConnector {
@@ -89,7 +94,36 @@ impl SqliteConnector {
             connection: Mutex::new(connection),
             table: table.to_owned(),
             schema,
+            tree_pushdown: false,
         })
+    }
+
+    /// Answers a tree's level in SQLite itself, with `WITH RECURSIVE`
+    /// (issue #132), instead of handing the scope's rows to the engine.
+    ///
+    /// **Off by default, because it is slower** where the rows are close: the
+    /// rules of a tree (T1, T3, T5) need the whole tree for every level, and
+    /// the engine does that in one pass over rows it has read once. Measured
+    /// on 100 000 nodes, a level takes about 75 ms the engine's way and
+    /// 850–960 ms in SQL (`docs/guides/connectors.md`). Worth it only when
+    /// moving the rows costs more than that.
+    pub fn with_tree_pushdown(mut self, on: bool) -> Self {
+        self.tree_pushdown = on;
+        self
+    }
+
+    /// One level of a tree, answered by SQLite (issue #132).
+    fn answer_tree(&self, query: &ValidatedQuery) -> Result<QueryResult, DataSourceError> {
+        let tree = query.tree.as_ref().expect("a tree query");
+        let compiler = Compiler {
+            table: &self.table,
+            schema: &self.schema,
+        };
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| backend("the connection is poisoned"))?;
+        tree::level(&compiler, &connection, query, tree)
     }
 
     fn answer(&self, query: &ValidatedQuery) -> Result<QueryResult, DataSourceError> {
@@ -140,7 +174,8 @@ impl Connector for SqliteConnector {
         Box::pin(async move { Ok(schema) })
     }
 
-    /// Everything but a pivot in one statement, which takes the generic path.
+    /// Everything but a pivot in one statement, which takes the generic path —
+    /// and, when asked for, a tree's level with `WITH RECURSIVE` (issue #132).
     fn capabilities(&self) -> DataSourceCapabilities {
         DataSourceCapabilities {
             filter: true,
@@ -148,6 +183,7 @@ impl Connector for SqliteConnector {
             group: true,
             aggregate: true,
             paging: true,
+            tree: self.tree_pushdown,
             ..DataSourceCapabilities::default()
         }
     }
@@ -156,8 +192,22 @@ impl Connector for SqliteConnector {
         &self,
         query: ValidatedQuery,
     ) -> BoxFuture<'_, Result<QueryResult, DataSourceError>> {
-        let answer = self.answer(&query);
-        Box::pin(async move { answer })
+        match &query.tree {
+            // A flat tree is the whole visible tree anyway (T8), and without
+            // the pushdown every tree is the engine's: it answers from the
+            // scope's rows, as for any source.
+            Some(tree) if tree.flat || !self.tree_pushdown => {
+                Box::pin(async move { Connector::tree(self, &query).await })
+            }
+            Some(_) => {
+                let answer = self.answer_tree(&query);
+                Box::pin(async move { answer })
+            }
+            None => {
+                let answer = self.answer(&query);
+                Box::pin(async move { answer })
+            }
+        }
     }
 }
 

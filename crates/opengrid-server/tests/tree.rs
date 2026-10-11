@@ -44,14 +44,40 @@ fn file(source: &str) -> Arc<dyn Connector> {
 
 fn sqlite(source: &str) -> Arc<dyn Connector> {
     let (schema, rows) = rows(source);
+    sqlite_of(source, schema, &rows, false)
+}
+
+/// SQLite holding `rows` in the table `source`, with the tree's pushdown
+/// (issue #132) or without.
+fn sqlite_of(
+    source: &str,
+    schema: Schema,
+    rows: &QueryResult,
+    pushdown: bool,
+) -> Arc<dyn Connector> {
     let mut connection = Connection::open_in_memory().expect("a database");
     create_table(&connection, source, &schema).expect("the table");
-    insert(&mut connection, source, &schema, &rows).expect("the rows");
-    Arc::new(SqliteConnector::new(connection, source, schema).expect("a connector"))
+    insert(&mut connection, source, &schema, rows).expect("the rows");
+    Arc::new(
+        SqliteConnector::new(connection, source, schema)
+            .expect("a connector")
+            .with_tree_pushdown(pushdown),
+    )
 }
 
 /// PostgreSQL, when this machine has one: the dataset in `og_test_<source>`.
 async fn postgres(source: &str) -> Option<Arc<dyn Connector>> {
+    let (schema, rows) = rows(source);
+    postgres_of(source, schema, &rows, false).await
+}
+
+/// PostgreSQL holding `rows` in `og_test_<source>`, when this machine has one.
+async fn postgres_of(
+    source: &str,
+    schema: Schema,
+    rows: &QueryResult,
+    pushdown: bool,
+) -> Option<Arc<dyn Connector>> {
     let url = std::env::var("OPENGRID_TEST_PG")
         .unwrap_or_else(|_| "host=localhost dbname=postgres".to_owned());
     let (client, connection) = match tokio_postgres::connect(&url, tokio_postgres::NoTls).await {
@@ -64,7 +90,6 @@ async fn postgres(source: &str) -> Option<Arc<dyn Connector>> {
     tokio::spawn(async move {
         let _ = connection.await;
     });
-    let (schema, rows) = rows(source);
     let table = format!("og_test_{source}");
     let columns: Vec<String> = schema
         .fields()
@@ -77,29 +102,44 @@ async fn postgres(source: &str) -> Option<Arc<dyn Connector>> {
             format!("\"{}\" {kind}", field.name)
         })
         .collect();
-    let mut sql = format!(
-        "DROP TABLE IF EXISTS \"{table}\"; CREATE TABLE \"{table}\" ({});",
-        columns.join(", ")
-    );
-    for row in 0..rows.row_count() {
-        let values: Vec<String> = rows
-            .columns
-            .iter()
-            .map(|column| match &column[row] {
-                opengrid_types::Value::Null => "NULL".to_owned(),
-                opengrid_types::Value::Utf8(text) => format!("'{}'", text.replace('\'', "''")),
-                other => opengrid_json::to_string(other),
-            })
-            .collect();
-        sql.push_str(&format!(
-            "INSERT INTO \"{table}\" VALUES ({});",
-            values.join(", ")
-        ));
+    client
+        .batch_execute(&format!(
+            "DROP TABLE IF EXISTS \"{table}\"; CREATE TABLE \"{table}\" ({});",
+            columns.join(", ")
+        ))
+        .await
+        .expect("the table");
+    // A thousand rows a statement: a hundred thousand one by one would take
+    // longer than the test.
+    let rows_of: Vec<String> = (0..rows.row_count())
+        .map(|row| {
+            let values: Vec<String> = rows
+                .columns
+                .iter()
+                .map(|column| match &column[row] {
+                    opengrid_types::Value::Null => "NULL".to_owned(),
+                    opengrid_types::Value::Utf8(text) => {
+                        format!("'{}'", text.replace('\'', "''"))
+                    }
+                    other => opengrid_json::to_string(other),
+                })
+                .collect();
+            format!("({})", values.join(", "))
+        })
+        .collect();
+    for chunk in rows_of.chunks(1000) {
+        client
+            .batch_execute(&format!(
+                "INSERT INTO \"{table}\" VALUES {};",
+                chunk.join(", ")
+            ))
+            .await
+            .expect("the rows");
     }
-    client.batch_execute(&sql).await.expect("the table");
     Some(Arc::new(
         opengrid_datasource_postgres::PostgresDataSource::connect(&url, &table, schema)
-            .expect("a source"),
+            .expect("a source")
+            .with_tree_pushdown(pushdown),
     ))
 }
 
@@ -233,6 +273,34 @@ async fn a_file_answers_every_tree_case() {
 #[tokio::test]
 async fn sqlite_answers_every_tree_case() {
     every_case("sqlite", SOURCES.iter().map(|s| (*s, sqlite(s))).collect()).await;
+}
+
+/// The same cases with the tree pushed down into SQLite (issue #132).
+#[tokio::test]
+async fn sqlite_with_the_pushdown_answers_every_tree_case() {
+    let connectors = SOURCES
+        .iter()
+        .map(|source| {
+            let (schema, rows) = rows(source);
+            (*source, sqlite_of(source, schema, &rows, true))
+        })
+        .collect();
+    every_case("sqlite pushdown", connectors).await;
+}
+
+/// The same cases with the tree pushed down into PostgreSQL (issue #132).
+#[tokio::test]
+async fn postgres_with_the_pushdown_answers_every_tree_case() {
+    let mut connectors = Vec::new();
+    for source in SOURCES {
+        let (schema, rows) = rows(source);
+        // A table of its own: the test without the pushdown runs beside it.
+        match postgres_of(&format!("{source}_pushdown"), schema, &rows, true).await {
+            Some(connector) => connectors.push((source, connector)),
+            None => return,
+        }
+    }
+    every_case("postgres pushdown", connectors).await;
 }
 
 #[tokio::test]
@@ -373,4 +441,222 @@ async fn a_tree_exports_flat_with_level_and_path() {
         "sort":[{"field":"id"}]}"#;
     let (_, csv) = export(app, US, "/export/tree?format=csv&bom=false", all).await;
     assert_eq!(csv, "id,level,path\r\n7,1,7\r\n8,2,7 / 8\r\n9,1,9\r\n");
+}
+
+/// A deterministic tree of `nodes` nodes (issue #132): five roots, every
+/// other node under an earlier one — some close (long chains), some far
+/// (wide levels) — fifty orphans, NULLs and repeated names, and two columns
+/// called `r` and `n`, the names a statement's own helpers could clash with.
+fn generated(nodes: u64) -> (Schema, QueryResult) {
+    let schema: Schema = opengrid_json::from_str(
+        r#"{"fields":[
+            {"name":"id","type":"int64","nullable":false},
+            {"name":"parent_id","type":"int64","nullable":true},
+            {"name":"name","type":"utf8","nullable":true},
+            {"name":"value","type":"int64","nullable":true},
+            {"name":"r","type":"int64","nullable":true},
+            {"name":"n","type":"utf8","nullable":true}]}"#,
+    )
+    .expect("a schema");
+    let mut state: u64 = 0x5eed_0132;
+    let mut next = move |bound: u64| {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        (state >> 33) % bound.max(1)
+    };
+    let mut csv = String::from("id,parent_id,name,value,r,n\n");
+    for id in 1..=nodes {
+        let parent = if id <= 5 {
+            "\\N".to_owned()
+        } else if id % 2000 == 0 {
+            (nodes + 1 + next(1000)).to_string()
+        } else if next(3) == 0 {
+            (id - 1 - next(id.min(20) - 1)).to_string()
+        } else {
+            (1 + next(id - 1)).to_string()
+        };
+        let name = if next(40) == 0 {
+            "\\N".to_owned()
+        } else {
+            format!("Name {}", next(500))
+        };
+        let value = if next(20) == 0 {
+            "\\N".to_owned()
+        } else {
+            next(1000).to_string()
+        };
+        let r = next(100);
+        let n = next(7);
+        csv.push_str(&format!("{id},{parent},{name},{value},{r},n{n}\n"));
+    }
+    let table = load_csv(csv.as_bytes(), &schema, CsvOptions::default()).expect("the rows");
+    let rows = QueryResult::new(schema.clone(), table.to_values(), 0);
+    (schema, rows)
+}
+
+/// The engine over the same rows: what every pushdown is compared with.
+fn engine_of(schema: &Schema, rows: &QueryResult) -> Arc<dyn Connector> {
+    let table = opengrid_columns::Table::from_values(schema, &rows.columns).expect("a table");
+    Arc::new(LocalConnector::new(
+        opengrid_engine::datasource::LocalDataSource::new(table),
+    ))
+}
+
+/// The queries the pushdown is compared on: levels at the roots and under
+/// wide and deep nodes, with filters that leave context, a scope, sorts in
+/// both directions with NULLs, paging, aggregates over subtrees, and a node
+/// that does not exist.
+fn differential_queries() -> Vec<String> {
+    let select = r#""select":["id","name","value","r","n"]"#;
+    let aggregate = r#""aggregate":[{"field":"value","fn":"sum","as":"total"},{"fn":"count","as":"nodes"},{"field":"value","fn":"count","as":"valued"},{"field":"value","fn":"avg","as":"mean"},{"field":"value","fn":"min","as":"low"},{"field":"value","fn":"max","as":"high"}]"#;
+    vec![
+        format!(
+            r#"{{"source":"big",{select},"tree":{{"parent":"parent_id",{aggregate}}},"sort":[{{"field":"name"}}],"limit":40}}"#
+        ),
+        format!(
+            r#"{{"source":"big",{select},"tree":{{"parent":"parent_id","under":1,{aggregate}}},"sort":[{{"field":"value","direction":"desc"}}],"offset":7,"limit":25}}"#
+        ),
+        format!(
+            r#"{{"source":"big",{select},"tree":{{"parent":"parent_id","under":3}},"sort":[{{"field":"name","direction":"desc","nulls":"first"}},{{"field":"r"}}],"limit":100}}"#
+        ),
+        format!(
+            r#"{{"source":"big",{select},"filter":{{"field":"value","op":"gt","value":990}},"tree":{{"parent":"parent_id",{aggregate}}},"sort":[{{"field":"id"}}],"limit":50}}"#
+        ),
+        format!(
+            r#"{{"source":"big",{select},"filter":{{"field":"name","op":"eq","value":"Name 42"}},"tree":{{"parent":"parent_id","under":2,{aggregate}}},"sort":[{{"field":"id"}}],"limit":50}}"#
+        ),
+        format!(
+            r#"{{"source":"big",{select},"filter":{{"field":"n","op":"contains","value":"3"}},"tree":{{"parent":"parent_id","under":17}},"sort":[{{"field":"n"}},{{"field":"id","direction":"desc"}}],"limit":30}}"#
+        ),
+        format!(
+            r#"{{"source":"big",{select},"tree":{{"parent":"parent_id","scope":{{"field":"value","op":"is_not_null"}},{aggregate}}},"sort":[{{"field":"id"}}],"limit":60}}"#
+        ),
+        format!(
+            r#"{{"source":"big",{select},"tree":{{"parent":"parent_id","under":4000}},"sort":[{{"field":"id"}}],"limit":20}}"#
+        ),
+        format!(
+            r#"{{"source":"big",{select},"tree":{{"parent":"parent_id","under":999999,{aggregate}}},"sort":[{{"field":"id"}}],"limit":20}}"#
+        ),
+    ]
+}
+
+/// The pushdown answers what the engine answers (issue #132): every query of
+/// [`differential_queries`] over a generated tree of 100 000 nodes, in SQLite
+/// and — when this machine has one — PostgreSQL, compared value for value with
+/// the engine over the same rows: the level, its total, and its tree part.
+#[tokio::test]
+async fn the_pushdown_answers_what_the_engine_answers() {
+    let (schema, rows) = generated(100_000);
+    let engine = engine_of(&schema, &rows);
+    let mut databases = vec![("sqlite", sqlite_of("big", schema.clone(), &rows, true))];
+    if let Some(postgres) = postgres_of("big", schema.clone(), &rows, true).await {
+        databases.push(("postgres", postgres));
+    }
+    let mut failures = Vec::new();
+    for (index, text) in differential_queries().iter().enumerate() {
+        let query: opengrid_query::Query = opengrid_json::from_str(text).expect("a query");
+        let validated = query
+            .validate(&schema, &opengrid_query::Limits::default())
+            .expect("a valid query");
+        let expected = engine
+            .execute(validated.clone())
+            .await
+            .expect("the engine answers");
+        assert!(
+            expected.tree.is_some(),
+            "query {index}: the engine answers a tree"
+        );
+        for (kind, database) in &databases {
+            assert!(database.capabilities().tree, "{kind} pushes trees down");
+            match database.execute(validated.clone()).await {
+                Ok(answer) if answer == expected => {}
+                Ok(answer) => failures.push(format!(
+                    "{kind} query {index}: rows {} vs {}, total {} vs {}, tree differs: {}",
+                    answer.row_count(),
+                    expected.row_count(),
+                    answer.total_count,
+                    expected.total_count,
+                    answer.tree != expected.tree
+                )),
+                Err(error) => failures.push(format!("{kind} query {index}: {error}")),
+            }
+        }
+    }
+    assert!(failures.is_empty(), "\n{}", failures.join("\n"));
+}
+
+/// What the pushdown saves (issue #132): one level of the generated tree of
+/// 100 000 nodes, the engine's way (`Connector::tree`: every row of the scope,
+/// then the engine) against the database's (`execute`), the median of five.
+/// Ignored, since it measures rather than checks:
+/// `cargo test --release -p opengrid-server --test tree -- --ignored --nocapture`.
+#[tokio::test]
+#[ignore]
+async fn measure_a_level_before_and_after() {
+    let (schema, rows) = generated(100_000);
+    let mut databases = vec![("sqlite", sqlite_of("big", schema.clone(), &rows, true))];
+    if let Some(postgres) = postgres_of("big", schema.clone(), &rows, true).await {
+        databases.push(("postgres", postgres));
+    }
+    let levels = [
+        ("roots", r#""tree":{"parent":"parent_id"}"#),
+        ("under 1", r#""tree":{"parent":"parent_id","under":1}"#),
+        (
+            "under 1, sum",
+            r#""tree":{"parent":"parent_id","under":1,"aggregate":[{"field":"value","fn":"sum","as":"total"}]}"#,
+        ),
+    ];
+    for (kind, database) in &databases {
+        for (name, tree) in levels {
+            let text = format!(
+                r#"{{"source":"big","select":["id","name","value"],{tree},"sort":[{{"field":"id"}}],"limit":50}}"#
+            );
+            let query: opengrid_query::Query = opengrid_json::from_str(&text).expect("a query");
+            let validated = query
+                .validate(&schema, &opengrid_query::Limits::default())
+                .expect("a valid query");
+            let mut before = Vec::new();
+            let mut after = Vec::new();
+            for _ in 0..5 {
+                let clock = std::time::Instant::now();
+                database.tree(&validated).await.expect("the engine's way");
+                before.push(clock.elapsed());
+                let clock = std::time::Instant::now();
+                database
+                    .execute(validated.clone())
+                    .await
+                    .expect("the pushdown");
+                after.push(clock.elapsed());
+            }
+            before.sort();
+            after.sort();
+            println!(
+                "{kind:9} {name:13} before {:>8.1} ms   after {:>8.1} ms",
+                before[2].as_secs_f64() * 1000.0,
+                after[2].as_secs_f64() * 1000.0
+            );
+        }
+    }
+}
+
+/// The pushdown is the operator's choice, never the default (issue #132): it
+/// is slower where the rows are close, so a connector reports `tree` only when
+/// asked to push trees down.
+#[tokio::test]
+async fn the_pushdown_is_off_unless_asked_for() {
+    let (schema, rows) = rows("tree");
+    assert!(
+        !sqlite_of("tree", schema.clone(), &rows, false)
+            .capabilities()
+            .tree
+    );
+    assert!(
+        sqlite_of("tree", schema.clone(), &rows, true)
+            .capabilities()
+            .tree
+    );
+    if let Some(postgres) = postgres_of("tree_default", schema, &rows, false).await {
+        assert!(!postgres.capabilities().tree);
+    }
 }
