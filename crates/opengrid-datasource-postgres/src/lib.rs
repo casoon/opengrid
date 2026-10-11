@@ -20,6 +20,7 @@ mod compiler;
 mod connector;
 mod export;
 mod source;
+mod tree;
 
 pub use compiler::{CompileError, CompiledQuery, PostgresCompiler, QueryCompiler, pg_type};
 pub use export::{ExportCanceller, PostgresExport};

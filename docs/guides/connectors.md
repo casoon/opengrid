@@ -121,6 +121,32 @@ HTTP [protocol](../../protocol/) instead, and proves it with the same suite over
   every conformance case.
 - **A table in memory** (`opengrid_connector::LocalConnector`, `from_csv` for a file).
 
+### A tree in the database, or in the engine
+
+A tree's level (rules T1–T7) is answered by default the way every source answers it: the
+connector hands the rows of the tree's scope to the engine, which builds the level. Both SQL
+references can answer it themselves instead, with `WITH RECURSIVE` —
+`SqliteConnector::with_tree_pushdown(true)`, `PostgresDataSource::with_tree_pushdown(true)` —
+and then report the capability `tree`. A flat tree (the export, T8) stays the engine's either
+way: its answer is the whole visible tree.
+
+**The pushdown is off by default because it is slower where the rows are close.** A tree's
+rules need the whole tree for every level — a key twice (T1), a cycle (T3), the matches with
+their ancestors (T5) — and the engine does that in one pass over rows it read once. Measured on
+a generated tree of 100 000 nodes, one level of 50 nodes, the median of five, PostgreSQL on the
+same machine:
+
+| | the engine's way | pushed down |
+|---|---|---|
+| SQLite, the roots | 74 ms | 900 ms |
+| SQLite, a wide level with a sum | 76 ms | 961 ms |
+| PostgreSQL, the roots | 168 ms | 540 ms |
+| PostgreSQL, a wide level with a sum | 170 ms | 474 ms |
+
+So it is worth it only where moving the scope's rows costs more than that — a large tree over a
+slow link to its database. `cargo test --release -p opengrid-server --test tree -- --ignored
+--nocapture` measures it again on any machine.
+
 They are examples, not a list of supported databases: anything that can answer the contract
 is one. `cargo run -p opengrid-example-server -- demo-sqlite` serves the demo from a SQLite
 file.

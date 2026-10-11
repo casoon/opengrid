@@ -631,3 +631,307 @@ impl PostgresCompiler {
         Ok(sql.finish())
     }
 }
+
+/// The columns a tree's statements carry beside the table's own (issue #132).
+const TREE_KEY: &str = "__og_key";
+const TREE_PARENT: &str = "__og_parent";
+const TREE_MATCH: &str = "__og_match";
+const TREE_ROW: &str = "__og_row";
+
+/// The extra output columns of a tree's level: each node's shown children,
+/// whether it matches, and its place on the page.
+pub(crate) const TREE_CHILDREN: &str = "__og_children";
+pub(crate) const TREE_MATCHED: &str = "__og_matched";
+const TREE_POSITION: &str = "__og_position";
+
+/// The temporary table a tree's statements read, dropped with the
+/// transaction that made it.
+const TREE_TABLE: &str = "og_tree_scoped";
+/// The source's own table, joined by `ctid` for the columns a level shows.
+const TREE_BASE: &str = "og_base";
+
+/// The indexes on [`TREE_TABLE`], and the statistics the planner needs to use
+/// them: every recursion joins a node to its parent or its children, and
+/// without them each step would hash the whole tree.
+pub(crate) const TREE_INDEXES: &str = "CREATE INDEX ON og_tree_scoped (__og_key); \
+     CREATE INDEX ON og_tree_scoped (__og_parent); \
+     CREATE INDEX ON og_tree_scoped (__og_row); ANALYZE og_tree_scoped;";
+
+/// One level of a tree as SQL (issue #132, rules T1–T7). The tree's rows —
+/// each one's `ctid` as its identity (a NULL key cannot be one), key, parent
+/// and whether it matches the filter — are copied once into a temporary
+/// table under the tree's scope ([`Self::tree_prepare`]); every statement then
+/// reads it as `scoped`, and the source's table only for the columns a level
+/// shows. `UNION` in every recursion, so a cycle ends the walk; T3 names it.
+impl PostgresCompiler {
+    /// `CREATE TEMP TABLE … ON COMMIT DROP AS …`: the tree's rows.
+    pub(crate) fn tree_prepare(
+        &self,
+        query: &ValidatedQuery,
+        tree: &opengrid_query::ValidatedTree,
+    ) -> Result<CompiledQuery, CompileError> {
+        let mut sql = Sql::default();
+        sql.push(&format!(
+            "CREATE TEMP TABLE {TREE_TABLE} ON COMMIT DROP AS SELECT ctid AS {TREE_ROW}, {} AS {TREE_KEY}, {} AS {TREE_PARENT}, ",
+            self.column(tree.key.as_str())?,
+            self.column(tree.parent.as_str())?
+        ));
+        match &query.filter {
+            Some(filter) => {
+                sql.push("COALESCE(");
+                self.filter(filter, &mut sql)?;
+                sql.push(", FALSE)");
+            }
+            None => sql.push("TRUE"),
+        }
+        sql.push(&format!(" AS {TREE_MATCH} FROM "));
+        sql.push(&quote_ident(&self.table)?);
+        if let Some(scope) = &tree.scope {
+            sql.push(" WHERE ");
+            self.filter(scope, &mut sql)?;
+        }
+        Ok(sql.finish())
+    }
+
+    /// `WITH RECURSIVE scoped AS (…)`: the tree's rows as prepared —
+    /// `NOT MATERIALIZED`, or PostgreSQL copies a CTE named more than once into
+    /// a table of its own, without the indexes, and sorts the whole tree in
+    /// every step of a recursion (12 s instead of 0.1 s at 100 000 nodes).
+    fn tree_scoped(sql: &mut Sql) {
+        sql.push(&format!(
+            "WITH RECURSIVE scoped AS NOT MATERIALIZED (SELECT * FROM {TREE_TABLE})"
+        ));
+    }
+
+    /// The key of a row as text, the way every other value is read back.
+    fn tree_key_text(&self, tree: &opengrid_query::ValidatedTree) -> Result<String, CompileError> {
+        Ok(read_as_text(TREE_KEY, self.data_type(tree.key.as_str())?))
+    }
+
+    /// T1: one key that appears more than once, as text — none if every key
+    /// is there once.
+    pub(crate) fn tree_duplicate_key(
+        &self,
+        tree: &opengrid_query::ValidatedTree,
+    ) -> Result<CompiledQuery, CompileError> {
+        let mut sql = Sql::default();
+        Self::tree_scoped(&mut sql);
+        sql.push(&format!(
+            " SELECT {} FROM scoped WHERE {TREE_KEY} IS NOT NULL GROUP BY {TREE_KEY} \
+             HAVING count(*) > 1 ORDER BY {TREE_KEY} LIMIT 1",
+            self.tree_key_text(tree)?
+        ));
+        Ok(sql.finish())
+    }
+
+    /// T3: a node of a cycle, as text — none if every node is reached from a
+    /// root. A node not reached lies on a cycle or below one; the walk up from
+    /// it finds the one that is its own ancestor.
+    pub(crate) fn tree_cycle(
+        &self,
+        tree: &opengrid_query::ValidatedTree,
+    ) -> Result<CompiledQuery, CompileError> {
+        let mut sql = Sql::default();
+        Self::tree_scoped(&mut sql);
+        sql.push(&format!(
+            ", reached(__og_r) AS (SELECT c.{TREE_ROW} FROM scoped c WHERE {root} \
+             UNION SELECT c.{TREE_ROW} FROM reached JOIN scoped p ON p.{TREE_ROW} = reached.__og_r \
+             JOIN scoped c ON c.{TREE_PARENT} = p.{TREE_KEY}), \
+             lost(__og_r) AS (SELECT s.{TREE_ROW} FROM scoped s WHERE NOT EXISTS \
+             (SELECT 1 FROM reached WHERE reached.__og_r = s.{TREE_ROW})), \
+             up(__og_s, __og_r, __og_d) AS (SELECT __og_r, __og_r, 0 FROM lost \
+             UNION SELECT up.__og_s, p.{TREE_ROW}, up.__og_d + 1 FROM up JOIN scoped c ON c.{TREE_ROW} = up.__og_r \
+             JOIN scoped p ON p.{TREE_KEY} = c.{TREE_PARENT} WHERE up.__og_d < (SELECT count(*) FROM lost)) \
+             SELECT {key} FROM up JOIN scoped ON scoped.{TREE_ROW} = up.__og_s \
+             WHERE up.__og_r = up.__og_s AND up.__og_d > 0 ORDER BY up.__og_s LIMIT 1",
+            root = tree_root("c"),
+            key = self.tree_key_text(tree)?,
+        ));
+        Ok(sql.finish())
+    }
+
+    /// T2 and T5: the orphans and the matches of the whole tree, and — when
+    /// the query names a node — whether that node exists (T4).
+    pub(crate) fn tree_counts(
+        &self,
+        tree: &opengrid_query::ValidatedTree,
+    ) -> Result<CompiledQuery, CompileError> {
+        let mut sql = Sql::default();
+        Self::tree_scoped(&mut sql);
+        sql.push(&format!(
+            " SELECT (SELECT count(*) FROM scoped c WHERE c.{TREE_PARENT} IS NOT NULL AND NOT EXISTS \
+             (SELECT 1 FROM scoped p WHERE p.{TREE_KEY} = c.{TREE_PARENT}))::text, \
+             (SELECT count(*) FROM scoped WHERE {TREE_MATCH})::text, "
+        ));
+        match &tree.under {
+            Some(under) => {
+                sql.push(&format!("(SELECT count(*) FROM scoped WHERE {TREE_KEY} = "));
+                sql.param(under.clone(), self.data_type(tree.key.as_str())?);
+                sql.push(")::text");
+            }
+            None => sql.push("'1'"),
+        }
+        Ok(sql.finish())
+    }
+
+    /// `, shown(__og_r), members(__og_r)`: the matches with their ancestors (T5), and of
+    /// those the children of `under`, or the roots (T4).
+    fn tree_members(
+        &self,
+        tree: &opengrid_query::ValidatedTree,
+        sql: &mut Sql,
+    ) -> Result<(), CompileError> {
+        sql.push(&format!(
+            ", shown(__og_r) AS (SELECT {TREE_ROW} FROM scoped WHERE {TREE_MATCH} \
+             UNION SELECT p.{TREE_ROW} FROM shown JOIN scoped c ON c.{TREE_ROW} = shown.__og_r \
+             JOIN scoped p ON p.{TREE_KEY} = c.{TREE_PARENT}), \
+             members(__og_r) AS (SELECT c.{TREE_ROW} FROM scoped c JOIN shown ON shown.__og_r = c.{TREE_ROW} WHERE "
+        ));
+        match &tree.under {
+            Some(under) => {
+                sql.push(&format!("c.{TREE_PARENT} = "));
+                sql.param(under.clone(), self.data_type(tree.key.as_str())?);
+            }
+            None => sql.push(&tree_root("c")),
+        }
+        sql.push(")");
+        Ok(())
+    }
+
+    /// How many nodes the level has, before paging (T6).
+    pub(crate) fn tree_total(
+        &self,
+        tree: &opengrid_query::ValidatedTree,
+    ) -> Result<CompiledQuery, CompileError> {
+        let mut sql = Sql::default();
+        Self::tree_scoped(&mut sql);
+        self.tree_members(tree, &mut sql)?;
+        sql.push(" SELECT count(*)::text FROM members");
+        Ok(sql.finish())
+    }
+
+    /// The level itself: the query's columns, each node's shown children and
+    /// whether it matches, sorted among siblings (T6, ties by the key) and
+    /// paged — and, asked for, each node's subtree aggregates over the
+    /// matches below and at it (T7). Answers the statement and its output
+    /// columns, every one read back as text.
+    pub(crate) fn tree_level(
+        &self,
+        query: &ValidatedQuery,
+        tree: &opengrid_query::ValidatedTree,
+    ) -> Result<(CompiledQuery, Vec<(String, DataType)>), CompileError> {
+        let mut sql = Sql::default();
+        Self::tree_scoped(&mut sql);
+        self.tree_members(tree, &mut sql)?;
+        sql.push(&format!(
+            ", kids(__og_r, __og_n) AS (SELECT p.{TREE_ROW}, count(*) FROM shown JOIN scoped c ON c.{TREE_ROW} = shown.__og_r \
+             JOIN scoped p ON p.{TREE_KEY} = c.{TREE_PARENT} GROUP BY p.{TREE_ROW}), \
+             level AS (SELECT "
+        ));
+        for field in query.output_schema.fields() {
+            sql.push(&self.column(field.name.as_str())?);
+            sql.push(" AS ");
+            sql.push(&quote_ident(field.name.as_str())?);
+            sql.push(", ");
+        }
+        sql.push(&format!(
+            "coalesce(kids.__og_n, 0) AS {TREE_CHILDREN}, scoped.{TREE_MATCH} AS {TREE_MATCHED}, \
+             scoped.{TREE_KEY} AS {TREE_KEY}, scoped.{TREE_ROW} AS {TREE_ROW} FROM members \
+             JOIN scoped ON scoped.{TREE_ROW} = members.__og_r \
+             JOIN {base} AS {TREE_BASE} ON {TREE_BASE}.ctid = scoped.{TREE_ROW} LEFT JOIN kids ON kids.__og_r = scoped.{TREE_ROW}), \
+             page AS MATERIALIZED (SELECT *, row_number() OVER (ORDER BY ",
+            base = quote_ident(&self.table)?
+        ));
+        // The order once for the numbering and once for the paging: an output
+        // column is an input column of `level`, so its collation can be written.
+        let mut order = Sql::default();
+        for key in &query.sort {
+            self.sort_key(key, query, &mut order)?;
+            order.push(", ");
+        }
+        let key_type = self.data_type(tree.key.as_str())?;
+        order.push(&collated(TREE_KEY, key_type));
+        order.push(" ASC NULLS LAST");
+        sql.push(&order.text);
+        sql.push(&format!(") AS {TREE_POSITION} FROM level ORDER BY "));
+        sql.push(&order.text);
+        if let Some(offset) = query.offset {
+            sql.push(" OFFSET ");
+            sql.param(Value::Int64(offset as i64), DataType::Int64);
+        }
+        if let Some(limit) = query.limit {
+            sql.push(" LIMIT ");
+            sql.param(Value::Int64(limit as i64), DataType::Int64);
+        }
+        sql.push(")");
+
+        let mut output: Vec<(String, DataType)> = query
+            .output_schema
+            .fields()
+            .iter()
+            .map(|field| (field.name.as_str().to_owned(), field.data_type))
+            .collect();
+        output.push((TREE_CHILDREN.to_owned(), DataType::Int64));
+        output.push((TREE_MATCHED.to_owned(), DataType::Bool));
+
+        if !tree.aggregate.is_empty() {
+            sql.push(&format!(
+                ", below(__og_t, __og_r) AS (SELECT {TREE_ROW}, {TREE_ROW} FROM page \
+                 UNION SELECT below.__og_t, c.{TREE_ROW} FROM below JOIN scoped p ON p.{TREE_ROW} = below.__og_r \
+                 JOIN scoped c ON c.{TREE_PARENT} = p.{TREE_KEY}), \
+                 subtree AS (SELECT below.__og_t AS __og_top"
+            ));
+            for aggregate in &tree.aggregate {
+                sql.push(", ");
+                self.aggregate(aggregate, &mut sql)?;
+                sql.push(" AS ");
+                sql.push(&quote_ident(aggregate.alias.as_str())?);
+            }
+            sql.push(&format!(
+                " FROM below JOIN scoped ON scoped.{TREE_ROW} = below.__og_r \
+                 JOIN {base} AS {TREE_BASE} ON {TREE_BASE}.ctid = scoped.{TREE_ROW} \
+                 WHERE scoped.{TREE_MATCH} GROUP BY below.__og_t)",
+                base = quote_ident(&self.table)?
+            ));
+            for field in tree.aggregate_schema.fields() {
+                output.push((field.name.as_str().to_owned(), field.data_type));
+            }
+        }
+
+        // Every column read back as text, the page in its order.
+        sql.push(" SELECT ");
+        for (index, (name, data_type)) in output.iter().enumerate() {
+            if index > 0 {
+                sql.push(", ");
+            }
+            sql.push(&read_as_text(&quote_ident(name)?, *data_type));
+        }
+        sql.push(" FROM page");
+        if !tree.aggregate.is_empty() {
+            sql.push(&format!(
+                " LEFT JOIN subtree ON subtree.__og_top = page.{TREE_ROW}"
+            ));
+        }
+        sql.push(&format!(" ORDER BY page.{TREE_POSITION}"));
+        Ok((sql.finish(), output))
+    }
+}
+
+/// A root's condition on the row `alias` (T2): no parent, or one that is no node.
+fn tree_root(alias: &str) -> String {
+    format!(
+        "({alias}.{TREE_PARENT} IS NULL OR NOT EXISTS \
+         (SELECT 1 FROM scoped p WHERE p.{TREE_KEY} = {alias}.{TREE_PARENT}))"
+    )
+}
+
+/// A column read back as text: PostgreSQL's own text form, a timestamp as
+/// ISO-8601 in UTC with microseconds (S9) — the form the wire reads.
+pub(crate) fn read_as_text(column: &str, data_type: DataType) -> String {
+    match data_type {
+        DataType::Timestamp => {
+            format!("to_char({column} AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"')")
+        }
+        _ => format!("{column}::text"),
+    }
+}
