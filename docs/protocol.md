@@ -48,7 +48,7 @@ The body's `source` must equal the path's; a mismatch is a `422` at `source`.
 - `offset` needs a `sort`. Values are JSON, read against the column's type: a decimal as a
   string (`"10.00"`), a date as `"2026-01-31"`, a timestamp as RFC 3339 in UTC.
 - What each of these means exactly — NULL, ordering, comparison, rounding — is
-  [Query semantics](guides/query-semantics.md). A server that answers differently gives the
+  [Query semantics](../guides/query-semantics/). A server that answers differently gives the
   browser different results from the engine in the tab.
 
 A query may ask for **one level of a tree** (E38): `tree: { key?, parent, under?, scope?, aggregate?, flat? }` — `key`
@@ -152,7 +152,7 @@ Always JSON, whatever `Accept` said:
 The headers carry `Content-Disposition: attachment` and `X-Total-Count`, the rows that follow.
 Everything that can still be a status is decided before the first byte; a failure after it
 breaks the connection off instead of ending a shorter file. The details are in
-[Where queries run](guides/where-queries-run.md#exporting-from-a-server).
+[Where queries run](../guides/where-queries-run/#exporting-from-a-server).
 
 ## The duties of a server
 
