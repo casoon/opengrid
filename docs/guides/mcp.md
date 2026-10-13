@@ -13,10 +13,10 @@ sources and its tools are in the
 ## The view is the interface
 
 Everything the reader chooses — sort, filters, columns, grouping, facets — is
-one value, the [view](../api.md#the-view). The model works on the same value:
+one value, the [view](../../api/#the-view). The model works on the same value:
 `opengrid_set_view` takes exactly what `get_view` returns, and `opengrid_describe`
 answers with it. The server counts a view the model sets without a browser,
-through the engine's [`view_query`](../api.md#exporting-the-view) — the same
+through the engine's [`view_query`](../../api/#exporting-the-view) — the same
 translation the grid uses for `get_query`.
 
 ## Two directions
@@ -24,7 +24,7 @@ translation the grid uses for `get_query`.
 | | |
 |---|---|
 | Reader → model | Each `opengrid-view-change` and `opengrid-selection-change` goes to the server, and one line goes into the model's context: `Filter: country eq DE · 52 matches · 3 selected`. |
-| Model → reader | The server keeps the session's view. The grid asks for it when it becomes visible or focused and every few seconds while it is, and applies it with [`set_view(host, view, { notice })`](../api.md#the-view): one query, one announcement, the focus where it was. |
+| Model → reader | The server keeps the session's view. The grid asks for it when it becomes visible or focused and every few seconds while it is, and applies it with [`set_view(host, view, { notice })`](../../api/#the-view): one query, one announcement, the focus where it was. |
 
 ## Rows
 
