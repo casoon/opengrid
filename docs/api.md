@@ -614,7 +614,7 @@ header is a sort button too and orders every level by that measure. With one it
 is not: a measure orders by the whole row, across every column value, and a
 header over one column value would promise an order its cells do not have. NULL
 sorts last either way. The pivot keeps the focus on the pressed button once the
-new answer is drawn. See the [protocol](protocol.md) for the `sort` a server
+new answer is drawn. See the [protocol](../protocol/) for the `sort` a server
 takes.
 
 **Folding.** With two row dimensions or more, a group's subtotal row header is a

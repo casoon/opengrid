@@ -40,7 +40,7 @@ as `Arc<dyn Connector>`. A source written against `SendDataSource` becomes a con
 
 `execute` answers with the requested page **and** `total_count`, the rows that matched before
 `offset` and `limit`. The query's semantics — NULL ordering, binary string comparison, exact
-decimals — are in [Query semantics](query-semantics.md); a connector that answers them
+decimals — are in [Query semantics](../query-semantics/); a connector that answers them
 differently gives the browser different results from the engine in the tab.
 
 ## Sources that only hand out rows

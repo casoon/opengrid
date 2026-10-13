@@ -124,79 +124,80 @@ const presets = [
         <opengrid-table label="Orders by customer" datasource="orders" columns="id,customer,country,amount"
         ></opengrid-table>
       </div>
+      {/* Drives every demo on the page; inside a stage, where the theme allows own scripts. */}
+      <script is:inline type="module">
+        const base = document.querySelector('[data-assets]').dataset.assets;
+        const { loadOpengrid, createLocalProvider } = await import(`${base}loader.js`);
+        const { default: init, Engine } = await import(`${base}engine/opengrid_wasm.js`);
+
+        await init();
+        const engine = new Engine();
+        const schema = await (await fetch(`${base}data/orders.schema.json`)).text();
+        const csv = await (await fetch(`${base}data/orders.csv`)).arrayBuffer();
+        engine.load_csv('orders', new Uint8Array(csv), schema);
+
+        const loader = await loadOpengrid();
+        const og = loader.module;
+
+        // What the schema cannot say: which columns are facets, what a group row shows,
+        // how a column looks. It narrows only — a sum over text would be refused.
+        const columns = {
+          id: { width: 120, mono: true, muted: true },
+          customer: { emphasis: true, facet: 'list' },
+          country: { facet: 'pills' },
+          amount: { width: 150, facet: 'range', aggregate: 'sum' },
+          qty: { aggregate: 'sum' },
+          ordered_on: { facet: 'period', aggregate: 'range' },
+        };
+        for (const host of document.querySelectorAll('opengrid-grid')) og.set_columns(host, columns);
+        for (const host of document.querySelectorAll('opengrid-grid, opengrid-table')) {
+          og.set_provider(host, createLocalProvider(engine));
+        }
+
+        // ---- Views: a few lines of page code on top of get_view / set_view ----------
+        const sort = [{ field: 'id', direction: 'asc' }];
+        const views = [
+          { sort },
+          { sort, filters: [{ column: 'country', op: 'eq', value: 'DE' }, { column: 'amount', op: 'gte', value: '10' }] },
+          { sort, filters: [{ column: 'customer', op: 'is_null', value: '' }] },
+          { sort, group: ['country'], expanded: [['DE']] },
+        ];
+        const grid = document.getElementById('og-views-grid');
+        const tabs = [...document.querySelectorAll('.og-tabs [role="tab"]')];
+        const json = document.getElementById('og-view-json');
+        const show = () => (json.textContent = JSON.stringify(og.get_view(grid), null, 2));
+        const choose = (index) => {
+          tabs.forEach((tab, at) => {
+            tab.setAttribute('aria-selected', String(at === index));
+            tab.tabIndex = at === index ? 0 : -1;
+          });
+          document.getElementById('og-views-panel').setAttribute('aria-labelledby', tabs[index].id);
+          og.set_view(grid, views[index]);
+          show();
+        };
+        tabs.forEach((tab, index) => tab.addEventListener('click', () => choose(index)));
+        tabs[0].parentElement.addEventListener('keydown', (event) => {
+          const at = tabs.indexOf(document.activeElement);
+          const next = { ArrowRight: at + 1, ArrowLeft: at - 1, Home: 0, End: tabs.length - 1 }[event.key];
+          if (at < 0 || next === undefined) return;
+          event.preventDefault();
+          const index = (next + tabs.length) % tabs.length;
+          choose(index);
+          tabs[index].focus();
+        });
+        grid.addEventListener('opengrid-view-change', show);
+        show();
+
+        // ---- Looks: a radio group that swaps a data attribute ------------------------
+        const themed = document.querySelector('.og-themed');
+        themed.addEventListener('change', (event) => {
+          if (event.target.name === 'og-preset') themed.dataset.preset = event.target.value;
+        });
+      </script>
     </Demo>
   </div>
 </Base>
 
-<script is:inline type="module">
-  const base = document.querySelector('[data-assets]').dataset.assets;
-  const { loadOpengrid, createLocalProvider } = await import(`${base}loader.js`);
-  const { default: init, Engine } = await import(`${base}engine/opengrid_wasm.js`);
-
-  await init();
-  const engine = new Engine();
-  const schema = await (await fetch(`${base}data/orders.schema.json`)).text();
-  const csv = await (await fetch(`${base}data/orders.csv`)).arrayBuffer();
-  engine.load_csv('orders', new Uint8Array(csv), schema);
-
-  const loader = await loadOpengrid();
-  const og = loader.module;
-
-  // What the schema cannot say: which columns are facets, what a group row shows,
-  // how a column looks. It narrows only — a sum over text would be refused.
-  const columns = {
-    id: { width: 120, mono: true, muted: true },
-    customer: { emphasis: true, facet: 'list' },
-    country: { facet: 'pills' },
-    amount: { width: 150, facet: 'range', aggregate: 'sum' },
-    qty: { aggregate: 'sum' },
-    ordered_on: { facet: 'period', aggregate: 'range' },
-  };
-  for (const host of document.querySelectorAll('opengrid-grid')) og.set_columns(host, columns);
-  for (const host of document.querySelectorAll('opengrid-grid, opengrid-table')) {
-    og.set_provider(host, createLocalProvider(engine));
-  }
-
-  // ---- Views: a few lines of page code on top of get_view / set_view ----------
-  const sort = [{ field: 'id', direction: 'asc' }];
-  const views = [
-    { sort },
-    { sort, filters: [{ column: 'country', op: 'eq', value: 'DE' }, { column: 'amount', op: 'gte', value: '10' }] },
-    { sort, filters: [{ column: 'customer', op: 'is_null', value: '' }] },
-    { sort, group: ['country'], expanded: [['DE']] },
-  ];
-  const grid = document.getElementById('og-views-grid');
-  const tabs = [...document.querySelectorAll('.og-tabs [role="tab"]')];
-  const json = document.getElementById('og-view-json');
-  const show = () => (json.textContent = JSON.stringify(og.get_view(grid), null, 2));
-  const choose = (index) => {
-    tabs.forEach((tab, at) => {
-      tab.setAttribute('aria-selected', String(at === index));
-      tab.tabIndex = at === index ? 0 : -1;
-    });
-    document.getElementById('og-views-panel').setAttribute('aria-labelledby', tabs[index].id);
-    og.set_view(grid, views[index]);
-    show();
-  };
-  tabs.forEach((tab, index) => tab.addEventListener('click', () => choose(index)));
-  tabs[0].parentElement.addEventListener('keydown', (event) => {
-    const at = tabs.indexOf(document.activeElement);
-    const next = { ArrowRight: at + 1, ArrowLeft: at - 1, Home: 0, End: tabs.length - 1 }[event.key];
-    if (at < 0 || next === undefined) return;
-    event.preventDefault();
-    const index = (next + tabs.length) % tabs.length;
-    choose(index);
-    tabs[index].focus();
-  });
-  grid.addEventListener('opengrid-view-change', show);
-  show();
-
-  // ---- Looks: a radio group that swaps a data attribute ------------------------
-  const themed = document.querySelector('.og-themed');
-  themed.addEventListener('change', (event) => {
-    if (event.target.name === 'og-preset') themed.dataset.preset = event.target.value;
-  });
-</script>
 
 <style>
   .page {
