@@ -34,7 +34,9 @@ test.beforeEach(async ({ page }) => {
 async function collect(page, names) {
   let alive = names;
   for (let round = 0; round < 20 && alive.length > 0; round += 1) {
-    await page.evaluate(() => window.gc());
+    // Async: a collection in a task of its own, with no stack that a stale
+    // pointer could keep the grid alive from (V8 scans the stack conservatively).
+    await page.evaluate(() => window.gc({ type: "major", execution: "async" }));
     await page.waitForTimeout(50);
     alive = await page.evaluate(
       (names) => names.filter((name) => window.__weak[name].deref() !== undefined),
