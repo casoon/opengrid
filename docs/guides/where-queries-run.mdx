@@ -16,6 +16,8 @@ HTTP, or be split across two of them without the elements knowing.
 | `createHybridProvider({ remote, planner, mode, onPlan })` | Split between a remote source and the engine in the tab. |
 | `createPivotProvider({ url, source, token })` | `POST /pivot/{source}` — a whole pivot in one request. |
 
+<Diagram name="where-queries-run" />
+
 ## On a server
 
 `opengrid-server` answers the same query AST over HTTP. The browser sends the AST, never SQL.
@@ -128,6 +130,8 @@ A source declares what it can do. The planner takes a query, gives the source th
 answer, and finishes the rest in the tab. `mode` — on the provider, or per element through the
 `mode` attribute — is `local`, `remote`, `hybrid` or `auto`. `onPlan` receives the plan before
 anything is sent, so the split is readable from outside.
+
+<Diagram name="hybrid-query" />
 
 ## A pivot
 

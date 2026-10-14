@@ -101,7 +101,7 @@ connect(document.querySelector("opengrid-grid"), {
 });
 ```
 
-See [Where queries run](https://github.com/casoon/opengrid/blob/main/docs/guides/where-queries-run.md).
+See [Where queries run](https://github.com/casoon/opengrid/blob/main/docs/guides/where-queries-run.mdx).
 
 ## React, Vue, Svelte
 

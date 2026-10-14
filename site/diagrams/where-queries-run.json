@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "type": "flow",
+  "title": "Where an opengrid query runs",
+  "description": "A grid, table or pivot on your page hands its query, as JSON and never as SQL, to a provider, which answers it in one of three ways: with the engine compiled to WebAssembly in the tab or a worker, on an opengrid-server that reads PostgreSQL or another connector, or split between the two by the planner. Every path gives the same answer.",
+  "source": "packages/opengrid/loader.js, crates/opengrid-server, crates/opengrid-planner, docs/guides/where-queries-run.mdx",
+  "width": 1100,
+  "height": 400,
+  "flow": {
+    "lanes": [
+      {
+        "id": "browser",
+        "label": "Browser"
+      },
+      {
+        "id": "server",
+        "label": "Your server"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "page",
+        "label": "Grid, table or pivot",
+        "sublabel": "hands its query to a provider",
+        "kind": "start",
+        "lane": "browser"
+      },
+      {
+        "id": "planner",
+        "label": "Hybrid",
+        "sublabel": "the planner splits the query",
+        "lane": "browser"
+      },
+      {
+        "id": "wasm",
+        "label": "In the tab",
+        "sublabel": "WebAssembly, or a worker",
+        "lane": "browser"
+      },
+      {
+        "id": "server",
+        "label": "On the server",
+        "sublabel": "opengrid-server",
+        "lane": "server"
+      },
+      {
+        "id": "db",
+        "label": "PostgreSQL",
+        "sublabel": "or another connector",
+        "kind": "store",
+        "lane": "server"
+      }
+    ],
+    "edges": [
+      {
+        "from": "page",
+        "to": "wasm"
+      },
+      {
+        "from": "page",
+        "to": "planner"
+      },
+      {
+        "from": "page",
+        "to": "server"
+      },
+      {
+        "from": "planner",
+        "to": "server",
+        "label": "what it can do",
+        "dash": "dashed"
+      },
+      {
+        "from": "planner",
+        "to": "wasm",
+        "label": "the rest",
+        "dash": "dashed"
+      },
+      {
+        "from": "server",
+        "to": "db"
+      }
+    ],
+    "mainPath": [
+      "page",
+      "wasm"
+    ],
+    "orientation": "landscape"
+  }
+}

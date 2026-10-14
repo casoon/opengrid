@@ -55,7 +55,7 @@
 //!    transaction and cursor gone.
 //! 2. **At most `max_concurrent_exports` at once** (its default in
 //!    `Registry::default_concurrent_exports`, why in
-//!    `docs/guides/where-queries-run.md`, "For operators"). One more is a `503`,
+//!    `docs/guides/where-queries-run.mdx`, "For operators"). One more is a `503`,
 //!    code `busy`, before any database work, so exports never take the connections `/query`
 //!    needs.
 //! 3. **PostgreSQL's own backstop**: the transaction sets

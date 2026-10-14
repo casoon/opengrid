@@ -1,0 +1,23 @@
+---
+// Counted from the repository at build time, so the figures cannot go stale.
+const cases = import.meta.glob('../../../crates/opengrid-conformance/cases/*.json');
+const pivotCases = import.meta.glob('../../../crates/opengrid-conformance/pivot-cases/*.json');
+const specs = import.meta.glob<string>('../../../tests/e2e/*.spec.js', {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+});
+const axeSpecs = Object.values(specs).filter((source) => source.includes('@axe-core/playwright'));
+---
+
+<table>
+  <thead>
+    <tr><th scope="col">Suite</th><th scope="col">Files</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Query conformance cases (<code>crates/opengrid-conformance/cases/</code>)</td><td>{Object.keys(cases).length}</td></tr>
+    <tr><td>Pivot conformance cases (<code>crates/opengrid-conformance/pivot-cases/</code>)</td><td>{Object.keys(pivotCases).length}</td></tr>
+    <tr><td>Playwright end-to-end specs (<code>tests/e2e/</code>)</td><td>{Object.keys(specs).length}</td></tr>
+    <tr><td>of them running axe-core over the result</td><td>{axeSpecs.length}</td></tr>
+  </tbody>
+</table>

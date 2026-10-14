@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "type": "flow",
+  "title": "One query through createHybridProvider",
+  "description": "The element's mode attribute, or the provider's mode, picks local, remote, hybrid or auto. The Planner splits the query into the part the source declares it can answer and the part that is left, and hands the plan to onPlan before anything is sent. The remote provider answers its part; when nothing is left, that answer is passed through untouched, otherwise the engine in the tab finishes the rest over it.",
+  "source": "packages/opengrid/loader.js (createHybridProvider), crates/opengrid-planner",
+  "width": 760,
+  "height": 900,
+  "flow": {
+    "lanes": [
+      { "id": "browser", "label": "Browser" },
+      { "id": "server", "label": "Server" }
+    ],
+    "nodes": [
+      { "id": "query", "label": "Query from the element", "sublabel": "JSON, with its mode", "kind": "start", "lane": "browser" },
+      { "id": "plan", "label": "planner.plan", "sublabel": "local, remote, hybrid or auto", "lane": "browser" },
+      { "id": "onplan", "label": "onPlan(plan)", "sublabel": "before anything is sent", "kind": "io", "lane": "browser" },
+      { "id": "remote", "label": "remote.execute", "sublabel": "the source's part", "lane": "server" },
+      { "id": "left", "label": "Anything left?", "sublabel": "plan.client", "kind": "decision", "lane": "browser" },
+      { "id": "finish", "label": "planner.finish", "sublabel": "the engine does the rest", "lane": "browser" },
+      { "id": "through", "label": "Answer passed through", "sublabel": "untouched", "kind": "end", "lane": "browser" },
+      { "id": "done", "label": "Answer", "kind": "end", "lane": "browser" }
+    ],
+    "edges": [
+      { "from": "query", "to": "plan" },
+      { "from": "plan", "to": "onplan" },
+      { "from": "onplan", "to": "remote" },
+      { "from": "remote", "to": "left" },
+      { "from": "left", "to": "through", "label": "no" },
+      { "from": "left", "to": "finish", "label": "yes" },
+      { "from": "finish", "to": "done" }
+    ],
+    "mainPath": ["query", "plan", "onplan", "remote", "left", "finish", "done"],
+    "orientation": "portrait"
+  }
+}
