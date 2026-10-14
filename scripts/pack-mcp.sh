@@ -38,8 +38,11 @@ manifest="$(tar -xzOf "$tarball" package/package.json)"
     echo "$tarball still names a workspace: range" >&2
     exit 1
 }
+# Listed once: `tar | grep -q` would fail under pipefail when grep stops
+# reading before tar has written everything (SIGPIPE).
+contents="$(tar -tzf "$tarball")"
 for file in package/src/server.mjs package/dist/view.html package/LICENSE-MIT package/LICENSE-APACHE; do
-    tar -tzf "$tarball" | grep -qx "$file" || {
+    grep -qx "$file" <<<"$contents" || {
         echo "$tarball has no $file" >&2
         exit 1
     }
