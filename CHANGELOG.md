@@ -842,7 +842,7 @@ tested.
   connection off rather than ending a short file. `Content-Disposition` names
   the file after the source, `X-Total-Count` carries the row count. A million
   rows from PostgreSQL keep the server under 40 MiB (measured in
-  [docs/guides/where-queries-run.md](docs/guides/where-queries-run.md)).
+  [docs/guides/where-queries-run.mdx](docs/guides/where-queries-run.mdx)).
   `createRestProvider(...).export(query, options)` fetches it as a `Blob`, and
   `exportRows` uses a provider's `export` when there is one — one request
   instead of pieces, the same file. No request of the REST or pivot provider

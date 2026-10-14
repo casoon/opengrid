@@ -14,14 +14,19 @@ export default defineConfig({
       repo: 'casoon/opengrid',
       version: '0.13.0',
       license: 'MIT OR Apache-2.0',
-      // Not published yet: no crates.io, npm or docs.rs links until a release exists.
-      packages: [],
+      // On npm; the Rust crates are not on crates.io yet, so no crates.io or docs.rs links.
+      packages: [
+        { label: 'npm', href: 'https://www.npmjs.com/package/@casoon/opengrid' },
+        { label: 'Live demos', href: 'https://og-vanilla.casoon.dev/' },
+      ],
+      mdxComponents: './src/mdx-components.ts',
       docsGroups: {
         overview: 'Overview',
         'getting-started': 'Getting started',
         guides: 'Guides',
       },
-      // CHANGELOG.md has no release yet, only an empty Unreleased section.
+      // CHANGELOG.md writes `## [x.y.z] — date` (em dash) and has package-prefixed releases;
+      // the theme reads `## [x.y.z] - YYYY-MM-DD`. The docs link the file on GitHub instead.
       changelog: false,
       // The examples need the WASM modules in a browser; the demo page runs them live.
       showcase: false,
