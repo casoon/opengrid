@@ -149,6 +149,17 @@ inventory.
       `pnpm release --dry-run` does every check and `npm publish --dry-run`, and publishes
       nothing.
 
+### `@casoon/opengrid-mcp`
+
+The MCP server ([#140](https://github.com/casoon/opengrid/issues/140)) carries the same
+version and comes out with every release: `just set-version` sets it, `publish-dry-run`
+packs it beside the grid (`just mcp-elements`, then `just package-mcp`, which installs the
+tarball as `npx` would and asks it over stdio), and `pnpm release` publishes it after
+`@casoon/opengrid`. `pnpm release --mcp` publishes it alone, under the tag
+`opengrid-mcp-vX.Y.Z`, for a version whose `@casoon/opengrid` is on npm already — the way
+its first release, 0.13.0, went out. Whether a host renders its view is not covered by a
+command; say in the changelog whether one was tried.
+
 ## After
 
 - [ ] Install the published package into an empty project and load a page from it — and

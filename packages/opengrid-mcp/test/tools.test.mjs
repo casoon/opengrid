@@ -121,7 +121,7 @@ test("sync takes the reader's change and hands out the model's view", async () =
   const reader = { sort: [{ field: "qty", direction: "asc" }] };
   const query = { source: "orders", select: ["id", "qty"], sort: [{ field: "qty", direction: "asc" }] };
   const changed = (
-        await call("opengrid_sync", { sessionId, revision: 1, change: { view: reader, query, selected: [0, 1, 2] } })
+    await call("opengrid_sync", { sessionId, revision: 1, change: { view: reader, query, selected: [0, 1, 2] } })
   ).structuredContent;
   assert.equal(changed.revision, 2);
   assert.equal(changed.origin, "reader");
@@ -139,7 +139,7 @@ test("selection reads the selected positions under the grid's query, cut at the 
   const { call } = await connect();
   const { sessionId } = (await call("opengrid_open", { source: "orders" })).structuredContent;
   const query = { source: "orders", select: ["id", "qty"], sort: [{ field: "id", direction: "desc" }] };
-    await call("opengrid_sync", { sessionId, revision: 1, change: { query, selected: [0, 1, 7] } });
+  await call("opengrid_sync", { sessionId, revision: 1, change: { query, selected: [0, 1, 7] } });
 
   const all = (await call("opengrid_selection", { sessionId })).structuredContent;
   assert.deepEqual(
@@ -177,6 +177,37 @@ test("the count of the reader's query is the server's", async () => {
     change: { query: { source: "orders", select: ["note"] } },
   });
   assert.equal(refused.isError, true);
+  // Nor a query of another source.
+  const other = errorOf(
+    await call("opengrid_sync", { sessionId, revision: 2, change: { query: { source: "customers", select: ["id"] } } }),
+  );
+  assert.equal(other.path, "change.query.source");
+  assert.equal((await call("opengrid_describe", { sessionId })).structuredContent.query.source, "orders");
+});
+
+test("a reader's change made before the model's last view is dropped", async () => {
+  const { call } = await connect();
+  const { sessionId } = (await call("opengrid_open", { source: "orders" })).structuredContent;
+  const model = { group: ["country"] };
+  await call("opengrid_set_view", { sessionId, view: model });
+
+  // The grid has not synced since it opened: its change was made on the old view.
+  const stale = (
+    await call("opengrid_sync", {
+      sessionId,
+      revision: 1,
+      change: { view: { sort: [{ field: "qty", direction: "asc" }] }, selected: [0, 1] },
+    })
+  ).structuredContent;
+  assert.equal(stale.origin, "model", "the answer hands the grid the model's view");
+  assert.deepEqual(stale.view, model);
+  assert.equal(stale.revision, 2);
+  assert.equal((await call("opengrid_describe", { sessionId })).structuredContent.selected, 0);
+
+  // Made on the model's view, it is taken.
+  const taken = (await call("opengrid_sync", { sessionId, revision: 2, change: { selected: [0] } })).structuredContent;
+  assert.equal(taken.origin, "reader");
+  assert.equal(taken.revision, 3);
 });
 
 test("without an allow-list every field may be asked, derived ones too", async () => {

@@ -10,6 +10,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
+const { version } = JSON.parse(readFileSync(`${root}package.json`, "utf8"));
 const common = {
   absWorkingDir: root,
   bundle: true,
@@ -23,7 +24,13 @@ const common = {
 await build({ ...common, entryPoints: ["view/elements.js"], outfile: "dist/elements.js" });
 await build({ ...common, entryPoints: ["test/host.js"], outfile: "dist/test-host.js" });
 
-const view = await build({ ...common, entryPoints: ["view/main.js"], write: false });
+// The view names itself to the host with the package's version.
+const view = await build({
+  ...common,
+  entryPoints: ["view/main.js"],
+  define: { OPENGRID_MCP_VERSION: JSON.stringify(version) },
+  write: false,
+});
 // Inline: a `</script` inside the code would end the element early.
 const code = view.outputFiles[0].text.replaceAll("</script", "<\\/script");
 const shell = readFileSync(`${root}view/index.html`, "utf8");
