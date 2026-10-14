@@ -26,7 +26,8 @@ const SYNC_EVERY_MS = 2000;
 
 register();
 
-const app = new App({ name: "opengrid", version: "0.0.0" }, {}, { autoResize: true });
+// OPENGRID_MCP_VERSION: the package's, set by scripts/build-view.mjs.
+const app = new App({ name: "opengrid", version: OPENGRID_MCP_VERSION }, {}, { autoResize: true });
 const main = document.querySelector(".app");
 const button = document.querySelector("#analyse");
 let words = TEXTS.en;

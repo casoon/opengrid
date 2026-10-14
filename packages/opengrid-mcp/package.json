@@ -1,7 +1,6 @@
 {
   "name": "@casoon/opengrid-mcp",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.13.0",
   "description": "opengrid as an MCP App: the grid in a chat client, driven by keyboard and by the model through one view",
   "type": "module",
   "license": "MIT OR Apache-2.0",
@@ -16,7 +15,9 @@
   "files": [
     "src",
     "dist/view.html",
-    "README.md"
+    "README.md",
+    "LICENSE-MIT",
+    "LICENSE-APACHE"
   ],
   "scripts": {
     "build": "node scripts/build-view.mjs",

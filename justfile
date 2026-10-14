@@ -75,6 +75,13 @@ mcp-elements:
     node packages/opengrid-mcp/scripts/patch-glue.mjs packages/opengrid-mcp/build/elements
     pnpm --filter @casoon/opengrid-mcp run build
 
+# Packt `@casoon/opengrid-mcp` wie ein Release nach target/npm-package/ und
+# installiert das Tarball wie `npx`: Start über stdio, Tools, eine Quelle, die
+# View (#140). Braucht `just mcp-elements` vorher.
+package-mcp:
+    bash scripts/pack-mcp.sh
+    bash scripts/check-mcp-install.sh
+
 # Die Tools des MCP-Servers (#140) über einen echten MCP-Client. Braucht das
 # Engine-Modul unter packages/opengrid/engine (`just package`).
 mcp-test:
