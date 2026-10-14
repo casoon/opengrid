@@ -177,7 +177,9 @@ test.describe("in the browser", () => {
     if (browserName === "chromium") {
       let alive = true;
       for (let round = 0; round < 20 && alive; round += 1) {
-        await page.evaluate(() => window.gc());
+        // Async: a collection in a task of its own, with no stack that a stale
+        // pointer could keep the grid alive from (V8 scans the stack conservatively).
+        await page.evaluate(() => window.gc({ type: "major", execution: "async" }));
         await page.waitForTimeout(50);
         alive = await page.evaluate(() => window.__weak.deref() !== undefined);
       }
