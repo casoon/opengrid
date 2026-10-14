@@ -1,3 +1,6 @@
 # Built by `just mcp-elements` (wasm2js) and `pnpm run build` (esbuild).
 build/
 dist/
+# Staged from the repository root by scripts/pack-mcp.sh.
+LICENSE-MIT
+LICENSE-APACHE

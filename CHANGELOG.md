@@ -30,6 +30,21 @@ Two things belong in every release entry and are easy to leave out:
   both databases either way, and a differential test compares the pushdown with the engine on
   a generated tree of 100 000 nodes.
 
+## `@casoon/opengrid-mcp` [0.13.0] — 2026-10-14
+
+**Not yet tried in a host.** No chat client has rendered the view yet — Claude Desktop
+included; the e2e suite runs it in a test host of its own, and the release installs the
+packed tarball and asks it over stdio. **Screen-reader pairings tested: none.**
+
+The first release of the MCP server ([#140](https://github.com/casoon/opengrid/issues/140)):
+opengrid's grid as an MCP App, on `@casoon/opengrid` 0.13.0. The model and the reader work
+on one view; the rows stay with the server. Sources are a CSV with schema or a source of an
+`opengrid-server` (URL and token); six tools (`opengrid_open`, `opengrid_set_view`,
+`opengrid_describe`, `opengrid_selection`, and for the grid only `opengrid_query`,
+`opengrid_sync`). The view ships the elements translated with wasm2js, because the hosts'
+CSP allows no WebAssembly. Published alone, under the tag `opengrid-mcp-v0.13.0`; from the
+next release on it comes out with `@casoon/opengrid`, with the same version.
+
 ## [0.13.0] — 2026-10-10
 
 **Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).

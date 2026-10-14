@@ -26,7 +26,8 @@ const SYNC_EVERY_MS = 2000;
 
 register();
 
-const app = new App({ name: "opengrid", version: "0.0.0" }, {}, { autoResize: true });
+// OPENGRID_MCP_VERSION: the package's, set by scripts/build-view.mjs.
+const app = new App({ name: "opengrid", version: OPENGRID_MCP_VERSION }, {}, { autoResize: true });
 const main = document.querySelector(".app");
 const button = document.querySelector("#analyse");
 let words = TEXTS.en;
@@ -58,8 +59,13 @@ function tell(summary) {
 async function sync(change) {
   if (!session) return;
   const { structuredContent: answer } = await tool("opengrid_sync", { sessionId: session.sessionId, revision, change });
-  if (answer.revision > revision && answer.origin === "model" && !change) {
-    // The model's view: one query, one announcement, the focus where it is.
+  const fromModel = answer.revision > revision && answer.origin === "model";
+  // Before the view is applied: what the grid reports while applying it is
+  // made on the model's view, not before it.
+  revision = answer.revision;
+  if (fromModel) {
+    // The model's view — also when the server dropped this change as made
+    // before it: one query, one announcement, the focus where it is.
     applying = true;
     try {
       set_view(grid, answer.view, { notice: words.byAssistant });
@@ -67,7 +73,6 @@ async function sync(change) {
       applying = false;
     }
   }
-  revision = answer.revision;
   if (change) tell(answer.summary);
 }
 

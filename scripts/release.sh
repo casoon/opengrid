@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
-# Publishes a release: the npm tarball that CI built for the release commit,
-# then the tag. One package: the React, Vue and Svelte components are its
-# subpaths (#27).
+# Publishes a release: the npm tarballs that CI built for the release commit,
+# then the tag. `@casoon/opengrid` — the React, Vue and Svelte components are
+# its subpaths (#27) — and `@casoon/opengrid-mcp` (#140), with one version.
+#
+# `--mcp` publishes `@casoon/opengrid-mcp` alone, under its own tag
+# `opengrid-mcp-vX.Y.Z`: for a version whose `@casoon/opengrid` is on npm
+# already (0.13.0, its first release).
 #
 # What is published is what CI checked: the `publish-dry-run` job packs with the
 # pinned toolchain and uploads the tarballs as the artifact `npm-packages`, and
@@ -10,27 +14,37 @@
 #
 # Usage: pnpm release            (asks before anything is published)
 #        pnpm release --dry-run  (every check, `npm publish --dry-run`, no tag)
+#        pnpm release --mcp [--dry-run]
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
 dry_run=false
-case "${1:-}" in
-    "") ;;
-    --dry-run) dry_run=true ;;
-    *) echo "usage: pnpm release [--dry-run]" >&2; exit 2 ;;
-esac
+mcp_only=false
+for arg in "$@"; do
+    case "$arg" in
+        --dry-run) dry_run=true ;;
+        --mcp) mcp_only=true ;;
+        *) echo "usage: pnpm release [--mcp] [--dry-run]" >&2; exit 2 ;;
+    esac
+done
 
 fail() { echo "release: $*" >&2; exit 1; }
 
 version=$(node -p 'require("./packages/opengrid/package.json").version')
-tag="v$version"
+mcp_version=$(node -p 'require("./packages/opengrid-mcp/package.json").version')
+[ "$mcp_version" = "$version" ] || fail "opengrid-mcp is $mcp_version, opengrid $version — run \`just set-version\`"
 dest="target/release"
 
-# The artifact holds the tarball at its root: CI uploads `target/npm-package/*.tgz`.
-packages=(
-    "casoon-opengrid-$version.tgz"
-)
+# The artifact holds the tarballs at its root: CI uploads `target/npm-package/*.tgz`.
+# In this order: the MCP server depends on the grid of its version.
+if $mcp_only; then
+    tag="opengrid-mcp-v$version"
+    packages=("casoon-opengrid-mcp-$version.tgz")
+else
+    tag="v$version"
+    packages=("casoon-opengrid-$version.tgz" "casoon-opengrid-mcp-$version.tgz")
+fi
 
 # --- The commit -------------------------------------------------------------
 
@@ -44,6 +58,10 @@ if git rev-parse -q --verify "refs/tags/$tag" >/dev/null || [ -n "$(git ls-remot
     fail "$tag exists already"
 fi
 npm whoami >/dev/null 2>&1 || fail "not logged in to npm — run \`npm login\`"
+if $mcp_only; then
+    npm view "@casoon/opengrid@$version" version >/dev/null 2>&1 \
+        || fail "@casoon/opengrid@$version is not on npm — release both, without --mcp"
+fi
 
 # --- The tarballs CI built for it --------------------------------------------
 

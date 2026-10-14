@@ -21,6 +21,9 @@ export class Sessions {
       // Bumped by every change; `origin` says whose it was.
       revision: 1,
       origin: "model",
+      // The revision of the model's last view: a reader's change made on an
+      // older one was made on a view the reader no longer has.
+      modelRevision: 1,
     };
     this.sessions.set(session.id, session);
     return session;
@@ -34,6 +37,12 @@ export class Sessions {
   setView(session, view, query, total) {
     Object.assign(session, { view, query, total, selected: [], origin: "model" });
     session.revision += 1;
+    session.modelRevision = session.revision;
+  }
+
+  /** Whether a change made at `revision` was made before the model's last view. */
+  isStale(session, revision) {
+    return revision < session.modelRevision;
   }
 
   /** What the reader did, as the rendered grid reports it. */

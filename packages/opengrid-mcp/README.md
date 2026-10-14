@@ -28,6 +28,10 @@ Developer → Edit Config**:
 Restart the app, then ask for a source: *"Open the orders as a grid."* Claude
 asks once whether it may show the app.
 
+Not yet tried in Claude Desktop or any other host: the tests run the view in a
+test host of their own. A report of how it behaves in yours is welcome as an
+[issue](https://github.com/casoon/opengrid/issues).
+
 | Client | |
 |---|---|
 | Claude Desktop | local, as above |
@@ -88,8 +92,9 @@ reached by URL and token:
 
 The server's rules hold as they are: its token, its allowed fields, its row
 filter. There is no `fields` for such a source; the server narrows. The source
-is described once when the MCP server starts — a server that cannot be reached
-or refuses the token stops the start with a sentence.
+is described once when the MCP server starts. A server that refuses the token
+stops the start with a sentence; one that cannot be reached does not — its
+source answers `unavailable` and is described when it is next opened.
 
 ## Tools
 
