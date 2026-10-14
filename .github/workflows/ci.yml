@@ -153,8 +153,9 @@ jobs:
 
   publish-dry-run:
     runs-on: ubuntu-latest
-    # About a minute with a warm cache; a cold Rust build takes several.
-    timeout-minutes: 30
+    # About a minute with a warm cache; a cold Rust build takes several, and
+    # the MCP view's nightly build of std (below) some more.
+    timeout-minutes: 45
     # The release path, walked without releasing (plan point 40, step 6). It
     # packs `@casoon/opengrid` exactly as `just package` does and asks npm what
     # it would send. A dry run needs no token, so this runs on every push and
@@ -163,8 +164,17 @@ jobs:
     # built with the pinned binaryen and checked here, and the release
     # publishes exactly it (docs/releasing.md → The release). The React, Vue
     # and Svelte components are its subpaths (#27), not packages of their own.
+    # `@casoon/opengrid-mcp` (#140) is packed beside it, installed as npx would
+    # and asked over stdio, and goes into the same artifact.
     steps:
       - uses: actions/checkout@v4
+      # The MCP view's elements need wasm2js and so nightly with rust-src, as
+      # in `e2e`; installed before stable, which stays the default.
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-06-02
+          components: rust-src
+          targets: wasm32-unknown-unknown
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
@@ -182,13 +192,22 @@ jobs:
         run: |
           curl -fsSL "https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}/binaryen-version_${BINARYEN_VERSION}-x86_64-linux.tar.gz" | tar -xz
           echo "$PWD/binaryen-version_${BINARYEN_VERSION}/bin" >> "$GITHUB_PATH"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.26.0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
       - run: just package
       - name: npm publish --dry-run
         run: npm publish --dry-run
         working-directory: target/npm-package/package
+      - run: just mcp-elements
+      - run: just package-mcp
+      - name: npm publish --dry-run (opengrid-mcp)
+        run: npm publish --dry-run target/npm-package/casoon-opengrid-mcp-*.tgz
       - uses: actions/upload-artifact@v4
         with:
           name: npm-packages

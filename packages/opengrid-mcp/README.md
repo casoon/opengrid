@@ -28,6 +28,10 @@ Developer → Edit Config**:
 Restart the app, then ask for a source: *"Open the orders as a grid."* Claude
 asks once whether it may show the app.
 
+Not yet tried in Claude Desktop or any other host: the tests run the view in a
+test host of their own. A report of how it behaves in yours is welcome as an
+[issue](https://github.com/casoon/opengrid/issues).
+
 | Client | |
 |---|---|
 | Claude Desktop | local, as above |
