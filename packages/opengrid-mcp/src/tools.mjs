@@ -109,6 +109,7 @@ export function registerTools(server, data, sessions) {
       _meta: { ui: { resourceUri: GRID_URI } },
     },
     guarded(async ({ source, view }) => {
+      await data.ready(source);
       const query = data.viewQuery(source, view ?? {});
       const total = await data.count(query);
       const session = sessions.open(source, view ?? {}, query, total);
@@ -227,7 +228,8 @@ export function registerTools(server, data, sessions) {
     "opengrid_sync",
     {
       title: "Sync the grid",
-      description: "Reports the reader's change and answers with the session's view and revision.",
+      description:
+        "Reports the reader's change and answers with the session's view and revision. A change made before the model's last view is dropped.",
       inputSchema: z.object({
         sessionId: z.string(),
         revision: z.number().int().min(0),
@@ -235,19 +237,22 @@ export function registerTools(server, data, sessions) {
           .object({
             view: z.record(z.string(), z.unknown()).optional(),
             query: z.record(z.string(), z.unknown()).nullable().optional(),
-            
             selected: z.array(z.number().int().min(0)).optional(),
           })
           .optional(),
       }),
       _meta: { ui: { visibility: ["app"] } },
     },
-    guarded(async ({ sessionId, change }) => {
+    guarded(async ({ sessionId, revision, change }) => {
       const session = sessionOf(sessions, sessionId);
-            if (change) {
+      // A stale change is dropped; the answer hands the grid the model's view.
+      if (change && !sessions.isStale(session, revision)) {
         // The count of a new query is the server's to say, not the view's.
         const query = change.query ?? undefined;
-        const total = query ? (await data.count(query)) : undefined;
+        if (query && query.source !== session.source) {
+          throw new DataError("validation", `the session's source is ${session.source}`, "change.query.source");
+        }
+        const total = query ? await data.count(query) : undefined;
         sessions.readerChanged(session, { ...change, query, total });
       }
       return answer({

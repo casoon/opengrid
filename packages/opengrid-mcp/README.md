@@ -88,8 +88,9 @@ reached by URL and token:
 
 The server's rules hold as they are: its token, its allowed fields, its row
 filter. There is no `fields` for such a source; the server narrows. The source
-is described once when the MCP server starts — a server that cannot be reached
-or refuses the token stops the start with a sentence.
+is described once when the MCP server starts. A server that refuses the token
+stops the start with a sentence; one that cannot be reached does not — its
+source answers `unavailable` and is described when it is next opened.
 
 ## Tools
 

@@ -45,19 +45,19 @@ function refusal(status, text) {
  * its row filter are the server's; here it is described once and asked by
  * query.
  */
-async function serverSource(name, server) {
+async function serverSource(name, server, token) {
   const base = server.url.replace(/\/$/, "");
   const remote = server.source ?? name;
-  const token = server.tokenEnv ? process.env[server.tokenEnv] : server.token;
-  if (server.tokenEnv && !token) {
-    throw new Error(`opengrid-mcp: source ${name}: the environment variable ${server.tokenEnv} is not set`);
-  }
   const headers = token ? { Authorization: `Bearer ${token}` } : {};
   let response;
   try {
     response = await fetch(`${base}/source/${encodeURIComponent(remote)}`, { headers, redirect: "error" });
   } catch (error) {
-    throw new Error(`opengrid-mcp: source ${name}: ${base} cannot be reached: ${error.cause?.message ?? error.message}`);
+    const unreachable = new Error(
+      `opengrid-mcp: source ${name}: ${base} cannot be reached: ${error.cause?.message ?? error.message}`,
+    );
+    unreachable.unreachable = true;
+    throw unreachable;
   }
   const text = await response.text();
   if (!response.ok) {
@@ -79,13 +79,19 @@ async function serverSource(name, server) {
 }
 
 export class Data {
-  /** Reads the sources — a server source is described once, here. */
+  /**
+   * Reads the sources. A server source is described once, here — or, when its
+   * server cannot be reached now, when it is next asked for (`ready`).
+   */
   static async load(config) {
     const data = new Data();
     for (const [name, source] of Object.entries(config.sources)) {
       if (source.server) {
-        const { schema, run } = await serverSource(name, source.server);
-        data.add(name, source, schema, schema.fields.map((field) => field.name), run);
+        const { tokenEnv } = source.server;
+        if (tokenEnv && !process.env[tokenEnv]) {
+          throw new Error(`opengrid-mcp: source ${name}: the environment variable ${tokenEnv} is not set`);
+        }
+        data.waiting.set(name, source);
       } else {
         const schema = JSON.parse(readFileSync(source.schema, "utf8"));
         const allowed = source.fields ?? schema.fields.map((field) => field.name);
@@ -97,6 +103,14 @@ export class Data {
         data.add(name, source, schema, allowed, async (query) => data.engine.execute(JSON.stringify(query)));
       }
     }
+    // A server that is down keeps the others from nothing: its source says so
+    // when asked. One that refuses is configured wrong and stops the start.
+    for (const name of data.waiting.keys()) {
+      await data.ready(name).catch((error) => {
+        if (error.code !== "unavailable") throw error;
+        console.error(error.message);
+      });
+    }
     return data;
   }
 
@@ -104,6 +118,31 @@ export class Data {
     this.engine = new Engine();
     this.checker = new Engine();
     this.sources = new Map();
+    // Server sources not described yet, and those being described now.
+    this.waiting = new Map();
+    this.describing = new Map();
+  }
+
+  /** Describes a waiting server source; a no-op for any other name. */
+  async ready(name) {
+    const source = this.waiting.get(name);
+    if (!source) return;
+    if (!this.describing.has(name)) {
+      const { server } = source;
+      const token = server.tokenEnv ? process.env[server.tokenEnv] : server.token;
+      const describing = serverSource(name, server, token)
+        .then(({ schema, run }) => {
+          this.add(name, source, schema, schema.fields.map((field) => field.name), run);
+          this.waiting.delete(name);
+        })
+        .finally(() => this.describing.delete(name));
+      this.describing.set(name, describing);
+    }
+    try {
+      await this.describing.get(name);
+    } catch (error) {
+      throw new DataError(error.unreachable ? "unavailable" : "backend", error.message, "source");
+    }
   }
 
   /**
@@ -127,7 +166,7 @@ export class Data {
 
   /** The names of the sources. */
   names() {
-    return [...this.sources.keys()];
+    return [...this.sources.keys(), ...this.waiting.keys()];
   }
 
   source(name) {
