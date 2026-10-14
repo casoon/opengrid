@@ -71,7 +71,13 @@ test("a token the server refuses stops the start, with a sentence", async () => 
   await expect(
     openClient({ sources: { orders: { server: { url: "http://127.0.0.1:8082", token: "wrong" } } } }),
   ).rejects.toThrow(/opengrid-mcp: source orders: http:\/\/127\.0\.0\.1:8082 refused/);
-  await expect(
-    openClient({ sources: { orders: { server: { url: "http://127.0.0.1:9", token: "x" } } } }),
-  ).rejects.toThrow(/cannot be reached/);
+});
+
+test("a server that cannot be reached does not stop the start; its source says so", async () => {
+  const client = await openClient({ sources: { orders: { server: { url: "http://127.0.0.1:9", token: "x" } } } });
+  const down = await client.callTool({ name: "opengrid_open", arguments: { source: "orders" } });
+  expect(down.isError).toBe(true);
+  const { error } = JSON.parse(down.content[0].text);
+  expect(error.code).toBe("unavailable");
+  expect(error.message).toMatch(/cannot be reached/);
 });
