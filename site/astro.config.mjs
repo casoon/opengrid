@@ -11,6 +11,7 @@ export default defineConfig({
       name: 'opengrid',
       description:
         'A portable Rust/WASM data and query engine, with an accessible data grid, table and pivot delivered as Web Components.',
+      tagline: 'Rust/WASM data grid as Web Components',
       repo: 'casoon/opengrid',
       version: '0.13.0',
       license: 'MIT OR Apache-2.0',
