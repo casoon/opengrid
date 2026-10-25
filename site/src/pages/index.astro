@@ -11,6 +11,7 @@ import {
   Quickstart,
 } from '@casoon/pages-theme/components';
 import Base from '@casoon/pages-theme/layouts/Base.astro';
+import config from 'virtual:casoon-pages/config';
 import { url } from '@casoon/pages-theme/url';
 import Diagram from '../components/Diagram.astro';
 
@@ -38,7 +39,7 @@ const page = `<opengrid-grid label="Orders" datasource="orders"
     />
     <Badges>
       <Badge>MIT OR Apache-2.0</Badge>
-      <Badge>npm 0.13.0</Badge>
+      <Badge>npm {config.version}</Badge>
       <Badge>React · Vue · Svelte · plain HTML</Badge>
     </Badges>
     <img
