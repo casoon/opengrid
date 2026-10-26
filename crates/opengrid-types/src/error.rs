@@ -104,6 +104,8 @@ pub enum ValueError {
     InvalidDecimalType { precision: u8, scale: u8 },
     /// An integer value does not fit the target type.
     OutOfRange,
+    /// A list holds a NULL; its elements are never NULL (issue #185).
+    NullInList,
 }
 
 impl fmt::Display for ValueError {
@@ -122,6 +124,7 @@ impl fmt::Display for ValueError {
                 write!(f, "invalid decimal type decimal({precision}, {scale})")
             }
             ValueError::OutOfRange => write!(f, "value out of range"),
+            ValueError::NullInList => write!(f, "a list holds no NULL"),
         }
     }
 }
@@ -140,6 +143,8 @@ impl fmt::Display for DataType {
             DataType::Utf8 => f.write_str("utf8"),
             DataType::Date => f.write_str("date"),
             DataType::Timestamp => f.write_str("timestamp"),
+            DataType::ListUtf8 => f.write_str("list<utf8>"),
+            DataType::ListInt64 => f.write_str("list<int64>"),
         }
     }
 }

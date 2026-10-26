@@ -1,0 +1,27 @@
+{
+  "id": "l1-has-matches-a-whole-element-not-a-part",
+  "rule": "L1",
+  "query": {
+    "source": "lists",
+    "select": [
+      "id"
+    ],
+    "filter": {
+      "field": "tags",
+      "op": "has",
+      "value": "a"
+    },
+    "sort": [
+      {
+        "field": "id"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "id"
+    ],
+    "rows": []
+  },
+  "ordered": true
+}

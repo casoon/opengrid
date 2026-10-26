@@ -29,6 +29,7 @@ fn named(value: &Value) -> String {
         Value::Date(date) => format!("{:?}", date.to_string()),
         Value::Timestamp(timestamp) => format!("{:?}", timestamp.to_string()),
         Value::Null => "null".to_owned(),
+        Value::List(_) => opengrid_json::ToJson::to_json(value).to_string(),
     }
 }
 

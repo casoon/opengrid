@@ -109,12 +109,12 @@ test("a marks sheet edits under the policy: choices, read-only, the event", asyn
   await page.keyboard.press("Enter");
   expect(await shadow(page, (root) => root.querySelector('[part="editor"]'))).toBeNull();
 
-  // A listed column opens a select, and the commit reaches the page.
+  // A listed column opens a combobox, and the commit reaches the page.
   await focus(1, 1);
   await page.keyboard.press("Enter");
   const editor = page.locator('opengrid-grid [part="editor"]');
-  await expect(editor).toHaveJSProperty("tagName", "SELECT");
-  await editor.selectOption("Gamma");
+  await expect(editor).toHaveAttribute("data-combo", "single");
+  await page.keyboard.type("Gamma");
   await page.keyboard.press("Enter");
   await expect.poll(() => page.evaluate(() => window.__changes)).toEqual([
     expect.objectContaining({ row: 1, column: "customer", value: "Gamma" }),

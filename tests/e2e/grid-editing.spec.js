@@ -21,8 +21,21 @@ async function focusCell(page, row, col) {
 
 async function editor(page) {
   return page.evaluate(() => {
-    const node = document.querySelector("opengrid-grid").shadowRoot.querySelector('[part="editor"]');
+    const root = document.querySelector("opengrid-grid").shadowRoot;
+    const node = root.querySelector('[part="editor"]');
     if (!node) return null;
+    // A column with choices is edited in a combobox (issue #185): its group
+    // holds the text field, and the options show while it filters.
+    if (node.hasAttribute("data-combo")) {
+      const input = node.querySelector("input");
+      return {
+        tag: "combobox",
+        value: input.value,
+        focused: root.activeElement === input,
+        shown: [...node.querySelectorAll('[role="option"]:not([hidden])')].map((option) => option.textContent),
+        choices: [...node.querySelectorAll('[role="option"]')].map((option) => option.textContent),
+      };
+    }
     return {
       tag: node.tagName.toLowerCase(),
       type: node.getAttribute("type"),
@@ -151,15 +164,15 @@ test("an empty editor clears a nullable cell and is refused on a required one", 
   expect(await cellText(page, 1, 0)).toBe(before);
 });
 
-test("a boolean edits as a checkbox and a listed column as a select", async ({ page }) => {
+test("a boolean edits as a checkbox and a listed column as a combobox", async ({ page }) => {
   await open(page);
 
-  // `customer` is Utf8, but the page supplied choices — so it is a select.
+  // `customer` is Utf8, but the page supplied choices — so it is a combobox.
   await focusCell(page, 0, 1);
   await page.keyboard.press("Enter");
-  const select = await editor(page);
-  expect(select.tag).toBe("select");
-  expect(select.options).toEqual(["Alpha", "Beta", "Gamma"]);
+  const combo = await editor(page);
+  expect(combo.tag).toBe("combobox");
+  expect(combo.choices).toEqual(["Alpha", "Beta", "Gamma"]);
   await page.keyboard.press("Escape");
 
   // `id` is an integer: a number field with a step of one.
@@ -267,32 +280,41 @@ test("a typed character opens the editor and replaces the value", async ({ page 
   expect(changes[0].value).toMatch(/^75(\.00)?$/);
 });
 
-test("a typed character picks the one choice that fits, and Enter takes it", async ({ page }) => {
+test("a typed character filters the choices, Enter takes the one that fits and commits", async ({ page }) => {
   await open(page);
   const before = await cellText(page, 1, 1);
 
   await focusCell(page, 1, 1);
   await page.keyboard.press("g");
-  await expect.poll(() => editor(page)).toMatchObject({ tag: "select", value: "Gamma", focused: true });
-  // Picked, not taken: nothing reached the page yet.
+  await expect.poll(() => editor(page)).toMatchObject({ tag: "combobox", value: "g", shown: ["Gamma"], focused: true });
+  // Typed, not taken: nothing reached the page yet.
   expect(await page.evaluate(() => window.__changes.length)).toBe(0);
+  await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");
   await expect.poll(() => editor(page)).toBeNull();
   expect(await cellText(page, 1, 1)).toBe(before);
 
-  // A character no choice starts with keeps the cell's own value.
+  // A character no choice contains leaves none, and Enter refuses it with the reason.
   await focusCell(page, 1, 1);
   await page.keyboard.press("x");
-  await expect.poll(() => editor(page)).toMatchObject({ tag: "select", value: before });
+  await expect.poll(() => editor(page)).toMatchObject({ tag: "combobox", value: "x", shown: [] });
+  await page.keyboard.press("Enter");
+  await expect
+    .poll(() => page.evaluate(() => document.querySelector("opengrid-grid").shadowRoot.querySelector('[part="status"]').textContent))
+    .toContain("“x” is not one of the choices");
+  expect(await editor(page)).not.toBeNull();
+  expect(await page.evaluate(() => window.__changes.length)).toBe(0);
+  await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");
 
   await focusCell(page, 1, 1);
   await page.keyboard.press("B");
-  await expect.poll(() => editor(page)).toMatchObject({ value: "Beta" });
+  await expect.poll(() => editor(page)).toMatchObject({ shown: ["Beta"] });
   await page.keyboard.press("Enter");
   await expect.poll(() => page.evaluate(() => window.__changes)).toEqual([
     expect.objectContaining({ row: 1, column: "customer", value: "Beta" }),
   ]);
+  await expect.poll(() => editor(page)).toBeNull();
 });
 
 test("F2 opens the editor on the cell's value, as Enter does", async ({ page }) => {

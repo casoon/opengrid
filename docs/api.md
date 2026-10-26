@@ -36,7 +36,7 @@ instead.
 | `set_provider(host, provider)` | Attaches the data source. `provider.execute(queryJson, mode, { signal })` answers the result as JSON or in the [binary form](#the-binary-result-form) (`Uint8Array`, `ArrayBuffer`), or a Promise of either; the third argument is optional, and so is everything else. |
 | `set_texts(host, texts)` | Overrides any subset of the [texts](#texts). Call it **before** `set_provider` and the component renders the right words from its first paint. |
 | `set_formats(host, formats)` | Per-column display formatting — see [`<opengrid-grid>`](#opengrid-grid). |
-| `set_choices(host, choices)` | Per-column editor choices: `{ customer: ["Alpha", "Beta"] }` turns that column's editor into a `<select>`. |
+| `set_choices(host, choices)` | Per-column editor choices: `{ customer: ["Alpha", "Beta"] }` turns that column's editor into a type-ahead combobox; an entry may be `{ value, label }`. A list column is edited only with choices — see [Lists](#lists). |
 | `get_view(host)` / `set_view(host, view, options?)` | Reads and applies the whole [view](#the-view) in one step; `options.notice` is said with the result. |
 | `set_columns(host, columns)` | Per-column presentation — see [`<opengrid-grid>`](#opengrid-grid). |
 | `get_query(host)` | The query of the current view, without a window — what an [export](#exporting-the-view) sends. In a [tree](#tree), every node flat (`tree.flat`), with its level and path. |
@@ -512,6 +512,33 @@ page loads fresh rows (`loadRows`) and the saved ones are the source's from then
 A field that is not nullable in the schema is marked required in the new row. Adding without a
 value for one is refused: nothing fires, the cell is marked invalid and the status line says
 `{column} needs a value`. Off while grouped, in a tree and with `page-size`.
+
+### Lists
+
+A column of type `list<utf8>` or `list<int64>` holds an ordered list of values. The cell shows them
+as **chips** (`part="list-item"` inside `part="list"`; `role="list"` and `listitem`). The editor is
+the ARIA **combobox** over the page's `set_choices`: the text field filters the choices as you type
+(`aria-expanded`, `aria-activedescendant`, the number of choices said in the status line), `↓`/`↑`
+move over them, `Enter` picks, `Backspace` on an empty field takes the last chip back, and `Enter` on
+an empty field commits. A text that is none of the choices is **refused** with the reason under the
+editor, never dropped. `{ value, label }` pairs show the label in chips and options and give the
+page the value.
+
+```js
+loader.module.set_choices(grid, {
+  subjects: [{ value: "m", label: "Maths" }, { value: "p", label: "Physics" }],
+});
+```
+
+A list column with no choices has no editor. Emptied, a list becomes the empty list — a NULL cell
+stays NULL if nothing was picked. The `opengrid-cell-change` for a list column carries the JSON
+array as its `value`. A plain column with choices uses the same combobox in place of the old
+`<select>`: one pick, committed with it.
+
+Filtering a list column: **contains** (`has`), **contains all** (`has_all`, values separated by
+commas) and **is empty** (`is_empty`), besides the null checks. It is not sorted, grouped or
+faceted; its only aggregate is `count`. In CSV a list is the JSON array in the cell; see
+[Query semantics](../guides/query-semantics/) for what a list is.
 
 ### Undo and redo
 
@@ -1200,7 +1227,7 @@ theme that animates a part.
 `editor`, `empty`, `empty-reset`, `empty-text`, `facet`, `facet-bounds`, `facet-cost`, `facet-count`,
 `facet-pill`, `facet-pills`, `facet-value`, `facets`, `facets-head`, `facets-toggle`, `filter`,
 `filter-clear`, `filter-dialog`, `filter-operator`, `filter-row-toggle`, `filter-value`, `footer`,
-`field-group`, `field-menu`, `group-mark`, `group-toggle`, `grouping-menu`, `header`, `layout`, `menu-label`, `operator-menu`, `page-first`, `page-label`, `page-last`, `page-next`,
+`field-group`, `field-menu`, `group-mark`, `group-toggle`, `grouping-menu`, `header`, `layout`, `list`, `list-item`, `list-item-remove`, `listbox`, `menu-label`, `operator-menu`, `page-first`, `page-label`, `page-last`, `page-next`,
 `page-previous`, `pager`, `paste-apply`, `paste-discard`, `paste-preview`, `paste-summary`, `row`, `row-header`, `search`, `search-hint`, `search-input`, `search-list`,
 `select`, `select-all`, `select-mark`, `sort-button`, `sort-direction`, `sort-index`, `source`, `status`,
 `table`, `toolbar`, `total-row`, `validation`, `viewport`.
@@ -1308,7 +1335,11 @@ loader.module.set_texts(host, { lang: "de", loading: "Wird geladen …" });
 | `queryWrongOperator` | `{column} does not take {operator}` | `{column}`, `{operator}` |
 | `emptyFiltered` / `emptySource` | `No row matches these filters.` / `There are no rows.` | |
 | `emptyReset` | `Reset filters` | |
-| `operators` | the ten filter operators, keyed by wire token | |
+| `operators` | the thirteen filter operators, keyed by wire token (`has`, `has_all` and `is_empty` are the list's) | |
+| `choicesOne` / `choicesOther` | `1 choice` / `{count} choices` — said while typing in a combobox | `{count}` |
+| `choiceRefused` | `“{value}” is not one of the choices` | `{value}` |
+| `listItemAdded` / `listItemRemoved` / `listItemRemove` | `{value} added` / `{value} removed` / `Remove {value}` — the chip's button | `{value}` |
+| `typeList` | `list` — the type beside a suggested column | |
 | `filterInvalid` | `{column}: {value} is not a value for this column` | `{column}`, `{value}` |
 | `cellRequired` | `{column} needs a value` | `{column}` |
 | `validationWarning` / `validationError` | `Warning: {message}` / `Error: {message}` | `{message}` |

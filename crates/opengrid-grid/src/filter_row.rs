@@ -34,6 +34,8 @@ pub enum FilterOp {
     Cmp(CmpOp),
     IsNull,
     IsNotNull,
+    /// The list is empty (issue #185): takes no value.
+    IsEmpty,
 }
 
 impl FilterOp {
@@ -42,6 +44,7 @@ impl FilterOp {
         match token {
             "is_null" => Some(FilterOp::IsNull),
             "is_not_null" => Some(FilterOp::IsNotNull),
+            "is_empty" => Some(FilterOp::IsEmpty),
             other => CmpOp::parse(other).map(FilterOp::Cmp),
         }
     }
@@ -52,6 +55,7 @@ impl FilterOp {
             FilterOp::Cmp(op) => op.as_str(),
             FilterOp::IsNull => "is_null",
             FilterOp::IsNotNull => "is_not_null",
+            FilterOp::IsEmpty => "is_empty",
         }
     }
 }
@@ -99,11 +103,26 @@ pub fn filter_expr(
         match entry.op {
             FilterOp::IsNull => comparisons.push(FilterExpr::IsNull { field }),
             FilterOp::IsNotNull => comparisons.push(FilterExpr::IsNotNull { field }),
+            FilterOp::IsEmpty => comparisons.push(FilterExpr::IsEmpty { field }),
             FilterOp::Cmp(op) => {
                 if entry.value.trim().is_empty() {
                     continue;
                 }
-                match literal(&entry.value, column.data_type) {
+                // `has_all` takes the elements as a person writes them: separated
+                // by commas (issue #185). Each one is read as an element.
+                let typed = if op == CmpOp::HasAll {
+                    entry
+                        .value
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|part| !part.is_empty())
+                        .map(|part| literal(part, column.data_type))
+                        .collect::<Option<Vec<_>>>()
+                        .map(opengrid_json::Json::Array)
+                } else {
+                    literal(&entry.value, column.data_type)
+                };
+                match typed {
                     Some(value) => comparisons.push(FilterExpr::Cmp { field, op, value }),
                     None => problems.push(FilterProblem {
                         column: entry.column.clone(),
@@ -173,5 +192,7 @@ pub fn literal(text: &str, data_type: DataType) -> Option<opengrid_json::Json> {
             let ok = text.len() >= 20 && text.ends_with('Z') && text.contains('T');
             ok.then(|| opengrid_json::Json::String(text.to_owned()))
         }
+        // What a person types for a list column is one of its elements (issue #185).
+        DataType::ListUtf8 | DataType::ListInt64 => literal(text, data_type.element()?),
     }
 }

@@ -27,6 +27,19 @@ pub enum Values {
     Date(Vec<i32>),
     /// Microseconds since 1970-01-01T00:00:00Z (rule S9).
     Timestamp(Vec<i64>),
+    /// Lists of integers (issue #185): all elements of the column in one
+    /// buffer; list `i` is `items[offsets[i]..offsets[i + 1]]`.
+    ListInt64 {
+        offsets: Vec<u32>,
+        items: Vec<i64>,
+    },
+    /// Lists of strings: list `i` is the elements `offsets[i]..offsets[i + 1]`,
+    /// and element `k` is `text[item_offsets[k]..item_offsets[k + 1]]`.
+    ListUtf8 {
+        offsets: Vec<u32>,
+        item_offsets: Vec<u32>,
+        text: String,
+    },
 }
 
 impl Values {
@@ -46,6 +59,23 @@ impl Values {
             }
             DataType::Date => Values::Date(Vec::with_capacity(capacity)),
             DataType::Timestamp => Values::Timestamp(Vec::with_capacity(capacity)),
+            DataType::ListInt64 => {
+                let mut offsets = Vec::with_capacity(capacity + 1);
+                offsets.push(0);
+                Values::ListInt64 {
+                    offsets,
+                    items: Vec::new(),
+                }
+            }
+            DataType::ListUtf8 => {
+                let mut offsets = Vec::with_capacity(capacity + 1);
+                offsets.push(0);
+                Values::ListUtf8 {
+                    offsets,
+                    item_offsets: vec![0],
+                    text: String::new(),
+                }
+            }
         }
     }
 
@@ -57,6 +87,9 @@ impl Values {
             Values::Decimal(values) => values.len(),
             Values::Utf8 { offsets, .. } => offsets.len() - 1,
             Values::Date(values) => values.len(),
+            Values::ListInt64 { offsets, .. } | Values::ListUtf8 { offsets, .. } => {
+                offsets.len() - 1
+            }
         }
     }
 
@@ -69,6 +102,10 @@ impl Values {
             Values::Decimal(values) => values.push(0),
             Values::Utf8 { offsets, text } => offsets.push(text.len() as u32),
             Values::Date(values) => values.push(0),
+            // The empty list: the same end as the one before.
+            Values::ListInt64 { offsets, .. } | Values::ListUtf8 { offsets, .. } => {
+                offsets.push(offsets.last().copied().unwrap_or(0));
+            }
         }
     }
 
@@ -100,6 +137,44 @@ impl Values {
             Values::Timestamp(values) => {
                 Values::Timestamp(positions.map(|at| values[at]).collect())
             }
+            Values::ListInt64 { offsets, items } => {
+                let mut out_offsets = Vec::with_capacity(offsets.len());
+                out_offsets.push(0);
+                let mut out_items = Vec::new();
+                for at in positions {
+                    out_items
+                        .extend_from_slice(&items[offsets[at] as usize..offsets[at + 1] as usize]);
+                    out_offsets.push(out_items.len() as u32);
+                }
+                Values::ListInt64 {
+                    offsets: out_offsets,
+                    items: out_items,
+                }
+            }
+            Values::ListUtf8 {
+                offsets,
+                item_offsets,
+                text,
+            } => {
+                let mut out_offsets = Vec::with_capacity(offsets.len());
+                out_offsets.push(0);
+                let mut out_item_offsets = vec![0];
+                let mut out_text = String::new();
+                for at in positions {
+                    for item in offsets[at] as usize..offsets[at + 1] as usize {
+                        out_text.push_str(
+                            &text[item_offsets[item] as usize..item_offsets[item + 1] as usize],
+                        );
+                        out_item_offsets.push(out_text.len() as u32);
+                    }
+                    out_offsets.push((out_item_offsets.len() - 1) as u32);
+                }
+                Values::ListUtf8 {
+                    offsets: out_offsets,
+                    item_offsets: out_item_offsets,
+                    text: out_text,
+                }
+            }
         }
     }
 }
@@ -125,6 +200,12 @@ impl Column {
             Values::Decimal(values) => values.len() * 16,
             Values::Utf8 { offsets, text } => offsets.len() * 4 + text.len(),
             Values::Date(values) => values.len() * 4,
+            Values::ListInt64 { offsets, items } => offsets.len() * 4 + items.len() * 8,
+            Values::ListUtf8 {
+                offsets,
+                item_offsets,
+                text,
+            } => (offsets.len() + item_offsets.len()) * 4 + text.len(),
         };
         values + self.validity.as_ref().map_or(0, Bitmap::byte_size)
     }
@@ -183,6 +264,44 @@ impl Column {
         }
     }
 
+    /// How many elements the list at `row` of a list column holds — none under
+    /// a NULL.
+    ///
+    /// # Panics
+    /// When the column is not a list column; the caller has checked the type.
+    pub fn list_len(&self, row: usize) -> usize {
+        match &self.values {
+            Values::ListInt64 { offsets, .. } | Values::ListUtf8 { offsets, .. } => {
+                (offsets[row + 1] - offsets[row]) as usize
+            }
+            _ => panic!("list_len() on a {} column", self.data_type),
+        }
+    }
+
+    /// Whether the list at `row` of a list column holds `item`: a string for a
+    /// `list<utf8>`, an integer for a `list<int64>`; `false` for anything else
+    /// and under a NULL.
+    pub fn list_has(&self, row: usize, item: &Value) -> bool {
+        if self.is_null(row) {
+            return false;
+        }
+        match (&self.values, item) {
+            (Values::ListInt64 { offsets, items }, Value::Int64(wanted)) => {
+                items[offsets[row] as usize..offsets[row + 1] as usize].contains(wanted)
+            }
+            (
+                Values::ListUtf8 {
+                    offsets,
+                    item_offsets,
+                    text,
+                },
+                Value::Utf8(wanted),
+            ) => (offsets[row] as usize..offsets[row + 1] as usize)
+                .any(|k| &text[item_offsets[k] as usize..item_offsets[k + 1] as usize] == wanted),
+            _ => false,
+        }
+    }
+
     /// The cell at `row` as a [`Value`].
     pub fn value(&self, row: usize) -> Value {
         if self.is_null(row) {
@@ -201,6 +320,25 @@ impl Column {
             Values::Utf8 { .. } => Value::Utf8(self.str(row).to_owned()),
             Values::Date(values) => Value::Date(Date::from_days_since_epoch(values[row])),
             Values::Timestamp(values) => Value::Timestamp(Timestamp::from_micros(values[row])),
+            Values::ListInt64 { offsets, items } => Value::List(
+                items[offsets[row] as usize..offsets[row + 1] as usize]
+                    .iter()
+                    .map(|item| Value::Int64(*item))
+                    .collect(),
+            ),
+            Values::ListUtf8 {
+                offsets,
+                item_offsets,
+                text,
+            } => Value::List(
+                (offsets[row] as usize..offsets[row + 1] as usize)
+                    .map(|k| {
+                        Value::Utf8(
+                            text[item_offsets[k] as usize..item_offsets[k + 1] as usize].to_owned(),
+                        )
+                    })
+                    .collect(),
+            ),
         }
     }
 
@@ -304,6 +442,48 @@ impl ColumnBuilder {
             }
             (Values::Date(values), Value::Date(value)) => values.push(value.days_since_epoch()),
             (Values::Timestamp(values), Value::Timestamp(value)) => values.push(value.micros()),
+            (Values::ListInt64 { offsets, items }, Value::List(list)) => {
+                let before = items.len();
+                for item in list {
+                    match item {
+                        Value::Int64(item) => items.push(*item),
+                        other => {
+                            items.truncate(before);
+                            return Err(format!("expects a list of int64, found {other:?}"));
+                        }
+                    }
+                }
+                let end = u32::try_from(items.len())
+                    .map_err(|_| "holds more list elements than a column can".to_owned())?;
+                offsets.push(end);
+            }
+            (
+                Values::ListUtf8 {
+                    offsets,
+                    item_offsets,
+                    text,
+                },
+                Value::List(list),
+            ) => {
+                let (items_before, text_before) = (item_offsets.len(), text.len());
+                for item in list {
+                    match item {
+                        Value::Utf8(item) => {
+                            text.push_str(item);
+                            let end = u32::try_from(text.len()).map_err(|_| {
+                                "holds more than 4 GiB of text, more than a column can".to_owned()
+                            })?;
+                            item_offsets.push(end);
+                        }
+                        other => {
+                            item_offsets.truncate(items_before);
+                            text.truncate(text_before);
+                            return Err(format!("expects a list of utf8, found {other:?}"));
+                        }
+                    }
+                }
+                offsets.push((item_offsets.len() - 1) as u32);
+            }
             (_, other) => {
                 return Err(format!("expects {}, found {other:?}", self.data_type));
             }
