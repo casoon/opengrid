@@ -59,3 +59,51 @@ fn an_error_is_the_same_error() {
         engine.execute_columns(query).unwrap_err()
     );
 }
+
+const ORDERS_JSON: &str = include_str!("../../opengrid-conformance/data/orders.json");
+
+/// Rows the page holds answer the whole suite as the same data through CSV do
+/// (issue #182).
+#[test]
+fn rows_answer_the_suite_as_csv_does() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../opengrid-conformance");
+    let schema = load_schema(&root.join("data/orders.schema.json")).unwrap();
+    let cases = check_dir(&root.join("cases"), &schema).expect("the cases load");
+    let mut from_csv = Engine::new();
+    from_csv
+        .load_csv("orders", ORDERS_CSV.as_bytes(), ORDERS_SCHEMA)
+        .unwrap();
+    let mut from_rows = Engine::new();
+    from_rows
+        .load_rows("orders", ORDERS_JSON, ORDERS_SCHEMA)
+        .unwrap();
+
+    for case in &cases {
+        let query = opengrid_json::to_string(&case.case.query);
+        let csv = from_csv.execute_result(&query).unwrap();
+        let rows = from_rows.execute_result(&query).unwrap();
+        compare(&Table::from(&csv), &Table::from(&rows), RowOrder::Ordered)
+            .unwrap_or_else(|mismatch| panic!("{}: {mismatch}", case.case.id));
+    }
+}
+
+/// Loading under a name replaces; a refused load leaves the old source.
+#[test]
+fn rows_replace_a_source_all_or_nothing() {
+    let schema = r#"{"fields":[{"name":"id","type":"int64","nullable":false}]}"#;
+    let mut engine = Engine::new();
+    engine
+        .load_rows("t", r#"[{"id":1},{"id":2}]"#, schema)
+        .unwrap();
+    let count = r#"{"source":"t","select":["id"]}"#;
+    assert_eq!(engine.execute_result(count).unwrap().total_count, 2);
+
+    let error = engine
+        .load_rows("t", r#"[{"id":1},{"id":"x"}]"#, schema)
+        .unwrap_err();
+    assert!(error.contains("row 1") && error.contains("id"), "{error}");
+    assert_eq!(engine.execute_result(count).unwrap().total_count, 2);
+
+    engine.load_rows("t", r#"[{"id":7}]"#, schema).unwrap();
+    assert_eq!(engine.execute_result(count).unwrap().total_count, 1);
+}

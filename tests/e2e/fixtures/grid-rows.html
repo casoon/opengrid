@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>opengrid rows fixture</title>
+    <style>
+      opengrid-grid {
+        display: block;
+        height: 260px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid rows fixture</h1>
+      <opengrid-grid
+        label="People"
+        datasource="people"
+        columns="id,name,born"
+        window-size="10"
+        row-key="id"
+      ></opengrid-grid>
+    </main>
+    <script type="module">
+      // Issue #182: rows the page already holds become the source — and a
+      // second load under the same name replaces it while the grid keeps its view.
+      import { loadOpengrid, createLocalProvider } from "/packages/opengrid/loader.js";
+      import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+
+      await init();
+      const schema = JSON.stringify({
+        fields: [
+          { name: "id", type: "int64", nullable: false },
+          { name: "name", type: "utf8", nullable: true },
+          { name: "born", type: "date", nullable: true },
+        ],
+      });
+      const provider = createLocalProvider(new Engine());
+      await provider.loadRows(
+        "people",
+        [
+          { id: 1, name: "Ada", born: "1815-12-10" },
+          { id: 2, name: "Grace", born: "1906-12-09" },
+          { id: 3, name: "Edsger", born: null },
+        ],
+        schema,
+      );
+
+      const loader = await loadOpengrid();
+      window.__provider = provider;
+      window.__schema = schema;
+      loader.module.set_provider(document.querySelector("opengrid-grid"), provider);
+      window.__ready = true;
+    </script>
+  </body>
+</html>

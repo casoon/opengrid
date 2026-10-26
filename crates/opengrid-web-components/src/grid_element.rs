@@ -198,6 +198,11 @@ struct GridRuntime {
     /// other to where it cannot go — the filter row reaches further than the
     /// rows, past its "Clear". Anywhere else, the reader moved it.
     scroll_echo: Option<(bool, i32)>,
+    /// The source was replaced (issue #182) and the next result is the new
+    /// one: the key of the focused record, if it had one. The pinned slot would
+    /// keep showing the old row, so the result drops the pin and the focus
+    /// follows the record.
+    replaced: Option<Option<Value>>,
 }
 
 impl GridRuntime {
@@ -285,6 +290,7 @@ fn fresh_runtime(
         retype_filter: false,
         scroll_top: 0,
         scroll_echo: None,
+        replaced: None,
     }
 }
 
@@ -387,6 +393,10 @@ fn on_connected(host: HtmlElement) {
     if !returning {
         adopt_sheets(&root);
         add_listeners(&root);
+        // A provider that replaced the source this grid shows (issue #182).
+        let replaced = Closure::<dyn FnMut(Event)>::new(on_source_replaced).into_js_value();
+        let _ = host
+            .add_event_listener_with_callback("opengrid-source-replaced", replaced.unchecked_ref());
         runtime.borrow_mut().row_height = height;
         // A `group-by` in the markup is read before anything else happens; one
         // the grid refuses is said with the first result, and it runs ungrouped.
@@ -418,6 +428,62 @@ fn on_connected(host: HtmlElement) {
     } else if refetch {
         run_query(&host, QueryKind::Window, false);
     }
+}
+
+/// The source this grid shows was replaced: the same query runs again over the
+/// new rows, and the view — sort, filter, focus — stays (issue #182).
+fn on_source_replaced(event: Event) {
+    let Some(host) = event
+        .current_target()
+        .and_then(|target| target.dyn_into::<HtmlElement>().ok())
+    else {
+        return;
+    };
+    if let Some(runtime) = runtime(&host) {
+        let focused_in_grid = host
+            .shadow_root()
+            .and_then(|root| root.active_element())
+            .is_some_and(|element| element.tag_name().eq_ignore_ascii_case("td"));
+        {
+            let mut runtime = runtime.borrow_mut();
+            let key = runtime
+                .active
+                .row()
+                .and_then(|row| runtime.state.row_key(row).cloned());
+            runtime.replaced = Some(key);
+        }
+        start_following(&host, focused_in_grid);
+        return;
+    }
+    start(&host);
+}
+
+/// [`start`], and the focus goes back to the active cell once the result lands.
+fn start_following(host: &HtmlElement, focus: bool) {
+    if let Some(runtime) = runtime(host) {
+        runtime.borrow_mut().known.clear();
+    }
+    ensure_skeleton(host);
+    render(host, false);
+    run_query(host, QueryKind::Data, focus);
+}
+
+/// The new rows are in: the pin is dropped and the active cell follows the
+/// record it stood on, or stays at its place where the record is gone.
+fn follow_replaced(runtime: &mut GridRuntime, key: Option<Value>) {
+    runtime.slots.iter_mut().for_each(|slot| *slot = None);
+    let Some(row) = runtime.active.row() else {
+        return;
+    };
+    let total = runtime.state.total_count();
+    let found = key.and_then(|key| runtime.state.row_of_key(&key));
+    let row = found.unwrap_or(row.min(total.saturating_sub(1)));
+    let active = match runtime.active {
+        ActiveCell::Data(cell) if total > 0 => ActiveCell::Data(CellRef::new(row, cell.col)),
+        ActiveCell::Select { .. } if total > 0 => ActiveCell::Select { row },
+        _ => ActiveCell::Header { col: 0 },
+    };
+    runtime.set_active(active);
 }
 
 /// Puts the viewport back at the offset the runtime remembers.
@@ -1102,8 +1168,12 @@ fn settle(
             Ok(result) => {
                 learn_types(&mut runtime, &result.schema);
                 runtime.state.apply_result(result);
+                if let Some(key) = runtime.replaced.take() {
+                    follow_replaced(&mut runtime, key);
+                }
             }
             Err(cause) => {
+                runtime.replaced = None;
                 runtime
                     .state
                     .set_status(GridStatus::Error(texts(host).error(&cause)));

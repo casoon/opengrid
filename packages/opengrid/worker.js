@@ -12,6 +12,7 @@
  *   init  { type:"init", id, moduleUrl, wasmUrl } -> { type:"ready", id }
  *   load  { type:"load", id, name, bytes, schema }
  *                                              -> { type:"loaded", id }
+ *   rows  { type:"rows", id, name, rows, schema }  -> { type:"loaded", id }  (issue #182)
  *   query { type:"query", id, query }          -> { id, result }
  *   stats { type:"stats", id }                 -> { id, result }   (issue #70)
  *   pivot { type:"pivot", id, pivot }          -> { id, result }   (issue #28)
@@ -39,6 +40,11 @@ self.onmessage = async ({ data }) => {
       }
       case "load": {
         engine.load_csv(data.name, new Uint8Array(data.bytes), data.schema);
+        self.postMessage({ type: "loaded", id: data.id });
+        break;
+      }
+      case "rows": {
+        engine.load_rows(data.name, data.rows, data.schema);
         self.postMessage({ type: "loaded", id: data.id });
         break;
       }

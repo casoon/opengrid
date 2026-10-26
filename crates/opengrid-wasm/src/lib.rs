@@ -32,7 +32,7 @@ use std::task::{Context, Poll, Waker};
 
 use opengrid_datasource::{DataSource, DataSourceCapabilities, QueryResult};
 use opengrid_engine::datasource::LocalDataSource;
-use opengrid_engine::ingest::{CsvOptions, load_csv as read_csv};
+use opengrid_engine::ingest::{CsvOptions, load_csv as read_csv, load_json as read_json};
 use opengrid_planner::ExecutionMode;
 use opengrid_query::{Limits, Query};
 use opengrid_types::{DataSourceId, Schema};
@@ -71,6 +71,22 @@ impl Engine {
         schema_json: &str,
     ) -> Result<(), JsError> {
         self.load_csv(name, bytes, schema_json)
+            .map_err(|message| JsError::new(&message))
+    }
+
+    /// Registers a source from rows the page already holds (issue #182): a
+    /// JSON array of objects keyed by field name, values in the wire notation
+    /// of E13. The schema is required, as for CSV. A name that is already
+    /// loaded is **replaced** — all or nothing: a row that does not fit is
+    /// refused with its row and field named, and the old source stays.
+    #[wasm_bindgen(js_name = load_rows)]
+    pub fn load_rows_js(
+        &mut self,
+        name: &str,
+        rows_json: &str,
+        schema_json: &str,
+    ) -> Result<(), JsError> {
+        self.load_rows(name, rows_json, schema_json)
             .map_err(|message| JsError::new(&message))
     }
 
@@ -176,6 +192,23 @@ impl Engine {
             read_csv(bytes, &schema, CsvOptions::default()).map_err(|error| error.to_string())?;
         let source = LocalDataSource::new(table);
         self.sources.insert(id.as_str().to_owned(), source);
+        Ok(())
+    }
+
+    /// Reads a JSON array of objects against an explicit schema and registers
+    /// the source under `name`, replacing one of that name.
+    pub fn load_rows(
+        &mut self,
+        name: &str,
+        rows_json: &str,
+        schema_json: &str,
+    ) -> Result<(), String> {
+        let id = DataSourceId::new(name).map_err(|error| format!("source {name:?}: {error}"))?;
+        let schema =
+            schema_json::from_json(schema_json).map_err(|error| format!("schema: {error}"))?;
+        let table = read_json(rows_json.as_bytes(), &schema).map_err(|error| error.to_string())?;
+        self.sources
+            .insert(id.as_str().to_owned(), LocalDataSource::new(table));
         Ok(())
     }
 

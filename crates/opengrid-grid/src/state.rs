@@ -336,6 +336,14 @@ impl GridState {
         self.value_at(col, row)
     }
 
+    /// The loaded row whose `row-key` is `key`, if it is in the loaded page.
+    pub fn row_of_key(&self, key: &Value) -> Option<u64> {
+        let col = self.column_of(self.saves.key.as_ref()?)?;
+        let rows = self.page.get(col)?;
+        let slot = rows.iter().position(|value| value == key)?;
+        Some(self.page_offset + slot as u64)
+    }
+
     /// The type of the `row-key` field, once a result has told it.
     pub fn row_key_type(&self) -> Option<opengrid_types::DataType> {
         let col = self.column_of(self.saves.key.as_ref()?)?;
