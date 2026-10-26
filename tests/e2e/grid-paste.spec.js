@@ -34,7 +34,11 @@ async function paste(page, text) {
   await page.evaluate((text) => {
     const data = new DataTransfer();
     data.setData("text/plain", text);
-    const event = new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true, composed: true });
+    // Firefox ignores `clipboardData` here and builds the event's own from its
+    // `dataType` and `data` instead; the other engines ignore those two.
+    const event = new ClipboardEvent("paste", {
+      clipboardData: data, dataType: "text/plain", data: text, bubbles: true, cancelable: true, composed: true,
+    });
     document.querySelector("opengrid-grid").shadowRoot.activeElement.dispatchEvent(event);
   }, text);
 }

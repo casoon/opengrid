@@ -113,7 +113,8 @@ jobs:
   e2e-browsers:
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch' && inputs.browsers
-    timeout-minutes: 60
+    # 60 cut WebKit off in the 0.14.0 run: two engines of a suite past 1200 tests.
+    timeout-minutes: 90
     # The two engines beyond Chromium (docs/releasing.md), by hand: `gh workflow
     # run ci.yml -f browsers=true`. On Linux, so a release does not depend on
     # the Firefox build Playwright ships for the release machine's macOS — the
