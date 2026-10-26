@@ -187,6 +187,15 @@ impl AddedRows {
         self.rows.last()
     }
 
+    /// Takes an added row out again — its add was undone (issue #186).
+    pub fn remove(&mut self, provisional: &str) -> Option<AddedRow> {
+        let place = self
+            .rows
+            .iter()
+            .position(|row| row.provisional == provisional)?;
+        Some(self.rows.remove(place))
+    }
+
     /// Adds a row with these values, as a fired draft would be — a paste of
     /// more rows than the grid has (issue #184). `values` is in schema order.
     pub fn push(&mut self, mut values: Vec<Value>) -> Option<&AddedRow> {
@@ -297,6 +306,19 @@ mod tests {
         added.mark_missing(vec![0]);
         added.set_draft(0, Value::Int64(1));
         assert!(added.missing().is_empty());
+    }
+
+    #[test]
+    fn an_added_row_can_be_taken_out_and_put_back() {
+        let mut added = rows();
+        added.set_draft(0, Value::Int64(1));
+        let provisional = added.fire().unwrap().provisional.clone();
+        let taken = added.remove(&provisional).unwrap();
+        assert!(added.rows().is_empty());
+        assert!(added.remove(&provisional).is_none());
+        let back = added.push(taken.values.clone()).unwrap();
+        assert_eq!(back.values, taken.values);
+        assert_ne!(back.provisional, provisional, "a new add, a new key");
     }
 
     #[test]

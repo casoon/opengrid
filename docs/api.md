@@ -513,6 +513,20 @@ A field that is not nullable in the schema is marked required in the new row. Ad
 value for one is refused: nothing fires, the cell is marked invalid and the status line says
 `{column} needs a value`. Off while grouped, in a tree and with `page-size`.
 
+### Undo and redo
+
+`Ctrl`/`Cmd`+`Z` undoes the last thing the reader did in the grid, `Shift`+`Ctrl`/`Cmd`+`Z` (and
+`Ctrl`+`Y`) does it again. The history is the grid's own — cell edits, rows added and a
+[paste](#pasting) as **one** step — not the page's saves. Each step fires the events the original
+fired — `opengrid-cell-change`, `opengrid-row-add`, `opengrid-paste` — with `undo: true` (`redo: true`
+going forward), so the page saves it as it saves an edit; an undone row add means "delete that
+`provisionalKey`", and a redone one is a new add under a new key. The cell shows the old value, marked
+unsaved, and the focus goes to it; the status line says `Undone: amount in row 12`. A new edit ends
+the way forward. The history ends when the source is replaced (`loadRows`), and without a `row-key`
+also when the sort or the filter changes, since a position then names another record. A
+[bulk change](#setting-a-value-for-the-selected-rows) is not a step: it ends the history. An open
+editor keeps the browser's own undo of its text.
+
 ### Validation
 
 ```js
@@ -1038,7 +1052,7 @@ not leave a shadow root the page wrapped the element in), and neither is
 | `opengrid-selection-change` | `{ rows: number[], count: number }` — logical row numbers, ascending. In a [tree](#tree) also `keys`: the selected nodes by key, and `count` counts them. |
 | `opengrid-bulk-change` | `{ keys, column, value }` — one value was set for the selected rows; see [Setting a value for the selected rows](#setting-a-value-for-the-selected-rows). |
 | `opengrid-paste` | `{ changes: [{ key?, row, column, value, previous }], added: [{ values, provisionalKey }] }` — a pasted block was applied; see [Pasting](#pasting). |
-| `opengrid-row-add` | `{ values, provisionalKey }` — a record was entered in the new row; see [Adding rows](#adding-rows). |
+| `opengrid-row-add` | `{ values, provisionalKey, undo?, redo? }` — a record was entered in the new row; see [Adding rows](#adding-rows). |
 | `opengrid-row-action` | `{ id, row, key? }` — an action was activated; `key` is the `row-key` value. |
 | `opengrid-cell-change` | `{ row, column, value, previous }` — everything needed to persist it. With `row-key` also `key`: the record's value of that field, `null` when the result does not carry it. |
 | `opengrid-view-change` | `{ view }` — the whole [view](#the-view) after the change. Scrolling and selecting are not view changes. On `<opengrid-pivot>` the view is its `rows`, `columns` and `values`. |
@@ -1298,6 +1312,10 @@ loader.module.set_texts(host, { lang: "de", loading: "Wird geladen …" });
 | `filterInvalid` | `{column}: {value} is not a value for this column` | `{column}`, `{value}` |
 | `cellRequired` | `{column} needs a value` | `{column}` |
 | `validationWarning` / `validationError` | `Warning: {message}` / `Error: {message}` | `{message}` |
+| `undoCell` / `redoCell` | `Undone: {column} in row {row}` / `Redone: …` | `{column}`, `{row}` |
+| `undoAdded` / `redoAdded` | `Undone: row added` / `Redone: row added` | |
+| `undoPaste` / `redoPaste` | `Undone: paste, {count} values` / `Redone: …` | `{count}` |
+| `undoNothing` / `redoNothing` | `Nothing to undo` / `Nothing to redo` | |
 | `bulkCaption` / `bulkApply` / `bulkMenu` | `Set {column} for {rows} selected` / `Set` / `Set for selected rows` | `{column}`, `{rows}` |
 | `bulkReadonly` / `bulkDone` | `{column} is read-only` / `{column} set for {rows}` | `{column}`, `{rows}` |
 | `pastePreview` / `pasteApply` / `pasteDiscard` | `Paste preview` / `Paste` / `Discard` | |

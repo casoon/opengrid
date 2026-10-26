@@ -48,6 +48,7 @@ mod added;
 pub mod facets;
 pub mod filter_row;
 pub mod grid_view;
+mod history;
 pub mod layout;
 pub mod paste;
 mod patch;
@@ -58,6 +59,7 @@ mod view;
 pub mod view_query;
 
 pub use added::{AddedRow, AddedRows, RowKind, RowState};
+pub use history::{AddedEntry, CellEdit, History, Step};
 pub use patch::Patch;
 pub use saving::{CellState, Finding, Level, Saves};
 pub use state::{GridState, GridStatus};

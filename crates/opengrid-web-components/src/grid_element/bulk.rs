@@ -213,6 +213,9 @@ fn apply(host: &HtmlElement) {
             return;
         };
         close(&root);
+        // A bulk change is not a step of the history (one event cannot carry a
+        // different old value per record): it ends the history instead.
+        runtime.borrow_mut().state.history_mut().clear();
         let rows: Vec<u64> = runtime.borrow().state.selection().to_vec();
         for row in &rows {
             runtime

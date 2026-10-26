@@ -20,6 +20,11 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Added
 
+- **Undo and redo of edits** ([#186](https://github.com/casoon/opengrid/issues/186)).
+  `Ctrl`/`Cmd`+`Z` and `Shift`+`Ctrl`/`Cmd`+`Z` (or `Ctrl`+`Y`) walk the grid's own history of
+  cell edits, added rows and pastes (a paste is one step). Each step fires the original event
+  with `undo: true` (`redo: true` forward), so the page saves it like any edit; the status line
+  says what was undone. The history ends when the source is replaced.
 - **Validation while typing, without blocking** ([#188](https://github.com/casoon/opengrid/issues/188)).
   `set_validators(host, { column: (value, row) => null | { level, message } })` runs on every
   keystroke in the editor and on commit; the message shows under the editor, stays on the cell

@@ -38,7 +38,11 @@
 # Raised the same day from 272000: one value for the selected rows (#187: the
 # panel, its editor shared with the cell editor, the keys of rows that are not
 # loaded, the menu entry) grew it by 3.7 KiB, to 272956 B.
-grid+pivot    276000  # 272956 B, 2026-10-26, #187
+# Validation while typing (#188) used the room that was left (275971 B). Raised
+# the same day from 276000: undo and redo (#186: the history, its steps for
+# cells, rows and pastes, the events with their flag, the texts) grew it by
+# 2.5 KiB, to 278522 B.
+grid+pivot    280500  # 278522 B, 2026-10-26, #186
 # Raised 2026-09-30 from 108000: the bound was not raised with 0.7.0, which
 # shipped the engine at 115.2 KiB already (CHANGELOG); rule P9's sorted
 # grouping sets and order sets (#108) added the rest, to 121610 B.
