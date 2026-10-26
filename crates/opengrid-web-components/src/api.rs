@@ -90,6 +90,7 @@ fn surface() -> String {
         crate::grid_element_events::VIEW_EVENT,
         crate::grid_element_events::QUERY_EVENT,
         crate::grid_element_events::ROW_ACTION_EVENT,
+        crate::grid_element_events::ROW_ADD_EVENT,
     ] {
         out.push_str(&format!("  {event}\n"));
     }
@@ -109,6 +110,7 @@ fn surface() -> String {
         "set_cell_state",
         "set_values",
         "set_actions",
+        "set_row_state",
     ] {
         out.push_str(&format!("  {name}\n"));
     }
@@ -318,7 +320,7 @@ elements
 
 attributes
   opengrid-table: columns datasource label theme
-  opengrid-grid: column-menu columns datasource density facets group-by label mode page-size \
+  opengrid-grid: add-row column-menu columns datasource density facets group-by label mode page-size \
 row-key search selection theme toolbar tree tree-key window-size
   opengrid-pivot: collapsed columns datasource fields filter label measures rows sort theme toolbar values
 
@@ -328,6 +330,7 @@ events
   opengrid-view-change
   opengrid-query
   opengrid-row-action
+  opengrid-row-add
 
 functions
   register
@@ -343,6 +346,7 @@ functions
   set_cell_state
   set_values
   set_actions
+  set_row_state
 
 loader exports
   loadOpengrid
@@ -395,9 +399,9 @@ error errorUnknown facetChipValues facetFrom facetQueries facetTo facetsGroup fa
 facetsToggle fieldEarlier fieldLater fieldRemove filterAny filterColumn filterColumnLabel filterConditionLabel filterGroup filterInvalid \
 filterRemoved filterRowToggle filterValueLabel filtersCleared groupByColumn groupChip \
 groupCollapsed groupExpanded groupInvalid groupRow groupSecondLevel \
-groupingFull hideColumn lang loading matchesOne matchesOther noValue nothingToAdd operatorLabel \
+groupingFull hideColumn lang loading matchesOne matchesOther newRow noValue nothingToAdd operatorLabel \
 operators pageFirst pageLast pageNext pageOf pagePrevious pivotColumns pivotFilterHint pivotFilterLabel pivotFilters pivotMeasures pivotRows pivotToolbar queriesOne queriesOther queryAnd \
-queryMissingValue queryUnknownColumn queryWrongOperator rowsOne rowsOther searchChip searchHint \
+queryMissingValue queryUnknownColumn queryWrongOperator rowAdded rowsOne rowsOther searchChip searchHint \
 searchLabel searchPlaceholder searchSuggestions selectAll selectedAll selectionCleared sortAscending \
 sortDescending sourceHybrid sourceLocal sourceRemote sourceWorker subtotal subtreeCell subtreeOnly toolbarGroup total \
 totalRow treeContext treeGroupIgnored treeLevelTooLarge treeOrphans treeRefused typeBool typeDate typeInteger typeNumber typeText typeTime ungroupColumn valueLabel

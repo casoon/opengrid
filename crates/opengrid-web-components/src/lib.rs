@@ -93,6 +93,8 @@ pub(crate) mod grid_element_events {
     pub const QUERY_EVENT: &str = "opengrid-query";
     /// Fired when a row's action was activated (issue #189).
     pub const ROW_ACTION_EVENT: &str = "opengrid-row-action";
+    /// Fired when a new row was entered (issue #183).
+    pub const ROW_ADD_EVENT: &str = "opengrid-row-add";
 }
 #[cfg(target_arch = "wasm32")]
 pub use element::register;

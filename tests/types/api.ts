@@ -122,6 +122,16 @@ export async function page(): Promise<void> {
     event.detail.key satisfies string | number | boolean | null | undefined;
   });
 
+  // Adding rows (issue #183).
+  module.set_row_state(grid, "new-1", "saved", 7);
+  module.set_row_state(grid, "new-2", "error", "Not saved.");
+  // @ts-expect-error — not a state
+  module.set_row_state(grid, "new-3", "failed");
+  grid.addEventListener("opengrid-row-add", (event) => {
+    event.detail.provisionalKey satisfies string;
+    event.detail.values satisfies Record<string, unknown>;
+  });
+
   // The view: read whole, written in parts.
   // @ts-expect-error — a grid that was never connected has no view
   void module.get_view(grid).sort;
