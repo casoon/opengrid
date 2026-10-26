@@ -217,6 +217,17 @@ export interface ExecuteOptions {
 export interface EngineProvider extends Provider {
   /** Loads CSV bytes as the source `name`, against a schema (JSON). */
   load(name: string, bytes: ArrayBuffer | Uint8Array, schema: string): Promise<void>;
+  /**
+   * Loads rows the page already holds as the source `name` (issue #182): an
+   * array of objects keyed by field name — or that array as JSON text — with
+   * values in the wire notation of the result (decimals as strings, dates as
+   * `YYYY-MM-DD`). The schema stays required. A name that is already loaded is
+   * replaced, all or nothing; a grid on it re-runs its query and keeps its view.
+   * A value that does not fit its field rejects with the row and field named.
+   */
+  loadRows(name: string, rows: readonly Record<string, unknown>[] | string, schema: string): Promise<void>;
+  /** Called by `set_provider`; the grid is told when a source it shows is replaced. */
+  watch(host: HTMLElement): void;
   /** What the engine holds: its memory and each source's size (issue #70). */
   stats(): Promise<EngineStats>;
   /** Stops a worker; a no-op in the tab. */
@@ -235,6 +246,8 @@ export interface EngineStats {
 /** The engine of the engine module, as `createLocalProvider` uses it. */
 export interface Engine {
   load_csv(name: string, bytes: Uint8Array, schema: string): void;
+  /** Rows as JSON text (an array of objects); replaces a source of that name (issue #182). */
+  load_rows(name: string, rowsJson: string, schema: string): void;
   /** The result as JSON. */
   execute(queryJson: string): string;
   /** The result in the binary form — what the tab and worker providers answer. */

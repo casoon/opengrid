@@ -198,6 +198,8 @@ export function createWorkerProvider({
     });
   }
 
+  const watchers = createWatchers();
+
   function start() {
     if (!worker) {
       worker = new Worker(workerScript, { type: "module" });
@@ -215,6 +217,23 @@ export function createWorkerProvider({
       await start();
       const buffer = toTransferable(bytes);
       await request({ type: "load", name, bytes: buffer, schema }, [buffer]);
+      watchers.loaded(name);
+    },
+
+    /**
+     * Loads rows the page already holds — an array of objects keyed by field
+     * name (or that array as JSON text) — against a schema (issue #182). A
+     * name already loaded is replaced, all or nothing.
+     */
+    async loadRows(name, rows, schema) {
+      await start();
+      await request({ type: "rows", name, rows: rowsJson(rows), schema });
+      watchers.loaded(name);
+    },
+
+    /** Called by `set_provider`: the grids to tell when a source is replaced. */
+    watch(host) {
+      watchers.watch(host);
     },
 
     /** Runs a query JSON and resolves with the result in the binary form. */
@@ -256,6 +275,51 @@ export function createWorkerProvider({
 }
 
 /**
+ * The grids on an engine provider's sources (issue #182).
+ *
+ * `watch(host)` is called by `set_provider`; the host is held weakly, so a
+ * removed grid is still collected (point 74). Loading under a name that is
+ * already loaded replaces the source, and every watching grid on that name is
+ * told with an `opengrid-source-replaced` event — it re-runs its query and
+ * keeps its view.
+ */
+function createWatchers() {
+  const loaded = new Set();
+  const hosts = new Set();
+  return {
+    watch(host) {
+      for (const ref of hosts) {
+        if (ref.deref() === host) {
+          return;
+        }
+      }
+      hosts.add(new WeakRef(host));
+    },
+    /** Records a load of `name`; tells the grids on it when it replaced one. */
+    loaded(name) {
+      const replaced = loaded.has(name);
+      loaded.add(name);
+      if (!replaced) {
+        return;
+      }
+      for (const ref of [...hosts]) {
+        const host = ref.deref();
+        if (!host) {
+          hosts.delete(ref);
+        } else if (host.getAttribute("datasource") === name) {
+          host.dispatchEvent(new CustomEvent("opengrid-source-replaced", { detail: { name } }));
+        }
+      }
+    },
+  };
+}
+
+/** Rows as the engine reads them: a JSON array of objects, as text. */
+function rowsJson(rows) {
+  return typeof rows === "string" ? rows : JSON.stringify(rows);
+}
+
+/**
  * A provider over an engine that is already initialised on the main thread.
  *
  * The fallback path of the elements (point 14): no worker, the same shape as
@@ -265,6 +329,7 @@ export function createWorkerProvider({
  * @returns {{load: Function, execute: Function, terminate: Function}}
  */
 export function createLocalProvider(engine) {
+  const watchers = createWatchers();
   return {
     /** Where the queries run; the grid names it in its footer (issue #33). */
     kind: "local",
@@ -274,6 +339,14 @@ export function createLocalProvider(engine) {
         bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes),
         schema,
       );
+      watchers.loaded(name);
+    },
+    async loadRows(name, rows, schema) {
+      engine.load_rows(name, rowsJson(rows), schema);
+      watchers.loaded(name);
+    },
+    watch(host) {
+      watchers.watch(host);
     },
     execute(queryJson) {
       return engine.execute_columns(queryJson);
