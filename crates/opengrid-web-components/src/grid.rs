@@ -363,6 +363,8 @@ pub const PASTE_PARTS: [&str; 4] = [
     "paste-apply",
     "paste-discard",
 ];
+/// The parts of the bulk panel (issue #187), built by the element when it opens.
+pub const BULK_PARTS: [&str; 3] = ["bulk", "bulk-apply", "bulk-cancel"];
 /// The empty row at the end that a new record is typed into (issue #183).
 pub const ADD_ROW_ATTRIBUTE: &str = "add-row";
 

@@ -82,9 +82,11 @@ use opengrid_web_core::provider::provider;
 use crate::columns::{self, WIDTH_STEP};
 use crate::formats::{CellFormat, Formatter, formats};
 use crate::grid_element_events::{
-    CELL_EVENT, PASTE_EVENT, ROW_ACTION_EVENT, ROW_ADD_EVENT, SELECTION_EVENT, VIEW_EVENT,
+    BULK_EVENT, CELL_EVENT, PASTE_EVENT, ROW_ACTION_EVENT, ROW_ADD_EVENT, SELECTION_EVENT,
+    VIEW_EVENT,
 };
 
+mod bulk;
 mod paste;
 use opengrid_web_core::renderer::{Dom, WebRenderer};
 
@@ -1532,6 +1534,15 @@ fn on_key_down(event: KeyboardEvent) {
         }
     }
 
+    // The bulk panel (issue #187) answers `Enter` and `Escape`.
+    if let Some(target) = event
+        .target()
+        .and_then(|node| node.dyn_into::<Element>().ok())
+        && bulk::in_panel(&target)
+    {
+        bulk::on_key(&host, &event, &target);
+        return;
+    }
     // The preview of a paste (issue #184) answers `Enter` and `Escape`.
     if let Some(target) = event
         .target()
@@ -1713,6 +1724,15 @@ fn on_key_down(event: KeyboardEvent) {
     // reported against a display position: `Enter` on a leaf opens no editor.
     if is_tree(&host) && event.key() == "Enter" && matches!(active, ActiveCell::Data(_)) {
         event.prevent_default();
+        return;
+    }
+    // `F2` with rows selected sets one value for all of them (issue #187).
+    if event.key() == "F2"
+        && let ActiveCell::Data(cell) = active
+        && bulk::applicable(&host, &runtime.borrow())
+    {
+        event.prevent_default();
+        bulk::open(&host, cell.col);
         return;
     }
     // `F2` and a typed character open no editor there either; they are left
@@ -2847,15 +2867,46 @@ fn begin_edit(host: &HtmlElement, cell: CellRef, typed: Option<&str>) {
     };
 
     td.set_text_content(None);
-    let choices = choices_for(host, cell.col);
+    let name = runtime
+        .borrow()
+        .state
+        .schema()
+        .fields()
+        .get(cell.col)
+        .map(|field| field.name.as_str().to_owned())
+        .unwrap_or_default();
+    let Some(editor) = build_editor(host, &document, cell.col, &name, data_type, &current, typed)
+    else {
+        return;
+    };
+    let _ = td.append_child(&editor);
+    if let Ok(element) = editor.dyn_into::<HtmlElement>() {
+        let _ = element.focus();
+    }
+}
+
+/// The form control that edits a value of `data_type`: a `<select>` when the page
+/// supplied choices, otherwise an input typed after the column — the same
+/// derivation as the filter row (point 51), one place for the cell editor and
+/// the bulk one. `typed` is the character that opened it, if one did.
+fn build_editor(
+    host: &HtmlElement,
+    document: &web_sys::Document,
+    col: usize,
+    name: &str,
+    data_type: DataType,
+    current: &str,
+    typed: Option<&str>,
+) -> Option<Element> {
+    let choices = choices_for(host, col);
     let editor: Element = match &choices {
         Some(options) => {
             let Ok(select) = document.create_element("select") else {
-                return;
+                return None;
             };
             let chosen = typed
                 .and_then(|typed| grid::choice_for_typed(options, typed))
-                .unwrap_or(&current);
+                .unwrap_or(current);
             for option in options {
                 if let Ok(node) = document.create_element("option") {
                     node.set_text_content(Some(option));
@@ -2870,7 +2921,7 @@ fn begin_edit(host: &HtmlElement, cell: CellRef, typed: Option<&str>) {
         }
         None => {
             let Ok(input) = document.create_element("input") else {
-                return;
+                return None;
             };
             let kind = grid::input_type(data_type);
             let _ = input.set_attribute("type", kind);
@@ -2884,7 +2935,7 @@ fn begin_edit(host: &HtmlElement, cell: CellRef, typed: Option<&str>) {
             } else if let Ok(field) = input.clone().dyn_into::<HtmlInputElement>() {
                 match typed {
                     Some(typed) if kind != "date" => field.set_value(typed),
-                    _ => field.set_value(&current),
+                    _ => field.set_value(current),
                 }
             }
             input
@@ -2892,13 +2943,8 @@ fn begin_edit(host: &HtmlElement, cell: CellRef, typed: Option<&str>) {
     };
     let _ = editor.set_attribute("part", "editor");
     // The column name is the accessible name: the cell it sits in has none.
-    if let Some(field) = runtime.borrow().state.schema().fields().get(cell.col) {
-        let _ = editor.set_attribute("aria-label", field.name.as_str());
-    }
-    let _ = td.append_child(&editor);
-    if let Ok(element) = editor.dyn_into::<HtmlElement>() {
-        let _ = element.focus();
-    }
+    let _ = editor.set_attribute("aria-label", name);
+    Some(editor)
 }
 
 /// Closes the editor, optionally taking what it holds (plan point 37).
@@ -3677,6 +3723,13 @@ fn on_filter_clear(event: Event) {
         } else {
             open_columns(&root, true);
         }
+        return;
+    }
+
+    // The buttons of the bulk panel (issue #187).
+    if let Ok(host) = root.host().dyn_into::<HtmlElement>()
+        && bulk::on_click(&host, &target)
+    {
         return;
     }
 
@@ -5634,6 +5687,7 @@ fn open_column_menu(host: &HtmlElement, col: usize) {
             group_by: &group_by,
             can_group: !host.has_attribute(PAGE_SIZE_ATTRIBUTE),
             visible: borrowed.state.schema().fields().len(),
+            bulk: bulk::available(host, &borrowed, col),
         };
         (crate::column_menu::entries(&column, &texts), name)
     };
@@ -5934,6 +5988,7 @@ fn activate_menu_item(host: &HtmlElement, item: &Element) {
             }
         }
         "hide" => set_column_hidden(host, &name, true),
+        "bulk" => bulk::open(host, col),
         grouping if grouping.starts_with("group:") => {
             let current = runtime
                 .borrow()

@@ -832,7 +832,12 @@ export type TextKey =
   | "pasteCutOff"
   | "pasteApplied"
   | "pasteDiscarded"
-  | "pasteBlocked";
+  | "pasteBlocked"
+  | "bulkCaption"
+  | "bulkApply"
+  | "bulkMenu"
+  | "bulkReadonly"
+  | "bulkDone";
 
 /**
  * Any subset of the texts; what is left out keeps its English default. `lang`
@@ -895,6 +900,14 @@ export interface RowAddDetail {
   provisionalKey: string;
 }
 
+/** `opengrid-bulk-change`: one value for the selected rows (issue #187). */
+export interface BulkChangeDetail {
+  /** The `row-key` values of the selected records. */
+  keys: WireValue[];
+  column: string;
+  value: string;
+}
+
 /** `opengrid-paste`: a pasted block was applied (issue #184). */
 export interface PasteDetail {
   /** One per cell of an existing row. */
@@ -941,6 +954,7 @@ export interface OpengridEventMap {
   "opengrid-row-action": CustomEvent<RowActionDetail>;
   "opengrid-row-add": CustomEvent<RowAddDetail>;
   "opengrid-paste": CustomEvent<PasteDetail>;
+  "opengrid-bulk-change": CustomEvent<BulkChangeDetail>;
 }
 
 // ---------------------------------------------------------------------------
