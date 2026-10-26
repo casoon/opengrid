@@ -296,6 +296,20 @@ pub struct GridTexts {
     pub undo_nothing: String,
     /// Said when there is no step to redo.
     pub redo_nothing: String,
+    /// The name of a list column's type, beside a suggested column (issue #185).
+    pub type_list: String,
+    /// How many choices a typed text leaves (issue #185): one.
+    pub choices_one: String,
+    /// How many choices a typed text leaves. May use `{count}`.
+    pub choices_other: String,
+    /// A text that is none of the choices is not taken (issue #185). May use `{value}`.
+    pub choice_refused: String,
+    /// Said when a choice is added to a list. May use `{value}`.
+    pub list_item_added: String,
+    /// Said when a choice is taken out of a list. May use `{value}`.
+    pub list_item_removed: String,
+    /// The name of a chip's remove button. May use `{value}`.
+    pub list_item_remove: String,
     /// A column was resized. May use `{column}` and `{width}` (plan point 36).
     pub column_width: String,
     /// A column was moved. May use `{column}`, `{position}` and `{count}`.
@@ -464,6 +478,13 @@ pub(crate) const KEYS: &[&str] = &[
     "filterInvalid",
     "cellRequired",
     "newRow",
+    "choicesOne",
+    "choicesOther",
+    "choiceRefused",
+    "listItemAdded",
+    "listItemRemoved",
+    "listItemRemove",
+    "typeList",
     "undoCell",
     "redoCell",
     "undoAdded",
@@ -527,6 +548,10 @@ pub const DEFAULT_OPERATORS: &[&str] = &[
     // and calling the absence of a value "empty" would merge the two.
     "has no value",
     "has a value",
+    // A list has an empty state of its own, unlike a text (issue #185).
+    "contains",
+    "contains all",
+    "is empty",
 ];
 
 /// The labels are indexed by the wire tokens' position, so the two lists must
@@ -657,6 +682,13 @@ impl Default for GridTexts {
             filter_invalid: "{column}: {value} is not a value for this column".to_owned(),
             cell_required: "{column} needs a value".to_owned(),
             new_row: "New row".to_owned(),
+            choices_one: "1 choice".to_owned(),
+            choices_other: "{count} choices".to_owned(),
+            choice_refused: "“{value}” is not one of the choices".to_owned(),
+            list_item_added: "{value} added".to_owned(),
+            list_item_removed: "{value} removed".to_owned(),
+            list_item_remove: "Remove {value}".to_owned(),
+            type_list: "list".to_owned(),
             undo_cell: "Undone: {column} in row {row}".to_owned(),
             redo_cell: "Redone: {column} in row {row}".to_owned(),
             undo_added: "Undone: row added".to_owned(),
@@ -856,6 +888,35 @@ impl GridTexts {
             &self.redo_paste
         };
         fill(template, "count", &count.to_string())
+    }
+
+    /// "1 choice" or "{count} choices".
+    pub fn choices_count(&self, count: usize) -> String {
+        if count == 1 {
+            self.choices_one.clone()
+        } else {
+            fill(&self.choices_other, "count", &count.to_string())
+        }
+    }
+
+    /// A text that is none of the choices.
+    pub fn choice_refused(&self, value: &str) -> String {
+        fill(&self.choice_refused, "value", value)
+    }
+
+    /// A choice was added to a list.
+    pub fn list_item_added(&self, value: &str) -> String {
+        fill(&self.list_item_added, "value", value)
+    }
+
+    /// A choice was taken out of a list.
+    pub fn list_item_removed(&self, value: &str) -> String {
+        fill(&self.list_item_removed, "value", value)
+    }
+
+    /// The name of a chip's remove button.
+    pub fn list_item_remove(&self, value: &str) -> String {
+        fill(&self.list_item_remove, "value", value)
     }
 
     /// A row was added and `waiting` rows are not saved yet.
@@ -1381,6 +1442,13 @@ mod host {
         overwrite(&mut texts.filter_invalid, string("filterInvalid"));
         overwrite(&mut texts.cell_required, string("cellRequired"));
         overwrite(&mut texts.new_row, string("newRow"));
+        overwrite(&mut texts.choices_one, string("choicesOne"));
+        overwrite(&mut texts.choices_other, string("choicesOther"));
+        overwrite(&mut texts.choice_refused, string("choiceRefused"));
+        overwrite(&mut texts.list_item_added, string("listItemAdded"));
+        overwrite(&mut texts.list_item_removed, string("listItemRemoved"));
+        overwrite(&mut texts.list_item_remove, string("listItemRemove"));
+        overwrite(&mut texts.type_list, string("typeList"));
         overwrite(&mut texts.undo_cell, string("undoCell"));
         overwrite(&mut texts.redo_cell, string("redoCell"));
         overwrite(&mut texts.undo_added, string("undoAdded"));

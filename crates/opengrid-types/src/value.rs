@@ -382,6 +382,9 @@ pub enum Value {
     Utf8(String),
     Date(Date),
     Timestamp(Timestamp),
+    /// The elements of a list column (issue #185): all of its element type,
+    /// none of them NULL, in the order given.
+    List(Vec<Value>),
 }
 
 impl Value {
@@ -396,6 +399,15 @@ impl Value {
     pub fn from_wire_str(text: &str, data_type: &DataType) -> Result<Self, ValueError> {
         match data_type {
             DataType::Utf8 => Ok(Value::Utf8(text.to_owned())),
+            // A CSV cell holds a list as the JSON array it is on the wire.
+            DataType::ListUtf8 | DataType::ListInt64 => {
+                let json =
+                    opengrid_json::Json::parse(text).map_err(|_| ValueError::TypeMismatch {
+                        expected: *data_type,
+                        found: "string",
+                    })?;
+                Value::from_json_typed(&json, data_type)
+            }
             _ => coerce_str(text, data_type),
         }
     }
@@ -506,10 +518,13 @@ fn coerce_str(s: &str, data_type: &DataType) -> Result<Value, ValueError> {
         }
         DataType::Date => Ok(Value::Date(Date::parse(s)?)),
         DataType::Timestamp => Ok(Value::Timestamp(Timestamp::parse(s)?)),
-        DataType::Bool | DataType::Int64 => Err(ValueError::TypeMismatch {
-            expected: *data_type,
-            found: "string",
-        }),
+        // A JSON string is not a list; a CSV cell is read by `from_wire_str`.
+        DataType::Bool | DataType::Int64 | DataType::ListUtf8 | DataType::ListInt64 => {
+            Err(ValueError::TypeMismatch {
+                expected: *data_type,
+                found: "string",
+            })
+        }
     }
 }
 
@@ -653,5 +668,40 @@ mod tests {
         assert!(
             Value::from_json_typed(&opengrid_json::Json::from("nan"), &DataType::Float64).is_err()
         );
+    }
+
+    /// A list column reads a JSON array of its element type, and a CSV cell
+    /// holds the same array (issue #185).
+    #[test]
+    fn a_list_reads_an_array_and_never_a_null_element() {
+        use opengrid_json::Json;
+        let read =
+            |text: &str, data_type| Value::from_json_typed(&Json::parse(text).unwrap(), &data_type);
+        assert_eq!(
+            read(r#"["a","b","a"]"#, DataType::ListUtf8),
+            Ok(Value::List(vec![
+                Value::Utf8("a".into()),
+                Value::Utf8("b".into()),
+                Value::Utf8("a".into())
+            ])),
+            "order and duplicates stay"
+        );
+        assert_eq!(read("[]", DataType::ListInt64), Ok(Value::List(vec![])));
+        assert_eq!(read("null", DataType::ListInt64), Ok(Value::Null));
+        assert_eq!(
+            read(r#"[1,null]"#, DataType::ListInt64),
+            Err(ValueError::NullInList)
+        );
+        assert!(read(r#"["x"]"#, DataType::ListInt64).is_err());
+        assert!(
+            read(r#""[1]""#, DataType::ListInt64).is_err(),
+            "a string is not a list"
+        );
+        assert!(read("[1]", DataType::Int64).is_err());
+        assert_eq!(
+            Value::from_wire_str("[1, 2]", &DataType::ListInt64),
+            Ok(Value::List(vec![Value::Int64(1), Value::Int64(2)]))
+        );
+        assert!(Value::from_wire_str("1, 2", &DataType::ListInt64).is_err());
     }
 }

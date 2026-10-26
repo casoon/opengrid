@@ -13,6 +13,8 @@ opengrid-types = { path = "../opengrid-types" }
 opengrid-query = { path = "../opengrid-query" }
 opengrid-datasource = { path = "../opengrid-datasource" }
 opengrid-connector = { path = "../opengrid-connector" }
+# A list is its JSON array in a TEXT column (issue #185).
+opengrid-json = { path = "../opengrid-json" }
 # Decided in #51 (E36): SQLite needs no installation — the library is compiled
 # in. Only this reference connector depends on it, never the server.
 rusqlite = { version = "0.40", features = ["bundled"] }
@@ -20,4 +22,3 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 [dev-dependencies]
 opengrid-conformance = { path = "../opengrid-conformance" }
 opengrid-engine = { path = "../opengrid-engine" }
-opengrid-json = { path = "../opengrid-json" }

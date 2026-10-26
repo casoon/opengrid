@@ -457,6 +457,9 @@ fn encode(column: &Column, row: usize, key: &mut Vec<u8>) {
             key.extend_from_slice(&[0x00, 0x00]);
         }
         Values::Date(values) => key.extend_from_slice(&order_of_i32(values[row])),
+        // No key: validation refuses to group by a list (issue #185), so no
+        // row ever gets here — and if one did, every list would be one group.
+        Values::ListInt64 { .. } | Values::ListUtf8 { .. } => {}
     }
 }
 

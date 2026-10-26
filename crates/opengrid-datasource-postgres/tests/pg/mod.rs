@@ -36,12 +36,17 @@ pub fn schema() -> Schema {
 /// The data set, read through the local engine — so both sides provably start
 /// from the same 50 rows.
 pub fn fixture_rows(schema: &Schema) -> QueryResult {
+    fixture_rows_of(schema, "orders.csv")
+}
+
+/// The same, for the data file `csv` of the suite (the list dataset of issue #185).
+pub fn fixture_rows_of(schema: &Schema, csv: &str) -> QueryResult {
     let schema = &schema.stored();
     use opengrid_engine::datasource::LocalDataSource;
     use opengrid_engine::ingest::{CsvOptions, load_csv};
     use opengrid_query::{Limits, Query};
 
-    let csv = std::fs::read(suite_dir().join("data/orders.csv")).expect("the conformance data");
+    let csv = std::fs::read(suite_dir().join("data").join(csv)).expect("the conformance data");
     let table = load_csv(&csv, schema, CsvOptions::default()).expect("ingest");
     let source = LocalDataSource::new(table);
 
@@ -74,6 +79,16 @@ pub async fn create_fixture(
     client: &tokio_postgres::Client,
     schema: &Schema,
     table: &str,
+) -> String {
+    create_fixture_of(client, schema, table, "orders.csv").await
+}
+
+/// [`create_fixture`] for another data file of the suite.
+pub async fn create_fixture_of(
+    client: &tokio_postgres::Client,
+    schema: &Schema,
+    table: &str,
+    csv: &str,
 ) -> String {
     let table = table.to_owned();
     // Only the **stored** columns become columns of the table. A derived one
@@ -112,7 +127,7 @@ pub async fn create_fixture(
         .await
         .expect("create table");
 
-    let rows = fixture_rows(schema);
+    let rows = fixture_rows_of(schema, csv);
     let names: Vec<String> = schema
         .fields()
         .iter()
@@ -152,6 +167,7 @@ pub async fn create_fixture(
                 Value::Utf8(text) => Some(text.clone()),
                 Value::Date(date) => Some(date.to_string()),
                 Value::Timestamp(timestamp) => Some(timestamp.to_string()),
+                Value::List(items) => Some(array_literal(items)),
             })
             .collect();
         let params: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = values
@@ -194,4 +210,21 @@ pub fn local_source(schema: &Schema) -> opengrid_engine::datasource::LocalDataSo
 
     let csv = std::fs::read(suite_dir().join("data/orders.csv")).expect("the conformance data");
     LocalDataSource::new(load_csv(&csv, schema, CsvOptions::default()).expect("ingest"))
+}
+
+/// A list as the PostgreSQL array literal `{"a","b"}` (issue #185): every
+/// element quoted, a backslash or a quote escaped by a backslash.
+fn array_literal(items: &[Value]) -> String {
+    let elements: Vec<String> = items
+        .iter()
+        .map(|item| {
+            let text = match item {
+                Value::Utf8(text) => text.clone(),
+                Value::Int64(number) => number.to_string(),
+                other => panic!("a list of strings or integers, found {other:?}"),
+            };
+            format!("\"{}\"", text.replace('\\', "\\\\").replace('"', "\\\""))
+        })
+        .collect();
+    format!("{{{}}}", elements.join(","))
 }

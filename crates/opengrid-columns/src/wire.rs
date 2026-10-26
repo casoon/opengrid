@@ -24,10 +24,15 @@
 //!            decimal    rows × i128 (the coefficient; the scale is the type's)
 //!            date       rows × i32 (days since 1970-01-01), padded
 //!            utf8       (rows + 1) × u32 offsets, padded · offsets[rows] bytes, padded
+//!            list<int64>  (rows + 1) × u32 offsets, padded · offsets[rows] × i64
+//!            list<utf8>   (rows + 1) × u32 offsets, padded · (items + 1) × u32 item
+//!                         offsets, padded · item_offsets[items] bytes, padded
 //! ```
 //!
 //! Type codes: 1 bool, 2 int64, 3 float64, 4 decimal, 5 utf8, 6 date,
-//! 7 timestamp. A pivot appends its own section after the table
+//! 7 timestamp, 8 list<int64>, 9 list<utf8> (issue #185, additive: a reader
+//! from before them refuses such a column with "unknown type code", and
+//! the version stays 1). A pivot appends its own section after the table
 //! (`opengrid-pivot`), written with the same [`Writer`] primitives. A tree's
 //! level (E38) appends its part:
 //!
@@ -426,6 +431,31 @@ impl Writer {
                 self.out.extend_from_slice(text.as_bytes());
                 self.pad();
             }
+            Values::ListInt64 { offsets, items } => {
+                for offset in offsets {
+                    self.out.extend_from_slice(&offset.to_le_bytes());
+                }
+                self.pad();
+                for item in items {
+                    self.out.extend_from_slice(&item.to_le_bytes());
+                }
+            }
+            Values::ListUtf8 {
+                offsets,
+                item_offsets,
+                text,
+            } => {
+                for offset in offsets {
+                    self.out.extend_from_slice(&offset.to_le_bytes());
+                }
+                self.pad();
+                for offset in item_offsets {
+                    self.out.extend_from_slice(&offset.to_le_bytes());
+                }
+                self.pad();
+                self.out.extend_from_slice(text.as_bytes());
+                self.pad();
+            }
         }
     }
 
@@ -440,6 +470,8 @@ impl Writer {
             Value::Utf8(_) => (5, 0, 0),
             Value::Date(_) => (6, 0, 0),
             Value::Timestamp(_) => (7, 0, 0),
+            // A list is never a pivot's scalar: the query model refuses to group by one.
+            Value::List(_) => unreachable!("a list is no scalar of a pivot"),
         };
         self.out
             .extend_from_slice(&[code, precision, scale, 0, 0, 0, 0, 0]);
@@ -454,6 +486,7 @@ impl Writer {
                 .out
                 .extend_from_slice(&i64::from(date.days_since_epoch()).to_le_bytes()),
             Value::Timestamp(value) => self.out.extend_from_slice(&value.micros().to_le_bytes()),
+            Value::List(_) => unreachable!("a list is no scalar of a pivot"),
         }
     }
 
@@ -472,6 +505,8 @@ fn type_code(data_type: DataType) -> (u8, u8, u8) {
         DataType::Utf8 => (5, 0, 0),
         DataType::Date => (6, 0, 0),
         DataType::Timestamp => (7, 0, 0),
+        DataType::ListInt64 => (8, 0, 0),
+        DataType::ListUtf8 => (9, 0, 0),
     }
 }
 
@@ -485,6 +520,8 @@ fn data_type(code: u8, precision: u8, scale: u8) -> Result<DataType, WireError> 
         5 => DataType::Utf8,
         6 => DataType::Date,
         7 => DataType::Timestamp,
+        8 => DataType::ListInt64,
+        9 => DataType::ListUtf8,
         other => return Err(WireError::new(format!("unknown type code {other}"))),
     })
 }
@@ -683,7 +720,48 @@ impl<'a> Reader<'a> {
                     text: text.to_owned(),
                 }
             }
+            DataType::ListInt64 => {
+                let offsets = self.list_offsets(rows)?;
+                let items = *offsets.last().expect("rows + 1 offsets") as usize;
+                Values::ListInt64 {
+                    offsets,
+                    items: self.fixed(items, i64::from_le_bytes)?,
+                }
+            }
+            DataType::ListUtf8 => {
+                let offsets = self.list_offsets(rows)?;
+                let items = *offsets.last().expect("rows + 1 offsets") as usize;
+                let item_offsets = self.fixed(Self::times(items, 1)? + 1, u32::from_le_bytes)?;
+                self.pad()?;
+                let length = *item_offsets.last().expect("items + 1 offsets") as usize;
+                let text = std::str::from_utf8(self.take(length)?)
+                    .map_err(|_| WireError::new("a text is not UTF-8"))?;
+                self.pad()?;
+                if item_offsets[0] != 0
+                    || item_offsets.windows(2).any(|pair| pair[0] > pair[1])
+                    || item_offsets
+                        .iter()
+                        .any(|offset| !text.is_char_boundary(*offset as usize))
+                {
+                    return Err(WireError::new("the text offsets do not fit the text"));
+                }
+                Values::ListUtf8 {
+                    offsets,
+                    item_offsets,
+                    text: text.to_owned(),
+                }
+            }
         })
+    }
+
+    /// The `rows + 1` offsets of a list column, checked to start at 0 and never fall.
+    fn list_offsets(&mut self, rows: usize) -> Result<Vec<u32>, WireError> {
+        let offsets = self.fixed(Self::times(rows, 1)? + 1, u32::from_le_bytes)?;
+        self.pad()?;
+        if offsets[0] != 0 || offsets.windows(2).any(|pair| pair[0] > pair[1]) {
+            return Err(WireError::new("the list offsets do not fit"));
+        }
+        Ok(offsets)
     }
 
     fn fixed<T, const N: usize>(
@@ -1120,5 +1198,64 @@ mod tests {
             let (back, _) = decode_result(&encode_result(&table, 9)).unwrap();
             same(&table, &back);
         }
+    }
+
+    /// List columns (issue #185) come back as they went: NULL, the empty list,
+    /// order and duplicates, non-ASCII text — and survive `take` and `slice`.
+    #[test]
+    fn list_columns_round_trip() {
+        let schema = Schema::new(vec![
+            Field::new(FieldName::new("tags").unwrap(), DataType::ListUtf8),
+            Field::new(FieldName::new("rooms").unwrap(), DataType::ListInt64),
+        ]);
+        let tags = vec![
+            Value::List(vec![
+                Value::Utf8("b".into()),
+                Value::Utf8("ä".into()),
+                Value::Utf8("b".into()),
+            ]),
+            Value::Null,
+            Value::List(vec![]),
+            Value::List(vec![Value::Utf8(String::new())]),
+        ];
+        let rooms = vec![
+            Value::List(vec![Value::Int64(3), Value::Int64(-1)]),
+            Value::List(vec![]),
+            Value::Null,
+            Value::List(vec![Value::Int64(i64::MAX)]),
+        ];
+        let table = Table::from_values(&schema, &[tags.clone(), rooms.clone()]).unwrap();
+        let bytes = encode_result(&table, 4);
+        let (back, total) = decode_result(&bytes).unwrap();
+        assert_eq!(total, 4);
+        assert_eq!(back.to_values(), vec![tags.clone(), rooms.clone()]);
+
+        let taken = table.column_at(0).take(&[3, 0]);
+        assert_eq!(
+            (0..2).map(|row| taken.value(row)).collect::<Vec<_>>(),
+            vec![tags[3].clone(), tags[0].clone()]
+        );
+    }
+
+    /// Offsets that point past what is there are a sentence, not a panic.
+    #[test]
+    fn broken_list_offsets_are_refused() {
+        let schema = Schema::new(vec![Field::new(
+            FieldName::new("rooms").unwrap(),
+            DataType::ListInt64,
+        )]);
+        let table = Table::from_values(
+            &schema,
+            &[vec![Value::List(vec![Value::Int64(1), Value::Int64(2)])]],
+        )
+        .unwrap();
+        let mut bytes = encode_result(&table, 1);
+        // The list's end offset says three items; two are there.
+        let at = bytes.len() - 2 * 8 - 8 + 4;
+        bytes[at] = 3;
+        assert!(decode_result(&bytes).is_err());
+        // A truncated column is refused too.
+        let bytes = encode_result(&table, 1);
+        assert!(decode_result(&bytes[..bytes.len() - 4]).is_err());
     }
 }

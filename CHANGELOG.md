@@ -20,6 +20,18 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Added
 
+- **List values in a cell, with a type-ahead editor** ([#185](https://github.com/casoon/opengrid/issues/185)).
+  Schema types `list<utf8>` and `list<int64>`: shown as chips, edited in an ARIA combobox over
+  `set_choices` (which may now give `{ value, label }` pairs), several picks, `Backspace` takes
+  the last back, `Enter` commits, a text that is no choice is refused with the reason. Filter
+  operators **contains**, **contains all** and **is empty** (`has`, `has_all`, `is_empty` on the wire).
+  A plain column with choices gets the same combobox instead of a `<select>`. Engine, wire format
+  (type codes 8 and 9, additive), CSV (a JSON array in the cell), SQLite (JSON text, `json_each`)
+  and PostgreSQL (arrays) agree on 20 conformance cases. **A list has no order:** sorting,
+  grouping or `min`/`max` on a list column is refused (`ListNotOrdered`).
+  **What breaks:** a page that read `Value` or `DataType` exhaustively in Rust must handle the new
+  variants; the wire format is unchanged for existing columns; a reader older than this version
+  refuses a result that carries a list column ("unknown type code").
 - **Undo and redo of edits** ([#186](https://github.com/casoon/opengrid/issues/186)).
   `Ctrl`/`Cmd`+`Z` and `Shift`+`Ctrl`/`Cmd`+`Z` (or `Ctrl`+`Y`) walk the grid's own history of
   cell edits, added rows and pastes (a paste is one step). Each step fires the original event

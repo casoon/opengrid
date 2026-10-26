@@ -183,6 +183,10 @@ pub fn values_equal(expected: &Value, actual: &Value) -> bool {
         (Value::Utf8(a), Value::Utf8(b)) => a == b,
         (Value::Date(a), Value::Date(b)) => a.days_since_epoch() == b.days_since_epoch(),
         (Value::Timestamp(a), Value::Timestamp(b)) => a.micros() == b.micros(),
+        // A list is its elements in order — and the order is part of the value.
+        (Value::List(a), Value::List(b)) => {
+            a.len() == b.len() && a.iter().zip(b).all(|(a, b)| values_equal(a, b))
+        }
         _ => false,
     }
 }
@@ -372,9 +376,30 @@ impl std::fmt::Display for Report {
 /// NULL ordering, binary string comparison, exact decimals, NaN, derived
 /// columns. A `Connector` runs through `opengrid_connector::AsSource`.
 pub async fn check_source<S: DataSource>(source: &S) -> Report {
-    let schema = fixture_schema();
+    check_cases(source, "cases", &fixture_schema()).await
+}
+
+/// The schema of the list dataset (issue #185): two list columns, one with a
+/// NULL, an empty list, duplicates, text with commas and quotes.
+pub fn lists_schema() -> Schema {
+    load_schema(&suite_dir().join("data/lists.schema.json")).expect("the suite's own schema")
+}
+
+/// The list dataset's rows, as CSV with a header and `\N` for NULL.
+pub fn lists_csv() -> PathBuf {
+    suite_dir().join("data/lists.csv")
+}
+
+/// Runs the list cases (`list-cases/`, rules L1–L6) against `source`, which
+/// holds [`lists_csv`] under [`lists_schema`] as the source `lists`. The same
+/// promise as [`check_source`]: every source reads a list the same way.
+pub async fn check_lists<S: DataSource>(source: &S) -> Report {
+    check_cases(source, "list-cases", &lists_schema()).await
+}
+
+async fn check_cases<S: DataSource>(source: &S, directory: &str, schema: &Schema) -> Report {
     let mut checked =
-        check_dir(&suite_dir().join("cases"), &schema).expect("the suite's own cases");
+        check_dir(&suite_dir().join(directory), schema).expect("the suite's own cases");
     checked.sort_by(|a, b| a.case.id.cmp(&b.case.id));
     let mut failures = Vec::new();
     for case in &checked {

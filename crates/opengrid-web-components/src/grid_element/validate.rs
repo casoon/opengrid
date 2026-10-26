@@ -90,19 +90,6 @@ pub(super) fn run(
     Some((Finding { level, message }, rule.block))
 }
 
-/// The text an editor holds.
-fn editor_text(editor: &Element) -> String {
-    match editor.clone().dyn_into::<HtmlInputElement>() {
-        Ok(input) if input.type_() == "checkbox" => input.checked().to_string(),
-        Ok(input) => input.value(),
-        Err(_) => editor
-            .clone()
-            .dyn_into::<HtmlSelectElement>()
-            .map(|select| select.value())
-            .unwrap_or_default(),
-    }
-}
-
 /// A keystroke (`input`) or a choice (`change`) in the editor of a cell.
 pub(super) fn on_editor_event(event: Event) {
     let Some(root) = current_shadow_root(&event) else {

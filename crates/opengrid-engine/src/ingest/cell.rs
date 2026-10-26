@@ -29,6 +29,10 @@ pub(crate) fn from_text(raw: &str, data_type: DataType) -> Result<Value, String>
         DataType::Decimal { .. } | DataType::Date | DataType::Timestamp => {
             Value::from_wire_str(raw, &data_type).map_err(|error| error.to_string())
         }
+        // A list is the JSON array it is on the wire, in the one cell (issue #185).
+        DataType::ListUtf8 | DataType::ListInt64 => {
+            Value::from_wire_str(raw, &data_type).map_err(|error| error.to_string())
+        }
     }
 }
 

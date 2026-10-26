@@ -64,7 +64,7 @@ test("Escape drops the panel, a read-only column refuses it, and a column with c
   await focusCell(page, 1, 2);
   await page.keyboard.press("F2");
   await expect.poll(() => panel(page)).toBe("Set room for 3 rows selected");
-  expect(await shadow(page, (root) => root.querySelector('[part="bulk"] select [value="B2"], [part="bulk"] select option[value="B2"]') !== null)).toBe(true);
+  expect(await shadow(page, (root) => root.querySelector('[part="bulk"] [role="option"][data-value="B2"]') !== null)).toBe(true);
   await page.keyboard.press("Escape");
   expect(await panel(page)).toBeNull();
   expect(await page.evaluate(() => window.__bulk)).toHaveLength(0);

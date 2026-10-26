@@ -1,0 +1,39 @@
+{
+  "id": "l1-not-has-keeps-the-empty-list-and-drops-null",
+  "rule": "L1",
+  "query": {
+    "source": "lists",
+    "select": [
+      "id"
+    ],
+    "filter": {
+      "not": {
+        "field": "tags",
+        "op": "has",
+        "value": "math"
+      }
+    },
+    "sort": [
+      {
+        "field": "id"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "id"
+    ],
+    "rows": [
+      [
+        3
+      ],
+      [
+        6
+      ],
+      [
+        7
+      ]
+    ]
+  },
+  "ordered": true
+}

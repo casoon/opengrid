@@ -500,7 +500,11 @@ export type FilterOperator =
   | "contains"
   | "starts_with"
   | "is_null"
-  | "is_not_null";
+  | "is_not_null"
+  /** A list column holds the value / every value / nothing (issue #185). */
+  | "has"
+  | "has_all"
+  | "is_empty";
 
 /** An aggregate in group rows and the grand total. */
 export type Aggregate = "sum" | "avg" | "count" | "min" | "max" | "range";
@@ -555,7 +559,11 @@ export type Format =
 
 export type Formats = Record<string, Format>;
 
-export type Choices = Record<string, string[]>;
+/** One choice: a value, or a `{ value, label }` pair — the label is shown, the value is stored. */
+export type Choice = string | number | { value: string | number; label?: string };
+
+/** The choices of each column; a list column is edited only with them (issue #185). */
+export type Choices = Record<string, Choice[]>;
 
 // ---------------------------------------------------------------------------
 // The view
@@ -846,6 +854,13 @@ export type TextKey =
   | "bulkDone"
   | "validationWarning"
   | "validationError"
+  | "typeList"
+  | "choicesOne"
+  | "choicesOther"
+  | "choiceRefused"
+  | "listItemAdded"
+  | "listItemRemoved"
+  | "listItemRemove"
   | "undoCell"
   | "redoCell"
   | "undoAdded"

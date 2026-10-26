@@ -1,0 +1,72 @@
+{
+  "id": "l4-a-list-comes-back-as-it-went",
+  "rule": "L4",
+  "query": {
+    "source": "lists",
+    "select": [
+      "id",
+      "tags",
+      "rooms"
+    ],
+    "filter": {
+      "field": "id",
+      "op": "in",
+      "value": [
+        1,
+        5,
+        6
+      ]
+    },
+    "sort": [
+      {
+        "field": "id"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "id",
+      "tags",
+      "rooms"
+    ],
+    "rows": [
+      [
+        1,
+        [
+          "math",
+          "physics"
+        ],
+        [
+          101,
+          102
+        ]
+      ],
+      [
+        5,
+        [
+          "physics",
+          "math",
+          "math"
+        ],
+        [
+          -1,
+          102,
+          102
+        ]
+      ],
+      [
+        6,
+        [
+          "Math",
+          "ä",
+          "a,b",
+          "say \"hi\""
+        ],
+        [
+          7
+        ]
+      ]
+    ]
+  },
+  "ordered": true
+}

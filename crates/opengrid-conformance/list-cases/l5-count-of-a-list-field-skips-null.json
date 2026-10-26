@@ -1,0 +1,34 @@
+{
+  "id": "l5-count-of-a-list-field-skips-null",
+  "rule": "L5",
+  "query": {
+    "source": "lists",
+    "select": [
+      "n_tags",
+      "n"
+    ],
+    "aggregate": [
+      {
+        "field": "tags",
+        "fn": "count",
+        "as": "n_tags"
+      },
+      {
+        "fn": "count",
+        "as": "n"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "n_tags",
+      "n"
+    ],
+    "rows": [
+      [
+        6,
+        7
+      ]
+    ]
+  }
+}

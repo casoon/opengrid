@@ -87,6 +87,7 @@ use crate::grid_element_events::{
 };
 
 mod bulk;
+mod combo;
 mod history;
 mod paste;
 mod validate;
@@ -969,6 +970,10 @@ fn render(host: &HtmlElement, focus_after: bool) {
         fix_presentation(&root, &schema, &presentation::styles(host));
     }
     sync_chrome(host);
+    // The lists of list columns are chips, drawn over the text the frame wrote.
+    if let Some(root) = host.shadow_root() {
+        combo::draw_cells(host, &root);
+    }
 
     if focus_after {
         focus_active(host);
@@ -1372,6 +1377,8 @@ fn add_listeners(root: &ShadowRoot) {
     let validating = Closure::<dyn FnMut(Event)>::new(validate::on_editor_event).into_js_value();
     let _ = root.add_event_listener_with_callback("input", validating.unchecked_ref());
     let _ = root.add_event_listener_with_callback("change", validating.unchecked_ref());
+    let typing = Closure::<dyn FnMut(Event)>::new(combo::on_input).into_js_value();
+    let _ = root.add_event_listener_with_callback("input", typing.unchecked_ref());
     let pasted = Closure::<dyn FnMut(Event)>::new(paste::on_paste).into_js_value();
     let _ = root.add_event_listener_with_callback("paste", pasted.unchecked_ref());
     let scroll = Closure::<dyn FnMut(Event)>::new(on_scroll).into_js_value();
@@ -1546,6 +1553,15 @@ fn on_key_down(event: KeyboardEvent) {
         }
     }
 
+    // The combobox of an editor (issue #185) takes its own keys first: the arrows,
+    // `Backspace` on its chips, `Enter` on an option.
+    if let Some(target) = event
+        .target()
+        .and_then(|node| node.dyn_into::<Element>().ok())
+        && combo::on_key(&host, &event, &target)
+    {
+        return;
+    }
     // The bulk panel (issue #187) answers `Enter` and `Escape`.
     if let Some(target) = event
         .target()
@@ -2847,32 +2863,18 @@ pub(crate) fn write_row_state(
 /// Where `set_choices` stores what the page supplied.
 pub(crate) const CHOICES_KEY: &str = "__opengridChoices";
 
-/// The choices a page supplied for a column, turning its editor into a select.
-///
-/// V1 has no enum type, so a `<select>` has no source of options in the schema —
-/// the page is the only honest one (plan point 37).
-fn choices_for(host: &HtmlElement, col: usize) -> Option<Vec<String>> {
-    let name = columns_of(host).get(col)?.clone();
-    let value =
-        js_sys::Reflect::get(host.as_ref(), &JsValue::from_str("__opengridChoices")).ok()?;
-    let list = js_sys::Reflect::get(&value, &JsValue::from_str(&name)).ok()?;
-    let array = list.dyn_into::<js_sys::Array>().ok()?;
-    let options: Vec<String> = array.iter().filter_map(|item| item.as_string()).collect();
-    (!options.is_empty()).then_some(options)
-}
-
 /// Opens the editor on the focused data cell (plan point 37).
 ///
 /// The editor is an ordinary form control inside the cell, typed after the
-/// column: `text`, `number` with the column's step, `date`, `checkbox`, or a
-/// `<select>` when the page supplied choices. The same derivation as the filter
-/// row (point 51) — one place decides what a column can hold.
+/// column: `text`, `number` with the column's step, `date`, `checkbox`, or the
+/// type-ahead combobox when the page supplied choices ([`combo`]). The same
+/// derivation as the filter row (point 51) — one place decides what a column
+/// can hold.
 ///
 /// `typed` is the character that opened it, if a character did: it **replaces**
-/// the value in a text or number field, as in a spreadsheet, and in a select
-/// it picks the one choice that fits ([`grid::choice_for_typed`]) — the reader
-/// still confirms with `Enter`. A date or a checkbox has no place for one
-/// character; it opens on the cell's value.
+/// the value in a text or number field, as in a spreadsheet, and in a combobox
+/// it is the start of what is looked for. A date or a checkbox has no place
+/// for one character; it opens on the cell's value.
 fn begin_edit(host: &HtmlElement, cell: CellRef, typed: Option<&str>) {
     let Some(runtime) = runtime(host) else {
         return;
@@ -2890,11 +2892,17 @@ fn begin_edit(host: &HtmlElement, cell: CellRef, typed: Option<&str>) {
         if presentation::styles(host).readonly(field.name.as_str()) {
             return;
         }
-        let current = borrowed
-            .state
-            .cell(cell)
-            .map(crate::formats::plain_text)
-            .unwrap_or_default();
+        // A list is edited in a combobox over the page's choices; with none there
+        // is nothing to pick from, and no editor (issue #185).
+        if field.data_type.is_list() && combo::choices_of(host, cell.col).is_none() {
+            return;
+        }
+        let current = match borrowed.state.cell(cell) {
+            // The JSON array, which the combobox reads its chips from.
+            Some(list @ Value::List(_)) => opengrid_json::ToJson::to_json(list).to_string(),
+            Some(value) => crate::formats::plain_text(value),
+            None => String::new(),
+        };
         (field.data_type, current)
     };
     if runtime.borrow_mut().state.begin_edit(cell).is_empty() {
@@ -2930,8 +2938,24 @@ fn begin_edit(host: &HtmlElement, cell: CellRef, typed: Option<&str>) {
         return;
     };
     let _ = td.append_child(&editor);
-    if let Ok(element) = editor.dyn_into::<HtmlElement>() {
+    focus_editor(&editor);
+}
+
+/// Puts the focus in an editor: in its text field, for a combobox.
+fn focus_editor(editor: &Element) {
+    let target = if combo::is_combo(editor) {
+        editor.query_selector("input").ok().flatten()
+    } else {
+        Some(editor.clone())
+    };
+    if let Some(element) = target.and_then(|target| target.dyn_into::<HtmlElement>().ok()) {
         let _ = element.focus();
+        // A pick that is already there is replaced by typing, as in a select.
+        if let Ok(field) = element.dyn_into::<HtmlInputElement>()
+            && combo::is_combo(editor)
+        {
+            field.select();
+        }
     }
 }
 
@@ -2948,53 +2972,52 @@ fn build_editor(
     current: &str,
     typed: Option<&str>,
 ) -> Option<Element> {
-    let choices = choices_for(host, col);
-    let editor: Element = match &choices {
-        Some(options) => {
-            let Ok(select) = document.create_element("select") else {
-                return None;
-            };
-            let chosen = typed
-                .and_then(|typed| grid::choice_for_typed(options, typed))
-                .unwrap_or(current);
-            for option in options {
-                if let Ok(node) = document.create_element("option") {
-                    node.set_text_content(Some(option));
-                    let _ = node.set_attribute("value", option);
-                    if option == chosen {
-                        let _ = node.set_attribute("selected", "");
-                    }
-                    let _ = select.append_child(&node);
-                }
-            }
-            select
+    // A column with choices is edited in the type-ahead combobox (issue #185).
+    if let Some(editor) = combo::build(host, document, col, name, data_type, current, typed) {
+        return Some(editor);
+    }
+    let editor: Element = {
+        let Ok(input) = document.create_element("input") else {
+            return None;
+        };
+        let kind = grid::input_type(data_type);
+        let _ = input.set_attribute("type", kind);
+        if let Some(step) = grid::input_step(data_type) {
+            let _ = input.set_attribute("step", &step);
         }
-        None => {
-            let Ok(input) = document.create_element("input") else {
-                return None;
-            };
-            let kind = grid::input_type(data_type);
-            let _ = input.set_attribute("type", kind);
-            if let Some(step) = grid::input_step(data_type) {
-                let _ = input.set_attribute("step", &step);
+        if kind == "checkbox" {
+            if current == "true" {
+                let _ = input.set_attribute("checked", "");
             }
-            if kind == "checkbox" {
-                if current == "true" {
-                    let _ = input.set_attribute("checked", "");
-                }
-            } else if let Ok(field) = input.clone().dyn_into::<HtmlInputElement>() {
-                match typed {
-                    Some(typed) if kind != "date" => field.set_value(typed),
-                    _ => field.set_value(current),
-                }
+        } else if let Ok(field) = input.clone().dyn_into::<HtmlInputElement>() {
+            match typed {
+                Some(typed) if kind != "date" => field.set_value(typed),
+                _ => field.set_value(current),
             }
-            input
         }
+        input
     };
     let _ = editor.set_attribute("part", "editor");
     // The column name is the accessible name: the cell it sits in has none.
     let _ = editor.set_attribute("aria-label", name);
     Some(editor)
+}
+
+/// The text an editor holds: an input's value, a checkbox's state, the value of a
+/// `<select>` — or what a combobox holds (issue #185).
+fn editor_text(editor: &Element) -> String {
+    if combo::is_combo(editor) {
+        return combo::text(editor);
+    }
+    match editor.clone().dyn_into::<HtmlInputElement>() {
+        Ok(input) if input.type_() == "checkbox" => input.checked().to_string(),
+        Ok(input) => input.value(),
+        Err(_) => editor
+            .clone()
+            .dyn_into::<HtmlSelectElement>()
+            .map(|select| select.value())
+            .unwrap_or_default(),
+    }
 }
 
 /// Closes the editor, optionally taking what it holds (plan point 37).
@@ -3014,20 +3037,8 @@ fn end_edit(host: &HtmlElement, commit: bool) {
         return;
     };
 
-    let typed = root
-        .query_selector("[part=\"editor\"]")
-        .ok()
-        .flatten()
-        .map(
-            |editor| match editor.clone().dyn_into::<HtmlInputElement>() {
-                Ok(input) if input.type_() == "checkbox" => input.checked().to_string(),
-                Ok(input) => input.value(),
-                Err(_) => editor
-                    .dyn_into::<HtmlSelectElement>()
-                    .map(|select| select.value())
-                    .unwrap_or_default(),
-            },
-        );
+    let editor = root.query_selector("[part=\"editor\"]").ok().flatten();
+    let typed = editor.as_ref().map(editor_text);
 
     let (data_type, field_name, nullable) = {
         let borrowed = runtime.borrow();
@@ -3095,9 +3106,14 @@ fn end_edit(host: &HtmlElement, commit: bool) {
         // One notation: the same parser the filter row and the wire format use,
         // so a value typed into a cell means what it would have meant anywhere
         // else (E13, S8, S9).
-        match grid::literal(text, data_type)
-            .and_then(|json| Value::from_json_typed(&json, &data_type).ok())
-        {
+        let parsed = if data_type.is_list() {
+            // The JSON array the combobox wrote (issue #185).
+            Value::from_wire_str(text, &data_type).ok()
+        } else {
+            grid::literal(text, data_type)
+                .and_then(|json| Value::from_json_typed(&json, &data_type).ok())
+        };
+        match parsed {
             Some(value) => commit_cell(
                 host,
                 &runtime,
@@ -3206,6 +3222,7 @@ fn redraw_cell(host: &HtmlElement, cell: CellRef) {
             .unwrap_or_default();
         td.set_text_content(Some(&text));
         let _ = td.remove_attribute("data-validating");
+        combo::draw_cell(host, &td, cell);
     }
     if borrowed.state.is_changed(cell) {
         let _ = td.set_attribute("data-changed", "true");
@@ -3365,7 +3382,7 @@ fn commit_cell(
             borrowed.state.row_key(cell.row).cloned(),
         )
     };
-    let previous = crate::formats::plain_text(&before);
+    let previous = crate::formats::event_text(&before);
     let changed = !runtime
         .borrow_mut()
         .state
@@ -3879,6 +3896,13 @@ fn on_filter_clear(event: Event) {
         } else {
             open_columns(&root, true);
         }
+        return;
+    }
+
+    // An option or a chip of a combobox (issue #185).
+    if let Ok(host) = root.host().dyn_into::<HtmlElement>()
+        && combo::on_click(&host, &target)
+    {
         return;
     }
 
@@ -7252,6 +7276,7 @@ fn update_search(host: &HtmlElement, root: &ShadowRoot) {
                 DataType::Float64 | DataType::Decimal { .. } => &texts.type_number,
                 DataType::Date => &texts.type_date,
                 DataType::Timestamp => &texts.type_time,
+                DataType::ListUtf8 | DataType::ListInt64 => &texts.type_list,
             };
             kind.set_text_content(Some(name));
             let _ = option.append_child(&kind);

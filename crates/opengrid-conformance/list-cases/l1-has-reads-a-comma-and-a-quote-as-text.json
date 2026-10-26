@@ -1,0 +1,40 @@
+{
+  "id": "l1-has-reads-a-comma-and-a-quote-as-text",
+  "rule": "L1",
+  "query": {
+    "source": "lists",
+    "select": [
+      "id"
+    ],
+    "filter": {
+      "or": [
+        {
+          "field": "tags",
+          "op": "has",
+          "value": "a,b"
+        },
+        {
+          "field": "tags",
+          "op": "has",
+          "value": "say \"hi\""
+        }
+      ]
+    },
+    "sort": [
+      {
+        "field": "id"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "id"
+    ],
+    "rows": [
+      [
+        6
+      ]
+    ]
+  },
+  "ordered": true
+}

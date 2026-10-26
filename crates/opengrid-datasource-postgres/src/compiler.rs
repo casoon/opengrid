@@ -348,6 +348,36 @@ impl PostgresCompiler {
             ValidatedFilter::IsNotNull { field, .. } => {
                 sql.push(&format!("{} IS NOT NULL", self.column(field.as_str())?));
             }
+            // A list column is a PostgreSQL array (issue #185). A NULL array is
+            // unknown for `has` and `has_all` (S1) and plainly not empty.
+            ValidatedFilter::Has { field, value } => {
+                let element = element_type(value);
+                sql.param(value.clone(), element);
+                sql.push(&format!(" = ANY({})", self.column(field.as_str())?));
+            }
+            ValidatedFilter::HasAll { field, values } => {
+                let column = self.column(field.as_str())?;
+                let Some(first) = values.first() else {
+                    // Nothing is asked for: any list has it, a NULL does not.
+                    sql.push(&format!("({column} IS NOT NULL)"));
+                    return Ok(());
+                };
+                let element = element_type(first);
+                sql.push(&format!("{column} @> ARRAY["));
+                for (index, value) in values.iter().enumerate() {
+                    if index > 0 {
+                        sql.push(", ");
+                    }
+                    sql.param(value.clone(), element);
+                }
+                sql.push(&format!("]::{}[]", pg_type(element)));
+            }
+            ValidatedFilter::IsEmpty { field } => {
+                let column = self.column(field.as_str())?;
+                sql.push(&format!(
+                    "({column} IS NOT NULL AND cardinality({column}) = 0)"
+                ));
+            }
             ValidatedFilter::InList {
                 field,
                 data_type,
@@ -454,6 +484,17 @@ pub fn pg_type(data_type: DataType) -> String {
         DataType::Date => "date".to_owned(),
         // S9: an instant in UTC with microsecond resolution.
         DataType::Timestamp => "timestamptz".to_owned(),
+        // An array (issue #185); the elements are never NULL.
+        DataType::ListUtf8 => "text[]".to_owned(),
+        DataType::ListInt64 => "bigint[]".to_owned(),
+    }
+}
+
+/// The type of a list element a filter literal is: a string or an integer.
+fn element_type(value: &Value) -> DataType {
+    match value {
+        Value::Int64(_) => DataType::Int64,
+        _ => DataType::Utf8,
     }
 }
 
@@ -466,7 +507,7 @@ fn sql_operator(op: CmpOp) -> &'static str {
         CmpOp::Gt => ">",
         CmpOp::Gte => ">=",
         // Handled before this point.
-        CmpOp::In | CmpOp::Contains | CmpOp::StartsWith => "=",
+        CmpOp::In | CmpOp::Contains | CmpOp::StartsWith | CmpOp::Has | CmpOp::HasAll => "=",
     }
 }
 

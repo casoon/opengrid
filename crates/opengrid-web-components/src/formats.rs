@@ -72,6 +72,18 @@ pub fn plain_text(value: &Value) -> String {
         Value::Utf8(text) => text.clone(),
         Value::Date(date) => date.to_string(),
         Value::Timestamp(timestamp) => timestamp.to_string(),
+        // The elements, comma-separated; the grid draws each as a chip (issue #185).
+        Value::List(items) => items.iter().map(plain_text).collect::<Vec<_>>().join(", "),
+    }
+}
+
+/// The value as an event gives it to the page: [`plain_text`], except that a
+/// list is the JSON array it is on the wire (issue #185) — the text a page can
+/// read back, where `a, b` could not tell `["a, b"]` from `["a","b"]`.
+pub fn event_text(value: &Value) -> String {
+    match value {
+        Value::List(_) => opengrid_json::ToJson::to_json(value).to_string(),
+        other => plain_text(other),
     }
 }
 

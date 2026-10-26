@@ -35,6 +35,8 @@ pub enum QueryError {
     ListExpected { path: String },
     /// `in` list contains a NULL (rule S2).
     NullInList { path: String },
+    /// A list column is not sorted or grouped on: a list has no order (issue #185).
+    ListNotOrdered { path: String, column: String },
     /// Filter nesting exceeds `Limits::max_depth`.
     FilterTooDeep { depth: usize, max_depth: usize },
     /// In an aggregate query a selected field is neither grouped nor an aggregate alias.
@@ -82,6 +84,7 @@ impl QueryError {
             QueryError::ValueTypeMismatch { .. } => "ValueTypeMismatch",
             QueryError::ListExpected { .. } => "ListExpected",
             QueryError::NullInList { .. } => "NullInList",
+            QueryError::ListNotOrdered { .. } => "ListNotOrdered",
             QueryError::FilterTooDeep { .. } => "FilterTooDeep",
             QueryError::SelectNotGrouped { .. } => "SelectNotGrouped",
             QueryError::AggregateFieldRequired { .. } => "AggregateFieldRequired",
@@ -108,6 +111,7 @@ impl QueryError {
             | QueryError::ValueTypeMismatch { path, .. }
             | QueryError::ListExpected { path }
             | QueryError::NullInList { path }
+            | QueryError::ListNotOrdered { path, .. }
             | QueryError::SelectNotGrouped { path, .. }
             | QueryError::AggregateFieldRequired { path, .. }
             | QueryError::AggregateTypeMismatch { path, .. }
@@ -157,6 +161,10 @@ impl fmt::Display for QueryError {
             QueryError::NullInList { path } => {
                 write!(f, "{path}: NULL is not allowed in an in list")
             }
+            QueryError::ListNotOrdered { path, column } => write!(
+                f,
+                "{path}: {column:?} is a list column; a list has no order, so it is neither sorted nor grouped on"
+            ),
             QueryError::FilterTooDeep { depth, max_depth } => {
                 write!(f, "filter depth {depth} exceeds the maximum of {max_depth}")
             }

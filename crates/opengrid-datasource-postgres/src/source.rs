@@ -233,6 +233,11 @@ pub(crate) fn wrap_for_reading(
                 DataType::Timestamp => format!(
                     "to_char({column} AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"') AS {column}"
                 ),
+                // A list comes back as the JSON array it is on the wire; an array
+                // literal's quoting is PostgreSQL's, JSON's is ours (issue #185).
+                DataType::ListUtf8 | DataType::ListInt64 => {
+                    format!("to_json({column})::text AS {column}")
+                }
         });
     }
     Ok(format!(
@@ -257,6 +262,7 @@ fn text_of(value: &Value) -> Option<String> {
         Value::Utf8(text) => Some(text.clone()),
         Value::Date(date) => Some(date.to_string()),
         Value::Timestamp(timestamp) => Some(timestamp.to_string()),
+        Value::List(_) => Some(opengrid_json::ToJson::to_json(value).to_string()),
     }
 }
 
@@ -284,6 +290,8 @@ pub(crate) fn value_from_text(
                 _ => text.to_owned(),
             }
         }
+        // The text is the JSON array `to_json` wrote.
+        DataType::ListUtf8 | DataType::ListInt64 => text.to_owned(),
         _ => opengrid_json::Json::from(text).to_string(),
     };
 

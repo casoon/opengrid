@@ -172,6 +172,11 @@ pub enum FilterExpr {
     IsNotNull {
         field: FieldName,
     },
+    /// The list is empty (issue #185): true for the empty list only — a NULL is
+    /// not an empty list.
+    IsEmpty {
+        field: FieldName,
+    },
 }
 
 impl FilterExpr {
@@ -182,7 +187,10 @@ impl FilterExpr {
                 1 + items.iter().map(Self::depth).max().unwrap_or(0)
             }
             FilterExpr::Not(inner) => 1 + inner.depth(),
-            FilterExpr::Cmp { .. } | FilterExpr::IsNull { .. } | FilterExpr::IsNotNull { .. } => 1,
+            FilterExpr::Cmp { .. }
+            | FilterExpr::IsNull { .. }
+            | FilterExpr::IsNotNull { .. }
+            | FilterExpr::IsEmpty { .. } => 1,
         }
     }
 }
@@ -201,6 +209,11 @@ pub enum CmpOp {
     In,
     Contains,
     StartsWith,
+    /// A list contains the value (issue #185). Named apart from `contains`,
+    /// which is the substring of a text.
+    Has,
+    /// A list contains every value of an array (issue #185).
+    HasAll,
 }
 
 impl CmpOp {
@@ -216,6 +229,8 @@ impl CmpOp {
             CmpOp::In => "in",
             CmpOp::Contains => "contains",
             CmpOp::StartsWith => "starts_with",
+            CmpOp::Has => "has",
+            CmpOp::HasAll => "has_all",
         }
     }
 
@@ -231,6 +246,8 @@ impl CmpOp {
             "in" => CmpOp::In,
             "contains" => CmpOp::Contains,
             "starts_with" => CmpOp::StartsWith,
+            "has" => CmpOp::Has,
+            "has_all" => CmpOp::HasAll,
             _ => return None,
         })
     }
@@ -304,6 +321,12 @@ impl FromJson for FilterExpr {
                 }
                 Ok(FilterExpr::IsNotNull { field })
             }
+            "is_empty" => {
+                if value.is_some() {
+                    return fail("is_empty takes no value".to_owned());
+                }
+                Ok(FilterExpr::IsEmpty { field })
+            }
             other => {
                 let op = CmpOp::parse(other)
                     .ok_or_else(|| Error::new(format!("unknown operator {other:?}")))?;
@@ -330,6 +353,9 @@ impl ToJson for FilterExpr {
             }
             FilterExpr::IsNotNull { field } => {
                 opengrid_json::json!({ "field": field, "op": "is_not_null" })
+            }
+            FilterExpr::IsEmpty { field } => {
+                opengrid_json::json!({ "field": field, "op": "is_empty" })
             }
         }
     }
@@ -374,6 +400,8 @@ named!(CmpOp {
     In = "in",
     Contains = "contains",
     StartsWith = "starts_with",
+    Has = "has",
+    HasAll = "has_all",
 });
 named!(SortDirection { Asc = "asc", Desc = "desc" });
 named!(NullsOrder { First = "first", Last = "last" });
@@ -501,7 +529,8 @@ impl AggregateFn {
                 }
                 _ => None,
             },
-            AggregateFn::Min | AggregateFn::Max => Some(input),
+            // A list has no order (issue #185), so it has no smallest or largest.
+            AggregateFn::Min | AggregateFn::Max => (!input.is_list()).then_some(input),
         }
     }
 }
@@ -542,6 +571,7 @@ impl fmt::Display for FilterExpr {
             FilterExpr::Cmp { field, op, .. } => write!(f, "{} {}", field, op.as_str()),
             FilterExpr::IsNull { field } => write!(f, "{field} is_null"),
             FilterExpr::IsNotNull { field } => write!(f, "{field} is_not_null"),
+            FilterExpr::IsEmpty { field } => write!(f, "{field} is_empty"),
         }
     }
 }

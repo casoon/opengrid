@@ -159,3 +159,27 @@ async fn both_engines_answer_the_same_thing() {
         failures.join("\n")
     );
 }
+
+/// The list cases (issue #185) against a real PostgreSQL: arrays, `= ANY`,
+/// `@>` and `cardinality` answer as the engine does — a NULL array unknown,
+/// the empty array empty, order and repeats kept on the way out.
+#[tokio::test]
+async fn postgresql_answers_every_list_case() {
+    let Some((client, url)) = pg::connect().await else {
+        return;
+    };
+    let schema = opengrid_conformance::lists_schema();
+    let table =
+        pg::create_fixture_of(&client, &schema, "opengrid_conformance_lists", "lists.csv").await;
+
+    let source = PostgresDataSource::connect(&url, &table, schema).expect("a source");
+    let report = opengrid_conformance::check_lists(&AsSource(&source)).await;
+
+    client
+        .batch_execute(&format!("DROP TABLE \"{table}\";"))
+        .await
+        .expect("drop table");
+    println!("list conformance (PostgreSQL): {report}");
+    report.assert_ok();
+    assert!(report.cases >= 20, "{report}");
+}
