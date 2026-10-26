@@ -43,6 +43,7 @@ instead.
 | `get_pivot(host, options)` | The pivot as it is shown, as CSV — see [exporting a pivot](#exporting-a-pivot). |
 | `set_cell_state(host, key, column, state, message?)` | What became of an edit the page saves: `saving`, `saved` or `error` — see [Saving edits](#saving-edits). |
 | `set_values(host, values)` | Values the page computes, `[{ key, column, value }]` — see [Saving edits](#saving-edits). |
+| `set_validators(host, validators)` | A function per column that runs while the reader types and says `null` or `{ level, message }` — see [Validation](#validation). |
 | `set_row_state(host, provisionalKey, state, detail?)` | What became of a row the reader added: `saving`, `saved` (with the record's key) or `error` (with a message) — see [Adding rows](#adding-rows). |
 | `set_actions(host, [{ id, label }])` | A trailing column per action, a button per row; fires `opengrid-row-action` — see [Row actions](#row-actions). |
 | `register()` | Defines the three elements. `loadOpengrid()` calls it; a page that loads the module itself calls it once. |
@@ -511,6 +512,32 @@ page loads fresh rows (`loadRows`) and the saved ones are the source's from then
 A field that is not nullable in the schema is marked required in the new row. Adding without a
 value for one is refused: nothing fires, the cell is marked invalid and the status line says
 `{column} needs a value`. Off while grouped, in a tree and with `page-size`.
+
+### Validation
+
+```js
+loader.module.set_validators(grid, {
+  // a function: it never blocks
+  seats: (value, row) => (Number(value) > 60 ? { level: "warning", message: "Over 60 seats is a hall." } : null),
+  // an object: an error blocks the commit
+  name: {
+    validate: (value) => (taken.has(value) ? { level: "error", message: "That name is taken." } : null),
+    block: true,
+  },
+});
+```
+
+The function runs on every keystroke in the editor and once more on commit; `value` is the text as it
+stands (as `opengrid-cell-change` gives it) and `row` the record as loaded, by field name. It
+answers `null`, or `{ level: "warning" | "error", message }`. The message shows under the editor,
+stays on the cell (`data-validation`, with `aria-description`; an `error` is also `aria-invalid`) until
+the next result, and is said once, politely, in the status line.
+
+**A finding does not block the commit** — the reader may save a duplicate and fix it later — unless
+the column is given as `{ validate, block: true }` and the answer is an `error`: then the editor stays
+open with the message. What the schema refuses (a letter in a number) always blocks. For a finding the
+page only knows after saving, `set_cell_state(host, key, column, "invalid", message)` marks the record's
+cell the same way and keeps it across results.
 
 ### Setting a value for the selected rows
 
@@ -1162,7 +1189,7 @@ theme that animates a part.
 `field-group`, `field-menu`, `group-mark`, `group-toggle`, `grouping-menu`, `header`, `layout`, `menu-label`, `operator-menu`, `page-first`, `page-label`, `page-last`, `page-next`,
 `page-previous`, `pager`, `paste-apply`, `paste-discard`, `paste-preview`, `paste-summary`, `row`, `row-header`, `search`, `search-hint`, `search-input`, `search-list`,
 `select`, `select-all`, `select-mark`, `sort-button`, `sort-direction`, `sort-index`, `source`, `status`,
-`table`, `toolbar`, `total-row`, `viewport`.
+`table`, `toolbar`, `total-row`, `validation`, `viewport`.
 
 `<opengrid-table>` and `<opengrid-pivot>` ship no stylesheet beyond the look's
 ink and font and the alignment of a column (above) — they are plain tables, and the
@@ -1270,6 +1297,7 @@ loader.module.set_texts(host, { lang: "de", loading: "Wird geladen …" });
 | `operators` | the ten filter operators, keyed by wire token | |
 | `filterInvalid` | `{column}: {value} is not a value for this column` | `{column}`, `{value}` |
 | `cellRequired` | `{column} needs a value` | `{column}` |
+| `validationWarning` / `validationError` | `Warning: {message}` / `Error: {message}` | `{message}` |
 | `bulkCaption` / `bulkApply` / `bulkMenu` | `Set {column} for {rows} selected` / `Set` / `Set for selected rows` | `{column}`, `{rows}` |
 | `bulkReadonly` / `bulkDone` | `{column} is read-only` / `{column} set for {rows}` | `{column}`, `{rows}` |
 | `pastePreview` / `pasteApply` / `pasteDiscard` | `Paste preview` / `Paste` / `Discard` | |

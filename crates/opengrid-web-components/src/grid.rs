@@ -363,6 +363,9 @@ pub const PASTE_PARTS: [&str; 4] = [
     "paste-apply",
     "paste-discard",
 ];
+/// The sentence under an editor a validator spoke about (issue #188), built by
+/// the element while a cell is edited.
+pub const VALIDATION_PART: &str = "validation";
 /// The parts of the bulk panel (issue #187), built by the element when it opens.
 pub const BULK_PARTS: [&str; 3] = ["bulk", "bulk-apply", "bulk-cancel"];
 /// The empty row at the end that a new record is typed into (issue #183).
@@ -1449,6 +1452,16 @@ pub fn grid_css() -> String {
          tbody tr[data-new-row] td[aria-required]::after {{ content: \" *\";
                              color: var({INK_MUTED_PROPERTY}); }}
          td[aria-invalid=\"true\"] {{ text-decoration: underline wavy; text-underline-offset: 3px; }}
+         td[data-validation=\"warning\"] {{ text-decoration: underline dotted; text-underline-offset: 3px; }}
+         /* The sentence under the editor (issue #188): it overlaps the rows below, as a
+            tooltip would, and the cell lets it out while it is there. */
+         td[data-validating] {{ position: relative; overflow: visible; z-index: 4; }}
+         [part=\"validation\"] {{ position: absolute; inset-inline-start: 0; top: 100%; z-index: 4;
+                             min-width: 100%; box-sizing: border-box; padding: 2px var({PAD_PROPERTY});
+                             white-space: normal; font-size: 0.9em;
+                             color: var({INK_PROPERTY}); background: var({SURFACE_2_PROPERTY});
+                             border: 1px solid var({LINE_STRONG_PROPERTY}); }}
+         [part=\"validation\"][data-level=\"error\"] {{ border-color: var({ACCENT_PROPERTY}); }}
          tr[data-added=\"error\"] td {{ text-decoration: underline wavy; text-underline-offset: 3px; }}
          /* The preview of a paste (issue #184). */
          [part=\"paste-preview\"] {{ padding: 8px 12px; background: var({SURFACE_2_PROPERTY});
@@ -3494,7 +3507,45 @@ pub fn patch_grid(
                         });
                     }
                     let lacking = kind == RowKind::Draft && state.added().missing().contains(&col);
-                    if cell_state == Some(opengrid_grid::CellState::Error) || lacking {
+                    // What a validator or the page said about the value (issue #188).
+                    let finding = state.finding(reference);
+                    match &finding {
+                        Some(finding) => {
+                            buffer.push(Patch::SetAttribute {
+                                node: *cell,
+                                name: "data-validation".to_owned(),
+                                value: finding.level.as_str().to_owned(),
+                            });
+                            buffer.push(Patch::SetAttribute {
+                                node: *cell,
+                                name: "aria-description".to_owned(),
+                                value: finding.message.clone(),
+                            });
+                        }
+                        None => {
+                            buffer.push(Patch::RemoveAttribute {
+                                node: *cell,
+                                name: "data-validation".to_owned(),
+                            });
+                            // A tree names its context in the same attribute, on
+                            // cells nobody edits (issue #135): not ours to clear.
+                            if tree.is_none() {
+                                buffer.push(Patch::RemoveAttribute {
+                                    node: *cell,
+                                    name: "aria-description".to_owned(),
+                                });
+                            }
+                        }
+                    }
+                    let found_error = finding
+                        .as_ref()
+                        .is_some_and(|finding| finding.level == opengrid_grid::Level::Error);
+                    if matches!(
+                        cell_state,
+                        Some(opengrid_grid::CellState::Error | opengrid_grid::CellState::Invalid)
+                    ) || lacking
+                        || found_error
+                    {
                         buffer.push(Patch::SetAttribute {
                             node: *cell,
                             name: "aria-invalid".to_owned(),
