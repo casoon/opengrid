@@ -1,0 +1,8 @@
+{
+  "fields": [
+    { "name": "id", "type": "int64", "nullable": false },
+    { "name": "name", "type": "utf8", "nullable": false },
+    { "name": "tags", "type": "list<utf8>", "nullable": true },
+    { "name": "rooms", "type": "list<int64>", "nullable": true }
+  ]
+}

@@ -42,7 +42,10 @@
 # the same day from 276000: undo and redo (#186: the history, its steps for
 # cells, rows and pastes, the events with their flag, the texts) grew it by
 # 2.5 KiB, to 278522 B.
-grid+pivot    280500  # 278522 B, 2026-10-26, #186
+# Raised the same day from 280500: list columns (#185: chips in the cell, the
+# combobox editor with its choices and refusals, the list operators in the
+# filter row, the texts) grew it by 8.0 KiB, to 286622 B.
+grid+pivot    289000  # 286622 B, 2026-10-26, #185
 # Raised 2026-09-30 from 108000: the bound was not raised with 0.7.0, which
 # shipped the engine at 115.2 KiB already (CHANGELOG); rule P9's sorted
 # grouping sets and order sets (#108) added the rest, to 121610 B.
@@ -57,4 +60,7 @@ grid+pivot    280500  # 278522 B, 2026-10-26, #186
 # Raised 2026-10-26 from 144800: `load_rows` (#182) — the JSON ingest, which
 # the engine already had natively, reachable from the tab — grew the engine by
 # 1.5 KiB, to 144811 B.
-engine        146400  # 144811 B, 2026-10-26, #182
+# Raised the same day from 146400: the list types (#185: two list columns in the
+# column buffers and the binary form, `has`, `has_all`, `is_empty`, their
+# validation) grew the engine by 4.0 KiB, to 149014 B.
+engine        151000  # 149014 B, 2026-10-26, #185

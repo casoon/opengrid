@@ -94,8 +94,8 @@ fn apply_cell(
         cell,
         key.as_ref(),
         &column,
-        &crate::formats::plain_text(value),
-        &crate::formats::plain_text(other),
+        &crate::formats::event_text(value),
+        &crate::formats::event_text(other),
         Some(flag),
     );
     (cell, column)
@@ -202,11 +202,11 @@ fn apply_paste(
             ("column", JsValue::from_str(&column)),
             (
                 "value",
-                JsValue::from_str(&crate::formats::plain_text(value)),
+                JsValue::from_str(&crate::formats::event_text(value)),
             ),
             (
                 "previous",
-                JsValue::from_str(&crate::formats::plain_text(other)),
+                JsValue::from_str(&crate::formats::event_text(other)),
             ),
         ] {
             let _ = js_sys::Reflect::set(&item, &JsValue::from_str(name), &value);

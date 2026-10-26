@@ -23,6 +23,11 @@ pub enum DataType {
     Date,
     /// Instant in UTC with microsecond resolution (semantics rule S9).
     Timestamp,
+    /// An ordered list of UTF-8 strings (issue #185). A list is as a whole a
+    /// value that can be NULL; its elements cannot.
+    ListUtf8,
+    /// An ordered list of 64-bit integers (issue #185).
+    ListInt64,
 }
 
 impl DataType {
@@ -45,6 +50,20 @@ impl DataType {
         matches!(self, DataType::Decimal { .. })
     }
 
+    /// True for the list types.
+    pub fn is_list(&self) -> bool {
+        matches!(self, DataType::ListUtf8 | DataType::ListInt64)
+    }
+
+    /// The type of a list's elements; `None` for a type that is not a list.
+    pub fn element(&self) -> Option<DataType> {
+        match self {
+            DataType::ListUtf8 => Some(DataType::Utf8),
+            DataType::ListInt64 => Some(DataType::Int64),
+            _ => None,
+        }
+    }
+
     /// True for types ordered exactly (everything except `Float64`).
     pub fn is_exact(&self) -> bool {
         !matches!(self, DataType::Float64)
@@ -65,6 +84,8 @@ mod tests {
             (DataType::Date, "\"date\""),
             (DataType::Timestamp, "\"timestamp\""),
             (DataType::Float64, "\"float64\""),
+            (DataType::ListUtf8, "\"list<utf8>\""),
+            (DataType::ListInt64, "\"list<int64>\""),
             (
                 DataType::Decimal {
                     precision: 12,

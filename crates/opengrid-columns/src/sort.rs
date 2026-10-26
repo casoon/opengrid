@@ -112,6 +112,11 @@ fn one_key(key: &SortKey<'_>, end: usize) -> Vec<u32> {
             desc,
             value_rows,
         ),
+        // A list has no order (issue #185): the query model refuses a sort on
+        // one, and here every list keys the same, so the rows keep their order.
+        Values::ListInt64 { .. } | Values::ListUtf8 { .. } => {
+            by(pairs(&present, |_| 0i64), desc, value_rows)
+        }
     };
 
     nulls.truncate(null_rows);
@@ -223,6 +228,8 @@ fn encode(key: &SortKey<'_>, row: usize, out: &mut Vec<u8>) {
             }
             out.extend_from_slice(&[0x00, 0x00]);
         }
+        // No order for lists (issue #185): every list encodes alike.
+        Values::ListInt64 { .. } | Values::ListUtf8 { .. } => {}
     }
     if key.descending {
         for byte in &mut out[start..] {
@@ -333,6 +340,8 @@ mod tests {
             DataType::Timestamp => (-2i64..2)
                 .prop_map(|t| Value::Timestamp(Timestamp::from_micros(t)))
                 .boxed(),
+            // Lists have no order and are never sorted on (issue #185).
+            DataType::ListUtf8 | DataType::ListInt64 => Just(Value::Null).boxed(),
         };
         prop_oneof![1 => Just(Value::Null), 4 => value].boxed()
     }

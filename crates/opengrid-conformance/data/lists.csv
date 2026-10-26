@@ -1,0 +1,8 @@
+id,name,tags,rooms
+1,Ada,"[""math"",""physics""]","[101,102]"
+2,Grace,"[""math""]",[]
+3,Edsger,[],[101]
+4,Barbara,\N,\N
+5,Linus,"[""physics"",""math"",""math""]","[-1,102,102]"
+6,Ünal,"[""Math"",""ä"",""a,b"",""say \""hi\""""]",[7]
+7,Karen,"[""""]","[101,102,103]"

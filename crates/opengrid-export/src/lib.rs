@@ -104,6 +104,8 @@ fn plain(value: &Value) -> Option<String> {
         Value::Utf8(text) => text.clone(),
         Value::Date(date) => date.to_string(),
         Value::Timestamp(timestamp) => timestamp.to_string(),
+        // A list is the JSON array it is on the wire (issue #185), in one cell.
+        Value::List(_) => opengrid_json::ToJson::to_json(value).to_string(),
     })
 }
 

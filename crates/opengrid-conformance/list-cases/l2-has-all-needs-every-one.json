@@ -1,0 +1,30 @@
+{
+  "id": "l2-has-all-needs-every-one",
+  "rule": "L2",
+  "query": {
+    "source": "lists",
+    "select": [
+      "id"
+    ],
+    "filter": {
+      "field": "tags",
+      "op": "has_all",
+      "value": [
+        "math",
+        "chemistry"
+      ]
+    },
+    "sort": [
+      {
+        "field": "id"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "id"
+    ],
+    "rows": []
+  },
+  "ordered": true
+}

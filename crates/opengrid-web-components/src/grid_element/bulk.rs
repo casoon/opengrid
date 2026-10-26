@@ -97,9 +97,7 @@ pub(super) fn open(host: &HtmlElement, col: usize) {
         }
     }
     let _ = layout.insert_before(&panel, Some(&viewport));
-    if let Ok(editor) = editor.dyn_into::<HtmlElement>() {
-        let _ = editor.focus();
-    }
+    focus_editor(&editor);
 }
 
 /// Removes the panel, if there is one.
@@ -156,7 +154,7 @@ fn cancel(host: &HtmlElement) {
 }
 
 /// Reads the editor, finds the keys of the selected records and sets the value.
-fn apply(host: &HtmlElement) {
+pub(super) fn apply(host: &HtmlElement) {
     let host = host.clone();
     spawn_local(async move {
         let (Some(runtime), Some(root)) = (runtime(&host), host.shadow_root()) else {
@@ -175,16 +173,7 @@ fn apply(host: &HtmlElement) {
             .query_selector("[part=\"editor\"]")
             .ok()
             .flatten()
-            .map(
-                |editor| match editor.clone().dyn_into::<HtmlInputElement>() {
-                    Ok(input) if input.type_() == "checkbox" => input.checked().to_string(),
-                    Ok(input) => input.value(),
-                    Err(_) => editor
-                        .dyn_into::<HtmlSelectElement>()
-                        .map(|select| select.value())
-                        .unwrap_or_default(),
-                },
-            )
+            .map(|editor| editor_text(&editor))
             .unwrap_or_default();
         let texts = texts(&host);
         let Some(field) = runtime.borrow().state.schema().fields().get(col).cloned() else {
@@ -234,7 +223,7 @@ fn apply(host: &HtmlElement) {
             ("column", JsValue::from_str(&name)),
             (
                 "value",
-                JsValue::from_str(&crate::formats::plain_text(&value)),
+                JsValue::from_str(&crate::formats::event_text(&value)),
             ),
         ] {
             let _ = js_sys::Reflect::set(&detail, &JsValue::from_str(property), &item);

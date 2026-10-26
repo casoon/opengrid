@@ -1,0 +1,30 @@
+{
+  "id": "l5-null-lists-are-found-by-is-null",
+  "rule": "L5",
+  "query": {
+    "source": "lists",
+    "select": [
+      "id"
+    ],
+    "filter": {
+      "field": "tags",
+      "op": "is_null"
+    },
+    "sort": [
+      {
+        "field": "id"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "id"
+    ],
+    "rows": [
+      [
+        4
+      ]
+    ]
+  },
+  "ordered": true
+}

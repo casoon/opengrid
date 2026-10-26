@@ -44,9 +44,13 @@ The body's `source` must equal the path's; a mismatch is a `422` at `source`.
 
 - Operators: `eq`, `ne`, `lt`, `lte`, `gt`, `gte`, `in` (value is an array), `contains`,
   `starts_with`, `is_null`, `is_not_null` (no value). Combine with `and`, `or`, `not`.
+  For a list column (`list<utf8>`, `list<int64>`): `has` (value is an element), `has_all` (value
+  is an array of elements) and `is_empty` (no value) — and only those, plus the null checks. A
+  list is a JSON array on the wire; its elements are never `null`.
 - Aggregates: `count` (without `field`: every row), `sum`, `avg`, `min`, `max`.
 - `offset` needs a `sort`. Values are JSON, read against the column's type: a decimal as a
-  string (`"10.00"`), a date as `"2026-01-31"`, a timestamp as RFC 3339 in UTC.
+  string (`"10.00"`), a date as `"2026-01-31"`, a timestamp as RFC 3339 in UTC, a list column
+  (`list<utf8>`, `list<int64>`) as a JSON array whose elements are never `null`.
 - What each of these means exactly — NULL, ordering, comparison, rounding — is
   [Query semantics](../guides/query-semantics/). A server that answers differently gives the
   browser different results from the engine in the tab.

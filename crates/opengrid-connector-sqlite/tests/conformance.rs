@@ -28,6 +28,28 @@ fn sqlite_answers_every_case() {
     assert!(report.cases >= 40, "{report}");
 }
 
+/// The list cases (issue #185): a list is its JSON array in a TEXT column and
+/// `json_each` reads the elements — `has`, `has_all` and `is_empty` answer as
+/// the engine does, a NULL list unknown, the empty one empty.
+#[test]
+fn sqlite_answers_every_list_case() {
+    use opengrid_conformance::{check_lists, lists_csv, lists_schema};
+
+    let schema = lists_schema();
+    let csv = std::fs::read(lists_csv()).expect("the list dataset");
+    let table = load_csv(&csv, &schema, CsvOptions::default()).expect("the rows");
+    let rows = QueryResult::new(schema.clone(), table.to_values(), 0);
+    let mut connection = Connection::open_in_memory().expect("an in-memory database");
+    create_table(&connection, "lists", &schema).expect("the table");
+    insert(&mut connection, "lists", &schema, &rows).expect("the rows go in");
+    let connector = SqliteConnector::new(connection, "lists", schema).expect("a connector");
+
+    let report = block_on(check_lists(&AsSource(&connector)));
+    println!("list conformance (SQLite): {report}");
+    report.assert_ok();
+    assert!(report.cases >= 20, "{report}");
+}
+
 fn rusqlite_version() -> String {
     Connection::open_in_memory()
         .and_then(|connection| {

@@ -420,7 +420,10 @@ fn collect_fields(filter: &ValidatedFilter, out: &mut Vec<FieldName>) {
         ValidatedFilter::Cmp { field, .. }
         | ValidatedFilter::InList { field, .. }
         | ValidatedFilter::IsNull { field, .. }
-        | ValidatedFilter::IsNotNull { field, .. } => push_unique(out, field.clone()),
+        | ValidatedFilter::IsNotNull { field, .. }
+        | ValidatedFilter::Has { field, .. }
+        | ValidatedFilter::HasAll { field, .. }
+        | ValidatedFilter::IsEmpty { field, .. } => push_unique(out, field.clone()),
     }
 }
 

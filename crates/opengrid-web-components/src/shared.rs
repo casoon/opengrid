@@ -43,6 +43,10 @@ pub const FILTER_OPERATORS: &[&str] = &[
     "lte",
     "is_null",
     "is_not_null",
+    // The list operators (issue #185); the labels of `DEFAULT_OPERATORS` follow.
+    "has",
+    "has_all",
+    "is_empty",
 ];
 
 /// Creates an element and appends it to `parent`, in patch order.

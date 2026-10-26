@@ -28,7 +28,7 @@ macro_rules! identifier {
 identifier!(FieldName);
 identifier!(DataSourceId);
 
-const TYPES: [&str; 7] = [
+const TYPES: [&str; 9] = [
     "bool",
     "int64",
     "float64",
@@ -36,6 +36,8 @@ const TYPES: [&str; 7] = [
     "utf8",
     "date",
     "timestamp",
+    "list<utf8>",
+    "list<int64>",
 ];
 
 impl FromJson for DataType {
@@ -50,6 +52,8 @@ impl FromJson for DataType {
                 "utf8" => Ok(DataType::Utf8),
                 "date" => Ok(DataType::Date),
                 "timestamp" => Ok(DataType::Timestamp),
+                "list<utf8>" => Ok(DataType::ListUtf8),
+                "list<int64>" => Ok(DataType::ListInt64),
                 // The one type with parameters is an object, never a bare name.
                 "decimal" => Err(Error::new(
                     "invalid type: unit variant, expected struct variant",
@@ -93,6 +97,8 @@ impl ToJson for DataType {
             DataType::Utf8 => Json::from("utf8"),
             DataType::Date => Json::from("date"),
             DataType::Timestamp => Json::from("timestamp"),
+            DataType::ListUtf8 => Json::from("list<utf8>"),
+            DataType::ListInt64 => Json::from("list<int64>"),
         }
     }
 }
@@ -191,6 +197,7 @@ impl ToJson for Value {
             Value::Utf8(text) => Json::from(text.as_str()),
             Value::Date(date) => Json::from(date.to_string()),
             Value::Timestamp(timestamp) => Json::from(timestamp.to_string()),
+            Value::List(items) => Json::Array(items.iter().map(ToJson::to_json).collect()),
         }
     }
 }
@@ -209,11 +216,23 @@ impl Value {
             Json::Number(Number::NegInt(value)) => crate::value::Raw::Int(*value),
             Json::Number(Number::Float(value)) => crate::value::Raw::Float(*value),
             Json::String(text) => crate::value::Raw::Str(text.clone()),
-            Json::Array(_) => {
-                return Err(ValueError::TypeMismatch {
-                    expected: *data_type,
-                    found: "array",
-                });
+            // A list column reads an array of its element type; an array for
+            // any other column is a mismatch (issue #185).
+            Json::Array(items) => {
+                let Some(element) = data_type.element() else {
+                    return Err(ValueError::TypeMismatch {
+                        expected: *data_type,
+                        found: "array",
+                    });
+                };
+                let items = items
+                    .iter()
+                    .map(|item| match item {
+                        Json::Null => Err(ValueError::NullInList),
+                        item => Self::from_json_typed(item, &element),
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                return Ok(Value::List(items));
             }
             Json::Object(_) => {
                 return Err(ValueError::TypeMismatch {

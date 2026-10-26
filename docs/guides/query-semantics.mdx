@@ -52,6 +52,17 @@ The same case files run against
 | S13 | Unicode normalisation: NFC is not NFD |
 | S14 | The empty string is a value, not NULL |
 | S15 | Derived date-part columns (year, month) filter, sort and group like stored ones |
+| L1 | `has`: a list holds an element, compared exactly and case-sensitively; a NULL list is unknown and drops, so `not has` drops it too |
+| L2 | `has_all`: every given element is in the list, in any order and any number of times; no elements is every list but a NULL one |
+| L3 | `is_empty` is true for the empty list only; a NULL list is not empty, and `not is_empty` keeps it |
+| L4 | A list comes back as it went in: order, repeats, empty elements and text with commas or quotes kept; NULL and the empty list stay two things |
+| L5 | `count` of a list field skips NULL; a list is found as NULL with `is_null` |
+| L6 | `has` and `has_all` combine with `and`, `or`, `not` like any filter |
+
+A list column has no order: it is **not sorted, grouped or compared** as a whole, and has no
+`min` or `max` — the query is refused with `ListNotOrdered` — and `eq`, `in` and the text
+operators do not apply to it. Its elements are never NULL, and the empty list is not NULL.
+The cases are in `list-cases/` over `lists.csv`; the engine, SQLite and PostgreSQL answer them alike.
 
 The file names say the rest — `s7-nan-sorts-after-numbers.json`,
 `s9-timestamp-microsecond-precision.json` — and each file is short enough to read.

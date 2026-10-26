@@ -1,0 +1,47 @@
+{
+  "id": "l4-null-and-the-empty-list-differ",
+  "rule": "L4",
+  "query": {
+    "source": "lists",
+    "select": [
+      "id",
+      "tags",
+      "rooms"
+    ],
+    "filter": {
+      "field": "id",
+      "op": "in",
+      "value": [
+        3,
+        4
+      ]
+    },
+    "sort": [
+      {
+        "field": "id"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "id",
+      "tags",
+      "rooms"
+    ],
+    "rows": [
+      [
+        3,
+        [],
+        [
+          101
+        ]
+      ],
+      [
+        4,
+        null,
+        null
+      ]
+    ]
+  },
+  "ordered": true
+}

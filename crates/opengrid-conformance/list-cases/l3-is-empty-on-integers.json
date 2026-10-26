@@ -1,0 +1,30 @@
+{
+  "id": "l3-is-empty-on-integers",
+  "rule": "L3",
+  "query": {
+    "source": "lists",
+    "select": [
+      "id"
+    ],
+    "filter": {
+      "field": "rooms",
+      "op": "is_empty"
+    },
+    "sort": [
+      {
+        "field": "id"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "id"
+    ],
+    "rows": [
+      [
+        2
+      ]
+    ]
+  },
+  "ordered": true
+}

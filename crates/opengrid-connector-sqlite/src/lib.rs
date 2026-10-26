@@ -19,6 +19,7 @@
 //! | `utf8` | `TEXT` |
 //! | `date` | `INTEGER`, days since 1970-01-01 |
 //! | `timestamp` | `INTEGER`, microseconds since 1970-01-01 UTC |
+//! | `list<utf8>`, `list<int64>` | `TEXT`, the JSON array; `has`, `has_all` and `is_empty` read it with `json_each` |
 //!
 //! Derived columns (`"from": { "part": "year", … }`) have no column; they are
 //! computed in SQL.
@@ -225,7 +226,8 @@ pub fn create_table(
         }
         let storage = match field.data_type {
             DataType::Float64 => "REAL",
-            DataType::Utf8 => "TEXT",
+            // A list is its JSON array, as text (issue #185).
+            DataType::Utf8 | DataType::ListUtf8 | DataType::ListInt64 => "TEXT",
             _ => "INTEGER",
         };
         let _ = write!(sql, "{} {storage}", quote(field.name.as_str())?);
@@ -457,6 +459,21 @@ impl Compiler<'_> {
         })
     }
 
+    /// `column` holds `value` as an element.
+    fn has(column: &str, value: &Value, sql: &mut Builder) {
+        sql.push(&format!(
+            "EXISTS (SELECT 1 FROM json_each({column}) WHERE value = "
+        ));
+        sql.param(
+            value,
+            match value {
+                Value::Int64(_) => DataType::Int64,
+                _ => DataType::Utf8,
+            },
+        );
+        sql.push(")");
+    }
+
     fn filter(&self, filter: &ValidatedFilter, sql: &mut Builder) -> Result<(), DataSourceError> {
         match filter {
             ValidatedFilter::And(parts) if parts.is_empty() => sql.push("1"),
@@ -486,6 +503,32 @@ impl Compiler<'_> {
             }
             ValidatedFilter::IsNotNull { field } => {
                 sql.push(&format!("{} IS NOT NULL", self.column(field.as_str())?));
+            }
+            // A list column holds its JSON array as text (issue #185): `json_each`
+            // reads the elements back, typed — a string as text, a number as an integer.
+            ValidatedFilter::Has { field, value } => {
+                let column = self.column(field.as_str())?;
+                // `EXISTS` over a NULL list is false, not unknown (S1): the CASE
+                // keeps the NULL list out of `NOT has` too.
+                sql.push(&format!("(CASE WHEN {column} IS NULL THEN NULL ELSE "));
+                Self::has(&column, value, sql);
+                sql.push(" END)");
+            }
+            ValidatedFilter::HasAll { field, values } => {
+                let column = self.column(field.as_str())?;
+                // Every value, and a NULL list is unknown: no values still needs a list.
+                sql.push(&format!("(CASE WHEN {column} IS NULL THEN NULL ELSE (1"));
+                for value in values {
+                    sql.push(" AND ");
+                    Self::has(&column, value, sql);
+                }
+                sql.push(") END)");
+            }
+            ValidatedFilter::IsEmpty { field } => {
+                let column = self.column(field.as_str())?;
+                sql.push(&format!(
+                    "({column} IS NOT NULL AND json_array_length({column}) = 0)"
+                ));
             }
             ValidatedFilter::InList {
                 field,
@@ -560,7 +603,7 @@ fn operator(op: CmpOp) -> &'static str {
         CmpOp::Lte => "<=",
         CmpOp::Gt => ">",
         CmpOp::Gte => ">=",
-        CmpOp::In | CmpOp::Contains | CmpOp::StartsWith => "=",
+        CmpOp::In | CmpOp::Contains | CmpOp::StartsWith | CmpOp::Has | CmpOp::HasAll => "=",
     }
 }
 
@@ -583,6 +626,7 @@ fn bind(value: &Value, data_type: DataType) -> Sql {
         Value::Utf8(value) => Sql::Text(value.clone()),
         Value::Date(value) => Sql::Integer(i64::from(value.days_since_epoch())),
         Value::Timestamp(value) => Sql::Integer(value.micros()),
+        Value::List(_) => Sql::Text(opengrid_json::ToJson::to_json(value).to_string()),
     }
 }
 
@@ -611,6 +655,12 @@ fn read(cell: Sql, data_type: DataType, name: &str) -> Result<Value, DataSourceE
         )),
         (DataType::Timestamp, Sql::Integer(micros)) => {
             Value::Timestamp(Timestamp::from_micros(micros))
+        }
+        (DataType::ListUtf8 | DataType::ListInt64, Sql::Text(text)) => {
+            let json =
+                opengrid_json::Json::parse(&text).map_err(|_| wrong(&Sql::Text(text.clone())))?;
+            Value::from_json_typed(&json, &data_type)
+                .map_err(|error| backend(format!("column {name:?} ({data_type}): {error}")))?
         }
         (_, other) => return Err(wrong(&other)),
     })

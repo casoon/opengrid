@@ -122,6 +122,7 @@ fn type_name(texts: &GridTexts, data_type: DataType) -> String {
         DataType::Float64 | DataType::Decimal { .. } => &texts.type_number,
         DataType::Date => &texts.type_date,
         DataType::Timestamp => &texts.type_time,
+        DataType::ListUtf8 | DataType::ListInt64 => &texts.type_list,
     }
     .clone()
 }
@@ -223,7 +224,7 @@ async fn prepare(host: &HtmlElement, anchor: CellRef, rows: Vec<Vec<String>>) {
                             .and_then(|result| result.columns.get(col)?.get(at))
                             .cloned()
                             .unwrap_or(Value::Null);
-                        let previous = crate::formats::plain_text(&before);
+                        let previous = crate::formats::event_text(&before);
                         let key = key_column.and_then(|key_col| {
                             existing.as_ref()?.columns.get(key_col)?.get(at).cloned()
                         });
@@ -524,7 +525,7 @@ fn apply(host: &HtmlElement) {
             ("column", JsValue::from_str(&change.column)),
             (
                 "value",
-                JsValue::from_str(&crate::formats::plain_text(&change.value)),
+                JsValue::from_str(&crate::formats::event_text(&change.value)),
             ),
             ("previous", JsValue::from_str(&change.previous)),
         ] {

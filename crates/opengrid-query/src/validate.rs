@@ -96,6 +96,19 @@ pub enum ValidatedFilter {
     IsNotNull {
         field: FieldName,
     },
+    /// A list contains `value`, an element of its type (issue #185).
+    Has {
+        field: FieldName,
+        value: GridValue,
+    },
+    /// A list contains every one of `values`.
+    HasAll {
+        field: FieldName,
+        values: Vec<GridValue>,
+    },
+    IsEmpty {
+        field: FieldName,
+    },
 }
 
 impl Query {
@@ -112,10 +125,16 @@ impl Query {
         }
 
         for (i, field) in self.group.iter().enumerate() {
-            if schema.field(field.as_str()).is_none() {
+            let Some(found) = schema.field(field.as_str()) else {
                 return Err(QueryError::UnknownField {
                     path: format!("group[{i}]"),
                     field: field.to_string(),
+                });
+            };
+            if found.data_type.is_list() {
+                return Err(QueryError::ListNotOrdered {
+                    path: format!("group[{i}]"),
+                    column: field.to_string(),
                 });
             }
         }
@@ -126,8 +145,14 @@ impl Query {
         let output = self.output_fields(schema, &aliases)?;
 
         for (i, sort) in self.sort.iter().enumerate() {
-            if !output.iter().any(|field| field.name == sort.field) {
+            let Some(column) = output.iter().find(|field| field.name == sort.field) else {
                 return Err(QueryError::SortUnknownColumn {
+                    path: format!("sort[{i}].field"),
+                    column: sort.field.to_string(),
+                });
+            };
+            if column.data_type.is_list() {
+                return Err(QueryError::ListNotOrdered {
                     path: format!("sort[{i}].field"),
                     column: sort.field.to_string(),
                 });
@@ -349,8 +374,66 @@ fn validate_filter(
                 field: field.clone(),
             })
         }
+        FilterExpr::IsEmpty { field } => {
+            let data_type = field_type(schema, field, &format!("{path}.field"))?;
+            if !data_type.is_list() {
+                return Err(QueryError::OperatorNotSupported {
+                    path: format!("{path}.op"),
+                    op: CmpOp::Has,
+                    data_type,
+                });
+            }
+            Ok(ValidatedFilter::IsEmpty {
+                field: field.clone(),
+            })
+        }
         FilterExpr::Cmp { field, op, value } => {
             let data_type = field_type(schema, field, &format!("{path}.field"))?;
+            // A list answers `has` and `has_all`, and nothing that orders or
+            // equates a whole list; a scalar answers neither of them.
+            let list = data_type.element();
+            if matches!(op, CmpOp::Has | CmpOp::HasAll) != list.is_some() {
+                return Err(QueryError::OperatorNotSupported {
+                    path: format!("{path}.op"),
+                    op: *op,
+                    data_type,
+                });
+            }
+            if let Some(element) = list {
+                let value_path = format!("{path}.value");
+                return match op {
+                    CmpOp::Has => {
+                        if value.is_null() {
+                            return Err(QueryError::NullInList { path: value_path });
+                        }
+                        Ok(ValidatedFilter::Has {
+                            field: field.clone(),
+                            value: coerce(value, element, &value_path)?,
+                        })
+                    }
+                    CmpOp::HasAll => {
+                        let JsonValue::Array(items) = value else {
+                            return Err(QueryError::ListExpected { path: value_path });
+                        };
+                        let values = items
+                            .iter()
+                            .enumerate()
+                            .map(|(i, item)| {
+                                let item_path = format!("{path}.value[{i}]");
+                                if item.is_null() {
+                                    return Err(QueryError::NullInList { path: item_path });
+                                }
+                                coerce(item, element, &item_path)
+                            })
+                            .collect::<Result<Vec<_>, _>>()?;
+                        Ok(ValidatedFilter::HasAll {
+                            field: field.clone(),
+                            values,
+                        })
+                    }
+                    _ => unreachable!("a list column has only has and has_all here"),
+                };
+            }
             match op {
                 CmpOp::In => {
                     let JsonValue::Array(items) = value else {
@@ -544,6 +627,19 @@ impl From<&ValidatedFilter> for FilterExpr {
                 field: field.clone(),
             },
             ValidatedFilter::IsNotNull { field } => FilterExpr::IsNotNull {
+                field: field.clone(),
+            },
+            ValidatedFilter::Has { field, value } => FilterExpr::Cmp {
+                field: field.clone(),
+                op: CmpOp::Has,
+                value: literal(value),
+            },
+            ValidatedFilter::HasAll { field, values } => FilterExpr::Cmp {
+                field: field.clone(),
+                op: CmpOp::HasAll,
+                value: JsonValue::Array(values.iter().map(literal).collect()),
+            },
+            ValidatedFilter::IsEmpty { field } => FilterExpr::IsEmpty {
                 field: field.clone(),
             },
         }

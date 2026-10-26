@@ -1,0 +1,30 @@
+{
+  "id": "l3-is-empty-is-the-empty-list-only",
+  "rule": "L3",
+  "query": {
+    "source": "lists",
+    "select": [
+      "id"
+    ],
+    "filter": {
+      "field": "tags",
+      "op": "is_empty"
+    },
+    "sort": [
+      {
+        "field": "id"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "id"
+    ],
+    "rows": [
+      [
+        3
+      ]
+    ]
+  },
+  "ordered": true
+}

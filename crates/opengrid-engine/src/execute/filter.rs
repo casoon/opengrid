@@ -60,7 +60,45 @@ pub(crate) fn evaluate(filter: &ValidatedFilter, table: &Table) -> Result<Mask, 
         }
         ValidatedFilter::IsNull { field } => null_mask(column(table, field)?),
         ValidatedFilter::IsNotNull { field } => not_kleene(&null_mask(column(table, field)?)),
+        // A list column (issue #185). `has` and `has_all` follow rule S1: a NULL
+        // list is unknown and drops. `is_empty` is a check like `is_null`: it is
+        // true for the empty list and false — never unknown — for everything else.
+        ValidatedFilter::Has { field, value } => {
+            let column = list_column(table, field)?;
+            (0..column.len())
+                .map(|row| (!column.is_null(row)).then(|| column.list_has(row, value)))
+                .collect()
+        }
+        ValidatedFilter::HasAll { field, values } => {
+            let column = list_column(table, field)?;
+            (0..column.len())
+                .map(|row| {
+                    (!column.is_null(row))
+                        .then(|| values.iter().all(|value| column.list_has(row, value)))
+                })
+                .collect()
+        }
+        ValidatedFilter::IsEmpty { field } => {
+            let column = list_column(table, field)?;
+            (0..column.len())
+                .map(|row| Some(!column.is_null(row) && column.list_len(row) == 0))
+                .collect()
+        }
     })
+}
+
+/// A column the list operators may read: validation checked the type, and a
+/// table that disagrees is reported as any other type mismatch.
+fn list_column<'a>(table: &'a Table, field: &FieldName) -> Result<&'a Column, ExecuteError> {
+    let column = column(table, field)?;
+    if !column.data_type().is_list() {
+        return Err(ExecuteError::TypeMismatch {
+            field: field.to_string(),
+            expected: DataType::ListUtf8,
+            found: column.data_type(),
+        });
+    }
+    Ok(column)
 }
 
 /// The rows that hold a NULL — rule S1 reaches NULL only through a null check.
@@ -147,8 +185,10 @@ fn holds(order: Ordering, op: CmpOp) -> bool {
         CmpOp::Lte => order != Ordering::Greater,
         CmpOp::Gt => order == Ordering::Greater,
         CmpOp::Gte => order != Ordering::Less,
-        CmpOp::In | CmpOp::Contains | CmpOp::StartsWith => {
-            unreachable!("`in` is an InList and the string operators are handled apart")
+        CmpOp::In | CmpOp::Contains | CmpOp::StartsWith | CmpOp::Has | CmpOp::HasAll => {
+            unreachable!(
+                "`in` is an InList, the string operators are handled apart and a list's are its own"
+            )
         }
     }
 }

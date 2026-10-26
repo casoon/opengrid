@@ -1,0 +1,40 @@
+{
+  "id": "l6-has-and-has-combine-like-any-filter",
+  "rule": "L6",
+  "query": {
+    "source": "lists",
+    "select": [
+      "id"
+    ],
+    "filter": {
+      "and": [
+        {
+          "field": "tags",
+          "op": "has",
+          "value": "math"
+        },
+        {
+          "field": "rooms",
+          "op": "has",
+          "value": 101
+        }
+      ]
+    },
+    "sort": [
+      {
+        "field": "id"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "id"
+    ],
+    "rows": [
+      [
+        1
+      ]
+    ]
+  },
+  "ordered": true
+}

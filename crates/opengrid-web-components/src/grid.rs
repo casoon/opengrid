@@ -366,6 +366,9 @@ pub const PASTE_PARTS: [&str; 4] = [
 /// The sentence under an editor a validator spoke about (issue #188), built by
 /// the element while a cell is edited.
 pub const VALIDATION_PART: &str = "validation";
+/// The parts of a list column (issue #185): the chips in a cell and in its
+/// editor, a chip's remove button, and the combobox's list of choices.
+pub const LIST_PARTS: [&str; 4] = ["list", "list-item", "list-item-remove", "listbox"];
 /// The parts of the bulk panel (issue #187), built by the element when it opens.
 pub const BULK_PARTS: [&str; 3] = ["bulk", "bulk-apply", "bulk-cancel"];
 /// The empty row at the end that a new record is typed into (issue #183).
@@ -499,6 +502,15 @@ pub const MIN_TARGET_SIZE: u64 = 24;
 ///   required column they would be a question with a constant answer.
 pub fn operators_for(data_type: DataType, nullable: bool) -> Vec<&'static str> {
     let mut operators = Vec::with_capacity(FILTER_OPERATORS.len());
+    // A list answers whether it holds a value, holds all of them, or holds none
+    // (issue #185); it is not compared as a whole.
+    if data_type.is_list() {
+        operators.extend(["has", "has_all", "is_empty"]);
+        if nullable {
+            operators.extend(["is_null", "is_not_null"]);
+        }
+        return operators;
+    }
     if data_type == DataType::Utf8 {
         operators.push("contains");
         operators.push("starts_with");
@@ -519,7 +531,7 @@ pub fn operators_for(data_type: DataType, nullable: bool) -> Vec<&'static str> {
 /// `is_null`/`is_not_null` are the two that do not; their value input is
 /// disabled rather than ignored, so the control says what it does.
 pub fn takes_value(op: &str) -> bool {
-    !matches!(op, "is_null" | "is_not_null")
+    !matches!(op, "is_null" | "is_not_null" | "is_empty")
 }
 
 /// What the operator button shows for `op` (issue #96): a sign, since the
@@ -537,6 +549,9 @@ pub fn operator_glyph(op: &str) -> &'static str {
         "lte" => "\u{2264}",
         "is_null" => "\u{2205}",
         "is_not_null" => "!\u{2205}",
+        "has" => "\u{220B}",
+        "has_all" => "\u{2287}",
+        "is_empty" => "[ ]",
         _ => "=",
     }
 }
@@ -571,6 +586,8 @@ pub fn input_type(data_type: DataType) -> &'static str {
         // A timestamp needs a time zone-free local field; the wire form is UTC
         // ISO-8601, which `datetime-local` does not produce — text for now.
         DataType::Timestamp | DataType::Utf8 => "text",
+        // A list is typed one element at a time (issue #185).
+        DataType::ListUtf8 | DataType::ListInt64 => "text",
     }
 }
 
@@ -585,30 +602,6 @@ pub fn typed_character(key: &str, ctrl: bool, meta: bool) -> Option<&str> {
     let mut chars = key.chars();
     let printable = matches!((chars.next(), chars.next()), (Some(c), None) if !c.is_control());
     (printable && key != " " && !ctrl && !meta).then_some(key)
-}
-
-/// The choice a typed character picks in a `<select>` editor, if exactly one
-/// fits: the option that **is** the character, ignoring case, or else the one
-/// option that starts with it. Grades `1`–`6` pick by equality; `1`, `1+`,
-/// `1-` still pick `1`; a character two options start with picks neither, and
-/// the editor keeps the cell's value.
-pub fn choice_for_typed<'a>(options: &'a [String], typed: &str) -> Option<&'a str> {
-    let typed = typed.to_lowercase();
-    let unique = |mut found: Vec<&'a String>| (found.len() == 1).then(|| found.remove(0).as_str());
-    unique(
-        options
-            .iter()
-            .filter(|option| option.to_lowercase() == typed)
-            .collect(),
-    )
-    .or_else(|| {
-        unique(
-            options
-                .iter()
-                .filter(|option| option.to_lowercase().starts_with(&typed))
-                .collect(),
-        )
-    })
 }
 
 /// The step attribute that lets a number input accept the column's precision.
@@ -1479,6 +1472,28 @@ pub fn grid_css() -> String {
                              padding: 0 12px; color: var({INK_PROPERTY}); background: var({SURFACE_PROPERTY});
                              border: 1px solid var({LINE_STRONG_PROPERTY});
                              border-radius: min(var({RADIUS_PROPERTY}), 7px); }}
+         /* List columns (issue #185): chips in the cell, and in the editor. */
+         [part~=\"list\"] {{ display: inline-flex; flex-wrap: nowrap; gap: 4px; align-items: center; }}
+         [part~=\"list-item\"] {{ display: inline-flex; align-items: center; gap: 2px; padding: 0 8px;
+                             border-radius: 999px; font-size: 0.9em; white-space: nowrap;
+                             color: var({ACCENT_INK_PROPERTY}); background: var({ACCENT_SOFT_PROPERTY}); }}
+         td:focus [part~=\"list\"] {{ flex-wrap: wrap; }}
+         [part=\"editor\"][data-combo] {{ display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
+                             padding: 2px 6px; box-sizing: border-box;
+                             background: var({SURFACE_PROPERTY}); border: 1px solid var({LINE_STRONG_PROPERTY}); }}
+         [part=\"editor\"][data-combo] [part~=\"list\"] {{ display: contents; }}
+         [part=\"editor\"][data-combo] input {{ flex: 1 1 6em; min-width: 4em; min-height: 24px; border: 0;
+                             font: inherit; color: var({INK_PROPERTY}); background: transparent; }}
+         [part~=\"list-item-remove\"] {{ font: inherit; min-width: 24px; min-height: 24px; border: 0;
+                             background: transparent; color: inherit; cursor: pointer; }}
+         [part~=\"listbox\"] {{ position: absolute; inset-inline-start: 0; top: 100%; z-index: 5;
+                             min-width: 100%; max-height: 12em; overflow: auto; margin: 0; padding: 0;
+                             list-style: none; box-sizing: border-box; white-space: normal;
+                             color: var({INK_PROPERTY}); background: var({SURFACE_PROPERTY});
+                             border: 1px solid var({LINE_STRONG_PROPERTY}); }}
+         [part~=\"listbox\"] [role=\"option\"] {{ padding: 4px 10px; min-height: 24px; cursor: pointer; }}
+         [part~=\"listbox\"] [role=\"option\"][aria-selected=\"true\"] {{
+                             color: var({ACCENT_INK_PROPERTY}); background: var({ACCENT_SOFT_PROPERTY}); }}
          td[data-state=\"saving\"] {{ color: var({INK_MUTED_PROPERTY}); }}
          td[data-state=\"error\"] {{ text-decoration: underline wavy; text-underline-offset: 3px; }}
          [part=\"editor\"] {{ font: inherit; width: 100%; box-sizing: border-box;
@@ -4414,21 +4429,6 @@ mod tests {
         // A shortcut is not typing.
         assert_eq!(typed_character("a", true, false), None);
         assert_eq!(typed_character("c", false, true), None);
-    }
-
-    #[test]
-    fn a_typed_character_picks_the_one_choice_that_fits() {
-        let grades: Vec<String> = ["1", "2", "3", "4", "5", "6"].map(String::from).to_vec();
-        assert_eq!(choice_for_typed(&grades, "3"), Some("3"));
-        assert_eq!(choice_for_typed(&grades, "7"), None);
-
-        // Equality first: `1` is a grade of its own beside `1+` and `1-`.
-        let tendencies: Vec<String> = ["1+", "1", "1-", "2+"].map(String::from).to_vec();
-        assert_eq!(choice_for_typed(&tendencies, "1"), Some("1"));
-        // Otherwise the one option that starts with it — and two are none.
-        let names: Vec<String> = ["Alpha", "Beta", "Bravo"].map(String::from).to_vec();
-        assert_eq!(choice_for_typed(&names, "a"), Some("Alpha"));
-        assert_eq!(choice_for_typed(&names, "b"), None);
     }
 
     fn state_with(rows: &[&str], total: u64, offset: u64, pool: u64) -> GridState {

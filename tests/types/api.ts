@@ -92,6 +92,7 @@ export async function page(): Promise<void> {
   module.set_formats(grid, { qty: (text: string) => text.length });
 
   module.set_choices(grid, { customer: ["Alpha", "Beta"] });
+  module.set_choices(grid, { subjects: [{ value: "m", label: "Maths" }], rooms: [101, 102] });
 
   // Presentation.
   module.set_columns(grid, {

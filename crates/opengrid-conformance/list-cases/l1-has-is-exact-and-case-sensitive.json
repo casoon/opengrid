@@ -1,0 +1,31 @@
+{
+  "id": "l1-has-is-exact-and-case-sensitive",
+  "rule": "L1",
+  "query": {
+    "source": "lists",
+    "select": [
+      "id"
+    ],
+    "filter": {
+      "field": "tags",
+      "op": "has",
+      "value": "Math"
+    },
+    "sort": [
+      {
+        "field": "id"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "id"
+    ],
+    "rows": [
+      [
+        6
+      ]
+    ]
+  },
+  "ordered": true
+}
