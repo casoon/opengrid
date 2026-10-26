@@ -20,6 +20,10 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Added
 
+- **One value for every selected row** ([#187](https://github.com/casoon/opengrid/issues/187)).
+  With rows selected, `F2` or the column menu's "Set for selected rows" opens the column's editor
+  once; committing fires one `opengrid-bulk-change` `{ keys, column, value }` and marks the cells
+  unsaved. Needs `row-key`; a read-only column refuses it.
 - **Pasting a block from a spreadsheet, with a preview** ([#184](https://github.com/casoon/opengrid/issues/184)).
   `Ctrl`/`Cmd`+`V` on a cell anchors the clipboard's tab-separated (or CSV) text there and
   shows what would happen first — each value read against its column in the grid's number

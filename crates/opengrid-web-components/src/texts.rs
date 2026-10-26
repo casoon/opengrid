@@ -266,6 +266,16 @@ pub struct GridTexts {
     pub paste_discarded: String,
     /// A paste with values that cannot be read is not applied. May use `{problems}`.
     pub paste_blocked: String,
+    /// The title of the panel that sets one value for the selected rows (issue #187). May use `{column}` and `{rows}`.
+    pub bulk_caption: String,
+    /// The button that sets the value for the selected rows.
+    pub bulk_apply: String,
+    /// The column menu entry that opens it.
+    pub bulk_menu: String,
+    /// Said when a read-only column is asked to be set. May use `{column}`.
+    pub bulk_readonly: String,
+    /// Said when the value was set. May use `{column}` and `{rows}`.
+    pub bulk_done: String,
     /// A column was resized. May use `{column}` and `{width}` (plan point 36).
     pub column_width: String,
     /// A column was moved. May use `{column}`, `{position}` and `{count}`.
@@ -434,6 +444,11 @@ pub(crate) const KEYS: &[&str] = &[
     "filterInvalid",
     "cellRequired",
     "newRow",
+    "bulkCaption",
+    "bulkApply",
+    "bulkMenu",
+    "bulkReadonly",
+    "bulkDone",
     "pastePreview",
     "pasteApply",
     "pasteDiscard",
@@ -612,6 +627,11 @@ impl Default for GridTexts {
             filter_invalid: "{column}: {value} is not a value for this column".to_owned(),
             cell_required: "{column} needs a value".to_owned(),
             new_row: "New row".to_owned(),
+            bulk_caption: "Set {column} for {rows} selected".to_owned(),
+            bulk_apply: "Set".to_owned(),
+            bulk_menu: "Set for selected rows".to_owned(),
+            bulk_readonly: "{column} is read-only".to_owned(),
+            bulk_done: "{column} set for {rows}".to_owned(),
             paste_preview: "Paste preview".to_owned(),
             paste_apply: "Paste".to_owned(),
             paste_discard: "Discard".to_owned(),
@@ -730,6 +750,29 @@ impl GridTexts {
     /// A paste that cannot be applied, and why.
     pub fn paste_blocked(&self, problems: &str) -> String {
         fill(&self.paste_blocked, "problems", problems)
+    }
+
+    /// The title of the bulk panel.
+    pub fn bulk_caption(&self, column: &str, rows: u64) -> String {
+        fill(
+            &fill(&self.bulk_caption, "column", self.column(column)),
+            "rows",
+            &self.rows(rows),
+        )
+    }
+
+    /// A read-only column refuses the bulk panel.
+    pub fn bulk_readonly(&self, column: &str) -> String {
+        fill(&self.bulk_readonly, "column", self.column(column))
+    }
+
+    /// The bulk value was set.
+    pub fn bulk_done(&self, column: &str, rows: u64) -> String {
+        fill(
+            &fill(&self.bulk_done, "column", self.column(column)),
+            "rows",
+            &self.rows(rows),
+        )
     }
 
     /// A row was added and `waiting` rows are not saved yet.
@@ -1255,6 +1298,11 @@ mod host {
         overwrite(&mut texts.filter_invalid, string("filterInvalid"));
         overwrite(&mut texts.cell_required, string("cellRequired"));
         overwrite(&mut texts.new_row, string("newRow"));
+        overwrite(&mut texts.bulk_caption, string("bulkCaption"));
+        overwrite(&mut texts.bulk_apply, string("bulkApply"));
+        overwrite(&mut texts.bulk_menu, string("bulkMenu"));
+        overwrite(&mut texts.bulk_readonly, string("bulkReadonly"));
+        overwrite(&mut texts.bulk_done, string("bulkDone"));
         overwrite(&mut texts.paste_preview, string("pastePreview"));
         overwrite(&mut texts.paste_apply, string("pasteApply"));
         overwrite(&mut texts.paste_discard, string("pasteDiscard"));

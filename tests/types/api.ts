@@ -132,6 +132,10 @@ export async function page(): Promise<void> {
     event.detail.values satisfies Record<string, unknown>;
   });
 
+  grid.addEventListener("opengrid-bulk-change", (event) => {
+    event.detail.keys satisfies unknown[];
+    event.detail.value satisfies string;
+  });
   grid.addEventListener("opengrid-paste", (event) => {
     event.detail.changes[0].column satisfies string;
     event.detail.added[0].provisionalKey satisfies string;

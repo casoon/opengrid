@@ -35,7 +35,10 @@
 # Raised the same day from 264000: pasting a block with its preview (#184: the
 # preview panel, the number notation by language, the texts) grew it by
 # 7.9 KiB, to 269261 B.
-grid+pivot    272000  # 269261 B, 2026-10-26, #184
+# Raised the same day from 272000: one value for the selected rows (#187: the
+# panel, its editor shared with the cell editor, the keys of rows that are not
+# loaded, the menu entry) grew it by 3.7 KiB, to 272956 B.
+grid+pivot    276000  # 272956 B, 2026-10-26, #187
 # Raised 2026-09-30 from 108000: the bound was not raised with 0.7.0, which
 # shipped the engine at 115.2 KiB already (CHANGELOG); rule P9's sorted
 # grouping sets and order sets (#108) added the rest, to 121610 B.
