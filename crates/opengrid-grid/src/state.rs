@@ -29,6 +29,7 @@ use opengrid_datasource::QueryResult;
 use opengrid_query::{FilterExpr, Sort, SortDirection};
 use opengrid_types::{Field, FieldName, Schema, Value};
 
+use crate::added::{AddedRows, RowKind};
 use crate::saving::{CellState, Saves};
 use crate::{CellRef, Patch, Window};
 
@@ -100,6 +101,8 @@ pub struct GridState {
     changed: Vec<CellRef>,
     /// What the page that saves said about cells, by record (issue #153).
     saves: Saves,
+    /// Rows the reader added, after the result (issue #183).
+    added: AddedRows,
 }
 
 impl GridState {
@@ -127,6 +130,7 @@ impl GridState {
             editing: None,
             changed: Vec::new(),
             saves: Saves::default(),
+            added: AddedRows::default(),
         }
     }
 
@@ -278,7 +282,13 @@ impl GridState {
     /// A cell outside the loaded page has nothing to edit — there is no value
     /// to start from, and inventing one would be a lie.
     pub fn begin_edit(&mut self, cell: CellRef) -> Vec<Patch> {
-        if self.editing == Some(cell) || self.cell(cell).is_none() {
+        if self.editing == Some(cell)
+            || self.cell(cell).is_none()
+            || matches!(
+                self.added.kind(cell.row, self.total_count),
+                RowKind::Added(_)
+            )
+        {
             return Vec::new();
         }
         self.editing = Some(cell);
@@ -298,6 +308,15 @@ impl GridState {
     /// **Optimistic and honest about it:** the grid shows what the reader typed
     /// and marks it; whether anyone stored it is the page's business (E23).
     pub fn set_cell(&mut self, cell: CellRef, value: Value) -> Vec<Patch> {
+        // The draft row takes what is typed; it is not the source's, so
+        // nothing is "changed" in it — the page hears of it when it is added.
+        if self.added.kind(cell.row, self.total_count) == RowKind::Draft {
+            return if self.added.set_draft(cell.col, value.clone()) {
+                vec![Patch::Cell { cell, value }]
+            } else {
+                Vec::new()
+            };
+        }
         let Some(row) = cell.row.checked_sub(self.page_offset) else {
             return Vec::new();
         };
@@ -332,6 +351,9 @@ impl GridState {
 
     /// The key of a loaded row: the `row-key` field's value in it.
     pub fn row_key(&self, row: u64) -> Option<&Value> {
+        if let RowKind::Added(place) = self.added.kind(row, self.total_count) {
+            return Some(&self.added.rows()[place].key);
+        }
         let col = self.column_of(self.saves.key.as_ref()?)?;
         self.value_at(col, row)
     }
@@ -521,6 +543,33 @@ impl GridState {
         self.window
     }
 
+    /// The rows the grid shows: the result's and the ones the reader added
+    /// after it (issue #183). [`total_count`](Self::total_count) stays the
+    /// result's — it is what a query and the status line are about.
+    pub fn row_count(&self) -> u64 {
+        self.total_count + self.added.len()
+    }
+
+    /// Rows the reader added, and the draft.
+    pub fn added(&self) -> &AddedRows {
+        &self.added
+    }
+
+    /// What display row `row` is.
+    pub fn row_kind(&self, row: u64) -> RowKind {
+        self.added.kind(row, self.total_count)
+    }
+
+    /// Turns the draft row on or off (the `add-row` attribute).
+    pub fn set_add_row(&mut self, on: bool) {
+        self.added.set_enabled(on, self.schema.len());
+    }
+
+    /// Mutable access for the transitions of added rows.
+    pub fn added_mut(&mut self) -> &mut AddedRows {
+        &mut self.added
+    }
+
     /// Number of rows currently loaded into the page.
     pub fn loaded_rows(&self) -> usize {
         self.page.first().map_or(0, Vec::len)
@@ -586,6 +635,7 @@ impl GridState {
         }
 
         self.schema = result.schema;
+        self.added.fit(self.schema.len());
         self.total_count = result.total_count;
         self.page_offset = first;
         self.page = result.columns;
@@ -789,6 +839,10 @@ impl GridState {
     }
 
     fn value_at(&self, col: usize, row: u64) -> Option<&Value> {
+        match self.added.kind(row, self.total_count) {
+            RowKind::Source => {}
+            kind => return self.added.value(kind, col),
+        }
         let slot = row.checked_sub(self.page_offset)?;
         let slot = usize::try_from(slot).ok()?;
         self.page.get(col)?.get(slot)

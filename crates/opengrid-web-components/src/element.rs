@@ -155,6 +155,15 @@ pub fn set_actions(host: &HtmlElement, actions: JsValue) {
     crate::grid_element::set_actions(host, &actions);
 }
 
+/// What became of a row the reader added (issue #183): `state` is `saving`,
+/// `saved` or `error`. `detail` is the record's `row-key` for `saved`, the
+/// message for `error` — said in the status line, as `set_cell_state` says one.
+#[cfg(feature = "grid")]
+#[wasm_bindgen(js_name = set_row_state)]
+pub fn set_row_state(host: &HtmlElement, provisional_key: &str, state: &str, detail: JsValue) {
+    crate::grid_element::write_row_state(host, provisional_key, state, &detail);
+}
+
 /// Sets how each column is presented (plan point 60).
 ///
 /// ```js

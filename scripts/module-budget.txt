@@ -27,7 +27,12 @@
 # get_query on a tree, the tree's columns in the browser's CSV, the binary
 # reader moved to shared) grew the element module by 5.6 KiB over 0.12.0
 # (249992 B, measured at v0.12.0), to 255702 B.
-grid+pivot    258000  # 255702 B, 2026-10-10, release 0.13.0
+# Raised 2026-10-26 from 258000: rows the page holds with the grid told when
+# a source is replaced (#182), editing while grouped (#190), the action column
+# (#189) and adding a record from the keyboard (#183: the new row, its state
+# machine, the add event, set_row_state) grew the element module by 5.3 KiB
+# over 0.13.0 (255702 B), to 261009 B and more with the issues after it.
+grid+pivot    264000  # 261009 B, 2026-10-26, #183
 # Raised 2026-09-30 from 108000: the bound was not raised with 0.7.0, which
 # shipped the engine at 115.2 KiB already (CHANGELOG); rule P9's sorted
 # grouping sets and order sets (#108) added the rest, to 121610 B.
@@ -39,4 +44,7 @@ grid+pivot    258000  # 255702 B, 2026-10-10, release 0.13.0
 # accumulators over a node's subtree) and the flat tree (#166: the whole tree
 # depth-first with levels and paths, both in the binary form) grew the engine
 # by 6.1 KiB over 0.12.0 (137014 B, measured at v0.12.0), to 143298 B.
-engine        144800  # 143298 B, 2026-10-10, release 0.13.0
+# Raised 2026-10-26 from 144800: `load_rows` (#182) — the JSON ingest, which
+# the engine already had natively, reachable from the tab — grew the engine by
+# 1.5 KiB, to 144811 B.
+engine        146400  # 144811 B, 2026-10-26, #182

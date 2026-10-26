@@ -107,3 +107,21 @@ fn rows_replace_a_source_all_or_nothing() {
     engine.load_rows("t", r#"[{"id":7}]"#, schema).unwrap();
     assert_eq!(engine.execute_result(count).unwrap().total_count, 1);
 }
+
+/// A window that starts after the last row asks for nothing and gets nothing —
+/// the grid draws the rows the reader added there (issue #183).
+#[test]
+fn a_window_past_the_end_is_an_empty_page_with_the_count() {
+    let schema = r#"{"fields":[{"name":"id","type":"int64","nullable":false}]}"#;
+    let mut engine = Engine::new();
+    engine
+        .load_rows("t", r#"[{"id":1},{"id":2}]"#, schema)
+        .unwrap();
+    let result = engine
+        .execute_result(
+            r#"{"source":"t","select":["id"],"sort":[{"field":"id","direction":"asc"}],"offset":5,"limit":10}"#,
+        )
+        .unwrap();
+    assert_eq!(result.total_count, 2);
+    assert!(result.columns.iter().all(Vec::is_empty));
+}
