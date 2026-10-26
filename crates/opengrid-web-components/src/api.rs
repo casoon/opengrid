@@ -92,6 +92,7 @@ fn surface() -> String {
         crate::grid_element_events::ROW_ACTION_EVENT,
         crate::grid_element_events::ROW_ADD_EVENT,
         crate::grid_element_events::PASTE_EVENT,
+        crate::grid_element_events::BULK_EVENT,
     ] {
         out.push_str(&format!("  {event}\n"));
     }
@@ -255,6 +256,7 @@ fn parts() -> Vec<String> {
         })
         // The paste preview is built by the element, on demand.
         .chain(grid::PASTE_PARTS.iter().map(|part| (*part).to_owned()))
+        .chain(grid::BULK_PARTS.iter().map(|part| (*part).to_owned()))
         // A part attribute may name more than one (`row total-row`).
         .flat_map(|value| {
             value
@@ -335,6 +337,7 @@ events
   opengrid-row-action
   opengrid-row-add
   opengrid-paste
+  opengrid-bulk-change
 
 functions
   register
@@ -385,7 +388,7 @@ custom properties (computed)
   --og-accent-soft --og-accent-ink --og-selected --og-hover
 
 parts
-  action action-cell action-header add-field add-filter add-grouping body caption cell cell-error cell-saved cell-saving chip chip-move chip-remove chips chips-clear column-menu \
+  action action-cell action-header add-field add-filter add-grouping body bulk bulk-apply bulk-cancel caption cell cell-error cell-saved cell-saving chip chip-move chip-remove chips chips-clear column-menu \
 column-menu-button column-toggle columns columns-toggle density editor empty empty-reset \
 empty-text facet facet-bounds facet-cost facet-count facet-pill facet-pills facet-value \
 facets facets-head facets-toggle field-group field-menu filter filter-clear filter-dialog filter-operator \
@@ -396,7 +399,7 @@ sort-index source status table toolbar total-row viewport
 
 text keys
   addColumn addFilter addFilterTitle addGrouping addMeasure addRow aggregateAvg aggregateCell aggregateCount aggregateGroup aggregateMax aggregateMin \
-aggregateNone aggregateRange aggregateSum apply booleanFalse booleanTrue cancel cellRequired chipRemove chipsClear chipsGroup clear columnAtEdge \
+aggregateNone aggregateRange aggregateSum apply booleanFalse booleanTrue bulkApply bulkCaption bulkDone bulkMenu bulkReadonly cancel cellRequired chipRemove chipsClear chipsGroup clear columnAtEdge \
 columnFull columnHidden columnMenu columnMoved columnShown columnWidth columnsGroup densityComfortable \
 densityCompact densityGroup densityNormal empty emptyFiltered emptyReset emptySource emptyValue \
 error errorUnknown facetChipValues facetFrom facetQueries facetTo facetsGroup facetsReset \

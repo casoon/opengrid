@@ -75,6 +75,8 @@ pub struct Column<'a> {
     pub can_group: bool,
     /// How many columns are visible.
     pub visible: usize,
+    /// Whether "set for selected rows" does something now (issue #187).
+    pub bulk: bool,
 }
 
 /// The entries of one column's menu, in order.
@@ -116,6 +118,9 @@ pub fn entries(column: &Column<'_>, texts: &GridTexts) -> Vec<Entry> {
     }
 
     let mut rest = Vec::new();
+    if column.bulk {
+        rest.push(Entry::item("bulk", &texts.bulk_menu));
+    }
     if column.can_group && crate::grouping::groupable(column.data_type) {
         if column.group_by.iter().any(|name| name == column.name) {
             rest.push(Entry::item("group:remove", &texts.ungroup_column));
@@ -185,6 +190,7 @@ mod tests {
             group_by,
             can_group: true,
             visible: 5,
+            bulk: false,
         }
     }
 

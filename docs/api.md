@@ -512,6 +512,16 @@ A field that is not nullable in the schema is marked required in the new row. Ad
 value for one is refused: nothing fires, the cell is marked invalid and the status line says
 `{column} needs a value`. Off while grouped, in a tree and with `page-size`.
 
+### Setting a value for the selected rows
+
+With rows selected, `F2` — or **Set for selected rows** in a column's [menu](#column-menu) — opens
+that column's editor once, in a small panel above the rows. `Enter` (or the button) sets the value,
+`Escape` drops the panel. One `opengrid-bulk-change` fires with `{ keys, column, value }`: the
+`row-key` values of the selected records, the column and the value as text. The cells in view show
+it, marked unsaved; the page saves and answers with `set_cell_state` per key. It needs `row-key`,
+and a column the page fills (`readonly` in `set_columns`) refuses it, said in the status line. Off
+while grouped and in a tree. The keys of selected rows that are not loaded are asked of the source.
+
 ### Pasting
 
 `Ctrl`/`Cmd`+`V` on a data cell reads the clipboard's text — tab-separated, as every spreadsheet
@@ -999,6 +1009,7 @@ not leave a shadow root the page wrapped the element in), and neither is
 | Event | `detail` |
 |---|---|
 | `opengrid-selection-change` | `{ rows: number[], count: number }` — logical row numbers, ascending. In a [tree](#tree) also `keys`: the selected nodes by key, and `count` counts them. |
+| `opengrid-bulk-change` | `{ keys, column, value }` — one value was set for the selected rows; see [Setting a value for the selected rows](#setting-a-value-for-the-selected-rows). |
 | `opengrid-paste` | `{ changes: [{ key?, row, column, value, previous }], added: [{ values, provisionalKey }] }` — a pasted block was applied; see [Pasting](#pasting). |
 | `opengrid-row-add` | `{ values, provisionalKey }` — a record was entered in the new row; see [Adding rows](#adding-rows). |
 | `opengrid-row-action` | `{ id, row, key? }` — an action was activated; `key` is the `row-key` value. |
@@ -1143,7 +1154,7 @@ would make it invisible), a **selected row** carries an inset accent bar as well
 as the tint (colour alone would be 1.4.1), and `prefers-reduced-motion` beats a
 theme that animates a part.
 
-**Parts:** `action`, `action-cell`, `action-header`, `add-field`, `add-filter`, `add-grouping`, `body`, `caption`, `cell`, `cell-error`, `cell-saved`, `cell-saving`, `chip`, `chip-move`, `chip-remove`, `chips`,
+**Parts:** `action`, `action-cell`, `action-header`, `add-field`, `add-filter`, `add-grouping`, `body`, `bulk`, `bulk-apply`, `bulk-cancel`, `caption`, `cell`, `cell-error`, `cell-saved`, `cell-saving`, `chip`, `chip-move`, `chip-remove`, `chips`,
 `chips-clear`, `column-menu`, `column-menu-button`, `column-toggle`, `columns`, `columns-toggle`, `density`,
 `editor`, `empty`, `empty-reset`, `empty-text`, `facet`, `facet-bounds`, `facet-cost`, `facet-count`,
 `facet-pill`, `facet-pills`, `facet-value`, `facets`, `facets-head`, `facets-toggle`, `filter`,
@@ -1259,6 +1270,8 @@ loader.module.set_texts(host, { lang: "de", loading: "Wird geladen …" });
 | `operators` | the ten filter operators, keyed by wire token | |
 | `filterInvalid` | `{column}: {value} is not a value for this column` | `{column}`, `{value}` |
 | `cellRequired` | `{column} needs a value` | `{column}` |
+| `bulkCaption` / `bulkApply` / `bulkMenu` | `Set {column} for {rows} selected` / `Set` / `Set for selected rows` | `{column}`, `{rows}` |
+| `bulkReadonly` / `bulkDone` | `{column} is read-only` / `{column} set for {rows}` | `{column}`, `{rows}` |
 | `pastePreview` / `pasteApply` / `pasteDiscard` | `Paste preview` / `Paste` / `Discard` | |
 | `pasteUnreadable` | `“{value}” cannot be read as {type}` | `{value}`, `{type}` |
 | `pasteBadOne` / `pasteBadOther` | `1 value not readable` / `{count} values not readable` | `{count}` |
