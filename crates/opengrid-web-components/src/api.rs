@@ -91,6 +91,7 @@ fn surface() -> String {
         crate::grid_element_events::QUERY_EVENT,
         crate::grid_element_events::ROW_ACTION_EVENT,
         crate::grid_element_events::ROW_ADD_EVENT,
+        crate::grid_element_events::PASTE_EVENT,
     ] {
         out.push_str(&format!("  {event}\n"));
     }
@@ -252,6 +253,8 @@ fn parts() -> Vec<String> {
             Patch::SetAttribute { name, value, .. } if name == "part" => Some(value.clone()),
             _ => None,
         })
+        // The paste preview is built by the element, on demand.
+        .chain(grid::PASTE_PARTS.iter().map(|part| (*part).to_owned()))
         // A part attribute may name more than one (`row total-row`).
         .flat_map(|value| {
             value
@@ -331,6 +334,7 @@ events
   opengrid-query
   opengrid-row-action
   opengrid-row-add
+  opengrid-paste
 
 functions
   register
@@ -386,7 +390,7 @@ column-menu-button column-toggle columns columns-toggle density editor empty emp
 empty-text facet facet-bounds facet-cost facet-count facet-pill facet-pills facet-value \
 facets facets-head facets-toggle field-group field-menu filter filter-clear filter-dialog filter-operator \
 filter-row-toggle filter-value footer group-mark group-toggle grouping-menu header layout menu-label operator-menu \
-page-first page-label page-last page-next page-previous pager row row-header search search-hint \
+page-first page-label page-last page-next page-previous pager paste-apply paste-discard paste-preview paste-summary row row-header search search-hint \
 search-input search-list select select-all select-mark sort-button sort-direction \
 sort-index source status table toolbar total-row viewport
 
@@ -400,7 +404,7 @@ facetsToggle fieldEarlier fieldLater fieldRemove filterAny filterColumn filterCo
 filterRemoved filterRowToggle filterValueLabel filtersCleared groupByColumn groupChip \
 groupCollapsed groupExpanded groupInvalid groupRow groupSecondLevel \
 groupingFull hideColumn lang loading matchesOne matchesOther newRow noValue nothingToAdd operatorLabel \
-operators pageFirst pageLast pageNext pageOf pagePrevious pivotColumns pivotFilterHint pivotFilterLabel pivotFilters pivotMeasures pivotRows pivotToolbar queriesOne queriesOther queryAnd \
+operators pageFirst pageLast pageNext pageOf pagePrevious pasteApplied pasteApply pasteBadOne pasteBadOther pasteBlocked pasteCutOff pasteDiscard pasteDiscarded pastePreview pasteUnreadable pivotColumns pivotFilterHint pivotFilterLabel pivotFilters pivotMeasures pivotRows pivotToolbar queriesOne queriesOther queryAnd \
 queryMissingValue queryUnknownColumn queryWrongOperator rowAdded rowsOne rowsOther searchChip searchHint \
 searchLabel searchPlaceholder searchSuggestions selectAll selectedAll selectionCleared sortAscending \
 sortDescending sourceHybrid sourceLocal sourceRemote sourceWorker subtotal subtreeCell subtreeOnly toolbarGroup total \
