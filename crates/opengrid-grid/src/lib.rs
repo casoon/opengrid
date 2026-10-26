@@ -49,6 +49,7 @@ pub mod facets;
 pub mod filter_row;
 pub mod grid_view;
 pub mod layout;
+pub mod paste;
 mod patch;
 mod saving;
 mod state;

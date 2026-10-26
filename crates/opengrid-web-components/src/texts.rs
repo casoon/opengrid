@@ -246,6 +246,26 @@ pub struct GridTexts {
     /// A row was added; the page has not saved it yet. May use `{count}`, the
     /// rows waiting.
     pub row_added: String,
+    /// The name of the panel that shows what a paste would do (issue #184).
+    pub paste_preview: String,
+    /// The button that applies a previewed paste.
+    pub paste_apply: String,
+    /// The button that drops a previewed paste.
+    pub paste_discard: String,
+    /// A pasted value its column cannot hold, with the reason. May use `{value}` and `{type}`.
+    pub paste_unreadable: String,
+    /// The summary of a paste: one value cannot be read.
+    pub paste_bad_one: String,
+    /// The summary of a paste. May use `{count}`.
+    pub paste_bad_other: String,
+    /// Values that fall outside the grid. May use `{count}`.
+    pub paste_cut_off: String,
+    /// Said when a paste was applied. May use `{count}`.
+    pub paste_applied: String,
+    /// Said when a paste was dropped.
+    pub paste_discarded: String,
+    /// A paste with values that cannot be read is not applied. May use `{problems}`.
+    pub paste_blocked: String,
     /// A column was resized. May use `{column}` and `{width}` (plan point 36).
     pub column_width: String,
     /// A column was moved. May use `{column}`, `{position}` and `{count}`.
@@ -414,6 +434,16 @@ pub(crate) const KEYS: &[&str] = &[
     "filterInvalid",
     "cellRequired",
     "newRow",
+    "pastePreview",
+    "pasteApply",
+    "pasteDiscard",
+    "pasteUnreadable",
+    "pasteBadOne",
+    "pasteBadOther",
+    "pasteCutOff",
+    "pasteApplied",
+    "pasteDiscarded",
+    "pasteBlocked",
     "rowAdded",
     "columnWidth",
     "columnMoved",
@@ -582,6 +612,16 @@ impl Default for GridTexts {
             filter_invalid: "{column}: {value} is not a value for this column".to_owned(),
             cell_required: "{column} needs a value".to_owned(),
             new_row: "New row".to_owned(),
+            paste_preview: "Paste preview".to_owned(),
+            paste_apply: "Paste".to_owned(),
+            paste_discard: "Discard".to_owned(),
+            paste_unreadable: "“{value}” cannot be read as {type}".to_owned(),
+            paste_bad_one: "1 value not readable".to_owned(),
+            paste_bad_other: "{count} values not readable".to_owned(),
+            paste_cut_off: "{count} values beyond the end are not pasted".to_owned(),
+            paste_applied: "{count} values pasted".to_owned(),
+            paste_discarded: "Paste discarded".to_owned(),
+            paste_blocked: "Not pasted: {problems}. Discard it and paste again.".to_owned(),
             row_added: "Row added, {count} not saved yet".to_owned(),
             column_width: "{column} is {width} pixels wide".to_owned(),
             column_moved: "{column} moved to position {position} of {count}".to_owned(),
@@ -661,6 +701,35 @@ impl GridTexts {
     /// A cell that may not be empty.
     pub fn cell_required(&self, column: &str) -> String {
         fill(&self.cell_required, "column", self.column(column))
+    }
+
+    /// A pasted value its column cannot hold (issue #184).
+    pub fn paste_unreadable(&self, value: &str, kind: &str) -> String {
+        fill(&fill(&self.paste_unreadable, "value", value), "type", kind)
+    }
+
+    /// "1 value not readable" or "{count} values not readable".
+    pub fn paste_bad(&self, count: usize) -> String {
+        if count == 1 {
+            self.paste_bad_one.clone()
+        } else {
+            fill(&self.paste_bad_other, "count", &count.to_string())
+        }
+    }
+
+    /// Values that fall outside the grid.
+    pub fn paste_cut_off(&self, count: usize) -> String {
+        fill(&self.paste_cut_off, "count", &count.to_string())
+    }
+
+    /// A paste was applied.
+    pub fn paste_applied(&self, count: usize) -> String {
+        fill(&self.paste_applied, "count", &count.to_string())
+    }
+
+    /// A paste that cannot be applied, and why.
+    pub fn paste_blocked(&self, problems: &str) -> String {
+        fill(&self.paste_blocked, "problems", problems)
     }
 
     /// A row was added and `waiting` rows are not saved yet.
@@ -1186,6 +1255,16 @@ mod host {
         overwrite(&mut texts.filter_invalid, string("filterInvalid"));
         overwrite(&mut texts.cell_required, string("cellRequired"));
         overwrite(&mut texts.new_row, string("newRow"));
+        overwrite(&mut texts.paste_preview, string("pastePreview"));
+        overwrite(&mut texts.paste_apply, string("pasteApply"));
+        overwrite(&mut texts.paste_discard, string("pasteDiscard"));
+        overwrite(&mut texts.paste_unreadable, string("pasteUnreadable"));
+        overwrite(&mut texts.paste_bad_one, string("pasteBadOne"));
+        overwrite(&mut texts.paste_bad_other, string("pasteBadOther"));
+        overwrite(&mut texts.paste_cut_off, string("pasteCutOff"));
+        overwrite(&mut texts.paste_applied, string("pasteApplied"));
+        overwrite(&mut texts.paste_discarded, string("pasteDiscarded"));
+        overwrite(&mut texts.paste_blocked, string("pasteBlocked"));
         overwrite(&mut texts.row_added, string("rowAdded"));
         overwrite(&mut texts.column_width, string("columnWidth"));
         overwrite(&mut texts.column_moved, string("columnMoved"));

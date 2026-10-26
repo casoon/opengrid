@@ -95,6 +95,8 @@ pub(crate) mod grid_element_events {
     pub const ROW_ACTION_EVENT: &str = "opengrid-row-action";
     /// Fired when a new row was entered (issue #183).
     pub const ROW_ADD_EVENT: &str = "opengrid-row-add";
+    /// Fired when a block of cells was pasted (issue #184).
+    pub const PASTE_EVENT: &str = "opengrid-paste";
 }
 #[cfg(target_arch = "wasm32")]
 pub use element::register;

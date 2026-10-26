@@ -132,6 +132,11 @@ export async function page(): Promise<void> {
     event.detail.values satisfies Record<string, unknown>;
   });
 
+  grid.addEventListener("opengrid-paste", (event) => {
+    event.detail.changes[0].column satisfies string;
+    event.detail.added[0].provisionalKey satisfies string;
+  });
+
   // The view: read whole, written in parts.
   // @ts-expect-error — a grid that was never connected has no view
   void module.get_view(grid).sort;

@@ -822,7 +822,17 @@ export type TextKey =
   | "noValue"
   | "emptyValue"
   | "newRow"
-  | "rowAdded";
+  | "rowAdded"
+  | "pastePreview"
+  | "pasteApply"
+  | "pasteDiscard"
+  | "pasteUnreadable"
+  | "pasteBadOne"
+  | "pasteBadOther"
+  | "pasteCutOff"
+  | "pasteApplied"
+  | "pasteDiscarded"
+  | "pasteBlocked";
 
 /**
  * Any subset of the texts; what is left out keeps its English default. `lang`
@@ -885,6 +895,21 @@ export interface RowAddDetail {
   provisionalKey: string;
 }
 
+/** `opengrid-paste`: a pasted block was applied (issue #184). */
+export interface PasteDetail {
+  /** One per cell of an existing row. */
+  changes: {
+    /** With `row-key` only: the record's value of that field. */
+    key?: WireValue;
+    row: number;
+    column: string;
+    value: string;
+    previous: string;
+  }[];
+  /** The rows past the end, with `add-row`. */
+  added: RowAddDetail[];
+}
+
 /** `opengrid-query`: one answer of the grid's provider (issue #70). */
 export interface QueryDetail {
   /** The provider's `kind`, or `null` when it names none. */
@@ -915,6 +940,7 @@ export interface OpengridEventMap {
   "opengrid-query": CustomEvent<QueryDetail>;
   "opengrid-row-action": CustomEvent<RowActionDetail>;
   "opengrid-row-add": CustomEvent<RowAddDetail>;
+  "opengrid-paste": CustomEvent<PasteDetail>;
 }
 
 // ---------------------------------------------------------------------------
