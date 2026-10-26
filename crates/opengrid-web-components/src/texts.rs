@@ -276,6 +276,10 @@ pub struct GridTexts {
     pub bulk_readonly: String,
     /// Said when the value was set. May use `{column}` and `{rows}`.
     pub bulk_done: String,
+    /// What the live region says when a validator warns (issue #188). May use `{message}`.
+    pub validation_warning: String,
+    /// What the live region says when a validator finds an error. May use `{message}`.
+    pub validation_error: String,
     /// A column was resized. May use `{column}` and `{width}` (plan point 36).
     pub column_width: String,
     /// A column was moved. May use `{column}`, `{position}` and `{count}`.
@@ -444,6 +448,8 @@ pub(crate) const KEYS: &[&str] = &[
     "filterInvalid",
     "cellRequired",
     "newRow",
+    "validationWarning",
+    "validationError",
     "bulkCaption",
     "bulkApply",
     "bulkMenu",
@@ -627,6 +633,8 @@ impl Default for GridTexts {
             filter_invalid: "{column}: {value} is not a value for this column".to_owned(),
             cell_required: "{column} needs a value".to_owned(),
             new_row: "New row".to_owned(),
+            validation_warning: "Warning: {message}".to_owned(),
+            validation_error: "Error: {message}".to_owned(),
             bulk_caption: "Set {column} for {rows} selected".to_owned(),
             bulk_apply: "Set".to_owned(),
             bulk_menu: "Set for selected rows".to_owned(),
@@ -773,6 +781,16 @@ impl GridTexts {
             "rows",
             &self.rows(rows),
         )
+    }
+
+    /// A validator's sentence as the live region says it.
+    pub fn validation_said(&self, error: bool, message: &str) -> String {
+        let template = if error {
+            &self.validation_error
+        } else {
+            &self.validation_warning
+        };
+        fill(template, "message", message)
     }
 
     /// A row was added and `waiting` rows are not saved yet.
@@ -1298,6 +1316,8 @@ mod host {
         overwrite(&mut texts.filter_invalid, string("filterInvalid"));
         overwrite(&mut texts.cell_required, string("cellRequired"));
         overwrite(&mut texts.new_row, string("newRow"));
+        overwrite(&mut texts.validation_warning, string("validationWarning"));
+        overwrite(&mut texts.validation_error, string("validationError"));
         overwrite(&mut texts.bulk_caption, string("bulkCaption"));
         overwrite(&mut texts.bulk_apply, string("bulkApply"));
         overwrite(&mut texts.bulk_menu, string("bulkMenu"));

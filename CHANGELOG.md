@@ -20,6 +20,12 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Added
 
+- **Validation while typing, without blocking** ([#188](https://github.com/casoon/opengrid/issues/188)).
+  `set_validators(host, { column: (value, row) => null | { level, message } })` runs on every
+  keystroke in the editor and on commit; the message shows under the editor, stays on the cell
+  (`data-validation`) and is said once in the status line. An error does not block the commit
+  unless the column is `{ validate, block: true }`; type errors from the schema always block.
+  `set_cell_state(..., "invalid", message)` reports a finding the page computes elsewhere.
 - **One value for every selected row** ([#187](https://github.com/casoon/opengrid/issues/187)).
   With rows selected, `F2` or the column menu's "Set for selected rows" opens the column's editor
   once; committing fires one `opengrid-bulk-change` `{ keys, column, value }` and marks the cells
