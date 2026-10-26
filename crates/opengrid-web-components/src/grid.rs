@@ -141,7 +141,7 @@
 //! growing it would shift the whole grid under it.
 
 use opengrid_datasource::QueryResult;
-use opengrid_grid::{CellRef, GridState, GridStatus, Window};
+use opengrid_grid::{CellRef, GridState, GridStatus, RowKind, Window};
 use opengrid_types::{DataType, Field, FieldName, Schema};
 use opengrid_web_core::element::{LABEL_ATTRIBUTE, mirror_label};
 use opengrid_web_core::patch::{NodeAllocator, NodeId, Patch, PatchBuffer};
@@ -355,6 +355,8 @@ const NARROW_TOOLBAR: u32 = 560;
 /// The boolean attribute that puts a search field above the grid (point 67):
 /// free text, or a filter written out (`country = DE and amount ≥ 10`).
 pub const SEARCH_ATTRIBUTE: &str = "search";
+/// The empty row at the end that a new record is typed into (issue #183).
+pub const ADD_ROW_ATTRIBUTE: &str = "add-row";
 
 /// The boolean attribute that shows the facet sidebar (point 66).
 ///
@@ -630,6 +632,7 @@ pub const OBSERVED: &[&str] = &[
     TOOLBAR_ATTRIBUTE,
     FACETS_ATTRIBUTE,
     SEARCH_ATTRIBUTE,
+    ADD_ROW_ATTRIBUTE,
     // CSS alone: the look is `:host([theme=…])` rules (issue #32).
     crate::theme::THEME_ATTRIBUTE,
 ];
@@ -1431,6 +1434,12 @@ pub fn grid_css() -> String {
                              border-radius: min(var({RADIUS_PROPERTY}), 7px); }}
          td[data-changed] {{ font-style: italic; }}
          td[data-changed]::after {{ content: \" *\"; }}
+         /* The new row (issue #183): a different ground, and a star on what it needs. */
+         tbody tr[data-new-row] td {{ background: var({SURFACE_2_PROPERTY}); }}
+         tbody tr[data-new-row] td[aria-required]::after {{ content: \" *\";
+                             color: var({INK_MUTED_PROPERTY}); }}
+         td[aria-invalid=\"true\"] {{ text-decoration: underline wavy; text-underline-offset: 3px; }}
+         tr[data-added=\"error\"] td {{ text-decoration: underline wavy; text-underline-offset: 3px; }}
          td[data-state=\"saving\"] {{ color: var({INK_MUTED_PROPERTY}); }}
          td[data-state=\"error\"] {{ text-decoration: underline wavy; text-underline-offset: 3px; }}
          [part=\"editor\"] {{ font: inherit; width: 100%; box-sizing: border-box;
@@ -3007,7 +3016,8 @@ pub fn patch_grid(
     tree: Option<&crate::tree::Tree>,
 ) {
     let fields = state.schema().fields();
-    let total_count = state.total_count();
+    // The rows shown: the result's and the ones the reader added (issue #183).
+    let total_count = state.row_count();
 
     // **The one place the role is decided** (F2): a grouped grid is a
     // `treegrid`, an ungrouped one a `grid`. Kept here, and nowhere else, so
@@ -3376,6 +3386,12 @@ pub fn patch_grid(
                     });
                 }
                 patch_actions(buffer, row_nodes, row, fields.len(), active, true);
+                let kind = state.row_kind(row);
+                patch_added_row(buffer, row_nodes, state, kind, texts);
+                // An added row waits for the page; its cells are marked the way
+                // an edit nobody saved is (point 37).
+                let waiting = matches!(kind, RowKind::Added(place)
+                    if state.added().rows()[place].state != opengrid_grid::RowState::Saved);
                 for (col, cell) in row_nodes.cells.iter().enumerate() {
                     buffer.push(Patch::SetAttribute {
                         node: *cell,
@@ -3402,7 +3418,7 @@ pub fn patch_grid(
                     // A cell the reader changed but nobody saved is marked —
                     // the grid shows what was typed and does not pretend it is
                     // stored (point 37).
-                    if state.is_changed(reference) {
+                    if state.is_changed(reference) || waiting {
                         buffer.push(Patch::SetAttribute {
                             node: *cell,
                             name: "data-changed".to_owned(),
@@ -3435,7 +3451,24 @@ pub fn patch_grid(
                             name: "data-state".to_owned(),
                         }),
                     }
-                    if cell_state == Some(opengrid_grid::CellState::Error) {
+                    // The new row marks what it needs (issue #183): a required
+                    // cell says so, and one a refused add lacked says why.
+                    let required = kind == RowKind::Draft
+                        && fields.get(col).is_some_and(|field| !field.nullable);
+                    if required {
+                        buffer.push(Patch::SetAttribute {
+                            node: *cell,
+                            name: "aria-required".to_owned(),
+                            value: "true".to_owned(),
+                        });
+                    } else {
+                        buffer.push(Patch::RemoveAttribute {
+                            node: *cell,
+                            name: "aria-required".to_owned(),
+                        });
+                    }
+                    let lacking = kind == RowKind::Draft && state.added().missing().contains(&col);
+                    if cell_state == Some(opengrid_grid::CellState::Error) || lacking {
                         buffer.push(Patch::SetAttribute {
                             node: *cell,
                             name: "aria-invalid".to_owned(),
@@ -3503,6 +3536,52 @@ pub fn patch_grid(
                     node: row_nodes.row,
                     name: "data-selected".to_owned(),
                 });
+            }
+        }
+    }
+}
+
+/// The row-level marks of the rows the reader added (issue #183): the empty
+/// row is named, an added row says what became of it. Every other row loses
+/// them — a pooled `<tr>` is recycled.
+fn patch_added_row(
+    buffer: &mut PatchBuffer,
+    row_nodes: &GridRowNodes,
+    state: &GridState,
+    kind: RowKind,
+    texts: &GridTexts,
+) {
+    let set = |buffer: &mut PatchBuffer, name: &str, value: String| {
+        buffer.push(Patch::SetAttribute {
+            node: row_nodes.row,
+            name: name.to_owned(),
+            value,
+        });
+    };
+    let remove = |buffer: &mut PatchBuffer, name: &str| {
+        buffer.push(Patch::RemoveAttribute {
+            node: row_nodes.row,
+            name: name.to_owned(),
+        });
+    };
+    match kind {
+        RowKind::Draft => {
+            set(buffer, "data-new-row", String::new());
+            set(buffer, "aria-label", texts.new_row.clone());
+            remove(buffer, "data-added");
+        }
+        RowKind::Added(place) => {
+            set(
+                buffer,
+                "data-added",
+                state.added().rows()[place].state.as_str().to_owned(),
+            );
+            remove(buffer, "data-new-row");
+            remove(buffer, "aria-label");
+        }
+        RowKind::Source => {
+            for name in ["data-new-row", "data-added", "aria-label"] {
+                remove(buffer, name);
             }
         }
     }

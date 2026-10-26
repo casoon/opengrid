@@ -43,6 +43,7 @@ instead.
 | `get_pivot(host, options)` | The pivot as it is shown, as CSV — see [exporting a pivot](#exporting-a-pivot). |
 | `set_cell_state(host, key, column, state, message?)` | What became of an edit the page saves: `saving`, `saved` or `error` — see [Saving edits](#saving-edits). |
 | `set_values(host, values)` | Values the page computes, `[{ key, column, value }]` — see [Saving edits](#saving-edits). |
+| `set_row_state(host, provisionalKey, state, detail?)` | What became of a row the reader added: `saving`, `saved` (with the record's key) or `error` (with a message) — see [Adding rows](#adding-rows). |
 | `set_actions(host, [{ id, label }])` | A trailing column per action, a button per row; fires `opengrid-row-action` — see [Row actions](#row-actions). |
 | `register()` | Defines the three elements. `loadOpengrid()` calls it; a page that loads the module itself calls it once. |
 
@@ -217,6 +218,7 @@ An interactive `<table role="grid">`: virtualized, keyboard-driven, filterable.
 | `search` | Puts a **search field** above the grid: free text, or a filter written out. See [Search](#search). |
 | `facets` | Shows the **facet sidebar** — the facets a page configured with `set_columns`. See [Facets](#facets). |
 | `toolbar` | Puts a **toolbar** above the grid: the active filters and the grouping as chips, a switch for the filter row, the column list, the density. Opt-in. See [Toolbar](#toolbar). |
+| `add-row` | An empty **new row** after the last one: type a record into it. See [Adding rows](#adding-rows). Off while grouped, in a tree and with `page-size`. |
 | `column-menu` | Gives every header a **column menu**: sort, filter, aggregate, group, hide. Opt-in. See [Column menu](#column-menu). |
 | `selection` | Shows the **selection column**: a checkbox per row and one in the header. Opt-in — selecting rows works from the keyboard either way; what this adds is the column that shows it and the pointer path to it. |
 | `density` | `compact`, `normal` or `comfortable` — row height, cell padding and font size in one step. `normal` is the default, and a grid without the attribute *is* a normal one; an unknown value is normal too. |
@@ -480,6 +482,35 @@ names its record by `key`; the `row` in the event is a display position and not
 for the page to use. Group headers and the total stay read-only, and without a
 `row-key` nothing edits. A fresh result (a replaced source) brings fresh
 aggregates for every group.
+
+### Adding rows
+
+```html
+<opengrid-grid datasource="people" columns="id,name,room" row-key="id" add-row></opengrid-grid>
+```
+
+```js
+grid.addEventListener("opengrid-row-add", async ({ detail }) => {
+  try {
+    const saved = await post(detail.values);
+    loader.module.set_row_state(grid, detail.provisionalKey, "saved", saved.id);
+  } catch (error) {
+    loader.module.set_row_state(grid, detail.provisionalKey, "error", `Not saved: ${error.message}`);
+  }
+});
+```
+
+With `add-row` the grid shows an empty **new row** after the last one. Typing into it opens the
+editor as on any cell, `Enter` goes on to the next column, and `Enter` in the last column — or
+`Ctrl`/`Cmd`+`Enter` anywhere in the row — adds the record: `opengrid-row-add` fires with the
+`values` by field name and a `provisionalKey`, the row appears at once marked unsaved, and a fresh
+new row holds the focus in its first column. The page answers with `set_row_state`; the message of
+an `error` is said in the status line, as `set_cell_state` says one. An added row is read-only; the
+page loads fresh rows (`loadRows`) and the saved ones are the source's from then on.
+
+A field that is not nullable in the schema is marked required in the new row. Adding without a
+value for one is refused: nothing fires, the cell is marked invalid and the status line says
+`{column} needs a value`. Off while grouped, in a tree and with `page-size`.
 
 ### Row actions
 
@@ -948,6 +979,7 @@ not leave a shadow root the page wrapped the element in), and neither is
 | Event | `detail` |
 |---|---|
 | `opengrid-selection-change` | `{ rows: number[], count: number }` — logical row numbers, ascending. In a [tree](#tree) also `keys`: the selected nodes by key, and `count` counts them. |
+| `opengrid-row-add` | `{ values, provisionalKey }` — a record was entered in the new row; see [Adding rows](#adding-rows). |
 | `opengrid-row-action` | `{ id, row, key? }` — an action was activated; `key` is the `row-key` value. |
 | `opengrid-cell-change` | `{ row, column, value, previous }` — everything needed to persist it. With `row-key` also `key`: the record's value of that field, `null` when the result does not carry it. |
 | `opengrid-view-change` | `{ view }` — the whole [view](#the-view) after the change. Scrolling and selecting are not view changes. On `<opengrid-pivot>` the view is its `rows`, `columns` and `values`. |
@@ -1206,6 +1238,7 @@ loader.module.set_texts(host, { lang: "de", loading: "Wird geladen …" });
 | `operators` | the ten filter operators, keyed by wire token | |
 | `filterInvalid` | `{column}: {value} is not a value for this column` | `{column}`, `{value}` |
 | `cellRequired` | `{column} needs a value` | `{column}` |
+| `newRow` / `rowAdded` | `New row` / `Row added, {count} not saved yet` — the empty row of `add-row`, and what is said once a row is added | `{count}` |
 | `selectionCleared` | `Selection cleared` | |
 | `columnWidth` | `{column} is {width} pixels wide` | `{column}`, `{width}` |
 | `columnMoved` | `{column} moved to position {position} of {count}` | `{column}`, `{position}`, `{count}` |

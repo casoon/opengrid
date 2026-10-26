@@ -102,6 +102,17 @@ export interface OpengridModule {
    * The label is the accessible name; group headers and the total have no button.
    */
   set_actions(host: HTMLElement, actions: RowAction[]): void;
+  /**
+   * What became of a row the reader added (issue #183), by the `provisionalKey`
+   * `opengrid-row-add` gave. `saved` takes the record's `row-key` as `detail`
+   * when it has one now; `error` takes the message, said in the live region.
+   */
+  set_row_state(
+    host: HTMLElement,
+    provisionalKey: string,
+    state: "saving" | "saved" | "error",
+    detail?: WireValue | string,
+  ): void;
   /** Defines the three elements. `loadOpengrid()` calls it. */
   register(): void;
 }
@@ -809,7 +820,9 @@ export type TextKey =
   | "total"
   | "subtotal"
   | "noValue"
-  | "emptyValue";
+  | "emptyValue"
+  | "newRow"
+  | "rowAdded";
 
 /**
  * Any subset of the texts; what is left out keeps its English default. `lang`
@@ -864,6 +877,14 @@ export interface RowActionDetail {
   key?: WireValue;
 }
 
+/** `opengrid-row-add`: a record was typed into the new row (issue #183). */
+export interface RowAddDetail {
+  /** The values by field name, in the wire notation of a result. */
+  values: Record<string, WireValue>;
+  /** What `set_row_state` names the row by until it has a key of its own. */
+  provisionalKey: string;
+}
+
 /** `opengrid-query`: one answer of the grid's provider (issue #70). */
 export interface QueryDetail {
   /** The provider's `kind`, or `null` when it names none. */
@@ -893,6 +914,7 @@ export interface OpengridEventMap {
   "opengrid-view-change": CustomEvent<ViewChangeDetail>;
   "opengrid-query": CustomEvent<QueryDetail>;
   "opengrid-row-action": CustomEvent<RowActionDetail>;
+  "opengrid-row-add": CustomEvent<RowAddDetail>;
 }
 
 // ---------------------------------------------------------------------------
@@ -923,6 +945,8 @@ export interface OpengridGridAttributes {
   facets?: string;
   toolbar?: string;
   "column-menu"?: string;
+  /** An empty row after the last one to type a new record into (`opengrid-row-add`). */
+  "add-row"?: string;
   selection?: string;
   density?: Density;
   /** One of the built-in looks; Base when absent. */

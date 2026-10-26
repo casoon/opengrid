@@ -241,6 +241,11 @@ pub struct GridTexts {
     pub filter_invalid: String,
     /// A required cell was cleared (plan point 37). May use `{column}`.
     pub cell_required: String,
+    /// The label of the empty row the reader types a new record into (issue #183).
+    pub new_row: String,
+    /// A row was added; the page has not saved it yet. May use `{count}`, the
+    /// rows waiting.
+    pub row_added: String,
     /// A column was resized. May use `{column}` and `{width}` (plan point 36).
     pub column_width: String,
     /// A column was moved. May use `{column}`, `{position}` and `{count}`.
@@ -408,6 +413,8 @@ pub(crate) const KEYS: &[&str] = &[
     "emptyReset",
     "filterInvalid",
     "cellRequired",
+    "newRow",
+    "rowAdded",
     "columnWidth",
     "columnMoved",
     "columnAtEdge",
@@ -574,6 +581,8 @@ impl Default for GridTexts {
             empty_reset: "Reset filters".to_owned(),
             filter_invalid: "{column}: {value} is not a value for this column".to_owned(),
             cell_required: "{column} needs a value".to_owned(),
+            new_row: "New row".to_owned(),
+            row_added: "Row added, {count} not saved yet".to_owned(),
             column_width: "{column} is {width} pixels wide".to_owned(),
             column_moved: "{column} moved to position {position} of {count}".to_owned(),
             column_at_edge: "{column} is already at the end".to_owned(),
@@ -652,6 +661,11 @@ impl GridTexts {
     /// A cell that may not be empty.
     pub fn cell_required(&self, column: &str) -> String {
         fill(&self.cell_required, "column", self.column(column))
+    }
+
+    /// A row was added and `waiting` rows are not saved yet.
+    pub fn row_added(&self, waiting: usize) -> String {
+        fill(&self.row_added, "count", &waiting.to_string())
     }
 
     /// What a column operation did, for the status line (plan point 36).
@@ -1171,6 +1185,8 @@ mod host {
         overwrite(&mut texts.empty_reset, string("emptyReset"));
         overwrite(&mut texts.filter_invalid, string("filterInvalid"));
         overwrite(&mut texts.cell_required, string("cellRequired"));
+        overwrite(&mut texts.new_row, string("newRow"));
+        overwrite(&mut texts.row_added, string("rowAdded"));
         overwrite(&mut texts.column_width, string("columnWidth"));
         overwrite(&mut texts.column_moved, string("columnMoved"));
         overwrite(&mut texts.column_at_edge, string("columnAtEdge"));

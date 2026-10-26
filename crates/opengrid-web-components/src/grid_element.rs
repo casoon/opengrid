@@ -69,7 +69,7 @@ use web_sys::{
     ScrollIntoViewOptions, ScrollLogicalPosition, ShadowRoot,
 };
 
-use opengrid_grid::{CellRef, GridState, GridStatus, Patch as GridPatch, Window};
+use opengrid_grid::{CellRef, GridState, GridStatus, Patch as GridPatch, RowKind, Window};
 use opengrid_query::{CmpOp, FilterExpr, Sort, SortDirection};
 use opengrid_types::{DataType, Value};
 use opengrid_web_core::element::{
@@ -81,7 +81,9 @@ use opengrid_web_core::provider::provider;
 
 use crate::columns::{self, WIDTH_STEP};
 use crate::formats::{CellFormat, Formatter, formats};
-use crate::grid_element_events::{CELL_EVENT, ROW_ACTION_EVENT, SELECTION_EVENT, VIEW_EVENT};
+use crate::grid_element_events::{
+    CELL_EVENT, ROW_ACTION_EVENT, ROW_ADD_EVENT, SELECTION_EVENT, VIEW_EVENT,
+};
 use opengrid_web_core::renderer::{Dom, WebRenderer};
 
 use crate::element::{answer_size, clear_root, describe, dispatch_query, now, place_under};
@@ -451,6 +453,7 @@ fn on_source_replaced(event: Event) {
                 .row()
                 .and_then(|row| runtime.state.row_key(row).cloned());
             runtime.replaced = Some(key);
+            runtime.state.added_mut().drop_saved();
             // The aggregates of a group come from the fresh rows too.
             runtime.groups_filter = None;
             if let Some(grouping) = runtime.grouping.as_mut() {
@@ -480,7 +483,7 @@ fn follow_replaced(runtime: &mut GridRuntime, key: Option<Value>) {
     let Some(row) = runtime.active.row() else {
         return;
     };
-    let total = runtime.state.total_count();
+    let total = runtime.state.row_count();
     let found = key.and_then(|key| runtime.state.row_of_key(&key));
     let row = found.unwrap_or(row.min(total.saturating_sub(1)));
     let active = match runtime.active {
@@ -489,6 +492,20 @@ fn follow_replaced(runtime: &mut GridRuntime, key: Option<Value>) {
         _ => ActiveCell::Header { col: 0 },
     };
     runtime.set_active(active);
+}
+
+/// The empty row at the end is there while `add-row` is set and the grid
+/// shows plain rows: a group header or a tree node has no end to add after, and
+/// a page is not the end of the list (issue #183).
+fn sync_add_row(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>) {
+    let on = host.has_attribute(grid::ADD_ROW_ATTRIBUTE)
+        && !host.has_attribute(PAGE_SIZE_ATTRIBUTE)
+        && !host.has_attribute(grid::TREE_ATTRIBUTE)
+        && runtime.borrow().grouping.is_none();
+    let mut borrowed = runtime.borrow_mut();
+    if borrowed.state.added().enabled() != on {
+        borrowed.state.set_add_row(on);
+    }
 }
 
 /// Puts the viewport back at the offset the runtime remembers.
@@ -511,7 +528,7 @@ fn window_from_scroll(runtime: &Rc<RefCell<GridRuntime>>) {
     let window = borrowed.state.window();
     let offset = grid::window_offset(
         grid::visible_start(borrowed.scroll_top.max(0) as u64, borrowed.row_height),
-        borrowed.state.total_count(),
+        borrowed.state.row_count(),
         window.count,
     );
     borrowed.state.set_window(Window::new(offset, window.count));
@@ -673,6 +690,10 @@ fn on_attribute_changed(
         // A tree refuses `page-size`: either way round, it is asked again.
         PAGE_SIZE_ATTRIBUTE if host.has_attribute(grid::TREE_ATTRIBUTE) => retree(&host),
         grid::TREE_ATTRIBUTE | grid::TREE_KEY_ATTRIBUTE => retree(&host),
+        grid::ADD_ROW_ATTRIBUTE => {
+            render(&host, false);
+            run_query(&host, QueryKind::Window, false);
+        }
         grid::ROW_KEY_ATTRIBUTE => {
             if let Some(runtime) = runtime(&host) {
                 runtime.borrow_mut().state.set_row_key(row_key_of(&host));
@@ -869,6 +890,7 @@ fn render(host: &HtmlElement, focus_after: bool) {
     let Some(runtime) = runtime(host) else {
         return;
     };
+    sync_add_row(host, &runtime);
 
     let paging = paging_of(host, &runtime);
     let (sorts, slots, pinned_slot) = {
@@ -877,7 +899,7 @@ fn render(host: &HtmlElement, focus_after: bool) {
             return;
         };
         let pool = view.pool();
-        let total = borrowed.state.total_count();
+        let total = borrowed.state.row_count();
         let window = borrowed.state.window();
         let rows = grid::window_rows(window.offset, total, pool as u64);
         let focus = borrowed.active.data().map(|cell| cell.row);
@@ -1514,7 +1536,11 @@ fn on_key_down(event: KeyboardEvent) {
         match event.key().as_str() {
             "Enter" => {
                 event.prevent_default();
+                let cell = runtime.borrow().state.editing();
                 end_edit(&host, true);
+                if let Some(cell) = cell {
+                    after_new_row_enter(&host, cell, event.ctrl_key() || event.meta_key());
+                }
             }
             "Escape" => {
                 event.prevent_default();
@@ -1696,6 +1722,17 @@ fn on_key_down(event: KeyboardEvent) {
         return;
     }
 
+    // `Ctrl`/`Cmd`+`Enter` anywhere in the new row adds the record (issue #183).
+    if event.key() == "Enter"
+        && (event.ctrl_key() || event.meta_key())
+        && let ActiveCell::Data(cell) = active
+        && runtime.borrow().state.row_kind(cell.row) == RowKind::Draft
+    {
+        event.prevent_default();
+        add_record(&host);
+        return;
+    }
+
     match (event.key().as_str(), event.ctrl_key()) {
         ("Enter", _) => {
             event.prevent_default();
@@ -1849,7 +1886,7 @@ fn move_with_key(
             runtime.active,
             // The action columns are places on the row like any other.
             runtime.state.schema().len() + actions_of(host).len(),
-            runtime.state.total_count(),
+            runtime.state.row_count(),
             runtime.state.window(),
             pool,
         )
@@ -2414,7 +2451,8 @@ fn paging_of(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>) -> grid::Pa
     let total = runtime.borrow().state.total_count();
     match grid::parse_page_size(host.get_attribute(PAGE_SIZE_ATTRIBUTE).as_deref()) {
         Some(size) => grid::Paging::page(runtime.borrow().page, size, total),
-        None => grid::Paging::whole(total),
+        // The rows the reader added count (issue #183).
+        None => grid::Paging::whole(runtime.borrow().state.row_count()),
     }
 }
 
@@ -2553,6 +2591,171 @@ fn on_action_click(host: &HtmlElement, target: &Element) -> bool {
         }
     }
     true
+}
+
+/// After `Enter` committed a cell of the new row: on to the next column, and
+/// from the last one — or with `Ctrl`/`Cmd` — the record is added (issue #183).
+fn after_new_row_enter(host: &HtmlElement, cell: CellRef, add: bool) {
+    let Some(runtime) = runtime(host) else {
+        return;
+    };
+    if runtime.borrow().state.row_kind(cell.row) != RowKind::Draft {
+        return;
+    }
+    let last = runtime.borrow().state.schema().len().saturating_sub(1);
+    if add || cell.col >= last {
+        add_record(host);
+        return;
+    }
+    runtime
+        .borrow_mut()
+        .set_active(ActiveCell::Data(CellRef::new(cell.row, cell.col + 1)));
+    render(host, true);
+}
+
+/// Adds the record typed into the new row (issue #183): refused, with the cell
+/// that lacks a value named, while a required one is empty; otherwise fired as
+/// `opengrid-row-add`, shown at once as an unsaved row, with a fresh new row
+/// under it holding the focus in its first column.
+fn add_record(host: &HtmlElement) {
+    let Some(runtime) = runtime(host) else {
+        return;
+    };
+    let lacking = {
+        let borrowed = runtime.borrow();
+        borrowed.state.added().lacking(borrowed.state.schema())
+    };
+    let draft_row = {
+        let borrowed = runtime.borrow();
+        borrowed.state.row_count().saturating_sub(1)
+    };
+    if let Some(&first) = lacking.first() {
+        let message = {
+            let borrowed = runtime.borrow();
+            let name = borrowed.state.schema().fields()[first]
+                .name
+                .as_str()
+                .to_owned();
+            texts(host).cell_required(&name)
+        };
+        {
+            let mut borrowed = runtime.borrow_mut();
+            borrowed.state.added_mut().mark_missing(lacking.clone());
+            borrowed.state.set_notice(message);
+            borrowed.set_active(ActiveCell::Data(CellRef::new(draft_row, first)));
+        }
+        render(host, true);
+        // The new row holds the focus, and the focused row is the one the
+        // renderer leaves alone: the marks are written here.
+        for col in lacking {
+            redraw_cell(host, CellRef::new(draft_row, col));
+        }
+        return;
+    }
+    let (provisional, values, waiting) = {
+        let mut borrowed = runtime.borrow_mut();
+        let Some(row) = borrowed.state.added_mut().fire().cloned() else {
+            return;
+        };
+        let fields = borrowed.state.schema().fields().to_vec();
+        let values = fields
+            .iter()
+            .zip(&row.values)
+            .map(|(field, value)| (field.name.as_str().to_owned(), value.clone()))
+            .collect::<Vec<_>>();
+        (row.provisional, values, borrowed.state.added().unsaved())
+    };
+    dispatch_row_add(host, &provisional, &values);
+
+    let (new_draft, pool) = {
+        let mut borrowed = runtime.borrow_mut();
+        let new_draft = borrowed.state.row_count().saturating_sub(1);
+        borrowed.state.set_notice(texts(host).row_added(waiting));
+        borrowed.set_active(ActiveCell::Data(CellRef::new(new_draft, 0)));
+        let pool = borrowed
+            .view
+            .as_ref()
+            .map_or_else(|| pool_of(host), |view| view.pool() as u64);
+        (new_draft, pool)
+    };
+    // The new row may be below the window: the window follows it.
+    let (offset, rows) = {
+        let borrowed = runtime.borrow();
+        (borrowed.state.window().offset, borrowed.state.row_count())
+    };
+    let wanted = grid::window_offset_for_row(new_draft, rows, pool);
+    if new_draft >= offset + pool || new_draft < offset {
+        runtime
+            .borrow_mut()
+            .state
+            .set_window(Window::new(wanted, pool));
+        run_query(host, QueryKind::Window, true);
+    } else {
+        render(host, true);
+    }
+}
+
+/// `opengrid-row-add`: `{ values, provisionalKey }` — the values by field name,
+/// in the wire notation of a result.
+fn dispatch_row_add(host: &HtmlElement, provisional: &str, values: &[(String, Value)]) {
+    let object = js_sys::Object::new();
+    for (name, value) in values {
+        let _ = js_sys::Reflect::set(
+            &object,
+            &JsValue::from_str(name),
+            &to_js(&opengrid_json::ToJson::to_json(value)),
+        );
+    }
+    let detail = js_sys::Object::new();
+    let _ = js_sys::Reflect::set(&detail, &JsValue::from_str("values"), &object);
+    let _ = js_sys::Reflect::set(
+        &detail,
+        &JsValue::from_str("provisionalKey"),
+        &JsValue::from_str(provisional),
+    );
+    let init = web_sys::CustomEventInit::new();
+    init.set_bubbles(true);
+    init.set_composed(true);
+    init.set_cancelable(false);
+    init.set_detail(&detail);
+    if let Ok(event) = web_sys::CustomEvent::new_with_event_init_dict(ROW_ADD_EVENT, &init) {
+        let _ = host.dispatch_event(&event);
+    }
+}
+
+/// [`crate::element::set_row_state`] (issue #183): what became of a row the
+/// reader added. `detail` is the record's key for `saved`, the message for `error`.
+pub(crate) fn write_row_state(
+    host: &HtmlElement,
+    provisional: &str,
+    state: &str,
+    detail: &JsValue,
+) {
+    let Some(runtime) = runtime(host) else {
+        return;
+    };
+    let Some(state) = opengrid_grid::RowState::parse(state) else {
+        return;
+    };
+    let key = (state == opengrid_grid::RowState::Saved)
+        .then(|| key_from_js(&runtime.borrow().state, detail))
+        .flatten();
+    let placed = runtime
+        .borrow_mut()
+        .state
+        .added_mut()
+        .set_state(provisional, state, key);
+    if placed.is_none() {
+        return;
+    }
+    // One live region (point 41), as `set_cell_state` has it: a failure is
+    // said in the status line, politely, and the focus stays where it is.
+    if state == opengrid_grid::RowState::Error
+        && let Some(message) = detail.as_string()
+    {
+        runtime.borrow_mut().state.set_notice(message);
+    }
+    render(host, false);
 }
 
 /// Where `set_choices` stores what the page supplied.
@@ -2729,6 +2932,9 @@ fn end_edit(host: &HtmlElement, commit: bool) {
     // Read before the commit: an edit of the key field itself still names the
     // record by the key it had.
     let key = row_key_js(host, &runtime.borrow().state, cell.row);
+    // What is typed into the new row is not an edit of anything yet: the page
+    // hears of it with the record (`opengrid-row-add`, issue #183).
+    let in_draft = runtime.borrow().state.row_kind(cell.row) == RowKind::Draft;
     let mut rejected = None;
     // **An empty editor means NULL** — on a column that may hold one. It is the
     // only way to clear a value, and a typed input sanitizes most other
@@ -2751,7 +2957,9 @@ fn end_edit(host: &HtmlElement, commit: bool) {
                 .set_cell(cell, Value::Null)
                 .is_empty()
             {
-                dispatch_cell_change(host, cell, key.as_ref(), &field_name, "", &previous);
+                if !in_draft {
+                    dispatch_cell_change(host, cell, key.as_ref(), &field_name, "", &previous);
+                }
             }
         } else {
             rejected = Some(String::new());
@@ -2770,7 +2978,7 @@ fn end_edit(host: &HtmlElement, commit: bool) {
                     .cell(cell)
                     .map(crate::formats::plain_text)
                     .unwrap_or_default();
-                if !runtime.borrow_mut().state.set_cell(cell, value).is_empty() {
+                if !runtime.borrow_mut().state.set_cell(cell, value).is_empty() && !in_draft {
                     dispatch_cell_change(host, cell, key.as_ref(), &field_name, text, &previous);
                 }
             }
@@ -2814,6 +3022,9 @@ fn end_edit(host: &HtmlElement, commit: bool) {
     }
 
     render(host, false);
+    if in_draft {
+        redraw_cell(host, cell);
+    }
     focus_active(host);
 }
 
@@ -2883,7 +3094,9 @@ fn redraw_cell(host: &HtmlElement, cell: CellRef) {
             let _ = td.remove_attribute("data-state");
         }
     }
-    if borrowed.state.cell_state(cell) == Some(opengrid_grid::CellState::Error) {
+    let lacking = borrowed.state.row_kind(cell.row) == RowKind::Draft
+        && borrowed.state.added().missing().contains(&cell.col);
+    if borrowed.state.cell_state(cell) == Some(opengrid_grid::CellState::Error) || lacking {
         let _ = td.set_attribute("aria-invalid", "true");
     } else {
         let _ = td.remove_attribute("aria-invalid");
@@ -3813,7 +4026,7 @@ fn on_scroll(event: Event) {
             .map(|view| view.pool() as u64)
             .unwrap_or(0);
         (
-            runtime.state.total_count(),
+            runtime.state.row_count(),
             pool,
             runtime.state.window().offset,
             runtime.row_height,
@@ -6993,7 +7206,9 @@ fn draw_empty(host: &HtmlElement, root: &ShadowRoot, runtime: &Rc<RefCell<GridRu
     };
     let (empty, filtered) = {
         let borrowed = runtime.borrow();
-        let empty = matches!(borrowed.state.status(), GridStatus::Empty);
+        // Rows the reader added are rows: the empty state would cover them.
+        let empty = matches!(borrowed.state.status(), GridStatus::Empty)
+            && borrowed.state.added().is_empty();
         let filtered = effective_filter(host, &borrowed, None).is_ok_and(|filter| filter.is_some());
         (empty, filtered)
     };

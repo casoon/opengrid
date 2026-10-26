@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>opengrid add-row fixture</title>
+    <style>
+      opengrid-grid {
+        display: block;
+        height: 300px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid add-row fixture</h1>
+      <opengrid-grid
+        label="Rooms"
+        datasource="rooms"
+        columns="id,name,seats"
+        window-size="10"
+        row-key="id"
+        add-row
+      ></opengrid-grid>
+    </main>
+    <script type="module">
+      // Issue #183: entering a list. `id` and `name` are required; the events are
+      // recorded and the page's answers are made by the test.
+      import { loadOpengrid, createLocalProvider } from "/packages/opengrid/loader.js";
+      import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+
+      window.__added = [];
+      document.addEventListener("opengrid-row-add", (event) => window.__added.push(event.detail));
+      document.addEventListener("opengrid-cell-change", () => (window.__cellChanges = (window.__cellChanges ?? 0) + 1));
+
+      await init();
+      const schema = JSON.stringify({
+        fields: [
+          { name: "id", type: "int64", nullable: false },
+          { name: "name", type: "utf8", nullable: false },
+          { name: "seats", type: "int64", nullable: true },
+        ],
+      });
+      const provider = createLocalProvider(new Engine());
+      await provider.loadRows(
+        "rooms",
+        [
+          { id: 1, name: "A1", seats: 20 },
+          { id: 2, name: "B2", seats: 30 },
+        ],
+        schema,
+      );
+      const loader = await loadOpengrid();
+      window.__module = loader.module;
+      window.__provider = provider;
+      window.__schema = schema;
+      loader.module.set_provider(document.querySelector("opengrid-grid"), provider);
+      window.__ready = true;
+    </script>
+  </body>
+</html>

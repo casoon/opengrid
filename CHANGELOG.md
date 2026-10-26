@@ -20,6 +20,13 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Added
 
+- **Adding a record from the keyboard** ([#183](https://github.com/casoon/opengrid/issues/183)).
+  `add-row` shows an empty new row after the last one; `Enter` goes on through the columns,
+  `Enter` in the last one (or `Ctrl`/`Cmd`+`Enter`) fires `opengrid-row-add`
+  `{ values, provisionalKey }` and shows the row at once, unsaved, with a fresh new row focused
+  under it. `set_row_state(host, provisionalKey, "saved" | "error" | "saving", detail)` answers.
+  Required fields (not nullable) are marked, and adding without one is refused with the cell
+  named. Off while grouped, in a tree and with `page-size`.
 - **Row actions** ([#189](https://github.com/casoon/opengrid/issues/189)).
   `set_actions(host, [{ id, label }])` adds a trailing column per action with a button on
   every row, reachable as cells of the grid; activating one fires `opengrid-row-action`
