@@ -187,6 +187,24 @@ impl AddedRows {
         self.rows.last()
     }
 
+    /// Adds a row with these values, as a fired draft would be — a paste of
+    /// more rows than the grid has (issue #184). `values` is in schema order.
+    pub fn push(&mut self, mut values: Vec<Value>) -> Option<&AddedRow> {
+        if !self.enabled {
+            return None;
+        }
+        values.resize(self.draft.len(), Value::Null);
+        self.counter += 1;
+        let provisional = format!("new-{}", self.counter);
+        self.rows.push(AddedRow {
+            key: Value::Utf8(provisional.clone()),
+            provisional,
+            values,
+            state: RowState::Unsaved,
+        });
+        self.rows.last()
+    }
+
     /// What the page said became of an added row. Answers its place among
     /// the added rows.
     pub fn set_state(

@@ -51,11 +51,13 @@ opengrid-export = { path = "../opengrid-export" }
 opengrid-pivot = { path = "../opengrid-pivot" }
 web-sys = { version = "0.3", features = [
     # The look of table and pivot, adopted into their shadow roots (issue #32).
+    "ClipboardEvent",
     "CssStyleSheet",
     "CustomElementRegistry",
     # The event seam of point 35.
     "CustomEvent",
     "CustomEventInit",
+    "DataTransfer",
     "Document",
     "DocumentFragment",
     "Element",

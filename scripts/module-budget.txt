@@ -31,8 +31,11 @@
 # a source is replaced (#182), editing while grouped (#190), the action column
 # (#189) and adding a record from the keyboard (#183: the new row, its state
 # machine, the add event, set_row_state) grew the element module by 5.3 KiB
-# over 0.13.0 (255702 B), to 261009 B and more with the issues after it.
-grid+pivot    264000  # 261009 B, 2026-10-26, #183
+# over 0.13.0 (255702 B), to 261009 B.
+# Raised the same day from 264000: pasting a block with its preview (#184: the
+# preview panel, the number notation by language, the texts) grew it by
+# 7.9 KiB, to 269261 B.
+grid+pivot    272000  # 269261 B, 2026-10-26, #184
 # Raised 2026-09-30 from 108000: the bound was not raised with 0.7.0, which
 # shipped the engine at 115.2 KiB already (CHANGELOG); rule P9's sorted
 # grouping sets and order sets (#108) added the rest, to 121610 B.

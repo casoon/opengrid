@@ -20,6 +20,13 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Added
 
+- **Pasting a block from a spreadsheet, with a preview** ([#184](https://github.com/casoon/opengrid/issues/184)).
+  `Ctrl`/`Cmd`+`V` on a cell anchors the clipboard's tab-separated (or CSV) text there and
+  shows what would happen first — each value read against its column in the grid's number
+  notation, unreadable ones marked with the reason, a sentence in the live region. `Enter`
+  applies, `Escape` discards; applying fires one `opengrid-paste` with every change and the
+  rows past the end (added rows with `add-row`, otherwise cut off). Formula-looking text is
+  never evaluated.
 - **Adding a record from the keyboard** ([#183](https://github.com/casoon/opengrid/issues/183)).
   `add-row` shows an empty new row after the last one; `Enter` goes on through the columns,
   `Enter` in the last one (or `Ctrl`/`Cmd`+`Enter`) fires `opengrid-row-add`

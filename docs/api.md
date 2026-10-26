@@ -512,6 +512,26 @@ A field that is not nullable in the schema is marked required in the new row. Ad
 value for one is refused: nothing fires, the cell is marked invalid and the status line says
 `{column} needs a value`. Off while grouped, in a tree and with `page-size`.
 
+### Pasting
+
+`Ctrl`/`Cmd`+`V` on a data cell reads the clipboard's text — tab-separated, as every spreadsheet
+copies, or CSV — and anchors it at the focused cell. **Nothing changes yet:** a preview
+(`part="paste-preview"`) shows each incoming value read against its column's type, in the number
+notation of the grid's language (`1.234,5` in German; the wire notation `1234.5` is understood
+too). A value that cannot be read is marked with the reason, and the live region says it:
+„12 rows, 2 values not readable“. `Enter` applies, `Escape` discards. A block with unreadable
+values is not applied.
+
+Applying fires **one** `opengrid-paste` for the whole block: `changes` has one entry per cell of
+an existing row (`key` with `row-key`, `row` always, `column`, `value` as text, `previous`), and
+the cells are marked unsaved as an edit's are; `added` holds the rows past the end, which become
+[added rows](#adding-rows) when `add-row` is set and are reported as cut off otherwise. The page
+saves as for single edits (`set_cell_state`, `set_row_state`). A cell that looks like a formula
+(`=SUM(…)`) is text in a text column and unreadable in a number column — never evaluated. The
+existing rows a block covers are asked of the source, so a block longer than the window is the
+same as one inside it; of those, the cells in the loaded window show the new values at once.
+Off while grouped and in a tree.
+
 ### Row actions
 
 ```js
@@ -979,6 +999,7 @@ not leave a shadow root the page wrapped the element in), and neither is
 | Event | `detail` |
 |---|---|
 | `opengrid-selection-change` | `{ rows: number[], count: number }` — logical row numbers, ascending. In a [tree](#tree) also `keys`: the selected nodes by key, and `count` counts them. |
+| `opengrid-paste` | `{ changes: [{ key?, row, column, value, previous }], added: [{ values, provisionalKey }] }` — a pasted block was applied; see [Pasting](#pasting). |
 | `opengrid-row-add` | `{ values, provisionalKey }` — a record was entered in the new row; see [Adding rows](#adding-rows). |
 | `opengrid-row-action` | `{ id, row, key? }` — an action was activated; `key` is the `row-key` value. |
 | `opengrid-cell-change` | `{ row, column, value, previous }` — everything needed to persist it. With `row-key` also `key`: the record's value of that field, `null` when the result does not carry it. |
@@ -1128,7 +1149,7 @@ theme that animates a part.
 `facet-pill`, `facet-pills`, `facet-value`, `facets`, `facets-head`, `facets-toggle`, `filter`,
 `filter-clear`, `filter-dialog`, `filter-operator`, `filter-row-toggle`, `filter-value`, `footer`,
 `field-group`, `field-menu`, `group-mark`, `group-toggle`, `grouping-menu`, `header`, `layout`, `menu-label`, `operator-menu`, `page-first`, `page-label`, `page-last`, `page-next`,
-`page-previous`, `pager`, `row`, `row-header`, `search`, `search-hint`, `search-input`, `search-list`,
+`page-previous`, `pager`, `paste-apply`, `paste-discard`, `paste-preview`, `paste-summary`, `row`, `row-header`, `search`, `search-hint`, `search-input`, `search-list`,
 `select`, `select-all`, `select-mark`, `sort-button`, `sort-direction`, `sort-index`, `source`, `status`,
 `table`, `toolbar`, `total-row`, `viewport`.
 
@@ -1238,6 +1259,11 @@ loader.module.set_texts(host, { lang: "de", loading: "Wird geladen …" });
 | `operators` | the ten filter operators, keyed by wire token | |
 | `filterInvalid` | `{column}: {value} is not a value for this column` | `{column}`, `{value}` |
 | `cellRequired` | `{column} needs a value` | `{column}` |
+| `pastePreview` / `pasteApply` / `pasteDiscard` | `Paste preview` / `Paste` / `Discard` | |
+| `pasteUnreadable` | `“{value}” cannot be read as {type}` | `{value}`, `{type}` |
+| `pasteBadOne` / `pasteBadOther` | `1 value not readable` / `{count} values not readable` | `{count}` |
+| `pasteCutOff` / `pasteApplied` | `{count} values beyond the end are not pasted` / `{count} values pasted` | `{count}` |
+| `pasteDiscarded` / `pasteBlocked` | `Paste discarded` / `Not pasted: {problems}. Discard it and paste again.` | `{problems}` |
 | `newRow` / `rowAdded` | `New row` / `Row added, {count} not saved yet` — the empty row of `add-row`, and what is said once a row is added | `{count}` |
 | `selectionCleared` | `Selection cleared` | |
 | `columnWidth` | `{column} is {width} pixels wide` | `{column}`, `{width}` |

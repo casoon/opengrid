@@ -355,6 +355,14 @@ const NARROW_TOOLBAR: u32 = 560;
 /// The boolean attribute that puts a search field above the grid (point 67):
 /// free text, or a filter written out (`country = DE and amount ≥ 10`).
 pub const SEARCH_ATTRIBUTE: &str = "search";
+/// The parts of the paste preview, which the element builds when a block is
+/// pasted (issue #184) and not with the skeleton: the freeze lists them here.
+pub const PASTE_PARTS: [&str; 4] = [
+    "paste-preview",
+    "paste-summary",
+    "paste-apply",
+    "paste-discard",
+];
 /// The empty row at the end that a new record is typed into (issue #183).
 pub const ADD_ROW_ATTRIBUTE: &str = "add-row";
 
@@ -1440,6 +1448,22 @@ pub fn grid_css() -> String {
                              color: var({INK_MUTED_PROPERTY}); }}
          td[aria-invalid=\"true\"] {{ text-decoration: underline wavy; text-underline-offset: 3px; }}
          tr[data-added=\"error\"] td {{ text-decoration: underline wavy; text-underline-offset: 3px; }}
+         /* The preview of a paste (issue #184). */
+         [part=\"paste-preview\"] {{ padding: 8px 12px; background: var({SURFACE_2_PROPERTY});
+                             border-bottom: 1px solid var({LINE_STRONG_PROPERTY}); }}
+         [part=\"paste-summary\"] {{ margin: 0 0 6px; font-weight: 600; }}
+         [data-paste-scroll] {{ max-height: 12em; overflow: auto; }}
+         [part=\"paste-preview\"] table {{ border-collapse: collapse; }}
+         [part=\"paste-preview\"] th, [part=\"paste-preview\"] td {{ padding: 2px 10px; text-align: start;
+                             border-bottom: 1px solid var({LINE_PROPERTY}); }}
+         [part=\"paste-preview\"] tr[data-new] td {{ font-style: italic; }}
+         [part=\"paste-preview\"] td[aria-invalid=\"true\"] {{ text-decoration: underline wavy;
+                             text-underline-offset: 3px; }}
+         [data-reason] {{ color: var({INK_MUTED_PROPERTY}); }}
+         [part=\"paste-preview\"] button {{ font: inherit; min-height: {MIN_TARGET_SIZE}px; margin: 6px 6px 0 0;
+                             padding: 0 12px; color: var({INK_PROPERTY}); background: var({SURFACE_PROPERTY});
+                             border: 1px solid var({LINE_STRONG_PROPERTY});
+                             border-radius: min(var({RADIUS_PROPERTY}), 7px); }}
          td[data-state=\"saving\"] {{ color: var({INK_MUTED_PROPERTY}); }}
          td[data-state=\"error\"] {{ text-decoration: underline wavy; text-underline-offset: 3px; }}
          [part=\"editor\"] {{ font: inherit; width: 100%; box-sizing: border-box;

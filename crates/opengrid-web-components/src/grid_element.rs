@@ -82,8 +82,10 @@ use opengrid_web_core::provider::provider;
 use crate::columns::{self, WIDTH_STEP};
 use crate::formats::{CellFormat, Formatter, formats};
 use crate::grid_element_events::{
-    CELL_EVENT, ROW_ACTION_EVENT, ROW_ADD_EVENT, SELECTION_EVENT, VIEW_EVENT,
+    CELL_EVENT, PASTE_EVENT, ROW_ACTION_EVENT, ROW_ADD_EVENT, SELECTION_EVENT, VIEW_EVENT,
 };
+
+mod paste;
 use opengrid_web_core::renderer::{Dom, WebRenderer};
 
 use crate::element::{answer_size, clear_root, describe, dispatch_query, now, place_under};
@@ -205,6 +207,8 @@ struct GridRuntime {
     /// keep showing the old row, so the result drops the pin and the focus
     /// follows the record.
     replaced: Option<Option<Value>>,
+    /// A paste shown and not yet applied (issue #184).
+    paste: Option<paste::Pending>,
 }
 
 impl GridRuntime {
@@ -293,6 +297,7 @@ fn fresh_runtime(
         scroll_top: 0,
         scroll_echo: None,
         replaced: None,
+        paste: None,
     }
 }
 
@@ -1353,6 +1358,8 @@ fn add_listeners(root: &ShadowRoot) {
     let _ = root.add_event_listener_with_callback("input", input.unchecked_ref());
     // Scroll does not bubble, but a capture listener on the shadow root sees the
     // viewport's scroll events.
+    let pasted = Closure::<dyn FnMut(Event)>::new(paste::on_paste).into_js_value();
+    let _ = root.add_event_listener_with_callback("paste", pasted.unchecked_ref());
     let scroll = Closure::<dyn FnMut(Event)>::new(on_scroll).into_js_value();
     let _ = root.add_event_listener_with_callback_and_bool("scroll", scroll.unchecked_ref(), true);
 }
@@ -1523,6 +1530,16 @@ fn on_key_down(event: KeyboardEvent) {
             on_operator_menu_key(&host, &event, &target);
             return;
         }
+    }
+
+    // The preview of a paste (issue #184) answers `Enter` and `Escape`.
+    if let Some(target) = event
+        .target()
+        .and_then(|node| node.dyn_into::<Element>().ok())
+        && paste::in_preview(&target)
+    {
+        paste::on_preview_key(&host, &event, &target);
+        return;
     }
 
     // Keys inside an open editor belong to the editor (point 37): `Enter`
@@ -3660,6 +3677,13 @@ fn on_filter_clear(event: Event) {
         } else {
             open_columns(&root, true);
         }
+        return;
+    }
+
+    // The buttons of a paste preview (issue #184).
+    if let Ok(host) = root.host().dyn_into::<HtmlElement>()
+        && paste::on_preview_click(&host, &target)
+    {
         return;
     }
 
