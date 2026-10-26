@@ -472,9 +472,13 @@ which leads) — there is no default, because "sum every number" would sum the i
 | Spoken | The cell shows a glyph (`Σ ⌀ # min max`) and says a word: `Sum: 1,234.00`. The glyph has an empty alternative. |
 | Total | A row at the **end** of the list, not a sticky footer: the arrow keys and a screen reader reach it like any row. It opens nothing and cannot be selected. |
 
-**While grouped, selection and editing are off.** A row number would name
-display positions — headers as well as rows — and would move on every toggle;
-the page could not map a reported change to anything.
+**While grouped, selection is off.** A row number would name display positions —
+headers as well as rows — and would move on every toggle. **Editing stays on when
+`row-key` is set** (issue #190): the data rows of a group edit, and the change
+names its record by `key`; the `row` in the event is a display position and not
+for the page to use. Group headers and the total stay read-only, and without a
+`row-key` nothing edits. A fresh result (a replaced source) brings fresh
+aggregates for every group.
 
 ### Tree
 

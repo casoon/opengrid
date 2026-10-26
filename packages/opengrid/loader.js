@@ -278,13 +278,12 @@ export function createWorkerProvider({
  * The grids on an engine provider's sources (issue #182).
  *
  * `watch(host)` is called by `set_provider`; the host is held weakly, so a
- * removed grid is still collected (point 74). Loading under a name that is
- * already loaded replaces the source, and every watching grid on that name is
- * told with an `opengrid-source-replaced` event — it re-runs its query and
+ * removed grid is still collected (point 74). Loading a source — under a new
+ * name or over a loaded one, which replaces it — tells every watching grid on
+ * that name with an `opengrid-source-replaced` event — it re-runs its query and
  * keeps its view.
  */
 function createWatchers() {
-  const loaded = new Set();
   const hosts = new Set();
   return {
     watch(host) {
@@ -295,13 +294,12 @@ function createWatchers() {
       }
       hosts.add(new WeakRef(host));
     },
-    /** Records a load of `name`; tells the grids on it when it replaced one. */
+    /**
+     * Tells the grids on `name` that it was loaded. A first load counts too: the
+     * engine may hold the source from before this provider (a grid that asked
+     * early shows its error until the rows arrive).
+     */
     loaded(name) {
-      const replaced = loaded.has(name);
-      loaded.add(name);
-      if (!replaced) {
-        return;
-      }
       for (const ref of [...hosts]) {
         const host = ref.deref();
         if (!host) {

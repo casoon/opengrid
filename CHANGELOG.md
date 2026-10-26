@@ -20,6 +20,10 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Added
 
+- **Editing while grouped** ([#190](https://github.com/casoon/opengrid/issues/190)). With a
+  `row-key`, the data rows of a grouped grid edit; the change names the record by its key.
+  Group headers and the total stay read-only, selection stays off, and a replaced source
+  refreshes the group aggregates.
 - **Rows the page already holds** ([#182](https://github.com/casoon/opengrid/issues/182)).
   `loadRows(name, rows, schema)` on the local and the worker provider (`load_rows` on the
   engine) takes an array of objects keyed by field name; the schema stays required and the

@@ -451,6 +451,11 @@ fn on_source_replaced(event: Event) {
                 .row()
                 .and_then(|row| runtime.state.row_key(row).cloned());
             runtime.replaced = Some(key);
+            // The aggregates of a group come from the fresh rows too.
+            runtime.groups_filter = None;
+            if let Some(grouping) = runtime.grouping.as_mut() {
+                grouping.invalidate();
+            }
         }
         start_following(&host, focused_in_grid);
         return;
@@ -1631,11 +1636,13 @@ fn on_key_down(event: KeyboardEvent) {
         }
     }
     // Grouped, a position is a display position: a selection would name
-    // headers as well as rows and move on every toggle, and an edit would be
-    // reported against a row number the page cannot map to anything. Both are
-    // off while `group-by` is set — recorded as an open question of point 62.
+    // headers as well as rows and move on every toggle, so selection is off
+    // while `group-by` is set — recorded as an open question of point 62.
+    // Editing stays on with a `row-key` (issue #190): an edit names its record
+    // by the key, and only a data row opens an editor ([`begin_edit`]).
     if is_grouped(&host)
-        && (matches!(event.key().as_str(), "Enter" | " ")
+        && ((event.key() == " " && !editable_group_row(&host, active))
+            || (event.key() == "Enter" && !editable_group_row(&host, active))
             || (event.key().eq_ignore_ascii_case("a") && (event.ctrl_key() || event.meta_key())))
     {
         event.prevent_default();
@@ -1653,7 +1660,8 @@ fn on_key_down(event: KeyboardEvent) {
         .filter(|_| !event.is_composing())
         .map(str::to_owned);
     let opens_editor = event.key() == "F2" || typed.is_some();
-    if opens_editor && (is_grouped(&host) || is_tree(&host)) {
+    if opens_editor && (is_tree(&host) || (is_grouped(&host) && !editable_group_row(&host, active)))
+    {
         return;
     }
 
@@ -2452,6 +2460,9 @@ fn begin_edit(host: &HtmlElement, cell: CellRef, typed: Option<&str>) {
     let Some(runtime) = runtime(host) else {
         return;
     };
+    if is_grouped(host) && !editable_group_row(host, ActiveCell::Data(cell)) {
+        return;
+    }
     let (data_type, current) = {
         let borrowed = runtime.borrow();
         let Some(field) = borrowed.state.schema().fields().get(cell.col) else {
@@ -4345,6 +4356,27 @@ fn grouping_of(host: &HtmlElement) -> Result<Option<Grouping>, String> {
 /// Whether the grid is grouped right now.
 fn is_grouped(host: &HtmlElement) -> bool {
     runtime(host).is_some_and(|runtime| runtime.borrow().grouping.is_some())
+}
+
+/// Whether `active` is a data row of a grouped grid that may be edited: the
+/// grid has a `row-key` (an edit names its record, not a display position) and
+/// the position is a row, not a group header or the total (issue #190).
+fn editable_group_row(host: &HtmlElement, active: ActiveCell) -> bool {
+    let Some(runtime) = runtime(host) else {
+        return false;
+    };
+    let borrowed = runtime.borrow();
+    host.has_attribute(grid::ROW_KEY_ATTRIBUTE)
+        && matches!(active, ActiveCell::Data(_))
+        && active.row().is_some_and(|row| {
+            matches!(
+                borrowed
+                    .grouping
+                    .as_ref()
+                    .and_then(|grouping| grouping.item_at(row)),
+                Some(grouping::Item::Row { .. })
+            )
+        })
 }
 
 /// Whether the grid is a tree right now.
