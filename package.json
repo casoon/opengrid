@@ -13,7 +13,7 @@
   "scripts-info": {
     "e2e": "Führt die Playwright-E2E-/A11y-Tests aus",
     "e2e:update": "Führt die E2E-Tests aus und aktualisiert die Screenshot-Baselines",
-    "release": "Veröffentlicht die von der CI gebauten npm-Pakete und setzt den Tag (--dry-run: nur prüfen)"
+    "release": "Prüft den Release-Commit und setzt den Tag; der Release-Workflow veröffentlicht die von der CI gebauten npm-Pakete (--dry-run: nur prüfen)"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",

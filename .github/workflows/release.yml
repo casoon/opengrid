@@ -1,0 +1,63 @@
+name: Release
+
+# Publishes the npm tarballs that the CI run of the tagged commit built and
+# checked (`publish-dry-run` → artifact `npm-packages`), never a rebuild. The
+# tag is set by `pnpm release` (docs/releasing.md → The release); the publish
+# waits for approval in the `npm` environment and uses npm Trusted Publishing,
+# so there is no token and the packages carry provenance.
+on:
+  push:
+    tags:
+      - "v*"
+      - "opengrid-mcp-v*"
+
+permissions:
+  contents: read
+
+jobs:
+  publish-npm:
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Update npm (Trusted Publishing needs >= 11.5)
+        run: npm install -g npm@latest
+
+      - name: Download the tarballs CI built for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --branch main --event push \
+            --commit "$GITHUB_SHA" --status success --limit 1 --json databaseId -q '.[0].databaseId')
+          [ -n "$run" ] || { echo "no successful CI run on main for $GITHUB_SHA" >&2; exit 1; }
+          gh run download "$run" --repo "$GITHUB_REPOSITORY" -n npm-packages -D dist
+
+      - name: Publish
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          case "$tag" in
+            opengrid-mcp-v*) version="${tag#opengrid-mcp-v}"; packages=("casoon-opengrid-mcp-$version.tgz") ;;
+            *) version="${tag#v}"; packages=("casoon-opengrid-$version.tgz" "casoon-opengrid-mcp-$version.tgz") ;;
+          esac
+          for file in "${packages[@]}"; do
+            [ -f "dist/$file" ] || { echo "the artifact has no $file" >&2; exit 1; }
+            manifest=$(tar -xzOf "dist/$file" package/package.json)
+            name=$(node -p 'JSON.parse(process.argv[1]).name' "$manifest")
+            got=$(node -p 'JSON.parse(process.argv[1]).version' "$manifest")
+            [ "$got" = "$version" ] || { echo "$file says $got, not $version" >&2; exit 1; }
+            # A release interrupted halfway is finished by running the job again.
+            if npm view "$name@$version" version >/dev/null 2>&1; then
+              echo "$name@$version is on npm already — skipped"
+              continue
+            fi
+            npm publish --access public "dist/$file"
+          done

@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Publishes a release: the npm tarballs that CI built for the release commit,
-# then the tag. `@casoon/opengrid` — the React, Vue and Svelte components are
+# Starts a release: checks the release commit, then sets and pushes the tag.
+# The tag triggers `.github/workflows/release.yml`, which publishes the npm
+# tarballs that CI built for the release commit (Trusted Publishing, after
+# approval in the `npm` environment). `@casoon/opengrid` — the React, Vue and Svelte components are
 # its subpaths (#27) — and `@casoon/opengrid-mcp` (#140), with one version.
 #
 # `--mcp` publishes `@casoon/opengrid-mcp` alone, under its own tag
@@ -9,10 +11,10 @@
 #
 # What is published is what CI checked: the `publish-dry-run` job packs with the
 # pinned toolchain and uploads the tarballs as the artifact `npm-packages`, and
-# this script downloads exactly that artifact for the commit it releases — never
-# a local build. See docs/releasing.md → The release.
+# the release workflow downloads exactly that artifact for the tagged commit —
+# never a local build. This script downloads it too, to check it before the tag. See docs/releasing.md → The release.
 #
-# Usage: pnpm release            (asks before anything is published)
+# Usage: pnpm release            (asks before the tag is set)
 #        pnpm release --dry-run  (every check, `npm publish --dry-run`, no tag)
 #        pnpm release --mcp [--dry-run]
 set -euo pipefail
@@ -57,7 +59,6 @@ commit=$(git rev-parse HEAD)
 if git rev-parse -q --verify "refs/tags/$tag" >/dev/null || [ -n "$(git ls-remote --tags origin "refs/tags/$tag")" ]; then
     fail "$tag exists already"
 fi
-npm whoami >/dev/null 2>&1 || fail "not logged in to npm — run \`npm login\`"
 if $mcp_only; then
     npm view "@casoon/opengrid@$version" version >/dev/null 2>&1 \
         || fail "@casoon/opengrid@$version is not on npm — release both, without --mcp"
@@ -85,7 +86,7 @@ echo "  version  $version"
 echo "  commit   ${commit:0:7} ($(git log -1 --format=%s "$commit"))"
 echo "  CI run   $run"
 for file in "${packages[@]}"; do
-    echo "  publish  $file"
+    echo "  publish  $file (by the release workflow)"
 done
 echo "  tag      $tag on ${commit:0:7}"
 echo
@@ -101,18 +102,8 @@ if $dry_run; then
     exit 0
 fi
 
-read -r -p "This cannot be undone. Type $version to publish: " answer
-[ "$answer" = "$version" ] || fail "not confirmed — nothing was published"
-
-for file in "${packages[@]}"; do
-    name=$(node -p 'JSON.parse(process.argv[1]).name' "$(tar -xzOf "$dest/$file" package/package.json)")
-    # A release interrupted halfway is finished by running it again.
-    if npm view "$name@$version" version >/dev/null 2>&1; then
-        echo "$name@$version is on npm already — skipped"
-        continue
-    fi
-    npm publish "$dest/$file"
-done
+read -r -p "This cannot be undone. Type $version to tag the release: " answer
+[ "$answer" = "$version" ] || fail "not confirmed — no tag was set"
 
 git tag "$tag" "$commit"
 git push origin "$tag"
@@ -120,5 +111,5 @@ git push origin "$tag"
 gh release edit "$tag" --target "$commit" >/dev/null 2>&1 || true
 
 echo
-echo "Published $version and pushed $tag."
+echo "Pushed $tag. Approve \`Publish to npm\` (environment npm) in the Release workflow run."
 echo "Next: publish the draft release on GitHub, and merge the docs that say it is on npm."

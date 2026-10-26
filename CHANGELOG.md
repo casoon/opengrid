@@ -18,6 +18,10 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+### Changed
+
+- **Releases:** the npm packages are published by a Release workflow on the tag, with npm Trusted Publishing (provenance, no token), after approval in the `npm` environment; `pnpm release` now checks the commit and sets the tag.
+
 ### Added
 
 - **List values in a cell, with a type-ahead editor** ([#185](https://github.com/casoon/opengrid/issues/185)).
