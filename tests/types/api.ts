@@ -115,6 +115,10 @@ export async function page(): Promise<void> {
     event.detail.key satisfies string | number | boolean | null | undefined;
   });
 
+  grid.addEventListener("opengrid-cell-change", (event) => {
+    event.detail.undo satisfies true | undefined;
+  });
+
   // Validation while typing (issue #188).
   module.set_validators(grid, {
     seats: (value, row) => (Number(value) > 60 && row.name ? { level: "warning", message: "Hall." } : null),

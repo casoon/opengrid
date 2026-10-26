@@ -411,10 +411,10 @@ filterRemoved filterRowToggle filterValueLabel filtersCleared groupByColumn grou
 groupCollapsed groupExpanded groupInvalid groupRow groupSecondLevel \
 groupingFull hideColumn lang loading matchesOne matchesOther newRow noValue nothingToAdd operatorLabel \
 operators pageFirst pageLast pageNext pageOf pagePrevious pasteApplied pasteApply pasteBadOne pasteBadOther pasteBlocked pasteCutOff pasteDiscard pasteDiscarded pastePreview pasteUnreadable pivotColumns pivotFilterHint pivotFilterLabel pivotFilters pivotMeasures pivotRows pivotToolbar queriesOne queriesOther queryAnd \
-queryMissingValue queryUnknownColumn queryWrongOperator rowAdded rowsOne rowsOther searchChip searchHint \
+queryMissingValue queryUnknownColumn queryWrongOperator redoAdded redoCell redoNothing redoPaste rowAdded rowsOne rowsOther searchChip searchHint \
 searchLabel searchPlaceholder searchSuggestions selectAll selectedAll selectionCleared sortAscending \
 sortDescending sourceHybrid sourceLocal sourceRemote sourceWorker subtotal subtreeCell subtreeOnly toolbarGroup total \
-totalRow treeContext treeGroupIgnored treeLevelTooLarge treeOrphans treeRefused typeBool typeDate typeInteger typeNumber typeText typeTime ungroupColumn validationError validationWarning valueLabel
+totalRow treeContext treeGroupIgnored treeLevelTooLarge treeOrphans treeRefused typeBool typeDate typeInteger typeNumber typeText typeTime undoAdded undoCell undoNothing undoPaste ungroupColumn validationError validationWarning valueLabel
 ";
         assert_eq!(surface(), expected);
     }

@@ -280,6 +280,22 @@ pub struct GridTexts {
     pub validation_warning: String,
     /// What the live region says when a validator finds an error. May use `{message}`.
     pub validation_error: String,
+    /// What undo says for a cell edit (issue #186). May use `{column}` and `{row}`.
+    pub undo_cell: String,
+    /// What redo says for a cell edit. May use `{column}` and `{row}`.
+    pub redo_cell: String,
+    /// What undo says for an added row.
+    pub undo_added: String,
+    /// What redo says for an added row.
+    pub redo_added: String,
+    /// What undo says for a paste. May use `{count}`.
+    pub undo_paste: String,
+    /// What redo says for a paste. May use `{count}`.
+    pub redo_paste: String,
+    /// Said when there is no step to undo.
+    pub undo_nothing: String,
+    /// Said when there is no step to redo.
+    pub redo_nothing: String,
     /// A column was resized. May use `{column}` and `{width}` (plan point 36).
     pub column_width: String,
     /// A column was moved. May use `{column}`, `{position}` and `{count}`.
@@ -448,6 +464,14 @@ pub(crate) const KEYS: &[&str] = &[
     "filterInvalid",
     "cellRequired",
     "newRow",
+    "undoCell",
+    "redoCell",
+    "undoAdded",
+    "redoAdded",
+    "undoPaste",
+    "redoPaste",
+    "undoNothing",
+    "redoNothing",
     "validationWarning",
     "validationError",
     "bulkCaption",
@@ -633,6 +657,14 @@ impl Default for GridTexts {
             filter_invalid: "{column}: {value} is not a value for this column".to_owned(),
             cell_required: "{column} needs a value".to_owned(),
             new_row: "New row".to_owned(),
+            undo_cell: "Undone: {column} in row {row}".to_owned(),
+            redo_cell: "Redone: {column} in row {row}".to_owned(),
+            undo_added: "Undone: row added".to_owned(),
+            redo_added: "Redone: row added".to_owned(),
+            undo_paste: "Undone: paste, {count} values".to_owned(),
+            redo_paste: "Redone: paste, {count} values".to_owned(),
+            undo_nothing: "Nothing to undo".to_owned(),
+            redo_nothing: "Nothing to redo".to_owned(),
             validation_warning: "Warning: {message}".to_owned(),
             validation_error: "Error: {message}".to_owned(),
             bulk_caption: "Set {column} for {rows} selected".to_owned(),
@@ -791,6 +823,39 @@ impl GridTexts {
             &self.validation_warning
         };
         fill(template, "message", message)
+    }
+
+    /// What undo or redo says for a cell edit: `row` is the 1-based position.
+    pub fn history_cell(&self, undoing: bool, column: &str, row: u64) -> String {
+        let template = if undoing {
+            &self.undo_cell
+        } else {
+            &self.redo_cell
+        };
+        fill(
+            &fill(template, "column", self.column(column)),
+            "row",
+            &row.to_string(),
+        )
+    }
+
+    /// What undo or redo says for an added row.
+    pub fn history_added(&self, undoing: bool) -> String {
+        if undoing {
+            self.undo_added.clone()
+        } else {
+            self.redo_added.clone()
+        }
+    }
+
+    /// What undo or redo says for a paste of `count` cells.
+    pub fn history_paste(&self, undoing: bool, count: usize) -> String {
+        let template = if undoing {
+            &self.undo_paste
+        } else {
+            &self.redo_paste
+        };
+        fill(template, "count", &count.to_string())
     }
 
     /// A row was added and `waiting` rows are not saved yet.
@@ -1316,6 +1381,14 @@ mod host {
         overwrite(&mut texts.filter_invalid, string("filterInvalid"));
         overwrite(&mut texts.cell_required, string("cellRequired"));
         overwrite(&mut texts.new_row, string("newRow"));
+        overwrite(&mut texts.undo_cell, string("undoCell"));
+        overwrite(&mut texts.redo_cell, string("redoCell"));
+        overwrite(&mut texts.undo_added, string("undoAdded"));
+        overwrite(&mut texts.redo_added, string("redoAdded"));
+        overwrite(&mut texts.undo_paste, string("undoPaste"));
+        overwrite(&mut texts.redo_paste, string("redoPaste"));
+        overwrite(&mut texts.undo_nothing, string("undoNothing"));
+        overwrite(&mut texts.redo_nothing, string("redoNothing"));
         overwrite(&mut texts.validation_warning, string("validationWarning"));
         overwrite(&mut texts.validation_error, string("validationError"));
         overwrite(&mut texts.bulk_caption, string("bulkCaption"));
