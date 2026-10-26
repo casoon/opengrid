@@ -139,23 +139,26 @@ inventory.
       real. This local pack is for **reading**, not for publishing: it was built with this
       machine's `wasm-opt`, and `just package` warns when that is not the binaryen CI pins.
 - [ ] Commit the version and the changelog, merge to `main`, and wait for its CI run.
-- [ ] `pnpm release` — publishes **the tarballs from the CI run of the release commit**
-      (the `npm-packages` artifact of its `publish-dry-run` job, built with the pinned
-      toolchain and checked by that very job), never a local build. It refuses unless
+- [ ] `pnpm release` — checks the release commit and sets the tag. It refuses unless
       `main` is clean and at `origin/main`, that commit has a successful CI run, the tag
-      does not exist yet and the tarball carries the version; then it shows what it will
-      do and asks you to type the version. It publishes the package, then tags the commit
-      and pushes the tag. Interrupted halfway, run it again: what is on npm is skipped.
-      `pnpm release --dry-run` does every check and `npm publish --dry-run`, and publishes
-      nothing.
+      does not exist yet and the tarball CI built (the `npm-packages` artifact of its
+      `publish-dry-run` job, packed with the pinned toolchain) carries the version; then
+      it shows what will happen and asks you to type the version. It then tags the
+      commit and pushes the tag. `pnpm release --dry-run` does every check and
+      `npm publish --dry-run`, and sets no tag.
+- [ ] Approve **Publish to npm** in the run of the Release workflow the tag started
+      (environment `npm`). The workflow publishes **the tarballs from the CI run of the
+      release commit**, never a rebuild, through npm Trusted Publishing: no token, and the
+      packages carry provenance. Interrupted halfway, run the job again: what is on npm is
+      skipped.
 
 ### `@casoon/opengrid-mcp`
 
 The MCP server ([#140](https://github.com/casoon/opengrid/issues/140)) carries the same
 version and comes out with every release: `just set-version` sets it, `publish-dry-run`
 packs it beside the grid (`just mcp-elements`, then `just package-mcp`, which installs the
-tarball as `npx` would and asks it over stdio), and `pnpm release` publishes it after
-`@casoon/opengrid`. `pnpm release --mcp` publishes it alone, under the tag
+tarball as `npx` would and asks it over stdio), and the release workflow publishes it after
+`@casoon/opengrid`. `pnpm release --mcp` tags it alone, under the tag
 `opengrid-mcp-vX.Y.Z`, for a version whose `@casoon/opengrid` is on npm already — the way
 its first release, 0.13.0, went out. Whether a host renders its view is not covered by a
 command; say in the changelog whether one was tried.
