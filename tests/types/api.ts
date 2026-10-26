@@ -115,6 +115,13 @@ export async function page(): Promise<void> {
     event.detail.key satisfies string | number | boolean | null | undefined;
   });
 
+  // An action column (issue #189).
+  module.set_actions(grid, [{ id: "open", label: "Open" }]);
+  grid.addEventListener("opengrid-row-action", (event) => {
+    event.detail.id satisfies string;
+    event.detail.key satisfies string | number | boolean | null | undefined;
+  });
+
   // The view: read whole, written in parts.
   // @ts-expect-error — a grid that was never connected has no view
   void module.get_view(grid).sort;

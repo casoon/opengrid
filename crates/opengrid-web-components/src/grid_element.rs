@@ -81,7 +81,7 @@ use opengrid_web_core::provider::provider;
 
 use crate::columns::{self, WIDTH_STEP};
 use crate::formats::{CellFormat, Formatter, formats};
-use crate::grid_element_events::{CELL_EVENT, SELECTION_EVENT, VIEW_EVENT};
+use crate::grid_element_events::{CELL_EVENT, ROW_ACTION_EVENT, SELECTION_EVENT, VIEW_EVENT};
 use opengrid_web_core::renderer::{Dom, WebRenderer};
 
 use crate::element::{answer_size, clear_root, describe, dispatch_query, now, place_under};
@@ -811,6 +811,7 @@ fn ensure_skeleton(host: &HtmlElement) {
             toolbar: host.has_attribute(grid::TOOLBAR_ATTRIBUTE),
             facets: host.has_attribute(grid::FACETS_ATTRIBUTE),
             search: host.has_attribute(grid::SEARCH_ATTRIBUTE),
+            actions: &actions_of(host),
         },
     );
     let root_node: Node = root.clone().unchecked_into();
@@ -1273,6 +1274,12 @@ fn selector(active: ActiveCell) -> String {
 
 /// Reads the active cell back from a DOM cell (click or `focusin`).
 fn active_from_element(element: &Element) -> Option<ActiveCell> {
+    // The button inside an action cell stands for the cell (issue #189).
+    if let Ok(Some(cell)) = element.closest("td[part=\"action-cell\"]")
+        && !cell.is_same_node(Some(element))
+    {
+        return active_from_element(&cell);
+    }
     // `closest`, not the attribute: the focus lands on the checkbox *inside*
     // the header cell, and a click can land on either.
     if let Some(cell) = element.closest("[data-select]").ok().flatten()
@@ -1635,6 +1642,17 @@ fn on_key_down(event: KeyboardEvent) {
             _ => {}
         }
     }
+    // An action cell (issue #189): `Enter` and `Space` press its button.
+    if let ActiveCell::Data(cell) = active
+        && let Some(index) = cell.col.checked_sub(runtime.borrow().state.schema().len())
+        && (event.key() == "Enter" || event.key() == " ")
+        && !event.ctrl_key()
+        && !event.meta_key()
+    {
+        event.prevent_default();
+        fire_action(&host, cell.row, index);
+        return;
+    }
     // Grouped, a position is a display position: a selection would name
     // headers as well as rows and move on every toggle, so selection is off
     // while `group-by` is set — recorded as an open question of point 62.
@@ -1829,7 +1847,8 @@ fn move_with_key(
             .unwrap_or_else(|| pool_of(host));
         (
             runtime.active,
-            runtime.state.schema().len(),
+            // The action columns are places on the row like any other.
+            runtime.state.schema().len() + actions_of(host).len(),
             runtime.state.total_count(),
             runtime.state.window(),
             pool,
@@ -2425,6 +2444,115 @@ fn settle_selection(
     render(host, false);
     dispatch_selection(host, &rows, None);
     let _ = runtime;
+}
+
+/// Where `set_actions` stores what the page supplied.
+pub(crate) const ACTIONS_KEY: &str = "__opengridActions";
+
+/// The actions the page supplied (issue #189): `[{ id, label }]`, in order. An
+/// entry without both is left out — an action nobody can name has no button.
+fn actions_of(host: &HtmlElement) -> Vec<grid::Action> {
+    let Ok(list) = js_sys::Reflect::get(host.as_ref(), &JsValue::from_str(ACTIONS_KEY)) else {
+        return Vec::new();
+    };
+    let Ok(list) = list.dyn_into::<js_sys::Array>() else {
+        return Vec::new();
+    };
+    list.iter()
+        .filter_map(|entry| {
+            let text = |name: &str| {
+                js_sys::Reflect::get(&entry, &JsValue::from_str(name))
+                    .ok()
+                    .and_then(|value| value.as_string())
+                    .filter(|value| !value.is_empty())
+            };
+            Some(grid::Action {
+                id: text("id")?,
+                label: text("label")?,
+            })
+        })
+        .collect()
+}
+
+/// Stores the page's actions and draws the columns (issue #189).
+pub(crate) fn set_actions(host: &HtmlElement, actions: &JsValue) {
+    let _ = js_sys::Reflect::set(host.as_ref(), &JsValue::from_str(ACTIONS_KEY), actions);
+    let Some(runtime) = runtime(host) else {
+        return;
+    };
+    if host.shadow_root().is_none() {
+        return;
+    }
+    // Part of the one-time skeleton: new columns are a new skeleton, around the
+    // same state.
+    let had_focus = reskeleton(host, &runtime);
+    run_query(host, QueryKind::Data, had_focus);
+}
+
+/// Whether row `row` is a record an action may name: not a group header and
+/// not the total.
+fn is_record(runtime: &GridRuntime, row: u64) -> bool {
+    runtime
+        .grouping
+        .as_ref()
+        .is_none_or(|grouping| matches!(grouping.item_at(row), Some(grouping::Item::Row { .. })))
+}
+
+/// Fires `opengrid-row-action` for the action at `index` on `row`.
+fn fire_action(host: &HtmlElement, row: u64, index: usize) {
+    let Some(runtime) = runtime(host) else {
+        return;
+    };
+    let Some(action) = actions_of(host).into_iter().nth(index) else {
+        return;
+    };
+    let key = {
+        let borrowed = runtime.borrow();
+        if !is_record(&borrowed, row) {
+            return;
+        }
+        row_key_js(host, &borrowed.state, row)
+    };
+    let detail = js_sys::Object::new();
+    if let Some(key) = key {
+        let _ = js_sys::Reflect::set(&detail, &JsValue::from_str("key"), &key);
+    }
+    for (name, value) in [
+        ("id", JsValue::from_str(&action.id)),
+        ("row", JsValue::from_f64(row as f64)),
+    ] {
+        let _ = js_sys::Reflect::set(&detail, &JsValue::from_str(name), &value);
+    }
+    let init = web_sys::CustomEventInit::new();
+    init.set_bubbles(true);
+    init.set_composed(true);
+    init.set_cancelable(false);
+    init.set_detail(&detail);
+    if let Ok(event) = web_sys::CustomEvent::new_with_event_init_dict(ROW_ACTION_EVENT, &init) {
+        let _ = host.dispatch_event(&event);
+    }
+}
+
+/// A click on an action button.
+fn on_action_click(host: &HtmlElement, target: &Element) -> bool {
+    let Ok(Some(cell)) = target.closest("td[part=\"action-cell\"]") else {
+        return false;
+    };
+    let (Some(row), Some(col)) = (
+        cell.get_attribute("data-row")
+            .and_then(|row| row.parse::<u64>().ok()),
+        cell.get_attribute("data-col")
+            .and_then(|col| col.parse::<usize>().ok()),
+    ) else {
+        return true;
+    };
+    if let Some(runtime) = runtime(host) {
+        let first = runtime.borrow().state.schema().len();
+        if let Some(index) = col.checked_sub(first) {
+            fire_action(host, row, index);
+        }
+    }
+    true
 }
 
 /// Where `set_choices` stores what the page supplied.
@@ -3319,6 +3447,13 @@ fn on_filter_clear(event: Event) {
         } else {
             open_columns(&root, true);
         }
+        return;
+    }
+
+    // An action button of a row (issue #189).
+    if let Ok(host) = root.host().dyn_into::<HtmlElement>()
+        && on_action_click(&host, &target)
+    {
         return;
     }
 

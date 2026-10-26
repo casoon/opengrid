@@ -799,6 +799,8 @@ pub struct GridNodes {
     pub select_all_mark: Option<NodeId>,
     /// The header cells, one per column.
     pub header_cells: Vec<GridHeaderNodes>,
+    /// The `<th>` of each action column, after the data columns (issue #189).
+    pub action_headers: Vec<NodeId>,
     /// The recycled pool: one entry per slot.
     pub rows: Vec<GridRowNodes>,
     /// The paging controls below the table (`part="pager"`), hidden while the
@@ -890,6 +892,8 @@ pub struct GridRowNodes {
     pub select_mark: Option<NodeId>,
     /// The `<td>`s, one per column.
     pub cells: Vec<NodeId>,
+    /// The `<td>` of each action column and the button inside it (issue #189).
+    pub actions: Vec<(NodeId, NodeId)>,
 }
 
 impl GridNodes {
@@ -1323,6 +1327,16 @@ pub struct GridSkeleton<'a> {
     pub facets: bool,
     /// Whether the search field is built (point 67).
     pub search: bool,
+    /// The page's actions, one trailing column each (issue #189).
+    pub actions: &'a [Action],
+}
+
+/// An action a page offers on every row (issue #189): the label is the accessible
+/// name, `id` is what `opengrid-row-action` names.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Action {
+    pub id: String,
+    pub label: String,
 }
 
 /// The grid's stylesheet: the `--og-*` defaults, the look, and the
@@ -1870,6 +1884,7 @@ pub fn build_grid(
         toolbar,
         facets,
         search,
+        actions,
     } = *skeleton;
     let fields = schema.fields();
     let ncols = fields.len();
@@ -2010,7 +2025,7 @@ pub fn build_grid(
         name: "aria-colcount".to_owned(),
         // The selection column counts when it is there: a reader told there are
         // five would look for a sixth.
-        value: (ncols + usize::from(selection)).to_string(),
+        value: (ncols + usize::from(selection) + actions.len()).to_string(),
     });
 
     let thead = element(buffer, nodes, Some(table), "thead");
@@ -2154,6 +2169,31 @@ pub fn build_grid(
         });
     }
 
+    // The action columns (issue #189): headers named by the label, so the
+    // column says what its buttons do. Not sortable, not filterable.
+    let mut action_headers = Vec::with_capacity(actions.len());
+    for (index, action) in actions.iter().enumerate() {
+        let th = element(buffer, nodes, Some(header_row), "th");
+        for (name, value) in [
+            ("part", "action-header"),
+            ("scope", "col"),
+            ("data-col", &(ncols + index).to_string()),
+            ("tabindex", "-1"),
+        ] {
+            buffer.push(Patch::SetAttribute {
+                node: th,
+                name: name.to_owned(),
+                value: value.to_owned(),
+            });
+        }
+        let name = element(buffer, nodes, Some(th), "span");
+        buffer.push(Patch::SetText {
+            node: name,
+            text: action.label.clone(),
+        });
+        action_headers.push(th);
+    }
+
     let tbody = element(buffer, nodes, Some(table), "tbody");
     set_style(buffer, tbody, "position: relative; height: 0px;");
 
@@ -2228,11 +2268,49 @@ pub fn build_grid(
             });
             cells.push(td);
         }
+        // One cell per action, with the button the pointer hits. The cell is
+        // what the roving tabindex lands on; `Enter` and `Space` on it press
+        // the button, which is not a tab stop of its own.
+        let mut action_cells = Vec::with_capacity(actions.len());
+        for (index, action) in actions.iter().enumerate() {
+            let td = element(buffer, nodes, Some(tr), "td");
+            for (name, value) in [
+                ("part", "action-cell"),
+                ("data-col", &(ncols + index).to_string()),
+                ("data-action", action.id.as_str()),
+                ("tabindex", "-1"),
+            ] {
+                buffer.push(Patch::SetAttribute {
+                    node: td,
+                    name: name.to_owned(),
+                    value: value.to_owned(),
+                });
+            }
+            let button = element(buffer, nodes, Some(td), "button");
+            for (name, value) in [
+                ("type", "button"),
+                ("part", "action"),
+                ("tabindex", "-1"),
+                ("data-action", action.id.as_str()),
+            ] {
+                buffer.push(Patch::SetAttribute {
+                    node: button,
+                    name: name.to_owned(),
+                    value: value.to_owned(),
+                });
+            }
+            buffer.push(Patch::SetText {
+                node: button,
+                text: action.label.clone(),
+            });
+            action_cells.push((td, button));
+        }
         rows.push(GridRowNodes {
             row: tr,
             select,
             select_mark,
             cells,
+            actions: action_cells,
         });
     }
 
@@ -2282,6 +2360,7 @@ pub fn build_grid(
         select_all,
         select_all_mark,
         header_cells,
+        action_headers,
         rows,
         pager,
         columns,
@@ -3056,6 +3135,19 @@ pub fn patch_grid(
         }
     }
 
+    for (index, th) in nodes.action_headers.iter().enumerate() {
+        buffer.push(Patch::SetAttribute {
+            node: *th,
+            name: "tabindex".to_owned(),
+            value: tabindex_for(
+                active
+                    == ActiveCell::Header {
+                        col: fields.len() + index,
+                    },
+            )
+            .to_owned(),
+        });
+    }
     for (col, header) in nodes.header_cells.iter().enumerate() {
         let key = fields
             .get(col)
@@ -3223,6 +3315,7 @@ pub fn patch_grid(
                         });
                     }
                     patch_group_row(buffer, row_nodes, item, grouping, fields, texts, format);
+                    patch_actions(buffer, row_nodes, row, fields.len(), active, false);
                     continue;
                 }
                 // A data row: one level deeper than the innermost group, or no
@@ -3282,6 +3375,7 @@ pub fn patch_grid(
                         .to_owned(),
                     });
                 }
+                patch_actions(buffer, row_nodes, row, fields.len(), active, true);
                 for (col, cell) in row_nodes.cells.iter().enumerate() {
                     buffer.push(Patch::SetAttribute {
                         node: *cell,
@@ -3410,6 +3504,44 @@ pub fn patch_grid(
                     name: "data-selected".to_owned(),
                 });
             }
+        }
+    }
+}
+
+/// The action cells of a row (issue #189): which row they are on, where the
+/// roving tabindex is, and whether there is a button at all — a group header
+/// or the total has no record to act on.
+fn patch_actions(
+    buffer: &mut PatchBuffer,
+    row_nodes: &GridRowNodes,
+    row: u64,
+    first_col: usize,
+    active: ActiveCell,
+    is_record: bool,
+) {
+    for (index, (cell, button)) in row_nodes.actions.iter().enumerate() {
+        buffer.push(Patch::SetAttribute {
+            node: *cell,
+            name: "data-row".to_owned(),
+            value: row.to_string(),
+        });
+        let is_active = active == ActiveCell::Data(CellRef::new(row, first_col + index));
+        buffer.push(Patch::SetAttribute {
+            node: *cell,
+            name: "tabindex".to_owned(),
+            value: tabindex_for(is_active).to_owned(),
+        });
+        if is_record {
+            buffer.push(Patch::RemoveAttribute {
+                node: *button,
+                name: "hidden".to_owned(),
+            });
+        } else {
+            buffer.push(Patch::SetAttribute {
+                node: *button,
+                name: "hidden".to_owned(),
+                value: String::new(),
+            });
         }
     }
 }
@@ -4563,6 +4695,7 @@ mod tests {
                 toolbar: false,
                 facets: false,
                 search: false,
+                actions: &[],
             },
         );
 
@@ -4660,6 +4793,7 @@ mod tests {
                 toolbar: false,
                 facets: false,
                 search: false,
+                actions: &[],
             },
         );
         let state = state_with(&["Gamma", "Alpha"], 5, 0, 4);
@@ -4731,6 +4865,7 @@ mod tests {
                 toolbar: false,
                 facets: false,
                 search: false,
+                actions: &[],
             },
         );
         let state = state_with(&["Gamma"], 1, 0, 1);
@@ -4786,6 +4921,7 @@ mod tests {
                 toolbar: false,
                 facets: false,
                 search: false,
+                actions: &[],
             },
         );
         let state = state_with(&["Gamma"], 1, 0, 1);
@@ -4860,6 +4996,7 @@ mod tests {
                 toolbar: false,
                 facets: false,
                 search: false,
+                actions: &[],
             },
         );
 
@@ -4949,6 +5086,7 @@ mod tests {
                 toolbar: false,
                 facets: false,
                 search: false,
+                actions: &[],
             },
         );
         assert!(
@@ -4981,6 +5119,7 @@ mod tests {
                 toolbar: false,
                 facets: false,
                 search: false,
+                actions: &[],
             },
         );
         let state = state_with(&["Gamma"], 1, 0, 1);
@@ -5057,6 +5196,7 @@ mod tests {
                 toolbar: false,
                 facets: false,
                 search: false,
+                actions: &[],
             },
         );
 
@@ -5147,6 +5287,7 @@ mod tests {
                 toolbar: false,
                 facets: true,
                 search: false,
+                actions: &[],
             },
         );
         let attribute = |node: NodeId, wanted: &str| {
@@ -5199,6 +5340,7 @@ mod tests {
                 toolbar: true,
                 facets: true,
                 search: true,
+                actions: &[],
             },
         );
         assert!(!buffer.patches().iter().any(|patch| matches!(
@@ -5331,6 +5473,7 @@ mod tests {
                 toolbar: false,
                 facets: false,
                 search: false,
+                actions: &[],
             },
         );
         let state = state_with(&["Gamma"], 1, 0, 1);
@@ -5386,6 +5529,7 @@ mod tests {
                 toolbar: false,
                 facets: false,
                 search: false,
+                actions: &[],
             },
         );
         let state = state_with(&["Gamma", "Alpha"], 5, 0, 2);
@@ -5436,6 +5580,7 @@ mod tests {
                 toolbar: false,
                 facets: false,
                 search: false,
+                actions: &[],
             },
         );
         let state = state_with(&["Gamma", "Alpha"], 5, 0, 3);
@@ -5493,6 +5638,7 @@ mod tests {
                 toolbar: false,
                 facets: false,
                 search: false,
+                actions: &[],
             },
         );
         // Slot 3 holds the focused row 6; the window scrolled to rows 20..24.
@@ -5836,6 +5982,7 @@ mod tests {
                     toolbar: false,
                     facets: false,
                     search: false,
+                    actions: &[],
                 },
             );
 
@@ -5900,6 +6047,7 @@ mod tests {
                     toolbar: false,
                     facets: false,
                     search: false,
+                    actions: &[],
                 },
             );
             buffer
