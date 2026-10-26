@@ -88,6 +88,7 @@ use crate::grid_element_events::{
 
 mod bulk;
 mod paste;
+mod validate;
 use opengrid_web_core::renderer::{Dom, WebRenderer};
 
 use crate::element::{answer_size, clear_root, describe, dispatch_query, now, place_under};
@@ -211,6 +212,9 @@ struct GridRuntime {
     replaced: Option<Option<Value>>,
     /// A paste shown and not yet applied (issue #184).
     paste: Option<paste::Pending>,
+    /// The finding the live region has said for the cell being edited, so it is
+    /// said once (issue #188).
+    validation_said: Option<String>,
 }
 
 impl GridRuntime {
@@ -300,6 +304,7 @@ fn fresh_runtime(
         scroll_echo: None,
         replaced: None,
         paste: None,
+        validation_said: None,
     }
 }
 
@@ -1360,6 +1365,10 @@ fn add_listeners(root: &ShadowRoot) {
     let _ = root.add_event_listener_with_callback("input", input.unchecked_ref());
     // Scroll does not bubble, but a capture listener on the shadow root sees the
     // viewport's scroll events.
+    // What the page's validators say while the reader types (issue #188).
+    let validating = Closure::<dyn FnMut(Event)>::new(validate::on_editor_event).into_js_value();
+    let _ = root.add_event_listener_with_callback("input", validating.unchecked_ref());
+    let _ = root.add_event_listener_with_callback("change", validating.unchecked_ref());
     let pasted = Closure::<dyn FnMut(Event)>::new(paste::on_paste).into_js_value();
     let _ = root.add_event_listener_with_callback("paste", pasted.unchecked_ref());
     let scroll = Closure::<dyn FnMut(Event)>::new(on_scroll).into_js_value();
@@ -2851,6 +2860,7 @@ fn begin_edit(host: &HtmlElement, cell: CellRef, typed: Option<&str>) {
     if runtime.borrow_mut().state.begin_edit(cell).is_empty() {
         return;
     }
+    runtime.borrow_mut().validation_said = None;
     render(host, false);
 
     let Some(root) = host.shadow_root() else {
@@ -2992,6 +3002,26 @@ fn end_edit(host: &HtmlElement, commit: bool) {
         }
     };
 
+    // The page's validator speaks on commit too (issue #188). A column that asks
+    // for it blocks on an error: the editor stays, with the sentence under it.
+    let finding = if commit {
+        validate::run(host, &runtime, cell, typed.as_deref().unwrap_or(""))
+    } else {
+        None
+    };
+    if let Some((found, true)) = &finding
+        && found.level == opengrid_grid::Level::Error
+    {
+        if let Ok(Some(editor)) = root.query_selector("[part=\"editor\"]") {
+            validate::show(&editor, Some(found));
+            if let Ok(editor) = editor.dyn_into::<HtmlElement>() {
+                let _ = editor.focus();
+            }
+        }
+        validate::announce(host, &runtime, Some(found));
+        return;
+    }
+
     // Read before the commit: an edit of the key field itself still names the
     // record by the key it had.
     let key = row_key_js(host, &runtime.borrow().state, cell.row);
@@ -3049,6 +3079,12 @@ fn end_edit(host: &HtmlElement, commit: bool) {
         }
     }
 
+    if commit && rejected.is_none() {
+        let finding = finding.map(|(found, _)| found);
+        validate::announce(host, &runtime, finding.as_ref());
+        runtime.borrow_mut().state.set_validation(cell, finding);
+    }
+    runtime.borrow_mut().validation_said = None;
     runtime.borrow_mut().state.end_edit();
     if let Some(value) = &rejected {
         let texts = texts(host);
@@ -3085,9 +3121,9 @@ fn end_edit(host: &HtmlElement, commit: bool) {
     }
 
     render(host, false);
-    if in_draft {
-        redraw_cell(host, cell);
-    }
+    // The focused row is the one the renderer leaves alone: the cell's marks —
+    // the new row's, a validator's — are written here.
+    redraw_cell(host, cell);
     focus_active(host);
 }
 
@@ -3136,6 +3172,7 @@ fn redraw_cell(host: &HtmlElement, cell: CellRef) {
             })
             .unwrap_or_default();
         td.set_text_content(Some(&text));
+        let _ = td.remove_attribute("data-validating");
     }
     if borrowed.state.is_changed(cell) {
         let _ = td.set_attribute("data-changed", "true");
@@ -3159,7 +3196,30 @@ fn redraw_cell(host: &HtmlElement, cell: CellRef) {
     }
     let lacking = borrowed.state.row_kind(cell.row) == RowKind::Draft
         && borrowed.state.added().missing().contains(&cell.col);
-    if borrowed.state.cell_state(cell) == Some(opengrid_grid::CellState::Error) || lacking {
+    // What a validator or the page said about the value (issue #188).
+    let finding = borrowed.state.finding(cell);
+    match &finding {
+        Some(finding) => {
+            let _ = td.set_attribute("data-validation", finding.level.as_str());
+            let _ = td.set_attribute("aria-description", &finding.message);
+        }
+        None => {
+            let _ = td.remove_attribute("data-validation");
+            // A tree's context is named in the same attribute (issue #135).
+            if !is_tree(host) {
+                let _ = td.remove_attribute("aria-description");
+            }
+        }
+    }
+    let found_error = finding
+        .as_ref()
+        .is_some_and(|finding| finding.level == opengrid_grid::Level::Error);
+    if matches!(
+        borrowed.state.cell_state(cell),
+        Some(opengrid_grid::CellState::Error | opengrid_grid::CellState::Invalid)
+    ) || lacking
+        || found_error
+    {
         let _ = td.set_attribute("aria-invalid", "true");
     } else {
         let _ = td.remove_attribute("aria-invalid");
@@ -3183,14 +3243,24 @@ pub(crate) fn write_cell_state(
     let Some(key) = key_from_js(&runtime.borrow().state, key) else {
         return;
     };
-    let cell = runtime
-        .borrow_mut()
-        .state
-        .set_cell_state(key, column, state);
+    let cell = {
+        let mut borrowed = runtime.borrow_mut();
+        // The sentence of an `invalid` cell stays with the record (issue #188).
+        borrowed.state.set_cell_message(
+            key.clone(),
+            column.clone(),
+            message
+                .clone()
+                .filter(|_| state == opengrid_grid::CellState::Invalid),
+        );
+        borrowed.state.set_cell_state(key, column, state)
+    };
     // One live region (point 41): a failure is said in the status line,
     // politely, and the focus stays where the reader is.
-    if state == opengrid_grid::CellState::Error
-        && let Some(message) = message
+    if matches!(
+        state,
+        opengrid_grid::CellState::Error | opengrid_grid::CellState::Invalid
+    ) && let Some(message) = message
     {
         runtime.borrow_mut().state.set_notice(message);
     }
@@ -3198,6 +3268,11 @@ pub(crate) fn write_cell_state(
     if let Some(cell) = cell {
         redraw_cell(host, cell);
     }
+}
+
+/// [`crate::element::set_validators`] (issue #188).
+pub(crate) fn set_validators(host: &HtmlElement, validators: &JsValue) {
+    validate::store(host, validators);
 }
 
 /// [`crate::element::set_values`] (issue #153).

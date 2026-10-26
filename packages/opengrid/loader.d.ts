@@ -113,6 +113,11 @@ export interface OpengridModule {
     state: "saving" | "saved" | "error",
     detail?: WireValue | string,
   ): void;
+  /**
+   * Validators that run while the reader types (issue #188). A function never
+   * blocks the commit; `{ validate, block: true }` blocks on an `error`.
+   */
+  set_validators(host: HTMLElement, validators: Record<string, Validator | ValidatorRule>): void;
   /** Defines the three elements. `loadOpengrid()` calls it. */
   register(): void;
 }
@@ -530,7 +535,8 @@ export interface ColumnConfig {
 }
 
 /** What `set_cell_state` says became of an edit. */
-export type CellState = "saving" | "saved" | "error";
+/** `invalid`: a finding the page computed elsewhere; `message` is its sentence. */
+export type CellState = "saving" | "saved" | "error" | "invalid";
 
 /** One value for `set_values`: the record by its `row-key`, the column, the value. */
 export interface CellValue {
@@ -837,7 +843,9 @@ export type TextKey =
   | "bulkApply"
   | "bulkMenu"
   | "bulkReadonly"
-  | "bulkDone";
+  | "bulkDone"
+  | "validationWarning"
+  | "validationError";
 
 /**
  * Any subset of the texts; what is left out keeps its English default. `lang`
@@ -875,6 +883,16 @@ export interface CellChangeDetail {
   column: string;
   value: string;
   previous: string;
+}
+
+/** What a validator says about a value, or `null` for nothing. */
+export type Finding = { level: "warning" | "error"; message: string } | null | undefined;
+/** `value` is the text in the editor, `row` the record as loaded, by field name. */
+export type Validator = (value: string, row: Record<string, WireValue>) => Finding;
+/** A validator that may block the commit on an `error`. */
+export interface ValidatorRule {
+  validate: Validator;
+  block?: boolean;
 }
 
 /** One action of `set_actions`. */

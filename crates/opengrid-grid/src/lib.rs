@@ -59,6 +59,6 @@ pub mod view_query;
 
 pub use added::{AddedRow, AddedRows, RowKind, RowState};
 pub use patch::Patch;
-pub use saving::{CellState, Saves};
+pub use saving::{CellState, Finding, Level, Saves};
 pub use state::{GridState, GridStatus};
 pub use view::{CellRef, Window};

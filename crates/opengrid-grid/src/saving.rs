@@ -19,6 +19,9 @@ pub enum CellState {
     Saving,
     Saved,
     Error,
+    /// A finding the page computed elsewhere (issue #188): the value is not
+    /// wrong for the grid, the page says it is wrong for the record.
+    Invalid,
 }
 
 impl CellState {
@@ -28,6 +31,7 @@ impl CellState {
             CellState::Saving => "saving",
             CellState::Saved => "saved",
             CellState::Error => "error",
+            CellState::Invalid => "invalid",
         }
     }
 
@@ -39,6 +43,7 @@ impl CellState {
             CellState::Saving => "cell cell-saving",
             CellState::Saved => "cell cell-saved",
             CellState::Error => "cell cell-error",
+            CellState::Invalid => "cell cell-invalid",
         }
     }
 
@@ -47,9 +52,41 @@ impl CellState {
             "saving" => CellState::Saving,
             "saved" => CellState::Saved,
             "error" => CellState::Error,
+            "invalid" => CellState::Invalid,
             _ => return None,
         })
     }
+}
+
+/// How serious a finding about a value is (issue #188).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Level {
+    Warning,
+    Error,
+}
+
+impl Level {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Level::Warning => "warning",
+            Level::Error => "error",
+        }
+    }
+
+    pub fn parse(token: &str) -> Option<Self> {
+        Some(match token {
+            "warning" => Level::Warning,
+            "error" => Level::Error,
+            _ => return None,
+        })
+    }
+}
+
+/// What a validator said about a value: how serious, and why.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Finding {
+    pub level: Level,
+    pub message: String,
 }
 
 /// The page's word on cells, by record.
@@ -60,6 +97,8 @@ pub struct Saves {
     pub(crate) states: Vec<(Value, FieldName, CellState)>,
     /// Values the page set, shown in place of the source's.
     pub(crate) values: Vec<(Value, FieldName, Value)>,
+    /// What the page said about a cell it called invalid (issue #188).
+    pub(crate) messages: Vec<(Value, FieldName, String)>,
 }
 
 impl Saves {
@@ -78,6 +117,22 @@ impl Saves {
         {
             Some(entry) => entry.2 = state,
             None => self.states.push((key, column, state)),
+        }
+    }
+
+    pub(crate) fn message(&self, key: &Value, column: &FieldName) -> Option<&str> {
+        self.messages
+            .iter()
+            .find(|(k, c, _)| k == key && c == column)
+            .map(|(_, _, message)| message.as_str())
+    }
+
+    /// Remembers the sentence of an `invalid` cell; `None` forgets it.
+    pub(crate) fn set_message(&mut self, key: Value, column: FieldName, message: Option<String>) {
+        self.messages
+            .retain(|(k, c, _)| !(*k == key && *c == column));
+        if let Some(message) = message {
+            self.messages.push((key, column, message));
         }
     }
 

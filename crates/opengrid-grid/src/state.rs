@@ -30,7 +30,7 @@ use opengrid_query::{FilterExpr, Sort, SortDirection};
 use opengrid_types::{Field, FieldName, Schema, Value};
 
 use crate::added::{AddedRows, RowKind};
-use crate::saving::{CellState, Saves};
+use crate::saving::{CellState, Finding, Level, Saves};
 use crate::{CellRef, Patch, Window};
 
 /// What the grid is currently showing (plan point 41).
@@ -103,6 +103,9 @@ pub struct GridState {
     saves: Saves,
     /// Rows the reader added, after the result (issue #183).
     added: AddedRows,
+    /// What the page's validators said about cells the reader committed
+    /// (issue #188). Like `changed`, gone with the next result.
+    validations: Vec<(CellRef, Finding)>,
 }
 
 impl GridState {
@@ -131,6 +134,7 @@ impl GridState {
             changed: Vec::new(),
             saves: Saves::default(),
             added: AddedRows::default(),
+            validations: Vec::new(),
         }
     }
 
@@ -399,6 +403,36 @@ impl GridState {
         self.saves.state(key, &field.name)
     }
 
+    /// The sentence the page gave an `invalid` cell (issue #188).
+    pub fn set_cell_message(&mut self, key: Value, column: FieldName, message: Option<String>) {
+        self.saves.set_message(key, column, message);
+    }
+
+    /// Remembers what a validator said about a committed cell; `None` clears it.
+    pub fn set_validation(&mut self, cell: CellRef, finding: Option<Finding>) {
+        self.validations.retain(|(at, _)| *at != cell);
+        if let Some(finding) = finding {
+            self.validations.push((cell, finding));
+        }
+    }
+
+    /// What is said about a cell: a validator's word on what the reader
+    /// committed, or the page's `invalid` (issue #188).
+    pub fn finding(&self, cell: CellRef) -> Option<Finding> {
+        if let Some((_, finding)) = self.validations.iter().find(|(at, _)| *at == cell) {
+            return Some(finding.clone());
+        }
+        if self.cell_state(cell) != Some(CellState::Invalid) {
+            return None;
+        }
+        let key = self.row_key(cell.row)?;
+        let field = self.schema.fields().get(cell.col)?;
+        Some(Finding {
+            level: Level::Error,
+            message: self.saves.message(key, &field.name)?.to_owned(),
+        })
+    }
+
     /// Sets values the page computes (issue #153). They are shown, not
     /// edited: no unsaved mark, and they stand over the source's value in
     /// every result that follows. Answers the loaded cells that changed.
@@ -599,6 +633,7 @@ impl GridState {
         // A fresh result is the source's word on every value, so the reader's
         // unsaved marks no longer mean anything (point 37).
         self.changed.clear();
+        self.validations.clear();
         self.editing = None;
 
         // The page's values stand over the source's, whatever order the rows
@@ -1453,6 +1488,40 @@ mod edit_tests {
         let state = keyed();
         assert_eq!(state.row_key(1), Some(&Value::Int64(2)));
         assert_eq!(grid().row_key(1), None, "no key without `row-key`");
+    }
+
+    /// A validator's word stays on the cell until the next result; the page's
+    /// `invalid` stays with the record, with its sentence (issue #188).
+    #[test]
+    fn a_cell_carries_what_was_said_about_it() {
+        let mut state = keyed();
+        let cell = CellRef::new(1, 1);
+        assert_eq!(state.finding(cell), None);
+
+        let finding = Finding {
+            level: Level::Warning,
+            message: "Is that right?".to_owned(),
+        };
+        state.set_validation(cell, Some(finding.clone()));
+        assert_eq!(state.finding(cell), Some(finding));
+        state.apply_result(result(&[(1, "DE", 10), (2, "FR", 20)], 2));
+        assert_eq!(state.finding(cell), None, "the source has spoken");
+
+        state.set_cell_state(Value::Int64(2), name("country"), CellState::Invalid);
+        state.set_cell_message(Value::Int64(2), name("country"), Some("Taken.".to_owned()));
+        assert_eq!(
+            state.finding(cell),
+            Some(Finding {
+                level: Level::Error,
+                message: "Taken.".to_owned()
+            })
+        );
+        // It survives a result: the page said it of the record.
+        state.apply_result(result(&[(1, "DE", 10), (2, "FR", 20)], 2));
+        assert_eq!(
+            state.finding(cell).map(|finding| finding.message),
+            Some("Taken.".to_owned())
+        );
     }
 
     /// `saved` takes the unsaved mark off; `error` keeps value and mark.

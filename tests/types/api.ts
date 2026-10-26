@@ -115,6 +115,15 @@ export async function page(): Promise<void> {
     event.detail.key satisfies string | number | boolean | null | undefined;
   });
 
+  // Validation while typing (issue #188).
+  module.set_validators(grid, {
+    seats: (value, row) => (Number(value) > 60 && row.name ? { level: "warning", message: "Hall." } : null),
+    name: { validate: () => ({ level: "error", message: "Taken." }), block: true },
+  });
+  // @ts-expect-error — not a level
+  module.set_validators(grid, { seats: () => ({ level: "info", message: "x" }) });
+  module.set_cell_state(grid, 7, "amount", "invalid", "Taken.");
+
   // An action column (issue #189).
   module.set_actions(grid, [{ id: "open", label: "Open" }]);
   grid.addEventListener("opengrid-row-action", (event) => {

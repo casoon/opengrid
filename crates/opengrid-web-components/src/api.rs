@@ -113,6 +113,7 @@ fn surface() -> String {
         "set_values",
         "set_actions",
         "set_row_state",
+        "set_validators",
     ] {
         out.push_str(&format!("  {name}\n"));
     }
@@ -257,6 +258,7 @@ fn parts() -> Vec<String> {
         // The paste preview is built by the element, on demand.
         .chain(grid::PASTE_PARTS.iter().map(|part| (*part).to_owned()))
         .chain(grid::BULK_PARTS.iter().map(|part| (*part).to_owned()))
+        .chain(std::iter::once(grid::VALIDATION_PART.to_owned()))
         // A part attribute may name more than one (`row total-row`).
         .flat_map(|value| {
             value
@@ -354,6 +356,7 @@ functions
   set_values
   set_actions
   set_row_state
+  set_validators
 
 loader exports
   loadOpengrid
@@ -395,7 +398,7 @@ facets facets-head facets-toggle field-group field-menu filter filter-clear filt
 filter-row-toggle filter-value footer group-mark group-toggle grouping-menu header layout menu-label operator-menu \
 page-first page-label page-last page-next page-previous pager paste-apply paste-discard paste-preview paste-summary row row-header search search-hint \
 search-input search-list select select-all select-mark sort-button sort-direction \
-sort-index source status table toolbar total-row viewport
+sort-index source status table toolbar total-row validation viewport
 
 text keys
   addColumn addFilter addFilterTitle addGrouping addMeasure addRow aggregateAvg aggregateCell aggregateCount aggregateGroup aggregateMax aggregateMin \
@@ -411,7 +414,7 @@ operators pageFirst pageLast pageNext pageOf pagePrevious pasteApplied pasteAppl
 queryMissingValue queryUnknownColumn queryWrongOperator rowAdded rowsOne rowsOther searchChip searchHint \
 searchLabel searchPlaceholder searchSuggestions selectAll selectedAll selectionCleared sortAscending \
 sortDescending sourceHybrid sourceLocal sourceRemote sourceWorker subtotal subtreeCell subtreeOnly toolbarGroup total \
-totalRow treeContext treeGroupIgnored treeLevelTooLarge treeOrphans treeRefused typeBool typeDate typeInteger typeNumber typeText typeTime ungroupColumn valueLabel
+totalRow treeContext treeGroupIgnored treeLevelTooLarge treeOrphans treeRefused typeBool typeDate typeInteger typeNumber typeText typeTime ungroupColumn validationError validationWarning valueLabel
 ";
         assert_eq!(surface(), expected);
     }

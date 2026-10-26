@@ -155,6 +155,17 @@ pub fn set_actions(host: &HtmlElement, actions: JsValue) {
     crate::grid_element::set_actions(host, &actions);
 }
 
+/// Gives columns a validator that runs while the reader types (issue #188):
+/// `{ column: (value, row) => null | { level: "warning" | "error", message } }`,
+/// or `{ column: { validate, block: true } }` to make an `error` block the
+/// commit. The answer is shown under the editor and stays on the cell; it blocks
+/// only where the column asks for it (what the schema refuses always does).
+#[cfg(feature = "grid")]
+#[wasm_bindgen(js_name = set_validators)]
+pub fn set_validators(host: &HtmlElement, validators: JsValue) {
+    crate::grid_element::set_validators(host, &validators);
+}
+
 /// What became of a row the reader added (issue #183): `state` is `saving`,
 /// `saved` or `error`. `detail` is the record's `row-key` for `saved`, the
 /// message for `error` — said in the status line, as `set_cell_state` says one.
