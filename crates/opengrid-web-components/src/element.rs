@@ -144,6 +144,17 @@ pub fn set_choices(host: &HtmlElement, choices: JsValue) {
     );
 }
 
+/// Gives every row of a grid actions (issue #189): `[{ id, label }]`, one
+/// trailing column each, with a button per row. Activating one — click, or
+/// `Enter` and `Space` on its cell — fires `opengrid-row-action` with
+/// `{ id, key, row }`; `key` is the `row-key` value, and group headers and the
+/// total have no button. The label is the accessible name.
+#[cfg(feature = "grid")]
+#[wasm_bindgen(js_name = set_actions)]
+pub fn set_actions(host: &HtmlElement, actions: JsValue) {
+    crate::grid_element::set_actions(host, &actions);
+}
+
 /// Sets how each column is presented (plan point 60).
 ///
 /// ```js

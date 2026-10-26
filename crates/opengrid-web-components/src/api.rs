@@ -89,6 +89,7 @@ fn surface() -> String {
         crate::grid_element_events::CELL_EVENT,
         crate::grid_element_events::VIEW_EVENT,
         crate::grid_element_events::QUERY_EVENT,
+        crate::grid_element_events::ROW_ACTION_EVENT,
     ] {
         out.push_str(&format!("  {event}\n"));
     }
@@ -107,6 +108,7 @@ fn surface() -> String {
         "get_pivot",
         "set_cell_state",
         "set_values",
+        "set_actions",
     ] {
         out.push_str(&format!("  {name}\n"));
     }
@@ -191,6 +193,10 @@ fn parts() -> Vec<String> {
             toolbar: true,
             facets: true,
             search: true,
+            actions: &[grid::Action {
+                id: "a".to_owned(),
+                label: "A".to_owned(),
+            }],
         },
     );
     // The table and the pivot **with** data (issue #29): their header, row
@@ -321,6 +327,7 @@ events
   opengrid-cell-change
   opengrid-view-change
   opengrid-query
+  opengrid-row-action
 
 functions
   register
@@ -335,6 +342,7 @@ functions
   get_pivot
   set_cell_state
   set_values
+  set_actions
 
 loader exports
   loadOpengrid
@@ -369,7 +377,7 @@ custom properties (computed)
   --og-accent-soft --og-accent-ink --og-selected --og-hover
 
 parts
-  add-field add-filter add-grouping body caption cell cell-error cell-saved cell-saving chip chip-move chip-remove chips chips-clear column-menu \
+  action action-cell action-header add-field add-filter add-grouping body caption cell cell-error cell-saved cell-saving chip chip-move chip-remove chips chips-clear column-menu \
 column-menu-button column-toggle columns columns-toggle density editor empty empty-reset \
 empty-text facet facet-bounds facet-cost facet-count facet-pill facet-pills facet-value \
 facets facets-head facets-toggle field-group field-menu filter filter-clear filter-dialog filter-operator \

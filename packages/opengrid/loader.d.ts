@@ -96,6 +96,12 @@ export interface OpengridModule {
    * Requires `row-key`.
    */
   set_values(host: HTMLElement, values: CellValue[]): void;
+  /**
+   * Gives every row actions (issue #189): one trailing column each, a button per
+   * row. Click, or `Enter`/`Space` on the cell, fires `opengrid-row-action`.
+   * The label is the accessible name; group headers and the total have no button.
+   */
+  set_actions(host: HTMLElement, actions: RowAction[]): void;
   /** Defines the three elements. `loadOpengrid()` calls it. */
   register(): void;
 }
@@ -843,6 +849,21 @@ export interface CellChangeDetail {
   previous: string;
 }
 
+/** One action of `set_actions`. */
+export interface RowAction {
+  id: string;
+  label: string;
+}
+
+/** `opengrid-row-action`: an action was activated on a row (issue #189). */
+export interface RowActionDetail {
+  id: string;
+  /** The row's position — in a grouped grid a display position; use `key`. */
+  row: number;
+  /** With `row-key` only: the record's value of that field. */
+  key?: WireValue;
+}
+
 /** `opengrid-query`: one answer of the grid's provider (issue #70). */
 export interface QueryDetail {
   /** The provider's `kind`, or `null` when it names none. */
@@ -871,6 +892,7 @@ export interface OpengridEventMap {
   "opengrid-cell-change": CustomEvent<CellChangeDetail>;
   "opengrid-view-change": CustomEvent<ViewChangeDetail>;
   "opengrid-query": CustomEvent<QueryDetail>;
+  "opengrid-row-action": CustomEvent<RowActionDetail>;
 }
 
 // ---------------------------------------------------------------------------

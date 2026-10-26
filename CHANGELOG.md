@@ -20,6 +20,11 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Added
 
+- **Row actions** ([#189](https://github.com/casoon/opengrid/issues/189)).
+  `set_actions(host, [{ id, label }])` adds a trailing column per action with a button on
+  every row, reachable as cells of the grid; activating one fires `opengrid-row-action`
+  `{ id, row, key }`. The labels are the accessible names; group headers and the total have
+  no button.
 - **Editing while grouped** ([#190](https://github.com/casoon/opengrid/issues/190)). With a
   `row-key`, the data rows of a grouped grid edit; the change names the record by its key.
   Group headers and the total stay read-only, selection stays off, and a replaced source

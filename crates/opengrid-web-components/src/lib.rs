@@ -91,6 +91,8 @@ pub(crate) mod grid_element_events {
     /// Fired after every answer of the grid's provider: where it ran, how
     /// long it took, how much came back (issue #70).
     pub const QUERY_EVENT: &str = "opengrid-query";
+    /// Fired when a row's action was activated (issue #189).
+    pub const ROW_ACTION_EVENT: &str = "opengrid-row-action";
 }
 #[cfg(target_arch = "wasm32")]
 pub use element::register;
