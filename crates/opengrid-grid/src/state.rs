@@ -30,6 +30,7 @@ use opengrid_query::{FilterExpr, Sort, SortDirection};
 use opengrid_types::{Field, FieldName, Schema, Value};
 
 use crate::added::{AddedRows, RowKind};
+use crate::history::History;
 use crate::saving::{CellState, Finding, Level, Saves};
 use crate::{CellRef, Patch, Window};
 
@@ -106,6 +107,8 @@ pub struct GridState {
     /// What the page's validators said about cells the reader committed
     /// (issue #188). Like `changed`, gone with the next result.
     validations: Vec<(CellRef, Finding)>,
+    /// What the reader did, to undo and redo (issue #186).
+    history: History,
 }
 
 impl GridState {
@@ -135,6 +138,7 @@ impl GridState {
             saves: Saves::default(),
             added: AddedRows::default(),
             validations: Vec::new(),
+            history: History::default(),
         }
     }
 
@@ -254,6 +258,11 @@ impl GridState {
     /// and the state does not see it — the element calls this for the same
     /// reason `set_filter` does.
     pub fn invalidate_selection(&mut self) -> Vec<Patch> {
+        // The history names positions too, unless the records have keys
+        // (issue #186): a different order puts different records in them.
+        if self.saves.key.is_none() {
+            self.history.clear();
+        }
         let patches = self.clear_selection();
         if !patches.is_empty() {
             self.selection_dropped = true;
@@ -597,6 +606,15 @@ impl GridState {
     /// Turns the draft row on or off (the `add-row` attribute).
     pub fn set_add_row(&mut self, on: bool) {
         self.added.set_enabled(on, self.schema.len());
+    }
+
+    /// The edit history (issue #186).
+    pub fn history(&self) -> &History {
+        &self.history
+    }
+
+    pub fn history_mut(&mut self) -> &mut History {
+        &mut self.history
     }
 
     /// Mutable access for the transitions of added rows.

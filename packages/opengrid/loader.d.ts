@@ -845,7 +845,15 @@ export type TextKey =
   | "bulkReadonly"
   | "bulkDone"
   | "validationWarning"
-  | "validationError";
+  | "validationError"
+  | "undoCell"
+  | "redoCell"
+  | "undoAdded"
+  | "redoAdded"
+  | "undoPaste"
+  | "redoPaste"
+  | "undoNothing"
+  | "redoNothing";
 
 /**
  * Any subset of the texts; what is left out keeps its English default. `lang`
@@ -883,6 +891,9 @@ export interface CellChangeDetail {
   column: string;
   value: string;
   previous: string;
+  /** Set when this change is an undo or a redo (issue #186). */
+  undo?: true;
+  redo?: true;
 }
 
 /** What a validator says about a value, or `null` for nothing. */
@@ -916,6 +927,9 @@ export interface RowAddDetail {
   values: Record<string, WireValue>;
   /** What `set_row_state` names the row by until it has a key of its own. */
   provisionalKey: string;
+  /** Set when this add is undone — delete the row — or redone (issue #186). */
+  undo?: true;
+  redo?: true;
 }
 
 /** `opengrid-bulk-change`: one value for the selected rows (issue #187). */
@@ -939,6 +953,9 @@ export interface PasteDetail {
   }[];
   /** The rows past the end, with `add-row`. */
   added: RowAddDetail[];
+  /** Set when this paste is undone or redone (issue #186). */
+  undo?: true;
+  redo?: true;
 }
 
 /** `opengrid-query`: one answer of the grid's provider (issue #70). */

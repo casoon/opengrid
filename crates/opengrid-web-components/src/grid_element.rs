@@ -87,6 +87,7 @@ use crate::grid_element_events::{
 };
 
 mod bulk;
+mod history;
 mod paste;
 mod validate;
 use opengrid_web_core::renderer::{Dom, WebRenderer};
@@ -466,6 +467,8 @@ fn on_source_replaced(event: Event) {
                 .and_then(|row| runtime.state.row_key(row).cloned());
             runtime.replaced = Some(key);
             runtime.state.added_mut().drop_saved();
+            // What the reader did was on the source that is replaced.
+            runtime.state.history_mut().clear();
             // The aggregates of a group come from the fresh rows too.
             runtime.groups_filter = None;
             if let Some(grouping) = runtime.grouping.as_mut() {
@@ -1705,6 +1708,27 @@ fn on_key_down(event: KeyboardEvent) {
             _ => {}
         }
     }
+    // Undo and redo of what the reader did (issue #186): `Ctrl`/`Cmd`+`Z`, and
+    // forward with `Shift` or `Ctrl`+`Y`. An open editor has its own, above.
+    if (event.ctrl_key() || event.meta_key()) && !event.alt_key() {
+        match event.key().to_ascii_lowercase().as_str() {
+            "z" => {
+                event.prevent_default();
+                if event.shift_key() {
+                    history::redo(&host);
+                } else {
+                    history::undo(&host);
+                }
+                return;
+            }
+            "y" if event.ctrl_key() => {
+                event.prevent_default();
+                history::redo(&host);
+                return;
+            }
+            _ => {}
+        }
+    }
     // An action cell (issue #189): `Enter` and `Space` press its button.
     if let ActiveCell::Data(cell) = active
         && let Some(index) = cell.col.checked_sub(runtime.borrow().state.schema().len())
@@ -2711,7 +2735,15 @@ fn add_record(host: &HtmlElement) {
             .collect::<Vec<_>>();
         (row.provisional, values, borrowed.state.added().unsaved())
     };
-    dispatch_row_add(host, &provisional, &values);
+    dispatch_row_add(host, &provisional, &values, None);
+    runtime
+        .borrow_mut()
+        .state
+        .history_mut()
+        .record(opengrid_grid::Step::Added(opengrid_grid::AddedEntry {
+            provisional: provisional.clone(),
+            values: values.iter().map(|(_, value)| value.clone()).collect(),
+        }));
 
     let (new_draft, pool) = {
         let mut borrowed = runtime.borrow_mut();
@@ -2743,7 +2775,12 @@ fn add_record(host: &HtmlElement) {
 
 /// `opengrid-row-add`: `{ values, provisionalKey }` — the values by field name,
 /// in the wire notation of a result.
-fn dispatch_row_add(host: &HtmlElement, provisional: &str, values: &[(String, Value)]) {
+fn dispatch_row_add(
+    host: &HtmlElement,
+    provisional: &str,
+    values: &[(String, Value)],
+    step: Option<&str>,
+) {
     let object = js_sys::Object::new();
     for (name, value) in values {
         let _ = js_sys::Reflect::set(
@@ -2759,6 +2796,9 @@ fn dispatch_row_add(host: &HtmlElement, provisional: &str, values: &[(String, Va
         &JsValue::from_str("provisionalKey"),
         &JsValue::from_str(provisional),
     );
+    if let Some(step) = step {
+        let _ = js_sys::Reflect::set(&detail, &JsValue::from_str(step), &JsValue::TRUE);
+    }
     let init = web_sys::CustomEventInit::new();
     init.set_bubbles(true);
     init.set_composed(true);
@@ -3038,22 +3078,16 @@ fn end_edit(host: &HtmlElement, commit: bool) {
         && !matches!(data_type, DataType::Utf8 | DataType::Bool)
     {
         if nullable {
-            let previous = runtime
-                .borrow()
-                .state
-                .cell(cell)
-                .map(crate::formats::plain_text)
-                .unwrap_or_default();
-            if !runtime
-                .borrow_mut()
-                .state
-                .set_cell(cell, Value::Null)
-                .is_empty()
-            {
-                if !in_draft {
-                    dispatch_cell_change(host, cell, key.as_ref(), &field_name, "", &previous);
-                }
-            }
+            commit_cell(
+                host,
+                &runtime,
+                cell,
+                Value::Null,
+                key.as_ref(),
+                &field_name,
+                "",
+                in_draft,
+            );
         } else {
             rejected = Some(String::new());
         }
@@ -3064,17 +3098,16 @@ fn end_edit(host: &HtmlElement, commit: bool) {
         match grid::literal(text, data_type)
             .and_then(|json| Value::from_json_typed(&json, &data_type).ok())
         {
-            Some(value) => {
-                let previous = runtime
-                    .borrow()
-                    .state
-                    .cell(cell)
-                    .map(crate::formats::plain_text)
-                    .unwrap_or_default();
-                if !runtime.borrow_mut().state.set_cell(cell, value).is_empty() && !in_draft {
-                    dispatch_cell_change(host, cell, key.as_ref(), &field_name, text, &previous);
-                }
-            }
+            Some(value) => commit_cell(
+                host,
+                &runtime,
+                cell,
+                value,
+                key.as_ref(),
+                &field_name,
+                text,
+                in_draft,
+            ),
             None => rejected = Some(text.to_owned()),
         }
     }
@@ -3312,7 +3345,51 @@ pub(crate) fn write_values(host: &HtmlElement, values: &JsValue) {
     }
 }
 
-/// Fires `opengrid-cell-change` on the host — the contract of point 35.
+/// Writes an edited value into its cell, tells the page and — for a real cell,
+/// not the new row's — remembers it for undo (issue #186).
+#[allow(clippy::too_many_arguments)]
+fn commit_cell(
+    host: &HtmlElement,
+    runtime: &Rc<RefCell<GridRuntime>>,
+    cell: CellRef,
+    value: Value,
+    key: Option<&JsValue>,
+    column: &str,
+    text: &str,
+    in_draft: bool,
+) {
+    let (before, record_key) = {
+        let borrowed = runtime.borrow();
+        (
+            borrowed.state.cell(cell).cloned().unwrap_or(Value::Null),
+            borrowed.state.row_key(cell.row).cloned(),
+        )
+    };
+    let previous = crate::formats::plain_text(&before);
+    let changed = !runtime
+        .borrow_mut()
+        .state
+        .set_cell(cell, value.clone())
+        .is_empty();
+    if !changed || in_draft {
+        return;
+    }
+    dispatch_cell_change(host, cell, key, column, text, &previous, None);
+    runtime
+        .borrow_mut()
+        .state
+        .history_mut()
+        .record(opengrid_grid::Step::Cell(opengrid_grid::CellEdit {
+            row: cell.row,
+            col: cell.col,
+            key: record_key,
+            before,
+            after: value,
+        }));
+}
+
+/// Fires `opengrid-cell-change` on the host — the contract of point 35. `step`
+/// says `undo` or `redo` when the change is one of those (issue #186).
 fn dispatch_cell_change(
     host: &HtmlElement,
     cell: CellRef,
@@ -3320,10 +3397,14 @@ fn dispatch_cell_change(
     column: &str,
     value: &str,
     previous: &str,
+    step: Option<&str>,
 ) {
     let detail = js_sys::Object::new();
     if let Some(key) = key {
         let _ = js_sys::Reflect::set(&detail, &JsValue::from_str("key"), key);
+    }
+    if let Some(step) = step {
+        let _ = js_sys::Reflect::set(&detail, &JsValue::from_str(step), &JsValue::TRUE);
     }
     for (key, value) in [
         ("row", JsValue::from_f64(cell.row as f64)),

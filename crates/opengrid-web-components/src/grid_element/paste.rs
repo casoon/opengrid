@@ -18,6 +18,7 @@ pub(super) struct Change {
     col: usize,
     column: String,
     value: Value,
+    before: Value,
     previous: String,
 }
 
@@ -217,11 +218,12 @@ async fn prepare(host: &HtmlElement, anchor: CellRef, rows: Vec<Vec<String>>) {
                         values[col] = value;
                     } else {
                         let at = (row - first) as usize;
-                        let previous = existing
+                        let before = existing
                             .as_ref()
                             .and_then(|result| result.columns.get(col)?.get(at))
-                            .map(crate::formats::plain_text)
-                            .unwrap_or_default();
+                            .cloned()
+                            .unwrap_or(Value::Null);
+                        let previous = crate::formats::plain_text(&before);
                         let key = key_column.and_then(|key_col| {
                             existing.as_ref()?.columns.get(key_col)?.get(at).cloned()
                         });
@@ -231,6 +233,7 @@ async fn prepare(host: &HtmlElement, anchor: CellRef, rows: Vec<Vec<String>>) {
                             col,
                             column: field.name.as_str().to_owned(),
                             value,
+                            before,
                             previous,
                         });
                     }
@@ -530,6 +533,7 @@ fn apply(host: &HtmlElement) {
         changes.push(&item);
     }
     let added = js_sys::Array::new();
+    let mut entries: Vec<opengrid_grid::AddedEntry> = Vec::new();
     let names: Vec<String> = runtime
         .borrow()
         .state
@@ -564,19 +568,33 @@ fn apply(host: &HtmlElement) {
             &JsValue::from_str(&row.provisional),
         );
         added.push(&item);
+        entries.push(opengrid_grid::AddedEntry {
+            provisional: row.provisional.clone(),
+            values: row.values.clone(),
+        });
     }
 
-    let detail = js_sys::Object::new();
-    let _ = js_sys::Reflect::set(&detail, &JsValue::from_str("changes"), &changes);
-    let _ = js_sys::Reflect::set(&detail, &JsValue::from_str("added"), &added);
-    let init = web_sys::CustomEventInit::new();
-    init.set_bubbles(true);
-    init.set_composed(true);
-    init.set_cancelable(false);
-    init.set_detail(&detail);
-    if let Ok(event) = web_sys::CustomEvent::new_with_event_init_dict(PASTE_EVENT, &init) {
-        let _ = host.dispatch_event(&event);
-    }
+    dispatch(host, &changes, &added, None);
+    // One step: its cells and its rows go back together (issue #186).
+    let edits = pending
+        .changes
+        .iter()
+        .map(|change| opengrid_grid::CellEdit {
+            row: change.row,
+            col: change.col,
+            key: change.key.clone(),
+            before: change.before.clone(),
+            after: change.value.clone(),
+        })
+        .collect();
+    runtime
+        .borrow_mut()
+        .state
+        .history_mut()
+        .record(opengrid_grid::Step::Paste {
+            edits,
+            added: entries,
+        });
 
     let cells = pending.changes.len()
         + pending
@@ -593,5 +611,29 @@ fn apply(host: &HtmlElement) {
     // are redrawn where they stand.
     for change in &pending.changes {
         redraw_cell(host, CellRef::new(change.row, change.col));
+    }
+}
+
+/// Fires `opengrid-paste` — `changes` and `added` as the event gives them. A paste
+/// that is undone or redone says so with `undo` or `redo` (issue #186).
+pub(super) fn dispatch(
+    host: &HtmlElement,
+    changes: &js_sys::Array,
+    added: &js_sys::Array,
+    step: Option<&str>,
+) {
+    let detail = js_sys::Object::new();
+    let _ = js_sys::Reflect::set(&detail, &JsValue::from_str("changes"), changes);
+    let _ = js_sys::Reflect::set(&detail, &JsValue::from_str("added"), added);
+    if let Some(step) = step {
+        let _ = js_sys::Reflect::set(&detail, &JsValue::from_str(step), &JsValue::TRUE);
+    }
+    let init = web_sys::CustomEventInit::new();
+    init.set_bubbles(true);
+    init.set_composed(true);
+    init.set_cancelable(false);
+    init.set_detail(&detail);
+    if let Ok(event) = web_sys::CustomEvent::new_with_event_init_dict(PASTE_EVENT, &init) {
+        let _ = host.dispatch_event(&event);
     }
 }
