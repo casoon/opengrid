@@ -64,6 +64,12 @@ Two things belong in every release entry and are easy to leave out:
   both databases either way, and a differential test compares the pushdown with the engine on
   a generated tree of 100 000 nodes.
 
+### Changed
+
+- **Project page** ([#197](https://github.com/casoon/opengrid/issues/197)). The start page
+  title is short enough for two lines; the three components it named moved into the lead. The
+  hero shows a tighter capture of the grid from the live demo, with a narrower one on phones.
+
 ## `@casoon/opengrid-mcp` [0.13.0] — 2026-10-14
 
 **Not yet tried in a host.** No chat client has rendered the view yet — Claude Desktop
