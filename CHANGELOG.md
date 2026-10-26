@@ -20,6 +20,13 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Added
 
+- **Rows the page already holds** ([#182](https://github.com/casoon/opengrid/issues/182)).
+  `loadRows(name, rows, schema)` on the local and the worker provider (`load_rows` on the
+  engine) takes an array of objects keyed by field name; the schema stays required and the
+  result is the same as the same data through CSV. Loading under a name that is already loaded
+  replaces the source all at once; a grid on it re-runs its query and keeps its sort, filter
+  and focus (by `row-key`). A value that does not fit is refused with the row and field named,
+  and the old rows stay. Providers gain `loadRows` and `watch` (`docs/guides/data-you-have.md`).
 - **A tree's level in SQL, on request** ([#132](https://github.com/casoon/opengrid/issues/132)).
   `SqliteConnector::with_tree_pushdown(true)` and `PostgresDataSource::with_tree_pushdown(true)`
   answer a level and its subtree aggregates (T1–T7) with `WITH RECURSIVE` and report the

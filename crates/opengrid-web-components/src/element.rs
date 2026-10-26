@@ -71,6 +71,13 @@ pub fn register() -> Result<(), JsValue> {
 #[wasm_bindgen(js_name = set_provider)]
 pub fn set_provider(host: &HtmlElement, provider: JsValue) {
     attach_provider(host, &provider);
+    // An engine provider tells the grids on a source when it is replaced
+    // (issue #182); the others have no such method.
+    if let Ok(watch) = js_sys::Reflect::get(&provider, &JsValue::from_str("watch"))
+        && let Some(watch) = watch.dyn_ref::<js_sys::Function>()
+    {
+        let _ = watch.call1(&provider, host);
+    }
     match host.tag_name().to_ascii_lowercase().as_str() {
         #[cfg(feature = "grid")]
         "opengrid-grid" => crate::grid_element::start(host),
