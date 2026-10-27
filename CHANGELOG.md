@@ -18,9 +18,31 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
-### Changed
+## [0.14.0] — 2026-10-26
 
-- **Releases:** the npm packages are published by a Release workflow on the tag, with npm Trusted Publishing (provenance, no token), after approval in the `npm` environment; `pnpm release` now checks the commit and sets the tag.
+**Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).
+**Browsers:** Chromium (the whole e2e suite: 1231 passed). Firefox and WebKit on Linux
+(`gh workflow run ci.yml -f browsers=true`): 1216 passed, 19 skipped by design, one WebKit test of
+the narrow filter row passed on its retry. The first run found the new paste tests failing in
+Firefox — the test's synthetic `ClipboardEvent`, whose `clipboardData` Firefox does not take, not
+the grid.
+
+The grid edits like a working tool: new rows from the keyboard, a pasted block with a preview,
+lists in a cell, undo, one value for many rows, validation while typing, row actions and editing
+while grouped — and the page can hand it rows it already holds. Releases now come from a tag
+workflow with npm Trusted Publishing.
+
+**Module sizes** (brotli, `just measure-modules`): the elements 249.7 → 279.4 KiB, the engine
+139.9 → 145.4 KiB, measured against v0.13.0 — within their bounds, which the feature PRs raised as they grew them
+(`scripts/module-budget.txt`).
+
+**What breaks:**
+- Rust: public enums gained variants for lists, so an exhaustive `match` must handle them —
+  `Value::List`, `DataType::ListUtf8` and `ListInt64`, `FilterExpr` and `ValidatedFilter`
+  `Has`, `HasAll` and `IsEmpty`, `CmpOp::Has` and `HasAll`, `QueryError::ListNotOrdered`,
+  `ValueError::NullInList`, and the grid's `FilterOp::IsEmpty`.
+- Wire format: unchanged for existing columns; a reader older than 0.14.0 refuses a result that
+  carries a list column ("unknown type code").
 
 ### Added
 
@@ -96,6 +118,7 @@ Two things belong in every release entry and are easy to leave out:
 - **Project page** ([#197](https://github.com/casoon/opengrid/issues/197)). The start page
   title is short enough for two lines; the three components it named moved into the lead. The
   hero shows a tighter capture of the grid from the live demo, with a narrower one on phones.
+- **Releases:** the npm packages are published by a Release workflow on the tag, with npm Trusted Publishing (provenance, no token), after approval in the `npm` environment; `pnpm release` now checks the commit and sets the tag.
 
 ## `@casoon/opengrid-mcp` [0.13.0] — 2026-10-14
 
