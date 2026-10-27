@@ -59,5 +59,6 @@ jobs:
               echo "$name@$version is on npm already — skipped"
               continue
             fi
-            npm publish --access public "dist/$file"
+            # `./`: npm reads `dist/<file>` as the GitHub repository `dist/<file>`.
+            npm publish --access public "./dist/$file"
           done
