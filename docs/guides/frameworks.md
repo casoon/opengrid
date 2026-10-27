@@ -28,8 +28,8 @@ The adapters are subpaths of the one package, and their frameworks are optional 
   `groupBy`, `columnMenu`, … — and they are **rendered**, so they are in the server's HTML. A
   boolean attribute is present or absent; `selection={false}` leaves it out.
 - **Everything else goes to `connect`:** `provider`, `texts`, `formats`, `presentation` (what
-  `set_columns` takes — named apart from the `columns` attribute), `choices`, `view`,
-  `defaultView`, and the three events.
+  `set_columns` takes — named apart from the `columns` attribute), `choices`, `actions`,
+  `validators`, `view`, `defaultView`, and the events.
 - **A prop that goes away is reset** — texts back to English, no formats — and one that was never
   given is left alone.
 - **The source is asked once** for the first result, in React's StrictMode too.
@@ -38,7 +38,7 @@ The adapters are subpaths of the one package, and their frameworks are optional 
 
 Four rules to know, because they come from the grid and not from the framework:
 
-1. **`provider` and format functions compare by identity.** A provider created inline —
+1. **`provider`, format and validator functions compare by identity.** A provider created inline —
    `provider={createRestProvider(…)}` in a React render — is a new provider on every render,
    and each one asks the source again. Create it once: outside the component, or in `useMemo`,
    a module-level `const`, a Svelte `<script module>`.
@@ -67,6 +67,52 @@ Four rules to know, because they come from the grid and not from the framework:
    `createWorkerProvider({ moduleUrl, workerUrl })`, `moduleUrl` as a string. The engine on
    the main thread, imported from `@casoon/opengrid/engine/opengrid_wasm.js`, is bundled like
    any module and needs nothing.
+
+## Editing
+
+The grid's editing reaches a component the same way everything else does: `rowKey` and `addRow`
+are attributes, `actions` and `validators` options, and each event a callback. Two things are
+not events:
+
+- **A new row is answered by the callback's return value** — `{ state: "saved", key }` or
+  `{ state: "error", message }`, or a promise of one; the row shows *saving* until it settles,
+  and a rejection is an error with its message ([Connecting](../../api/#connecting)).
+- **`setCellState` and `setValues`** — what became of an edit the page saves, and values it
+  computes — are methods on the component's ref.
+
+| | New row | Other events | `setCellState`, `setValues` on |
+|---|---|---|---|
+| React | `onRowAdd` | `onCellChange`, `onPaste`, `onBulkChange`, `onRowAction`, `onSourceReplaced` | the `ref` — the element, carrying both (`useRef<OpengridGridRef>`) |
+| Vue | `@row-add` — a prop, since it answers | `@cell-change`, `@paste`, `@bulk-change`, `@row-action`, `@source-replaced` | the template ref (`OpengridGridExposed`) |
+| Svelte | `onrowadd` | `oncellchange`, `onpaste`, `onbulkchange`, `onrowaction`, `onsourcereplaced` | `bind:this` |
+| Angular | `[rowAdd]` | the element's own: `(opengrid-paste)` and so on | `#grid="opengrid"` |
+
+```jsx
+const ACTIONS = [{ id: "remove", label: "Remove" }];
+
+function Rooms({ provider }) {
+  const grid = useRef(null);
+  return (
+    <OpengridGrid
+      ref={grid}
+      label="Rooms"
+      datasource="rooms"
+      rowKey="id"
+      addRow
+      provider={provider}
+      actions={ACTIONS}
+      onRowAdd={async ({ values }) => ({ state: "saved", key: (await save(values)).id })}
+      onCellChange={async ({ key, column, value }) => {
+        await update(key, column, value);
+        grid.current.setCellState(key, column, "saved");
+      }}
+      onRowAction={({ id, key }) => id === "remove" && remove(key)}
+    />
+  );
+}
+```
+
+`actions` and `validators` follow rule 1: keep them stable, as `ACTIONS` is here.
 
 ## React
 
@@ -97,7 +143,8 @@ export function Orders() {
 }
 ```
 
-- `ref` is the element. `id`, `className`, `style`, `aria-*` go to it; `className` is written as
+- `ref` is the element, carrying the connection's `setCellState` and `setValues`. `id`,
+  `className`, `style`, `aria-*` go to it; `className` is written as
   `class`, which React 18 would not do for a custom element.
 - The module says `"use client"`, so a Server Component can import it as a client boundary.
 - `hidden`, `inert` and `autoFocus` follow the present-or-absent rule too: React 18 would write
@@ -133,8 +180,9 @@ const view = ref(null);
 
 - The element is rendered by the adapter, so **no** `compilerOptions.isCustomElement` is needed.
   A page that writes `<opengrid-grid>` into a template itself needs it.
-- The events are `update:view`, `selectionChange` and `cellChange` — `@selection-change` and
-  `@cell-change` in a template.
+- The events are `update:view`, `selectionChange`, `cellChange`, `paste`, `bulkChange`,
+  `rowAction` and `sourceReplaced` — `@selection-change` and so on in a template. `onRowAdd` is
+  a prop, because it answers; a template writes it as `@row-add` all the same.
 - Under `<KeepAlive>` the connection stays; the grid comes back with its view and selection.
 - A provider held in `ref()` is a proxy. That is fine for the providers `@casoon/opengrid`
   creates; a provider class of your own with `#private` fields belongs in `markRaw` or
@@ -170,7 +218,8 @@ const view = ref(null);
 
 - The package ships `.svelte` sources; the page's bundler compiles them with its Svelte plugin,
   as for any Svelte library.
-- The callbacks are spelled the Svelte way: `onviewchange`, `onselectionchange`, `oncellchange`.
+- The callbacks are spelled the Svelte way: `onviewchange`, `onselectionchange`, `oncellchange`,
+  `onrowadd`, `onpaste`, `onbulkchange`, `onrowaction`, `onsourcereplaced`.
 - Controlled is `bind:view`. A `view={…}` **without** `bind:` follows Svelte's rule for bindable
   props: after the reader's first change the component holds its own value, as an
   `<input value>` without `bind:` does.
@@ -202,14 +251,27 @@ import {
   afterNextRender,
   inject,
 } from "@angular/core";
-import { connect, type Connection, type ConnectOptions, type View } from "@casoon/opengrid";
+import {
+  connect,
+  type CellWrites,
+  type Connection,
+  type ConnectOptions,
+  type View,
+} from "@casoon/opengrid";
 
-@Directive({ selector: "[opengrid]" })
-export class OpengridDirective implements OnChanges, OnDestroy {
+@Directive({ selector: "[opengrid]", exportAs: "opengrid" })
+export class OpengridDirective implements OnChanges, OnDestroy, CellWrites {
   @Input() provider?: ConnectOptions["provider"];
   @Input() texts?: ConnectOptions["texts"];
   @Input() view?: ConnectOptions["view"];
   @Output() viewChange = new EventEmitter<View>();
+  // Editing (the grid only). The answer to a new row is the function's return
+  // value, which an @Output cannot give.
+  @Input() rowKey?: string;
+  @Input() addRow?: boolean;
+  @Input() actions?: ConnectOptions["actions"];
+  @Input() validators?: ConnectOptions["validators"];
+  @Input() rowAdd?: ConnectOptions["onRowAdd"];
 
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private connection?: Connection;
@@ -221,7 +283,10 @@ export class OpengridDirective implements OnChanges, OnDestroy {
         provider: this.provider,
         texts: this.texts,
         view: this.view,
+        actions: this.actions,
+        validators: this.validators,
         onViewChange: (view) => this.viewChange.emit(view),
+        onRowAdd: (detail) => this.rowAdd?.(detail),
       });
     });
   }
@@ -229,11 +294,31 @@ export class OpengridDirective implements OnChanges, OnDestroy {
   // Only the inputs that changed: an unchanged `view` passed along with new
   // texts would put back a view the reader has changed since.
   ngOnChanges(changes: SimpleChanges): void {
+    const element = this.host.nativeElement;
+    if ("rowKey" in changes) {
+      if (this.rowKey) element.setAttribute("row-key", this.rowKey);
+      else element.removeAttribute("row-key");
+    }
+    if ("addRow" in changes) {
+      if (this.addRow) element.setAttribute("add-row", "");
+      else element.removeAttribute("add-row");
+    }
     const changed: ConnectOptions = {};
     if ("provider" in changes) changed.provider = this.provider;
     if ("texts" in changes) changed.texts = this.texts;
     if ("view" in changes) changed.view = this.view;
+    if ("actions" in changes) changed.actions = this.actions;
+    if ("validators" in changes) changed.validators = this.validators;
     this.connection?.update(changed);
+  }
+
+  /** What became of an edit the page saves — `#grid="opengrid"` in the template. */
+  setCellState(...args: Parameters<CellWrites["setCellState"]>): void {
+    this.connection?.setCellState(...args);
+  }
+
+  setValues(values: Parameters<CellWrites["setValues"]>[0]): void {
+    this.connection?.setValues(values);
   }
 
   ngOnDestroy(): void {
@@ -260,6 +345,16 @@ export class OpengridDirective implements OnChanges, OnDestroy {
   the page's view back.
 - Add inputs for `formats`, `presentation`, `choices` and `defaultView` the same way when a page
   needs them.
+- **Editing:** `rowKey` and `addRow` are inputs that set the attributes — a plain `row-key="id"`
+  works too. The new row is answered by `[rowAdd]`, a function whose return value is the row's
+  state, since an `@Output` cannot answer. `exportAs: "opengrid"` gives the template the
+  directive — `#rooms="opengrid"` — and with it `setCellState` and `setValues`:
+
+  ```html
+  <opengrid-grid opengrid #rooms="opengrid" label="Rooms" datasource="rooms" rowKey="id"
+                 [addRow]="true" [provider]="provider" [actions]="actions" [rowAdd]="answerRowAdd"
+                 (opengrid-cell-change)="onChange($event, rooms)"></opengrid-grid>
+  ```
 - **Exporting:** a template variable on the element is the element — `#grid` on
   `<opengrid-grid>` and `(click)="exportView(grid)"` — and the component's
   `exportView(grid: HTMLElement)` exports it as `exportRows(this.provider, query)` when
@@ -319,7 +414,10 @@ in both 18 and 19 — with StrictMode or a development build, axe-core, and a ch
 is collected once the framework takes it out. Each adapter also renders on the server, and the
 packed tarball is put into a scratch project's `node_modules` — beside the framework and
 nothing else from the repository — and each subpath rendered and type-checked there. The same
-tarball installs into a project without any framework, which must pull none of them in. The Angular directive
+tarball installs into a project without any framework, which must pull none of them in. Each
+example also has a grid of rooms that adds a row, pastes, undoes and runs a row action through
+props and callbacks alone, and marks a saved edit through the ref
+(`tests/e2e/adapters-editing.spec.js`, Angular included). The Angular directive
 runs the same browser checks in an Angular 22 app built by the Angular CLI, plus a one-way
 `[view]` that keeps the reader's change.
 

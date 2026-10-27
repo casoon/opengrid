@@ -3,8 +3,10 @@
  *
  * The props are the element's attributes in camelCase plus the options of
  * `connect` from `@casoon/opengrid`, with the callbacks in Svelte's own
- * spelling — `onviewchange`, `onselectionchange`, `oncellchange` — `view`
- * bindable (`bind:view`), and the element itself through `bind:element`.
+ * spelling — `onviewchange`, `onselectionchange`, `oncellchange`, `onrowadd`,
+ * `onpaste`, `onbulkchange`, `onrowaction`, `onsourcereplaced` — `view`
+ * bindable (`bind:view`), the element itself through `bind:element`, and the
+ * grid's `setCellState` and `setValues` through `bind:this`.
  * Everything else (`id`, `class`, `style`, `aria-*`) goes to the element.
  *
  * `view` is controlled through `bind:view`: a binding whose setter refuses the
@@ -16,26 +18,53 @@
 import type { Component } from "svelte";
 import type { HTMLAttributes } from "svelte/elements";
 import type {
+  BulkChangeDetail,
   CellChangeDetail,
+  CellWrites,
   ConnectOptions,
   Density,
   Theme,
   Mode,
   PivotConnectOptions,
+  PasteDetail,
   PivotView,
+  RowActionDetail,
   SelectionChangeDetail,
+  SourceReplacedDetail,
   View,
 } from "../loader.js";
 
-/** `connect`'s options, the callbacks in Svelte's spelling. */
-type Options = Omit<ConnectOptions, "onViewChange" | "onSelectionChange" | "onCellChange"> & {
+/** The callbacks of `connect`, which take Svelte's spelling here. */
+type Callbacks =
+  | "onViewChange"
+  | "onSelectionChange"
+  | "onCellChange"
+  | "onRowAdd"
+  | "onPaste"
+  | "onBulkChange"
+  | "onRowAction"
+  | "onSourceReplaced";
+
+/** The callbacks every component has, in Svelte's spelling. */
+type SvelteCallbacks = {
   /** The element, for `bind:element`. */
   element?: HTMLElement;
-  /** The reader changed the view; `bind:view` has it already. */
-  onviewchange?: (view: View) => void;
   onselectionchange?: (detail: SelectionChangeDetail) => void;
   oncellchange?: (detail: CellChangeDetail) => void;
+  /** Answers with the new row's state, as `onRowAdd` does in `connect`. */
+  onrowadd?: ConnectOptions["onRowAdd"];
+  onpaste?: (detail: PasteDetail) => void;
+  onbulkchange?: (detail: BulkChangeDetail) => void;
+  onrowaction?: (detail: RowActionDetail) => void;
+  onsourcereplaced?: (detail: SourceReplacedDetail) => void;
 };
+
+/** `connect`'s options, the callbacks in Svelte's spelling. */
+type Options = Omit<ConnectOptions, Callbacks> &
+  SvelteCallbacks & {
+    /** The reader changed the view; `bind:view` has it already. */
+    onviewchange?: (view: View) => void;
+  };
 
 /** What the element itself takes, minus what the component owns. */
 type ElementProps = Omit<HTMLAttributes<HTMLElement>, "children" | keyof Options>;
@@ -58,6 +87,10 @@ export interface OpengridGridProps extends Options, ElementProps {
   tree?: string;
   /** The field the parent key refers to; `id` when absent. */
   treeKey?: string;
+  /** The field that names a record: `key` in the editing events. */
+  rowKey?: string;
+  /** An empty row after the last one to type a new record into (`onrowadd`). */
+  addRow?: boolean;
   search?: boolean;
   facets?: boolean;
   toolbar?: boolean;
@@ -76,15 +109,10 @@ export interface OpengridTableProps extends Options, ElementProps {
 }
 
 /** The pivot's options: its view is a `PivotView`. */
-type PivotOptions = Omit<
-  PivotConnectOptions,
-  "onViewChange" | "onSelectionChange" | "onCellChange"
-> & {
-  element?: HTMLElement;
-  onviewchange?: (view: PivotView) => void;
-  onselectionchange?: (detail: SelectionChangeDetail) => void;
-  oncellchange?: (detail: CellChangeDetail) => void;
-};
+type PivotOptions = Omit<PivotConnectOptions, Callbacks> &
+  SvelteCallbacks & {
+    onviewchange?: (view: PivotView) => void;
+  };
 
 export interface OpengridPivotProps extends PivotOptions, ElementProps {
   label?: string;
@@ -110,6 +138,7 @@ export interface OpengridPivotProps extends PivotOptions, ElementProps {
   theme?: Theme;
 }
 
-export const OpengridGrid: Component<OpengridGridProps, {}, "view" | "element">;
+/** What `bind:this` on `OpengridGrid` gives: the connection's cell writes. */
+export const OpengridGrid: Component<OpengridGridProps, CellWrites, "view" | "element">;
 export const OpengridTable: Component<OpengridTableProps, {}, "view" | "element">;
 export const OpengridPivot: Component<OpengridPivotProps, {}, "view" | "element">;

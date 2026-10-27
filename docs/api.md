@@ -181,12 +181,29 @@ connection.disconnect();              // the listeners go; the element keeps its
 | `defaultView` | `set_view`, once — the uncontrolled form: after that the grid leads |
 | `presentation` | `set_columns` — named apart from the `columns` attribute, which is the projection |
 | `onViewChange`, `onSelectionChange`, `onCellChange` | the three [events](#events); each callback receives the `detail` (for the view: the view itself) |
+| `actions`, `validators` | `set_actions`, `set_validators` — the grid only |
+| `onPaste`, `onBulkChange`, `onRowAction`, `onSourceReplaced` | `opengrid-paste`, `opengrid-bulk-change`, `opengrid-row-action`, `opengrid-source-replaced`; each callback receives the `detail` |
+| `onRowAdd` | `opengrid-row-add`, and its answer is `set_row_state`: return `{ state: "saved", key }` or `{ state: "error", message }`, or a promise of one — the row shows `saving` until it settles; resolved with nothing, it is saved, and a rejection is an `error` with its message. No answer at all leaves the row unsaved for the page; an undone add is not answered |
+
+The connection also carries `set_cell_state` and `set_values` as `setCellState(key, column, state, message?)` and `setValues(values)` — the grid only; before the module has loaded, they wait for it.
+
+```js
+const connection = connect(grid, {
+  provider,
+  actions: [{ id: "remove", label: "Remove" }],
+  onRowAdd: async ({ values }) => ({ state: "saved", key: (await save(values)).id }),
+  onCellChange: async ({ key, column, value }) => {
+    await update(key, column, value);
+    connection.setCellState(key, column, "saved");
+  },
+});
+```
 
 | | |
 |---|---|
-| Order | Texts, formats, presentation, choices, view, provider — so the first query is the only one, and the first paint is in the right words. An `update` that changes the texts or the presentation rebuilds the grid, and one that changes the view as well rebuilds it twice: the source is asked twice, and only the second answer is shown. |
-| Changes | `update` writes an option only when it differs from what the element has. A key left out keeps its value; a key given as `undefined` resets it — texts to English, no formats, no presentation, no choices. `provider` has no "none"; for `view`, `undefined` means the grid leads. |
-| Controlled | `view` is written whenever it differs from what the grid shows: after the reader sorted, passing the same saved view again restores it — and a page that keeps passing a view without taking the reader's changes back holds the grid there, as a controlled input does. Writing back what the grid just reported costs nothing: `onViewChange: (view) => connection.update({ view })`. `onViewChange` hears the reader, not the views `connect` wrote. A view the grid refuses — a column it does not have yet — is tried again on the next `update`. Formats compare functions by identity — keep them stable, or each update redraws. |
+| Order | Texts, formats, presentation, choices, actions, validators, view, provider — so the first query is the only one, and the first paint is in the right words. An `update` that changes the texts or the presentation rebuilds the grid, and one that changes the view as well rebuilds it twice: the source is asked twice, and only the second answer is shown. |
+| Changes | `update` writes an option only when it differs from what the element has. A key left out keeps its value; a key given as `undefined` resets it — texts to English, no formats, no presentation, no choices, no actions, no validators. `provider` has no "none"; for `view`, `undefined` means the grid leads. |
+| Controlled | `view` is written whenever it differs from what the grid shows: after the reader sorted, passing the same saved view again restores it — and a page that keeps passing a view without taking the reader's changes back holds the grid there, as a controlled input does. Writing back what the grid just reported costs nothing: `onViewChange: (view) => connection.update({ view })`. `onViewChange` hears the reader, not the views `connect` wrote. A view the grid refuses — a column it does not have yet — is tried again on the next `update`. Formats and validators compare functions by identity — keep them stable, or each update redraws. |
 | Timing | `connect` returns at once; `connection.ready` settles once the module is loaded and the options are applied. Updates before that are folded in. On the [fallback](#loading), nothing is applied and `ready` says so. |
 | The view | needs the element in the document. On one that is not, the view **and the provider** wait for the next `update`, together, so the first query still asks for the view; the console says so. Everything else may come first. |
 | Loading | `connect` calls `loadOpengrid()`, whose first call decides the URLs: a page that needs its own calls `loadOpengrid(options)` first. |

@@ -5,8 +5,8 @@
  *
  * A thin shell around `connect`: the component renders the custom element with
  * its attributes, and hands everything else — provider, texts, formats,
- * presentation, choices, the view and the three event callbacks — to one
- * connection. The rules of the module functions live in `connect`, not here.
+ * presentation, choices, actions, validators, the view and the event
+ * callbacks — to one connection. The rules of the module functions live in `connect`, not here.
  *
  * Three things only a React shell has to know:
  *
@@ -30,6 +30,9 @@
  * - **An option is passed when it is set, or was set last time** — so a prop
  *   that goes away is reset (`connect`'s `undefined`), and one that was never
  *   there is not reset on every render.
+ * - **The ref is the element,** and the element behind it carries the
+ *   connection's `setCellState` and `setValues` — there is no other object a
+ *   React ref could be without ceasing to be the element.
  */
 
 import { createElement, forwardRef, useEffect, useImperativeHandle, useRef } from "react";
@@ -50,6 +53,13 @@ const OPTIONS = [
   "onViewChange",
   "onSelectionChange",
   "onCellChange",
+  "actions",
+  "validators",
+  "onRowAdd",
+  "onPaste",
+  "onBulkChange",
+  "onRowAction",
+  "onSourceReplaced",
 ];
 
 /**
@@ -66,7 +76,15 @@ function component(tag, displayName, attributes, booleans) {
     const connection = useRef(null);
     /** The options of the last render, to tell a removed prop from an absent one. */
     const previous = useRef({});
-    useImperativeHandle(ref, () => element.current, []);
+    useImperativeHandle(
+      ref,
+      () =>
+        Object.assign(element.current, {
+          setCellState: (...args) => connection.current?.setCellState(...args),
+          setValues: (values) => connection.current?.setValues(values),
+        }),
+      [],
+    );
 
     const rendered = { ref: element };
     const options = {};
@@ -145,6 +163,8 @@ export const OpengridGrid = component(
     groupBy: "group-by",
     tree: "tree",
     treeKey: "tree-key",
+    rowKey: "row-key",
+    addRow: "add-row",
     search: "search",
     facets: "facets",
     toolbar: "toolbar",
@@ -153,7 +173,7 @@ export const OpengridGrid = component(
     density: "density",
     theme: "theme",
   },
-  ["search", "facets", "toolbar", "columnMenu", "selection"],
+  ["search", "facets", "toolbar", "columnMenu", "selection", "addRow"],
 );
 
 export const OpengridTable = component(

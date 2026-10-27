@@ -3,7 +3,8 @@
  *
  * The same thin shell as the React adapter: the component renders the custom
  * element with its attributes, and hands everything else — provider, texts,
- * formats, presentation, choices, the view and the events — to one `connect`.
+ * formats, presentation, choices, actions, validators, the view and the
+ * events — to one `connect`.
  *
  * What only a Vue shell has to know:
  *
@@ -15,6 +16,11 @@
  * - **Events in camelCase** (`selectionChange`, `cellChange`), which a
  *   template writes as `@selection-change` — Vue normalizes the two, and only
  *   the camelCase form gives typed `onSelectionChange` props.
+ * - **`onRowAdd` is a prop, not an event:** its answer is the new row's
+ *   state, and an emitted event has none. A template still writes it as
+ *   `@row-add`, which Vue passes as the prop `onRowAdd`.
+ * - **The template ref** exposes `setCellState` and `setValues`; `$el` is
+ *   the element, as before.
  * - **`v-model:view`:** the view comes in as a prop and goes out as
  *   `update:view`, which is the reader's change `connect` reports. Writing it
  *   back is no change, so the loop ends there.
@@ -36,7 +42,17 @@ import { connect } from "../loader.js";
 
 /** The options of `connect` that are props; deep ones compare by value. */
 const SHALLOW = ["provider"];
-const DEEP = ["texts", "formats", "presentation", "choices", "view"];
+const DEEP = ["texts", "formats", "presentation", "choices", "actions", "validators", "view"];
+
+/** The events, by `connect`'s callback. */
+const EVENTS = {
+  onSelectionChange: "selectionChange",
+  onCellChange: "cellChange",
+  onPaste: "paste",
+  onBulkChange: "bulkChange",
+  onRowAction: "rowAction",
+  onSourceReplaced: "sourceReplaced",
+};
 
 /**
  * Builds one component.
@@ -54,12 +70,13 @@ function component(tag, name, attributes, booleans) {
   for (const option of [...SHALLOW, ...DEEP, "defaultView"]) {
     props[option] = { type: null, default: undefined };
   }
+  props.onRowAdd = { type: Function, default: undefined };
 
   return defineComponent({
     name,
     props,
-    emits: ["update:view", "selectionChange", "cellChange"],
-    setup(props, { emit }) {
+    emits: ["update:view", ...Object.values(EVENTS)],
+    setup(props, { emit, expose }) {
       const element = ref(null);
       let connection = null;
 
@@ -74,9 +91,11 @@ function component(tag, name, attributes, booleans) {
               if (props.view != null) connection?.update({ view: props.view });
             });
           },
-          onSelectionChange: (detail) => emit("selectionChange", detail),
-          onCellChange: (detail) => emit("cellChange", detail),
+          onRowAdd: (detail) => props.onRowAdd?.(detail),
         };
+        for (const [callback, event] of Object.entries(EVENTS)) {
+          options[callback] = (detail) => emit(event, detail);
+        }
         for (const option of [...SHALLOW, ...DEEP, "defaultView"]) {
           if (props[option] !== undefined) {
             options[option] = props[option];
@@ -102,6 +121,11 @@ function component(tag, name, attributes, booleans) {
         );
       }
       onActivated(() => connection?.update({}));
+
+      expose({
+        setCellState: (...args) => connection?.setCellState(...args),
+        setValues: (values) => connection?.setValues(values),
+      });
 
       onBeforeUnmount(() => {
         connection?.disconnect();
@@ -137,6 +161,8 @@ export const OpengridGrid = component(
     groupBy: "group-by",
     tree: "tree",
     treeKey: "tree-key",
+    rowKey: "row-key",
+    addRow: "add-row",
     search: "search",
     facets: "facets",
     toolbar: "toolbar",
@@ -145,7 +171,7 @@ export const OpengridGrid = component(
     density: "density",
     theme: "theme",
   },
-  ["search", "facets", "toolbar", "columnMenu", "selection"],
+  ["search", "facets", "toolbar", "columnMenu", "selection", "addRow"],
 );
 
 export const OpengridTable = component(

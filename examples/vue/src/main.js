@@ -4,9 +4,9 @@
 
 import { createApp } from "vue";
 import { loadOpengrid } from "@casoon/opengrid";
-import { MODULE_URL, ordersProvider } from "./provider.js";
+import { MODULE_URL, ordersProvider, roomsProvider } from "./provider.js";
 import App from "./App.vue";
 
 // The element module from its built place (docs/api.md §Connecting → Loading).
 await loadOpengrid({ moduleUrl: MODULE_URL });
-createApp(App, { provider: await ordersProvider() }).mount("#app");
+createApp(App, { provider: await ordersProvider(), rooms: await roomsProvider() }).mount("#app");

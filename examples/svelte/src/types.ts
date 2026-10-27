@@ -36,7 +36,22 @@ export const pivotView: ComponentProps<typeof OpengridPivot> = {
 // @ts-expect-error — a pivot's view is its rows, columns and values
 export const pivotRefused: ComponentProps<typeof OpengridPivot> = { view: { density: "compact" } };
 
+// Editing (issue #206): `onrowadd` answers; `bind:this` has the cell writes.
+export const rooms: GridProps = {
+  rowKey: "id",
+  addRow: true,
+  actions: [{ id: "remove", label: "Remove" }],
+  validators: { seats: () => null },
+  onrowadd: async (detail) => ({ state: "saved", key: detail.values["id"] ?? null }),
+  onpaste: (detail) => detail.changes.length satisfies number,
+  onrowaction: (detail) => detail.id satisfies string,
+};
+declare const instance: ReturnType<typeof OpengridGrid>;
+instance.setCellState(1, "seats", "saved");
+
 export const refused: GridProps[] = [
+  // @ts-expect-error — `addRow` is a boolean
+  { addRow: "yes" },
   // @ts-expect-error — a density is one of three
   { density: "tight" },
   // @ts-expect-error — the size is a number

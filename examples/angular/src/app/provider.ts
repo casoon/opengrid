@@ -30,3 +30,33 @@ export async function ordersProvider(): Promise<Provider> {
     },
   };
 }
+
+/** The rooms provider, handed from `main.ts` to the component (issue #206). */
+export const ROOMS = new InjectionToken<Provider>("the rooms provider");
+
+/**
+ * A few rooms the page holds itself (`loadRows`), for the editing grid — the
+ * same as the other examples' `roomsProvider`.
+ */
+export async function roomsProvider(): Promise<Provider> {
+  const engineModule = "/examples/engine-demo/pkg/opengrid_wasm.js";
+  const { default: init, Engine: EngineClass } = await import(engineModule);
+  await init();
+  const provider = createLocalProvider(new EngineClass());
+  await provider.loadRows(
+    "rooms",
+    [
+      { id: 1, name: "A1", seats: 10 },
+      { id: 2, name: "B2", seats: 20 },
+      { id: 3, name: "C3", seats: 30 },
+    ],
+    JSON.stringify({
+      fields: [
+        { name: "id", type: "int64", nullable: false },
+        { name: "name", type: "utf8", nullable: false },
+        { name: "seats", type: "int64", nullable: true },
+      ],
+    }),
+  );
+  return provider;
+}

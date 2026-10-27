@@ -160,7 +160,7 @@ test.describe("in the browser", () => {
       window.__weak = new WeakRef(document.querySelector("opengrid-grid"));
     });
     await page.getByRole("button", { name: "Hide the grid" }).click();
-    await expect(page.locator("opengrid-grid")).toHaveCount(0);
+    await expect(page.locator("opengrid-grid.orders")).toHaveCount(0);
 
     // `window.gc` is Chromium's (`--expose-gc`); the other engines have no way
     // to force a collection, so there only the second half runs.

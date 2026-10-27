@@ -12,6 +12,8 @@
     groupBy,
     tree,
     treeKey,
+    rowKey,
+    addRow = false,
     search = false,
     facets = false,
     toolbar = false,
@@ -27,9 +29,20 @@
   /** A boolean attribute is present or absent; `false` is absent. */
   const flag = (on) => (on ? "" : undefined);
   const text = (value) => (value == null ? undefined : String(value));
+
+  let inner;
+
+  export function setCellState(key, column, state, message) {
+    inner.setCellState(key, column, state, message);
+  }
+
+  export function setValues(values) {
+    inner.setValues(values);
+  }
 </script>
 
 <Opengrid
+  bind:this={inner}
   tag="opengrid-grid"
   attributes={{
     label,
@@ -41,6 +54,8 @@
     "group-by": groupBy,
     tree,
     "tree-key": treeKey,
+    "row-key": rowKey,
+    "add-row": flag(addRow),
     search: flag(search),
     facets: flag(facets),
     toolbar: flag(toolbar),

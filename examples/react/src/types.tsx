@@ -4,6 +4,31 @@
 import { useRef, useState } from "react";
 import { OpengridGrid, OpengridPivot, OpengridTable } from "@casoon/opengrid/react";
 import type { OpengridGridElement, View } from "@casoon/opengrid";
+import type { OpengridGridRef } from "@casoon/opengrid/react";
+
+/** Editing through props and the ref (issue #206). */
+function Rooms() {
+  const rooms = useRef<OpengridGridRef>(null);
+  return (
+    <>
+      <OpengridGrid
+        ref={rooms}
+        rowKey="id"
+        addRow
+        actions={[{ id: "remove", label: "Remove" }]}
+        validators={{ seats: () => null }}
+        onRowAdd={async (detail) => ({ state: "saved", key: detail.values.id ?? null })}
+        onCellChange={(detail) => rooms.current?.setCellState(detail.key ?? null, detail.column, "saved")}
+        onPaste={(detail) => detail.added.length satisfies number}
+        onRowAction={(detail) => detail.id satisfies string}
+      />
+      {/* @ts-expect-error — `addRow` is a boolean */}
+      <OpengridGrid addRow="yes" />
+      {/* @ts-expect-error — a row's answer is a state */}
+      <OpengridGrid onRowAdd={() => ({ state: "done" })} />
+    </>
+  );
+}
 
 export function Page() {
   const grid = useRef<OpengridGridElement>(null);
@@ -27,6 +52,7 @@ export function Page() {
         aria-describedby="help"
       />
       <OpengridTable label="Orders" datasource="orders" columns="id" defaultView={{ density: "compact" }} />
+      <Rooms />
       <OpengridPivot datasource="orders" rows="country" columns="ordered_year" values="[]" />
       {/* @ts-expect-error — a density is one of three */}
       <OpengridGrid density="tight" />

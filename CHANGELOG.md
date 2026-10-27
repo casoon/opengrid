@@ -18,6 +18,17 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+### Added
+
+- **Editing through `connect` and the framework components** ([#206](https://github.com/casoon/opengrid/issues/206)).
+  New options `actions` and `validators` (functions compare by identity, as in `formats`) and the
+  callbacks `onRowAdd`, `onPaste`, `onBulkChange`, `onRowAction`, `onSourceReplaced`. `onRowAdd`
+  answers with the new row's state, or a promise of it — that is `set_row_state`. The connection
+  carries `setCellState` and `setValues`, and so does each component's ref (React: the element;
+  Vue: the template ref; Svelte: `bind:this`). React, Vue and Svelte take `rowKey` and `addRow`
+  as props; the Angular recipe has them as inputs, `[rowAdd]` and `exportAs: "opengrid"`.
+  See the framework guide's "Editing".
+
 ## [0.14.0] — 2026-10-26
 
 **Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).

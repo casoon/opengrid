@@ -1,6 +1,7 @@
 // opengrid in React (plan point 77): the grid as a React component, its view
 // held in React state, and a button that takes the grid out and puts it back —
-// the way a route change does.
+// the way a route change does. Below it, a grid of rooms to edit through props
+// and callbacks alone (issue #206).
 //
 // Served from the repository root (`just serve-demo`, or the e2e server): the
 // element module and the engine are loaded from their built places there.
@@ -8,13 +9,45 @@
 import React, { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { loadOpengrid } from "@casoon/opengrid";
-import { MODULE_URL, ordersProvider } from "./provider.js";
+import { MODULE_URL, ROOM_ACTIONS, ROOM_VALIDATORS, ordersProvider, roomsProvider } from "./provider.js";
 import { OpengridGrid } from "@casoon/opengrid/react";
 
 const SAVED = { sort: [{ field: "customer", direction: "asc" }] };
 const GERMAN = { lang: "de", matchesOne: "{count} Treffer", matchesOther: "{count} Treffer" };
 
-function App({ provider }) {
+// For the tests: every editing callback, in order.
+window.__edits = [];
+const record = (type) => (detail) => window.__edits.push({ type, ...detail });
+
+function Rooms({ provider }) {
+  const grid = useRef(null);
+  return (
+    <OpengridGrid
+      ref={grid}
+      id="rooms"
+      label="Rooms"
+      datasource="rooms"
+      columns="id,name,seats"
+      rowKey="id"
+      addRow
+      provider={provider}
+      actions={ROOM_ACTIONS}
+      validators={ROOM_VALIDATORS}
+      onRowAdd={async (detail) => {
+        record("rowAdd")(detail);
+        return { state: "saved", key: detail.values.id };
+      }}
+      onCellChange={(detail) => {
+        record("cellChange")(detail);
+        grid.current.setCellState(detail.key, detail.column, "saved");
+      }}
+      onPaste={record("paste")}
+      onRowAction={record("rowAction")}
+    />
+  );
+}
+
+function App({ provider, rooms }) {
   const [shown, setShown] = useState(true);
   const [view, setView] = useState({ sort: [{ field: "id", direction: "asc" }] });
   const [selected, setSelected] = useState(0);
@@ -68,6 +101,7 @@ function App({ provider }) {
           onSelectionChange={(detail) => setSelected(detail.count)}
         />
       )}
+      <Rooms provider={rooms} />
     </main>
   );
 }
@@ -76,8 +110,9 @@ function App({ provider }) {
 // under a hashed name (docs/api.md §Connecting → Loading).
 await loadOpengrid({ moduleUrl: MODULE_URL });
 const provider = await ordersProvider();
+const rooms = await roomsProvider();
 createRoot(document.getElementById("root")).render(
   <StrictMode>
-    <App provider={provider} />
+    <App provider={provider} rooms={rooms} />
   </StrictMode>,
 );
