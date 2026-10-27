@@ -109,10 +109,14 @@ test("a paste is one step: one event back, cells and rows together", async ({ pa
   // Row 4 (R5) and row 5 (R6): both exist, so the block changes four cells.
   await shadow(page, (root) => root.querySelector('td[data-row="4"][data-col="1"]').focus());
   await page.evaluate(() => {
+    const text = "P1\t5\nP2\t6\n";
     const data = new DataTransfer();
-    data.setData("text/plain", "P1\t5\nP2\t6\n");
+    data.setData("text/plain", text);
     const root = document.querySelector("opengrid-grid").shadowRoot;
-    root.activeElement.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true, composed: true }));
+    // Firefox reads `dataType` and `data`, not `clipboardData` (grid-paste.spec.js).
+    root.activeElement.dispatchEvent(new ClipboardEvent("paste", {
+      clipboardData: data, dataType: "text/plain", data: text, bubbles: true, cancelable: true, composed: true,
+    }));
   });
   await expect.poll(() => shadow(page, (root) => root.querySelector('[part="paste-summary"]')?.textContent)).toBe("2 rows");
   await page.keyboard.press("Enter");

@@ -1,6 +1,6 @@
 {
   "name": "@casoon/opengrid-mcp",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "description": "opengrid as an MCP App: the grid in a chat client, driven by keyboard and by the model through one view",
   "type": "module",
   "license": "MIT OR Apache-2.0",
