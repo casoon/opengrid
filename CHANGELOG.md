@@ -21,7 +21,11 @@ Two things belong in every release entry and are easy to leave out:
 ## [0.14.0] — 2026-10-26
 
 **Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).
-**Browsers:** Chromium (the whole e2e suite: 1231 passed). BROWSERS_PLACEHOLDER
+**Browsers:** Chromium (the whole e2e suite: 1231 passed). Firefox and WebKit on Linux
+(`gh workflow run ci.yml -f browsers=true`): 1216 passed, 19 skipped by design, one WebKit test of
+the narrow filter row passed on its retry. The first run found the new paste tests failing in
+Firefox — the test's synthetic `ClipboardEvent`, whose `clipboardData` Firefox does not take, not
+the grid.
 
 The grid edits like a working tool: new rows from the keyboard, a pasted block with a preview,
 lists in a cell, undo, one value for many rows, validation while typing, row actions and editing
