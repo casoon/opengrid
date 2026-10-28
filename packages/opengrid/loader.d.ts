@@ -129,7 +129,7 @@ export interface OpengridModule {
 /**
  * What `connect` supplies an element with. Each is one module function —
  * `presentation` is `set_columns`, named apart from the `columns` attribute —
- * and the three callbacks receive the event's `detail`.
+ * and the callbacks receive the event's `detail`.
  */
 export interface ConnectOptions {
   provider?: Provider;
@@ -151,6 +151,40 @@ export interface ConnectOptions {
   onViewChange?: (view: View) => void;
   onSelectionChange?: (detail: SelectionChangeDetail) => void;
   onCellChange?: (detail: CellChangeDetail) => void;
+  /** `set_actions`: compared by value. The grid only. */
+  actions?: RowAction[];
+  /** `set_validators`: functions compare by identity, as in `formats`. The grid only. */
+  validators?: Record<string, Validator | ValidatorRule>;
+  /**
+   * The reader added a row (`add-row`). The answer is the row's state
+   * (`set_row_state`): a promise shows `saving` until it settles — resolved
+   * with nothing, the row is saved — a rejection is an `error` with its
+   * message, and no answer at all leaves the row to the page. Not answered
+   * for an undone add.
+   */
+  onRowAdd?: (detail: RowAddDetail) => RowAnswer | Promise<RowAnswer | void> | void;
+  onPaste?: (detail: PasteDetail) => void;
+  onBulkChange?: (detail: BulkChangeDetail) => void;
+  onRowAction?: (detail: RowActionDetail) => void;
+  /** The provider loaded the grid's source again (`loadRows`); the grid asks anew. */
+  onSourceReplaced?: (detail: SourceReplacedDetail) => void;
+}
+
+/** What `onRowAdd` says became of the row; `key` is its `row-key` now. */
+export type RowAnswer =
+  | { state: "saving" }
+  | { state: "saved"; key?: WireValue }
+  | { state: "error"; message: string };
+
+/**
+ * What a page writes into the grid's cells, on a {@link Connection} and on each
+ * component's ref. Both wait for the module. The grid only; both need `row-key`.
+ */
+export interface CellWrites {
+  /** `set_cell_state`: what became of an edit the page saves. */
+  setCellState(key: WireValue, column: string, state: CellState, message?: string): void;
+  /** `set_values`: values the page computes, in a `readonly` column. */
+  setValues(values: CellValue[]): void;
 }
 
 /** `connect`'s options for `<opengrid-pivot>`: its view is a {@link PivotView}. */
@@ -160,7 +194,7 @@ export type PivotConnectOptions = Omit<ConnectOptions, "view" | "defaultView" | 
   onViewChange?: (view: PivotView) => void;
 };
 
-export interface Connection<O = ConnectOptions> {
+export interface Connection<O = ConnectOptions> extends CellWrites {
   /** Settles once the module is loaded and the options are applied. */
   ready: Promise<LoadResult>;
   /**
@@ -945,6 +979,14 @@ export interface RowAddDetail {
   /** Set when this add is undone — delete the row — or redone (issue #186). */
   undo?: true;
   redo?: true;
+}
+
+/**
+ * `opengrid-source-replaced`: the grid's source was loaded again (issue #182).
+ * Fired on the grid only; it does not bubble.
+ */
+export interface SourceReplacedDetail {
+  name: string;
 }
 
 /** `opengrid-bulk-change`: one value for the selected rows (issue #187). */

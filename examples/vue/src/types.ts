@@ -2,8 +2,8 @@
 // test, compiled by `just types` and never bundled. Written with `h()`:
 // checking templates would take vue-tsc, which the project does not carry.
 
-import { h } from "vue";
-import { OpengridGrid, OpengridPivot, OpengridTable } from "@casoon/opengrid/vue";
+import { h, ref } from "vue";
+import { OpengridGrid, OpengridPivot, OpengridTable, type OpengridGridExposed } from "@casoon/opengrid/vue";
 import type { PivotView, View } from "@casoon/opengrid";
 
 let view: View | null = null;
@@ -40,4 +40,22 @@ export const nodes = [
   h(OpengridGrid, { columns: { amount: { aggregate: "sum" } } }),
   // @ts-expect-error — the view event carries the view
   h(OpengridGrid, { "onUpdate:view": (next: string) => next }),
+  // Editing (issue #206): `onRowAdd` answers, the rest are events.
+  h(OpengridGrid, {
+    rowKey: "id",
+    addRow: true,
+    actions: [{ id: "remove", label: "Remove" }],
+    validators: { seats: () => null },
+    onRowAdd: async (detail) => ({ state: "saved", key: detail.values["id"] ?? null }),
+    onPaste: (detail) => detail.changes.length satisfies number,
+    onRowAction: (detail) => detail.id satisfies string,
+    onSourceReplaced: (detail) => detail.name satisfies string,
+  }),
+  // @ts-expect-error — `addRow` is a boolean
+  h(OpengridGrid, { addRow: "yes" }),
 ];
+
+/** The template ref: the cell writes, and the element as `$el`. */
+const rooms = ref<OpengridGridExposed | null>(null);
+rooms.value?.setCellState(1, "seats", "saved");
+rooms.value?.$el.getAttribute("row-key");

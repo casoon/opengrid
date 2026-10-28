@@ -6,8 +6,8 @@
   too; everything else goes to one `connect` from `@casoon/opengrid`:
 
   - One effect reads every option — objects through `$state.snapshot`, so a
-    change inside a `$state` object counts (for `formats`, the functions in it
-    keep their identity) — and passes on what is set now or was set last time:
+    change inside a `$state` object counts (for `formats` and `validators`,
+    the functions in them keep their identity) — and passes on what is set now or was set last time:
     a prop taken away is reset, one never given is left alone (the same rule
     as the React adapter).
   - `bind:view`: the view the reader changed is written into the bound prop;
@@ -17,7 +17,11 @@
     React and Vue. A `view={…}` without `bind:` follows Svelte's rule for
     bindable props: the reader's change becomes the component's own value,
     as a typed-in `value` does on an `<input>` without `bind:`.
-  - `bind:element` gives the page the element, as `ref` does in React.
+  - `bind:element` gives the page the element, as `ref` does in React;
+    `bind:this` the component, with the connection's `setCellState` and
+    `setValues`.
+  - `onrowadd` answers with the new row's state, as `onRowAdd` does in
+    `connect`.
   - The connection is made once the element exists and closed when the
     component is destroyed. The element keeps its own state for as long as it
     lives (docs/api.md §Connecting).
@@ -37,9 +41,16 @@
     formats,
     presentation,
     choices,
+    actions,
+    validators,
     onviewchange,
     onselectionchange,
     oncellchange,
+    onrowadd,
+    onpaste,
+    onbulkchange,
+    onrowaction,
+    onsourcereplaced,
     ...rest
   } = $props();
 
@@ -50,9 +61,11 @@
     const options = {
       provider,
       texts: $state.snapshot(texts),
-      formats: formats && snapshotFormats(formats),
+      formats: formats && snapshotKeepingFunctions(formats),
       presentation: $state.snapshot(presentation),
       choices: $state.snapshot(choices),
+      actions: $state.snapshot(actions),
+      validators: validators && snapshotKeepingFunctions(validators),
       view: $state.snapshot(view),
       defaultView: $state.snapshot(defaultView),
     };
@@ -67,6 +80,11 @@
         },
         onSelectionChange: (detail) => onselectionchange?.(detail),
         onCellChange: (detail) => oncellchange?.(detail),
+        onRowAdd: (detail) => onrowadd?.(detail),
+        onPaste: (detail) => onpaste?.(detail),
+        onBulkChange: (detail) => onbulkchange?.(detail),
+        onRowAction: (detail) => onrowaction?.(detail),
+        onSourceReplaced: (detail) => onsourcereplaced?.(detail),
       };
       if (!connection) {
         if (options.view != null && options.defaultView != null) {
@@ -87,14 +105,25 @@
     });
   });
 
-  /** The formats as plain values, their functions kept as they are. */
-  function snapshotFormats(value) {
+  /** Plain values all the way down, the functions kept as they are. */
+  function snapshotKeepingFunctions(value) {
+    if (typeof value === "function" || value === null || typeof value !== "object") {
+      return value;
+    }
+    if (Array.isArray(value)) {
+      return value.map(snapshotKeepingFunctions);
+    }
     return Object.fromEntries(
-      Object.entries(value).map(([column, format]) => [
-        column,
-        typeof format === "function" ? format : $state.snapshot(format),
-      ]),
+      Object.entries(value).map(([name, inner]) => [name, snapshotKeepingFunctions(inner)]),
     );
+  }
+
+  export function setCellState(key, column, state, message) {
+    connection?.setCellState(key, column, state, message);
+  }
+
+  export function setValues(values) {
+    connection?.setValues(values);
   }
 
   $effect(() => () => {

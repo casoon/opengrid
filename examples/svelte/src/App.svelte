@@ -3,11 +3,12 @@
   // refuses the reader's changes, texts switched and changed in place, and a
   // grid that is taken out and put back, the way a route change does.
   import { OpengridGrid } from "@casoon/opengrid/svelte";
+  import Rooms from "./Rooms.svelte";
 
   // eslint-disable-next-line no-undef -- defined by vite.config.js
   const VERSION = __SVELTE_VERSION__;
 
-  let { provider } = $props();
+  let { provider, rooms } = $props();
 
   const SAVED = { sort: [{ field: "customer", direction: "asc" }] };
   // One `$state` object, changed in place by "Say rows" — a change inside it
@@ -60,4 +61,5 @@
       onselectionchange={(detail) => (selected = detail.count)}
     />
   {/if}
+  <Rooms provider={rooms} />
 </main>

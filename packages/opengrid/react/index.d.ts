@@ -20,6 +20,7 @@
 
 import type { ForwardRefExoticComponent, HTMLAttributes, RefAttributes } from "react";
 import type {
+  CellWrites,
   ConnectOptions,
   Density,
   Theme,
@@ -54,6 +55,10 @@ export interface OpengridGridProps extends ConnectOptions, ElementProps {
   tree?: string;
   /** The field the parent key refers to; `id` when absent. */
   treeKey?: string;
+  /** The field that names a record: `key` in the editing events. */
+  rowKey?: string;
+  /** An empty row after the last one to type a new record into (`onRowAdd`). */
+  addRow?: boolean;
   search?: boolean;
   facets?: boolean;
   toolbar?: boolean;
@@ -95,6 +100,13 @@ export interface OpengridPivotProps extends PivotConnectOptions, ElementProps {
   filter?: string;
   theme?: Theme;
 }
+
+/**
+ * What the ref holds: the element, carrying the connection's `setCellState`
+ * and `setValues` — `useRef<OpengridGridRef>(null)`. The prop takes a ref to
+ * the plain element too.
+ */
+export type OpengridGridRef = OpengridGridElement & CellWrites;
 
 export const OpengridGrid: ForwardRefExoticComponent<
   OpengridGridProps & RefAttributes<OpengridGridElement>

@@ -5,8 +5,12 @@
 import { ref, version } from "vue";
 import GridTab from "./GridTab.vue";
 import OtherTab from "./OtherTab.vue";
+import RoomsGrid from "./RoomsGrid.vue";
 
-defineProps({ provider: { type: Object, required: true } });
+defineProps({
+  provider: { type: Object, required: true },
+  rooms: { type: Object, required: true },
+});
 const tab = ref("grid");
 const shown = ref(true);
 </script>
@@ -29,5 +33,6 @@ const shown = ref(true);
         <OtherTab v-else />
       </KeepAlive>
     </template>
+    <RoomsGrid :provider="rooms" />
   </main>
 </template>
