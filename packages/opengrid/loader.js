@@ -959,8 +959,8 @@ function aborted() {
  *
  * `update` applies only what changed. A key left out of an update keeps its
  * value; a key given as `undefined` resets it (texts to English, no formats, no
- * presentation, no choices) — except `provider`, which has no "none", and
- * `view`, where `undefined` (or `null`) means the grid leads. Attributes
+ * presentation, no choices, no actions, no validators) — except `provider`,
+ * which has no "none", and `view`, where `undefined` (or `null`) means the grid leads. Attributes
  * (`label`, `columns`, `group-by`, …) are not options: the page or the
  * framework sets them on the element as usual.
  *
@@ -973,12 +973,17 @@ function aborted() {
  * set). On an element that is not, the view **and the provider** wait for the
  * next `update` — together, so the first query still asks for the view.
  *
+ * **Editing** (issue #206): `onRowAdd` answers with the new row's state — or a
+ * promise of it — which is `set_row_state`; `setCellState` and `setValues` on
+ * the connection are `set_cell_state` and `set_values`, and wait for the
+ * module like every option does.
+ *
  * `connect` loads the module with `loadOpengrid()`, whose first call decides
  * the URLs: a page that needs its own calls `loadOpengrid(options)` first.
  *
  * @param {HTMLElement} host an `<opengrid-grid>`, `-table` or `-pivot`.
  * @param {object} options see `ConnectOptions` in `loader.d.ts`.
- * @returns {{ready: Promise<{fallback: boolean, module?: object}>, update: Function, disconnect: Function}}
+ * @returns {{ready: Promise<{fallback: boolean, module?: object}>, update: Function, setCellState: Function, setValues: Function, disconnect: Function}}
  */
 export function connect(host, options = {}) {
   let current = { ...options };
@@ -1011,9 +1016,51 @@ export function connect(host, options = {}) {
     ],
     ["opengrid-selection-change", (event) => current.onSelectionChange?.(event.detail)],
     ["opengrid-cell-change", (event) => current.onCellChange?.(event.detail)],
+    ["opengrid-row-add", (event) => answerRowAdd(event.detail)],
+    ["opengrid-paste", (event) => current.onPaste?.(event.detail)],
+    ["opengrid-bulk-change", (event) => current.onBulkChange?.(event.detail)],
+    ["opengrid-row-action", (event) => current.onRowAction?.(event.detail)],
+    ["opengrid-source-replaced", (event) => current.onSourceReplaced?.(event.detail)],
   ];
   for (const [type, listener] of listeners) {
     host.addEventListener(type, listener);
+  }
+
+  /**
+   * `onRowAdd`'s answer becomes the row's state: a promise shows `saving` until
+   * it settles — resolved with nothing, the row is saved — and a rejection is
+   * an `error` with its message. An undone add has no row left to answer for.
+   */
+  function answerRowAdd(detail) {
+    const answer = current.onRowAdd?.(detail);
+    if (answer == null || detail.undo) {
+      return;
+    }
+    const key = detail.provisionalKey;
+    if (typeof answer.then !== "function") {
+      setRowState(key, answer);
+      return;
+    }
+    setRowState(key, { state: "saving" });
+    answer.then(
+      (state) => setRowState(key, state ?? { state: "saved" }),
+      (error) => setRowState(key, { state: "error", message: String(error?.message ?? error) }),
+    );
+  }
+
+  function setRowState(key, { state, key: saved, message }) {
+    if (module && connected) {
+      module.set_row_state(host, key, state, state === "saved" ? saved : message);
+    }
+  }
+
+  /** Runs `call` with the module — now, or once it has loaded. */
+  function withModule(call) {
+    if (module) {
+      call(module);
+    } else {
+      ready.then(() => module && connected && call(module));
+    }
   }
 
   /** Writes one option if it differs from what the element has. */
@@ -1068,7 +1115,7 @@ export function connect(host, options = {}) {
     }
     if ("formats" in changed) {
       const formats = changed.formats ?? {};
-      write("formats", formats, formatsKey(formats), (value) => module.set_formats(host, value));
+      write("formats", formats, identityKey(formats), (value) => module.set_formats(host, value));
     }
     if ("presentation" in changed) {
       const presentation = changed.presentation ?? {};
@@ -1079,6 +1126,16 @@ export function connect(host, options = {}) {
     if ("choices" in changed) {
       const choices = changed.choices ?? {};
       write("choices", choices, stableKey(choices), (value) => module.set_choices(host, value));
+    }
+    if ("actions" in changed) {
+      const actions = changed.actions ?? [];
+      write("actions", actions, stableKey(actions), (value) => module.set_actions(host, value));
+    }
+    if ("validators" in changed) {
+      const validators = changed.validators ?? {};
+      write("validators", validators, identityKey(validators), (value) =>
+        module.set_validators(host, value),
+      );
     }
 
     const wantsView =
@@ -1128,6 +1185,12 @@ export function connect(host, options = {}) {
       current = { ...current, ...next };
       apply(next);
     },
+    setCellState(key, column, state, message) {
+      withModule((loaded) => loaded.set_cell_state(host, key, column, state, message));
+    },
+    setValues(values) {
+      withModule((loaded) => loaded.set_values(host, values));
+    },
     disconnect() {
       connected = false;
       for (const [type, listener] of listeners) {
@@ -1137,36 +1200,36 @@ export function connect(host, options = {}) {
   };
 }
 
-/** A JSON key that does not depend on the order an object's keys were written in. */
-function stableKey(value) {
-  return JSON.stringify(value, (_, inner) =>
-    inner && typeof inner === "object" && !Array.isArray(inner)
+/**
+ * A JSON key that does not depend on the order an object's keys were written
+ * in; `each` may stand in for a value first.
+ */
+function stableKey(value, each = (inner) => inner) {
+  return JSON.stringify(value, (_, raw) => {
+    const inner = each(raw);
+    return inner && typeof inner === "object" && !Array.isArray(inner)
       ? Object.fromEntries(Object.entries(inner).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
-      : inner,
-  );
+      : inner;
+  });
 }
 
 /**
- * Formats compare by identity where they are functions and by value where
- * they are `Intl` options. Function identities are numbered per call site so
- * two different functions never compare equal.
+ * Formats and validators compare by identity where they are functions and by
+ * value elsewhere (`Intl` options, `block`). Function identities are numbered
+ * per call site so two different functions never compare equal.
  */
 const functionIds = new WeakMap();
 let nextFunctionId = 1;
-function formatsKey(formats) {
-  return stableKey(
-    Object.fromEntries(
-      Object.entries(formats).map(([column, format]) => {
-        if (typeof format !== "function") {
-          return [column, format];
-        }
-        if (!functionIds.has(format)) {
-          functionIds.set(format, nextFunctionId++);
-        }
-        return [column, { function: functionIds.get(format) }];
-      }),
-    ),
-  );
+function identityKey(value) {
+  return stableKey(value, (inner) => {
+    if (typeof inner !== "function") {
+      return inner;
+    }
+    if (!functionIds.has(inner)) {
+      functionIds.set(inner, nextFunctionId++);
+    }
+    return { function: functionIds.get(inner) };
+  });
 }
 
 /**

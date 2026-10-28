@@ -331,5 +331,26 @@ export async function page(): Promise<void> {
   connection.update({ columns: { amount: { aggregate: "sum" } } });
   // @ts-expect-error — the callback gets the view, not the event
   connect(grid, { onViewChange: (event: CustomEvent) => event.detail });
+
+  // Editing through `connect` (issue #206).
+  const editing = connect(grid, {
+    actions: [{ id: "remove", label: "Remove" }],
+    validators: { seats: (value) => (value ? null : { level: "error", message: "Required." }), name: { validate: () => null, block: true } },
+    onRowAdd: async (detail) => ({ state: "saved", key: detail.values["id"] ?? null }),
+    onPaste: (detail) => detail.changes.length satisfies number,
+    onBulkChange: (detail) => detail.keys,
+    onRowAction: (detail) => detail.id satisfies string,
+    onSourceReplaced: (detail) => detail.name satisfies string,
+  });
+  connect(grid, { onRowAdd: () => ({ state: "error", message: "Exists already." }) });
+  connect(grid, { onRowAdd: () => undefined });
+  editing.setCellState(1, "seats", "saved");
+  editing.setValues([{ key: 1, column: "total", value: 3 }]);
+  // @ts-expect-error — an error says why
+  connect(grid, { onRowAdd: () => ({ state: "error" }) });
+  // @ts-expect-error — a cell is saving, saved, an error or invalid
+  editing.setCellState(1, "seats", "done");
+  // @ts-expect-error — an action has a label
+  connect(grid, { actions: [{ id: "remove" }] });
   connection.disconnect();
 }

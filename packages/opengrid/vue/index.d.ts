@@ -3,25 +3,43 @@
  *
  * The props are the element's attributes in camelCase plus the options of
  * `connect` from `@casoon/opengrid`; the callbacks are Vue events instead:
- * `update:view` (so `v-model:view` works), `selectionChange` and `cellChange`
- * — `@selection-change` and `@cell-change` in a template.
+ * `update:view` (so `v-model:view` works), `selectionChange`, `cellChange`,
+ * `paste`, `bulkChange`, `rowAction` and `sourceReplaced` — `@selection-change`
+ * and so on in a template. `onRowAdd` stays a prop, because its answer is the
+ * new row's state; a template writes it as `@row-add` all the same.
  */
 
 import type { DefineSetupFnComponent } from "vue";
 import type {
+  BulkChangeDetail,
   CellChangeDetail,
+  CellWrites,
   ConnectOptions,
   Density,
   Theme,
   Mode,
   PivotConnectOptions,
+  OpengridGridElement,
+  PasteDetail,
   PivotView,
+  RowActionDetail,
   SelectionChangeDetail,
+  SourceReplacedDetail,
   View,
 } from "../loader.js";
 
-/** `connect`'s options, less the callbacks — those are events here. */
-type Options = Omit<ConnectOptions, "onViewChange" | "onSelectionChange" | "onCellChange">;
+/** The callbacks of `connect` that are events here. */
+type Callbacks =
+  | "onViewChange"
+  | "onSelectionChange"
+  | "onCellChange"
+  | "onPaste"
+  | "onBulkChange"
+  | "onRowAction"
+  | "onSourceReplaced";
+
+/** `connect`'s options, less the callbacks that are events. */
+type Options = Omit<ConnectOptions, Callbacks>;
 
 /** A type, not an interface: Vue's `EmitsOptions` wants an index signature. */
 export type OpengridEmits = {
@@ -29,7 +47,17 @@ export type OpengridEmits = {
   "update:view": (view: View) => void;
   selectionChange: (detail: SelectionChangeDetail) => void;
   cellChange: (detail: CellChangeDetail) => void;
+  paste: (detail: PasteDetail) => void;
+  bulkChange: (detail: BulkChangeDetail) => void;
+  rowAction: (detail: RowActionDetail) => void;
+  sourceReplaced: (detail: SourceReplacedDetail) => void;
 };
+
+/**
+ * What a template ref on `OpengridGrid` holds: the connection's `setCellState`
+ * and `setValues`, and the element as `$el` — `ref<OpengridGridExposed | null>(null)`.
+ */
+export type OpengridGridExposed = CellWrites & { $el: OpengridGridElement };
 
 export interface OpengridGridProps extends Options {
   /** The accessible name of the table. */
@@ -49,6 +77,10 @@ export interface OpengridGridProps extends Options {
   tree?: string;
   /** The field the parent key refers to; `id` when absent. */
   treeKey?: string;
+  /** The field that names a record: `key` in the editing events. */
+  rowKey?: string;
+  /** An empty row after the last one to type a new record into (`@row-add`). */
+  addRow?: boolean;
   search?: boolean;
   facets?: boolean;
   toolbar?: boolean;
@@ -72,7 +104,7 @@ export type OpengridPivotEmits = Omit<OpengridEmits, "update:view"> & {
 };
 
 export interface OpengridPivotProps
-  extends Omit<PivotConnectOptions, "onViewChange" | "onSelectionChange" | "onCellChange"> {
+  extends Omit<PivotConnectOptions, Callbacks> {
   label?: string;
   datasource?: string;
   /** Comma-separated row dimensions, outermost first. */
