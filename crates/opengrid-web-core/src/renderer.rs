@@ -5,7 +5,7 @@
 //! `create_element`, `set_attribute`, `append_child`, `set_text`. The trait is
 //! generic over the node type so the patch computation can be exercised on the
 //! host with a recording renderer, while the browser uses
-//! [`WebRenderer`] over `web-sys`.
+//! `WebRenderer` over `web-sys`.
 //!
 //! [`Dom`] owns the renderer plus the mapping from [`NodeId`] to real nodes and
 //! applies a whole [`PatchBuffer`] in one call — the single WASM↔DOM crossing per
@@ -17,7 +17,7 @@ use crate::patch::{NodeId, Patch, PatchBuffer};
 
 /// The DOM operations the grid needs.
 ///
-/// Implementations: [`WebRenderer`] (browser, `web-sys`) and the recording
+/// Implementations: `WebRenderer` (browser, `web-sys`) and the recording
 /// renderer in this module's tests, which is what makes the batching logic
 /// native-testable.
 pub trait Renderer {

@@ -2,7 +2,7 @@
 //!
 //! Point 09 binds data and engine in one place: [`LocalDataSource`] holds the
 //! table and answers with the column-free
-//! [`QueryResult`](opengrid_datasource::QueryResult) (E14). Before this point the
+//! [`QueryResult`] (E14). Before this point the
 //! conformance runner needed a test-local adapter (`LocalEngine`), because the
 //! orphan rule kept this crate from implementing the suite's trait — that
 //! workaround is gone with the real trait.

@@ -7,7 +7,7 @@
 //! dataset, one query per rule, and the expected table.
 //!
 //! The engines that answer these cases are the
-//! [`DataSource`](opengrid_datasource::DataSource) implementations of point 09:
+//! [`DataSource`] implementations of point 09:
 //! the local engine in `opengrid-engine`, PostgreSQL in point 26,
 //! later MySQL and Mongo. This crate stays engine-neutral — it holds the cases,
 //! the comparison and [`Table`], plus [`block_on`], the bridge between the suite's

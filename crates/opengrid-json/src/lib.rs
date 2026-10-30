@@ -6,7 +6,7 @@
 //! and the server cannot read the same bytes two ways (decision E35).
 //!
 //! It is deliberately small — a document tree ([`Json`]), a strict reader
-//! ([`Json::parse`], RFC 8259), a compact writer ([`Json::to_string`]) and two
+//! ([`Json::parse`], RFC 8259), a compact writer (the [`Display`](std::fmt::Display) impl, `json.to_string()`) and two
 //! traits ([`FromJson`], [`ToJson`]) the opengrid types implement by hand.
 //! [`Fields`] carries the one rule every opengrid object follows: an unknown
 //! key is an error, never ignored.

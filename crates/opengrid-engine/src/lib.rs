@@ -1,4 +1,4 @@
-//! The opengrid engine: ingest (CSV/JSON → [`Table`](opengrid_columns::Table)),
+//! The opengrid engine: ingest (CSV/JSON → [`Table`]),
 //! the local query executor and the `DataSource` adapter over it.
 //!
 //! The data lives in `opengrid-columns` — typed columns of exactly the types of

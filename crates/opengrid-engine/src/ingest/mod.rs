@@ -9,7 +9,7 @@
 //! A CSV cell is text, a JSON cell is a JSON scalar, but inside a column they
 //! have to mean exactly the same thing. For `decimal`, `date` and `timestamp`
 //! the CSV text therefore goes through the wire coercion of `opengrid-types`
-//! ([`Value::from_wire_str`], the string branch of [`Value::deserialize_typed`],
+//! ([`Value::from_wire_str`], the string branch of [`Value::from_json_typed`],
 //! E13), so both formats share one implementation of scale handling (rule S8)
 //! and of UTC normalization (rule S9). That is what makes "the same data in both formats yields identical
 //! tables" hold by construction instead of by coincidence.

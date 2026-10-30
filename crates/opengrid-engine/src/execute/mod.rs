@@ -16,7 +16,7 @@
 //!
 //! Rules S1 (three-valued filter logic), S2 (`in`), S3/S4/S6/S7 (sorting and
 //! paging), S13/S14 (string comparison, empty string) are implemented in
-//! [`filter`] and [`order`], each with the rule in its doc comment.
+//! `filter` and `order`, each with the rule in its doc comment.
 
 mod aggregate;
 mod filter;
