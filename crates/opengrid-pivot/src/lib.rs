@@ -11,7 +11,7 @@
 //! 1. **Pivot semantics are query semantics.** Every cell is an aggregate over a
 //!    group, and rules S1–S15 describe those completely. There is no second
 //!    semantics to prove, and this crate re-implements none of the first.
-//! 2. **No Arrow.** The engine sits on the [`DataSource`] trait, so it works over
+//! 2. **No Arrow.** The engine sits on the [`DataSource`](opengrid_datasource::DataSource) trait, so it works over
 //!    the local engine, PostgreSQL, REST and the hybrid path alike.
 //! 3. **Subtotals are asked for, not rolled up.** The average of averages is not
 //!    an average (S12), so every level is its own grouping over the raw rows.
@@ -21,7 +21,7 @@
 //! It never compares two values to decide an order. Each grouping set is
 //! requested **sorted** by its own keys, so the order comes from whoever owns
 //! rules S3/S4 — the engine or the database. Assembling the matrix needs only
-//! equality, and the one place that needs it says so ([`same_key`]).
+//! equality, and the one place that needs it says so (`same_key`).
 
 mod assemble;
 mod engine;

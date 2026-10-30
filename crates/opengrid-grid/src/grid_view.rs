@@ -33,7 +33,7 @@
 //! Nowhere near one place, which is the other reason to have this module: the
 //! sort is in [`GridState`](crate::GridState), the filters are in the
 //! DOM inputs of the filter row, the column layout is in
-//! [`ColumnLayout`](crate::layout::ColumnLayout) and the density is an
+//! [`ColumnLayout`] and the density is an
 //! attribute. Gathering and restoring that is exactly the work this module
 //! names, and the element glue is the only place that knows all four.
 

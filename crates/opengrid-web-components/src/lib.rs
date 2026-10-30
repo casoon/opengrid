@@ -23,7 +23,7 @@
 //! text registry for no measured gain.
 //!
 //! Point 48 gives both elements one language: everything they write themselves
-//! is English and lives in [`texts`], and a page overrides any of it — with the
+//! is English and lives in `texts`, and a page overrides any of it — with the
 //! language it is in — through the exported `set_texts`.
 
 // **On the host this crate is only its tests.** Every entry point — the

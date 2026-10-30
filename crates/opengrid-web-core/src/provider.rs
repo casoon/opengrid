@@ -9,13 +9,13 @@
 //!
 //! * [`QueryExecutor`] is the portable, synchronous seam an engine implements —
 //!   the local WASM engine today, a native test now.
-//! * [`DataProvider`] is the Promise-based contract the components use. The
-//!   local [`LocalProvider`] resolves on the spot; the page-owned engine is
-//!   wrapped by [`JsProvider`] (point 14), and the Worker-backed provider of
+//! * `DataProvider` is the Promise-based contract the components use. The
+//!   local `LocalProvider` resolves on the spot; the page-owned engine is
+//!   wrapped by `JsProvider` (point 14), and the Worker-backed provider of
 //!   point 19 returns a promise that settles later, with the same signature.
 //!
-//! A provider can be attached to a host element with [`set_provider`] and read
-//! back with [`provider`]; point 14 fills the element with the actual query.
+//! A provider can be attached to a host element with `set_provider` and read
+//! back with `provider`; point 14 fills the element with the actual query.
 
 use std::fmt;
 

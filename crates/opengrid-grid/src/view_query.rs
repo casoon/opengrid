@@ -10,7 +10,7 @@ use opengrid_query::FilterExpr;
 /// sort list in the user's order (point 18 multi-sort); each entry becomes a
 /// `{ "field", "direction" }` object and the key is omitted when nothing is
 /// sorted. `filter` is serialized from the [`FilterExpr`] built by
-/// [`filter_expr`]; `direction` is the wire token `"asc"`/`"desc"`.
+/// [`filter_expr`](crate::filter_row::filter_expr); `direction` is the wire token `"asc"`/`"desc"`.
 pub fn query_json(
     source: &str,
     columns: &[String],
@@ -34,7 +34,7 @@ pub fn query_json(
 /// (plan point 82): what a page exports.
 ///
 /// `groups` come first, ascending with **NULL last** stated explicitly — the
-/// order [`crate::grouping::group_query_json`] gives the groups, written the
+/// order `group_query_json` in `opengrid-web-components` gives the groups, written the
 /// same way, so the rows of a grouped grid come in the order it shows them.
 /// Then `sorts`, without the keys `groups` already has.
 pub fn view_query_json(
