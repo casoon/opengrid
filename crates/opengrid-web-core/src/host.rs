@@ -16,7 +16,7 @@
 //! task); a cache like Vue's `<KeepAlive>` takes it out and puts it back much
 //! later. Both expect the same element back. Only the garbage collector knows
 //! that an element will never return, so a `FinalizationRegistry` reports it,
-//! and every table registered with [`on_release`] drops the id.
+//! and every table registered with `on_release` drops the id.
 //!
 //! That only works if no table holds the host — or anything in its shadow
 //! tree — past the moment it leaves the document. A reference from WASM is a

@@ -29,6 +29,11 @@ Two things belong in every release entry and are easy to leave out:
   as props; the Angular recipe has them as inputs, `[rowAdd]` and `exportAs: "opengrid"`.
   See the framework guide's "Editing".
 
+### Fixed
+
+- **Docs:** rustdoc builds without warnings again: broken and private intra-doc links in the
+  crate docs now point at public paths or are plain code spans.
+
 ## [0.14.0] — 2026-10-26
 
 **Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).

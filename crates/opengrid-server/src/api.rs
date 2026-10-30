@@ -17,7 +17,7 @@
 //!    of point 23.
 //!
 //! `POST /export/{source}` takes the same path through steps 1–4 (see
-//! [`admit`]) and then streams every row of the answer as a file — the
+//! `admit`) and then streams every row of the answer as a file — the
 //! `export` module.
 //!
 //! `GET /source/{source}` answers what a *planner* needs before it can ask

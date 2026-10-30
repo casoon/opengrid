@@ -7,7 +7,7 @@
 //! keep its data in Arrow. Arrow's kernels branch over every Arrow type — lists,
 //! structs, dictionaries — and nearly all of the engine module was that
 //! generality. This crate knows exactly the seven types of the query model
-//! ([`DataType`]) and nothing else; a new type comes through the query model,
+//! ([`DataType`](opengrid_types::DataType)) and nothing else; a new type comes through the query model,
 //! never through this crate.
 //!
 //! What the crate does **not** know is query semantics: three-valued filter

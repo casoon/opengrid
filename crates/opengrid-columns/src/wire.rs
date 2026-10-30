@@ -30,7 +30,7 @@
 //! ```
 //!
 //! Type codes: 1 bool, 2 int64, 3 float64, 4 decimal, 5 utf8, 6 date,
-//! 7 timestamp, 8 list<int64>, 9 list<utf8> (issue #185, additive: a reader
+//! 7 timestamp, 8 `list<int64>`, 9 `list<utf8>` (issue #185, additive: a reader
 //! from before them refuses such a column with "unknown type code", and
 //! the version stays 1). A pivot appends its own section after the table
 //! (`opengrid-pivot`), written with the same [`Writer`] primitives. A tree's
