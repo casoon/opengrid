@@ -31,7 +31,7 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Changed
 
-- **Docs:** the project site uses the current shared theme (0.12.5) and ends with a link to the
+- **Docs:** the project site uses the current shared theme (0.12.6) and ends with a link to the
   quickstart.
 
 ### Fixed
