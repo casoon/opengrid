@@ -29,6 +29,11 @@ Two things belong in every release entry and are easy to leave out:
   as props; the Angular recipe has them as inputs, `[rowAdd]` and `exportAs: "opengrid"`.
   See the framework guide's "Editing".
 
+### Changed
+
+- **Docs:** the project site uses the current shared theme (0.12.3) and ends with a link to the
+  quickstart.
+
 ### Fixed
 
 - **Docs:** rustdoc builds without warnings again: broken and private intra-doc links in the

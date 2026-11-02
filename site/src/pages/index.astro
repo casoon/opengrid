@@ -3,6 +3,7 @@ import {
   Badge,
   Badges,
   Button,
+  CallToAction,
   CodeBlock,
   Facts,
   Features,
@@ -127,6 +128,12 @@ const page = `<opengrid-grid label="Orders" datasource="orders"
   >
     <CodeBlock code={page} lang="html" title="index.html" label="HTML" />
   </Quickstart>
+
+  <CallToAction
+    title="A grid on your page in three steps."
+    href={url('docs/getting-started/quickstart/')}
+    label="Read the quickstart"
+  />
 </Base>
 
 <style>
