@@ -567,7 +567,11 @@ going forward), so the page saves it as it saves an edit; an undone row add mean
 `provisionalKey`", and a redone one is a new add under a new key. The cell shows the old value, marked
 unsaved, and the focus goes to it; the status line says `Undone: amount in row 12`. A new edit ends
 the way forward. The history ends when the source is replaced (`loadRows`), and without a `row-key`
-also when the sort or the filter changes, since a position then names another record. A
+also when the sort or the filter changes, since a position then names another record. With a
+`row-key` the record decides: when it is not among the loaded rows (a filter took it out, a scroll
+moved on), the undo does not write into the grid — its old position holds another record now — and the
+event still reaches the page with the record's `key`. A value the page sets with `set_values` ends
+the steps it overrides, so the grid does not take back what the page has just said. A
 [bulk change](#setting-a-value-for-the-selected-rows) is not a step: it ends the history. An open
 editor keeps the browser's own undo of its text.
 

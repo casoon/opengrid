@@ -148,3 +148,46 @@ test("nothing to undo at first, and a fresh source ends the history", async ({ p
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);
 });
+
+// Issue #225: with a row-key the history names records, and a filter can take a
+// record out of the loaded rows. Its old position then holds somebody else.
+test("undoing an edit of a record that is not loaded writes into nobody, and tells the page by key", async ({ page }) => {
+  await open(page);
+  await edit(page, 0, 2, "99");
+  expect(await cell(page, 0, 2)).toBe("99");
+
+  // Only R5 matches now; it sits in the position record 1 had. The focus leaves
+  // that row first: the renderer keeps the focused row's slot as it was.
+  await shadow(page, (root) => root.querySelector('td[data-row="3"][data-col="0"]').focus());
+  await shadow(page, (root) => root.querySelector('input[data-col="1"]').focus());
+  await page.keyboard.type("R5");
+  await page.keyboard.press("Enter");
+  await expect.poll(() => cell(page, 0, 1)).toBe("R5");
+  expect(await cell(page, 0, 2)).toBe("50");
+
+  await shadow(page, (root) => root.querySelector('td[data-row="0"][data-col="2"]').focus());
+  await page.keyboard.press("Control+z");
+
+  const undone = (await events(page)).filter((event) => event.undo);
+  expect(undone).toEqual([
+    expect.objectContaining({ type: "opengrid-cell-change", key: 1, column: "seats", value: "10", previous: "99" }),
+  ]);
+  expect(await cell(page, 0, 1)).toBe("R5");
+  expect(await cell(page, 0, 2), "R5 keeps its own seats").toBe("50");
+});
+
+test("a value the page sets ends the undo of the edit it overrides", async ({ page }) => {
+  await open(page);
+  await edit(page, 1, 2, "99");
+  await page.evaluate(() =>
+    window.__module.set_values(document.querySelector("opengrid-grid"), [{ key: 2, column: "seats", value: 55 }]),
+  );
+  await expect.poll(() => cell(page, 1, 2)).toBe("55");
+
+  await shadow(page, (root) => root.querySelector('td[data-row="1"][data-col="2"]').focus());
+  await page.keyboard.press("Control+z");
+
+  expect((await events(page)).filter((event) => event.undo)).toEqual([]);
+  expect(await cell(page, 1, 2)).toBe("55");
+  expect(await status(page)).toContain("Nothing to undo");
+});
