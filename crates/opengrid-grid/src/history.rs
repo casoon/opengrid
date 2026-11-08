@@ -18,6 +18,13 @@ pub struct CellEdit {
     pub after: Value,
 }
 
+impl CellEdit {
+    /// Whether the page'"'"'s word for this record'"'"'s cell overrides the edit.
+    fn is_stale(&self, key: &Value, col: usize, now: &Value) -> bool {
+        self.col == col && self.key.as_ref() == Some(key) && self.after != *now
+    }
+}
+
 /// One row the reader added, in schema order, under the key it was added with.
 #[derive(Clone, Debug, PartialEq)]
 pub struct AddedEntry {
@@ -80,6 +87,23 @@ impl History {
         self.redo.clear();
     }
 
+    /// The page said what a record's cell holds now (`set_values`): a step that
+    /// would put another value there is no longer the grid's to take back or
+    /// give again, so it goes. A step whose `after` is the value the page just
+    /// confirmed stays — nothing changed for it. A paste keeps its other cells.
+    pub fn forget_cell(&mut self, key: &Value, col: usize, now: &Value) {
+        for steps in [&mut self.undo, &mut self.redo] {
+            steps.retain_mut(|step| match step {
+                Step::Cell(edit) => !edit.is_stale(key, col, now),
+                Step::Paste { edits, added } => {
+                    edits.retain(|edit| !edit.is_stale(key, col, now));
+                    !edits.is_empty() || !added.is_empty()
+                }
+                Step::Added(_) => true,
+            });
+        }
+    }
+
     pub fn can_undo(&self) -> bool {
         !self.undo.is_empty()
     }
@@ -101,6 +125,51 @@ mod tests {
             before: Value::Int64(before),
             after: Value::Int64(after),
         })
+    }
+
+    /// Issue #225: the page'"'"'s `set_values` overrides an edit; the grid must not
+    /// take the old value back over it. A confirmation of the same value, or
+    /// another cell, leaves the history alone.
+    #[test]
+    fn a_value_the_page_sets_ends_the_steps_it_overrides() {
+        let keyed = |key: i64, col: usize, before: i64, after: i64| CellEdit {
+            row: 0,
+            col,
+            key: Some(Value::Int64(key)),
+            before: Value::Int64(before),
+            after: Value::Int64(after),
+        };
+        let mut history = History::default();
+        history.record(Step::Cell(keyed(1, 0, 10, 20)));
+        history.record(Step::Cell(keyed(2, 0, 10, 20)));
+        history.record(Step::Cell(keyed(1, 1, 10, 20)));
+        history.record(Step::Paste {
+            edits: vec![keyed(1, 0, 30, 40), keyed(3, 0, 30, 40)],
+            added: Vec::new(),
+        });
+
+        // The page says 40 for record 1, column 0. The edit that made it 20
+        // is overridden and goes; the paste, which made it 40, stays whole.
+        history.forget_cell(&Value::Int64(1), 0, &Value::Int64(40));
+        let mut left = Vec::new();
+        while let Some(step) = history.take_undo() {
+            left.push(step);
+        }
+        assert_eq!(left.len(), 3);
+
+        // A value that differs from the paste'"'"'s `after` takes that cell out of
+        // the paste and keeps the other one.
+        let mut history = History::default();
+        history.record(Step::Paste {
+            edits: vec![keyed(1, 0, 30, 40), keyed(3, 0, 30, 40)],
+            added: Vec::new(),
+        });
+        history.forget_cell(&Value::Int64(1), 0, &Value::Int64(99));
+        let Some(Step::Paste { edits, .. }) = history.take_undo() else {
+            panic!("the paste stays, with one cell less");
+        };
+        assert_eq!(edits.len(), 1);
+        assert_eq!(edits[0].key, Some(Value::Int64(3)));
     }
 
     #[test]
