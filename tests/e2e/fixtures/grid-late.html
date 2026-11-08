@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>opengrid late answers fixture</title>
+    <style>
+      opengrid-grid {
+        --og-row-height: 32px;
+        display: block;
+        height: 224px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid late answers fixture</h1>
+      <opengrid-grid
+        label="Orders"
+        datasource="orders"
+        columns="id,customer,amount,qty"
+        window-size="10"
+      ></opengrid-grid>
+    </main>
+    <script type="module">
+      // Issue #223: answers that arrive late, and out of the order they were asked.
+      // With `__hold` set, every query waits; `__releaseAll()` answers them in the
+      // order they were asked, so every one but the last has been superseded by then.
+      import { loadOpengrid, createLocalProvider } from "/packages/opengrid/loader.js";
+      import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+
+      window.__hold = false;
+      window.__held = [];
+      window.__releaseAll = () => {
+        const held = window.__held.splice(0);
+        for (const release of held) release();
+      };
+
+      async function start() {
+        const loader = await loadOpengrid();
+        await init();
+        const real = createLocalProvider(new Engine());
+        const schema = await (await fetch("/tests/e2e/fixtures/grid-long.schema.json")).text();
+        const csv = await (await fetch("/tests/e2e/fixtures/grid-long.csv")).arrayBuffer();
+        await real.load("orders", csv, schema);
+
+        const provider = {
+          execute(queryJson, mode) {
+            if (!window.__hold) return real.execute(queryJson, mode);
+            return new Promise((resolve) => {
+              window.__held.push(() => resolve(real.execute(queryJson, mode)));
+            });
+          },
+        };
+        loader.module.set_provider(document.querySelector("opengrid-grid"), provider);
+      }
+
+      window.__opengridReady = start();
+    </script>
+  </body>
+</html>
