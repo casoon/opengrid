@@ -36,6 +36,9 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Fixed
 
+- **Server:** a `POST /query` that named no `limit` read the whole filtered table into memory;
+  it now gets `max_limit`, as `docs/protocol.md` always said ([#216](https://github.com/casoon/opengrid/issues/216)).
+  An export is unchanged and still reads up to its row bound.
 - **Docs:** rustdoc builds without warnings again: broken and private intra-doc links in the
   crate docs now point at public paths or are plain code spans.
 
