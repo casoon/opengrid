@@ -346,6 +346,12 @@ impl Accumulator {
                 *sum = sum
                     .checked_add(values[row])
                     .ok_or_else(|| overflow(alias))?;
+                // `i128` holds 39 digits, the result type 38: a sum past that
+                // is an overflow too, or the answer could not be read back.
+                if Decimal::new(*sum, 0).digit_count() > u32::from(DataType::MAX_DECIMAL_PRECISION)
+                {
+                    return Err(overflow(alias));
+                }
                 *seen = true;
             }
             (Accumulator::SumFloat64 { sum, seen }, AggregateFn::Sum, Values::Float64(values)) => {

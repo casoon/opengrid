@@ -432,7 +432,20 @@ impl ColumnBuilder {
             (Values::Bool(values), Value::Bool(value)) => values.push(*value),
             (Values::Int64(values), Value::Int64(value)) => values.push(*value),
             (Values::Float64(values), Value::Float64(value)) => values.push(*value),
-            (Values::Decimal(values), Value::Decimal(value)) => values.push(value.value()),
+            (Values::Decimal(values), Value::Decimal(value)) => {
+                // The coefficient is stored without its scale, so a value of
+                // another scale would silently change its meaning (100 at scale
+                // 0 is 1.00 at scale 2).
+                if let DataType::Decimal { precision, scale } = self.data_type
+                    && value.scale() != scale
+                {
+                    return Err(format!(
+                        "expects decimal({precision}, {scale}), found scale {}",
+                        value.scale()
+                    ));
+                }
+                values.push(value.value());
+            }
             (Values::Utf8 { offsets, text }, Value::Utf8(value)) => {
                 text.push_str(value);
                 let end = u32::try_from(text.len()).map_err(|_| {
@@ -520,6 +533,22 @@ mod tests {
 
     fn read(column: &Column) -> Vec<Value> {
         (0..column.len()).map(|row| column.value(row)).collect()
+    }
+
+    /// Issue #213: a decimal of another scale is refused, not stored with a
+    /// different meaning. Connectors build their own decimals.
+    #[test]
+    fn a_decimal_of_another_scale_is_refused() {
+        let mut builder = ColumnBuilder::new(DataType::decimal(12, 2).unwrap(), 2);
+        builder.push(&Value::Decimal(Decimal::new(100, 2))).unwrap();
+        let error = builder
+            .push(&Value::Decimal(Decimal::new(100, 0)))
+            .unwrap_err();
+        assert_eq!(error, "expects decimal(12, 2), found scale 0");
+
+        let column = builder.finish();
+        assert_eq!(column.len(), 1, "the refused value was not stored");
+        assert_eq!(column.value(0), Value::Decimal(Decimal::new(100, 2)));
     }
 
     #[test]
