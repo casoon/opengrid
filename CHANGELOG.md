@@ -36,6 +36,9 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Fixed
 
+- **Grid:** scrolling while a cell was being edited closed the editor in the grid's state but left
+  the `<input>` on screen, where `Enter` and `Escape` no longer reached it and the typed value was
+  lost. A scroll now leaves the editor open ([#224](https://github.com/casoon/opengrid/issues/224)).
 - **Engine:** a date or timestamp text with a multi-byte character (a filter literal, a CSV cell, a
   wire value) panicked the parser — a wasm trap in the browser, a 500 on the server; it is now a
   validation error ([#209](https://github.com/casoon/opengrid/issues/209)).
