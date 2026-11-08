@@ -490,3 +490,37 @@ async fn a_tree_is_answered_past_the_row_filter() {
         "the scope keeps to this tenant's rows"
     );
 }
+
+/// Issue #216: a query that names no `limit` is a page of at most `max_limit`
+/// rows, not the whole table. `total_count` still counts everything.
+#[tokio::test]
+async fn a_query_without_a_limit_gets_the_maximum() {
+    let connector = LocalConnector::from_csv(
+        &opengrid_conformance::fixture_csv(),
+        &opengrid_conformance::suite_dir().join("data/orders.schema.json"),
+    )
+    .expect("the fixture");
+    let app = Server::builder()
+        .token(TOKEN, [("country", "DE")])
+        .limits(opengrid_query::Limits::new(20, 8))
+        .source(
+            "orders",
+            connector,
+            SourcePolicy {
+                allowed_fields: vec!["id".to_owned()],
+                row_filter: None,
+            },
+        )
+        .build()
+        .await
+        .expect("a server")
+        .router();
+
+    let body = r#"{"source":"orders","select":["id"]}"#;
+    let (status, answer) = post(app, "orders", Some(TOKEN), body).await;
+
+    assert_eq!(status, StatusCode::OK);
+    let result = result_from_json(&answer).expect("the body is a result");
+    assert_eq!(result.row_count(), 20, "the page is cut at max_limit");
+    assert_eq!(result.total_count, 50, "total_count counts before paging");
+}

@@ -168,6 +168,7 @@ async fn query(
         &headers,
         &body,
         &state.registry.limits,
+        Some(state.registry.limits.max_limit),
     )?;
 
     // A tree goes to a connector that answers trees as it is, and to any
@@ -294,13 +295,16 @@ fn columns_response(body: Vec<u8>) -> Response {
 /// validation against the full schema. `POST /query` and `POST /export` both
 /// come through here (issue #2), so an export cannot be a way around a rule a
 /// query keeps; they differ only in `limits` — an export's `max_limit` is
-/// `max_export_rows`.
+/// `max_export_rows` — and in `default_limit`: a query that names no `limit`
+/// gets it (issue #216), so a page is never more than `max_limit` rows. An
+/// export passes `None` and reads up to its row bound, which it counts first.
 pub(crate) fn admit(
     state: &AppState,
     source_name: &str,
     headers: &HeaderMap,
     body: &Bytes,
     limits: &Limits,
+    default_limit: Option<u64>,
 ) -> Result<(Arc<Source>, ValidatedQuery), Failure> {
     let context = authorize(state, headers)?;
 
@@ -323,7 +327,10 @@ pub(crate) fn admit(
         )
     })?;
 
-    let query: Query = request_body(body)?;
+    let mut query: Query = request_body(body)?;
+    if query.limit.is_none() {
+        query.limit = default_limit;
+    }
     if query.source.as_str() != source_name {
         return Err(WireError::at(
             ErrorCode::Validation,
