@@ -45,9 +45,9 @@ fn run(host: &HtmlElement, undoing: bool) {
     let flag = if undoing { "undo" } else { "redo" };
     let (step, said, at) = match step {
         Step::Cell(edit) => {
-            let (cell, column) = apply_cell(host, &runtime, &edit, undoing, flag);
+            let (cell, column, loaded) = apply_cell(host, &runtime, &edit, undoing, flag);
             let said = texts.history_cell(undoing, &column, cell.row + 1);
-            (Step::Cell(edit), said, Some(cell))
+            (Step::Cell(edit), said, loaded.then_some(cell))
         }
         Step::Added(entry) => {
             let entry = apply_added(host, &runtime, entry, undoing, flag);
@@ -74,21 +74,26 @@ fn run(host: &HtmlElement, undoing: bool) {
 }
 
 /// Sets one cell back or forward and tells the page. Answers where the cell is
-/// now — the record by its key if it moved — and its column's name.
+/// now — the record by its key if it moved — its column's name and whether the
+/// record is on screen to be written into.
 fn apply_cell(
     host: &HtmlElement,
     runtime: &Rc<RefCell<GridRuntime>>,
     edit: &CellEdit,
     undoing: bool,
     flag: &str,
-) -> (CellRef, String) {
+) -> (CellRef, String, bool) {
     let (value, other) = if undoing {
         (&edit.before, &edit.after)
     } else {
         (&edit.after, &edit.before)
     };
-    let (cell, column, key) = place(runtime, edit);
-    runtime.borrow_mut().state.set_cell(cell, value.clone());
+    let (cell, column, key, loaded) = place(runtime, edit);
+    // A record that is not on screen is not written into: its old position
+    // holds somebody else now (issue #225). The page still hears of it, by key.
+    if loaded {
+        runtime.borrow_mut().state.set_cell(cell, value.clone());
+    }
     dispatch_cell_change(
         host,
         cell,
@@ -98,21 +103,28 @@ fn apply_cell(
         &crate::formats::event_text(other),
         Some(flag),
     );
-    (cell, column)
+    (cell, column, loaded)
 }
 
-/// Where an edit's cell is now, its column's name and its record's key as the
-/// page gave it.
+/// Where an edit's cell is now, its column's name, its record's key as the
+/// page gave it, and whether the record is in the loaded page.
+///
+/// **With a key, the key decides.** A sort or a scroll can move the record out
+/// of the loaded rows; its old position then names whoever sits there now, so
+/// the cell is not written into (`loaded` is false) and the event carries the
+/// position the edit had. Without a key the history ends with every sort or
+/// filter, so the position is still the record's.
 fn place(
     runtime: &Rc<RefCell<GridRuntime>>,
     edit: &CellEdit,
-) -> (CellRef, String, Option<JsValue>) {
+) -> (CellRef, String, Option<JsValue>, bool) {
     let borrowed = runtime.borrow();
-    let row = edit
+    let found = edit
         .key
         .as_ref()
-        .and_then(|key| borrowed.state.row_of_key(key))
-        .unwrap_or(edit.row);
+        .and_then(|key| borrowed.state.row_of_key(key));
+    let loaded = found.is_some() || edit.key.is_none();
+    let row = found.unwrap_or(edit.row);
     let column = borrowed
         .state
         .schema()
@@ -124,7 +136,7 @@ fn place(
         .key
         .as_ref()
         .map(|key| to_js(&opengrid_json::ToJson::to_json(key)));
-    (CellRef::new(row, edit.col), column, key)
+    (CellRef::new(row, edit.col), column, key, loaded)
 }
 
 fn by_name(runtime: &Rc<RefCell<GridRuntime>>, values: &[Value]) -> Vec<(String, Value)> {
@@ -190,9 +202,11 @@ fn apply_paste(
         } else {
             (&edit.after, &edit.before)
         };
-        let (cell, column, key) = place(runtime, edit);
-        runtime.borrow_mut().state.set_cell(cell, value.clone());
-        first.get_or_insert(cell);
+        let (cell, column, key, loaded) = place(runtime, edit);
+        if loaded {
+            runtime.borrow_mut().state.set_cell(cell, value.clone());
+            first.get_or_insert(cell);
+        }
         let item = js_sys::Object::new();
         if let Some(key) = &key {
             let _ = js_sys::Reflect::set(&item, &JsValue::from_str("key"), key);

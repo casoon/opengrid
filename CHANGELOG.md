@@ -36,6 +36,11 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Fixed
 
+- **Grid:** with a `row-key`, undo and redo of a record that was not among the loaded rows (a filter
+  or a scroll had moved it out) wrote the old value into whichever record sat in its former position.
+  The grid is not written to then; the event reaches the page with the record's `key`. A value the
+  page sets with `set_values` now ends the undo and redo steps it overrides
+  ([#225](https://github.com/casoon/opengrid/issues/225)).
 - **Grid:** scrolling while a cell was being edited closed the editor in the grid's state but left
   the `<input>` on screen, where `Enter` and `Escape` no longer reached it and the typed value was
   lost. A scroll now leaves the editor open ([#224](https://github.com/casoon/opengrid/issues/224)).

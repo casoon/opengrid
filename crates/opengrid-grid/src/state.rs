@@ -451,6 +451,11 @@ impl GridState {
         }
         let mut cells = Vec::new();
         for (key, column, value) in entries {
+            // What the page says now is not the grid's to take back or give
+            // again (issue #225).
+            if let Some(col) = self.column_of(&column) {
+                self.history.forget_cell(&key, col, &value);
+            }
             if let Some(cell) = self.cell_of(&key, &column)
                 && let Some(slot) = cell
                     .row
