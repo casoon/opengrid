@@ -229,7 +229,21 @@ pub fn plan(
     // A tree's level depends on every row and the filter over all of them
     // (T5): where the source cannot do both, the client does both, over the
     // rows the source sends.
-    if query.tree.is_some() && (!effective.tree || client_steps.contains(&ClientStep::Filter)) {
+    //
+    // The same holds for the order and the page of the level (T6): a source
+    // that answers the tree but leaves the sort or the paging to the client
+    // would hand over a level the client can only receive as plain rows — the
+    // tree part of the answer (`children`, `match`, `orphans`) does not survive
+    // the trip — so the client builds the level itself.
+    let pages = query.limit.is_some() || query.offset.is_some();
+    let sort_is_the_clients = !query.sort.is_empty() && !effective.sort;
+    let page_is_the_clients = pages && !effective.paging;
+    if query.tree.is_some()
+        && (!effective.tree
+            || client_steps.contains(&ClientStep::Filter)
+            || sort_is_the_clients
+            || page_is_the_clients)
+    {
         source_query.tree = None;
         client_steps.push(ClientStep::Tree);
         if query.filter.is_some() && !client_steps.contains(&ClientStep::Filter) {
@@ -268,14 +282,16 @@ pub fn plan(
     // and a sort key may name an aggregate alias that does not exist before the
     // aggregation at all. This is the rule of 05-planner.md ("sorting depends on
     // a client-computed field"), and grouping is the case V1 actually has.
-    let rows_change_locally =
-        client_steps.contains(&ClientStep::Group) || client_steps.contains(&ClientStep::Aggregate);
+    // The client's tree is the same: it orders the siblings of a level by the
+    // query's sort (T6), and a sort the source applied first would be lost.
+    let rows_change_locally = client_steps.contains(&ClientStep::Group)
+        || client_steps.contains(&ClientStep::Aggregate)
+        || client_steps.contains(&ClientStep::Tree);
     if !query.sort.is_empty() && (!effective.sort || rows_change_locally) {
         source_query.sort = Vec::new();
         client_steps.push(ClientStep::Sort);
     }
 
-    let pages = query.limit.is_some() || query.offset.is_some();
     // The rule of 05-planner.md, generalised: paging may only be pushed when
     // nothing is left that changes the rows or their order. Paging first and
     // filtering afterwards answers a different question.
@@ -340,6 +356,18 @@ pub fn plan(
     {
         push_unique(&mut needed, tree.key.clone());
         push_unique(&mut needed, tree.parent.clone());
+        // What the level is made of (the scope, T5) and what its nodes sum (T7)
+        // is read by the client too, so the source has to send those columns.
+        if let Some(scope) = &tree.scope {
+            for field in filter_fields(scope) {
+                push_unique(&mut needed, field);
+            }
+        }
+        for aggregate in &tree.aggregate {
+            if let Some(field) = &aggregate.field {
+                push_unique(&mut needed, field.clone());
+            }
+        }
     }
     // The projection is rewritten exactly when the source is no longer the one
     // aggregating: its output is then plain columns of `schema`. While the
@@ -539,6 +567,95 @@ mod tests {
             plan(&tree, &schema(), without("tree"), ExecutionMode::Remote),
             Err(PlanError::NotPushable { operation: "tree" })
         ));
+    }
+
+    /// T6: the order of a level is the query's sort, and a client that builds
+    /// the level must get that sort — also without paging, which used to drag
+    /// the sort along by accident (issue #211).
+    #[test]
+    fn a_tree_the_client_builds_gets_the_sort_with_or_without_paging() {
+        let tree = query(
+            r#"{"source":"orders","select":["country"],
+                "sort":[{"field":"country"}],
+                "tree":{"key":"id","parent":"amount"}}"#,
+        );
+        let plan = plan(&tree, &schema(), without("tree"), ExecutionMode::Auto).expect("plans");
+        assert!(plan.client_steps.contains(&ClientStep::Tree));
+        assert!(
+            plan.client_steps.contains(&ClientStep::Sort),
+            "the sort is the client's too: {:?}",
+            plan.client_steps
+        );
+        assert!(
+            plan.source_query.sort.is_empty(),
+            "the source does not sort first"
+        );
+        assert!(!plan.client_query.as_ref().unwrap().sort.is_empty());
+    }
+
+    /// A source that answers trees but leaves the sort or the paging to the
+    /// client cannot hand over a level: the tree part of the answer would be
+    /// lost on the way. The client builds the level then (issue #211).
+    #[test]
+    fn a_tree_is_the_clients_when_the_sort_or_the_page_is() {
+        let sorted = query(
+            r#"{"source":"orders","select":["country"],
+                "sort":[{"field":"country"}],
+                "tree":{"key":"id","parent":"amount"}}"#,
+        );
+        let paged = query(
+            r#"{"source":"orders","select":["country"],
+                "sort":[{"field":"country"}],"limit":10,
+                "tree":{"key":"id","parent":"amount"}}"#,
+        );
+        for (name, tree, capabilities) in [
+            ("sort", &sorted, without("sort")),
+            ("paging", &paged, without("paging")),
+        ] {
+            let plan = plan(tree, &schema(), capabilities, ExecutionMode::Auto).expect("plans");
+            assert!(
+                plan.client_steps.contains(&ClientStep::Tree),
+                "without {name}: {:?}",
+                plan.client_steps
+            );
+            assert!(
+                plan.source_query.tree.is_none(),
+                "without {name}: the source is asked for rows"
+            );
+            assert!(plan.client_query.as_ref().unwrap().tree.is_some());
+        }
+
+        // Nothing missing: still pushed whole.
+        let whole = plan(
+            &paged,
+            &schema(),
+            DataSourceCapabilities::ALL,
+            ExecutionMode::Auto,
+        )
+        .expect("plans");
+        assert!(whole.client_steps.is_empty() && whole.source_query.tree.is_some());
+    }
+
+    /// The client that builds the level reads the scope and the sums too, so
+    /// the source has to send those columns, though nobody selected them.
+    #[test]
+    fn a_tree_the_client_builds_gets_the_columns_of_its_scope_and_sums() {
+        let tree = query(
+            r#"{"source":"orders","select":["id"],
+                "tree":{"key":"id","parent":"amount",
+                        "scope":{"field":"country","op":"eq","value":"DE"},
+                        "aggregate":[{"field":"amount","fn":"sum","as":"total"}]}}"#,
+        );
+        let plan = plan(&tree, &schema(), without("tree"), ExecutionMode::Auto).expect("plans");
+        let names: Vec<&str> = plan
+            .source_query
+            .select
+            .iter()
+            .map(|f| f.as_str())
+            .collect();
+        for needed in ["id", "amount", "country"] {
+            assert!(names.contains(&needed), "{needed} missing from {names:?}");
+        }
     }
 
     /// A source that can do everything gets everything — that is what `auto`

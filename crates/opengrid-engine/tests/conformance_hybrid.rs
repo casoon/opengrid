@@ -14,12 +14,20 @@ mod common;
 
 use std::path::PathBuf;
 
-use opengrid_conformance::{RowOrder, Table, block_on, check_dir, compare};
-use opengrid_datasource::{DataSourceCapabilities, DataSourceError, QueryResult, SendDataSource};
+use opengrid_conformance::{
+    RowOrder, Table, block_on, check_dir, check_lists, check_tree_case, compare, lists_csv,
+    lists_schema, load_schema, tree_cases, tree_dataset,
+};
+use opengrid_datasource::{
+    DataSourceCapabilities, DataSourceError, QueryResult, SendDataSource, wire,
+};
+use opengrid_engine::Table as EngineTable;
 use opengrid_engine::datasource::LocalDataSource;
 use opengrid_engine::hybrid::HybridSource;
+use opengrid_engine::ingest::{CsvOptions, load_csv};
+use opengrid_json::FromJson;
 use opengrid_planner::ExecutionMode;
-use opengrid_query::ValidatedQuery;
+use opengrid_query::{Limits, Query, ValidatedQuery};
 use opengrid_types::Schema;
 
 fn cases_dir() -> PathBuf {
@@ -34,8 +42,13 @@ struct Partial {
 
 impl Partial {
     fn new(capabilities: DataSourceCapabilities) -> Self {
+        Self::over(common::csv_table(), capabilities)
+    }
+
+    /// The same, over another dataset (the tree and the list cases have their own).
+    fn over(table: EngineTable, capabilities: DataSourceCapabilities) -> Self {
         Self {
-            inner: LocalDataSource::new(common::csv_table()),
+            inner: LocalDataSource::new(table),
             capabilities,
         }
     }
@@ -45,6 +58,7 @@ impl Partial {
         let checks = [
             (query.filter.is_some(), self.capabilities.filter, "filter"),
             (!query.group.is_empty(), self.capabilities.group, "group"),
+            (query.tree.is_some(), self.capabilities.tree, "tree"),
             (
                 !query.aggregate.is_empty(),
                 self.capabilities.aggregate,
@@ -94,6 +108,7 @@ fn partial_sources() -> Vec<(&'static str, DataSourceCapabilities)> {
             "group" => caps.group = false,
             "aggregate" => caps.aggregate = false,
             "paging" => caps.paging = false,
+            "tree" => caps.tree = false,
             other => panic!("unknown capability {other}"),
         }
         caps
@@ -104,6 +119,7 @@ fn partial_sources() -> Vec<(&'static str, DataSourceCapabilities)> {
         ("without group", without("group")),
         ("without aggregate", without("aggregate")),
         ("without paging", without("paging")),
+        ("without tree", without("tree")),
         // The extreme: a source that only hands over rows. Every step is the
         // client's, which is what `mode="local"` looks like from here.
         ("rows only", DataSourceCapabilities::default()),
@@ -157,6 +173,72 @@ fn the_hybrid_path_answers_the_whole_suite() {
     // A suite that never splits would prove nothing: most cases must have left
     // work for the client.
     assert!(split > 100, "too few split plans: {split}");
+}
+
+/// The tree cases (E38, rules T1–T6) over the hybrid path, for every gap.
+///
+/// A source that answers trees but not the sort or the paging used to hand the
+/// client plain rows, and the tree part of the answer (`children`, `match`,
+/// `orphans`) did not survive the trip (issue #211). The partial source here
+/// refuses a tree it does not declare, so a planner that pushed one anyway
+/// fails loudly.
+#[test]
+fn the_hybrid_path_answers_the_tree_cases() {
+    let cases = tree_cases();
+    assert!(cases.len() >= 9, "the suite has its tree cases");
+
+    let mut failed: Vec<String> = Vec::new();
+    for (name, capabilities) in partial_sources() {
+        for (id, case) in &cases {
+            let query = Query::from_json(&case["query"]).expect("a query");
+            let (csv, schema_path) = tree_dataset(query.source.as_str());
+            let schema = load_schema(&schema_path).expect("schema");
+            let table = load_csv(&std::fs::read(csv).unwrap(), &schema, CsvOptions::default())
+                .expect("the CSV loads");
+            // A case may expect the query to be refused; that is an answer too.
+            let answer = query
+                .validate(&schema, &Limits::default())
+                .map_err(|error| error.to_string())
+                .and_then(|validated| {
+                    let source = HybridSource::new(Partial::over(table, capabilities), schema);
+                    block_on(source.run(validated))
+                        .map(|(result, _)| {
+                            // Through the wire and back, as the engine's own tree run does.
+                            wire::result_from_json(&wire::result_to_json(&result))
+                                .expect("reads back")
+                        })
+                        .map_err(|error| error.to_string())
+                });
+            failed.extend(
+                check_tree_case(case, answer)
+                    .into_iter()
+                    .map(|problem| format!("{name}, {id}: {problem}")),
+            );
+        }
+    }
+    assert!(failed.is_empty(), "\n{}", failed.join("\n"));
+}
+
+/// The list cases (issue #185, rules L1–L6) over the hybrid path, for every gap.
+#[test]
+fn the_hybrid_path_answers_the_list_cases() {
+    let schema = lists_schema();
+    let mut failed: Vec<String> = Vec::new();
+    for (name, capabilities) in partial_sources() {
+        let table = load_csv(
+            &std::fs::read(lists_csv()).expect("the list dataset"),
+            &schema,
+            CsvOptions::default(),
+        )
+        .expect("ingest");
+        let source = HybridSource::new(Partial::over(table, capabilities), schema.clone());
+        let report = block_on(check_lists(&source));
+        if report.cases < 20 {
+            failed.push(format!("{name}: only {} cases ran", report.cases));
+        }
+        failed.extend(report.failures.iter().map(|f| format!("{name}, {f}")));
+    }
+    assert!(failed.is_empty(), "\n{}", failed.join("\n"));
 }
 
 /// `total_count` is the count *after* the client's work, not the source's.
