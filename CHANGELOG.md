@@ -36,6 +36,13 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Fixed
 
+- **Planner:** a tree the client builds (the source has no trees, or leaves the sort or the paging
+  to the client) lost the query's sort when it was not paged, and a tree the source answered but
+  could not sort or page came back as plain rows without `children`, `match` and `orphans`. The
+  client now builds the whole level in those cases and asks the source for the columns of the tree's
+  scope and sums too, which it did not, so a scoped or summing tree failed with an unknown column.
+  The hybrid conformance run now covers the tree and list cases
+  ([#211](https://github.com/casoon/opengrid/issues/211)).
 - **Engine:** a decimal `sum` of 39 digits was returned as a `decimal(38, s)` that neither wire form
   could read back; it is now an overflow error, like an `int64` sum past its limit. A decimal pushed
   into a column of another scale was stored with a different meaning (100 at scale 0 became `1.00`);
