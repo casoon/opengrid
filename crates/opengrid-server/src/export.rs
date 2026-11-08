@@ -156,7 +156,7 @@ pub(crate) async fn export(
     body: Bytes,
 ) -> Result<Response, Failure> {
     let limits = Limits::new(state.max_export_rows, state.registry.limits.max_depth);
-    let (source, query) = admit(&state, &source_name, &headers, &body, &limits)?;
+    let (source, query) = admit(&state, &source_name, &headers, &body, &limits, None)?;
     let format = format_of(&uri, headers.get(header::ACCEPT))?;
 
     // Before any database work: an export over the bound costs nothing.

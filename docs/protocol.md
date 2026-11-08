@@ -169,7 +169,8 @@ in:
    every export before anything runs. No request can remove it.
 3. **A field allowlist.** A column the caller may not see does not exist for them: the same
    `422 unknown field` a typo gets, and it is missing from `GET /source`.
-4. **Bounds.** `max_limit` rows a page, a body size, a timeout, and for exports a row bound and
+4. **Bounds.** `max_limit` rows a page — a `/query` that names no `limit` gets `max_limit`, and
+   `total_count` still counts every match — a body size, a timeout, and for exports a row bound and
    a bound on how many run at once — each a status with a sentence, never a truncated answer.
 
 ## Proving a server
