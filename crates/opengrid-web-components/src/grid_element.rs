@@ -1100,7 +1100,7 @@ pub(crate) fn run_query(host: &HtmlElement, kind: QueryKind, focus: bool) {
     spawn_local(async move {
         let answered = JsFuture::from(promise).await;
         let outcome = measured(&host, provider_kind, started, answered);
-        settle(&host, generation, outcome, focus);
+        settle(&host, generation, outcome, focus, kind);
     });
 }
 
@@ -1152,7 +1152,7 @@ fn probe_then_query(
     spawn_local(async move {
         let schema = match ask(&host, &provider, &grid_runtime, &probe, &mode).await {
             Ok(result) => result.schema,
-            Err(message) => return settle(&host, generation, Err(message), focus),
+            Err(message) => return settle(&host, generation, Err(message), focus, kind),
         };
         // The types are the source's, whichever query asked for them.
         learn_types(&mut grid_runtime.borrow_mut(), &schema);
@@ -1202,6 +1202,7 @@ fn settle(
     generation: u64,
     outcome: Result<opengrid_datasource::QueryResult, String>,
     focus: bool,
+    kind: QueryKind,
 ) {
     let Some(runtime) = runtime(host) else {
         return;
@@ -1215,7 +1216,13 @@ fn settle(
         match outcome {
             Ok(result) => {
                 learn_types(&mut runtime, &result.schema);
-                runtime.state.apply_result(result);
+                // A window is the same result moved, so what the reader is in
+                // the middle of — an editor, unsaved marks — stays (issue #224).
+                if kind == QueryKind::Window {
+                    runtime.state.apply_window_result(result);
+                } else {
+                    runtime.state.apply_result(result);
+                }
                 if let Some(key) = runtime.replaced.take() {
                     follow_replaced(&mut runtime, key);
                 }
@@ -5226,7 +5233,8 @@ fn run_grouped(
     let grid_runtime = grid_runtime.clone();
     spawn_local(async move {
         let stale = |runtime: &Rc<RefCell<GridRuntime>>| runtime.borrow().generation != generation;
-        let fail = |message: String| settle(&host, generation, Err(message), focus);
+        let fail =
+            |message: String| settle(&host, generation, Err(message), focus, QueryKind::Data);
 
         // The typed schema, when the groups are asked again: which aggregates
         // a column allows depends on its type, and the display schema of
@@ -5422,7 +5430,7 @@ fn run_grouped(
             }
         }
         let result = opengrid_datasource::QueryResult::new(schema, page, total);
-        settle(&host, generation, Ok(result), focus);
+        settle(&host, generation, Ok(result), focus, QueryKind::Data);
     });
 }
 
@@ -5599,7 +5607,8 @@ fn run_tree(
     let grid_runtime = grid_runtime.clone();
     spawn_local(async move {
         let stale = |runtime: &Rc<RefCell<GridRuntime>>| runtime.borrow().generation != generation;
-        let fail = |message: String| settle(&host, generation, Err(message), focus);
+        let fail =
+            |message: String| settle(&host, generation, Err(message), focus, QueryKind::Data);
 
         let mut schema: Option<opengrid_types::Schema> = None;
 
@@ -5724,7 +5733,7 @@ fn run_tree(
             runtime.state.set_selection(selected);
             opengrid_datasource::QueryResult::new(schema, page, total)
         };
-        settle(&host, generation, Ok(result), focus);
+        settle(&host, generation, Ok(result), focus, QueryKind::Data);
     });
 }
 

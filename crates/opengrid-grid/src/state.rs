@@ -643,6 +643,20 @@ impl GridState {
     /// status at [`GridStatus::Ready`] or, with no matching row,
     /// [`GridStatus::Empty`].
     pub fn apply_result(&mut self, result: QueryResult) -> Vec<Patch> {
+        self.apply(result, false)
+    }
+
+    /// Like [`apply_result`](Self::apply_result), for rows of the *same* result
+    /// — a scroll moved the window, nothing was sorted, filtered or replaced.
+    /// The cell editor stays open, with the finding under it: the reader is in
+    /// the middle of typing, and the editor sits in a slot the renderer keeps
+    /// (issue #224). The unsaved marks still go, because the page holds the
+    /// edited values and this result replaces them with the source's.
+    pub fn apply_window_result(&mut self, result: QueryResult) -> Vec<Patch> {
+        self.apply(result, true)
+    }
+
+    fn apply(&mut self, result: QueryResult, keep_edits: bool) -> Vec<Patch> {
         let mut patches = Vec::new();
         // Exactly one result carries the "selection cleared" notice: the one
         // that arrived because of the sort or filter that dropped it.
@@ -651,8 +665,13 @@ impl GridState {
         // A fresh result is the source's word on every value, so the reader's
         // unsaved marks no longer mean anything (point 37).
         self.changed.clear();
-        self.validations.clear();
-        self.editing = None;
+        if keep_edits {
+            let editing = self.editing;
+            self.validations.retain(|(cell, _)| Some(*cell) == editing);
+        } else {
+            self.validations.clear();
+            self.editing = None;
+        }
 
         // The page's values stand over the source's, whatever order the rows
         // arrive in (issue #153).
@@ -969,6 +988,31 @@ mod tests {
             nulls: NullsOrder::default(),
             collation: Collation::default(),
         }
+    }
+
+    /// Issue #224: a scroll brings rows of the same result, and must not take
+    /// the editor away from a reader who is typing. A new query still does.
+    #[test]
+    fn a_window_result_keeps_the_editor_and_a_data_result_closes_it() {
+        let rows = [(1, "DE", 10), (2, "FR", 20)];
+        let cell = CellRef::new(1, 2);
+
+        let mut state = GridState::new(schema());
+        state.apply_result(result(&rows, 2));
+        state.begin_edit(cell);
+        assert_eq!(state.editing(), Some(cell));
+        state.set_cell(cell, Value::Int64(99));
+        assert!(state.is_changed(cell));
+
+        state.apply_window_result(result(&rows, 2));
+        assert_eq!(state.editing(), Some(cell), "the editor stays");
+        assert!(
+            !state.is_changed(cell),
+            "the marks go: the source's value is shown again"
+        );
+
+        state.apply_result(result(&rows, 2));
+        assert_eq!(state.editing(), None, "a new query closes it");
     }
 
     #[test]
