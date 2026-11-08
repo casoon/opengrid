@@ -36,6 +36,12 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Fixed
 
+- **Grid:** after a filter, facet or search the row the focus stood on kept showing the old record,
+  or stayed on as an empty row past the end; a new answer now clears the pinned row and keeps the
+  active cell inside the result. A focus request that a newer query superseded is carried by the
+  answer that lands, and an answer no longer pulls the focus back from a filter field or a toolbar
+  button the reader moved to. The grouped grand total is asked again when a newer query cut the
+  first one short ([#223](https://github.com/casoon/opengrid/issues/223)).
 - **Grid:** with a `row-key`, undo and redo of a record that was not among the loaded rows (a filter
   or a scroll had moved it out) wrote the old value into whichever record sat in its former position.
   The grid is not written to then; the event reaches the page with the record's `key`. A value the

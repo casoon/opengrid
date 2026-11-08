@@ -159,6 +159,9 @@ struct GridRuntime {
     page: u64,
     /// Bumped per query; a result from an older generation is discarded.
     generation: u64,
+    /// A focus request that a newer query superseded. The answer that does land
+    /// carries it, or nobody would have the focus (issue #223).
+    pending_focus: bool,
     /// The grouping, while `group-by` is set and valid (point 62).
     grouping: Option<Grouping>,
     /// The filter the loaded groups were counted under — a different one means
@@ -287,6 +290,7 @@ fn fresh_runtime(
         raf_pending: false,
         page: 0,
         generation: 0,
+        pending_focus: false,
         grouping: grouping_of(host).ok().flatten(),
         groups_filter: None,
         tree: tree_of(host).ok().flatten(),
@@ -349,7 +353,7 @@ fn reset_runtime(host: &HtmlElement) {
         fresh.state.restore_saves(runtime.state.take_saves());
         fresh.state.set_row_key(row_key_of(host));
         runtime.state = fresh.state;
-        runtime.active = fresh.active;
+        runtime.set_active(fresh.active);
         runtime.view = None;
         runtime.dom = None;
         runtime.viewport = None;
@@ -1156,7 +1160,7 @@ fn probe_then_query(
         };
         // The types are the source's, whichever query asked for them.
         learn_types(&mut grid_runtime.borrow_mut(), &schema);
-        if grid_runtime.borrow().generation != generation {
+        if superseded(&grid_runtime, generation, focus) {
             return;
         }
         let Some(root) = host.shadow_root() else {
@@ -1209,8 +1213,10 @@ fn settle(
     };
     {
         let mut runtime = runtime.borrow_mut();
-        // A newer scroll, key or filter superseded this query.
+        // A newer scroll, key or filter superseded this query; its focus request
+        // is not lost with it.
         if runtime.generation != generation {
+            runtime.pending_focus |= focus;
             return;
         }
         match outcome {
@@ -1225,6 +1231,12 @@ fn settle(
                 }
                 if let Some(key) = runtime.replaced.take() {
                     follow_replaced(&mut runtime, key);
+                } else if kind == QueryKind::Data {
+                    // Other rows sit in the positions now. The renderer keeps
+                    // the focused row's slot as it was, which for a scroll is
+                    // right and for a new result shows the old record — or
+                    // one past the end (issue #223).
+                    follow_replaced(&mut runtime, None);
                 }
             }
             Err(cause) => {
@@ -1235,6 +1247,11 @@ fn settle(
             }
         }
     }
+    let focus = {
+        let mut runtime = runtime.borrow_mut();
+        let asked = focus || std::mem::take(&mut runtime.pending_focus);
+        asked && may_take_focus(host)
+    };
     // The first result brings the real schema, and a `set_columns` made before
     // the provider was attached has only met the display schema so far — where
     // every column is `Utf8` and `sum` on a number would read as a sum on text
@@ -1242,6 +1259,30 @@ fn settle(
     // when the checked presentation actually changed.
     recolumn(host);
     render(host, focus);
+}
+
+/// Whether a newer query has replaced this one; a focus request it carried is
+/// kept for the answer that lands (issue #223).
+fn superseded(runtime: &Rc<RefCell<GridRuntime>>, generation: u64, focus: bool) -> bool {
+    let Ok(mut runtime) = runtime.try_borrow_mut() else {
+        return false;
+    };
+    let stale = runtime.generation != generation;
+    if stale && focus {
+        runtime.pending_focus = true;
+    }
+    stale
+}
+
+/// Whether an answer may move the focus: from the table itself — a header or a
+/// cell — yes; not when the reader has gone to a filter field or a toolbar
+/// button while it was on its way (issue #223).
+fn may_take_focus(host: &HtmlElement) -> bool {
+    let Some(root) = host.shadow_root() else {
+        return true;
+    };
+    root.active_element()
+        .is_none_or(|focused| focused.closest("td, th").ok().flatten().is_some())
 }
 
 /// Focuses the active cell (after a re-render) and scrolls it into view.
@@ -2098,7 +2139,9 @@ fn move_column(host: &HtmlElement, col: usize, by: i32) {
     // The focus follows the column, not the place it left. The query that the
     // rebuild started focuses the active cell when its result lands.
     if let Some(runtime) = runtime(host) {
-        runtime.borrow_mut().active = ActiveCell::Header { col: position };
+        runtime
+            .borrow_mut()
+            .set_active(ActiveCell::Header { col: position });
     }
     announce(
         host,
@@ -2523,7 +2566,7 @@ fn on_pager_click(host: &HtmlElement, target: &Element) -> bool {
         borrowed.page = next;
         // The focus goes to the first cell of the new page: leaving it on a row
         // that no longer exists drops it to the document.
-        borrowed.active = ActiveCell::Data(CellRef::new(next * size, 0));
+        borrowed.set_active(ActiveCell::Data(CellRef::new(next * size, 0)));
     }
     // A page change is a different set of rows, so it announces (point 41).
     //
@@ -5030,7 +5073,7 @@ fn regroup(host: &HtmlElement) {
         borrowed.grouping = grouping.clone().ok().flatten();
         borrowed.groups_filter = None;
         borrowed.state.set_window(Window::new(0, pool));
-        borrowed.active = ActiveCell::Header { col: 0 };
+        borrowed.set_active(ActiveCell::Header { col: 0 });
         // Grouped, a position is a display position — a selection naming them
         // would name headers as well as rows, and would move on every toggle.
         borrowed.state.clear_selection();
@@ -5232,7 +5275,7 @@ fn run_grouped(
     let host = host.clone();
     let grid_runtime = grid_runtime.clone();
     spawn_local(async move {
-        let stale = |runtime: &Rc<RefCell<GridRuntime>>| runtime.borrow().generation != generation;
+        let stale = |runtime: &Rc<RefCell<GridRuntime>>| superseded(runtime, generation, focus);
         let fail =
             |message: String| settle(&host, generation, Err(message), focus, QueryKind::Data);
 
@@ -5299,7 +5342,6 @@ fn run_grouped(
             };
             {
                 let mut runtime = grid_runtime.borrow_mut();
-                runtime.groups_filter = Some(filter.clone());
                 if let Some(grouping) = runtime.grouping.as_mut() {
                     grouping.set_groups(groups);
                 }
@@ -5314,8 +5356,14 @@ fn run_grouped(
             if stale(&grid_runtime) {
                 return;
             }
-            if let Some(grouping) = grid_runtime.borrow_mut().grouping.as_mut() {
-                grouping.set_total(total);
+            {
+                // Only now are the groups asked for this filter complete: a
+                // newer query in between must ask the total again.
+                let mut runtime = grid_runtime.borrow_mut();
+                runtime.groups_filter = Some(filter.clone());
+                if let Some(grouping) = runtime.grouping.as_mut() {
+                    grouping.set_total(total);
+                }
             }
         }
 
@@ -5606,7 +5654,7 @@ fn run_tree(
     let host = host.clone();
     let grid_runtime = grid_runtime.clone();
     spawn_local(async move {
-        let stale = |runtime: &Rc<RefCell<GridRuntime>>| runtime.borrow().generation != generation;
+        let stale = |runtime: &Rc<RefCell<GridRuntime>>| superseded(runtime, generation, focus);
         let fail =
             |message: String| settle(&host, generation, Err(message), focus, QueryKind::Data);
 
