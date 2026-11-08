@@ -36,6 +36,9 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Fixed
 
+- **Engine:** a date or timestamp text with a multi-byte character (a filter literal, a CSV cell, a
+  wire value) panicked the parser — a wasm trap in the browser, a 500 on the server; it is now a
+  validation error ([#209](https://github.com/casoon/opengrid/issues/209)).
 - **Server:** a `POST /query` that named no `limit` read the whole filtered table into memory;
   it now gets `max_limit`, as `docs/protocol.md` always said ([#216](https://github.com/casoon/opengrid/issues/216)).
   An export is unchanged and still reads up to its row bound.

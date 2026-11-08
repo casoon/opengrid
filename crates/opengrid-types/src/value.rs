@@ -231,7 +231,10 @@ impl Date {
     /// Parses a strict `YYYY-MM-DD` string.
     pub fn parse(s: &str) -> Result<Self, ValueError> {
         let invalid = || ValueError::InvalidDate(s.to_owned());
-        if s.len() != 10 || &s[4..5] != "-" || &s[7..8] != "-" {
+        // Bytes, not `&s[4..5]`: a multi-byte character across byte 4 or 7 is
+        // not a char boundary, and slicing there panics (issue #209).
+        let bytes = s.as_bytes();
+        if bytes.len() != 10 || bytes[4] != b'-' || bytes[7] != b'-' || !s.is_ascii() {
             return Err(invalid());
         }
         let year: i32 = s[0..4].parse().map_err(|_| invalid())?;
@@ -531,6 +534,24 @@ fn coerce_str(s: &str, data_type: &DataType) -> Result<Value, ValueError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Issue #209: text from a filter literal, a CSV cell or the wire is not
+    /// ASCII, and the parsers answer with an error for it instead of slicing
+    /// through a character. A two-byte character is put at every position of a
+    /// ten-byte string, so each slice boundary the parser touches is hit.
+    #[test]
+    fn a_date_or_timestamp_with_non_ascii_text_is_an_error_not_a_panic() {
+        for at in 0..=8 {
+            let mut text = "2024-01-15".to_owned();
+            text.replace_range(at..at + 2, "ä");
+            assert_eq!(text.len(), 10, "ä is two bytes: still ten bytes long");
+            assert!(Date::parse(&text).is_err(), "{text:?}");
+            assert!(Timestamp::parse(&format!("{text}T00:00:00Z")).is_err());
+        }
+        assert!(Date::parse("abcä-01-0").is_err());
+        assert!(Timestamp::parse("2024-01-15T0ä:00:00Z").is_err());
+        assert!(Date::parse("2024-01-15").is_ok());
+    }
 
     /// The parsers of point 45 read digits without building a string; these are
     /// the edges where that could differ from parsing the concatenation.
