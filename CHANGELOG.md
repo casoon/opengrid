@@ -36,6 +36,10 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Fixed
 
+- **Engine:** a decimal `sum` of 39 digits was returned as a `decimal(38, s)` that neither wire form
+  could read back; it is now an overflow error, like an `int64` sum past its limit. A decimal pushed
+  into a column of another scale was stored with a different meaning (100 at scale 0 became `1.00`);
+  it is now refused ([#213](https://github.com/casoon/opengrid/issues/213)).
 - **Grid:** after a filter, facet or search the row the focus stood on kept showing the old record,
   or stayed on as an empty row past the end; a new answer now clears the pinned row and keeps the
   active cell inside the result. A focus request that a newer query superseded is carried by the
