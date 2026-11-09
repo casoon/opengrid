@@ -3101,6 +3101,22 @@ pub fn patch_grid(
         name: "aria-rowcount".to_owned(),
         value: (paging.rows + 1).to_string(),
     });
+    // Rows can be selected, several at once (`Shift`+`Space`, `Ctrl`+`A`) —
+    // except while grouped, where a selection would name display positions.
+    // The table says so; the rows below say nothing of a selection they cannot
+    // have.
+    if grouping.is_none() {
+        buffer.push(Patch::SetAttribute {
+            node: nodes.table,
+            name: "aria-multiselectable".to_owned(),
+            value: "true".to_owned(),
+        });
+    } else {
+        buffer.push(Patch::RemoveAttribute {
+            node: nodes.table,
+            name: "aria-multiselectable".to_owned(),
+        });
+    }
     patch_pager(buffer, &nodes.pager, paging, total_count, texts);
 
     // The select-all header, in its three states (point 61).
@@ -3219,7 +3235,10 @@ pub fn patch_grid(
         buffer.push(Patch::SetAttribute {
             node: header.cell,
             name: "aria-sort".to_owned(),
+            // One header at a time (ARIA 1.2): the primary key. The others show
+            // their order and direction in the header's `aria-hidden` marks.
             value: key
+                .filter(|position| *position == 0)
                 .map_or("none", |position| aria_sort(sorts[position].1))
                 .to_owned(),
         });
@@ -3299,7 +3318,7 @@ pub fn patch_grid(
                     patch_tree_row(buffer, row_nodes, entry, local, row_height, texts);
                 }
                 let selected = state.is_selected(row);
-                selection_attributes(buffer, row_nodes.row, selected);
+                selection_attributes(buffer, row_nodes.row, selected, grouping.is_none());
                 if let (Some(cell), Some(mark)) = (row_nodes.select, row_nodes.select_mark) {
                     buffer.push(Patch::SetAttribute {
                         node: cell,
@@ -3395,6 +3414,30 @@ pub fn patch_grid(
                         name: "aria-level".to_owned(),
                     }),
                 }
+                // Its place among the rows of its group: the pool holds about
+                // forty rows, so assistive technology cannot count them itself.
+                // A tree's node sets its own below.
+                match &item {
+                    Some(crate::grouping::Item::Row { offset, size, .. }) => {
+                        for (name, value) in
+                            [("aria-posinset", offset + 1), ("aria-setsize", *size)]
+                        {
+                            buffer.push(Patch::SetAttribute {
+                                node: row_nodes.row,
+                                name: name.to_owned(),
+                                value: value.to_string(),
+                            });
+                        }
+                    }
+                    _ => {
+                        for name in ["aria-posinset", "aria-setsize"] {
+                            buffer.push(Patch::RemoveAttribute {
+                                node: row_nodes.row,
+                                name: name.to_owned(),
+                            });
+                        }
+                    }
+                }
                 for name in ["aria-expanded", "data-kind", "data-level"] {
                     buffer.push(Patch::RemoveAttribute {
                         node: row_nodes.row,
@@ -3419,7 +3462,7 @@ pub fn patch_grid(
                 // selection survive scrolling (point 35). `data-selected` is the
                 // styling hook; `aria-selected` is the announcement.
                 let selected = state.is_selected(row);
-                selection_attributes(buffer, row_nodes.row, selected);
+                selection_attributes(buffer, row_nodes.row, selected, grouping.is_none());
                 if let (Some(cell), Some(mark)) = (row_nodes.select, row_nodes.select_mark) {
                     buffer.push(Patch::SetAttribute {
                         node: cell,
@@ -3740,13 +3783,15 @@ fn patch_group_row(
     format: &dyn CellFormat,
 ) {
     use crate::grouping::Item;
-    let (label, level, expanded, aggregates, kind) = match item {
+    let (label, level, expanded, aggregates, kind, place) = match item {
         Item::Group {
             level,
             value,
             count,
             expanded,
             aggregates,
+            position,
+            siblings,
             ..
         } => {
             let column = grouping
@@ -3761,10 +3806,13 @@ fn patch_group_row(
                 Some(*expanded),
                 aggregates,
                 "group",
+                Some((*position, *siblings)),
             )
         }
+        // The grand total is a row of its own, not one of the groups: counting
+        // it in would make "group 3 of 7" say "of 8".
         Item::Total { count, aggregates } => {
-            (texts.total_row(*count), 1, None, aggregates, "total")
+            (texts.total_row(*count), 1, None, aggregates, "total", None)
         }
         Item::Row { .. } => return,
     };
@@ -3779,6 +3827,25 @@ fn patch_group_row(
             name: name.to_owned(),
             value,
         });
+    }
+    match place {
+        Some((position, siblings)) => {
+            for (name, value) in [("aria-posinset", position), ("aria-setsize", siblings)] {
+                buffer.push(Patch::SetAttribute {
+                    node: row_nodes.row,
+                    name: name.to_owned(),
+                    value: value.to_string(),
+                });
+            }
+        }
+        None => {
+            for name in ["aria-posinset", "aria-setsize"] {
+                buffer.push(Patch::RemoveAttribute {
+                    node: row_nodes.row,
+                    name: name.to_owned(),
+                });
+            }
+        }
     }
     match expanded {
         Some(expanded) => buffer.push(Patch::SetAttribute {
@@ -4051,7 +4118,18 @@ pub fn select_all_state(selected: usize, total_count: u64) -> CheckState {
     }
 }
 
-fn selection_attributes(buffer: &mut PatchBuffer, row: NodeId, selected: bool) {
+fn selection_attributes(buffer: &mut PatchBuffer, row: NodeId, selected: bool, offered: bool) {
+    // A grouped grid refuses `Space` and `Ctrl`+`A`: `aria-selected="false"`
+    // would say "this can be selected" about rows that cannot.
+    if !offered {
+        for name in ["aria-selected", "data-selected"] {
+            buffer.push(Patch::RemoveAttribute {
+                node: row,
+                name: name.to_owned(),
+            });
+        }
+        return;
+    }
     buffer.push(Patch::SetAttribute {
         node: row,
         name: "aria-selected".to_owned(),
@@ -5110,7 +5188,8 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(aria, ["ascending", "descending"]);
+        // One header at a time (ARIA 1.2): the second key shows in the marks.
+        assert_eq!(aria, ["ascending", "none"]);
 
         let text_of = |node: NodeId| -> String {
             buffer

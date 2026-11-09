@@ -25,6 +25,9 @@ async function drawn(page) {
         kind: tr.dataset.kind ?? "row",
         level: tr.getAttribute("aria-level"),
         expanded: tr.getAttribute("aria-expanded"),
+        posinset: tr.getAttribute("aria-posinset"),
+        setsize: tr.getAttribute("aria-setsize"),
+        selected: tr.getAttribute("aria-selected"),
         index: Number(tr.getAttribute("aria-rowindex")),
         text: tr.querySelector("td[data-col]")?.textContent ?? "",
       }));
@@ -96,6 +99,69 @@ test("a grouped grid is a treegrid of group headers", async ({ page }) => {
     expect(row).toMatchObject({ kind: "group", level: "1", expanded: "false" });
   }
   expect(rows.at(-1).kind).toBe("total");
+});
+
+test("a group and its rows say their place among their siblings", async ({ page }) => {
+  // The pool holds about forty rows, so assistive technology cannot count
+  // "group 3 of 5" from the DOM: the grid says it (APG treegrid).
+  const groups = (await drawn(page)).filter((row) => row.kind === "group");
+  expect(groups.map((row) => [row.posinset, row.setsize])).toEqual([
+    ["1", "5"],
+    ["2", "5"],
+    ["3", "5"],
+    ["4", "5"],
+    ["5", "5"],
+  ]);
+  // The total is not one of the groups: "5 of 6" would be false.
+  const total = (await drawn(page)).find((row) => row.kind === "total");
+  expect([total.posinset, total.setsize]).toEqual([null, null]);
+
+  // FR has 46 rows; its rows are 1..n of 46, wherever the window starts.
+  await press(page, 'td[data-row="1"][data-col="0"]', "Enter");
+  await expect.poll(async () => (await drawn(page)).filter((row) => row.kind === "row").length).toBeGreaterThan(1);
+  const rows = (await drawn(page)).filter((row) => row.kind === "row");
+  expect(rows.map((row) => [row.posinset, row.setsize]).slice(0, 2)).toEqual([
+    ["1", "46"],
+    ["2", "46"],
+  ]);
+});
+
+test("on two levels, a subgroup counts among its parent's subgroups", async ({ page }) => {
+  await page.evaluate(() =>
+    document.querySelector("opengrid-grid").setAttribute("group-by", "country,customer"),
+  );
+  await expect.poll(() => rowcount(page)).toBe(7);
+  await press(page, 'td[data-row="0"][data-col="0"]', "Enter");
+  await expect.poll(async () => (await drawn(page))[1]?.level).toBe("2");
+  const subgroups = (await drawn(page)).filter((row) => row.level === "2");
+  expect(subgroups.length).toBeGreaterThan(1);
+  subgroups.forEach((row, index) => {
+    expect(row.posinset).toBe(String(index + 1));
+    expect(Number(row.setsize)).toBeGreaterThanOrEqual(subgroups.length);
+  });
+  await press(page, 'td[data-row="1"][data-col="0"]', "Enter");
+  await expect.poll(async () => (await drawn(page))[2]?.kind).toBe("row");
+  const row = (await drawn(page))[2];
+  expect(row.posinset).toBe("1");
+  expect(Number(row.setsize)).toBeGreaterThan(0);
+});
+
+test("a grouped grid offers no selection: no aria-selected, no aria-multiselectable", async ({
+  page,
+}) => {
+  // `Space` and `Ctrl`+`A` are refused while grouped, so `aria-selected="false"`
+  // on a row would invite a try that does nothing.
+  await press(page, 'td[data-row="0"][data-col="0"]', "Enter");
+  await expect.poll(async () => (await drawn(page)).filter((row) => row.kind === "row").length).toBeGreaterThan(0);
+  for (const row of await drawn(page)) expect(row.selected).toBeNull();
+  expect(
+    await page.evaluate(() =>
+      document
+        .querySelector("opengrid-grid")
+        .shadowRoot.querySelector("table")
+        .hasAttribute("aria-multiselectable"),
+    ),
+  ).toBe(false);
 });
 
 test("the status line counts rows, not display positions", async ({ page }) => {

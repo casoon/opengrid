@@ -41,4 +41,13 @@ test("what a configuration may not say is named", () => {
   refused({ sources: { r: { server: { url: "https://x.example", token: "a", tokenEnv: "B" } } } }, /token or tokenEnv/);
   refused({ sources: { r: { server: { url: "not a url" } } } }, /sources\.r/);
   refused({ sources: {} }, /at least one source/);
+  // A token over http would travel in clear text; only the machine itself is exempt.
+  refused({ sources: { r: { server: { url: "http://grid.example/api", tokenEnv: "T" } } } }, /https, or http only for/);
+});
+
+test("http is accepted for loopback only", () => {
+  for (const url of ["http://localhost:8080", "http://127.0.0.1:8080", "http://[::1]:8080", "https://grid.example"]) {
+    const { path } = write({ sources: { r: { server: { url } } } });
+    assert.equal(loadConfig(path).sources.r.server.url, url);
+  }
 });

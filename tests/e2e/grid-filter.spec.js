@@ -251,10 +251,13 @@ test("Shift+Enter from a header adds and removes an additional sort key", async 
   // Shift+Enter on `amount` appends it as the second key (order preserved).
   await focusIn(page, 'th[data-col="2"]');
   await page.keyboard.press("Shift+Enter");
+  // `aria-sort` names one header at a time (ARIA 1.2): the primary key. The
+  // second shows in the `aria-hidden` marks, checked below.
+  await expect.poll(() => sortIndex(page, 2)).toBe("2");
   await expect.poll(() => ariaSorts(page)).toEqual([
     "none",
     "ascending",
-    "ascending",
+    "none",
     "none",
   ]);
   await expect.poll(() => sortIndex(page, 1)).toBe("1");
@@ -273,12 +276,8 @@ test("Shift+Enter from a header adds and removes an additional sort key", async 
 
   // A second Shift+Enter toggles the appended key to descending.
   await page.keyboard.press("Shift+Enter");
-  await expect.poll(() => ariaSorts(page)).toEqual([
-    "none",
-    "ascending",
-    "descending",
-    "none",
-  ]);
+  await expect.poll(() => sortDirection(page, 2)).toBe("▼");
+  expect(await ariaSorts(page)).toEqual(["none", "ascending", "none", "none"]);
   await expect.poll(() => sortIndex(page, 2)).toBe("2");
   expect(await columnText(page, 2)).toEqual(["40.00", "20.00", "10.00", "5.00", "30.00"]);
 

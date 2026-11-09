@@ -35,6 +35,7 @@ use opengrid_pivot::{PivotResult, ValidatedPivotQuery};
 use crate::compiler::{
     CompileError, CompiledQuery, GROUPING_PREFIX, PostgresCompiler, QueryCompiler, quote_ident,
 };
+use crate::lease::Lease;
 
 /// A table in a PostgreSQL database, behind the `DataSource` contract.
 pub struct PostgresDataSource {
@@ -152,7 +153,7 @@ impl PostgresDataSource {
         compiled: &CompiledQuery,
         output: &[(String, DataType)],
     ) -> Result<Vec<Vec<Option<String>>>, DataSourceError> {
-        let client = self.pool.get().await.map_err(backend)?;
+        let mut lease = Lease::new(self.pool.get().await.map_err(backend)?);
         let sql = wrap_for_reading(&compiled.sql, output).map_err(compile)?;
         let params = text_params(&compiled.params);
         let refs: Vec<&(dyn ToSql + Sync)> = params
@@ -160,8 +161,10 @@ impl PostgresDataSource {
             .map(|param| param as &(dyn ToSql + Sync))
             .collect();
 
-        let rows = client.query(&sql, &refs).await.map_err(backend)?;
-        Ok(texts(&rows, output.len()))
+        // A future dropped here (the server's timeout) cancels the statement.
+        let outcome = lease.client().query(&sql, &refs).await;
+        drop(lease.release());
+        Ok(texts(&outcome.map_err(backend)?, output.len()))
     }
 }
 

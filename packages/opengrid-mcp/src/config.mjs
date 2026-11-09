@@ -16,6 +16,15 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { z } from "zod";
 
+// A bearer token must not travel in clear text over a network (#242).
+const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]"]);
+function isSafeUrl(value) {
+  // Not a URL at all: `.url()` says so, and a refinement still runs after it.
+  if (!URL.canParse(value)) return true;
+  const url = new URL(value);
+  return url.protocol === "https:" || (url.protocol === "http:" && LOOPBACK.has(url.hostname));
+}
+
 const NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 const File = z
@@ -34,7 +43,7 @@ const OnServer = z
   .object({
     server: z
       .object({
-        url: z.string().url(),
+        url: z.string().url().refine(isSafeUrl, { message: "https, or http only for localhost, 127.0.0.1 or [::1]" }),
         source: z.string().regex(NAME).optional(),
         tokenEnv: z.string().min(1).optional(),
         token: z.string().min(1).optional(),

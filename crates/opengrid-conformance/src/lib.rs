@@ -73,33 +73,54 @@ impl From<&QueryResult> for Table {
     }
 }
 
-/// Runs a future to completion, for a future that never yields.
+/// Runs a future to completion, for the suite's synchronous runners.
 ///
 /// The engines are async (decision E5), the suite's runners are plain `#[test]`
-/// functions. A **local** data source must not await anything: its futures are
-/// ready on the first poll, which is what this relies on — a future that pends
-/// panics with a message instead of hanging. This is not a general-purpose
-/// runtime; the runner of point 26 brings its own.
+/// functions. A **local** data source awaits nothing: its futures are ready on
+/// the first poll. A source that answers from a thread of its own (SQLite,
+/// issue #217) pends and wakes the future when the answer is there: this
+/// parks the thread until then. A future that is not woken within
+/// `WAKE_TIMEOUT` panics with a message instead of hanging. This is not a
+/// general-purpose runtime; the runner of point 26 brings its own.
 pub fn block_on<F: Future>(future: F) -> F::Output {
-    /// Whether the future woke itself before it said `Pending`.
-    struct Woken(std::sync::atomic::AtomicBool);
+    /// How long a pending future may wait for its wake-up.
+    const WAKE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
+    /// Whether the future was woken, and the thread to unpark when it is.
+    struct Woken {
+        woken: std::sync::atomic::AtomicBool,
+        thread: std::thread::Thread,
+    }
     impl std::task::Wake for Woken {
         fn wake(self: std::sync::Arc<Self>) {
-            self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+            self.woken.store(true, std::sync::atomic::Ordering::SeqCst);
+            self.thread.unpark();
         }
     }
-    let woken = std::sync::Arc::new(Woken(std::sync::atomic::AtomicBool::new(false)));
+    let woken = std::sync::Arc::new(Woken {
+        woken: std::sync::atomic::AtomicBool::new(false),
+        thread: std::thread::current(),
+    });
     let waker = Waker::from(std::sync::Arc::clone(&woken));
     let mut context = Context::from_waker(&waker);
     let mut future = Box::pin(future);
     loop {
-        woken.0.store(false, std::sync::atomic::Ordering::SeqCst);
+        woken
+            .woken
+            .store(false, std::sync::atomic::Ordering::SeqCst);
         match future.as_mut().poll(&mut context) {
             Poll::Ready(output) => return output,
-            // A future that only gives others their turn (the rows tier does,
-            // between pieces) wakes itself at once: poll it again.
-            Poll::Pending if woken.0.load(std::sync::atomic::Ordering::SeqCst) => {}
-            Poll::Pending => panic!("a data source awaited; the suite's runners are synchronous"),
+            // Pending: a future that only gives others their turn (the rows
+            // tier does, between pieces) has woken itself already; one that
+            // waits for a thread is woken from there.
+            Poll::Pending => {
+                let waited = std::time::Instant::now();
+                while !woken.woken.load(std::sync::atomic::Ordering::SeqCst) {
+                    let left = WAKE_TIMEOUT.saturating_sub(waited.elapsed());
+                    assert!(!left.is_zero(), "a data source awaited and was never woken");
+                    std::thread::park_timeout(left);
+                }
+            }
         }
     }
 }
