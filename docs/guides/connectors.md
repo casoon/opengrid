@@ -125,6 +125,11 @@ another type, a key the token does not carry or an operator the column cannot an
 error, as are a token value handed in twice and an `allow_origin` that is not a valid header
 value.
 
+PostgreSQL pool. `PostgresDataSource::connect_with(url, table, schema, PoolOptions { max_size,
+wait_timeout, create_timeout, recycle_timeout })` sizes and times the pool; size
+`max_concurrent_exports` against `pool_size()`. TLS is not part of the crate yet: until it is
+(see issue #220), keep the database on a trusted network or behind a TLS-terminating proxy.
+
 ## A server in another language
 
 The Rust contract helps Rust programs. A server written in .NET, Java or Node implements the
