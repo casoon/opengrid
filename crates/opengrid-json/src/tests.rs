@@ -101,6 +101,25 @@ proptest! {
     }
 }
 
+/// Issue #257: the parser rounds a float correctly, which is what the standard
+/// library does, and not what `serde_json` does without `float_roundtrip`.
+#[test]
+fn a_float_is_read_as_the_standard_library_reads_it() {
+    for text in [
+        "69e31",
+        "6.9e32",
+        "1e23",
+        "5e-324",
+        "1.7976931348623157e308",
+        "123456789012345678",
+    ] {
+        let ours = Json::parse(text).unwrap().to_string();
+        let expected: f64 = text.parse().unwrap();
+        let read: f64 = ours.parse().unwrap();
+        assert_eq!(read.to_bits(), expected.to_bits(), "{text}: {ours}");
+    }
+}
+
 #[test]
 fn edge_cases_read_as_serde_reads_them() {
     for text in [
@@ -115,6 +134,9 @@ fn edge_cases_read_as_serde_reads_them() {
         "-9223372036854775809",
         "1E2",
         "1e-2",
+        // serde_json rounds these one bit off without `float_roundtrip` (#257).
+        "69e31",
+        "6.9e32",
         "\"\\ud83d\\ude00\"",
         "\"\\ud83d\"",
         "\"\\ude00\"",
