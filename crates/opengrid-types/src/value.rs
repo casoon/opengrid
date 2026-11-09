@@ -479,6 +479,13 @@ pub(crate) fn coerce(raw: Raw, data_type: &DataType) -> Result<Value, ValueError
         (Raw::UInt(u), DataType::Int64) => i64::try_from(u)
             .map(Value::Int64)
             .map_err(|_| mismatch("integer")),
+        // Rule S8: an integer compares with a decimal; a float does not.
+        (Raw::Int(i), DataType::Decimal { precision, scale }) => {
+            fit_decimal(Decimal::new(i128::from(i), 0), *precision, *scale)
+        }
+        (Raw::UInt(u), DataType::Decimal { precision, scale }) => {
+            fit_decimal(Decimal::new(i128::from(u), 0), *precision, *scale)
+        }
         (Raw::Float(f), DataType::Float64) => Ok(Value::Float64(f)),
         (Raw::Int(i), DataType::Float64) => Ok(Value::Float64(i as f64)),
         (Raw::UInt(u), DataType::Float64) => Ok(Value::Float64(u as f64)),
@@ -488,6 +495,17 @@ pub(crate) fn coerce(raw: Raw, data_type: &DataType) -> Result<Value, ValueError
         (Raw::Str(s), _) => coerce_str(&s, data_type),
         (other, _) => Err(mismatch(other.kind())),
     }
+}
+
+/// A parsed decimal at the column's scale, or `DecimalOutOfRange` when it does
+/// not fit the scale exactly or the precision.
+fn fit_decimal(parsed: Decimal, precision: u8, scale: u8) -> Result<Value, ValueError> {
+    let out_of_range = ValueError::DecimalOutOfRange { precision, scale };
+    let rescaled = parsed.rescale(scale).ok_or(out_of_range.clone())?;
+    if exceeds_precision(&rescaled, precision) {
+        return Err(out_of_range);
+    }
+    Ok(Value::Decimal(rescaled))
 }
 
 /// The string spellings of every non-string type: what [`coerce`] does with a
@@ -504,20 +522,7 @@ fn coerce_str(s: &str, data_type: &DataType) -> Result<Value, ValueError> {
         }
         DataType::Utf8 => Ok(Value::Utf8(s.to_owned())),
         DataType::Decimal { precision, scale } => {
-            let parsed = parse_decimal(s)?;
-            let rescaled = parsed
-                .rescale(*scale)
-                .ok_or(ValueError::DecimalOutOfRange {
-                    precision: *precision,
-                    scale: *scale,
-                })?;
-            if exceeds_precision(&rescaled, *precision) {
-                return Err(ValueError::DecimalOutOfRange {
-                    precision: *precision,
-                    scale: *scale,
-                });
-            }
-            Ok(Value::Decimal(rescaled))
+            fit_decimal(parse_decimal(s)?, *precision, *scale)
         }
         DataType::Date => Ok(Value::Date(Date::parse(s)?)),
         DataType::Timestamp => Ok(Value::Timestamp(Timestamp::parse(s)?)),
@@ -689,6 +694,39 @@ mod tests {
         assert!(
             Value::from_json_typed(&opengrid_json::Json::from("nan"), &DataType::Float64).is_err()
         );
+    }
+
+    /// Issue #210, rule S8: an integer literal compares with a decimal column
+    /// and is read at the column's scale; a float literal is still refused.
+    #[test]
+    fn an_integer_literal_on_a_decimal_column_is_read_at_its_scale() {
+        let decimal = |precision, scale| DataType::Decimal { precision, scale };
+        let read = |text: &str, data_type: &DataType| {
+            Value::from_json_typed(&opengrid_json::Json::parse(text).unwrap(), data_type)
+        };
+        assert_eq!(
+            read("-10", &decimal(12, 2)),
+            Ok(Value::Decimal(Decimal::new(-1000, 2)))
+        );
+        assert_eq!(
+            read("18446744073709551615", &decimal(38, 2)),
+            Ok(Value::Decimal(Decimal::new(
+                1_844_674_407_370_955_161_500,
+                2
+            )))
+        );
+        // Ten digits do not fit decimal(12,2): the scaled value has twelve+.
+        assert_eq!(
+            read("10000000000", &decimal(12, 2)),
+            Err(ValueError::DecimalOutOfRange {
+                precision: 12,
+                scale: 2
+            })
+        );
+        assert!(read("99999999999", &decimal(12, 0)).is_ok());
+        // Float against decimal stays an error.
+        assert!(read("10.5", &decimal(12, 2)).is_err());
+        assert!(read("10.0", &decimal(12, 2)).is_err());
     }
 
     /// A list column reads a JSON array of its element type, and a CSV cell
