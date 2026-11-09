@@ -84,112 +84,154 @@ impl Field {
     }
 }
 
-/// Splits `input` into records.
-pub(crate) fn scan(input: &str, delimiter: u8) -> Result<Vec<Record<'_>>, ScanError> {
-    let bytes = input.as_bytes();
-    let mut records = Vec::new();
-    let mut fields: Vec<Cow<'_, str>> = Vec::new();
-    let mut field = Field::default();
-    let mut start = 0usize;
-    let mut index = 0usize;
-    let mut line = 1usize;
-    let mut record_line = 1usize;
-    let mut quoted = false;
-    let mut quote_line = 1usize;
-    let mut field_start = true;
-    let mut started = false;
+/// Splits `input` into records, one at a time: the records of the whole file
+/// never exist at once. After an error the iterator ends.
+pub(crate) fn scan(input: &str, delimiter: u8) -> Scanner<'_> {
+    Scanner {
+        input,
+        delimiter,
+        fields: Vec::new(),
+        field: Field::default(),
+        start: 0,
+        index: 0,
+        line: 1,
+        record_line: 1,
+        quoted: false,
+        quote_line: 1,
+        field_start: true,
+        started: false,
+        done: false,
+    }
+}
 
-    while index < bytes.len() {
-        let byte = bytes[index];
-        if quoted {
-            if byte == b'"' {
-                if bytes.get(index + 1) == Some(&b'"') {
-                    field.push(input, start, index);
-                    field.push_quote(input);
-                    index += 2;
-                    start = index;
+/// The iterator [`scan`] returns.
+pub(crate) struct Scanner<'a> {
+    input: &'a str,
+    delimiter: u8,
+    fields: Vec<Cow<'a, str>>,
+    field: Field,
+    start: usize,
+    index: usize,
+    line: usize,
+    record_line: usize,
+    quoted: bool,
+    quote_line: usize,
+    field_start: bool,
+    started: bool,
+    done: bool,
+}
+
+impl<'a> Iterator for Scanner<'a> {
+    type Item = Result<Record<'a>, ScanError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.done {
+            return None;
+        }
+        let input = self.input;
+        let bytes = input.as_bytes();
+        while self.index < bytes.len() {
+            let byte = bytes[self.index];
+            if self.quoted {
+                if byte == b'"' {
+                    if bytes.get(self.index + 1) == Some(&b'"') {
+                        self.field.push(input, self.start, self.index);
+                        self.field.push_quote(input);
+                        self.index += 2;
+                        self.start = self.index;
+                        continue;
+                    }
+                    self.field.push(input, self.start, self.index);
+                    self.quoted = false;
+                    self.index += 1;
+                    self.start = self.index;
                     continue;
                 }
-                field.push(input, start, index);
-                quoted = false;
-                index += 1;
-                start = index;
+                // Line breaks inside a quoted field count, they are not separators.
+                if byte == b'\n' || (byte == b'\r' && bytes.get(self.index + 1) != Some(&b'\n')) {
+                    self.line += 1;
+                }
+                self.index += 1;
                 continue;
             }
-            // Line breaks inside a quoted field count, they are not separators.
-            if byte == b'\n' || (byte == b'\r' && bytes.get(index + 1) != Some(&b'\n')) {
-                line += 1;
-            }
-            index += 1;
-            continue;
-        }
-        if byte == delimiter {
-            field.push(input, start, index);
-            fields.push(field.take(input));
-            index += 1;
-            start = index;
-            field_start = true;
-            started = true;
-        } else if byte == b'\n' || byte == b'\r' {
-            let separator = if byte == b'\r' && bytes.get(index + 1) == Some(&b'\n') {
-                2
+            if byte == self.delimiter {
+                self.field.push(input, self.start, self.index);
+                self.fields.push(self.field.take(input));
+                self.index += 1;
+                self.start = self.index;
+                self.field_start = true;
+                self.started = true;
+            } else if byte == b'\n' || byte == b'\r' {
+                let separator = if byte == b'\r' && bytes.get(self.index + 1) == Some(&b'\n') {
+                    2
+                } else {
+                    1
+                };
+                self.field.push(input, self.start, self.index);
+                // A line without any content is not a record.
+                let record = if self.started || !self.field.is_empty() || !self.fields.is_empty() {
+                    self.fields.push(self.field.take(input));
+                    // The next record most likely has as many fields: sized once
+                    // instead of grown from nothing for every record (point 45).
+                    let width = self.fields.len();
+                    Some(Record {
+                        fields: std::mem::replace(&mut self.fields, Vec::with_capacity(width)),
+                        line: self.record_line,
+                    })
+                } else {
+                    self.field.take(input);
+                    None
+                };
+                self.index += separator;
+                self.line += 1;
+                self.record_line = self.line;
+                self.start = self.index;
+                self.field_start = true;
+                self.started = false;
+                if let Some(record) = record {
+                    return Some(Ok(record));
+                }
+            } else if byte == b'"' && self.field_start {
+                self.quoted = true;
+                self.quote_line = self.line;
+                self.index += 1;
+                self.start = self.index;
+                self.field_start = false;
+                self.started = true;
             } else {
-                1
-            };
-            field.push(input, start, index);
-            // A line without any content is not a record.
-            if started || !field.is_empty() || !fields.is_empty() {
-                fields.push(field.take(input));
-                // The next record most likely has as many fields: sized once
-                // instead of grown from nothing for every record (point 45).
-                let width = fields.len();
-                records.push(Record {
-                    fields: std::mem::replace(&mut fields, Vec::with_capacity(width)),
-                    line: record_line,
-                });
-            } else {
-                field.take(input);
+                self.field_start = false;
+                self.started = true;
+                self.index += 1;
             }
-            index += separator;
-            line += 1;
-            record_line = line;
-            start = index;
-            field_start = true;
-            started = false;
-        } else if byte == b'"' && field_start {
-            quoted = true;
-            quote_line = line;
-            index += 1;
-            start = index;
-            field_start = false;
-            started = true;
-        } else {
-            field_start = false;
-            started = true;
-            index += 1;
         }
-    }
 
-    if quoted {
-        return Err(ScanError {
-            line: quote_line,
-            message: "unterminated quoted field".to_owned(),
-        });
+        self.done = true;
+        if self.quoted {
+            return Some(Err(ScanError {
+                line: self.quote_line,
+                message: "unterminated quoted field".to_owned(),
+            }));
+        }
+        if self.started || !self.field.is_empty() || !self.fields.is_empty() {
+            self.field.push(input, self.start, input.len());
+            self.fields.push(self.field.take(input));
+            return Some(Ok(Record {
+                fields: std::mem::take(&mut self.fields),
+                line: self.record_line,
+            }));
+        }
+        None
     }
-    if started || !field.is_empty() || !fields.is_empty() {
-        field.push(input, start, input.len());
-        fields.push(field.take(input));
-        records.push(Record {
-            fields: std::mem::take(&mut fields),
-            line: record_line,
-        });
-    }
-    Ok(records)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// All records of `input`, or the first error.
+    fn scan(input: &str, delimiter: u8) -> Result<Vec<Record<'_>>, ScanError> {
+        super::scan(input, delimiter).collect()
+    }
 
     fn fields<'a>(records: &'a [Record<'a>]) -> Vec<Vec<&'a str>> {
         records

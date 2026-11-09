@@ -105,6 +105,12 @@ query against the schema narrowed to `allowed_fields`, added the row filter with
 the token's context, and validated the result against the full schema. A connector only ever
 sees a `ValidatedQuery` that already carries every rule — it cannot forget one.
 
+Errors. A connector fails with the kind that is true: `DataSourceError::Backend` for an outage
+(the caller never sees its text, only a reference), `LimitExceeded` when the caller can narrow the
+query, `Data` when the data breaks a rule the query relies on (a tree with a key twice or a
+cycle). The server tells the caller the message of the last two; give those no database text.
+`ServerBuilder::on_error` receives the cause of every backend failure and every refused token.
+
 One rule a connector must carry out itself: for a tree, the tenant rule is **only** in
 `tree.scope`, not in `query.filter` (a filter would turn the tree into a filtered one — T5 shows
 the ancestors of a match as context, and a flat export grows a `match` column). A connector that

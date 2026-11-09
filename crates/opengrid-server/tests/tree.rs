@@ -660,3 +660,20 @@ async fn the_pushdown_is_off_unless_asked_for() {
         assert!(!postgres.capabilities().tree);
     }
 }
+
+/// Issue #219: a tree that breaks its rules is the data's fault, not an outage
+/// of the source: the caller is told which rows (not a fixed sentence), over
+/// the file and over SQLite alike.
+#[tokio::test]
+async fn a_cycle_is_told_to_the_caller_not_hidden_as_an_outage() {
+    for (kind, connector) in [
+        ("file", file("tree_cycle")),
+        ("sqlite", sqlite("tree_cycle")),
+    ] {
+        let app = app(vec![("tree_cycle", connector)], false).await;
+        let query = r#"{"source":"tree_cycle","select":["id"],"tree":{"parent":"parent_id"}}"#;
+        let error = ask(app, TOKEN, query).await.expect_err("a cycle");
+        assert!(error.contains("a cycle (rule T3)"), "{kind}: {error}");
+        assert!(!error.contains("reference"), "{kind}: {error}");
+    }
+}
