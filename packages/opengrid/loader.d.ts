@@ -1037,7 +1037,11 @@ export interface ViewChangeDetail<V = View> {
   view: V;
 }
 
-/** The events, by name. All bubble, all are composed, none is cancelable. */
+/**
+ * The events, by name. All bubble, all are composed, none is cancelable —
+ * except `opengrid-source-replaced`, which `loader.js` dispatches on the grid
+ * without bubbling.
+ */
 export interface OpengridEventMap {
   "opengrid-selection-change": CustomEvent<SelectionChangeDetail>;
   "opengrid-cell-change": CustomEvent<CellChangeDetail>;
@@ -1047,6 +1051,8 @@ export interface OpengridEventMap {
   "opengrid-row-add": CustomEvent<RowAddDetail>;
   "opengrid-paste": CustomEvent<PasteDetail>;
   "opengrid-bulk-change": CustomEvent<BulkChangeDetail>;
+  /** Dispatched by `loader.js` on the grid; it does not bubble. */
+  "opengrid-source-replaced": CustomEvent<SourceReplacedDetail>;
 }
 
 // ---------------------------------------------------------------------------
@@ -1057,7 +1063,7 @@ export interface OpengridEventMap {
  * The attributes of `<opengrid-grid>`, as strings the way HTML has them — for
  * adapters and JSX typings to build on. For
  * the boolean ones — `selection`, `toolbar`, `search`, `facets`,
- * `column-menu` — presence is what counts, whatever the value.
+ * `column-menu`, `add-row` — presence is what counts, whatever the value.
  */
 export interface OpengridGridAttributes {
   label?: string;
@@ -1116,7 +1122,7 @@ export interface OpengridPivotAttributes {
   theme?: Theme;
 }
 
-/** `<opengrid-grid>`; it fires the three events. */
+/** `<opengrid-grid>`; it fires the events of {@link OpengridEventMap}. */
 export interface OpengridGridElement extends HTMLElement {}
 /** `<opengrid-table>`. */
 export interface OpengridTableElement extends HTMLElement {}

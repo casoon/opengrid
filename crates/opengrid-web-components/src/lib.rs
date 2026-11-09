@@ -35,7 +35,7 @@
 #![cfg_attr(not(target_arch = "wasm32"), allow(dead_code, unused_imports))]
 
 // Nothing here is public API: the surface of this crate is the **DOM** — the
-// elements, their attributes, their events and their parts — plus the four
+// elements, their attributes, their events and their parts — plus the
 // exported functions below. A module left `pub` would be a promise nobody meant
 // to make (plan point 39).
 #[cfg(test)]
@@ -99,6 +99,9 @@ pub(crate) mod grid_element_events {
     pub const PASTE_EVENT: &str = "opengrid-paste";
     /// Fired when one value was set for the selected rows (issue #187).
     pub const BULK_EVENT: &str = "opengrid-bulk-change";
+    /// Dispatched by `loader.js` on the grids of a source an engine provider
+    /// replaced (issue #182); the grid listens for it. It does not bubble.
+    pub const SOURCE_REPLACED_EVENT: &str = "opengrid-source-replaced";
 }
 #[cfg(target_arch = "wasm32")]
 pub use element::register;
