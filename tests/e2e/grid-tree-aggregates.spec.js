@@ -47,8 +47,8 @@ test("a node shows its own value and its subtree's sum, and says both", async ({
   await expect.poll(() => revenue(page)).toEqual([
     // A leaf: its own value, nothing else.
     ["Orphan", "7", null],
-    ["Partners", "10 · Σ 15", "10. Sum of the subtree: 15"],
-    ["Sales", "0 · Σ 223", "0. Sum of the subtree: 223"],
+    ["Partners", "10 · Σ 15", "10 · Σ 15, Sum of the subtree"],
+    ["Sales", "0 · Σ 223", "0 · Σ 223, Sum of the subtree"],
   ]);
   // The level was asked with the summary over each subtree.
   const asked = await page.evaluate(() => window.__queries.map((query) => JSON.parse(query)));
@@ -75,11 +75,11 @@ test("an opened level brings its own sums; NULL is no value", async ({ page }) =
   const rows = await revenue(page);
   expect(rows.slice(3)).toEqual([
     // North: 100 + Alice 30 + Eve 3; Bob's NULL is not a value (S11).
-    ["North", "100 · Σ 133", "100. Sum of the subtree: 133"],
-    ["Alice", "30 · Σ 33", "30. Sum of the subtree: 33"],
+    ["North", "100 · Σ 133", "100 · Σ 133, Sum of the subtree"],
+    ["Alice", "30 · Σ 33", "30 · Σ 33, Sum of the subtree"],
     ["Eve", "3", null],
     ["Bob", "", null],
-    ["South", "50 · Σ 90", "50. Sum of the subtree: 90"],
+    ["South", "50 · Σ 90", "50 · Σ 90, Sum of the subtree"],
   ]);
 });
 
@@ -93,15 +93,12 @@ test("another summary from the view asks the tree again", async ({ page }) => {
   await expect.poll(() => revenue(page).then((rows) => rows[2])).toEqual([
     "Sales",
     "0 · max 100",
-    "0. Maximum of the subtree: 100",
+    "0 · max 100, Maximum of the subtree",
   ]);
 });
 
 test("has no axe violations with subtree sums shown", async ({ page }) => {
   await expect.poll(() => revenue(page).then((rows) => rows[2]?.[1])).toBe("0 · Σ 223");
-  // `label-content-name-mismatch` (WCAG 2.5.3) is off here until the name of a
-  // node's cell is decided: the cell shows "10 · Σ 15" and says "10. Sum of the
-  // subtree: 15" — options in the comment on #306.
-  const results = await new AxeBuilder({ page }).disableRules(["label-content-name-mismatch"]).analyze();
+  const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);
 });

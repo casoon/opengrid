@@ -187,11 +187,14 @@ pub struct GridTexts {
     /// tree is not shown beside `page-size` or grouped.
     pub tree_context: String,
     /// A node's cell that also shows its subtree's summary (T7, issue #165):
-    /// `{value}` is the node's own, `{aggregate}` the summary's name,
-    /// `{total}` the summary — "120. Sum of the subtree: 1,450".
+    /// `{shown}` is the cell's visible text — "120 · Σ 1,450" — so that the
+    /// name contains it (WCAG 2.5.3); `{value}` is the node's own,
+    /// `{aggregate}` the summary's name, `{total}` the summary. The default
+    /// says "120 · Σ 1,450, Sum of the subtree". A text without `{shown}`
+    /// stays as the page wrote it.
     pub subtree_cell: String,
-    /// The same for a node without a value of its own: `{aggregate}`,
-    /// `{total}` — "Sum of the subtree: 1,450".
+    /// The same for a node without a value of its own: `{shown}`,
+    /// `{aggregate}`, `{total}`.
     pub subtree_only: String,
     pub tree_orphans: String,
     pub tree_level_too_large: String,
@@ -650,8 +653,8 @@ impl Default for GridTexts {
             pivot_filter_label: "Add a filter".to_owned(),
             pivot_filter_hint: "field = value \u{00B7} Enter".to_owned(),
             tree_context: "context".to_owned(),
-            subtree_cell: "{value}. {aggregate} of the subtree: {total}".to_owned(),
-            subtree_only: "{aggregate} of the subtree: {total}".to_owned(),
+            subtree_cell: "{shown}, {aggregate} of the subtree".to_owned(),
+            subtree_only: "{shown}, {aggregate} of the subtree".to_owned(),
             tree_orphans: "Without a parent, shown at the top: {count}".to_owned(),
             tree_level_too_large:
                 "{count} rows at one level; a level holds at most {max} \u{2014} choose a filter"
@@ -1115,35 +1118,50 @@ impl GridTexts {
     }
 
     /// A tree node's cell with its subtree's summary (T7): what it says.
+    /// `shown` is the text the cell shows, or what stands for it.
     #[cfg(feature = "grid")]
     pub fn subtree_cell(
         &self,
+        shown: &str,
         value: &str,
         summary: crate::presentation::Summary,
         total: &str,
     ) -> String {
         fill(
             &fill(
-                &fill(&self.subtree_cell, "value", value),
-                "aggregate",
-                self.aggregate_name(summary),
+                &fill(
+                    &fill(&self.subtree_cell, "value", value),
+                    "aggregate",
+                    self.aggregate_name(summary),
+                ),
+                "total",
+                total,
             ),
-            "total",
-            total,
+            "shown",
+            shown,
         )
     }
 
     /// A tree node's cell without a value of its own: only its subtree's summary.
     #[cfg(feature = "grid")]
-    pub fn subtree_only(&self, summary: crate::presentation::Summary, total: &str) -> String {
+    pub fn subtree_only(
+        &self,
+        shown: &str,
+        summary: crate::presentation::Summary,
+        total: &str,
+    ) -> String {
         fill(
             &fill(
-                &self.subtree_only,
-                "aggregate",
-                self.aggregate_name(summary),
+                &fill(
+                    &self.subtree_only,
+                    "aggregate",
+                    self.aggregate_name(summary),
+                ),
+                "total",
+                total,
             ),
-            "total",
-            total,
+            "shown",
+            shown,
         )
     }
 
@@ -1551,6 +1569,41 @@ mod tests {
         let name = reasoned(&texts.add_grouping, &texts.grouping_full);
         assert_eq!(name, "+ Group. Grouped by two columns already");
         assert!(name.starts_with(&texts.add_grouping));
+    }
+
+    /// `{shown}` puts the cell's visible text into the name (WCAG 2.5.3); a
+    /// page's own text without it stays as written.
+    #[cfg(feature = "grid")]
+    #[test]
+    fn a_subtree_name_has_the_shown_text_where_the_text_puts_it() {
+        use crate::presentation::Summary;
+        use opengrid_query::AggregateFn;
+        let sum = Summary::Fn(AggregateFn::Sum);
+        let mut texts = GridTexts::default();
+        assert_eq!(
+            texts.subtree_cell("10 · Σ 15", "10", sum, "15"),
+            "10 · Σ 15, Sum of the subtree"
+        );
+        assert_eq!(
+            texts.subtree_only("Σ 15", sum, "15"),
+            "Σ 15, Sum of the subtree"
+        );
+        texts.subtree_cell = "Teilbaum {aggregate}: {value} von {total} ({shown})".to_owned();
+        assert_eq!(
+            texts.subtree_cell("10 · Σ 15", "10", sum, "15"),
+            "Teilbaum Sum: 10 von 15 (10 · Σ 15)"
+        );
+        // The old wording, with no `{shown}`, is kept exactly.
+        texts.subtree_cell = "{value}. {aggregate} of the subtree: {total}".to_owned();
+        texts.subtree_only = "{aggregate} of the subtree: {total}".to_owned();
+        assert_eq!(
+            texts.subtree_cell("10 · Σ 15", "10", sum, "15"),
+            "10. Sum of the subtree: 15"
+        );
+        assert_eq!(
+            texts.subtree_only("Σ 15", sum, "15"),
+            "Sum of the subtree: 15"
+        );
     }
 
     /// One match is not "1 matches".
