@@ -40,6 +40,10 @@ Two things belong in every release entry and are easy to leave out:
   `u64::MAX` overflowed `rows + 1` in a text or list column, and path lengths of a flat tree that wrap
   around `u64` passed the sum check and then indexed out of range. Both are now a decode error, so a
   hostile or broken server cannot trap the page ([#212](https://github.com/casoon/opengrid/issues/212)).
+- **Query:** an integer literal on a `decimal` column (`{"field": "amount", "op": "gt", "value": 10}`) was
+  refused as `ValueTypeMismatch`, although rule S8 allows comparing an integer with a decimal. It is
+  now read at the column's scale (an overflow of the precision is still a validation error); a float
+  literal on a decimal column stays an error ([#210](https://github.com/casoon/opengrid/issues/210)).
 - **Planner:** a tree the client builds (the source has no trees, or leaves the sort or the paging
   to the client) lost the query's sort when it was not paged, and a tree the source answered but
   could not sort or page came back as plain rows without `children`, `match` and `orphans`. The
