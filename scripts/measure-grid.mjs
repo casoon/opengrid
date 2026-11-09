@@ -192,7 +192,7 @@ async function resizeRun(page, cdp) {
           requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(done, 0))),
         );
       for (let step = 0; step < 20; step += 1) {
-        host.style.width = step % 2 ? "1000px" : "700px";
+        host.style.width = step % 2 ? "1600px" : "1100px";
         await next();
       }
       return {};

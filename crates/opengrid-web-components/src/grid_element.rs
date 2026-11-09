@@ -2402,8 +2402,11 @@ fn align_filter(host: &HtmlElement) {
     let Ok(headers) = root.query_selector_all("th[data-col]") else {
         return;
     };
+    // Every measurement first, every write after: a write between two reads
+    // makes the browser lay the page out again for the next read.
     let table_left = table.get_bounding_client_rect().left();
     let mut first = None;
+    let mut groups = Vec::new();
     for index in 0..headers.length() {
         let Some(header) = headers
             .item(index)
@@ -2421,13 +2424,7 @@ fn align_filter(host: &HtmlElement) {
             && let Some(group) = operator.parent_element()
             && let Ok(group) = group.dyn_into::<HtmlElement>()
         {
-            // Through the CSSOM, like every style the grid writes: a page
-            // whose `style-src` lacks 'unsafe-inline' refuses the attribute.
-            group.style().set_css_text(&format!(
-                "display: inline-flex; align-items: center; gap: 0.25rem; flex: none; \
-                 box-sizing: border-box; padding-right: 0.25rem; width: {:.2}px;",
-                rect.width()
-            ));
+            groups.push((group, rect.width()));
         }
     }
     let Some(first) = first else {
@@ -2443,6 +2440,14 @@ fn align_filter(host: &HtmlElement) {
         - filter.get_bounding_client_rect().left()
         - f64::from(filter.client_left())
         + first;
+    for (group, width) in groups {
+        // Through the CSSOM, like every style the grid writes: a page
+        // whose `style-src` lacks 'unsafe-inline' refuses the attribute.
+        group.style().set_css_text(&format!(
+            "display: inline-flex; align-items: center; gap: 0.25rem; flex: none; \
+             box-sizing: border-box; padding-right: 0.25rem; width: {width:.2}px;"
+        ));
+    }
     if let Ok(filter) = filter.dyn_into::<HtmlElement>() {
         let _ = filter
             .style()
