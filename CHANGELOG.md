@@ -54,6 +54,15 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Fixed
 
+- **Connectors:** a query the server gave up on (its timeout, a client that left) kept running in the
+  database. PostgreSQL now gets a cancel request for the connection when the request is dropped
+  halfway (`/query`, `/pivot`, a pushed-down tree) and the connection is closed instead of reused.
+  SQLite ran on the async thread, to the end, so the timeout could not fire and one slow query held
+  every other request; it now runs on a thread of its own and a dropped request interrupts the
+  statement. `opengrid_conformance::block_on` waits for a future that is woken from another
+  thread (up to two minutes) instead of panicking. `opengrid-datasource-postgres` depends on `tokio` (already in the build) to send the cancel
+  request, and SQLite queries of one connector still run one after the other
+  ([#217](https://github.com/casoon/opengrid/issues/217)).
 - **Columns:** the binary wire reader no longer panics on forged counts and lengths: a row count of
   `u64::MAX` overflowed `rows + 1` in a text or list column, and path lengths of a flat tree that wrap
   around `u64` passed the sum check and then indexed out of range. Both are now a decode error, so a

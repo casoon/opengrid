@@ -22,3 +22,5 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 [dev-dependencies]
 opengrid-conformance = { path = "../opengrid-conformance" }
 opengrid-engine = { path = "../opengrid-engine" }
+# The timeout test drives a future with a deadline, as the server does.
+tokio = { version = "1", features = ["rt", "time", "macros"] }
