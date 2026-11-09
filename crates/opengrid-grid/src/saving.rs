@@ -147,3 +147,89 @@ impl Saves {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn name(text: &str) -> FieldName {
+        FieldName::new(text).unwrap()
+    }
+
+    #[test]
+    fn a_state_token_reads_back_and_names_its_part() {
+        for (token, state) in [
+            ("saving", CellState::Saving),
+            ("saved", CellState::Saved),
+            ("error", CellState::Error),
+            ("invalid", CellState::Invalid),
+        ] {
+            assert_eq!(CellState::parse(token), Some(state));
+            assert_eq!(state.as_str(), token);
+            // `::part()` takes no attribute selector, so the part carries the state.
+            assert_eq!(state.part(), format!("cell cell-{token}"));
+        }
+        assert_eq!(CellState::parse("Saved"), None);
+        assert_eq!(CellState::parse(""), None);
+    }
+
+    #[test]
+    fn a_level_token_reads_back_and_nothing_else_does() {
+        assert_eq!(Level::parse("warning"), Some(Level::Warning));
+        assert_eq!(Level::parse("error"), Some(Level::Error));
+        assert_eq!(Level::Warning.as_str(), "warning");
+        assert_eq!(Level::Error.as_str(), "error");
+        assert_eq!(Level::parse("info"), None);
+        assert_eq!(Level::parse("Error"), None);
+    }
+
+    /// Everything is keyed by record and column: the same column of another
+    /// record, or another column of the same record, is another cell.
+    #[test]
+    fn a_state_belongs_to_its_record_and_column_and_the_last_word_wins() {
+        let mut saves = Saves::default();
+        let key = Value::Int64(1);
+        assert_eq!(saves.state(&key, &name("seats")), None);
+
+        saves.set_state(key.clone(), name("seats"), CellState::Saving);
+        assert_eq!(saves.state(&key, &name("seats")), Some(CellState::Saving));
+        assert_eq!(saves.state(&key, &name("city")), None);
+        assert_eq!(saves.state(&Value::Int64(2), &name("seats")), None);
+
+        saves.set_state(key.clone(), name("seats"), CellState::Saved);
+        assert_eq!(saves.state(&key, &name("seats")), Some(CellState::Saved));
+        assert_eq!(
+            saves.states.len(),
+            1,
+            "a second word replaces, it does not stack"
+        );
+    }
+
+    #[test]
+    fn a_message_is_replaced_and_forgotten_by_record_and_column() {
+        let mut saves = Saves::default();
+        let key = Value::Utf8("a".into());
+        saves.set_message(key.clone(), name("seats"), Some("too many".into()));
+        saves.set_message(key.clone(), name("city"), Some("unknown".into()));
+        assert_eq!(saves.message(&key, &name("seats")), Some("too many"));
+
+        saves.set_message(key.clone(), name("seats"), Some("too few".into()));
+        assert_eq!(saves.message(&key, &name("seats")), Some("too few"));
+        assert_eq!(saves.messages.len(), 2);
+
+        saves.set_message(key.clone(), name("seats"), None);
+        assert_eq!(saves.message(&key, &name("seats")), None);
+        assert_eq!(saves.message(&key, &name("city")), Some("unknown"));
+    }
+
+    #[test]
+    fn a_value_the_page_set_is_replaced_in_place() {
+        let mut saves = Saves::default();
+        let key = Value::Int64(7);
+        saves.set_value(key.clone(), name("avg"), Value::Float64(1.5));
+        saves.set_value(key.clone(), name("avg"), Value::Float64(2.5));
+        saves.set_value(Value::Int64(8), name("avg"), Value::Float64(9.0));
+        assert_eq!(saves.values.len(), 2);
+        assert_eq!(saves.values[0].2, Value::Float64(2.5));
+    }
+}

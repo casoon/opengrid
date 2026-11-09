@@ -257,4 +257,146 @@ mod tests {
         history.clear();
         assert!(!history.can_undo() && !history.can_redo());
     }
+
+    fn keyed(key: i64, col: usize, before: i64, after: i64) -> CellEdit {
+        CellEdit {
+            row: 0,
+            col,
+            key: Some(Value::Int64(key)),
+            before: Value::Int64(before),
+            after: Value::Int64(after),
+        }
+    }
+
+    fn undo_steps(history: &mut History) -> Vec<Step> {
+        std::iter::from_fn(|| history.take_undo()).collect()
+    }
+
+    /// Issue #236: the page's word reaches the steps that were undone too — what
+    /// could be redone would otherwise put an old value over the page's.
+    #[test]
+    fn the_page_overrides_what_could_be_redone_as_well() {
+        let mut history = History::default();
+        history.record(Step::Cell(keyed(1, 0, 10, 20)));
+        let step = history.take_undo().unwrap();
+        history.done_undo(step);
+        assert!(history.can_redo());
+
+        history.forget_cell(&Value::Int64(1), 0, &Value::Int64(99));
+        assert!(!history.can_redo());
+    }
+
+    /// An edit without a key cannot be matched to a record, so the page's word
+    /// about a record never touches it.
+    #[test]
+    fn a_step_without_a_key_stays_when_the_page_speaks() {
+        let mut history = History::default();
+        history.record(edit(0, 1, 2));
+        history.forget_cell(&Value::Int64(0), 0, &Value::Int64(99));
+        assert_eq!(undo_steps(&mut history), vec![edit(0, 1, 2)]);
+    }
+
+    /// A paste whose every cell is overridden and that added no row has nothing
+    /// left to take back, so it goes; with an added row it stays.
+    #[test]
+    fn a_paste_with_nothing_left_goes_and_one_with_an_added_row_stays() {
+        let entry = AddedEntry {
+            provisional: "new-1".into(),
+            values: vec![Value::Int64(1)],
+        };
+        let mut history = History::default();
+        history.record(Step::Paste {
+            edits: vec![keyed(1, 0, 30, 40)],
+            added: Vec::new(),
+        });
+        history.record(Step::Paste {
+            edits: vec![keyed(1, 0, 30, 40)],
+            added: vec![entry.clone()],
+        });
+        history.forget_cell(&Value::Int64(1), 0, &Value::Int64(99));
+        assert_eq!(
+            undo_steps(&mut history),
+            vec![Step::Paste {
+                edits: Vec::new(),
+                added: vec![entry],
+            }]
+        );
+    }
+
+    /// An added row is the reader's own: the page's word about a cell never
+    /// takes it from the history.
+    #[test]
+    fn an_added_row_stays_when_the_page_speaks() {
+        let mut history = History::default();
+        let entry = AddedEntry {
+            provisional: "new-1".into(),
+            values: vec![Value::Int64(1)],
+        };
+        history.record(Step::Added(entry.clone()));
+        history.forget_cell(&Value::Int64(1), 0, &Value::Int64(99));
+        assert_eq!(undo_steps(&mut history), vec![Step::Added(entry)]);
+    }
+
+    /// Moving column 0 to place 1 (and a new column at 0): an edit follows its
+    /// column, an edit in a column no longer shown goes, an added row's values
+    /// are picked in the new order with Null for a column it never had.
+    #[test]
+    fn a_moved_column_takes_its_edits_along_and_a_removed_one_loses_them() {
+        let entry = AddedEntry {
+            provisional: "new-1".into(),
+            values: vec![Value::Int64(10), Value::Int64(11), Value::Int64(12)],
+        };
+        let mut history = History::default();
+        history.record(Step::Cell(keyed(1, 0, 1, 2)));
+        history.record(Step::Cell(keyed(1, 1, 3, 4)));
+        history.record(Step::Cell(keyed(1, 2, 5, 6)));
+        history.record(Step::Added(entry));
+        history.record(Step::Paste {
+            edits: vec![keyed(2, 0, 7, 8), keyed(2, 1, 9, 10)],
+            added: Vec::new(),
+        });
+
+        // New order: [new column, old 0, old 2]; old column 1 is gone.
+        history.remap(&[None, Some(0), Some(2)]);
+
+        let steps = undo_steps(&mut history);
+        assert_eq!(
+            steps,
+            vec![
+                Step::Paste {
+                    edits: vec![keyed(2, 1, 7, 8)],
+                    added: Vec::new(),
+                },
+                Step::Added(AddedEntry {
+                    provisional: "new-1".into(),
+                    values: vec![Value::Null, Value::Int64(10), Value::Int64(12)],
+                }),
+                Step::Cell(keyed(1, 2, 5, 6)),
+                Step::Cell(keyed(1, 1, 1, 2)),
+            ]
+        );
+    }
+
+    /// A paste whose columns are all gone, and that added nothing, goes whole.
+    #[test]
+    fn a_paste_of_removed_columns_only_is_gone() {
+        let mut history = History::default();
+        history.record(Step::Paste {
+            edits: vec![keyed(1, 1, 3, 4)],
+            added: Vec::new(),
+        });
+        history.remap(&[Some(0)]);
+        assert!(!history.can_undo());
+    }
+
+    /// The remap reaches the way forward too.
+    #[test]
+    fn a_moved_column_reaches_the_steps_that_were_undone() {
+        let mut history = History::default();
+        history.record(Step::Cell(keyed(1, 0, 1, 2)));
+        let step = history.take_undo().unwrap();
+        history.done_undo(step);
+        history.remap(&[None, Some(0)]);
+        assert_eq!(history.take_redo(), Some(Step::Cell(keyed(1, 1, 1, 2))));
+    }
 }
