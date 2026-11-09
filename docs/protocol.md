@@ -165,7 +165,13 @@ in:
 
 1. **A token on every request.** Compared in constant time, never logged, never echoed in an
    error, and what a database says never reaches the caller (it can name tables, hidden columns
-   and tenant values). The token stands for a context — the tenant, the account.
+   and tenant values). The token stands for a context — the tenant, the account. A token is a
+   random secret of at least 32 characters (`openssl rand -hex 32`), never a word. The `Bearer`
+   scheme is matched without regard to case (RFC 7235). The example server's demo presets fall
+   back to public demo tokens when their environment variable is unset and warn about it on
+   stderr instead of refusing to start (declined, #222): the demo pages carry those values, and
+   the presets listen on the loopback address only; the `e2e` preset's `e2e-token` is a test
+   fixture.
 2. **A mandatory row filter** from that context, added to every query, every pivot level and
    every export before anything runs. No request can remove it. A context that does not fit the
    filter (a value that is not the column's type, a missing key) is a startup error, not a
@@ -174,7 +180,10 @@ in:
    `match` column).
 3. **A field allowlist.** A column the caller may not see does not exist for them: the same
    `422 unknown field` a typo gets, and it is missing from `GET /source`.
-4. **Bounds.** `max_limit` rows a page — a `/query` that names no `limit` gets `max_limit`, and
+4. **Bounds.** Every answer carries `Cache-Control: no-store` and `X-Content-Type-Options:
+   nosniff`. A body is cut off at `max_payload_bytes` while it is read (also above axum's own
+   2 MiB), an `offset` past `2^63 - 1` and an `in`, `has_all`, `and` or `or` of more than
+   `max_list_values` (1 000) entries are `422`. `max_limit` rows a page — a `/query` that names no `limit` gets `max_limit`, and
    `total_count` still counts every match — a body size, a timeout, and for exports a row bound and
    a bound on how many run at once — each a status with a sentence, never a truncated answer.
 

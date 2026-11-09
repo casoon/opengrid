@@ -35,6 +35,12 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Changed
 
+- **Engine:** the hot paths no longer allocate per row. `in` looks each cell up in a set of the
+  literals instead of comparing the whole column once per literal (500 values over 1M rows: 2229 ms
+  to 19 ms), `min`/`max` reuse one buffer per group (1M rows by country: 154 ms to 102 ms), and a
+  tree keys its nodes on the typed value and builds the paths of the returned page only (100 000
+  nodes: roots 24 ms to 8 ms, flat tree 49 ms to 30 ms; native release build). The answers are the
+  same ([#214](https://github.com/casoon/opengrid/issues/214)).
 - **Engine:** `load_csv` reads the file record by record into the column builders instead of
   scanning every record first. The peak memory of loading the 1M-row demo file (85 MB) drops from
   431 MiB to 159 MiB (native, release build, maximum resident set size); the result is the same
@@ -70,6 +76,18 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Fixed
 
+- **Server and connectors, hardening** ([#222](https://github.com/casoon/opengrid/issues/222)).
+  `max_payload_bytes` above axum's 2 MiB is honoured (the router carries the limit; an oversize body
+  is still the `limit_exceeded` wire error), every answer has `Cache-Control: no-store` and
+  `X-Content-Type-Options: nosniff`, and the `Bearer` scheme matches without regard to case. An
+  `offset` past `i64::MAX` is a validation error (`OffsetTooLarge`) instead of a negative one in the
+  database, and `Limits::max_list_values` (default 1 000) bounds an `in`, `has_all`, `and` or `or`
+  (`ListTooLong`). A decimal that does not fit SQLite's 64-bit integer is a backend error instead of
+  a wrapped number. `PostgresDataSource::connect_in_schema` takes a table in a PostgreSQL schema.
+  The example server warns when it falls back to a public demo token. **What breaks:** `Limits` has
+  a new public field (a struct literal without `..Limits::default()` no longer compiles),
+  `QueryError` has two new variants, `SchemaError` one, and `Schema::check` refuses a column named
+  `__og_…` or `__grouping_…`, which the connectors use for helper columns.
 - **Server:** a backend failure reaches the browser as one fixed sentence and a reference
   (`the data source failed (reference og-…)`), no longer as the database's text, which can name a
   table, a hidden column or a tenant's value. New `ServerBuilder::on_error(hook)` receives the full
