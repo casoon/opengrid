@@ -11,19 +11,23 @@
 //! connection was reused would end somebody else's statement.
 
 use deadpool_postgres::Object;
-use tokio_postgres::{CancelToken, NoTls};
+use tokio_postgres::CancelToken;
+
+use crate::tls::Canceller;
 
 pub(crate) struct Lease {
     client: Option<Object>,
     cancel: CancelToken,
+    canceller: Canceller,
 }
 
 impl Lease {
-    pub(crate) fn new(client: Object) -> Self {
+    pub(crate) fn new(client: Object, canceller: Canceller) -> Self {
         let cancel = client.cancel_token();
         Self {
             client: Some(client),
             cancel,
+            canceller,
         }
     }
 
@@ -49,8 +53,9 @@ impl Drop for Lease {
             return;
         };
         let cancel = self.cancel.clone();
+        let canceller = self.canceller.clone();
         runtime.spawn(async move {
-            let _ = cancel.cancel_query(NoTls).await;
+            canceller.cancel(cancel).await;
             // Closes the connection; the pool opens a new one when needed.
             drop(Object::take(client));
         });

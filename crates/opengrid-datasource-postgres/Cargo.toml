@@ -25,6 +25,18 @@ deadpool-postgres = "0.14"
 # (issue #217).
 tokio = { version = "1", features = ["rt"] }
 opengrid-json = { path = "../opengrid-json" }
+# TLS to the database (issue #220), behind the `tls` feature and off by default:
+# `rustls` with the `ring` provider, which builds without system packages (no
+# cmake, no OpenSSL headers). `connect_with_tls` itself takes any
+# `MakeTlsConnect`, so an application may bring `native-tls` instead.
+tokio-postgres-rustls = { version = "0.14", optional = true }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"], optional = true }
+webpki-roots = { version = "1", optional = true }
+rustls-pki-types = { version = "1", features = ["std"], optional = true }
+
+[features]
+# `rustls_connector`, the ready-made TLS connector for `connect_with_tls`.
+tls = ["dep:tokio-postgres-rustls", "dep:rustls", "dep:webpki-roots", "dep:rustls-pki-types"]
 
 [dev-dependencies]
 # The pivot tests compile and run pivots (point 31).
