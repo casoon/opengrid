@@ -1109,17 +1109,18 @@ pub fn is_capped(rows: u64, row_height: u64) -> bool {
 ///
 /// Unscaled (`capped` false, `shift` 0) it is the product, as it always was.
 /// Capped, a row whose place would lie outside the sizer — the focused row,
-/// pinned while the reader scrolled far away from it — is parked above the
-/// sizer (or at its last slot): negative overflow is not scrollable and a place
-/// inside the sizer far from the viewport is not seen, whereas a place at
-/// millions of pixels would stretch the scroll area.
+/// pinned while the reader scrolled far away from it — is parked two rows above
+/// the sizer (or at its last slot). There it is clipped or under the sticky
+/// header, and it does not stretch the scroll area: a place at millions of
+/// pixels would, in Firefox even upwards (measured: a row parked at -10 000 000
+/// px halved the scroll height, which then ended at row 2 967 129 of 3 000 000).
 pub fn row_top(row: u64, row_height: u64, shift: u64, capped: bool) -> i64 {
     let top = i128::from(row) * i128::from(row_height) - i128::from(shift);
     if !capped {
         return top as i64;
     }
     let last_slot = i128::from(MAX_SIZER_PX.saturating_sub(row_height));
-    top.clamp(-i128::from(MAX_SIZER_PX), last_slot) as i64
+    top.clamp(-2 * i128::from(row_height), last_slot) as i64
 }
 
 /// Where a scrolled viewport stands once a [`ScrollScale`] has read it: the
@@ -6603,7 +6604,7 @@ mod tests {
     fn a_far_row_is_parked_outside_the_sizer() {
         assert_eq!(row_top(1_000, 32, 31_000, true), 1_000);
         // Above the viewport by millions of pixels: above the sizer, not scrollable.
-        assert_eq!(row_top(5, 32, 80_000_000, true), -(MAX_SIZER_PX as i64));
+        assert_eq!(row_top(5, 32, 80_000_000, true), -64);
         // Below it: the last slot inside the sizer, never past its end.
         assert_eq!(row_top(2_999_999, 32, 0, true), (MAX_SIZER_PX - 32) as i64);
         // The last row at the last scroll position sits in the last slot exactly.
