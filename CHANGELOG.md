@@ -44,6 +44,12 @@ Two things belong in every release entry and are easy to leave out:
   ([#221](https://github.com/casoon/opengrid/issues/221)).
 - **Docs:** the project site uses the current shared theme (0.12.6) and ends with a link to the
   quickstart.
+- **Packaging:** a bundler's production build finds the WebAssembly modules and the worker by
+  itself ([#238](https://github.com/casoon/opengrid/issues/238)). `loader.js` and `worker.js`
+  import the packaged glue statically and the worker is started with the
+  `new Worker(new URL(...))` form, so `loadOpengrid()` and `createWorkerProvider()` work in a Vite
+  build without `moduleUrl` or `workerUrl`; the options still replace the defaults. Before, such a
+  build fell back to the plain table and could not start the engine's worker.
 - **API:** `opengrid-source-replaced` is frozen, typed in `OpengridEventMap` and in the events table
   of the API reference, which says that `loader.js` dispatches it on the grid without bubbling
   ([#234](https://github.com/casoon/opengrid/issues/234)). A test now reads the module's

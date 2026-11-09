@@ -37,14 +37,10 @@
  * single worker of V1 (no pool, no SharedArrayBuffer).
  */
 
-/** Default location of the wasm-bindgen glue; point 40 pins the packaged path. */
-const DEFAULT_MODULE_URL = new URL("./pkg/opengrid_web_components.js", import.meta.url);
-
-/**
- * Default location of the engine module's glue, shipped under `engine/`. A
- * string, not a `URL`: it travels to the worker by `postMessage`.
- */
-const DEFAULT_ENGINE_URL = new URL("./engine/opengrid_wasm.js", import.meta.url).href;
+// The packaged glue (point 40 pins the path), imported statically: a bundler
+// follows the import, and the `new URL("…_bg.wasm", import.meta.url)` inside the
+// glue, so the `.wasm` ends up in its output. `moduleUrl` replaces it.
+import * as packaged from "./pkg/opengrid_web_components.js";
 
 /** Set once the first `loadOpengrid` call has run. */
 let loading;
@@ -67,9 +63,9 @@ export function loadOpengrid(options = {}) {
   return loading;
 }
 
-async function start({ moduleUrl = DEFAULT_MODULE_URL, wasmUrl } = {}) {
+async function start({ moduleUrl, wasmUrl } = {}) {
   try {
-    const module = await import(moduleUrl);
+    const module = moduleUrl ? await import(/* @vite-ignore */ moduleUrl) : packaged;
     // wasm-bindgen `--target web` exports the initialiser as the default.
     await module.default(wasmUrl);
     module.register();
@@ -157,18 +153,17 @@ function installFallback(name = "opengrid-table") {
  *
  * @param {object} [options]
  * @param {string} [options.moduleUrl] wasm-bindgen glue of the engine module;
- *   defaults to the packaged one under `engine/`. A string, not a `URL`: it
- *   travels to the worker by `postMessage`.
+ *   defaults to the packaged one under `engine/`, which `worker.js` imports
+ *   itself. A string, not a `URL`: it travels to the worker by `postMessage`.
  * @param {string} [options.wasmUrl] explicit `.wasm` URL, if it is not next to the glue.
  * @param {URL|string} [options.workerUrl] the worker entry; defaults to `worker.js` next to this file.
  * @returns {{load: Function, execute: Function, terminate: Function, worker?: Worker}}
  */
 export function createWorkerProvider({
-  moduleUrl = DEFAULT_ENGINE_URL,
+  moduleUrl,
   wasmUrl,
   workerUrl,
 } = {}) {
-  const workerScript = workerUrl ?? new URL("./worker.js", import.meta.url);
   let worker;
   let ready;
   let nextId = 1;
@@ -202,7 +197,11 @@ export function createWorkerProvider({
 
   function start() {
     if (!worker) {
-      worker = new Worker(workerScript, { type: "module" });
+      // Written out in full: the `new Worker(new URL(…, import.meta.url), …)` form
+      // is what bundlers recognise and bundle.
+      worker = workerUrl
+        ? new Worker(workerUrl, { type: "module" })
+        : new Worker(new URL("./worker.js", import.meta.url), { type: "module" });
       worker.onmessage = ({ data }) => onMessage(data);
       ready = request({ type: "init", moduleUrl, wasmUrl });
     }
