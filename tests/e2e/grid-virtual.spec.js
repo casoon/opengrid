@@ -173,3 +173,79 @@ test("has no axe violations", async ({ page }) => {
   const { violations } = await new AxeBuilder({ page }).analyze();
   expect(violations).toEqual([]);
 });
+
+/**
+ * What the grid writes into the shadow root while `act` runs: Text nodes
+ * replaced or changed inside the data cells (`childList`, `characterData`) and
+ * attributes written to the body's rows and cells, by `TAG.name` (a write of
+ * the same value counts too).
+ */
+async function writesDuring(page, act) {
+  await page.evaluate(() => {
+    const root = document.querySelector("opengrid-grid").shadowRoot;
+    const seen = { text: 0, attributes: [] };
+    const tally = (record) => {
+      if (record.type === "attributes") {
+        if (record.target.closest("tbody")) {
+          const name = `${record.target.tagName}.${record.attributeName}`;
+          if (!seen.attributes.includes(name)) seen.attributes.push(name);
+        }
+        return;
+      }
+      const target = record.target.nodeType === 1 ? record.target : record.target.parentElement;
+      if (target?.closest("td[data-row]")) seen.text += 1;
+    };
+    const observer = new MutationObserver((records) => records.forEach(tally));
+    window.__tally = tally;
+    observer.observe(root, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+      attributes: true,
+    });
+    window.__writes = { seen, observer };
+  });
+  await act();
+  return page.evaluate(async () => {
+    await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+    const { seen, observer } = window.__writes;
+    observer.takeRecords().forEach(window.__tally);
+    observer.disconnect();
+    return seen;
+  });
+}
+
+test("a frame that changes no row writes only what changed", async ({ page }) => {
+  await page.evaluate(() => {
+    const root = document.querySelector("opengrid-grid").shadowRoot;
+    root.querySelector('td[data-row="3"][data-col="0"]').focus();
+  });
+
+  // Selecting a row redraws the frame, but every cell already shows the right
+  // text. Replacing a Text node for the same characters costs a layout.
+  const same = await writesDuring(page, async () => {
+    await page.keyboard.press(" ");
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            document
+              .querySelector("opengrid-grid")
+              .shadowRoot.querySelectorAll('tr[aria-selected="true"]').length,
+        ),
+      )
+      .toBe(1);
+  });
+  expect(same.text).toBe(0);
+  // And of the attributes only the two the selection changes: the rest of the
+  // set a row is patched with is already as it should be, and so are the
+  // columns' markers, which belong to a result and not to a frame.
+  expect(same.attributes.sort()).toEqual(["TR.aria-selected", "TR.data-selected"]);
+
+  // Not vacuous: a scroll recycles rows, and their text does change.
+  const moved = await writesDuring(page, async () => {
+    await scrollTo(page, 4000);
+    await expect.poll(() => rowindexFor(page, 125)).toBe("127");
+  });
+  expect(moved.text).toBeGreaterThan(0);
+});

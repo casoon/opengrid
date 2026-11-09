@@ -225,15 +225,15 @@ impl GridState {
         } else {
             (row, anchor)
         };
-        let before = self.selection.clone();
-        for value in low..=high {
-            if let Err(index) = self.selection.binary_search(&value) {
-                self.selection.insert(index, value);
-            }
-        }
-        if self.selection == before {
+        // The rows of the range that are selected already sit side by side in
+        // the sorted list; the whole range takes their place in one move of the
+        // tail, not one insert (and one move) per row.
+        let first = self.selection.partition_point(|selected| *selected < low);
+        let last = self.selection.partition_point(|selected| *selected <= high);
+        if (last - first) as u64 == high - low + 1 {
             return Vec::new();
         }
+        self.selection.splice(first..last, low..=high);
         vec![Patch::Selection(self.selection.clone())]
     }
 
@@ -1471,6 +1471,35 @@ mod selection_tests {
     fn a_range_without_an_anchor_is_a_toggle() {
         let mut state = grid();
         assert_eq!(state.extend_selection(9), vec![Patch::Selection(vec![9])]);
+    }
+
+    /// Extending a range keeps what was selected, adds the rest of the range,
+    /// and says nothing when there was nothing to add — whatever lies inside,
+    /// below or above the range already.
+    #[test]
+    fn extending_a_range_adds_what_is_missing() {
+        // `toggle` selects the rows in order, the last one becomes the anchor.
+        let extended = |toggle: &[u64], to: u64| {
+            let mut state = grid();
+            for row in toggle {
+                state.toggle_selection(*row);
+            }
+            let patches = state.extend_selection(to);
+            (state.selection().to_vec(), patches)
+        };
+        // Holes inside the range are filled, rows outside it stay.
+        assert_eq!(extended(&[2, 5, 9, 4], 7).0, [2, 4, 5, 6, 7, 9]);
+        // Downwards, with the selection above the range.
+        assert_eq!(extended(&[50, 60, 40], 37).0, [37, 38, 39, 40, 50, 60]);
+        // Upwards, with the selection below the range.
+        assert_eq!(extended(&[1, 2, 10], 12).0, [1, 2, 10, 11, 12]);
+        // Everything of the range is selected already: nothing to say.
+        let (rows, patches) = extended(&[4, 5, 3], 5);
+        assert_eq!(rows, [3, 4, 5]);
+        assert!(patches.is_empty());
+        // Otherwise the patch carries the whole selection.
+        let (rows, patches) = extended(&[3], 5);
+        assert_eq!(patches, vec![Patch::Selection(rows)]);
     }
 
     /// "Select all" means every matching row, not every loaded one — the grid

@@ -210,6 +210,11 @@ struct GridRuntime {
     /// other to where it cannot go — the filter row reaches further than the
     /// rows, past its "Clear". Anywhere else, the reader moved it.
     scroll_echo: Option<(bool, i32)>,
+    /// The types and markers [`fix_operator_choices`] and [`fix_presentation`]
+    /// last wrote into the skeleton. They belong to a result (the types arrive
+    /// with it) and to the pool's cells, which exist from the skeleton on, so a
+    /// frame that finds the same ones writes nothing; a new skeleton clears it.
+    decorated: Option<Decorated>,
     /// The source was replaced (issue #182) and the next result is the new
     /// one: the key of the focused record, if it had one. The pinned slot would
     /// keep showing the old row, so the result drops the pin and the focus
@@ -311,6 +316,7 @@ fn fresh_runtime(
         retype_filter: false,
         scroll_top: 0,
         scroll_echo: None,
+        decorated: None,
         replaced: None,
         paste: None,
         epoch: 0,
@@ -914,6 +920,7 @@ fn ensure_skeleton(host: &HtmlElement) {
         borrowed.viewport = viewport;
         borrowed.dom = Some(dom);
         borrowed.view = Some(view);
+        borrowed.decorated = None;
     }
     // The reader's widths live on the header cells and survive the frames that
     // follow; a fresh skeleton has to get them back (point 36).
@@ -1018,8 +1025,13 @@ fn render(host: &HtmlElement, focus_after: bool) {
 
     if let Some(root) = host.shadow_root() {
         let schema = runtime.borrow().state.schema().clone();
-        fix_operator_choices(&root, &schema);
-        fix_presentation(&root, &schema, &presentation::styles(host));
+        let styles = presentation::styles(host);
+        let decorated = Decorated::of(&schema, &styles);
+        if runtime.borrow().decorated.as_ref() != Some(&decorated) {
+            fix_operator_choices(&root, &schema);
+            fix_presentation(&root, &schema, &styles);
+            runtime.borrow_mut().decorated = Some(decorated);
+        }
     }
     sync_chrome(host);
     sync_descriptions(host);
@@ -2401,8 +2413,11 @@ fn align_filter(host: &HtmlElement) {
     let Ok(headers) = root.query_selector_all("th[data-col]") else {
         return;
     };
+    // Every measurement first, every write after: a write between two reads
+    // makes the browser lay the page out again for the next read.
     let table_left = table.get_bounding_client_rect().left();
     let mut first = None;
+    let mut groups = Vec::new();
     for index in 0..headers.length() {
         let Some(header) = headers
             .item(index)
@@ -2420,13 +2435,7 @@ fn align_filter(host: &HtmlElement) {
             && let Some(group) = operator.parent_element()
             && let Ok(group) = group.dyn_into::<HtmlElement>()
         {
-            // Through the CSSOM, like every style the grid writes: a page
-            // whose `style-src` lacks 'unsafe-inline' refuses the attribute.
-            group.style().set_css_text(&format!(
-                "display: inline-flex; align-items: center; gap: 0.25rem; flex: none; \
-                 box-sizing: border-box; padding-right: 0.25rem; width: {:.2}px;",
-                rect.width()
-            ));
+            groups.push((group, rect.width()));
         }
     }
     let Some(first) = first else {
@@ -2442,6 +2451,14 @@ fn align_filter(host: &HtmlElement) {
         - filter.get_bounding_client_rect().left()
         - f64::from(filter.client_left())
         + first;
+    for (group, width) in groups {
+        // Through the CSSOM, like every style the grid writes: a page
+        // whose `style-src` lacks 'unsafe-inline' refuses the attribute.
+        group.style().set_css_text(&format!(
+            "display: inline-flex; align-items: center; gap: 0.25rem; flex: none; \
+             box-sizing: border-box; padding-right: 0.25rem; width: {width:.2}px;"
+        ));
+    }
     if let Ok(filter) = filter.dyn_into::<HtmlElement>() {
         let _ = filter
             .style()
@@ -3708,6 +3725,20 @@ fn dispatch_cell_change(
     crate::element::dispatch(host, CELL_EVENT, &detail);
 }
 
+#[wasm_bindgen::prelude::wasm_bindgen(inline_js = "
+export function __opengrid_numbers(values) {
+    const list = new Array(values.length);
+    for (let at = 0; at < list.length; at += 1) {
+        list[at] = values[at];
+    }
+    return list;
+}
+")]
+extern "C" {
+    #[wasm_bindgen::prelude::wasm_bindgen(js_name = __opengrid_numbers)]
+    fn numbers_to_array(values: &[f64]) -> js_sys::Array;
+}
+
 /// Fires `opengrid-selection-change` on the host.
 ///
 /// **The event contract (point 35), which every later event follows:**
@@ -3723,10 +3754,11 @@ fn dispatch_cell_change(
 /// * `detail` is plain JSON-ish data — no Rust types, no live references:
 ///   `{ rows: [u64], count: number }`.
 fn dispatch_selection(host: &HtmlElement, rows: &[u64], keys: Option<&[opengrid_json::Json]>) {
-    let list = js_sys::Array::new();
-    for row in rows {
-        list.push(&JsValue::from_f64(*row as f64));
-    }
+    // One call and a loop in JavaScript, not one call per row: "select all"
+    // over 100 000 rows names them all. The event still carries a plain array
+    // of numbers (`Array.from` over a typed array was slower than the calls).
+    let numbers: Vec<f64> = rows.iter().map(|row| *row as f64).collect();
+    let list = numbers_to_array(&numbers);
     let detail = js_sys::Object::new();
     let _ = js_sys::Reflect::set(&detail, &JsValue::from_str("rows"), &list);
     // A tree counts its selected nodes — shown or not — and names them by key.
@@ -4061,6 +4093,27 @@ fn on_filter_change(event: Event) {
     fix_operator_choices(&root, &schema);
 }
 
+/// What [`fix_operator_choices`] and [`fix_presentation`] work from: the
+/// columns' types and the markers the page's configuration gives them.
+#[derive(PartialEq)]
+struct Decorated {
+    schema: opengrid_types::Schema,
+    markers: Vec<Vec<(&'static str, String)>>,
+}
+
+impl Decorated {
+    fn of(schema: &opengrid_types::Schema, styles: &presentation::ColumnStyles) -> Self {
+        Self {
+            schema: schema.clone(),
+            markers: schema
+                .fields()
+                .iter()
+                .map(|field| styles.markers(field.name.as_str(), field.data_type))
+                .collect(),
+        }
+    }
+}
+
 /// Moves a column's operator control onto an operator its type allows.
 ///
 /// The options are built before the types are known (point 51), so the default
@@ -4076,8 +4129,8 @@ fn on_filter_change(event: Event) {
 /// column, including the numbers, and would stay wrong for the life of the
 /// grid.
 ///
-/// Written per result rather than per frame: it is a handful of attributes per
-/// column, and the browser ignores a `setAttribute` that changes nothing.
+/// Written per result rather than per frame: [`render`] calls it only when the
+/// [`Decorated`] it would write differs from the last one.
 fn fix_presentation(
     root: &ShadowRoot,
     schema: &opengrid_types::Schema,

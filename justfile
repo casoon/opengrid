@@ -144,6 +144,11 @@ e2e: wasm-build-components wasm-build package mcp-elements mcp-test
 measure-pivot: wasm-build-components
     node scripts/measure-pivot.mjs
 
+# Scroll-Frame, Filter und Strg+A des Grids über 100 000 Zeilen (#235): Zeit,
+# DOM-Schreibzugriffe, Allokation — in Chromium und WebKit. Messwerte, kein Test.
+measure-grid: wasm-build wasm-build-components
+    node scripts/measure-grid.mjs
+
 # Dieselbe Suite in Firefox und WebKit (Release-Checkliste, docs/releasing.md).
 # Opt-in: `just e2e` und CI bleiben bei Chromium. Ohne Screenshot-Baselines —
 # die gehören Chromium. Die Browser einmal holen:
