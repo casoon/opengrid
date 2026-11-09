@@ -32,6 +32,10 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
+  // A test that passes only on its retry is a flake, and the retry would hide
+  // it: the run turns red instead. It showed once already: a focus spec that
+  // depended on an animation frame passed on the retry for days (#266).
+  failOnFlakyTests: !!process.env.CI,
   reporter: process.env.CI ? [["github"], ["list"]] : "list",
   // Baselines are keyed by project **and platform**. They were keyed by project
   // alone, on the assumption that a pinned Playwright ships the same Chromium
