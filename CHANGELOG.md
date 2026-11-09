@@ -60,6 +60,16 @@ Two things belong in every release entry and are easy to leave out:
   `new Worker(new URL(...))` form, so `loadOpengrid()` and `createWorkerProvider()` work in a Vite
   build without `moduleUrl` or `workerUrl`; the options still replace the defaults. Before, such a
   build fell back to the plain table and could not start the engine's worker.
+- **Grid:** scrolling, filtering and selecting everything cost less
+  ([#235](https://github.com/casoon/opengrid/issues/235), measured with `just measure-grid` over
+  100 000 rows and 10 columns in Chromium). A frame now crosses into the DOM once instead of once
+  per patch, writes only what differs (a text, an attribute or a removal that is already as it
+  should be is left alone), and the operator choices and column markers are written per result
+  instead of per frame. A scroll step of three rows: 6 656 DOM writes become 64, the script time
+  9.6 ms becomes 2.7 ms and the main-thread time 14.2 ms becomes 4.2 ms. The handler of Ctrl+A
+  runs 3.6 ms instead of 11.7 ms, `<opengrid-table>` draws 5 000 rows 20 % faster, and extending a range
+  over a large selection no longer takes quadratic time. The DOM, the events and the texts are
+  the same.
 - **API:** `opengrid-source-replaced` is frozen, typed in `OpengridEventMap` and in the events table
   of the API reference, which says that `loader.js` dispatches it on the grid without bubbling
   ([#234](https://github.com/casoon/opengrid/issues/234)). A test now reads the module's
