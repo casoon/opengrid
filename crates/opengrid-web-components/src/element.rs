@@ -87,22 +87,6 @@ pub fn set_provider(host: &HtmlElement, provider: JsValue) {
     }
 }
 
-/// Overrides the texts a component writes itself (point 48).
-///
-/// `texts` is a plain JS object with any subset of the keys `lang`, `loading`,
-/// `matchesOne`, `matchesOther`, `empty`, `error`, `errorUnknown`,
-/// `filterGroup`, `operatorLabel`, `valueLabel`, `clear` and `operators`; every
-/// key left out keeps its English default. `{count}`, `{column}` and `{cause}`
-/// are the placeholders. A `lang` is written onto the elements that carry these
-/// texts — the grid's filter row and status line, the table's error paragraph —
-/// so they are announced in the language they are written in. Never onto the
-/// data: the cells are the page's, in the page's language.
-///
-/// Exported as `set_texts` beside `set_provider`, and like it, it takes effect
-/// immediately: the grid rebuilds, because its labels are part of the one-time
-/// skeleton (the filter row, the scroll offset and the focus are carried
-/// across). Call it **before** wiring the provider and the component renders the
-/// right words from its first paint.
 /// Sets the per-column display formats (plan point 42).
 ///
 /// `formats` is a plain JS object keyed by column name. A value is either a
@@ -359,6 +343,22 @@ pub fn set_values(host: &HtmlElement, values: JsValue) {
     }
 }
 
+/// Overrides the texts a component writes itself (point 48).
+///
+/// `texts` is a plain JS object with any subset of the keys `lang`, `loading`,
+/// `matchesOne`, `matchesOther`, `empty`, `error`, `errorUnknown`,
+/// `filterGroup`, `operatorLabel`, `valueLabel`, `clear` and `operators`; every
+/// key left out keeps its English default. `{count}`, `{column}` and `{cause}`
+/// are the placeholders. A `lang` is written onto the elements that carry these
+/// texts — the grid's filter row and status line, the table's error paragraph —
+/// so they are announced in the language they are written in. Never onto the
+/// data: the cells are the page's, in the page's language.
+///
+/// Exported as `set_texts` beside `set_provider`, and like it, it takes effect
+/// immediately: the grid rebuilds, because its labels are part of the one-time
+/// skeleton (the filter row, the scroll offset and the focus are carried
+/// across). Call it **before** wiring the provider and the component renders the
+/// right words from its first paint.
 #[wasm_bindgen(js_name = set_texts)]
 pub fn set_texts(host: &HtmlElement, values: JsValue) {
     let mut new = texts::from_js(&values);

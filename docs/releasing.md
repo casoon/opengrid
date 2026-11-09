@@ -10,7 +10,7 @@ A release that skips them is not a release; it is a publish.
 ## What 0.x promises
 
 The public API is frozen (the element names, their attributes, their events, their
-`::part` names, their custom properties, their text keys, the ten module functions, the
+`::part` names, their custom properties, their text keys, the module functions, the
 eight exports of `loader.js`, the REST provider's methods, and the fields and codes of an
 error) and `docs/api.md` is its written form. Tests keep the
 two honest with each other, and with `loader.d.ts`: a frozen name missing from the
@@ -149,7 +149,7 @@ inventory.
 - [ ] Approve **Publish to npm** in the run of the Release workflow the tag started
       (environment `npm`). The workflow publishes **the tarballs from the CI run of the
       release commit**, never a rebuild, through npm Trusted Publishing: no token, and the
-      packages carry provenance. Interrupted halfway, run the job again: what is on npm is
+      packages carry provenance. The CI artifacts expire after 90 days: a tag set on a commit older than that fails the publish, correctly but surprisingly — release from a recent commit. Interrupted halfway, run the job again: what is on npm is
       skipped.
 
 ### `@casoon/opengrid-mcp`

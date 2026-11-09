@@ -109,6 +109,25 @@ Names. A column may not start with `__og_` or `__grouping_`: the connectors buil
 under those prefixes, and `Schema::check` refuses such a field. A PostgreSQL table in a schema is
 `PostgresDataSource::connect_in_schema(url, "sales", "orders", schema)`; a dot inside the table
 name given to `connect` is part of the name.
+Errors. A connector fails with the kind that is true: `DataSourceError::Backend` for an outage
+(the caller never sees its text, only a reference), `LimitExceeded` when the caller can narrow the
+query, `Data` when the data breaks a rule the query relies on (a tree with a key twice or a
+cycle). The server tells the caller the message of the last two; give those no database text.
+`ServerBuilder::on_error` receives the cause of every backend failure and every refused token.
+
+One rule a connector must carry out itself: for a tree, the tenant rule is **only** in
+`tree.scope`, not in `query.filter` (a filter would turn the tree into a filtered one — T5 shows
+the ancestors of a match as context, and a flat export grows a `match` column). A connector that
+reports the capability `tree` therefore has to apply `tree.scope` to every row it reads, as the
+SQLite and PostgreSQL references do; one that honours only `query.filter` leaks other tenants'
+rows. A connector without the capability is asked for the rows of the scope through
+`Connector::tree`, whose default applies it.
+
+Startup. `Server::builder().build()` checks every token against every source's row filter: the
+context value is read as the filtered column's type (`"7"` for a `bigint` tenant), and a value of
+another type, a key the token does not carry or an operator the column cannot answer is a build
+error, as are a token value handed in twice and an `allow_origin` that is not a valid header
+value.
 
 ## A server in another language
 

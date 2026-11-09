@@ -344,3 +344,213 @@ async fn an_endless_ready_source_meets_the_timeout() {
     assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE, "{body}");
     assert!(body.contains("took longer"), "{body}");
 }
+
+/// A connector that fails the way a database does: with a text that names a
+/// table and a tenant's value.
+struct Failing {
+    inner: FromSource<LocalDataSource>,
+}
+
+impl Connector for Failing {
+    fn schema(&self) -> BoxFuture<'_, Result<Schema, DataSourceError>> {
+        self.inner.schema()
+    }
+
+    fn capabilities(&self) -> DataSourceCapabilities {
+        self.inner.capabilities()
+    }
+
+    fn execute(
+        &self,
+        _query: ValidatedQuery,
+    ) -> BoxFuture<'_, Result<QueryResult, DataSourceError>> {
+        Box::pin(async {
+            Err(DataSourceError::Backend {
+                message: r#"relation "tenants_secret" does not exist; invalid input syntax for type bigint: "acme""#
+                    .to_owned(),
+            })
+        })
+    }
+}
+
+/// Issue #219: what a database says can name a table, a hidden column or a
+/// tenant's value, so the caller gets one fixed sentence and a reference; the
+/// operator's hook gets the cause under the same reference, and a refused token
+/// is reported without the token.
+#[tokio::test]
+async fn a_backend_failure_is_a_fixed_sentence_and_a_reference() {
+    let (recording, _) = Recording::new();
+    let reports = Arc::new(Mutex::new(Vec::new()));
+    let seen = Arc::clone(&reports);
+    let server = Server::builder()
+        .source(
+            "orders",
+            Failing {
+                inner: recording.inner,
+            },
+            SourcePolicy::default(),
+        )
+        .token(TOKEN, [("tenant", "acme")])
+        .on_error(move |report| seen.lock().unwrap().push(report.clone()))
+        .build()
+        .await
+        .expect("a server");
+
+    let (status, body) = post(
+        server.router(),
+        "/query/orders",
+        r#"{"source":"orders","select":["id"]}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_GATEWAY, "{body}");
+    assert!(
+        !body.contains("tenants_secret") && !body.contains("acme"),
+        "{body}"
+    );
+    assert!(
+        body.contains("the data source failed (reference og-"),
+        "{body}"
+    );
+
+    {
+        let reports = reports.lock().unwrap();
+        assert_eq!(reports.len(), 1, "{reports:?}");
+        let report = &reports[0];
+        assert!(report.detail.contains("tenants_secret"), "{report:?}");
+        let reference = report.reference.as_deref().expect("a reference");
+        assert!(body.contains(reference), "{body} / {reference}");
+    }
+
+    // A wrong token: one answer to the caller, the reason to the operator.
+    let response = server
+        .router()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/query/orders")
+                .header(header::AUTHORIZATION, "Bearer not-the-token-9999")
+                .body(Body::from("{}"))
+                .unwrap(),
+        )
+        .await
+        .expect("the router answers");
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let reports = reports.lock().unwrap();
+    assert_eq!(reports.len(), 2, "{reports:?}");
+    assert_eq!(reports[1].detail, "an unknown token");
+    assert!(
+        reports
+            .iter()
+            .all(|report| !format!("{report:?}").contains("not-the-token-9999"))
+    );
+}
+
+/// Issue #221: what a token's context does to a row filter is settled at
+/// startup. The context is text; a `bigint` column reads it as a number, so a
+/// numeric tenant works — and a value that is no number, a key the token does
+/// not carry, or an operator the column cannot answer stops `build`, instead
+/// of failing every request of that token with a 422.
+#[tokio::test]
+async fn a_row_filter_on_a_number_column_takes_a_numeric_context() {
+    let (connector, _) = Recording::new();
+    let server = Server::builder()
+        .source(
+            "orders",
+            connector,
+            SourcePolicy {
+                allowed_fields: vec!["customer".into()],
+                row_filter: Some(RowFilter::new("id", "eq", ":tenant")),
+            },
+        )
+        .token(TOKEN, [("tenant", "7")])
+        .build()
+        .await
+        .expect("a server");
+    let (status, body) = post(
+        server.router(),
+        "/query/orders",
+        r#"{"source":"orders","select":["customer"]}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(result_from_json(&body).unwrap().total_count, 1);
+}
+
+#[tokio::test]
+async fn a_context_that_does_not_fit_the_row_filter_does_not_build() {
+    let build = |filter: RowFilter, context: &[(&str, &str)]| {
+        let (connector, _) = Recording::new();
+        Server::builder()
+            .source(
+                "orders",
+                connector,
+                SourcePolicy {
+                    allowed_fields: Vec::new(),
+                    row_filter: Some(filter),
+                },
+            )
+            .token(TOKEN, context.iter().copied())
+            .build()
+    };
+    let message = |result: Result<Server, opengrid_server::RegistryError>| {
+        result
+            .err()
+            .map(|error| error.to_string())
+            .unwrap_or_default()
+    };
+
+    let not_a_number =
+        message(build(RowFilter::new("id", "eq", ":tenant"), &[("tenant", "acme")]).await);
+    assert!(not_a_number.contains("tenant"), "{not_a_number}");
+    let missing = message(build(RowFilter::new("id", "eq", ":tenant"), &[("other", "7")]).await);
+    assert!(missing.contains("tenant"), "{missing}");
+    let operator = message(
+        build(
+            RowFilter::new("id", "contains", ":tenant"),
+            &[("tenant", "7")],
+        )
+        .await,
+    );
+    assert!(!operator.is_empty(), "an operator the column cannot answer");
+    // The same filter with a context that fits builds.
+    assert!(
+        build(RowFilter::new("id", "eq", ":tenant"), &[("tenant", "7")])
+            .await
+            .is_ok()
+    );
+}
+
+/// Two tokens of one value would keep one context and silently give the first
+/// tenant the second's rows.
+#[tokio::test]
+async fn a_token_twice_does_not_build() {
+    let (connector, _) = Recording::new();
+    let result = Server::builder()
+        .source("orders", connector, SourcePolicy::default())
+        .token(TOKEN, [("tenant", "a")])
+        .token(TOKEN, [("tenant", "b")])
+        .build()
+        .await;
+    let message = result
+        .err()
+        .map(|error| error.to_string())
+        .unwrap_or_default();
+    assert!(message.contains("twice"), "{message}");
+}
+
+/// An origin that does not parse used to be dropped silently.
+#[tokio::test]
+async fn an_unparsable_origin_does_not_build() {
+    let (connector, _) = Recording::new();
+    let result = Server::builder()
+        .source("orders", connector, SourcePolicy::default())
+        .allow_origin("https://app.example.com")
+        .allow_origin("https://bad\norigin")
+        .build()
+        .await;
+    let message = result
+        .err()
+        .map(|error| error.to_string())
+        .unwrap_or_default();
+    assert!(message.contains("origin"), "{message}");
+}

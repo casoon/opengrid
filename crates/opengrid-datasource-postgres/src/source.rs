@@ -322,6 +322,13 @@ pub(crate) fn backend(error: impl std::fmt::Display) -> DataSourceError {
     }
 }
 
+/// The data breaks a tree rule: the caller is told, it is no outage.
+pub(crate) fn data(message: impl Into<String>) -> DataSourceError {
+    DataSourceError::Data {
+        message: message.into(),
+    }
+}
+
 pub(crate) fn compile(error: crate::compiler::CompileError) -> DataSourceError {
     DataSourceError::Backend {
         message: error.to_string(),

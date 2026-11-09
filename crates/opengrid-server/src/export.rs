@@ -96,7 +96,7 @@ use opengrid_export::{
 use opengrid_query::{Limits, ValidatedQuery};
 use tokio::sync::{OwnedSemaphorePermit, oneshot};
 
-use crate::api::{AppState, Failure, admit, source_failed};
+use crate::api::{AppState, Failure, Reporter, admit, source_failed};
 use crate::registry::Source;
 
 /// Rows read from the source at a time — the `max_limit` a page has by default,
@@ -189,6 +189,7 @@ pub(crate) async fn export(
         ready,
         Outlet::new(sender),
         permit,
+        state.reporter.clone(),
     ));
 
     // Dropping `started` — on the timeout, or when the client leaves before
@@ -206,7 +207,10 @@ pub(crate) async fn export(
         }
         // The task ended without a word, which only a panic does.
         Ok(Err(_)) => {
-            return Err(WireError::new(ErrorCode::Backend, "the export failed to start").into());
+            return Err(state
+                .reporter
+                .backend("the export task ended without a word (a panic)")
+                .into());
         }
         Ok(Ok(started)) => started?,
     };
@@ -238,6 +242,7 @@ async fn stream(
     mut ready: oneshot::Sender<Result<u64, Failure>>,
     mut outlet: Outlet,
     _permit: OwnedSemaphorePermit,
+    reporter: Reporter,
 ) {
     // Before the first byte: every step races the handler, which gives up on
     // the timeout or when the client leaves — `ready.closed()` resolves then.
@@ -256,7 +261,7 @@ async fn stream(
     let mut rows = match step(opened, ready.closed(), None).await {
         None => return,
         Some(Err(error)) => {
-            let _ = ready.send(Err(source_failed(error).into()));
+            let _ = ready.send(Err(source_failed(error, &reporter).into()));
             return;
         }
         Some(Ok(rows)) => rows,
@@ -266,7 +271,7 @@ async fn stream(
     let count = match step(rows.count(), ready.closed(), canceller.as_ref()).await {
         None => return,
         Some(Err(error)) => {
-            let _ = ready.send(Err(source_failed(error).into()));
+            let _ = ready.send(Err(source_failed(error, &reporter).into()));
             rows.close().await;
             return;
         }
@@ -305,7 +310,7 @@ async fn stream(
     {
         None => return,
         Some(Err(error)) => {
-            let _ = ready.send(Err(source_failed(error).into()));
+            let _ = ready.send(Err(source_failed(error, &reporter).into()));
             rows.close().await;
             return;
         }
@@ -315,7 +320,7 @@ async fn stream(
     let mut writer = match Writer::new(format, &source.name) {
         Ok(writer) => writer,
         Err(message) => {
-            let _ = ready.send(Err(WireError::new(ErrorCode::Backend, message).into()));
+            let _ = ready.send(Err(reporter.backend(message).into()));
             rows.close().await;
             return;
         }
@@ -352,7 +357,7 @@ async fn stream(
         {
             Some(Ok(piece)) => piece,
             Some(Err(error)) => {
-                outlet.abort(source_failed(error).message);
+                outlet.abort(source_failed(error, &reporter).message);
                 return;
             }
             None => {
