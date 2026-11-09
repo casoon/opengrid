@@ -30,7 +30,8 @@ That freezes the list, not the design: it may still change before 1.0.
 | `<opengrid-pivot>` | Rows crossed with up to two column dimensions, with subtotals. |
 
 All three ship in one module. The Cargo features `grid` and `pivot` exist for anyone who wants
-only one. In React, Vue and Svelte they come as components — see
+only one; `set_columns` and `set_formats` are in both, so a pivot-only build pulls the grid and
+query crates too (it grows from 122.9 to 125.0 KiB brotli). In React, Vue and Svelte they come as components — see
 [Frameworks](guides/frameworks/).
 
 ## What V1 deliberately does not do

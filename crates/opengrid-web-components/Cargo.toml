@@ -23,7 +23,9 @@ crate-type = ["cdylib", "rlib"]
 [features]
 default = ["grid", "pivot"]
 grid = ["dep:opengrid-grid", "dep:opengrid-query"]
-pivot = []
+# The pivot reads the page's presentation (`set_columns`, `set_formats`), which
+# is written in the grid's and the query's types: it pulls the same crates (#234).
+pivot = ["dep:opengrid-grid", "dep:opengrid-query"]
 
 [dependencies]
 opengrid-web-core = { path = "../opengrid-web-core" }
