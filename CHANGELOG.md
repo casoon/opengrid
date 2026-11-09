@@ -31,6 +31,13 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Changed
 
+- **Server:** `ServerBuilder::build` now fails at startup for what used to fail on every request or
+  silently: a token whose context does not fit a source's row filter (a `tenant_id bigint` filter
+  never worked, the context was always sent as text; it is now read as the column's type), a token
+  value handed in twice (the last context replaced the first's, so the first tenant got the second's
+  rows), and an `allow_origin` that is not a valid header value (it was dropped). **What breaks:** a
+  server that was configured with any of these now refuses to start
+  ([#221](https://github.com/casoon/opengrid/issues/221)).
 - **Docs:** the project site uses the current shared theme (0.12.6) and ends with a link to the
   quickstart.
 - **Packages:** the peer range of `vue` is `>=3.4.20` and that of `@types/react` is `>=18.3.0`
