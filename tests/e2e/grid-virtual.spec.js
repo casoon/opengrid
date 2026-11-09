@@ -177,15 +177,19 @@ test("has no axe violations", async ({ page }) => {
 /**
  * What the grid writes into the shadow root while `act` runs: Text nodes
  * replaced or changed inside the data cells (`childList`, `characterData`) and
- * attributes written (a write of the same value counts too).
+ * attributes written to the body's rows and cells, by `TAG.name` (a write of
+ * the same value counts too).
  */
 async function writesDuring(page, act) {
   await page.evaluate(() => {
     const root = document.querySelector("opengrid-grid").shadowRoot;
-    const seen = { text: 0, attributes: 0 };
+    const seen = { text: 0, attributes: [] };
     const tally = (record) => {
       if (record.type === "attributes") {
-        seen.attributes += 1;
+        if (record.target.closest("tbody")) {
+          const name = `${record.target.tagName}.${record.attributeName}`;
+          if (!seen.attributes.includes(name)) seen.attributes.push(name);
+        }
         return;
       }
       const target = record.target.nodeType === 1 ? record.target : record.target.parentElement;
@@ -211,7 +215,7 @@ async function writesDuring(page, act) {
   });
 }
 
-test("a frame that changes no row writes no text", async ({ page }) => {
+test("a frame that changes no row writes only what changed", async ({ page }) => {
   await page.evaluate(() => {
     const root = document.querySelector("opengrid-grid").shadowRoot;
     root.querySelector('td[data-row="3"][data-col="0"]').focus();
@@ -233,6 +237,14 @@ test("a frame that changes no row writes no text", async ({ page }) => {
       .toBe(1);
   });
   expect(same.text).toBe(0);
+  // And of the attributes only the two the selection changes: the rest of the
+  // set a row is patched with is already as it should be. (The presentation
+  // markers are the element's, not the frame's.)
+  expect(
+    same.attributes
+      .filter((name) => !/data-(align|mono|emphasis|muted)|aria-readonly/.test(name))
+      .sort(),
+  ).toEqual(["TR.aria-selected", "TR.data-selected"]);
 
   // Not vacuous: a scroll recycles rows, and their text does change.
   const moved = await writesDuring(page, async () => {
