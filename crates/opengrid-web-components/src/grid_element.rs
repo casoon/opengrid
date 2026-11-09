@@ -1040,8 +1040,54 @@ fn render(host: &HtmlElement, focus_after: bool) {
         combo::draw_cells(host, &root);
     }
 
+    keep_pager_focus(host);
     if focus_after {
         focus_active(host);
+    }
+}
+
+/// The paging buttons in the order they stand in the pager.
+const PAGER_BUTTONS: [&str; 4] = ["page-first", "page-previous", "page-next", "page-last"];
+
+/// Moves the focus off a paging button the render has just disabled.
+///
+/// Pressing "Next" on the way to the last page disables the button the focus
+/// stands on, and a browser then drops the focus to the document (WCAG 2.4.3).
+/// The focus goes to the nearest button that still works, on the side the
+/// reader was heading away from: "next" and "last" hand it back to "previous",
+/// "first" and "previous" to "next". With none left it goes to the active cell.
+fn keep_pager_focus(host: &HtmlElement) {
+    let Some(root) = host.shadow_root() else {
+        return;
+    };
+    let Some(focused) = root.active_element() else {
+        return;
+    };
+    if !focused.has_attribute("disabled") {
+        return;
+    }
+    let Some(position) = focused
+        .get_attribute("part")
+        .and_then(|part| PAGER_BUTTONS.iter().position(|name| *name == part))
+    else {
+        return;
+    };
+    let candidates: Vec<&str> = if position >= 2 {
+        PAGER_BUTTONS[..position].iter().rev().copied().collect()
+    } else {
+        PAGER_BUTTONS[position + 1..].to_vec()
+    };
+    let target = candidates.into_iter().find_map(|name| {
+        root.query_selector(&format!("[part=\"{name}\"]:not([disabled])"))
+            .ok()
+            .flatten()
+            .and_then(|button| button.dyn_into::<HtmlElement>().ok())
+    });
+    match target {
+        Some(button) => {
+            let _ = button.focus();
+        }
+        None => focus_active(host),
     }
 }
 

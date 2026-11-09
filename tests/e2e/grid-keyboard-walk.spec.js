@@ -165,7 +165,7 @@ test("the pager is reached and used with the keyboard alone", async ({ page }) =
 // The button that was pressed is the one that is disabled by the press: on the
 // last page "next" has nothing to offer. A browser moves the focus off a
 // disabled control once it has drawn a frame, to the document.
-test.fixme("the focus does not fall to the document when the pager disables the button it stands on (#285)", async ({
+test("the focus does not fall to the document when the pager disables the button it stands on", async ({
   page,
 }) => {
   await page.focus("#before");
@@ -177,5 +177,6 @@ test.fixme("the focus does not fall to the document when the pager disables the 
   await expect.poll(() => ids(page)).toEqual(["5"]);
   // Two frames: the point where a browser drops the focus from a disabled button.
   await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
-  expect(await where(page)).not.toBe("body");
+  // The focus went to the button that still works, the way back.
+  expect(await where(page)).toBe("page-previous");
 });
