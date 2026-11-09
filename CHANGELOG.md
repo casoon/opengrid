@@ -72,6 +72,16 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Fixed
 
+- **Pivot and grid: live region, language, names and descriptions** ([#231](https://github.com/casoon/opengrid/issues/231)).
+  `<opengrid-pivot>` keeps its status line across answers and changes only its text, where it built
+  a fresh `role="status"` with the text already inside on every answer (WCAG 4.1.3); the toolbar and
+  the table are drawn around it. The grand total carries our `lang`, and the filter field is named
+  by a hidden node with our `lang` instead of `aria-label`. A validation sentence and a tree's
+  "context" are hidden nodes the cell is described by (`aria-describedby`) instead of
+  `aria-description` (ARIA 1.3 draft); a finding no longer overwrites the context on a tree's first
+  cell. The *Add filter* dialog is `aria-modal="true"`, and what it says about a refused value goes
+  through the status line instead of a second `role="alert"`.
+
 - **Server and connectors, hardening** ([#222](https://github.com/casoon/opengrid/issues/222)).
   `max_payload_bytes` above axum's 2 MiB is honoured (the router carries the limit; an oversize body
   is still the `limit_exceeded` wire error), every answer has `Cache-Control: no-store` and

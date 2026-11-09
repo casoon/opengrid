@@ -976,6 +976,7 @@ fn render(host: &HtmlElement, focus_after: bool) {
         fix_presentation(&root, &schema, &presentation::styles(host));
     }
     sync_chrome(host);
+    sync_descriptions(host);
     // The lists of list columns are chips, drawn over the text the frame wrote.
     if let Some(root) = host.shadow_root() {
         combo::draw_cells(host, &root);
@@ -3250,6 +3251,161 @@ fn key_from_js(state: &GridState, key: &JsValue) -> Option<Value> {
     Value::from_json_typed(&json, &data_type).ok()
 }
 
+/// Makes what a cell says about itself a node it is described by.
+///
+/// A validation sentence and a tree's "context" were `aria-description`, which
+/// is ARIA 1.3 draft with uneven support, and one attribute for two things: a
+/// finding on a tree's first cell overwrote the context. They are hidden text
+/// nodes now, in one hidden box in the shadow root, and a cell lists the ones
+/// it has in `aria-describedby` — the established pair (ARIA 1.1). The frame
+/// writes the cell's marks as patches; this runs after it, since a patch cannot
+/// make a node of its own.
+fn sync_descriptions(host: &HtmlElement) {
+    let (Some(runtime), Some(root), Some(document)) =
+        (runtime(host), host.shadow_root(), host.owner_document())
+    else {
+        return;
+    };
+    let borrowed = runtime.borrow();
+    let tree_context = texts(host);
+    let Some(store) = description_store(&root, &document) else {
+        return;
+    };
+    let mut wanted: Vec<String> = Vec::new();
+    // Every cell that carries a finding is described by it — and by the
+    // context, when the frame put that on it.
+    if let Ok(cells) = root.query_selector_all("td[data-validation]") {
+        for index in 0..cells.length() {
+            let Some(td) = cells
+                .item(index)
+                .and_then(|node| node.dyn_into::<HtmlElement>().ok())
+            else {
+                continue;
+            };
+            let (Some(row), Some(col)) = (
+                td.get_attribute("data-row")
+                    .and_then(|row| row.parse().ok()),
+                td.get_attribute("data-col")
+                    .and_then(|col| col.parse().ok()),
+            ) else {
+                continue;
+            };
+            let Some(finding) = borrowed.state.finding(CellRef::new(row, col)) else {
+                continue;
+            };
+            let id = format!("{}{row}-{col}", grid::FINDING_ID_PREFIX);
+            description_node(&document, &store, &id, &finding.message, None);
+            let mut ids: Vec<String> = td
+                .get_attribute("aria-describedby")
+                .unwrap_or_default()
+                .split_whitespace()
+                .filter(|token| !token.starts_with(grid::FINDING_ID_PREFIX))
+                .map(str::to_owned)
+                .collect();
+            ids.push(id.clone());
+            let _ = td.set_attribute("aria-describedby", &ids.join(" "));
+            wanted.push(id);
+        }
+    }
+    // A cell whose finding is gone loses its token — a tree's context stays.
+    if let Ok(cells) = root.query_selector_all(r#"td[aria-describedby]:not([data-validation])"#) {
+        for index in 0..cells.length() {
+            let Some(td) = cells
+                .item(index)
+                .and_then(|node| node.dyn_into::<Element>().ok())
+            else {
+                continue;
+            };
+            let kept: Vec<String> = td
+                .get_attribute("aria-describedby")
+                .unwrap_or_default()
+                .split_whitespace()
+                .filter(|token| !token.starts_with(grid::FINDING_ID_PREFIX))
+                .map(str::to_owned)
+                .collect();
+            if kept.is_empty() {
+                let _ = td.remove_attribute("aria-describedby");
+            } else {
+                let _ = td.set_attribute("aria-describedby", &kept.join(" "));
+            }
+        }
+    }
+    let context = root
+        .query_selector(&format!(
+            r#"[aria-describedby~="{}"]"#,
+            grid::TREE_CONTEXT_ID
+        ))
+        .ok()
+        .flatten()
+        .is_some();
+    if context {
+        description_node(
+            &document,
+            &store,
+            grid::TREE_CONTEXT_ID,
+            &tree_context.tree_context,
+            Some(&tree_context.lang),
+        );
+        wanted.push(grid::TREE_CONTEXT_ID.to_owned());
+    }
+    // Nodes nothing refers to any more.
+    let mut child = store.first_element_child();
+    while let Some(node) = child {
+        child = node.next_element_sibling();
+        if !wanted.contains(&node.id()) {
+            node.remove();
+        }
+    }
+}
+
+/// The hidden box the description nodes live in, made on first need.
+fn description_store(root: &web_sys::ShadowRoot, document: &web_sys::Document) -> Option<Element> {
+    if let Ok(Some(store)) = root.query_selector("[data-descriptions]") {
+        return Some(store);
+    }
+    let store = document.create_element("div").ok()?;
+    store.set_attribute("data-descriptions", "").ok()?;
+    store.set_attribute("hidden", "").ok()?;
+    root.append_child(&store).ok()?;
+    Some(store)
+}
+
+/// One description node: made if it is not there, its words and language set.
+fn description_node(
+    document: &web_sys::Document,
+    store: &Element,
+    id: &str,
+    text: &str,
+    lang: Option<&str>,
+) {
+    let node = match store
+        .query_selector(&format!(r#"[id="{id}"]"#))
+        .ok()
+        .flatten()
+    {
+        Some(node) => node,
+        None => {
+            let Ok(node) = document.create_element("span") else {
+                return;
+            };
+            node.set_id(id);
+            let _ = store.append_child(&node);
+            node
+        }
+    };
+    if node.text_content().as_deref() != Some(text) {
+        node.set_text_content(Some(text));
+    }
+    match lang.filter(|lang| !lang.trim().is_empty()) {
+        Some(lang) => {
+            let _ = node.set_attribute("lang", lang);
+        }
+        None => {
+            let _ = node.remove_attribute("lang");
+        }
+    }
+}
+
 /// Redraws one cell in place: the focused row's slot is pinned and the
 /// renderer leaves it alone (point 17), so the page's word on a cell there
 /// would otherwise wait for the focus to move.
@@ -3303,13 +3459,12 @@ fn redraw_cell(host: &HtmlElement, cell: CellRef) {
     match &finding {
         Some(finding) => {
             let _ = td.set_attribute("data-validation", finding.level.as_str());
-            let _ = td.set_attribute("aria-description", &finding.message);
         }
         None => {
             let _ = td.remove_attribute("data-validation");
-            // A tree's context is named in the same attribute (issue #135).
+            // A tree's context is named by the same attribute (issue #135).
             if !is_tree(host) {
-                let _ = td.remove_attribute("aria-description");
+                let _ = td.remove_attribute("aria-describedby");
             }
         }
     }
@@ -3326,6 +3481,8 @@ fn redraw_cell(host: &HtmlElement, cell: CellRef) {
     } else {
         let _ = td.remove_attribute("aria-invalid");
     }
+    drop(borrowed);
+    sync_descriptions(host);
 }
 
 /// [`crate::element::set_cell_state`] (issue #153).
@@ -7649,6 +7806,8 @@ fn open_filter_dialog(host: &HtmlElement) {
         ("part", "filter-dialog"),
         ("role", "dialog"),
         ("popover", "auto"),
+        // Tab does not leave it (`on_dialog_key`): it says so.
+        ("aria-modal", "true"),
         ("aria-labelledby", "og-filter-dialog-title"),
     ] {
         let _ = dialog.set_attribute(name, value);
@@ -7661,7 +7820,7 @@ fn open_filter_dialog(host: &HtmlElement) {
          <label><span></span><select data-dialog=\"column\"></select></label>\
          <label><span></span><select data-dialog=\"op\"></select></label>\
          <label data-dialog-value><span></span><input data-dialog=\"value\"></label>\
-         <p data-dialog-problem role=\"alert\" hidden></p>\
+         <p data-dialog-problem hidden></p>\
          <div data-dialog-actions>\
            <button type=\"button\" data-dialog-action=\"cancel\"></button>\
            <button type=\"button\" data-dialog-action=\"apply\"></button>\
@@ -7834,6 +7993,8 @@ fn apply_filter_dialog(host: &HtmlElement) {
             line.set_text_content(Some(message));
             let _ = line.remove_attribute("hidden");
         }
+        // Said through the status line, the grid's one live region.
+        announce(host, message);
     };
     if grid::takes_value(&op) && value.trim().is_empty() {
         problem(&texts.query_missing_value.replace("{column}", &column));

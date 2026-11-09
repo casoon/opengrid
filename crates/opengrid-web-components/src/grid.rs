@@ -3296,7 +3296,7 @@ pub fn patch_grid(
                 // closed: its state is rewritten, its place is not.
                 if let Some(entry) = tree.and_then(|tree| tree.entry_at(row)) {
                     let local = row.saturating_sub(paging.base);
-                    patch_tree_row(buffer, row_nodes, entry, local, row_height, texts);
+                    patch_tree_row(buffer, row_nodes, entry, local, row_height);
                 }
                 let selected = state.is_selected(row);
                 selection_attributes(buffer, row_nodes.row, selected);
@@ -3404,7 +3404,7 @@ pub fn patch_grid(
                 // A tree's node (issue #135): its depth, its place among its
                 // siblings, whether it opens — the treegrid's own words.
                 if let Some(entry) = tree.and_then(|tree| tree.entry_at(row)) {
-                    patch_tree_row(buffer, row_nodes, entry, local, row_height, texts);
+                    patch_tree_row(buffer, row_nodes, entry, local, row_height);
                 }
                 // A slot that showed the total carried our `lang` on its label;
                 // a value in it is the page's word again.
@@ -3531,11 +3531,10 @@ pub fn patch_grid(
                                 name: "data-validation".to_owned(),
                                 value: finding.level.as_str().to_owned(),
                             });
-                            buffer.push(Patch::SetAttribute {
-                                node: *cell,
-                                name: "aria-description".to_owned(),
-                                value: finding.message.clone(),
-                            });
+                            // The sentence itself is a hidden node the cell is
+                            // described by (`aria-describedby`, ARIA 1.1): the
+                            // element writes it after the frame — see
+                            // `sync_descriptions`.
                         }
                         None => {
                             buffer.push(Patch::RemoveAttribute {
@@ -3547,7 +3546,7 @@ pub fn patch_grid(
                             if tree.is_none() {
                                 buffer.push(Patch::RemoveAttribute {
                                     node: *cell,
-                                    name: "aria-description".to_owned(),
+                                    name: "aria-describedby".to_owned(),
                                 });
                             }
                         }
@@ -4150,7 +4149,6 @@ fn patch_tree_row(
     entry: &crate::tree::Entry,
     local: u64,
     row_height: u64,
-    texts: &GridTexts,
 ) {
     let row = row_nodes.row;
     let set = |buffer: &mut PatchBuffer, name: &str, value: String| {
@@ -4194,20 +4192,28 @@ fn patch_tree_row(
         if let Some(first) = row_nodes.cells.first() {
             buffer.push(Patch::RemoveAttribute {
                 node: *first,
-                name: "aria-description".to_owned(),
+                name: "aria-describedby".to_owned(),
             });
         }
     } else {
         set(buffer, "data-context", String::new());
+        // The words are a hidden node the element keeps (`TREE_CONTEXT_ID`).
         if let Some(first) = row_nodes.cells.first() {
             buffer.push(Patch::SetAttribute {
                 node: *first,
-                name: "aria-description".to_owned(),
-                value: texts.tree_context.clone(),
+                name: "aria-describedby".to_owned(),
+                value: TREE_CONTEXT_ID.to_owned(),
             });
         }
     }
 }
+
+/// The id of the hidden node that says "context", which the first cell of a
+/// tree row shown only for the match below it is described by.
+pub const TREE_CONTEXT_ID: &str = "og-tree-context";
+
+/// The id prefix of the hidden nodes that hold a cell's validation sentence.
+pub const FINDING_ID_PREFIX: &str = "og-finding-";
 
 /// Hides a pool slot that holds no logical row in the current window.
 const ROW_HIDDEN_STYLE: &str = "display: none;";
@@ -4299,7 +4305,7 @@ fn set_lang(buffer: &mut PatchBuffer, node: NodeId, texts: &GridTexts) {
 /// `lang`, and the target points at it with `aria-labelledby`. A hidden element
 /// still names what refers to it, and the reference stays inside the shadow
 /// root (E8).
-fn label_by(
+pub(crate) fn label_by(
     buffer: &mut PatchBuffer,
     nodes: &mut NodeAllocator,
     parent: NodeId,

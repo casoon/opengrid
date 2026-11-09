@@ -162,13 +162,15 @@ test("a filter keeps the path to a match, as context", async ({ page }) => {
   expect(rows.map((row) => row.context)).toEqual([true, true, true, false]);
   // The context is named for the ear, on its first cell.
   expect(
-    await page.evaluate(() =>
-      document
-        .querySelector("opengrid-grid")
-        .shadowRoot.querySelector('td[data-row="0"][data-col="0"]')
-        .getAttribute("aria-description"),
-    ),
-  ).toBe("context");
+    await page.evaluate(() => {
+      const root = document.querySelector("opengrid-grid").shadowRoot;
+      const cell = root.querySelector('td[data-row="0"][data-col="0"]');
+      return [
+        cell.hasAttribute("aria-description"),
+        root.getElementById(cell.getAttribute("aria-describedby")).textContent,
+      ];
+    }),
+  ).toEqual([false, "context"]);
   // One match, not four rows.
   expect(await status(page)).toMatch(/\b1\b/);
 });

@@ -148,6 +148,103 @@ test.describe("pivot", () => {
     expect(results.violations).toEqual([]);
   });
 
+  // WCAG 4.1.3: a live region that is rebuilt with its text already inside is
+  // announced unreliably. The status line is made once; an answer changes its
+  // text, and that is the announcement.
+  test("the status line survives every answer and each answer is a change of its text", async ({
+    page,
+  }) => {
+    await open(page);
+    await page.evaluate(() => {
+      const root = document.querySelector("opengrid-pivot").shadowRoot;
+      const line = root.querySelector('[part="status"]');
+      window.__line = line;
+      window.__heard = [line.textContent];
+      window.__removed = false;
+      new MutationObserver((records) => {
+        for (const record of records) {
+          if ([...record.removedNodes].some((node) => node === line || node.contains?.(line))) {
+            window.__removed = true;
+          }
+        }
+        const text = root.querySelector('[part="status"]')?.textContent;
+        if (text !== window.__heard.at(-1)) window.__heard.push(text);
+      }).observe(root, { subtree: true, childList: true, characterData: true });
+    });
+    await page.evaluate(() =>
+      document.querySelector("opengrid-pivot").setAttribute("rows", "customer"),
+    );
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            document
+              .querySelector("opengrid-pivot")
+              .shadowRoot.querySelector('thead th button[data-sort-field="customer"], thead th')
+              ?.textContent,
+        ),
+      )
+      .toContain("customer");
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          document
+            .querySelector("opengrid-pivot")
+            .shadowRoot.querySelector('[part="status"]')
+            .getAttribute("data-state"),
+        ),
+      )
+      .toBe("ready");
+    const kept = await page.evaluate(() => ({
+      same:
+        document.querySelector("opengrid-pivot").shadowRoot.querySelector('[part="status"]') ===
+        window.__line,
+      connected: window.__line.isConnected,
+      removed: window.__removed,
+      role: window.__line.getAttribute("role"),
+      heard: window.__heard,
+      live: window.__line.getAttribute("aria-live"),
+    }));
+    expect(kept).toMatchObject({ same: true, connected: true, removed: false, role: "status", live: "polite" });
+    // Loading, then the answer: two changes of one node's text.
+    expect(kept.heard.length).toBeGreaterThanOrEqual(2);
+    expect(kept.heard.at(-1)).toBe((await facts(page)).status);
+  });
+
+  test("the grand total and the filter field name themselves in our language", async ({ page }) => {
+    await open(page);
+    await page.evaluate(() => document.querySelector("opengrid-pivot").setAttribute("toolbar", ""));
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            !!document.querySelector("opengrid-pivot").shadowRoot.querySelector("[data-filter-input]"),
+        ),
+      )
+      .toBe(true);
+    const seen = await page.evaluate(() => {
+      const root = document.querySelector("opengrid-pivot").shadowRoot;
+      const input = root.querySelector("[data-filter-input]");
+      const label = root.getElementById(input.getAttribute("aria-labelledby"));
+      return {
+        total: root.querySelector("tbody tr[data-total]:last-child th").getAttribute("lang"),
+        status: root.querySelector('[part="status"]').getAttribute("lang"),
+        ariaLabel: input.getAttribute("aria-label"),
+        label: label?.textContent,
+        labelLang: label?.getAttribute("lang"),
+        hidden: label?.hidden,
+      };
+    });
+    expect(seen.total).toBeTruthy();
+    expect(seen.total).toBe(seen.status);
+    // Named by a hidden node with our `lang` (rule F9), not by `aria-label`.
+    expect(seen.ariaLabel).toBeNull();
+    expect(seen.label).toBeTruthy();
+    expect(seen.labelLang).toBe(seen.status);
+    expect(seen.hidden).toBe(true);
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  });
+
   // Issue #120: two column dimensions — a header row each, and every value
   // cell names its headers, so a screen reader reads all of them.
   test("two column dimensions give a named three-row header", async ({ page }) => {
