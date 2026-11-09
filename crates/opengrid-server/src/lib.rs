@@ -23,7 +23,7 @@ mod export;
 pub mod registry;
 mod server;
 
-pub use api::{AppState, router};
+pub use api::{AppState, ErrorReport, router};
 pub use opengrid_connector::Connector;
 pub use registry::{Registry, RegistryError, RowFilter, SourcePolicy};
 pub use server::{Server, ServerBuilder};

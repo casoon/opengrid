@@ -14,7 +14,7 @@ use tokio_postgres::types::ToSql;
 
 use crate::PostgresDataSource;
 use crate::compiler::CompiledQuery;
-use crate::source::{backend, compile, text_params, texts, value_from_text};
+use crate::source::{backend, compile, data, text_params, texts, value_from_text};
 
 /// A key as a sentence names it — the engine's words, so an error reads the
 /// same whichever way the level was answered.
@@ -89,7 +89,7 @@ impl PostgresDataSource {
         let rows = run(compiler.tree_duplicate_key(tree).map_err(compile)?, 1).await?;
         if let Some(text) = rows.first().and_then(|row| row[0].clone()) {
             let key = value_from_text(Some(&text), key_type, tree.key.as_str())?;
-            return Err(backend(format!(
+            return Err(data(format!(
                 "tree: the key {} appears more than once (rule T1)",
                 named(&key)
             )));
@@ -99,7 +99,7 @@ impl PostgresDataSource {
         let rows = run(compiler.tree_cycle(tree).map_err(compile)?, 1).await?;
         if let Some(text) = rows.first().and_then(|row| row[0].clone()) {
             let key = value_from_text(Some(&text), key_type, tree.key.as_str())?;
-            return Err(backend(format!(
+            return Err(data(format!(
                 "tree: the parents of {} lead back to it — a cycle (rule T3)",
                 named(&key)
             )));

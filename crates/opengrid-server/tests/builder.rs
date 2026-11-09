@@ -344,3 +344,103 @@ async fn an_endless_ready_source_meets_the_timeout() {
     assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE, "{body}");
     assert!(body.contains("took longer"), "{body}");
 }
+
+/// A connector that fails the way a database does: with a text that names a
+/// table and a tenant's value.
+struct Failing {
+    inner: FromSource<LocalDataSource>,
+}
+
+impl Connector for Failing {
+    fn schema(&self) -> BoxFuture<'_, Result<Schema, DataSourceError>> {
+        self.inner.schema()
+    }
+
+    fn capabilities(&self) -> DataSourceCapabilities {
+        self.inner.capabilities()
+    }
+
+    fn execute(
+        &self,
+        _query: ValidatedQuery,
+    ) -> BoxFuture<'_, Result<QueryResult, DataSourceError>> {
+        Box::pin(async {
+            Err(DataSourceError::Backend {
+                message: r#"relation "tenants_secret" does not exist; invalid input syntax for type bigint: "acme""#
+                    .to_owned(),
+            })
+        })
+    }
+}
+
+/// Issue #219: what a database says can name a table, a hidden column or a
+/// tenant's value, so the caller gets one fixed sentence and a reference; the
+/// operator's hook gets the cause under the same reference, and a refused token
+/// is reported without the token.
+#[tokio::test]
+async fn a_backend_failure_is_a_fixed_sentence_and_a_reference() {
+    let (recording, _) = Recording::new();
+    let reports = Arc::new(Mutex::new(Vec::new()));
+    let seen = Arc::clone(&reports);
+    let server = Server::builder()
+        .source(
+            "orders",
+            Failing {
+                inner: recording.inner,
+            },
+            SourcePolicy::default(),
+        )
+        .token(TOKEN, [("tenant", "acme")])
+        .on_error(move |report| seen.lock().unwrap().push(report.clone()))
+        .build()
+        .await
+        .expect("a server");
+
+    let (status, body) = post(
+        server.router(),
+        "/query/orders",
+        r#"{"source":"orders","select":["id"]}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_GATEWAY, "{body}");
+    assert!(
+        !body.contains("tenants_secret") && !body.contains("acme"),
+        "{body}"
+    );
+    assert!(
+        body.contains("the data source failed (reference og-"),
+        "{body}"
+    );
+
+    {
+        let reports = reports.lock().unwrap();
+        assert_eq!(reports.len(), 1, "{reports:?}");
+        let report = &reports[0];
+        assert!(report.detail.contains("tenants_secret"), "{report:?}");
+        let reference = report.reference.as_deref().expect("a reference");
+        assert!(body.contains(reference), "{body} / {reference}");
+    }
+
+    // A wrong token: one answer to the caller, the reason to the operator.
+    let response = server
+        .router()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/query/orders")
+                .header(header::AUTHORIZATION, "Bearer not-the-token-9999")
+                .body(Body::from("{}"))
+                .unwrap(),
+        )
+        .await
+        .expect("the router answers");
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let reports = reports.lock().unwrap();
+    assert_eq!(reports.len(), 2, "{reports:?}");
+    assert_eq!(reports[1].detail, "an unknown token");
+    assert!(
+        reports
+            .iter()
+            .all(|report| !format!("{report:?}").contains("not-the-token-9999"))
+    );
+}

@@ -31,7 +31,7 @@ use opengrid_connector::Connector;
 use opengrid_pivot::PivotLimits;
 use opengrid_query::Limits;
 
-use crate::api::AppState;
+use crate::api::{AppState, ErrorReport, Hook, Reporter};
 use crate::registry::{Registry, RegistryError, Source, SourcePolicy};
 
 /// A built server: its router, ready to serve.
@@ -87,6 +87,7 @@ pub struct ServerBuilder {
     settings: Settings,
     limits: Limits,
     pivot_limits: PivotLimits,
+    on_error: Option<Hook>,
 }
 
 impl ServerBuilder {
@@ -159,6 +160,17 @@ impl ServerBuilder {
         self
     }
 
+    /// Called for every failure the caller is not told in full — a backend
+    /// failure (the caller gets a fixed sentence and a reference; the report
+    /// has the cause and the same reference) and a refused token (the caller
+    /// gets one answer; the report says which way it failed). Without it
+    /// nothing is written down. Bridge it to `tracing` or `log` in the
+    /// application; the report never holds a token value.
+    pub fn on_error(mut self, hook: impl Fn(&ErrorReport) + Send + Sync + 'static) -> Self {
+        self.on_error = Some(Arc::new(hook));
+        self
+    }
+
     /// The query limits every source is validated with.
     pub fn limits(mut self, limits: Limits) -> Self {
         self.limits = limits;
@@ -203,8 +215,11 @@ impl ServerBuilder {
         }
 
         let registry = Registry::new(sources, self.limits, self.pivot_limits);
-        let state =
+        let mut state =
             AppState::from_parts(registry, self.tokens.into_iter().collect(), &self.settings);
+        if let Some(hook) = self.on_error {
+            state.reporter = Reporter::with_hook(hook);
+        }
         Ok(Server {
             state: Arc::new(state),
         })

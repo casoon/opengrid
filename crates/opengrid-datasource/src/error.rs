@@ -17,15 +17,20 @@ pub enum DataSourceError {
     /// rows to read than it is allowed to hold, say. The caller can narrow the
     /// query; nothing is broken.
     LimitExceeded { message: String },
+    /// The data breaks a rule the query relies on — a tree with a key twice or
+    /// a cycle (T1, T3). Not an outage and not the query's fault: the message
+    /// names the rows, was written to be read by the caller, and a server may
+    /// show it.
+    Data { message: String },
 }
 
 impl std::fmt::Display for DataSourceError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             DataSourceError::NoData => f.write_str("the data source holds no data"),
-            DataSourceError::Backend { message } | DataSourceError::LimitExceeded { message } => {
-                f.write_str(message)
-            }
+            DataSourceError::Backend { message }
+            | DataSourceError::LimitExceeded { message }
+            | DataSourceError::Data { message } => f.write_str(message),
         }
     }
 }
