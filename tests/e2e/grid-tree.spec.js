@@ -236,7 +236,12 @@ test("the selection names nodes by key, and stays when they close", async ({ pag
   await press(page, 'td[data-row="3"][data-col="0"]', " ");
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("Shift+ ");
-  expect(await last()).toEqual({ rows: [3, 4], count: 2, keys: [2, 3] });
+  expect(await last()).toEqual({
+    rows: [3, 4],
+    ranges: [{ from: 3, to: 4 }],
+    count: 2,
+    keys: [2, 3],
+  });
   expect(await selected()).toEqual(["North", "South"]);
 
   // Closing Sales hides them; they stay selected, by key.

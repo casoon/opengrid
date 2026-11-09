@@ -3858,7 +3858,7 @@ extern "C" {
 ///   be prevented needs a state machine that can be rolled back, and V1 has
 ///   none.
 /// * `detail` is plain JSON-ish data — no Rust types, no live references:
-///   `{ rows: [u64], count: number }`.
+///   `{ rows: [u64], ranges: [{ from, to }], count: number }`.
 fn dispatch_selection(host: &HtmlElement, rows: &[u64], keys: Option<&[opengrid_json::Json]>) {
     // One call and a loop in JavaScript, not one call per row: "select all"
     // over 100 000 rows names them all. The event still carries a plain array
@@ -3867,6 +3867,24 @@ fn dispatch_selection(host: &HtmlElement, rows: &[u64], keys: Option<&[opengrid_
     let list = numbers_to_array(&numbers);
     let detail = js_sys::Object::new();
     let _ = js_sys::Reflect::set(&detail, &JsValue::from_str("rows"), &list);
+    // The same rows as runs of adjacent ones: `Ctrl`+`A` over 100 000 rows is
+    // one `{ from, to }`, for a page that must not walk the list.
+    let ranges = js_sys::Array::new();
+    for (from, to) in grid::selection_ranges(rows) {
+        let range = js_sys::Object::new();
+        let _ = js_sys::Reflect::set(
+            &range,
+            &JsValue::from_str("from"),
+            &JsValue::from_f64(from as f64),
+        );
+        let _ = js_sys::Reflect::set(
+            &range,
+            &JsValue::from_str("to"),
+            &JsValue::from_f64(to as f64),
+        );
+        ranges.push(&range);
+    }
+    let _ = js_sys::Reflect::set(&detail, &JsValue::from_str("ranges"), &ranges);
     // A tree counts its selected nodes — shown or not — and names them by key.
     let count = keys.map_or(rows.len(), <[_]>::len);
     let _ = js_sys::Reflect::set(
