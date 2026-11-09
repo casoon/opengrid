@@ -114,6 +114,47 @@ mod host {
     // under any CSP without `'unsafe-eval'` — a strict page's, and every MCP
     // Apps host's (issue #139).
     #[wasm_bindgen(inline_js = "
+// The language of the page at `host`: the nearest `lang` attribute, through
+// shadow roots as well; empty when there is none or it is empty.
+export function __opengrid_page_lang(host) {
+    for (let node = host; node; node = node.parentElement || (node.getRootNode && node.getRootNode().host) || null) {
+        const lang = node.getAttribute && node.getAttribute('lang');
+        if (lang !== null && lang !== undefined) return lang.trim();
+    }
+    return '';
+}
+
+// One observer for every host whose formats follow the page's language. It
+// holds the hosts weakly, so a removed grid is still collected.
+const followers = new Set();
+const known = new WeakSet();
+const roots = new WeakSet();
+let observer = null;
+export function __opengrid_follow_lang(host, relocalize) {
+    if (!known.has(host)) {
+        known.add(host);
+        followers.add(new WeakRef(host));
+    }
+    if (!observer) {
+        observer = new MutationObserver(() => {
+            for (const ref of [...followers]) {
+                const host = ref.deref();
+                if (!host) followers.delete(ref);
+                else if (host.isConnected) relocalize(host);
+            }
+        });
+    }
+    const watch = (node) => {
+        if (node && !roots.has(node)) {
+            roots.add(node);
+            observer.observe(node, { attributes: true, attributeFilter: ['lang'], subtree: true });
+        }
+    };
+    watch(host.ownerDocument.documentElement);
+    const root = host.getRootNode();
+    if (root !== host.ownerDocument) watch(root);
+}
+
 export function __opengrid_intl_formatter(kind, locale, options) {
     const loc = locale || undefined;
     const format = kind === 'date'
@@ -134,6 +175,25 @@ export function __opengrid_intl_formatter(kind, locale, options) {
     extern "C" {
         #[wasm_bindgen(catch, js_name = __opengrid_intl_formatter)]
         fn intl_formatter(kind: &str, locale: &str, options: &JsValue) -> Result<JsValue, JsValue>;
+        #[cfg(feature = "grid")]
+        #[wasm_bindgen(js_name = __opengrid_page_lang)]
+        fn page_lang(host: &HtmlElement) -> String;
+        #[cfg(feature = "grid")]
+        #[wasm_bindgen(js_name = __opengrid_follow_lang)]
+        fn follow_lang(host: &HtmlElement, relocalize: &js_sys::Function);
+    }
+
+    /// The formats as the page gave them, before `Intl` options became
+    /// functions — what a change of `lang` resolves again.
+    #[cfg(feature = "grid")]
+    fn source_symbol() -> js_sys::Symbol {
+        js_sys::Symbol::for_("opengrid.formats.source")
+    }
+
+    /// The page language the formats were resolved with.
+    #[cfg(feature = "grid")]
+    fn lang_symbol() -> js_sys::Symbol {
+        js_sys::Symbol::for_("opengrid.formats.lang")
     }
 
     /// The global symbol the resolved formats are stored under.
@@ -152,8 +212,9 @@ export function __opengrid_intl_formatter(kind, locale, options) {
     }
 
     impl ColumnFormats {
-        /// Reads a plain JS object `{ column: fn | IntlOptions }`.
-        pub fn from_js(value: &JsValue) -> Self {
+        /// Reads a plain JS object `{ column: fn | IntlOptions }`; an `Intl`
+        /// entry without a `locale` takes `page_lang` (empty: the browser's).
+        pub fn from_js(value: &JsValue, page_lang: &str) -> Self {
             let mut by_name = HashMap::new();
             let Some(object) = value.dyn_ref::<js_sys::Object>() else {
                 return Self { by_name };
@@ -167,7 +228,7 @@ export function __opengrid_intl_formatter(kind, locale, options) {
                 };
                 if let Ok(function) = entry.clone().dyn_into::<js_sys::Function>() {
                     by_name.insert(name, function);
-                } else if let Some(function) = intl_function(&entry) {
+                } else if let Some(function) = intl_function(&entry, page_lang) {
                     by_name.insert(name, function);
                 }
             }
@@ -184,7 +245,7 @@ export function __opengrid_intl_formatter(kind, locale, options) {
     /// `{ "kind": "number", "locale": "de-DE", ... }` — the rest of the object
     /// goes to `Intl` unchanged, so everything `Intl` can do is available
     /// without this module knowing about it.
-    fn intl_function(options: &JsValue) -> Option<js_sys::Function> {
+    fn intl_function(options: &JsValue, page_lang: &str) -> Option<js_sys::Function> {
         let kind = js_sys::Reflect::get(options, &JsValue::from_str("kind"))
             .ok()
             .and_then(|value| value.as_string())
@@ -192,7 +253,9 @@ export function __opengrid_intl_formatter(kind, locale, options) {
         let locale = js_sys::Reflect::get(options, &JsValue::from_str("locale"))
             .ok()
             .and_then(|value| value.as_string())
-            .unwrap_or_default();
+            .filter(|locale| !locale.trim().is_empty())
+            // Explicit `locale`, then the page's `lang`, then the browser's.
+            .unwrap_or_else(|| page_lang.to_owned());
 
         // Built in JS so the options object travels as it is; the closure is
         // created once per column and reused for every cell.
@@ -205,18 +268,70 @@ export function __opengrid_intl_formatter(kind, locale, options) {
     /// attaches the result to `host`, replacing any previous formats.
     #[cfg(feature = "grid")]
     pub fn set_formats_for(host: &HtmlElement, value: &JsValue) {
+        let lang = page_lang(host);
         let resolved = js_sys::Object::new();
-        for (name, function) in ColumnFormats::from_js(value).by_name {
+        for (name, function) in ColumnFormats::from_js(value, &lang).by_name {
             let _ = js_sys::Reflect::set(&resolved, &JsValue::from_str(&name), &function);
         }
         let _ = js_sys::Reflect::set(host.as_ref(), formats_symbol().as_ref(), &resolved);
+        let _ = js_sys::Reflect::set(host.as_ref(), source_symbol().as_ref(), value);
+        let _ = js_sys::Reflect::set(
+            host.as_ref(),
+            lang_symbol().as_ref(),
+            &JsValue::from_str(&lang),
+        );
+        if uses_page_lang(value) {
+            follow(host);
+        }
+    }
+
+    /// Whether an `Intl` entry has no `locale` of its own, so the page's `lang`
+    /// decides how it reads.
+    #[cfg(feature = "grid")]
+    fn uses_page_lang(value: &JsValue) -> bool {
+        let Some(object) = value.dyn_ref::<js_sys::Object>() else {
+            return false;
+        };
+        js_sys::Object::values(object).iter().any(|entry| {
+            !entry.is_function()
+                && js_sys::Reflect::get(&entry, &JsValue::from_str("locale"))
+                    .ok()
+                    .and_then(|locale| locale.as_string())
+                    .is_none_or(|locale| locale.trim().is_empty())
+        })
+    }
+
+    /// Resolves the formats again when the page's language changes: the
+    /// elements redraw with the numbers and dates of the new language.
+    #[cfg(feature = "grid")]
+    fn follow(host: &HtmlElement) {
+        thread_local! {
+            static RELOCALIZE: js_sys::Function = wasm_bindgen::closure::Closure::<dyn FnMut(HtmlElement)>::new(
+                |host: HtmlElement| {
+                    let used = js_sys::Reflect::get(host.as_ref(), lang_symbol().as_ref())
+                        .ok()
+                        .and_then(|lang| lang.as_string())
+                        .unwrap_or_default();
+                    if page_lang(&host) == used {
+                        return;
+                    }
+                    let source = js_sys::Reflect::get(host.as_ref(), source_symbol().as_ref())
+                        .unwrap_or(JsValue::UNDEFINED);
+                    crate::element::set_formats(&host, source);
+                },
+            )
+            .into_js_value()
+            .unchecked_into();
+        }
+        RELOCALIZE.with(|relocalize| follow_lang(host, relocalize));
     }
 
     /// The formats attached to `host`, or empty ones.
     pub fn formats(host: &HtmlElement) -> Rc<ColumnFormats> {
         let stored = js_sys::Reflect::get(host.as_ref(), formats_symbol().as_ref())
             .unwrap_or(JsValue::UNDEFINED);
-        Rc::new(ColumnFormats::from_js(&stored))
+        // What is stored is functions already, so no language is needed.
+        Rc::new(ColumnFormats::from_js(&stored, ""))
     }
 
     /// The formats bound to a schema, ready for the renderer.
