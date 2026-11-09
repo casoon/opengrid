@@ -48,25 +48,18 @@ Four rules to know, because they come from the grid and not from the framework:
 3. **`density` and `groupBy` belong to the view as well.** The reader changes them from the
    toolbar and the column menu, so as props they set the start. With a controlled `view`, leave
    them out and let the view carry them.
-4. **Bundlers and the WebAssembly module.** The element module is loaded from `pkg/` next to
-   `loader.js` through `new URL("./pkg/…", import.meta.url)`. Vite's development server handles
-   that without a setting: it pre-bundles `@casoon/opengrid` and rewrites the URL to the
-   installed `pkg/` (checked by hand with Vite 8.3 and the packed package). A production build
-   is another matter — Vite copies the glue module into its assets but not the `.wasm` beside
-   it, so the element would fall back to the plain table. For a production build, and for any
-   bundler: serve the `pkg/` directory yourself and call `loadOpengrid({ moduleUrl })` once
-   before the first component mounts — every later load reuses that call. The examples do
-   exactly that.
-
-   The engine's worker follows the same rule. `createWorkerProvider()` finds `worker.js` and
-   the engine under `engine/` next to `loader.js`, and without a bundler and under Vite's
-   development server those defaults work. A production build breaks both: Vite inlines
-   `worker.js` as a `data:` worker, which cannot import the engine, and copies the engine's glue
-   without its `.wasm` (checked with Vite 8.3 and the packed package; an explicit `moduleUrl`
-   alone does not help). Serve `engine/` and `worker.js` yourself and pass both:
-   `createWorkerProvider({ moduleUrl, workerUrl })`, `moduleUrl` as a string. The engine on
-   the main thread, imported from `@casoon/opengrid/engine/opengrid_wasm.js`, is bundled like
-   any module and needs nothing.
+4. **Bundlers and the WebAssembly module.** Without options, `loadOpengrid()` and
+   `createWorkerProvider()` need nothing from the page: `loader.js` imports the element module
+   and `worker.js` the engine in a form a bundler follows, and the worker is started with
+   `new Worker(new URL("./worker.js", import.meta.url), { type: "module" })`. A production build
+   with Vite's defaults therefore emits the glue, the worker and both `.wasm` files
+   (`tests/e2e/bundler-production.spec.js` loads such a build from `examples/bundler`). What a
+   bundler cannot follow is a URL of your own: `loadOpengrid({ moduleUrl })` and
+   `createWorkerProvider({ moduleUrl, workerUrl })` import from where you say, at run time, and
+   the files there are yours to serve (for the worker, `moduleUrl` and `wasmUrl` are strings). The
+   engine on the main thread, imported from `@casoon/opengrid/engine/opengrid_wasm.js`, is bundled
+   like any module. The examples in this repository still pass `moduleUrl`, because they run from
+   the repository's built `pkg/`.
 
 ## Editing
 

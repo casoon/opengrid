@@ -4,6 +4,7 @@
 # from finding this one when it runs there.
 packages:
   - packages/*
+  - examples/bundler
   - examples/react
   - examples/vue
   - examples/svelte

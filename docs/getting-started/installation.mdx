@@ -45,11 +45,13 @@ No `opengrid-*` crate is published, so `opengrid-server` runs from the repositor
 install, all under `node_modules/@casoon/opengrid/`. Wherever `loader.js` goes, those go with
 it, whole directories.
 
-A bundler does not always keep them together. Vite's development server does; a production
-build does not, and the element falls back to the plain table. Serve the directories yourself
-and pass their URLs — `loadOpengrid({ moduleUrl })`, `createWorkerProvider({ moduleUrl, workerUrl })`.
-[Frameworks → Bundlers and the WebAssembly module](../../guides/frameworks/#what-every-adapter-does-the-same-way)
-has the details. The engine imported on the main thread is bundled like any module.
+With a bundler there is nothing to do: `loader.js` and `worker.js` import the modules the way a
+bundler follows, so a production build (checked with Vite) puts the elements, the worker, the
+engine and both `.wasm` files into its output. Pass `moduleUrl` or `workerUrl` only to serve them
+from somewhere else; the options are in
+[Frameworks → Bundlers and the WebAssembly module](../../guides/frameworks/#what-every-adapter-does-the-same-way).
+
+## Without a bundler
 
 A page without a bundler takes the files from `node_modules` and serves them as they are:
 
@@ -68,7 +70,9 @@ opengrid/
     └── opengrid_wasm_bg.wasm
 ```
 
-The [Quickstart](../quickstart/) assumes this layout.
+The [Quickstart](../quickstart/) assumes this layout. Serve the `.wasm` files as
+`application/wasm`: with another type the browser cannot compile the module while it downloads, and
+the loader falls back to compiling after the whole download, with a warning in the console.
 
 ## Content Security Policy
 
