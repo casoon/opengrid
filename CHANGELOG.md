@@ -33,6 +33,12 @@ Two things belong in every release entry and are easy to leave out:
 
 - **Docs:** the project site uses the current shared theme (0.12.6) and ends with a link to the
   quickstart.
+- **API:** `opengrid-source-replaced` is frozen, typed in `OpengridEventMap` and in the events table
+  of the API reference, which says that `loader.js` dispatches it on the grid without bubbling
+  ([#234](https://github.com/casoon/opengrid/issues/234)). A test now reads the module's
+  `#[wasm_bindgen]` exports from the source and holds them against the frozen functions and an
+  explicit internal list, so a new export cannot slip past the freeze. The docs and types no longer
+  count events or functions.
 
 ### Fixed
 
