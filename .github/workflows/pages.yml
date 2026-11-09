@@ -34,7 +34,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - uses: extractions/setup-just@v2
+      - uses: extractions/setup-just@v4
 
       # Pinned to the version the crate pins; a different CLI stops with a version error.
       - uses: taiki-e/install-action@v2
