@@ -50,6 +50,21 @@ The package holds the elements and the query engine. With a bundler, import from
 `@casoon/opengrid`; without one, see
 [Installation](https://github.com/casoon/opengrid/blob/main/docs/getting-started/installation.mdx).
 
+### Rust crates
+
+The engine and the server are on crates.io, one crate per layer. They carry the same version
+as the npm package, so give every `opengrid-*` crate the same one:
+
+```toml
+[dependencies]
+opengrid-server = "0.14"           # the gateway, as a library
+opengrid-connector-sqlite = "0.14" # or opengrid-datasource-postgres
+opengrid-engine = "0.14"           # the engine alone, native
+```
+
+While the version is 0.x, a minor bump may break the Rust API
+([releasing](https://github.com/casoon/opengrid/blob/main/docs/releasing.md)).
+
 ## Data in the browser
 
 The engine reads a CSV against a schema — it never guesses types.

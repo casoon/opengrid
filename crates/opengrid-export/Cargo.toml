@@ -3,17 +3,22 @@ name = "opengrid-export"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "CSV and JSON from an opengrid query result, piece by piece"
+description = "CSV, JSON and XLSX from an opengrid query result, piece by piece"
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+keywords = ["export", "csv", "xlsx", "data-grid"]
+categories = ["encoding", "database"]
 
 [lints]
 workspace = true
 
 [dependencies]
-opengrid-types = { path = "../opengrid-types" }
-opengrid-datasource = { path = "../opengrid-datasource" }
+opengrid-types = { workspace = true }
+opengrid-datasource = { workspace = true }
 # The pivot's answer (`PivotResult`), exported as it is shown (issue #3).
-opengrid-pivot = { path = "../opengrid-pivot" }
-opengrid-json = { path = "../opengrid-json" }
+opengrid-pivot = { workspace = true }
+opengrid-json = { workspace = true }
 # XLSX on the server (issue #72, decided by the owner): off by default, so the
 # browser modules never carry it. `constant_memory` writes finished rows to a
 # temporary file, so an export's memory does not grow with its rows.

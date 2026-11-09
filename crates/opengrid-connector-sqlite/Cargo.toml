@@ -4,17 +4,22 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "SQLite as a reference connector for opengrid-server: a file, no installation"
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+keywords = ["sqlite", "connector", "data-grid", "opengrid"]
+categories = ["database"]
 
 [lints]
 workspace = true
 
 [dependencies]
-opengrid-types = { path = "../opengrid-types" }
-opengrid-query = { path = "../opengrid-query" }
-opengrid-datasource = { path = "../opengrid-datasource" }
-opengrid-connector = { path = "../opengrid-connector" }
+opengrid-types = { workspace = true }
+opengrid-query = { workspace = true }
+opengrid-datasource = { workspace = true }
+opengrid-connector = { workspace = true }
 # A list is its JSON array in a TEXT column (issue #185).
-opengrid-json = { path = "../opengrid-json" }
+opengrid-json = { workspace = true }
 # Decided in #51 (E36): SQLite needs no installation — the library is compiled
 # in. Only this reference connector depends on it, never the server.
 rusqlite = { version = "0.41", features = ["bundled"] }

@@ -14,8 +14,8 @@ A conformance suite of JSON cases pins what "the same" means.
 ## Status
 
 Pre-1.0. On npm are `@casoon/opengrid`, with the elements and the engine, and the adapters for
-React, Vue and Svelte — see [Installation](getting-started/installation/). The Rust crates are
-not on crates.io yet. What each release changed is in
+React, Vue and Svelte — see [Installation](getting-started/installation/). The portable Rust
+crates and `opengrid-server` are on crates.io. What each release changed is in
 [`CHANGELOG.md`](https://github.com/casoon/opengrid/blob/main/CHANGELOG.md).
 
 The public API is written down in [The public API](api/), and a test fails when it changes.

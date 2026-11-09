@@ -4,12 +4,17 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "Query AST, JSON contract and validation for opengrid"
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+keywords = ["query", "ast", "data-grid", "opengrid"]
+categories = ["data-structures", "database", "parsing"]
 
 [lints]
 workspace = true
 
 [dependencies]
-opengrid-types = { path = "../opengrid-types" }
-opengrid-json = { path = "../opengrid-json" }
+opengrid-types = { workspace = true }
+opengrid-json = { workspace = true }
 
 [dev-dependencies]

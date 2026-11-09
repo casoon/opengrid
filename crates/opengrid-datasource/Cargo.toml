@@ -3,14 +3,19 @@ name = "opengrid-datasource"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "DataSource contract, capabilities and portable query result for opengrid"
+description = "The DataSource contract, capabilities and portable query result of opengrid"
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+keywords = ["data-source", "query", "data-grid", "opengrid"]
+categories = ["database", "data-structures"]
 
 [lints]
 workspace = true
 
 [dependencies]
-opengrid-types = { path = "../opengrid-types" }
-opengrid-query = { path = "../opengrid-query" }
+opengrid-types = { workspace = true }
+opengrid-query = { workspace = true }
 # Generates the `Send` variant of `DataSource` from the one definition
 # (plan/spezifikation/14-entscheidungen.md E5). Build-time only: a proc macro
 # does not reach the wasm bundle.
@@ -19,4 +24,4 @@ trait-variant = "0.1"
 # codec of browser and server (issue #41). The wire module walks the document
 # itself, because reading a value needs its column type first and JSON object
 # keys have no order.
-opengrid-json = { path = "../opengrid-json" }
+opengrid-json = { workspace = true }
