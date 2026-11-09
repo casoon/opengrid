@@ -147,7 +147,7 @@ Always JSON, whatever `Accept` said:
 | `validation` | 422 | The query does not fit the schema the caller may see; `path` says where. |
 | `limit_exceeded` | 413 | Too big: the body, the page (`max_limit`), the time, an export's rows. |
 | `busy` | 503 | Too many exports running; the same request may succeed later. |
-| `backend` | 502 | The source behind the server failed. |
+| `backend` | 502 | The source behind the server failed. The message is one fixed sentence with a reference (`the data source failed (reference og-…)`); the cause stays with the operator, who finds it under that reference (`ServerBuilder::on_error`). Exception: data that breaks a rule the query relies on — a tree with a key twice or a cycle (T1, T3) — is told in full, because it names rows of the caller's own data; it travels as `backend` until it gets a code of its own. |
 
 ## Export
 
@@ -164,7 +164,8 @@ A server that holds other people's data owes the browser four things, whatever i
 in:
 
 1. **A token on every request.** Compared in constant time, never logged, never echoed in an
-   error. The token stands for a context — the tenant, the account.
+   error, and what a database says never reaches the caller (it can name tables, hidden columns
+   and tenant values). The token stands for a context — the tenant, the account.
 2. **A mandatory row filter** from that context, added to every query, every pivot level and
    every export before anything runs. No request can remove it. A context that does not fit the
    filter (a value that is not the column's type, a missing key) is a startup error, not a

@@ -125,11 +125,8 @@ pub trait Connector: Send + Sync {
             let answer = self.execute(rows).await?;
             let table = opengrid_columns::Table::from_values(&answer.schema, &answer.columns)
                 .map_err(|message| DataSourceError::Backend { message })?;
-            let result = opengrid_engine::execute::execute(&table, query).map_err(|error| {
-                DataSourceError::Backend {
-                    message: error.to_string(),
-                }
-            })?;
+            let result =
+                opengrid_engine::execute::execute(&table, query).map_err(DataSourceError::from)?;
             let mut level = QueryResult::new(
                 query.output_schema.clone(),
                 result.table.to_values(),

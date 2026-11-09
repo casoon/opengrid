@@ -1,0 +1,15 @@
+{
+  "name": "opengrid-example-bundler",
+  "private": true,
+  "type": "module",
+  "description": "A production build (minified, Vite defaults) of a page that calls loadOpengrid() and createWorkerProvider() without any URL (#238).",
+  "scripts": {
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@casoon/opengrid": "workspace:*"
+  },
+  "devDependencies": {
+    "vite": "8.3.1"
+  }
+}

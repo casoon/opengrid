@@ -169,21 +169,22 @@ pub fn load_csv(bytes: &[u8], schema: &Schema, options: CsvOptions) -> Result<Ta
     let stored = schema.stored();
     let layout = Layout::of(schema, &stored);
 
-    let scanned = csv::scan(text(bytes)?, options.delimiter).map_err(|error| IngestError::Csv {
+    let to_error = |error: csv::ScanError| IngestError::Csv {
         line: error.line,
         message: error.message,
-    })?;
-    let mut records = scanned.into_iter();
+    };
+    let mut records = csv::scan(text(bytes)?, options.delimiter);
     if options.has_header {
-        match records.next() {
+        match records.next().transpose().map_err(to_error)? {
             Some(header) => check_header(&stored, &header.fields, header.line)?,
             None => return Builders::new(schema, 0).finish(),
         }
     }
-    // Row by row straight into the column builders (point 45): the typed rows
-    // of the whole file never exist at once.
+    // Record by record straight into the column builders (point 45): neither
+    // the records nor the typed rows of the whole file exist at once.
     let mut builders = Builders::new(schema, 0);
     for record in records {
+        let record = record.map_err(to_error)?;
         builders.push(layout.complete(read_row(&stored, &record, &options)?))?;
     }
     builders.finish()
@@ -387,19 +388,20 @@ pub fn infer_schema_csv(bytes: &[u8], options: CsvOptions) -> Result<Schema, Ing
             message: "infer_schema_csv needs a header row to name the columns".to_owned(),
         });
     }
-    let scanned = csv::scan(text(bytes)?, options.delimiter).map_err(|error| IngestError::Csv {
+    let to_error = |error: csv::ScanError| IngestError::Csv {
         line: error.line,
         message: error.message,
-    })?;
-    let mut records = scanned.into_iter();
-    let Some(header) = records.next() else {
+    };
+    let mut records = csv::scan(text(bytes)?, options.delimiter);
+    let Some(header) = records.next().transpose().map_err(to_error)? else {
         return Err(IngestError::Schema {
             message: "no header row to infer from".to_owned(),
         });
     };
-    let samples: Vec<csv::Record> = records
+    let samples = records
         .take(options.max_records.unwrap_or(usize::MAX))
-        .collect();
+        .collect::<Result<Vec<csv::Record>, _>>()
+        .map_err(to_error)?;
     let mut fields = Vec::with_capacity(header.fields.len());
     for (position, name) in header.fields.iter().enumerate() {
         let name = FieldName::new(name.as_ref()).map_err(|error| IngestError::Schema {

@@ -32,6 +32,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use axum::Router;
@@ -49,6 +50,79 @@ use tower_http::cors::CorsLayer;
 
 use crate::registry::{PrepareError, Registry, Source};
 
+/// A failure the operator should see. The caller was told less: for a backend
+/// failure a fixed sentence and the `reference`, never `detail` (issue #219).
+#[derive(Clone, Debug)]
+pub struct ErrorReport {
+    pub code: ErrorCode,
+    /// The reference the caller got in its message; none when the caller was
+    /// told the cause itself or nothing about it (a refused token).
+    pub reference: Option<String>,
+    /// The full cause. Never a token value.
+    pub detail: String,
+}
+
+pub(crate) type Hook = Arc<dyn Fn(&ErrorReport) + Send + Sync>;
+
+/// Where failures are written down for the operator, and the source of the
+/// references a caller can quote.
+#[derive(Clone)]
+pub struct Reporter {
+    hook: Option<Hook>,
+    started: u64,
+    counter: Arc<AtomicU64>,
+}
+
+impl Default for Reporter {
+    fn default() -> Self {
+        Self {
+            hook: None,
+            started: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |since| since.as_secs()),
+            counter: Arc::default(),
+        }
+    }
+}
+
+impl Reporter {
+    pub(crate) fn with_hook(hook: Hook) -> Self {
+        Self {
+            hook: Some(hook),
+            ..Self::default()
+        }
+    }
+
+    fn report(&self, code: ErrorCode, reference: Option<String>, detail: String) {
+        if let Some(hook) = &self.hook {
+            hook(&ErrorReport {
+                code,
+                reference,
+                detail,
+            });
+        }
+    }
+
+    /// A backend failure as the caller sees it: one fixed sentence and a
+    /// reference that finds `detail` in the operator's records. What a
+    /// database says can carry a table, a column or a tenant's value.
+    pub(crate) fn backend(&self, detail: impl Into<String>) -> WireError {
+        let number = self.counter.fetch_add(1, Ordering::Relaxed);
+        let reference = format!("og-{:x}-{number:04x}", self.started);
+        self.report(ErrorCode::Backend, Some(reference.clone()), detail.into());
+        WireError::new(
+            ErrorCode::Backend,
+            format!("the data source failed (reference {reference})"),
+        )
+    }
+
+    /// A failure the caller is told in full: written down, not hidden.
+    fn told(&self, code: ErrorCode, message: String) -> WireError {
+        self.report(code, None, message.clone());
+        WireError::new(code, message)
+    }
+}
+
 /// Everything a request needs, shared by every handler.
 pub struct AppState {
     pub registry: Registry,
@@ -63,6 +137,8 @@ pub struct AppState {
     /// The exports that may run at once, and the places they take.
     pub max_concurrent_exports: usize,
     pub exports: Arc<Semaphore>,
+    /// Where the failures a caller is not told in full are written down.
+    pub reporter: Reporter,
 }
 
 impl AppState {
@@ -85,6 +161,7 @@ impl AppState {
             max_export_rows: settings.max_export_rows,
             max_concurrent_exports: concurrent,
             exports: Arc::new(Semaphore::new(concurrent)),
+            reporter: Reporter::default(),
         }
     }
 }
@@ -193,11 +270,11 @@ async fn query(
             )
         })?;
 
-    let result = executed.map_err(source_failed)?;
+    let result = executed.map_err(|error| source_failed(error, &state.reporter))?;
 
     if wants_columns(&headers) {
         let table = opengrid_columns::Table::from_values(&result.schema, &result.columns)
-            .map_err(|message| WireError::new(ErrorCode::Backend, message))?;
+            .map_err(|message| state.reporter.backend(message))?;
         // A tree's level carries its part in the binary form too (E38), and
         // its subtree aggregates (T7).
         return Ok(columns_response(match &result.tree {
@@ -210,7 +287,7 @@ async fn query(
                             &tree.aggregate_schema,
                             &tree.aggregates,
                         )
-                        .map_err(|message| WireError::new(ErrorCode::Backend, message))?,
+                        .map_err(|message| state.reporter.backend(message))?,
                     ),
                 };
                 opengrid_columns::wire::encode_tree_result(
@@ -345,25 +422,32 @@ pub(crate) fn admit(
 
     let validated = source
         .prepare(query, limits, context)
-        .map_err(prepare_failed)?;
+        .map_err(|error| prepare_failed(error, &state.reporter))?;
     Ok((source, validated))
 }
 
 /// A source that could not answer, as the wire error it becomes.
-pub(crate) fn source_failed(error: DataSourceError) -> WireError {
+///
+/// A backend failure is a fixed sentence and a reference (the cause stays with
+/// the operator: it can name a table, a column or a tenant's value). A
+/// `LimitExceeded` is the caller's to act on. A `Data` error (a tree with a
+/// cycle) is told in full too: it names the rows of the caller's own data, and
+/// it has no code of its own yet, so it travels as `backend` (issue #219).
+pub(crate) fn source_failed(error: DataSourceError, reporter: &Reporter) -> WireError {
     match error {
         DataSourceError::NoData => {
             WireError::new(ErrorCode::Backend, "the data source holds no data")
         }
-        DataSourceError::Backend { message } => WireError::new(ErrorCode::Backend, message),
+        DataSourceError::Backend { message } => reporter.backend(message),
         DataSourceError::LimitExceeded { message } => {
             WireError::new(ErrorCode::LimitExceeded, message)
         }
+        DataSourceError::Data { message } => reporter.told(ErrorCode::Backend, message),
     }
 }
 
 /// A failed `prepare`, as the wire error it becomes.
-fn prepare_failed(error: PrepareError) -> Failure {
+fn prepare_failed(error: PrepareError, reporter: &Reporter) -> Failure {
     match error {
         PrepareError::Validation(error) => match error.path() {
             Some(path) => WireError::at(ErrorCode::Validation, error.to_string(), path),
@@ -374,7 +458,7 @@ fn prepare_failed(error: PrepareError) -> Failure {
         PrepareError::Pivot(error) => WireError::new(ErrorCode::Validation, error.to_string()),
         // A configuration that does not fit the caller: never fall back to
         // running without the mandatory filter.
-        PrepareError::Context(message) => WireError::new(ErrorCode::Backend, message),
+        PrepareError::Context(message) => reporter.backend(message),
     }
     .into()
 }
@@ -437,7 +521,7 @@ async fn pivot(
             &state.registry.pivot_limits,
             context,
         )
-        .map_err(prepare_failed)?;
+        .map_err(|error| prepare_failed(error, &state.reporter))?;
 
     let executed = tokio::time::timeout(state.timeout, source.data.pivot(&prepared))
         .await
@@ -451,7 +535,7 @@ async fn pivot(
             )
         })?;
 
-    let result = executed.map_err(source_failed)?;
+    let result = executed.map_err(|error| source_failed(error, &state.reporter))?;
 
     if wants_columns(&headers) {
         return Ok(columns_response(opengrid_pivot::pivot_to_bytes(
@@ -522,22 +606,28 @@ fn authorize<'a>(
     state: &'a AppState,
     headers: &HeaderMap,
 ) -> Result<&'a BTreeMap<String, String>, Failure> {
-    let refused = || -> Failure {
+    // The caller is told one thing; the operator's records say which it was.
+    let refused = |why: &str| -> Failure {
+        state
+            .reporter
+            .report(ErrorCode::Unauthorized, None, why.to_owned());
         WireError::new(ErrorCode::Unauthorized, "a valid bearer token is required").into()
     };
 
     let presented = headers
         .get(header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
+        .ok_or_else(|| refused("no Authorization header"))?
+        .to_str()
+        .ok()
         .and_then(|value| value.strip_prefix("Bearer "))
-        .ok_or_else(refused)?;
+        .ok_or_else(|| refused("the Authorization header is not a Bearer token"))?;
 
     state
         .tokens
         .iter()
         .find(|(configured, _)| constant_time_eq(configured, presented))
         .map(|(_, context)| context)
-        .ok_or_else(refused)
+        .ok_or_else(|| refused("an unknown token"))
 }
 
 /// Compares two secrets without leaking where they differ.

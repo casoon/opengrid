@@ -21,7 +21,7 @@ use opengrid_types::DataType;
 use rusqlite::Connection;
 use rusqlite::types::Value as Sql;
 
-use crate::{Builder, Compiler, backend, quote, read, sort_key, sqlite};
+use crate::{Builder, Compiler, data, quote, read, sort_key, sqlite};
 
 const KEY: &str = "__og_key";
 const PARENT: &str = "__og_parent";
@@ -187,7 +187,7 @@ fn answer(
          HAVING count(*) > 1 ORDER BY {KEY} LIMIT 1"
     ));
     if let Some(key) = first_key(connection, &sql, key_type)? {
-        return Err(backend(format!(
+        return Err(data(format!(
             "tree: the key {} appears more than once (rule T1)",
             named(&key)
         )));
@@ -211,7 +211,7 @@ fn answer(
         root = is_root()
     ));
     if let Some(key) = first_key(connection, &sql, key_type)? {
-        return Err(backend(format!(
+        return Err(data(format!(
             "tree: the parents of {} lead back to it — a cycle (rule T3)",
             named(&key)
         )));
