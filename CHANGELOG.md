@@ -72,6 +72,11 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Fixed
 
+- **Grid: a selected row is visible under forced colours** ([#230](https://github.com/casoon/opengrid/issues/230)).
+  The tint is `Canvas` there and browsers drop `box-shadow`, so a selected row looked like any
+  other unless the `selection` column was on. It now keeps a 4px `Highlight` border on its first
+  cell.
+
 - **Server:** a backend failure reaches the browser as one fixed sentence and a reference
   (`the data source failed (reference og-…)`), no longer as the database's text, which can name a
   table, a hidden column or a tenant's value. New `ServerBuilder::on_error(hook)` receives the full
