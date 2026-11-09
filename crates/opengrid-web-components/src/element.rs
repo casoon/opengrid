@@ -391,8 +391,27 @@ fn on_connected(host: HtmlElement) {
         crate::theme::adopt_table_look(&root);
         render_skeleton(&host, &root);
         add_sort_listener(&root);
+        // A provider that replaced the source this table shows (issue #226).
+        let replaced = Closure::<dyn FnMut(Event)>::new(on_source_replaced).into_js_value();
+        let _ = host.add_event_listener_with_callback(
+            crate::grid_element_events::SOURCE_REPLACED_EVENT,
+            replaced.unchecked_ref(),
+        );
     }
     run_query(&host, None, None);
+}
+
+/// The source this table shows was replaced: the same query runs again over
+/// the new rows, and the sort stays.
+fn on_source_replaced(event: Event) {
+    let Some(host) = event
+        .current_target()
+        .and_then(|target| target.dyn_into::<HtmlElement>().ok())
+    else {
+        return;
+    };
+    let sort = host.shadow_root().and_then(|root| current_sort(&root));
+    run_query(&host, sort, None);
 }
 
 /// Nothing to tear down: the root and its listener die with the host, and what

@@ -24,4 +24,4 @@ mod tree;
 
 pub use compiler::{CompileError, CompiledQuery, PostgresCompiler, QueryCompiler, pg_type};
 pub use export::{ExportCanceller, PostgresExport};
-pub use source::PostgresDataSource;
+pub use source::{PoolOptions, PostgresDataSource};

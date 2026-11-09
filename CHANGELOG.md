@@ -20,6 +20,10 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Added
 
+- **PostgreSQL:** `PostgresDataSource::connect_with` and `PoolOptions` set the pool size and the wait,
+  create and recycle timeouts, so `max_concurrent_exports` can be sized against a known pool. TLS is
+  not part of this ([#220](https://github.com/casoon/opengrid/issues/220), awaiting a decision on the
+  dependency).
 - **Editing through `connect` and the framework components** ([#206](https://github.com/casoon/opengrid/issues/206)).
   New options `actions` and `validators` (functions compare by identity, as in `formats`) and the
   callbacks `onRowAdd`, `onPaste`, `onBulkChange`, `onRowAction`, `onSourceReplaced`. `onRowAdd`
@@ -72,6 +76,15 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Fixed
 
+- **Grid:** loading the source again leaves nothing of the old one behind
+  ([#226](https://github.com/casoon/opengrid/issues/226)). The selection is cleared (and the
+  `opengrid-selection-change` event and the status line say so), a tree asks for its levels again
+  instead of keeping the old ones, and a facet lists the new source's values. A result with fewer
+  rows no longer leaves selected rows that are not there. The rows the reader added and the undo
+  history now survive what rebuilds the grid (moving or hiding a column, `tree`, applying a view),
+  following their columns by name; a changed `datasource` still starts clean. `<opengrid-table>` and
+  `<opengrid-pivot>` re-run their query when `loadRows` or `load` replaces their source, which only
+  the grid did.
 - **Server and connectors, hardening** ([#222](https://github.com/casoon/opengrid/issues/222)).
   `max_payload_bytes` above axum's 2 MiB is honoured (the router carries the limit; an oversize body
   is still the `limit_exceeded` wire error), every answer has `Cache-Control: no-store` and

@@ -62,5 +62,5 @@ pub use added::{AddedRow, AddedRows, RowKind, RowState};
 pub use history::{AddedEntry, CellEdit, History, Step};
 pub use patch::Patch;
 pub use saving::{CellState, Finding, Level, Saves};
-pub use state::{GridState, GridStatus};
+pub use state::{Edits, GridState, GridStatus};
 pub use view::{CellRef, Window};
