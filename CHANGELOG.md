@@ -129,6 +129,16 @@ Two things belong in every release entry and are easy to leave out:
   `u64::MAX` overflowed `rows + 1` in a text or list column, and path lengths of a flat tree that wrap
   around `u64` passed the sum check and then indexed out of range. Both are now a decode error, so a
   hostile or broken server cannot trap the page ([#212](https://github.com/casoon/opengrid/issues/212)).
+- **Server:** pivots, trees and Excel exports are bounded before the work is done, not after it.
+  A pivot's grouping sets carry a limit one past `max_cells` (PostgreSQL's single statement one past
+  the sets' sum), so a pivot over a high-cardinality dimension no longer reads every group; the
+  overflow is `limit_exceeded` (it was a hidden `backend` error in the default pivot path). A tree the
+  engine builds has its scope counted against the new `ServerBuilder::max_tree_rows` (default
+  1 000 000) before its rows are read, for a level and for an export. The new
+  `ServerBuilder::max_xlsx_rows` (default 100 000) bounds an Excel export below the sheet's 1 048 576
+  rows, since the whole workbook is built in memory. **What breaks:** a tree over a million rows,
+  and an Excel export over 100 000 rows, are refused unless the bound is raised
+  ([#218](https://github.com/casoon/opengrid/issues/218)).
 - **Query:** an integer literal on a `decimal` column (`{"field": "amount", "op": "gt", "value": 10}`) was
   refused as `ValueTypeMismatch`, although rule S8 allows comparing an integer with a decimal. It is
   now read at the column's scale (an overflow of the precision is still a validation error); a float

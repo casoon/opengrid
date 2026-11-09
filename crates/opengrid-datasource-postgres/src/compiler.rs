@@ -692,6 +692,18 @@ impl PostgresCompiler {
             sql.push(" ASC NULLS LAST");
         }
 
+        // One past what the sets may hold together (`max_cells` each): more
+        // rows than that and some level is over the bound, which `assemble`
+        // reports - without the database having sent the rest (issue #218).
+        sql.push(&format!(
+            " LIMIT {}",
+            pivot
+                .sets
+                .len()
+                .saturating_mul(pivot.limits.max_cells)
+                .saturating_add(1)
+        ));
+
         Ok(sql.finish())
     }
 }

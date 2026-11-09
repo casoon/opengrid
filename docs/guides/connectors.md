@@ -129,6 +129,12 @@ another type, a key the token does not carry or an operator the column cannot an
 error, as are a token value handed in twice and an `allow_origin` that is not a valid header
 value.
 
+Bounds. A pivot's grouping sets arrive with a `limit` one past `max_cells`: a connector applies
+`limit` like any other query's and lets the pivot engine report the overflow (a connector that
+answers a whole pivot in one statement, as PostgreSQL does, bounds the statement by the sum). A
+tree the engine builds is counted first (`max_tree_rows`); a connector that answers trees itself
+keeps the rows in the database.
+
 Timeouts. The server drops a query's future when its timeout runs out or the client leaves. A
 connector must then end the work behind it, not only forget the future: the PostgreSQL reference
 sends a cancel request for the connection and discards it, the SQLite reference interrupts the
