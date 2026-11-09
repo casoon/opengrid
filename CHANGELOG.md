@@ -31,6 +31,12 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Changed
 
+- **Engine:** the hot paths no longer allocate per row. `in` looks each cell up in a set of the
+  literals instead of comparing the whole column once per literal (500 values over 1M rows: 2229 ms
+  to 19 ms), `min`/`max` reuse one buffer per group (1M rows by country: 154 ms to 102 ms), and a
+  tree keys its nodes on the typed value and builds the paths of the returned page only (100 000
+  nodes: roots 24 ms to 8 ms, flat tree 49 ms to 30 ms; native release build). The answers are the
+  same ([#214](https://github.com/casoon/opengrid/issues/214)).
 - **Engine:** `load_csv` reads the file record by record into the column builders instead of
   scanning every record first. The peak memory of loading the 1M-row demo file (85 MB) drops from
   431 MiB to 159 MiB (native, release build, maximum resident set size); the result is the same

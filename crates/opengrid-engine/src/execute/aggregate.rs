@@ -280,6 +280,9 @@ enum Accumulator {
     /// row it sits in, so the result can be taken from the input column.
     Extreme {
         key: Option<Vec<u8>>,
+        /// The candidate being encoded; it swaps places with `key` when it wins,
+        /// so a row costs no allocation.
+        scratch: Vec<u8>,
         row: usize,
         max: bool,
     },
@@ -308,6 +311,7 @@ impl Accumulator {
             AggregateFn::Avg => Accumulator::Avg { sum: 0.0, count: 0 },
             AggregateFn::Min | AggregateFn::Max => Accumulator::Extreme {
                 key: None,
+                scratch: Vec::new(),
                 row: 0,
                 max: function == AggregateFn::Max,
             },
@@ -365,26 +369,30 @@ impl Accumulator {
             (
                 Accumulator::Extreme {
                     key,
+                    scratch,
                     row: best,
                     max,
                 },
                 AggregateFn::Min | AggregateFn::Max,
                 _,
             ) => {
-                let mut candidate = Vec::new();
-                encode(column, row, &mut candidate);
+                scratch.clear();
+                encode(column, row, scratch);
                 let better = match key {
                     None => true,
                     Some(current) => {
                         if *max {
-                            candidate > *current
+                            *scratch > *current
                         } else {
-                            candidate < *current
+                            *scratch < *current
                         }
                     }
                 };
                 if better {
-                    *key = Some(candidate);
+                    match key {
+                        Some(current) => std::mem::swap(current, scratch),
+                        None => *key = Some(std::mem::take(scratch)),
+                    }
                     *best = row;
                 }
             }
