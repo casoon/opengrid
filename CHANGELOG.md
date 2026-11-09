@@ -31,6 +31,10 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Changed
 
+- **Engine:** `load_csv` reads the file record by record into the column builders instead of
+  scanning every record first. The peak memory of loading the 1M-row demo file (85 MB) drops from
+  431 MiB to 159 MiB (native, release build, maximum resident set size); the result is the same
+  ([#215](https://github.com/casoon/opengrid/issues/215)).
 - **Docs:** the project site uses the current shared theme (0.12.6) and ends with a link to the
   quickstart.
 - **Packages:** the peer range of `vue` is `>=3.4.20` and that of `@types/react` is `>=18.3.0`
