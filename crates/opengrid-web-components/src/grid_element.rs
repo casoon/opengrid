@@ -355,6 +355,13 @@ fn reset_runtime(host: &HtmlElement) {
         // What the page said about cells names records, and a rebuild keeps
         // the records (issue #153).
         fresh.state.restore_saves(runtime.state.take_saves());
+        // The rows the reader added and the history are the same: they wait
+        // for the page, and a column moving is not their end (issue #226). A
+        // tree or a grouping has no end to add after (see `sync_add_row`).
+        let edits = runtime.state.take_edits();
+        if fresh.tree.is_none() && fresh.grouping.is_none() {
+            fresh.state.restore_edits(edits);
+        }
         fresh.state.set_row_key(row_key_of(host));
         runtime.state = fresh.state;
         runtime.set_active(fresh.active);
@@ -474,6 +481,7 @@ fn on_source_replaced(event: Event) {
             .shadow_root()
             .and_then(|root| root.active_element())
             .is_some_and(|element| element.tag_name().eq_ignore_ascii_case("td"));
+        let selection_dropped;
         {
             let mut runtime = runtime.borrow_mut();
             let key = runtime
@@ -484,11 +492,25 @@ fn on_source_replaced(event: Event) {
             runtime.state.added_mut().drop_saved();
             // What the reader did was on the source that is replaced.
             runtime.state.history_mut().clear();
+            // A selection names positions, and other records sit in them now.
+            selection_dropped = !runtime.state.invalidate_selection().is_empty();
             // The aggregates of a group come from the fresh rows too.
             runtime.groups_filter = None;
             if let Some(grouping) = runtime.grouping.as_mut() {
                 grouping.invalidate();
             }
+            // The levels of a tree are the old source's: without this the
+            // query finds them loaded and asks for nothing.
+            if let Some(tree) = runtime.tree.as_mut() {
+                tree.invalidate();
+            }
+            runtime.tree_asked = None;
+            // So are the values a facet lists and their counts.
+            runtime.facet_domain.clear();
+            runtime.facet_counts.clear();
+        }
+        if selection_dropped {
+            announce_if_cleared(&host, &runtime);
         }
         start_following(&host, focused_in_grid);
         return;
@@ -793,6 +815,11 @@ fn on_attribute_changed(
                 let mut runtime = runtime.borrow_mut();
                 runtime.known.clear();
                 runtime.state.take_saves();
+                // The rows the reader added and what they did belong to it too,
+                // and so do the values the facets list.
+                let _ = runtime.state.take_edits();
+                runtime.facet_domain.clear();
+                runtime.facet_counts.clear();
             }
             clear_root(&root);
             reset_runtime(&host);
@@ -1222,6 +1249,8 @@ fn settle(
         return;
     };
     let mut paste_dropped = false;
+    // Rows of the selection that the result no longer has (issue #226).
+    let mut shrunk = None;
     {
         let mut runtime = runtime.borrow_mut();
         // A newer scroll, key or filter superseded this query; its focus request
@@ -1241,10 +1270,17 @@ fn settle(
                 learn_types(&mut runtime, &result.schema);
                 // A window is the same result moved, so what the reader is in
                 // the middle of — an editor, unsaved marks — stays (issue #224).
-                if kind == QueryKind::Window {
-                    runtime.state.apply_window_result(result);
+                let patches = if kind == QueryKind::Window {
+                    runtime.state.apply_window_result(result)
                 } else {
-                    runtime.state.apply_result(result);
+                    runtime.state.apply_result(result)
+                };
+                if runtime.tree.is_none()
+                    && patches
+                        .iter()
+                        .any(|patch| matches!(patch, GridPatch::Selection(_)))
+                {
+                    shrunk = Some(runtime.state.selection().to_vec());
                 }
                 if let Some(key) = runtime.replaced.take() {
                     follow_replaced(&mut runtime, key);
@@ -1285,6 +1321,9 @@ fn settle(
     // when the checked presentation actually changed.
     recolumn(host);
     render(host, focus);
+    if let Some(rows) = shrunk {
+        dispatch_selection(host, &rows, None);
+    }
 }
 
 /// Whether a newer query has replaced this one; a focus request it carried is
@@ -6787,6 +6826,10 @@ fn refresh_facets(host: &HtmlElement) {
                 let Ok(result) = ask_uncounted(&host, &provider, &query, &mode).await else {
                     continue;
                 };
+                // A round a newer one replaced may come from another source.
+                if grid_runtime.borrow().facet_generation != generation {
+                    return;
+                }
                 if let Ok(domain) = grouping::groups_from(&result) {
                     grid_runtime
                         .borrow_mut()

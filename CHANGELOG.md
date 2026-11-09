@@ -20,6 +20,10 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Added
 
+- **PostgreSQL:** `PostgresDataSource::connect_with` and `PoolOptions` set the pool size and the wait,
+  create and recycle timeouts, so `max_concurrent_exports` can be sized against a known pool. TLS is
+  not part of this ([#220](https://github.com/casoon/opengrid/issues/220), awaiting a decision on the
+  dependency).
 - **Editing through `connect` and the framework components** ([#206](https://github.com/casoon/opengrid/issues/206)).
   New options `actions` and `validators` (functions compare by identity, as in `formats`) and the
   callbacks `onRowAdd`, `onPaste`, `onBulkChange`, `onRowAction`, `onSourceReplaced`. `onRowAdd`
@@ -72,13 +76,15 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Fixed
 
-- **Grid:** pasting no longer writes into a column the page fills (`readonly`)
-  ([#228](https://github.com/casoon/opengrid/issues/228)). The preview shows those cells with the
-  reason and leaves them out, the live region names the column, and a block of nothing else closes
-  without an `opengrid-paste`. A preview is discarded when a new result for the whole query lands
-  (another sort or filter, a replaced source, a rebuild), and an answer that arrives after one does
-  not open one; before, `Enter` applied the block to rows that were no longer there. The preview's
-  query is no longer counted in the footer.
+- **Grid:** loading the source again leaves nothing of the old one behind
+  ([#226](https://github.com/casoon/opengrid/issues/226)). The selection is cleared (and the
+  `opengrid-selection-change` event and the status line say so), a tree asks for its levels again
+  instead of keeping the old ones, and a facet lists the new source's values. A result with fewer
+  rows no longer leaves selected rows that are not there. The rows the reader added and the undo
+  history now survive what rebuilds the grid (moving or hiding a column, `tree`, applying a view),
+  following their columns by name; a changed `datasource` still starts clean. `<opengrid-table>` and
+  `<opengrid-pivot>` re-run their query when `loadRows` or `load` replaces their source, which only
+  the grid did.
 - **Server and connectors, hardening** ([#222](https://github.com/casoon/opengrid/issues/222)).
   `max_payload_bytes` above axum's 2 MiB is honoured (the router carries the limit; an oversize body
   is still the `limit_exceeded` wire error), every answer has `Cache-Control: no-store` and
@@ -134,6 +140,13 @@ Two things belong in every release entry and are easy to leave out:
 - **Grid:** scrolling while a cell was being edited closed the editor in the grid's state but left
   the `<input>` on screen, where `Enter` and `Escape` no longer reached it and the typed value was
   lost. A scroll now leaves the editor open ([#224](https://github.com/casoon/opengrid/issues/224)).
+- **Grid:** pasting no longer writes into a column the page fills (`readonly`)
+  ([#228](https://github.com/casoon/opengrid/issues/228)). The preview shows those cells with the
+  reason and leaves them out, the live region names the column, and a block of nothing else closes
+  without an `opengrid-paste`. A preview is discarded when a new result for the whole query lands
+  (another sort or filter, a replaced source, a rebuild), and an answer that arrives after one does
+  not open one; before, `Enter` applied the block to rows that were no longer there. The preview's
+  query is no longer counted in the footer.
 - **Engine:** a date or timestamp text with a multi-byte character (a filter literal, a CSV cell, a
   wire value) panicked the parser — a wasm trap in the browser, a 500 on the server; it is now a
   validation error ([#209](https://github.com/casoon/opengrid/issues/209)).

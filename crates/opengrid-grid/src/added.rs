@@ -90,6 +90,29 @@ impl AddedRows {
         }
     }
 
+    /// The shown columns changed (moved, hidden, shown again): every row keeps
+    /// the value of each column that is still there, in its new place.
+    /// `from[new]` is where the column now at `new` stood before; a column that
+    /// was not shown starts empty.
+    pub fn remap(&mut self, from: &[Option<usize>]) {
+        let pick = |values: &[Value]| -> Vec<Value> {
+            from.iter()
+                .map(|old| {
+                    old.and_then(|old| values.get(old))
+                        .cloned()
+                        .unwrap_or(Value::Null)
+                })
+                .collect()
+        };
+        for row in &mut self.rows {
+            row.values = pick(&row.values);
+        }
+        if !self.draft.is_empty() {
+            self.draft = pick(&self.draft);
+        }
+        self.missing.clear();
+    }
+
     /// The draft is as wide as the schema.
     pub fn fit(&mut self, width: usize) {
         if self.enabled && self.draft.len() != width {
