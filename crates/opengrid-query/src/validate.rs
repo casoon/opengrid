@@ -17,7 +17,16 @@ pub struct Limits {
     pub max_limit: u64,
     /// Largest accepted filter nesting depth.
     pub max_depth: usize,
+    /// Most values in one `in` / `has_all` list and most operands of one
+    /// `and` / `or` (issue #222): a raised payload limit must not let a query
+    /// exceed what a database binds (PostgreSQL: 65 535 parameters).
+    pub max_list_values: usize,
 }
+
+const DEFAULT_MAX_LIST_VALUES: usize = 1_000;
+
+/// The largest `offset`: what a signed 64-bit database number holds.
+const MAX_OFFSET: u64 = i64::MAX as u64;
 
 impl Limits {
     /// Explicit limits.
@@ -25,6 +34,7 @@ impl Limits {
         Self {
             max_limit,
             max_depth,
+            max_list_values: DEFAULT_MAX_LIST_VALUES,
         }
     }
 }
@@ -34,6 +44,7 @@ impl Default for Limits {
         Self {
             max_limit: 10_000,
             max_depth: 8,
+            max_list_values: DEFAULT_MAX_LIST_VALUES,
         }
     }
 }
@@ -163,6 +174,17 @@ impl Query {
             return Err(QueryError::OffsetWithoutSort);
         }
 
+        // Every connector hands the offset to a database as a signed 64-bit
+        // number; past it the cast wraps to a negative one (issue #222).
+        if let Some(offset) = self.offset
+            && offset > MAX_OFFSET
+        {
+            return Err(QueryError::OffsetTooLarge {
+                offset,
+                max_offset: MAX_OFFSET,
+            });
+        }
+
         if let Some(limit) = self.limit
             && limit > limits.max_limit
         {
@@ -173,7 +195,7 @@ impl Query {
         }
 
         let filter = match &self.filter {
-            Some(filter) => Some(validate_filter(filter, schema, "filter")?),
+            Some(filter) => Some(validate_filter(filter, schema, limits, "filter")?),
             None => None,
         };
 
@@ -232,7 +254,7 @@ impl Query {
                         None => None,
                     },
                     scope: match &tree.scope {
-                        Some(scope) => Some(validate_filter(scope, schema, "tree.scope")?),
+                        Some(scope) => Some(validate_filter(scope, schema, limits, "tree.scope")?),
                         None => None,
                     },
                 })
@@ -337,29 +359,52 @@ impl Query {
     }
 }
 
+fn check_list_len(len: usize, limits: &Limits, path: &str) -> Result<(), QueryError> {
+    if len > limits.max_list_values {
+        return Err(QueryError::ListTooLong {
+            path: path.to_owned(),
+            len,
+            max: limits.max_list_values,
+        });
+    }
+    Ok(())
+}
+
 fn validate_filter(
     expr: &FilterExpr,
     schema: &Schema,
+    limits: &Limits,
     path: &str,
 ) -> Result<ValidatedFilter, QueryError> {
     match expr {
-        FilterExpr::And(items) => Ok(ValidatedFilter::And(
-            items
-                .iter()
-                .enumerate()
-                .map(|(i, item)| validate_filter(item, schema, &format!("{path}.and[{i}]")))
-                .collect::<Result<_, _>>()?,
-        )),
-        FilterExpr::Or(items) => Ok(ValidatedFilter::Or(
-            items
-                .iter()
-                .enumerate()
-                .map(|(i, item)| validate_filter(item, schema, &format!("{path}.or[{i}]")))
-                .collect::<Result<_, _>>()?,
-        )),
+        FilterExpr::And(items) => {
+            check_list_len(items.len(), limits, &format!("{path}.and"))?;
+            Ok(ValidatedFilter::And(
+                items
+                    .iter()
+                    .enumerate()
+                    .map(|(i, item)| {
+                        validate_filter(item, schema, limits, &format!("{path}.and[{i}]"))
+                    })
+                    .collect::<Result<_, _>>()?,
+            ))
+        }
+        FilterExpr::Or(items) => {
+            check_list_len(items.len(), limits, &format!("{path}.or"))?;
+            Ok(ValidatedFilter::Or(
+                items
+                    .iter()
+                    .enumerate()
+                    .map(|(i, item)| {
+                        validate_filter(item, schema, limits, &format!("{path}.or[{i}]"))
+                    })
+                    .collect::<Result<_, _>>()?,
+            ))
+        }
         FilterExpr::Not(inner) => Ok(ValidatedFilter::Not(Box::new(validate_filter(
             inner,
             schema,
+            limits,
             &format!("{path}.not"),
         )?))),
         FilterExpr::IsNull { field } => {
@@ -415,6 +460,7 @@ fn validate_filter(
                         let JsonValue::Array(items) = value else {
                             return Err(QueryError::ListExpected { path: value_path });
                         };
+                        check_list_len(items.len(), limits, &value_path)?;
                         let values = items
                             .iter()
                             .enumerate()
@@ -441,6 +487,7 @@ fn validate_filter(
                             path: format!("{path}.value"),
                         });
                     };
+                    check_list_len(items.len(), limits, &format!("{path}.value"))?;
                     let values = items
                         .iter()
                         .enumerate()

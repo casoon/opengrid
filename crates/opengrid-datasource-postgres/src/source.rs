@@ -68,6 +68,19 @@ impl PostgresDataSource {
         })
     }
 
+    /// The same for a table in the PostgreSQL schema `namespace`. A name with a
+    /// dot in `connect` is one table name; this is how a qualified one is given.
+    pub fn connect_in_schema(
+        url: &str,
+        namespace: &str,
+        table: &str,
+        schema: Schema,
+    ) -> Result<Self, DataSourceError> {
+        let mut source = Self::connect(url, table, schema)?;
+        source.compiler = source.compiler.in_namespace(namespace);
+        Ok(source)
+    }
+
     /// Answers a tree's level in PostgreSQL itself, with `WITH RECURSIVE`
     /// (issue #132), instead of handing the scope's rows to the engine.
     ///
