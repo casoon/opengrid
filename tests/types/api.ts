@@ -215,6 +215,7 @@ export async function page(): Promise<void> {
   // Events: the detail is typed on the element and on the document.
   grid.addEventListener("opengrid-selection-change", (event) => {
     event.detail satisfies SelectionChangeDetail;
+    event.detail.ranges[0]?.from satisfies number | undefined;
   });
   grid.addEventListener("opengrid-cell-change", (event) => {
     event.detail satisfies CellChangeDetail;
@@ -287,6 +288,7 @@ export async function page(): Promise<void> {
       switch (refused.code) {
         case "busy":
         case "limit_exceeded":
+        case "data":
         case "too_many_rows":
         case "source_changed":
           break;

@@ -403,6 +403,7 @@ async fn a_backend_failure_is_a_fixed_sentence_and_a_reference() {
     )
     .await;
     assert_eq!(status, StatusCode::BAD_GATEWAY, "{body}");
+    assert!(body.contains(r#""code":"backend""#), "{body}");
     assert!(
         !body.contains("tenants_secret") && !body.contains("acme"),
         "{body}"

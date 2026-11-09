@@ -147,7 +147,8 @@ Always JSON, whatever `Accept` said:
 | `validation` | 422 | The query does not fit the schema the caller may see; `path` says where. |
 | `limit_exceeded` | 413 | Too big: the body, the page (`max_limit`), the time, an export's rows. |
 | `busy` | 503 | Too many exports running; the same request may succeed later. |
-| `backend` | 502 | The source behind the server failed. The message is one fixed sentence with a reference (`the data source failed (reference og-…)`); the cause stays with the operator, who finds it under that reference (`ServerBuilder::on_error`). Exception: data that breaks a rule the query relies on — a tree with a key twice or a cycle (T1, T3) — is told in full, because it names rows of the caller's own data; it travels as `backend` until it gets a code of its own. |
+| `backend` | 502 | The source behind the server failed. The message is one fixed sentence with a reference (`the data source failed (reference og-…)`); the cause stays with the operator, who finds it under that reference (`ServerBuilder::on_error`). |
+| `data` | 422 | The data breaks a rule the query relies on — a tree with a key twice or a cycle (T1, T3). Not an outage and not the query's fault: the message is told in full, because it names rows of the caller's own data. Added after the others; a client that does not know it treats it as a general failure. |
 
 ## Export
 
@@ -190,9 +191,10 @@ in:
    `max_cells` (and the P9 order sets one past `max_rows`), so a pivot over a high-cardinality
    dimension is `limit_exceeded` without the source sending every group; a tree built by the
    engine (the source does not answer trees itself, and every flat tree) has its scope counted
-   against `max_tree_rows` (default 1 000 000) before any row is read, for a level and for an
-   export; an Excel export has `max_xlsx_rows` (default 100 000, never above the 1 048 576 of a
-   sheet), because the workbook is built in memory before the first byte.
+   against `max_tree_rows` (default 5 000 000) before any row is read, for a level and for an
+   export; an Excel export has `max_xlsx_rows` (default 1 000 000, never above the 1 048 576 of a
+   sheet), because the file is assembled, and held in memory, before the first byte: it counts
+   against the timeout, which a million rows of ten columns exceed at the default 10 s.
 
 ## Proving a server
 

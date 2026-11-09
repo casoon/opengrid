@@ -48,12 +48,12 @@ test("Space selects the focused row and the page hears about it", async ({ page 
 
   await expect.poll(() => selectedRows(page)).toEqual([2]);
   const seen = await events(page);
-  expect(seen.at(-1)).toEqual({ rows: [2], count: 1 });
+  expect(seen.at(-1)).toEqual({ rows: [2], ranges: [{ from: 2, to: 2 }], count: 1 });
 
   // The event reaches the document, so it bubbled out of the shadow root.
   await page.keyboard.press(" ");
   await expect.poll(() => selectedRows(page)).toEqual([]);
-  expect((await events(page)).at(-1)).toEqual({ rows: [], count: 0 });
+  expect((await events(page)).at(-1)).toEqual({ rows: [], ranges: [], count: 0 });
 });
 
 test("Shift+Space extends from the last plain selection", async ({ page }) => {
@@ -64,6 +64,52 @@ test("Shift+Space extends from the last plain selection", async ({ page }) => {
   await page.keyboard.press("Shift+ ");
 
   await expect.poll(() => selectedRows(page)).toEqual([1, 2, 3, 4]);
+});
+
+test("the event names the rows and, beside them, the runs of adjacent rows", async ({ page }) => {
+  // Issue #235 (the owner's decision): `rows` stays, `ranges` is added.
+  await open(page);
+  await focusCell(page, 'td[data-row="1"][data-col="0"]');
+  await page.keyboard.press(" ");
+  await focusCell(page, 'td[data-row="3"][data-col="0"]');
+  await page.keyboard.press(" ");
+  await focusCell(page, 'td[data-row="4"][data-col="0"]');
+  await page.keyboard.press("Shift+ ");
+  await expect.poll(() => selectedRows(page)).toEqual([1, 3, 4]);
+  expect((await events(page)).at(-1)).toEqual({
+    rows: [1, 3, 4],
+    ranges: [
+      { from: 1, to: 1 },
+      { from: 3, to: 4 },
+    ],
+    count: 3,
+  });
+
+  // The gap closes: one run.
+  await focusCell(page, 'td[data-row="2"][data-col="0"]');
+  await page.keyboard.press(" ");
+  await expect.poll(() => selectedRows(page)).toEqual([1, 2, 3, 4]);
+  expect((await events(page)).at(-1)).toEqual({
+    rows: [1, 2, 3, 4],
+    ranges: [{ from: 1, to: 4 }],
+    count: 4,
+  });
+
+  // Every matching row is one range, and `rows` still lists them all.
+  await page.keyboard.press("Control+a");
+  const total = await page.evaluate(
+    () =>
+      Number(
+        document
+          .querySelector("opengrid-grid")
+          .shadowRoot.querySelector("table")
+          .getAttribute("aria-rowcount"),
+      ) - 1,
+  );
+  const last = (await events(page)).at(-1);
+  expect(last.count).toBe(total);
+  expect(last.rows.length).toBe(total);
+  expect(last.ranges).toEqual([{ from: 0, to: total - 1 }]);
 });
 
 test("Ctrl+A selects every matching row, not only the loaded ones", async ({ page }) => {
@@ -125,7 +171,7 @@ test("sorting drops the selection, and says so", async ({ page }) => {
   await page.keyboard.press("Enter");
 
   await expect.poll(() => selectedRows(page)).toEqual([]);
-  expect((await events(page)).at(-1)).toEqual({ rows: [], count: 0 });
+  expect((await events(page)).at(-1)).toEqual({ rows: [], ranges: [], count: 0 });
   // A selection that vanishes without a word is a trap.
   await expect
     .poll(() =>

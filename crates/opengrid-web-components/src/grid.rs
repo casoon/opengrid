@@ -3251,6 +3251,19 @@ pub fn patch_grid(
                 .map_or("none", |position| aria_sort(sorts[position].1))
                 .to_owned(),
         });
+        // A further key says its place instead: a hidden node the element keeps
+        // (`SORT_KEY_ID_PREFIX`), the header described by it.
+        match key.filter(|position| *position > 0) {
+            Some(position) => buffer.push(Patch::SetAttribute {
+                node: header.cell,
+                name: "aria-describedby".to_owned(),
+                value: format!("{SORT_KEY_ID_PREFIX}{}", position + 1),
+            }),
+            None => buffer.push(Patch::RemoveAttribute {
+                node: header.cell,
+                name: "aria-describedby".to_owned(),
+            }),
+        }
         buffer.push(Patch::SetAttribute {
             node: header.cell,
             name: "tabindex".to_owned(),
@@ -4110,6 +4123,21 @@ impl CheckState {
     }
 }
 
+/// The selected rows as runs of adjacent rows, `(from, to)` both inclusive,
+/// ascending — the `ranges` of `opengrid-selection-change` (issue #235). `rows`
+/// is ascending, as the event promises; "select all" over 100 000 rows is one
+/// run.
+pub fn selection_ranges(rows: &[u64]) -> Vec<(u64, u64)> {
+    let mut ranges: Vec<(u64, u64)> = Vec::new();
+    for &row in rows {
+        match ranges.last_mut() {
+            Some((_, to)) if *to + 1 == row => *to = row,
+            _ => ranges.push((row, row)),
+        }
+    }
+    ranges
+}
+
 /// The state of the select-all header for a selection over `total_count` rows.
 ///
 /// **"All" means all matching rows, not the loaded page.** The grid holds one
@@ -4299,6 +4327,10 @@ fn patch_tree_row(
 /// tree row shown only for the match below it is described by.
 pub const TREE_CONTEXT_ID: &str = "og-tree-context";
 
+/// The id prefix of the hidden nodes that say a header's place among several
+/// sort keys; the 1-based position follows.
+pub const SORT_KEY_ID_PREFIX: &str = "og-sort-key-";
+
 /// The id prefix of the hidden nodes that hold a cell's validation sentence.
 pub const FINDING_ID_PREFIX: &str = "og-finding-";
 
@@ -4423,6 +4455,19 @@ pub(crate) fn label_by(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_selection_is_named_as_runs_of_adjacent_rows() {
+        use super::selection_ranges;
+        assert_eq!(selection_ranges(&[]), []);
+        assert_eq!(selection_ranges(&[7]), [(7, 7)]);
+        assert_eq!(
+            selection_ranges(&[0, 1, 2, 4, 6, 7]),
+            [(0, 2), (4, 4), (6, 7)]
+        );
+        let all: Vec<u64> = (0..100_000).collect();
+        assert_eq!(selection_ranges(&all), [(0, 99_999)]);
+    }
+
     use super::*;
 
     /// A tree's node with children shows its own value and its subtree's

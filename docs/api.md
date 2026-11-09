@@ -1098,6 +1098,7 @@ the same for `/query`, `/pivot`, `/source` and `/export`:
 | `limit_exceeded` | `413` | Too big for the server: a body over `max_payload_bytes`, a query over the server's timeout, more rows than `max_export_rows`, an export without its first byte within the timeout. The same request usually fails again — a timeout may pass under less load. | Narrow the view. |
 | `busy` | `503` | `max_concurrent_exports` exports are already running. The request itself is fine. | Try again in a moment. |
 | `backend` | `502` | The source behind the server failed. | Try again later; the operator's log says why. |
+| `data` | `422` | The data breaks a rule the query relies on — a tree with a key twice or a cycle. The message names the rows. Retrying does not help. | Show the message to whoever owns the data. A client that does not know the code treats it like any failure. |
 
 **`exportRows`' own codes** never come from a server:
 
@@ -1116,7 +1117,7 @@ exception to the first part: `loader.js` dispatches it on the element, without `
 
 | Event | `detail` |
 |---|---|
-| `opengrid-selection-change` | `{ rows: number[], count: number }` — logical row numbers, ascending. In a [tree](#tree) also `keys`: the selected nodes by key, and `count` counts them. |
+| `opengrid-selection-change` | `{ rows: number[], ranges: { from: number, to: number }[], count: number }` — logical row numbers, ascending, and the same rows as `ranges`: runs of adjacent rows, ascending, both ends inclusive (select-all over 100 000 rows is one range, `{ from: 0, to: 99999 }`). In a [tree](#tree) `ranges` follow `rows`, the nodes shown; also `keys`: the selected nodes by key, and `count` counts them. |
 | `opengrid-bulk-change` | `{ keys, column, value }` — one value was set for the selected rows; see [Setting a value for the selected rows](#setting-a-value-for-the-selected-rows). |
 | `opengrid-paste` | `{ changes: [{ key?, row, column, value, previous }], added: [{ values, provisionalKey }] }` — a pasted block was applied; see [Pasting](#pasting). |
 | `opengrid-row-add` | `{ values, provisionalKey, undo?, redo? }` — a record was entered in the new row; see [Adding rows](#adding-rows). |
@@ -1335,6 +1336,7 @@ loader.module.set_texts(host, { lang: "de", loading: "Wird geladen …" });
 | `aggregateSum` / `aggregateAvg` / `aggregateCount` / `aggregateMin` / `aggregateMax` / `aggregateRange` | `Sum` / `Average` / `Count` / `Minimum` / `Maximum` / `Range` | |
 | `columnMenu` | `{column} column menu` | `{column}` |
 | `sortAscending` / `sortDescending` | `Sort ascending` / `Sort descending` | |
+| `sortKey` | `Sort key {position}` — a further sort key's place (1-based), said by its column header through `aria-describedby`; the primary key carries `aria-sort` | `{position}` |
 | `filterColumn` | `Filter …` | |
 | `aggregateGroup` / `aggregateNone` | `Aggregate in groups` / `No aggregate` | |
 | `groupByColumn` / `groupSecondLevel` / `ungroupColumn` | `Group by this column` / `Group as second level` / `Remove this grouping` | |

@@ -457,7 +457,7 @@ export function exportRows(provider: Provider, query: ViewQuery, options?: Expor
 // ---------------------------------------------------------------------------
 
 /**
- * What went wrong, as a closed list a page can switch on. The first seven are
+ * What went wrong, as a closed list a page can switch on. The first eight are
  * the server's, from its error form; the last three are `exportRows`' own.
  */
 export type ErrorCode =
@@ -468,6 +468,7 @@ export type ErrorCode =
   | "unauthorized"
   | "backend"
   | "malformed"
+  | "data"
   | "too_many_rows"
   | "source_changed"
   | "module_not_loaded";
@@ -767,6 +768,7 @@ export type TextKey =
   | "columnMenu"
   | "sortAscending"
   | "sortDescending"
+  | "sortKey"
   | "filterColumn"
   | "aggregateGroup"
   | "aggregateNone"
@@ -924,6 +926,11 @@ export type Texts = Partial<Record<TextKey, string>> & {
  */
 export interface SelectionChangeDetail {
   rows: number[];
+  /**
+   * The same rows as runs of adjacent ones, ascending, both ends inclusive:
+   * select-all over 100 000 rows is `[{ from: 0, to: 99999 }]`.
+   */
+  ranges: Array<{ from: number; to: number }>;
   count: number;
   /** In a tree only: the selected nodes' keys, the shown ones first. */
   keys?: unknown[];

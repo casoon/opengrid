@@ -64,8 +64,21 @@ Two things belong in every release entry and are easy to leave out:
   rows), and an `allow_origin` that is not a valid header value (it was dropped). **What breaks:** a
   server that was configured with any of these now refuses to start
   ([#221](https://github.com/casoon/opengrid/issues/221)).
+- **Server:** data that breaks a rule of the query, a tree with a key twice or a cycle, now answers
+  with the new error code `data` and status `422` instead of `backend` and `502`; the message is
+  still told in full. The code is added to the end of `ErrorCode` (`opengrid-datasource`), of the
+  frozen server codes and of the `ErrorCode` type in `loader.d.ts`. `createRestProvider`, `exportRows`
+  and the elements pass a code they do not know on unchanged and treat it as a failure like any
+  other. **What breaks:** a `switch` over `ErrorCode` in Rust must handle the new variant, and a client
+  that retried `backend` for a tree cycle now sees `data` and retrying does not help
+  ([#219](https://github.com/casoon/opengrid/issues/219)).
 - **Docs:** the project site uses the current shared theme (0.12.6) and ends with a link to the
   quickstart.
+- **Grid:** a further sort key says its place to a screen reader. `aria-sort` stays on the primary
+  key only (ARIA 1.2); the header of the second and later keys is described by "Sort key 2", "Sort key
+  3" … through `aria-describedby` and a hidden node. **Public API:** the new text key `sortKey`
+  (`Sort key {position}`, 1-based) for `set_texts`, documented in `docs/api.md`
+  ([#229](https://github.com/casoon/opengrid/issues/229)).
 - **Packaging:** a bundler's production build finds the WebAssembly modules and the worker by
   itself ([#238](https://github.com/casoon/opengrid/issues/238)). `loader.js` and `worker.js`
   import the packaged glue statically and the worker is started with the
@@ -82,12 +95,23 @@ Two things belong in every release entry and are easy to leave out:
   runs 3.6 ms instead of 11.7 ms, `<opengrid-table>` draws 5 000 rows 20 % faster, and extending a range
   over a large selection no longer takes quadratic time. The DOM, the events and the texts are
   the same.
+- **Server:** the defaults of the two bounds from [#218](https://github.com/casoon/opengrid/issues/218)
+  are larger: `max_xlsx_rows` 1 000 000 (it was 100 000; the 1 048 576 of an Excel sheet stays the
+  hard bound) and `max_tree_rows` 5 000 000 (it was 1 000 000). Both are still set per server. A
+  million rows of ten columns take about 65 MiB while the workbook is made (100 000 rows: 14 MiB)
+  but about 25 s, which is past the default timeout of 10 s: raise `timeout` for such exports.
 - **API:** `opengrid-source-replaced` is frozen, typed in `OpengridEventMap` and in the events table
   of the API reference, which says that `loader.js` dispatches it on the grid without bubbling
   ([#234](https://github.com/casoon/opengrid/issues/234)). A test now reads the module's
   `#[wasm_bindgen]` exports from the source and holds them against the frozen functions and an
   explicit internal list, so a new export cannot slip past the freeze. The docs and types no longer
   count events or functions.
+- **Grid:** `opengrid-selection-change` carries `ranges` beside `rows`: the selected rows as runs of
+  adjacent rows, `{ from, to }`, ascending, both ends inclusive, so a page can take "select all" over
+  100 000 rows as one range instead of walking the list. `rows` and `count` are unchanged; in a
+  tree `ranges` follow `rows`. **Public API:** the detail gains the field `ranges`
+  (`SelectionChangeDetail` in `loader.d.ts`, the events table in `docs/api.md`), additive
+  ([#235](https://github.com/casoon/opengrid/issues/235)).
 - **Packages:** the peer range of `vue` is `>=3.4.20` and that of `@types/react` is `>=18.3.0`
   ([#237](https://github.com/casoon/opengrid/issues/237)). The shipped Vue types import
   `DefineSetupFnComponent`, which Vue only has from 3.4.20; a project on 3.3 or early 3.4 got a
@@ -178,6 +202,11 @@ Two things belong in every release entry and are easy to leave out:
   refused as `ValueTypeMismatch`, although rule S8 allows comparing an integer with a decimal. It is
   now read at the column's scale (an overflow of the precision is still a validation error); a float
   literal on a decimal column stays an error ([#210](https://github.com/casoon/opengrid/issues/210)).
+- **Grid:** a filter control that has the focus stays in sight when the filter row is laid out again
+  (a window resized, a column shown). The widths and the indent changed under the control and the
+  row's own scroll position did not follow, so the control could end up beside the edge and stay
+  there (WCAG 2.4.11). Found by a spec that passed only on its retry
+  (`at 480px every filter control is in sight`, about 1 run in 20).
 - **Pivot and grid: live region, language, names and descriptions** ([#231](https://github.com/casoon/opengrid/issues/231)).
   `<opengrid-pivot>` keeps its status line across answers and changes only its text, where it built
   a fresh `role="status"` with the text already inside on every answer (WCAG 4.1.3); the toolbar and

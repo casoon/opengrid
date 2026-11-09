@@ -49,7 +49,7 @@ const ERROR_FIELDS: [&str; 3] = ["status", "code", "path"];
 /// The `code`s of the server's error form — `ErrorCode` in
 /// `opengrid_datasource::wire`, a closed list; a test below holds the two
 /// together. The REST and pivot providers hand them on as they came.
-const SERVER_ERROR_CODES: [&str; 7] = [
+const SERVER_ERROR_CODES: [&str; 8] = [
     "validation",
     "unknown_source",
     "limit_exceeded",
@@ -57,6 +57,7 @@ const SERVER_ERROR_CODES: [&str; 7] = [
     "unauthorized",
     "backend",
     "malformed",
+    "data",
 ];
 
 /// The `code`s of `exportRows`' own errors, the `coded(…)` calls of
@@ -389,7 +390,7 @@ error fields
   status code path
 
 error codes (server)
-  validation unknown_source limit_exceeded busy unauthorized backend malformed
+  validation unknown_source limit_exceeded busy unauthorized backend malformed data
 
 error codes (exportRows)
   too_many_rows source_changed module_not_loaded
@@ -425,7 +426,7 @@ groupingFull hideColumn lang listItemAdded listItemRemove listItemRemoved loadin
 operators pageFirst pageLast pageNext pageOf pagePrevious pasteApplied pasteApply pasteBadOne pasteBadOther pasteBlocked pasteCutOff pasteDiscard pasteDiscarded pastePreview pasteUnreadable pivotColumns pivotFilterHint pivotFilterLabel pivotFilters pivotMeasures pivotRows pivotToolbar queriesOne queriesOther queryAnd \
 queryMissingValue queryUnknownColumn queryWrongOperator redoAdded redoCell redoNothing redoPaste rowAdded rowsOne rowsOther searchChip searchHint \
 searchLabel searchPlaceholder searchSuggestions selectAll selectedAll selectionCleared sortAscending \
-sortDescending sourceHybrid sourceLocal sourceRemote sourceWorker subtotal subtreeCell subtreeOnly toolbarGroup total \
+sortDescending sortKey sourceHybrid sourceLocal sourceRemote sourceWorker subtotal subtreeCell subtreeOnly toolbarGroup total \
 totalRow treeContext treeGroupIgnored treeLevelTooLarge treeOrphans treeRefused typeBool typeDate typeInteger typeList typeNumber typeText typeTime undoAdded undoCell undoNothing undoPaste ungroupColumn validationError validationWarning valueLabel
 ";
         assert_eq!(surface(), expected);

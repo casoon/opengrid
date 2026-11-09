@@ -2509,6 +2509,34 @@ fn align_filter(host: &HtmlElement) {
         let _ = filter
             .style()
             .set_property("padding-left", &format!("{:.2}px", indent.max(0.0)));
+        keep_focus_in_sight(&root, &filter);
+    }
+}
+
+/// A filter control that has the focus stays in sight when the row is laid out
+/// again (a window resized, a column shown, the facets opened).
+///
+/// The widths and the indent change under the control, and the row's own
+/// horizontal scroll position does not follow: with the focus on a control the
+/// browser had scrolled to, the control could end up beside the row's edge and
+/// stay there (WCAG 2.4.11). Only the row is moved, sideways — never the page.
+fn keep_focus_in_sight(root: &ShadowRoot, filter: &HtmlElement) {
+    let Some(focused) = root.active_element() else {
+        return;
+    };
+    if !filter.contains(Some(&focused)) {
+        return;
+    }
+    let (frame, control) = (
+        filter.get_bounding_client_rect(),
+        focused.get_bounding_client_rect(),
+    );
+    let behind = frame.left() - control.left();
+    let beyond = control.right() - frame.right();
+    if behind > 0.5 {
+        filter.set_scroll_left(filter.scroll_left() - behind.ceil() as i32);
+    } else if beyond > 0.5 {
+        filter.set_scroll_left(filter.scroll_left() + beyond.ceil() as i32);
     }
 }
 
@@ -3489,6 +3517,34 @@ fn sync_descriptions(host: &HtmlElement) {
             }
         }
     }
+    // A further sort key's header is described by its place.
+    if let Ok(headers) = root.query_selector_all("th[aria-describedby]") {
+        for index in 0..headers.length() {
+            let Some(th) = headers
+                .item(index)
+                .and_then(|node| node.dyn_into::<Element>().ok())
+            else {
+                continue;
+            };
+            let Some(id) = th.get_attribute("aria-describedby") else {
+                continue;
+            };
+            let Some(position) = id
+                .strip_prefix(grid::SORT_KEY_ID_PREFIX)
+                .and_then(|position| position.parse().ok())
+            else {
+                continue;
+            };
+            description_node(
+                &document,
+                &store,
+                &id,
+                &tree_context.sort_key(position),
+                Some(&tree_context.lang),
+            );
+            wanted.push(id);
+        }
+    }
     let context = root
         .query_selector(&format!(
             r#"[aria-describedby~="{}"]"#,
@@ -3830,7 +3886,7 @@ extern "C" {
 ///   be prevented needs a state machine that can be rolled back, and V1 has
 ///   none.
 /// * `detail` is plain JSON-ish data — no Rust types, no live references:
-///   `{ rows: [u64], count: number }`.
+///   `{ rows: [u64], ranges: [{ from, to }], count: number }`.
 fn dispatch_selection(host: &HtmlElement, rows: &[u64], keys: Option<&[opengrid_json::Json]>) {
     // One call and a loop in JavaScript, not one call per row: "select all"
     // over 100 000 rows names them all. The event still carries a plain array
@@ -3839,6 +3895,24 @@ fn dispatch_selection(host: &HtmlElement, rows: &[u64], keys: Option<&[opengrid_
     let list = numbers_to_array(&numbers);
     let detail = js_sys::Object::new();
     let _ = js_sys::Reflect::set(&detail, &JsValue::from_str("rows"), &list);
+    // The same rows as runs of adjacent ones: `Ctrl`+`A` over 100 000 rows is
+    // one `{ from, to }`, for a page that must not walk the list.
+    let ranges = js_sys::Array::new();
+    for (from, to) in grid::selection_ranges(rows) {
+        let range = js_sys::Object::new();
+        let _ = js_sys::Reflect::set(
+            &range,
+            &JsValue::from_str("from"),
+            &JsValue::from_f64(from as f64),
+        );
+        let _ = js_sys::Reflect::set(
+            &range,
+            &JsValue::from_str("to"),
+            &JsValue::from_f64(to as f64),
+        );
+        ranges.push(&range);
+    }
+    let _ = js_sys::Reflect::set(&detail, &JsValue::from_str("ranges"), &ranges);
     // A tree counts its selected nodes — shown or not — and names them by key.
     let count = keys.map_or(rows.len(), <[_]>::len);
     let _ = js_sys::Reflect::set(
