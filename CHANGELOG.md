@@ -89,6 +89,11 @@ Two things belong in every release entry and are easy to leave out:
   following their columns by name; a changed `datasource` still starts clean. `<opengrid-table>` and
   `<opengrid-pivot>` re-run their query when `loadRows` or `load` replaces their source, which only
   the grid did.
+- **Grid: a selected row is visible under forced colours** ([#230](https://github.com/casoon/opengrid/issues/230)).
+  The tint is `Canvas` there and browsers drop `box-shadow`, so a selected row looked like any
+  other unless the `selection` column was on. It now keeps a 4px `Highlight` border on its first
+  cell.
+
 - **Server and connectors, hardening** ([#222](https://github.com/casoon/opengrid/issues/222)).
   `max_payload_bytes` above axum's 2 MiB is honoured (the router carries the limit; an oversize body
   is still the `limit_exceeded` wire error), every answer has `Cache-Control: no-store` and
