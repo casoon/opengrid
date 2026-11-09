@@ -23,6 +23,10 @@
  * transferred, not copied. Nothing engine-specific is serialised here.
  */
 
+// The packaged engine glue, imported statically so that a bundler follows it and
+// the `.wasm` beside it; `init` names another one with `moduleUrl`.
+import * as packaged from "./engine/opengrid_wasm.js";
+
 /** The single engine instance, created on `init` and reused for every query. */
 let engine;
 
@@ -32,7 +36,7 @@ self.onmessage = async ({ data }) => {
       case "init": {
         // wasm-bindgen `--target web`: the default export initialises the
         // module; the named `Engine` class is created afterwards.
-        const module = await import(data.moduleUrl);
+        const module = data.moduleUrl ? await import(/* @vite-ignore */ data.moduleUrl) : packaged;
         await module.default(data.wasmUrl);
         engine = new module.Engine();
         self.postMessage({ type: "ready", id: data.id });
