@@ -663,7 +663,8 @@ async fn the_pushdown_is_off_unless_asked_for() {
 
 /// Issue #219: a tree that breaks its rules is the data's fault, not an outage
 /// of the source: the caller is told which rows (not a fixed sentence), over
-/// the file and over SQLite alike.
+/// the file and over SQLite alike, under the code `data` with status 422 (a
+/// backend failure stays `backend`, 502: see builder.rs).
 #[tokio::test]
 async fn a_cycle_is_told_to_the_caller_not_hidden_as_an_outage() {
     for (kind, connector) in [
@@ -672,9 +673,28 @@ async fn a_cycle_is_told_to_the_caller_not_hidden_as_an_outage() {
     ] {
         let app = app(vec![("tree_cycle", connector)], false).await;
         let query = r#"{"source":"tree_cycle","select":["id"],"tree":{"parent":"parent_id"}}"#;
-        let error = ask(app, TOKEN, query).await.expect_err("a cycle");
+        let error = ask(app.clone(), TOKEN, query).await.expect_err("a cycle");
         assert!(error.contains("a cycle (rule T3)"), "{kind}: {error}");
         assert!(!error.contains("reference"), "{kind}: {error}");
+        assert!(error.contains(r#""code":"data""#), "{kind}: {error}");
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/query/tree_cycle")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::AUTHORIZATION, format!("Bearer {TOKEN}"))
+                    .body(Body::from(query.to_owned()))
+                    .unwrap(),
+            )
+            .await
+            .expect("the router answers");
+        assert_eq!(
+            response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{kind}"
+        );
     }
 }
 

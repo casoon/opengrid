@@ -287,6 +287,7 @@ export async function page(): Promise<void> {
       switch (refused.code) {
         case "busy":
         case "limit_exceeded":
+        case "data":
         case "too_many_rows":
         case "source_changed":
           break;

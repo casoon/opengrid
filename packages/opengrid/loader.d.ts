@@ -457,7 +457,7 @@ export function exportRows(provider: Provider, query: ViewQuery, options?: Expor
 // ---------------------------------------------------------------------------
 
 /**
- * What went wrong, as a closed list a page can switch on. The first seven are
+ * What went wrong, as a closed list a page can switch on. The first eight are
  * the server's, from its error form; the last three are `exportRows`' own.
  */
 export type ErrorCode =
@@ -468,6 +468,7 @@ export type ErrorCode =
   | "unauthorized"
   | "backend"
   | "malformed"
+  | "data"
   | "too_many_rows"
   | "source_changed"
   | "module_not_loaded";

@@ -52,6 +52,14 @@ Two things belong in every release entry and are easy to leave out:
   rows), and an `allow_origin` that is not a valid header value (it was dropped). **What breaks:** a
   server that was configured with any of these now refuses to start
   ([#221](https://github.com/casoon/opengrid/issues/221)).
+- **Server:** data that breaks a rule of the query, a tree with a key twice or a cycle, now answers
+  with the new error code `data` and status `422` instead of `backend` and `502`; the message is
+  still told in full. The code is added to the end of `ErrorCode` (`opengrid-datasource`), of the
+  frozen server codes and of the `ErrorCode` type in `loader.d.ts`. `createRestProvider`, `exportRows`
+  and the elements pass a code they do not know on unchanged and treat it as a failure like any
+  other. **What breaks:** a `switch` over `ErrorCode` in Rust must handle the new variant, and a client
+  that retried `backend` for a tree cycle now sees `data` and retrying does not help
+  ([#219](https://github.com/casoon/opengrid/issues/219)).
 - **Docs:** the project site uses the current shared theme (0.12.6) and ends with a link to the
   quickstart.
 - **Packaging:** a bundler's production build finds the WebAssembly modules and the worker by

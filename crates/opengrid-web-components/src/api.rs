@@ -32,7 +32,7 @@ const REST_PROVIDER_METHODS: [&str; 3] = ["describe", "execute", "export"];
 
 /// The methods of the two engine providers — `stats` is what the engine holds
 /// (issue #70). The same list for both: a page swaps one for the other.
-const ENGINE_PROVIDER_METHODS: [&str; 7] = [
+const ENGINE_PROVIDER_METHODS: [&str; 8] = [
     "execute",
     "load",
     "loadRows",
@@ -57,6 +57,7 @@ const SERVER_ERROR_CODES: [&str; 7] = [
     "unauthorized",
     "backend",
     "malformed",
+    "data",
 ];
 
 /// The `code`s of `exportRows`' own errors, the `coded(…)` calls of
@@ -389,7 +390,7 @@ error fields
   status code path
 
 error codes (server)
-  validation unknown_source limit_exceeded busy unauthorized backend malformed
+  validation unknown_source limit_exceeded busy unauthorized backend malformed data
 
 error codes (exportRows)
   too_many_rows source_changed module_not_loaded
