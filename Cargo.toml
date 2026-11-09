@@ -27,6 +27,26 @@ members = [
 version = "0.14.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/casoon/opengrid"
+homepage = "https://casoon.github.io/opengrid/"
+
+# The crates that go to crates.io, with the version every one of them carries:
+# crates.io wants a version beside each `path`, and this is the one place that
+# says it. `scripts/set-version.sh` moves it with the release. Dev-dependencies
+# stay path-only on purpose: cargo drops them from the published manifest, which
+# is what lets `opengrid-conformance` and `xtask` stay unpublished.
+[workspace.dependencies]
+opengrid-json = { path = "crates/opengrid-json", version = "0.14.0" }
+opengrid-types = { path = "crates/opengrid-types", version = "0.14.0" }
+opengrid-query = { path = "crates/opengrid-query", version = "0.14.0" }
+opengrid-columns = { path = "crates/opengrid-columns", version = "0.14.0" }
+opengrid-datasource = { path = "crates/opengrid-datasource", version = "0.14.0" }
+opengrid-planner = { path = "crates/opengrid-planner", version = "0.14.0" }
+opengrid-engine = { path = "crates/opengrid-engine", version = "0.14.0" }
+opengrid-pivot = { path = "crates/opengrid-pivot", version = "0.14.0" }
+opengrid-grid = { path = "crates/opengrid-grid", version = "0.14.0" }
+opengrid-export = { path = "crates/opengrid-export", version = "0.14.0" }
+opengrid-connector = { path = "crates/opengrid-connector", version = "0.14.0" }
 
 # Grundsatzlints (plan/spezifikation/11-crates.md, 14-entscheidungen.md E4).
 # `unsafe_code = "forbid"` gilt workspaceweit; clippy wird in CI/`just check`

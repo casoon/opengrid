@@ -3,7 +3,12 @@ name = "opengrid-json"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "The one JSON codec of opengrid: a small reader and writer shared by the browser and the server"
+description = "A small JSON reader and writer shared by the browser and the server"
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+keywords = ["json", "codec", "parser"]
+categories = ["encoding", "parser-implementations", "wasm"]
 
 [lints]
 workspace = true

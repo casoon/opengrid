@@ -4,19 +4,24 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "Data gateway for opengrid, as a library: query AST in, columns out, sources handed in as connectors"
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+keywords = ["server", "axum", "data-grid", "opengrid"]
+categories = ["web-programming::http-server", "database"]
 
 [lints]
 workspace = true
 
 [dependencies]
-opengrid-types = { path = "../opengrid-types" }
-opengrid-query = { path = "../opengrid-query" }
-opengrid-pivot = { path = "../opengrid-pivot" }
-opengrid-datasource = { path = "../opengrid-datasource" }
+opengrid-types = { workspace = true }
+opengrid-query = { workspace = true }
+opengrid-pivot = { workspace = true }
+opengrid-datasource = { workspace = true }
 # The contract every source comes through (issue #45, E36).
-opengrid-connector = { path = "../opengrid-connector" }
+opengrid-connector = { workspace = true }
 # The binary result form (E35), answered when `Accept` asks for it.
-opengrid-columns = { path = "../opengrid-columns" }
+opengrid-columns = { workspace = true }
 
 # Server stack, decision E12.
 axum = "0.8"
@@ -31,9 +36,9 @@ tower-http = { version = "0.6", features = ["cors"] }
 # the issue over `futures-util` or a hand-written body.
 http-body-util = { version = "0.1", features = ["channel"] }
 # The export writes its rows in the one notation every export uses (E33).
-opengrid-export = { path = "../opengrid-export", features = ["xlsx"] }
+opengrid-export = { workspace = true, features = ["xlsx"] }
 
-opengrid-json = { path = "../opengrid-json" }
+opengrid-json = { workspace = true }
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }

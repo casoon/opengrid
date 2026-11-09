@@ -4,16 +4,21 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "Pivot for opengrid: dimensions, measures, grouping sets and the result they shape"
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+keywords = ["pivot", "olap", "data-grid", "opengrid"]
+categories = ["database", "data-structures"]
 
 [lints]
 workspace = true
 
 [dependencies]
-opengrid-types = { path = "../opengrid-types" }
-opengrid-query = { path = "../opengrid-query" }
-opengrid-datasource = { path = "../opengrid-datasource" }
-opengrid-columns = { path = "../opengrid-columns" }
-opengrid-json = { path = "../opengrid-json" }
+opengrid-types = { workspace = true }
+opengrid-query = { workspace = true }
+opengrid-datasource = { workspace = true }
+opengrid-columns = { workspace = true }
+opengrid-json = { workspace = true }
 
 [dev-dependencies]
 opengrid-conformance = { path = "../opengrid-conformance" }
