@@ -324,6 +324,50 @@ test.describe("forced colors", () => {
     await expect(page.locator("opengrid-grid")).toHaveScreenshot("grid-forced-colors.png");
   });
 
+  // The tint is Canvas and `box-shadow` is dropped under a forced palette, so
+  // the inset bar of a selected row is gone; a border keeps it visible
+  // (WCAG 1.4.1, 1.4.11).
+  async function selectFirstRow(page) {
+    await focusIn(page, 'td[data-row="0"][data-col="0"]');
+    await page.keyboard.press(" ");
+    await page.waitForFunction(
+      () =>
+        !!document
+          .querySelector("opengrid-grid")
+          .shadowRoot.querySelector('tbody tr[data-selected="true"]'),
+    );
+  }
+
+  test("a selected row keeps a visible sign", async ({ page, browserName }) => {
+    test.skip(
+      browserName === "webkit",
+      "WebKit matches forced-colors under emulation but forces no colour, not even a plain div's",
+    );
+    await selectFirstRow(page);
+    const bar = await computed(page, 'tbody tr[data-selected="true"] > :first-child', [
+      "border-inline-start-width",
+      "border-inline-start-style",
+    ]);
+    expect(bar).toEqual({
+      "border-inline-start-width": "4px",
+      "border-inline-start-style": "solid",
+    });
+    const other = await computed(page, 'tbody tr:not([data-selected="true"]) > :first-child', [
+      "border-inline-start-width",
+    ]);
+    expect(other["border-inline-start-width"]).toBe("0px");
+  });
+
+  test("matches the forced-colors baseline with a selected row", async ({ page, browserName }) => {
+    test.skip(browserName !== "chromium", "Screenshot baselines are Chromium's (tests/e2e/playwright.config.js)");
+    await selectFirstRow(page);
+    // Focus moves off the row, so the picture shows the selection and no ring.
+    await page.evaluate(() =>
+      document.querySelector("opengrid-grid").shadowRoot.activeElement?.blur(),
+    );
+    await expect(page.locator("opengrid-grid")).toHaveScreenshot("grid-forced-colors-selected.png");
+  });
+
   test("has no axe violations", async ({ page }) => {
     const { violations } = await new AxeBuilder({ page }).analyze();
     expect(violations).toEqual([]);
