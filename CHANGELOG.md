@@ -22,7 +22,9 @@ Two things belong in every release entry and are easy to leave out:
 ## [0.15.0] - 2026-11-09
 
 **Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).
-**Browsers:** @@BROWSERS@@
+**Browsers:** Chromium (the whole e2e suite: 1405 passed). Firefox and WebKit on Linux
+(`gh workflow run ci.yml -f browsers=true`): 1386 passed, 24 skipped by design — no failures, none
+on a retry.
 
 The first release with the Rust crates on crates.io: the engine, the connectors and
 `opengrid-server`, fourteen crates at the npm package's version. The rest is hardening after a
@@ -31,7 +33,9 @@ about the database and refuses a wrong configuration at startup; PostgreSQL conn
 both SQL connectors end a statement nobody waits for; the grid keeps its focus, its selection and
 its editor through new answers, scrolls a result of any length and does less work per frame.
 
-**Module sizes** (brotli, `just measure-modules`): @@SIZES@@
+**Module sizes** (brotli, `just measure-modules`): the elements 279.4 → 288.5 KiB, the engine
+145.4 → 149.1 KiB, measured against v0.14.0 — both within their bounds
+(`scripts/module-budget.txt`); the elements are 83 bytes under theirs.
 
 **What breaks:**
 - Rust: `DataSourceError` gained `Data`, `ErrorCode` gained `Data`, `QueryError` gained
