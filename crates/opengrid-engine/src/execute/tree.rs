@@ -13,23 +13,78 @@
 
 use std::collections::HashMap;
 
-use opengrid_columns::Table;
 use opengrid_columns::sort::{SortKey, order};
+use opengrid_columns::{Column, Table, Values};
 use opengrid_datasource::{FlatTree, TreeLevel};
 use opengrid_query::{NullsOrder, SortDirection, ValidatedQuery, ValidatedTree};
-use opengrid_types::Value;
+use opengrid_types::{DataType, Value};
 
 use super::{ExecuteError, QueryResult, aggregate, column, filter, project};
 
-/// A key as something to look up: equal keys are equal strings (S7 — `NaN`
-/// is `NaN`, `-0.0` is `0.0`). NULL is no key.
-fn identity(value: &Value) -> Option<String> {
-    match value {
-        Value::Null => None,
-        Value::Float64(number) if number.is_nan() => Some("nan".to_owned()),
-        Value::Float64(number) if *number == 0.0 => Some("0".to_owned()),
-        other => Some(opengrid_json::to_string(other)),
+/// A key as something to look up: equal keys are equal identities (S7 - `NaN`
+/// is `NaN`, `-0.0` is `0.0`). NULL is no key. Typed, so looking one up
+/// allocates nothing.
+#[derive(Hash, PartialEq, Eq)]
+enum Identity<'a> {
+    Bool(bool),
+    Int64(i64),
+    Float64(u64),
+    Decimal(i128, u8),
+    Utf8(&'a str),
+    Date(i32),
+    Timestamp(i64),
+    /// Anything else (a list): its JSON text.
+    Other(String),
+}
+
+/// The bits of a float, the same for every `NaN` and for both zeros.
+fn float_identity(number: f64) -> u64 {
+    if number.is_nan() {
+        f64::NAN.to_bits()
+    } else if number == 0.0 {
+        0
+    } else {
+        number.to_bits()
     }
+}
+
+/// The identity of a literal.
+fn identity(value: &Value) -> Option<Identity<'_>> {
+    Some(match value {
+        Value::Null => return None,
+        Value::Bool(flag) => Identity::Bool(*flag),
+        Value::Int64(number) => Identity::Int64(*number),
+        Value::Float64(number) => Identity::Float64(float_identity(*number)),
+        Value::Decimal(number) => Identity::Decimal(number.value(), number.scale()),
+        Value::Utf8(text) => Identity::Utf8(text),
+        Value::Date(date) => Identity::Date(date.days_since_epoch()),
+        Value::Timestamp(time) => Identity::Timestamp(time.micros()),
+        other @ Value::List(_) => Identity::Other(opengrid_json::to_string(other)),
+    })
+}
+
+/// The identity of one cell, read from the column without building a `Value`.
+fn cell_identity(column: &Column, row: usize) -> Option<Identity<'_>> {
+    if column.is_null(row) {
+        return None;
+    }
+    Some(match column.values() {
+        Values::Bool(values) => Identity::Bool(values[row]),
+        Values::Int64(values) => Identity::Int64(values[row]),
+        Values::Float64(values) => Identity::Float64(float_identity(values[row])),
+        Values::Decimal(values) => {
+            let DataType::Decimal { scale, .. } = column.data_type() else {
+                unreachable!("a decimal buffer belongs to a decimal column")
+            };
+            Identity::Decimal(values[row], scale)
+        }
+        Values::Utf8 { .. } => Identity::Utf8(column.str(row)),
+        Values::Date(values) => Identity::Date(values[row]),
+        Values::Timestamp(values) => Identity::Timestamp(values[row]),
+        Values::ListInt64 { .. } | Values::ListUtf8 { .. } => {
+            Identity::Other(opengrid_json::to_string(&column.value(row)))
+        }
+    })
 }
 
 /// The key as a sentence names it.
@@ -67,9 +122,9 @@ pub(crate) fn execute(
     let rows = table.num_rows();
 
     // T1: every key once.
-    let mut by_key: HashMap<String, u32> = HashMap::with_capacity(rows);
+    let mut by_key: HashMap<Identity<'_>, u32> = HashMap::with_capacity(rows);
     for row in 0..rows {
-        if let Some(id) = identity(&keys.value(row))
+        if let Some(id) = cell_identity(keys, row)
             && by_key.insert(id, row as u32).is_some()
         {
             return Err(ExecuteError::Tree {
@@ -86,7 +141,7 @@ pub(crate) fn execute(
     let mut parent_of: Vec<Option<u32>> = Vec::with_capacity(rows);
     let mut orphans = 0u64;
     for row in 0..rows {
-        match identity(&parents.value(row)) {
+        match cell_identity(parents, row) {
             None => parent_of.push(None),
             Some(id) => match by_key.get(&id) {
                 Some(parent) => parent_of.push(Some(*parent)),
@@ -260,20 +315,25 @@ fn flat(
 
     // Depth-first; the path is the keys from the root down.
     let keys = column(table, tree.key.as_str())?;
-    let mut sequence: Vec<(u32, u64, Vec<Value>)> = Vec::with_capacity(shown.len());
-    let mut stack: Vec<(u32, u64, Vec<Value>)> = roots
-        .iter()
-        .rev()
-        .map(|root| (*root, 1, vec![keys.value(*root as usize)]))
-        .collect();
-    while let Some((row, level, path)) = stack.pop() {
+    let mut sequence: Vec<(u32, u64)> = Vec::with_capacity(shown.len());
+    let mut stack: Vec<(u32, u64)> = roots.iter().rev().map(|root| (*root, 1)).collect();
+    while let Some((row, level)) = stack.pop() {
         for child in kids[row as usize].iter().rev() {
-            let mut below = path.clone();
-            below.push(keys.value(*child as usize));
-            stack.push((*child, level + 1, below));
+            stack.push((*child, level + 1));
         }
-        sequence.push((row, level, path));
+        sequence.push((row, level));
     }
+    // Only the page needs its paths: the keys of the ancestors, root first.
+    let path_of = |row: u32| {
+        let mut path = Vec::new();
+        let mut at = Some(row);
+        while let Some(node) = at {
+            path.push(keys.value(node as usize));
+            at = parent_of[node as usize];
+        }
+        path.reverse();
+        path
+    };
 
     let count = sequence.len();
     let offset = usize::try_from(query.offset.unwrap_or(0))
@@ -285,7 +345,7 @@ fn flat(
             .min(count)
     });
     let page = &sequence[offset..end];
-    let rows: Vec<u32> = page.iter().map(|(row, _, _)| *row).collect();
+    let rows: Vec<u32> = page.iter().map(|(row, _)| *row).collect();
     Ok(QueryResult {
         table: project(&table.take(&rows), &query.output_schema)?,
         total_count: count as u64,
@@ -295,8 +355,8 @@ fn flat(
             matches,
             orphans,
             flat: Some(FlatTree {
-                levels: page.iter().map(|(_, level, _)| *level).collect(),
-                paths: page.iter().map(|(_, _, path)| path.clone()).collect(),
+                levels: page.iter().map(|(_, level)| *level).collect(),
+                paths: page.iter().map(|(row, _)| path_of(*row)).collect(),
                 key_type: keys.data_type(),
                 filtered: query.filter.is_some(),
             }),
