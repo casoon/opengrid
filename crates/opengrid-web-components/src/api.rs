@@ -3,7 +3,7 @@
 //! The API of this crate is not its Rust items — every module is `pub(crate)`.
 //! It is the **DOM**: three custom elements, their attributes, the events they
 //! fire, the parts a page may style, the custom properties it may set, and the
-//! keys it may translate. Plus the ten module functions and the loader's exports.
+//! keys it may translate. Plus the module functions and the loader's exports.
 //!
 //! This module writes that surface down as data and a test compares it against
 //! a list that a human maintains. A name that changes shows up in the diff of
@@ -63,6 +63,31 @@ const SERVER_ERROR_CODES: [&str; 7] = [
 /// loader.js; a test below reads them from there.
 const EXPORT_ERROR_CODES: [&str; 3] = ["too_many_rows", "source_changed", "module_not_loaded"];
 
+/// The module functions a page calls through `loader.module`, in the order the
+/// freeze lists them.
+const FUNCTIONS: [&str; 15] = [
+    "register",
+    "set_provider",
+    "set_texts",
+    "set_formats",
+    "set_choices",
+    "get_view",
+    "set_view",
+    "set_columns",
+    "get_query",
+    "get_pivot",
+    "set_cell_state",
+    "set_values",
+    "set_actions",
+    "set_row_state",
+    "set_validators",
+];
+
+/// `#[wasm_bindgen]` exports that are **not** in the freeze, on purpose: the
+/// loader calls them for `exportRows`, a page is meant to go through that. A
+/// new export is in neither list until somebody decides which it belongs to.
+const INTERNAL_EXPORTS: [&str; 2] = ["export_csv", "export_json"];
+
 /// Every name a page can rely on, in one string.
 fn surface() -> String {
     let mut out = String::new();
@@ -93,28 +118,13 @@ fn surface() -> String {
         crate::grid_element_events::ROW_ADD_EVENT,
         crate::grid_element_events::PASTE_EVENT,
         crate::grid_element_events::BULK_EVENT,
+        crate::grid_element_events::SOURCE_REPLACED_EVENT,
     ] {
         out.push_str(&format!("  {event}\n"));
     }
 
     out.push_str("\nfunctions\n");
-    for name in [
-        "register",
-        "set_provider",
-        "set_texts",
-        "set_formats",
-        "set_choices",
-        "get_view",
-        "set_view",
-        "set_columns",
-        "get_query",
-        "get_pivot",
-        "set_cell_state",
-        "set_values",
-        "set_actions",
-        "set_row_state",
-        "set_validators",
-    ] {
+    for name in FUNCTIONS {
         out.push_str(&format!("  {name}\n"));
     }
 
@@ -341,6 +351,7 @@ events
   opengrid-row-add
   opengrid-paste
   opengrid-bulk-change
+  opengrid-source-replaced
 
 functions
   register
@@ -418,6 +429,61 @@ sortDescending sourceHybrid sourceLocal sourceRemote sourceWorker subtotal subtr
 totalRow treeContext treeGroupIgnored treeLevelTooLarge treeOrphans treeRefused typeBool typeDate typeInteger typeList typeNumber typeText typeTime undoAdded undoCell undoNothing undoPaste ungroupColumn validationError validationWarning valueLabel
 ";
         assert_eq!(surface(), expected);
+    }
+
+    /// The names of the crate's `#[wasm_bindgen]` exports, read from the source:
+    /// the attribute at the start of a line, then the next `pub fn`; the name is
+    /// the `js_name` when there is one. Imports (`extern`, indented) are not
+    /// exports.
+    fn wasm_bindgen_exports() -> Vec<String> {
+        let mut paths = vec![std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src")];
+        let mut names = Vec::new();
+        while let Some(path) = paths.pop() {
+            if path.is_dir() {
+                paths.extend(std::fs::read_dir(&path).unwrap().map(|e| e.unwrap().path()));
+                continue;
+            }
+            if path.extension().is_none_or(|ext| ext != "rs") {
+                continue;
+            }
+            let source = std::fs::read_to_string(&path).unwrap();
+            let mut pending: Option<Option<String>> = None;
+            for line in source.lines() {
+                if let Some(attribute) = line.strip_prefix("#[wasm_bindgen") {
+                    pending =
+                        Some(attribute.split_once("js_name = ").map(|(_, rest)| {
+                            rest.split([')', ',']).next().unwrap().trim().to_owned()
+                        }));
+                } else if let Some(js_name) = &pending
+                    && let Some(rest) = line.strip_prefix("pub fn ")
+                {
+                    let function = rest.split(['(', '<']).next().unwrap().to_owned();
+                    names.push(js_name.clone().unwrap_or(function));
+                    pending = None;
+                }
+            }
+        }
+        names.sort_unstable();
+        names
+    }
+
+    /// The freeze cannot notice a new export by itself: it is a list. This reads
+    /// the exports from the source and holds them against the frozen functions
+    /// plus the explicit internal ones — a new `#[wasm_bindgen]` function fails
+    /// here until it is put in one of the two lists.
+    #[test]
+    fn every_wasm_export_is_frozen_or_internal() {
+        let mut known: Vec<String> = FUNCTIONS
+            .iter()
+            .chain(INTERNAL_EXPORTS.iter())
+            .map(|name| (*name).to_owned())
+            .collect();
+        known.sort_unstable();
+        assert_eq!(
+            wasm_bindgen_exports(),
+            known,
+            "a #[wasm_bindgen] export is in neither FUNCTIONS nor INTERNAL_EXPORTS, or the other way round"
+        );
     }
 
     /// Every frozen name, without the section headings and element prefixes.

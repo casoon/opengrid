@@ -51,7 +51,7 @@ instead.
 **Types.** The package ships `loader.d.ts`: every name on this page is typed —
 the view, the column configuration, the texts, the formats, the providers, and
 the attributes of each element as `Opengrid…Attributes` for adapters and JSX
-typings to build on — and the three events are in the global event map,
+typings to build on — and the events are in the global event map,
 so `grid.addEventListener("opengrid-view-change", e => e.detail.view)` knows what
 `detail` holds, on the element and on the document alike.
 
@@ -180,7 +180,7 @@ connection.disconnect();              // the listeners go; the element keeps its
 | `provider`, `texts`, `formats`, `choices`, `view` | `set_provider`, `set_texts`, `set_formats`, `set_choices`, `set_view` |
 | `defaultView` | `set_view`, once — the uncontrolled form: after that the grid leads |
 | `presentation` | `set_columns` — named apart from the `columns` attribute, which is the projection |
-| `onViewChange`, `onSelectionChange`, `onCellChange` | the three [events](#events); each callback receives the `detail` (for the view: the view itself) |
+| `onViewChange`, `onSelectionChange`, `onCellChange` | the [events](#events) of the same names; each callback receives the `detail` (for the view: the view itself) |
 | `actions`, `validators` | `set_actions`, `set_validators` — the grid only |
 | `onPaste`, `onBulkChange`, `onRowAction`, `onSourceReplaced` | `opengrid-paste`, `opengrid-bulk-change`, `opengrid-row-action`, `opengrid-source-replaced`; each callback receives the `detail` |
 | `onRowAdd` | `opengrid-row-add`, and its answer is `set_row_state`: return `{ state: "saved", key }` or `{ state: "error", message }`, or a promise of one — the row shows `saving` until it settles; resolved with nothing, it is saved, and a rejection is an `error` with its message. No answer at all leaves the row unsaved for the page; an undone add is not answered |
@@ -756,7 +756,7 @@ loader.module.set_columns(pivot, { country: { title: "Country" }, total: { title
 loader.module.set_formats(pivot, { total: { kind: "number", locale: "de-DE" } });
 ```
 
-**The view of a pivot** is what it pivots by and measures — its three
+**The view of a pivot** is what it pivots by and measures — its
 attributes as one value, `get_view`/`set_view` as at the grid:
 
 ```js
@@ -768,7 +768,7 @@ loader.module.set_view(pivot, { ...view, rows: ["customer"] });
 ```
 
 The attributes **are** the view, so there is no second copy to fall out of step:
-`set_view` writes all six at once and costs one query, and every change of
+`set_view` writes all of them at once and costs one query, and every change of
 them — by `set_view`, a sort button or the page setting an attribute — fires
 `opengrid-view-change`. Setting what it has says nothing. A view whose `rows` or
 `columns` is not a list of names, whose `values` is not a list of measures or
@@ -1091,9 +1091,10 @@ the same for `/query`, `/pivot`, `/source` and `/export`:
 
 ## Events
 
-All four fire on the host, `bubbles` and `composed` (without `composed` they would
-not leave a shadow root the page wrapped the element in), and neither is
-`cancelable` — they report what has already happened.
+The events fire on the host, `bubbles` and `composed` (without `composed` they would
+not leave a shadow root the page wrapped the element in), and none is
+`cancelable` — they report what has already happened. `opengrid-source-replaced` is the
+exception to the first part: `loader.js` dispatches it on the grid, without `bubbles`.
 
 | Event | `detail` |
 |---|---|
@@ -1103,7 +1104,8 @@ not leave a shadow root the page wrapped the element in), and neither is
 | `opengrid-row-add` | `{ values, provisionalKey, undo?, redo? }` — a record was entered in the new row; see [Adding rows](#adding-rows). |
 | `opengrid-row-action` | `{ id, row, key? }` — an action was activated; `key` is the `row-key` value. |
 | `opengrid-cell-change` | `{ row, column, value, previous }` — everything needed to persist it. With `row-key` also `key`: the record's value of that field, `null` when the result does not carry it. |
-| `opengrid-view-change` | `{ view }` — the whole [view](#the-view) after the change. Scrolling and selecting are not view changes. On `<opengrid-pivot>` the view is its `rows`, `columns` and `values`. |
+| `opengrid-view-change` | `{ view }` — the whole [view](#the-view) after the change. Scrolling and selecting are not view changes. On `<opengrid-pivot>` the view is its `rows`, `columns`, `values`, `sort`, `collapsed` and `filter`. |
+| `opengrid-source-replaced` | `{ name }` — an engine provider replaced the source this grid shows; the grid re-runs its query. Dispatched by `loader.js`, on the grid only, not bubbling; `connect` hands it to `onSourceReplaced`. |
 | `opengrid-query` | `{ kind, ms, rows, total, bytes, form, memory }` after **every** answer of the provider, on the grid and the pivot (issue #70): where it ran (the provider's `kind`), the round trip in milliseconds measured in the tab, rows answered and matches before paging, the answer's size as it arrived and its form (`binary` or `json`), and the element module's WASM memory. Measured always, sent nowhere — what the page does with it is the page's. |
 
 **The component edits; the page saves.** There is no write path: the engine's
