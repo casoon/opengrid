@@ -554,3 +554,36 @@ async fn an_unparsable_origin_does_not_build() {
         .unwrap_or_default();
     assert!(message.contains("origin"), "{message}");
 }
+
+/// Issue #218: a pivot's grouping sets are asked for with a limit one past
+/// `max_cells`, so a pivot over a high-cardinality dimension is refused
+/// without the source reading every group first.
+#[tokio::test]
+async fn a_pivot_asks_the_source_for_no_more_than_its_cells() {
+    let (connector, asked) = Recording::new();
+    let server = Server::builder()
+        .pivot_limits(opengrid_pivot::PivotLimits {
+            max_cells: 10,
+            ..opengrid_pivot::PivotLimits::default()
+        })
+        .source("orders", connector, SourcePolicy::default())
+        .token(TOKEN, [("tenant", "x")])
+        .build()
+        .await
+        .expect("a server");
+    let (status, body) = post(
+        server.router(),
+        "/pivot/orders",
+        r#"{"source":"orders","rows":["id"],"values":[{"fn":"count","as":"n"}]}"#,
+    )
+    .await;
+    assert_ne!(status, StatusCode::OK, "{body}");
+    assert!(body.contains("cells"), "{body}");
+    let asked = asked.lock().unwrap();
+    assert!(!asked.is_empty());
+    assert!(
+        asked.iter().all(|query| query.limit == Some(11)),
+        "{:?}",
+        asked.iter().map(|query| query.limit).collect::<Vec<_>>()
+    );
+}

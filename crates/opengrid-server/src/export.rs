@@ -158,6 +158,8 @@ pub(crate) async fn export(
     let limits = Limits::new(state.max_export_rows, state.registry.limits.max_depth);
     let (source, query) = admit(&state, &source_name, &headers, &body, &limits, None)?;
     let format = format_of(&uri, headers.get(header::ACCEPT))?;
+    // A tree export builds the whole tree before it counts (issue #218).
+    crate::api::within_tree_bound(&state, &source, &query).await?;
 
     // Before any database work: an export over the bound costs nothing.
     let Ok(permit) = Arc::clone(&state.exports).try_acquire_owned() else {
@@ -180,6 +182,7 @@ pub(crate) async fn export(
         query,
         format.clone(),
         state.max_export_rows,
+        state.max_xlsx_rows,
         state.timeout,
         ready,
         Outlet::new(sender),
@@ -233,6 +236,7 @@ async fn stream(
     query: ValidatedQuery,
     format: Format,
     max_rows: u64,
+    max_xlsx_rows: u64,
     timeout: Duration,
     mut ready: oneshot::Sender<Result<u64, Failure>>,
     mut outlet: Outlet,
@@ -272,12 +276,13 @@ async fn stream(
         }
         Some(Ok(count)) => count,
     };
-    if format == Format::Xlsx && count > XLSX_MAX_ROWS {
+    if format == Format::Xlsx && count > XLSX_MAX_ROWS.min(max_xlsx_rows) {
         let _ = ready.send(Err(WireError::new(
             ErrorCode::LimitExceeded,
             format!(
-                "the export has {count} rows, more than the {XLSX_MAX_ROWS} an Excel sheet holds; \
-                 export it as CSV or JSON"
+                "the export has {count} rows, more than the {} an Excel export may have \
+                 (max_xlsx_rows, at most the {XLSX_MAX_ROWS} a sheet holds); export it as CSV or JSON",
+                XLSX_MAX_ROWS.min(max_xlsx_rows)
             ),
         )
         .into()));

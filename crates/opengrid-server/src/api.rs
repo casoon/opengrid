@@ -134,6 +134,10 @@ pub struct AppState {
     pub allowed_origins: Vec<String>,
     /// The most rows one export may have (issue #2).
     pub max_export_rows: u64,
+    /// The most rows a tree's scope may have (see `ServerBuilder::max_tree_rows`).
+    pub max_tree_rows: u64,
+    /// The most rows an Excel export may have.
+    pub max_xlsx_rows: u64,
     /// The exports that may run at once, and the places they take.
     pub max_concurrent_exports: usize,
     pub exports: Arc<Semaphore>,
@@ -159,6 +163,8 @@ impl AppState {
             timeout: settings.timeout,
             allowed_origins: settings.allowed_origins.clone(),
             max_export_rows: settings.max_export_rows,
+            max_tree_rows: settings.max_tree_rows,
+            max_xlsx_rows: settings.max_xlsx_rows,
             max_concurrent_exports: concurrent,
             exports: Arc::new(Semaphore::new(concurrent)),
             reporter: Reporter::default(),
@@ -251,6 +257,9 @@ async fn query(
     // A tree goes to a connector that answers trees as it is, and to any
     // other through its tree path (plan point 122).
     let tree = validated.tree.is_some();
+    if tree {
+        within_tree_bound(&state, &source, &validated).await?;
+    }
     let answering = async {
         if tree && !source.data.capabilities().tree {
             source.data.tree(&validated).await
@@ -424,6 +433,72 @@ pub(crate) fn admit(
         .prepare(query, limits, context)
         .map_err(|error| prepare_failed(error, &state.reporter))?;
     Ok((source, validated))
+}
+
+/// A tree is built from all the rows of its scope - by the engine, for a
+/// source that does not answer trees itself, and for every flat tree. Counted
+/// first, so a scope past `max_tree_rows` is refused before one row is read
+/// (issue #218).
+pub(crate) async fn within_tree_bound(
+    state: &AppState,
+    source: &Source,
+    query: &ValidatedQuery,
+) -> Result<(), Failure> {
+    let Some(tree) = &query.tree else {
+        return Ok(());
+    };
+    if source.data.capabilities().tree && !tree.flat {
+        // The database builds the level; the engine does not hold the rows.
+        return Ok(());
+    }
+    let alias = opengrid_types::FieldName::new("scope_rows").expect("a valid name");
+    let count = ValidatedQuery {
+        source: query.source.clone(),
+        select: vec![alias.clone()],
+        filter: tree.scope.clone(),
+        group: Vec::new(),
+        aggregate: vec![opengrid_query::Aggregate {
+            field: None,
+            function: opengrid_query::AggregateFn::Count,
+            alias: alias.clone(),
+        }],
+        sort: Vec::new(),
+        offset: None,
+        limit: None,
+        tree: None,
+        output_schema: opengrid_types::Schema::new(vec![opengrid_types::Field::required(
+            alias,
+            opengrid_types::DataType::Int64,
+        )]),
+    };
+    let counted = tokio::time::timeout(state.timeout, source.data.execute(count))
+        .await
+        .map_err(|_| {
+            WireError::new(
+                ErrorCode::LimitExceeded,
+                format!(
+                    "counting the tree took longer than {} ms",
+                    state.timeout.as_millis()
+                ),
+            )
+        })?
+        .map_err(|error| source_failed(error, &state.reporter))?;
+    let rows = match counted.columns.first().and_then(|column| column.first()) {
+        Some(opengrid_types::Value::Int64(rows)) => u64::try_from(*rows).unwrap_or(0),
+        _ => 0,
+    };
+    if rows > state.max_tree_rows {
+        return Err(WireError::new(
+            ErrorCode::LimitExceeded,
+            format!(
+                "the tree has {rows} rows, more than the {} a tree may have (max_tree_rows); \
+                 narrow its scope",
+                state.max_tree_rows
+            ),
+        )
+        .into());
+    }
+    Ok(())
 }
 
 /// A source that could not answer, as the wire error it becomes.

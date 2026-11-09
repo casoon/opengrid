@@ -66,6 +66,16 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Fixed
 
+- **Server:** pivots, trees and Excel exports are bounded before the work is done, not after it.
+  A pivot's grouping sets carry a limit one past `max_cells` (PostgreSQL's single statement one past
+  the sets' sum), so a pivot over a high-cardinality dimension no longer reads every group; the
+  overflow is `limit_exceeded` (it was a hidden `backend` error in the default pivot path). A tree the
+  engine builds has its scope counted against the new `ServerBuilder::max_tree_rows` (default
+  1 000 000) before its rows are read, for a level and for an export. The new
+  `ServerBuilder::max_xlsx_rows` (default 100 000) bounds an Excel export below the sheet's 1 048 576
+  rows, since the whole workbook is built in memory. **What breaks:** a tree over a million rows,
+  and an Excel export over 100 000 rows, are refused unless the bound is raised
+  ([#218](https://github.com/casoon/opengrid/issues/218)).
 - **Server:** a backend failure reaches the browser as one fixed sentence and a reference
   (`the data source failed (reference og-…)`), no longer as the database's text, which can name a
   table, a hidden column or a tenant's value. New `ServerBuilder::on_error(hook)` receives the full
