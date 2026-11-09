@@ -204,6 +204,10 @@ struct GridRuntime {
     /// the offset of an element that leaves the document, even for a move;
     /// this is what puts it back (point 74).
     scroll_top: i32,
+    /// How many pixels the rows sit higher than `row * row_height` while the
+    /// result is taller than the sizer may be ([`grid::MAX_SIZER_PX`]); the
+    /// virtual scroll position is `scroll_top + shift`. 0 otherwise.
+    shift: u64,
     /// Which of viewport (`true`) and filter row (`false`) was just scrolled
     /// to follow the other, and to where (issue #62). A scroll event from it
     /// at exactly that position is the echo; passing it back would pull the
@@ -315,6 +319,7 @@ fn fresh_runtime(
         known: known.clone(),
         retype_filter: false,
         scroll_top: 0,
+        shift: 0,
         scroll_echo: None,
         decorated: None,
         replaced: None,
@@ -389,6 +394,7 @@ fn reset_runtime(host: &HtmlElement) {
         runtime.pending_offset = None;
         runtime.raf_pending = false;
         runtime.scroll_top = 0;
+        runtime.shift = 0;
         // The preview went with the DOM (`clear_root`); what it would apply
         // names cells of a layout that is gone.
         runtime.paste = None;
@@ -595,12 +601,66 @@ fn restore_scroll(runtime: &Rc<RefCell<GridRuntime>>) {
 fn window_from_scroll(runtime: &Rc<RefCell<GridRuntime>>) {
     let mut borrowed = runtime.borrow_mut();
     let window = borrowed.state.window();
+    let virtual_top = grid::Placement {
+        scroll_top: borrowed.scroll_top.max(0) as u64,
+        shift: borrowed.shift,
+    }
+    .virtual_top();
     let offset = grid::window_offset(
-        grid::visible_start(borrowed.scroll_top.max(0) as u64, borrowed.row_height),
+        grid::visible_start(virtual_top, borrowed.row_height),
         borrowed.state.row_count(),
         window.count,
     );
     borrowed.state.set_window(Window::new(offset, window.count));
+}
+
+/// How a result taller than the sizer may be is scrolled, measured now: `None`
+/// while its rows fit (nothing is scaled then) or the viewport has no scroll
+/// range yet.
+fn scroll_scale(runtime: &GridRuntime, viewport: &Element) -> Option<grid::ScrollScale> {
+    // Asked on every scroll event: the layout is not read for a result that fits.
+    if !grid::is_capped(runtime.state.row_count(), runtime.row_height) {
+        return None;
+    }
+    let client = viewport.client_height();
+    grid::ScrollScale::new(
+        runtime.state.row_count(),
+        runtime.row_height,
+        (viewport.scroll_height() - client).max(0) as u64,
+        client.max(0) as u64,
+    )
+}
+
+/// Puts the scroll position where `row` is, when it is further from the viewport
+/// than the browser's own scrolling (`scrollIntoView` of the focus) should be
+/// trusted with: past [`grid::MAX_SIZER_PX`] a row far away sits outside the
+/// sizer until the position is placed (issue #284). Nothing happens for a row
+/// close by, or while the rows fit the sizer.
+fn scroll_to_far_row(runtime: &Rc<RefCell<GridRuntime>>, row: u64) {
+    let (viewport, top) = {
+        let mut borrowed = runtime.borrow_mut();
+        let Some(viewport) = borrowed.viewport.clone() else {
+            return;
+        };
+        let Some(scale) = scroll_scale(&borrowed, &viewport) else {
+            return;
+        };
+        let wanted = row.saturating_mul(borrowed.row_height);
+        let current = grid::Placement {
+            scroll_top: borrowed.scroll_top.max(0) as u64,
+            shift: borrowed.shift,
+        }
+        .virtual_top();
+        if wanted.abs_diff(current) <= scale.near() {
+            return;
+        }
+        let placed = scale.place_virtual(wanted);
+        let top = i32::try_from(placed.scroll_top).unwrap_or(i32::MAX);
+        borrowed.scroll_top = top;
+        borrowed.shift = placed.shift;
+        (viewport, top)
+    };
+    viewport.set_scroll_top(top);
 }
 
 /// Scrolls to the active row when a fresh pool cannot show it, and answers
@@ -627,7 +687,19 @@ fn follow_active_row(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>) -> 
             return false;
         }
         let top = row.saturating_mul(borrowed.row_height);
-        borrowed.scroll_top = i32::try_from(top).unwrap_or(i32::MAX);
+        let scale = borrowed
+            .viewport
+            .as_ref()
+            .and_then(|viewport| scroll_scale(&borrowed, viewport));
+        let placed = match scale {
+            Some(scale) => scale.place_virtual(top),
+            None => grid::Placement {
+                scroll_top: top,
+                shift: 0,
+            },
+        };
+        borrowed.scroll_top = i32::try_from(placed.scroll_top).unwrap_or(i32::MAX);
+        borrowed.shift = placed.shift;
     }
     window_from_scroll(runtime);
     true
@@ -968,6 +1040,19 @@ fn render(host: &HtmlElement, focus_after: bool) {
     sync_add_row(host, &runtime);
 
     let paging = paging_of(host, &runtime);
+    // Past the sizer's limit the rows are lifted by the shift, which cannot be
+    // more than the rows are taller than the sizer (the result may have shrunk).
+    let paging = {
+        let mut borrowed = runtime.borrow_mut();
+        let shift = match paging.size {
+            None => borrowed
+                .shift
+                .min(grid::squeezed_px(paging.rows, borrowed.row_height)),
+            Some(_) => 0,
+        };
+        borrowed.shift = shift;
+        paging.shifted(shift)
+    };
     let (sorts, slots, pinned_slot) = {
         let borrowed = runtime.borrow();
         let Some(view) = borrowed.view.as_ref() else {
@@ -2173,6 +2258,9 @@ fn move_with_key(
     runtime.borrow_mut().set_active(next);
     match reload {
         Some(new_offset) => {
+            if let Some(cell) = next.data() {
+                scroll_to_far_row(runtime, cell.row);
+            }
             runtime
                 .borrow_mut()
                 .state
@@ -3026,6 +3114,7 @@ fn add_record(host: &HtmlElement) {
     };
     let wanted = grid::window_offset_for_row(new_draft, rows, pool);
     if new_draft >= offset + pool || new_draft < offset {
+        scroll_to_far_row(&runtime, new_draft);
         runtime
             .borrow_mut()
             .state
@@ -4734,10 +4823,39 @@ fn on_scroll(event: Event) {
     else {
         return;
     };
-    let scroll_top = viewport.scroll_top().max(0);
-    // Remembered for the return: a browser forgets it (point 74).
-    runtime.borrow_mut().scroll_top = scroll_top;
-    let scroll_top = scroll_top as u64;
+    let mut scroll_top = viewport.scroll_top().max(0);
+    // Past the sizer's limit the position is read through the scale (issue
+    // #284); a change of the shift moves every row, window or not.
+    let shifted = {
+        let mut borrowed = runtime.borrow_mut();
+        let previous = grid::Placement {
+            scroll_top: borrowed.scroll_top.max(0) as u64,
+            shift: borrowed.shift,
+        };
+        let placed = match scroll_scale(&borrowed, &viewport) {
+            Some(scale) => scale.place(previous, scroll_top as u64),
+            None => grid::Placement {
+                scroll_top: scroll_top as u64,
+                shift: 0,
+            },
+        };
+        if placed.scroll_top != scroll_top as u64 {
+            scroll_top = i32::try_from(placed.scroll_top).unwrap_or(i32::MAX);
+            viewport.set_scroll_top(scroll_top);
+        }
+        borrowed.shift = placed.shift;
+        // Remembered for the return: a browser forgets it (point 74).
+        borrowed.scroll_top = scroll_top;
+        placed.shift != previous.shift
+    };
+    if shifted {
+        render(&host, false);
+    }
+    let scroll_top = grid::Placement {
+        scroll_top: scroll_top as u64,
+        shift: runtime.borrow().shift,
+    }
+    .virtual_top();
 
     let (total_count, pool, offset, row_height) = {
         let runtime = runtime.borrow();
@@ -6275,6 +6393,7 @@ fn move_to_row(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>, row: u64)
     if row < window.offset || row >= window.offset + window.count {
         let pool = pool_of(host);
         let offset = grid::window_offset_for_row(row, total, pool);
+        scroll_to_far_row(runtime, row);
         runtime
             .borrow_mut()
             .state

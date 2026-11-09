@@ -268,6 +268,26 @@ The table carries `aria-multiselectable="true"` (`Shift`+`Space` and `Ctrl`+`A` 
 several); while grouped, where selection is off, neither the table nor a row says anything
 of a selection.
 
+**Very long results** (issue #284). A browser caps the height of an element, so the
+scroll area is never more than 10 000 000 px (312 500 rows at 32 px, 238 095 at 42 px;
+measured: Chromium and WebKit stop at 33.5 million, Firefox at about 17.9 million). A
+result that fits is drawn exactly as it always was. A taller one is scrolled through two
+maps, and `aria-rowindex` and `aria-rowcount` stay the logical rows throughout:
+
+- **Dragging the scroll bar**, `scrollTop = x` and `Ctrl`+`Home`/`End` map proportionally:
+  the thumb at the middle is the middle of the result, its two ends are the first row and
+  the last row (the last one at the bottom edge). One pixel of the thumb is many rows.
+- **Everything smaller** — the wheel, touch, the track, `PageUp`/`PageDown`, the arrow keys —
+  moves the browser's own scroll position, so one notch of the wheel is a few rows, not
+  thousands. Near either end of the scroll bar the grid puts the thumb back to the
+  proportional place of where the rows actually are (the rows do not move on screen), which
+  is what lets the wheel reach the first and the last row from anywhere. In between the thumb
+  is therefore not exactly proportional while the wheel is used.
+
+The query is the same window of `limit` and `offset` as for a short result. The focused row
+stays pinned while the reader drags away from it; it is parked outside the scroll area and
+is back in place when the reader returns.
+
 Column visibility is a panel under its button (*Columns*, in the filter row, or in
 the toolbar when there is one): a checkbox per column, including the hidden ones —
 otherwise there would be no way back. It stays open while columns are ticked, each

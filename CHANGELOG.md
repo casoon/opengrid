@@ -188,6 +188,17 @@ Two things belong in every release entry and are easy to leave out:
   rows, since the whole workbook is built in memory. **What breaks:** a tree over a million rows,
   and an Excel export over 100 000 rows, are refused unless the bound is raised
   ([#218](https://github.com/casoon/opengrid/issues/218)).
+- **Grid: a result of any length can be scrolled to its last row** ([#284](https://github.com/casoon/opengrid/issues/284)).
+  The sizer is `rows * row-height` and a browser caps the height of an element (Firefox at about
+  17.9 million pixels, Chromium and WebKit at 33.5 million), so past about a million rows the end
+  was out of reach. The sizer now stops at 10 million pixels (312 500 rows at 32 px) and above that
+  the scroll position is mapped onto the rows: dragging the scroll bar lands proportionally in the
+  result (its ends are the first and the last row, to the pixel), while the wheel, touch, the
+  arrow and page keys still move a few rows at a time. Ctrl+End and every other far jump of the
+  focus place the scroll position first. A result that fits the sizer is drawn exactly as before.
+  **What changes:** results between 312 500 rows and the old limit are now scaled too, so the thumb
+  of the scroll bar is not exactly proportional while the wheel is used in the middle of such a
+  result; a drag of it moves by many rows per pixel.
 - **Grid: `--og-row-height` is followed at runtime and a fractional value counts** ([#283](https://github.com/casoon/opengrid/issues/283)).
   A change while the grid stays in the page (a theme switch, a class on a parent) used to leave the
   window math on the old height, so rows overlapped; the grid now notices it through the size of its
