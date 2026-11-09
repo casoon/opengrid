@@ -5,6 +5,7 @@
 //! (plan/spezifikation/08-rendering.md §DOM-Brücke).
 
 use wasm_bindgen::JsCast;
+use wasm_bindgen::prelude::wasm_bindgen;
 use web_sys::{Document, Element, HtmlElement, Node};
 
 use super::Renderer;
@@ -36,6 +37,26 @@ impl WebRenderer {
     pub fn document(&self) -> &Document {
         &self.document
     }
+}
+
+#[wasm_bindgen(inline_js = "
+// Writes nothing when the node already shows exactly this text: one Text node
+// with these characters, or no child for the empty string. A recycled cell
+// that shows the same value again, and the status line on every scroll frame,
+// then neither lose their Text node nor queue a mutation (a live region may
+// announce a replaced node again). Whatever else the node holds, such as the
+// chips drawn over a cell, is not equal and is replaced as before.
+export function __opengrid_set_text(node, text) {
+    const first = node.firstChild;
+    if (first === null ? text === \"\" : first.nodeType === 3 && first.nextSibling === null && first.data === text) {
+        return;
+    }
+    node.textContent = text;
+}
+")]
+extern "C" {
+    #[wasm_bindgen(js_name = __opengrid_set_text)]
+    fn set_text_if_changed(node: &Node, text: &str);
 }
 
 impl Renderer for WebRenderer {
@@ -76,7 +97,7 @@ impl Renderer for WebRenderer {
     }
 
     fn set_text(&mut self, node: &Node, text: &str) {
-        node.set_text_content(Some(text));
+        set_text_if_changed(node, text);
     }
 
     fn append_child(&mut self, parent: &Node, child: &Node) {

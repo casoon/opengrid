@@ -173,3 +173,71 @@ test("has no axe violations", async ({ page }) => {
   const { violations } = await new AxeBuilder({ page }).analyze();
   expect(violations).toEqual([]);
 });
+
+/**
+ * What the grid writes into the shadow root while `act` runs: Text nodes
+ * replaced or changed inside the data cells (`childList`, `characterData`) and
+ * attributes written (a write of the same value counts too).
+ */
+async function writesDuring(page, act) {
+  await page.evaluate(() => {
+    const root = document.querySelector("opengrid-grid").shadowRoot;
+    const seen = { text: 0, attributes: 0 };
+    const tally = (record) => {
+      if (record.type === "attributes") {
+        seen.attributes += 1;
+        return;
+      }
+      const target = record.target.nodeType === 1 ? record.target : record.target.parentElement;
+      if (target?.closest("td[data-row]")) seen.text += 1;
+    };
+    const observer = new MutationObserver((records) => records.forEach(tally));
+    window.__tally = tally;
+    observer.observe(root, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+      attributes: true,
+    });
+    window.__writes = { seen, observer };
+  });
+  await act();
+  return page.evaluate(async () => {
+    await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+    const { seen, observer } = window.__writes;
+    observer.takeRecords().forEach(window.__tally);
+    observer.disconnect();
+    return seen;
+  });
+}
+
+test("a frame that changes no row writes no text", async ({ page }) => {
+  await page.evaluate(() => {
+    const root = document.querySelector("opengrid-grid").shadowRoot;
+    root.querySelector('td[data-row="3"][data-col="0"]').focus();
+  });
+
+  // Selecting a row redraws the frame, but every cell already shows the right
+  // text. Replacing a Text node for the same characters costs a layout.
+  const same = await writesDuring(page, async () => {
+    await page.keyboard.press(" ");
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            document
+              .querySelector("opengrid-grid")
+              .shadowRoot.querySelectorAll('tr[aria-selected="true"]').length,
+        ),
+      )
+      .toBe(1);
+  });
+  expect(same.text).toBe(0);
+
+  // Not vacuous: a scroll recycles rows, and their text does change.
+  const moved = await writesDuring(page, async () => {
+    await scrollTo(page, 4000);
+    await expect.poll(() => rowindexFor(page, 125)).toBe("127");
+  });
+  expect(moved.text).toBeGreaterThan(0);
+});
