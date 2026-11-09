@@ -19,6 +19,7 @@
 mod compiler;
 mod connector;
 mod export;
+mod lease;
 mod source;
 mod tree;
 

@@ -14,6 +14,7 @@ use tokio_postgres::types::ToSql;
 
 use crate::PostgresDataSource;
 use crate::compiler::CompiledQuery;
+use crate::lease::Lease;
 use crate::source::{backend, compile, data, text_params, texts, value_from_text};
 
 /// A key as a sentence names it — the engine's words, so an error reads the
@@ -40,13 +41,28 @@ impl PostgresDataSource {
         query: &ValidatedQuery,
         tree: &ValidatedTree,
     ) -> Result<QueryResult, DataSourceError> {
-        let compiler = &self.compiler;
         let key_type = self
             .schema_of(tree.key.as_str())
             .ok_or_else(|| backend(format!("no column {:?}", tree.key.as_str())))?;
 
-        let mut client = self.pool.get().await.map_err(backend)?;
-        let transaction = client
+        let mut lease = Lease::new(self.pool.get().await.map_err(backend)?);
+        let outcome = self.tree_level(&mut lease, query, tree, key_type).await;
+        drop(lease.release());
+        outcome
+    }
+
+    /// The statements of [`execute_tree`](Self::execute_tree) on a leased
+    /// connection: dropped halfway, the lease cancels the one that runs.
+    async fn tree_level(
+        &self,
+        lease: &mut Lease,
+        query: &ValidatedQuery,
+        tree: &ValidatedTree,
+        key_type: DataType,
+    ) -> Result<QueryResult, DataSourceError> {
+        let compiler = &self.compiler;
+        let transaction = lease
+            .client()
             .build_transaction()
             .isolation_level(IsolationLevel::RepeatableRead)
             .start()
