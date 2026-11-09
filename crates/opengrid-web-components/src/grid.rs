@@ -4195,8 +4195,8 @@ fn patch_group_row(
 /// 2.3.2026" says less than "2.3.2026".
 /// What a tree node's cell shows and says when its column has a summary
 /// and the node has children (T7, issue #165): its own value, then the
-/// summary over its subtree — `120 · Σ 1,450`, said "120. Sum of the
-/// subtree: 1,450". A leaf, or a column without a summary, gets `None`.
+/// summary over its subtree — `120 · Σ 1,450`, said "120 · Σ 1,450, Sum of
+/// the subtree". A leaf, or a column without a summary, gets `None`.
 fn subtree_cell(
     tree: &crate::tree::Tree,
     row: u64,
@@ -4225,20 +4225,6 @@ fn subtree_cell(
         values.get(index).copied().unwrap_or(&[]),
         format,
     );
-    // A node without a value of its own — a team lead who sells nothing —
-    // says only its subtree's summary; "(no value)" first would be noise.
-    let said = |total: &str| {
-        if own.is_empty() {
-            texts.subtree_only(function, total)
-        } else {
-            texts.subtree_cell(own, function, total)
-        }
-    };
-    // An aggregate over nothing is NULL (S11): the cell shows the node's own
-    // value only, and says that the summary has none.
-    if total.is_empty() {
-        return Some((own.to_owned(), said(&texts.no_value)));
-    }
     // The glyph the group rows draw with CSS, written here: it sits between
     // two values, not before the cell. A range needs none — its dash says it.
     let glyph = match function {
@@ -4249,12 +4235,34 @@ fn subtree_cell(
         Summary::Fn(AggregateFn::Max) => "max ",
         Summary::Range => "",
     };
-    let shown = if own.is_empty() {
-        format!("{glyph}{total}")
-    } else {
-        format!("{own} \u{00B7} {glyph}{total}")
+    let join = |own: &str, total: &str| {
+        if own.is_empty() {
+            format!("{glyph}{total}")
+        } else {
+            format!("{own} \u{00B7} {glyph}{total}")
+        }
     };
-    Some((shown, said(&total)))
+    // A node without a value of its own — a team lead who sells nothing —
+    // says only its subtree's summary; "(no value)" first would be noise.
+    // `shown` is what the name starts with (WCAG 2.5.3, Label in Name): the
+    // cell's text.
+    let said = |shown: &str, total: &str| {
+        if own.is_empty() {
+            texts.subtree_only(shown, function, total)
+        } else {
+            texts.subtree_cell(shown, own, function, total)
+        }
+    };
+    // An aggregate over nothing is NULL (S11): the cell shows the node's own
+    // value only, and says that the summary has none — in the name, which
+    // starts with the cell's text and then has the word for none.
+    if total.is_empty() {
+        let none = &texts.no_value;
+        return Some((own.to_owned(), said(&join(own, none), none)));
+    }
+    let shown = join(own, &total);
+    let name = said(&shown, &total);
+    Some((shown, name))
 }
 
 fn aggregate_text(
@@ -4737,7 +4745,7 @@ mod tests {
             subtree_cell(&tree, 0, 1, &fields, "120", &texts, &plain),
             Some((
                 "120 \u{00B7} \u{03A3} 1450".to_owned(),
-                "120. Sum of the subtree: 1450".to_owned()
+                "120 \u{00B7} \u{03A3} 1450, Sum of the subtree".to_owned()
             ))
         );
         // NULL over the subtree (S11): the own value, and the word for none.
@@ -4745,7 +4753,7 @@ mod tests {
             subtree_cell(&tree, 1, 1, &fields, "10", &texts, &plain),
             Some((
                 "10".to_owned(),
-                "10. Sum of the subtree: (no value)".to_owned()
+                "10 \u{00B7} \u{03A3} (no value), Sum of the subtree".to_owned()
             ))
         );
         // No value of its own: only the summary is said.
@@ -4753,7 +4761,7 @@ mod tests {
             subtree_cell(&tree, 0, 1, &fields, "", &texts, &plain),
             Some((
                 "\u{03A3} 1450".to_owned(),
-                "Sum of the subtree: 1450".to_owned()
+                "\u{03A3} 1450, Sum of the subtree".to_owned()
             ))
         );
         assert_eq!(

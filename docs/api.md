@@ -707,7 +707,7 @@ the guide [A tree in the grid](../guides/tree/).
 | Filter | A match keeps the path to it: its ancestors are shown as **context**, muted and described with `treeContext`, through `aria-describedby`. The status line counts matches, not the context. |
 | Orphans | A row whose parent does not exist is a root, and the status line says how many there are (`treeOrphans`). |
 | Order | Siblings are sorted by the grid's sort; the hierarchy is never broken by it. |
-| Summaries | A column's aggregate — from `set_columns`, the column menu or the view's `aggregates`, as in groups — is shown on every node **with children** as its subtree's summary beside its own value: `120 · Σ 1,450`, said `subtreeCell` ("120. Sum of the subtree: 1,450"). Over the node and all its descendants, from the raw rows, and with a filter over the matches only — context does not count (rule T7). A leaf shows its own value. |
+| Summaries | A column's aggregate — from `set_columns`, the column menu or the view's `aggregates`, as in groups — is shown on every node **with children** as its subtree's summary beside its own value: `120 · Σ 1,450`, said `subtreeCell` ("120 · Σ 1,450, Sum of the subtree"). Over the node and all its descendants, from the raw rows, and with a filter over the matches only — context does not count (rule T7). A leaf shows its own value. |
 | Size | A level holds at most 10 000 nodes — a larger one is refused with `treeLevelTooLarge`; narrow it with a filter. |
 | Refused | `page-size` alongside: a tree scrolls (`treeRefused`). `group-by` alongside is not used (`treeGroupIgnored`), and the toolbar's + Group is `aria-disabled` and says so. |
 | View | `expanded` holds the open nodes, each as `[key]`, and travels in the [view](#the-view). |
@@ -1381,8 +1381,8 @@ loader.module.set_texts(host, { lang: "de", loading: "Wird geladen …" });
 | `fieldRemove` / `fieldEarlier` / `fieldLater` | `Remove {field}` / `Move {field} earlier` / `Move {field} later` | `{field}` |
 | `pivotFilters` / `pivotFilterLabel` / `pivotFilterHint` | `Filters` / `Add a filter` / `field = value · Enter` — the pivot's filter group, its field's name and hint | |
 | `treeContext` | `context` — a tree's row shown only because a match is below it | |
-| `subtreeCell` | `{value}. {aggregate} of the subtree: {total}` — what a node's cell says when it also shows its subtree's summary | `{value}`, `{aggregate}`, `{total}` |
-| `subtreeOnly` | `{aggregate} of the subtree: {total}` — the same for a node without a value of its own | `{aggregate}`, `{total}` |
+| `subtreeCell` | `{shown}, {aggregate} of the subtree` — what a node's cell says when it also shows its subtree's summary: "120 · Σ 1,450, Sum of the subtree". `{shown}` is the cell's visible text, so the name contains it (WCAG 2.5.3); German: `{shown}, {aggregate} im Teilbaum`. A text you set **without** `{shown}` is used exactly as written, and its name then does not contain the visible text — your decision. | `{shown}`, `{value}`, `{aggregate}`, `{total}` |
+| `subtreeOnly` | `{shown}, {aggregate} of the subtree` — the same for a node without a value of its own: "Σ 1,450, Sum of the subtree" | `{shown}`, `{aggregate}`, `{total}` |
 | `treeOrphans` | `Without a parent, shown at the top: {count}` | `{count}` |
 | `treeLevelTooLarge` | `{count} rows at one level; a level holds at most {max} — choose a filter` | `{count}`, `{max}` |
 | `treeRefused` / `treeGroupIgnored` | `no tree with page-size: a tree scrolls` / `group-by is not used in a tree` | |

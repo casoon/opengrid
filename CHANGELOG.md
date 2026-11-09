@@ -165,9 +165,7 @@ Two things belong in every release entry and are easy to leave out:
   text, then the reason: `+ Row. Nothing left to add`. The reasons are the texts `groupingFull`,
   `treeGroupIgnored`, `columnFull` and `nothingToAdd`, unchanged and still translatable; no key is
   new or gone, but the name is now `{addGrouping|addRow|addColumn|addMeasure}. {reason}`, so a page
-  or test that read the whole name as the bare reason sees the longer one. A node's cell in a tree
-  that shows a subtree summary (`10 · Σ 15`, said "10. Sum of the subtree: 15") is not changed yet:
-  which name it should have is open on the issue.
+  or test that read the whole name as the bare reason sees the longer one.
 - **Connectors:** a query the server gave up on (its timeout, a client that left) kept running in the
   database. PostgreSQL now gets a cancel request for the connection when the request is dropped
   halfway (`/query`, `/pivot`, a pushed-down tree) and the connection is closed instead of reused.
@@ -177,6 +175,18 @@ Two things belong in every release entry and are easy to leave out:
   thread (up to two minutes) instead of panicking. `opengrid-datasource-postgres` depends on `tokio` (already in the build) to send the cancel
   request, and SQLite queries of one connector still run one after the other
   ([#217](https://github.com/casoon/opengrid/issues/217)).
+- **Grid a11y: a tree node's cell with a subtree summary names what it shows** ([#306](https://github.com/casoon/opengrid/issues/306)).
+  The cell shows `10 · Σ 15` but said "10. Sum of the subtree: 15", which axe-core 4.14 reports as
+  `label-content-name-mismatch` (WCAG 2.5.3, Label in Name). The texts `subtreeCell` and
+  `subtreeOnly` get a new placeholder `{shown}` for the cell's visible text, and the English
+  defaults use it: the name is now "10 · Σ 15, Sum of the subtree" (was
+  `{value}. {aggregate} of the subtree: {total}` and `{aggregate} of the subtree: {total}`; now both
+  `{shown}, {aggregate} of the subtree`). **The default wording changes**, so a test or a page that
+  matches the old sentence sees the new one, and the summary is now said once. For a summary that
+  is NULL, `{shown}` is the cell text plus the word for none ("10 · Σ (no value)"). The new
+  placeholder is additive: a text a page has set without `{shown}` stays valid and is used exactly
+  as written; its name then does not contain the visible text, which is the page's decision.
+  `{value}`, `{aggregate}` and `{total}` work as before.
 - **Grid:** with a far row focused, the last row of the result is drawn again
   ([#309](https://github.com/casoon/opengrid/issues/309)). The focused row keeps its own slot while
   the rows scroll; when that left the window one slot short, the window lost its last row, so a click
