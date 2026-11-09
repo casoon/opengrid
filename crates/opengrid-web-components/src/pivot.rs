@@ -609,7 +609,16 @@ pub fn build_toolbar(
         attribute(buffer, input, "part", "search-input");
         attribute(buffer, input, "type", "text");
         attribute(buffer, input, "data-filter-input", "");
-        attribute(buffer, input, "aria-label", &texts.pivot_filter_label);
+        // Named in our words with our `lang`, not by `aria-label` (F9).
+        crate::grid::label_by(
+            buffer,
+            nodes,
+            group,
+            input,
+            "og-label-pivot-filter",
+            &texts.pivot_filter_label,
+            texts,
+        );
         attribute(buffer, input, "placeholder", &texts.pivot_filter_hint);
         attribute(buffer, input, "autocomplete", "off");
         attribute(buffer, input, "spellcheck", "false");
@@ -1147,9 +1156,9 @@ pub fn build_pivot(
     }
 
     let status_node = element(buffer, nodes, Some(layout), "p");
-    attribute(buffer, status_node, "part", "status");
-    attribute(buffer, status_node, "role", "status");
-    attribute(buffer, status_node, "aria-live", "polite");
+    for (name, value) in STATUS_ATTRIBUTES {
+        attribute(buffer, status_node, name, value);
+    }
     attribute(buffer, status_node, "data-state", state);
     if !texts.lang.is_empty() {
         attribute(buffer, status_node, "lang", &texts.lang);
@@ -1158,7 +1167,48 @@ pub fn build_pivot(
         node: status_node,
         text: status.to_owned(),
     });
+    build_pivot_table(buffer, nodes, layout, label, model, texts, look);
+}
 
+/// What makes the status line a live region. `<opengrid-pivot>` creates the
+/// node once with these and then only changes its text, so the region is one
+/// assistive technology already observes (WCAG 4.1.3) — the same rule as the
+/// grid's status line.
+pub const STATUS_ATTRIBUTES: [(&str, &str); 3] = [
+    ("part", "status"),
+    ("role", "status"),
+    ("aria-live", "polite"),
+];
+
+/// The pivot without its toolbar and its status line — what an answer redraws.
+///
+/// `<opengrid-pivot>` keeps the status line across redraws and builds only the
+/// toolbar and this table into a fragment next to it: the table is the last
+/// node built under `ROOT`.
+pub fn build_pivot_redraw(
+    buffer: &mut PatchBuffer,
+    nodes: &mut NodeAllocator,
+    label: Option<&str>,
+    model: Option<&PivotModel>,
+    texts: &GridTexts,
+    look: &dyn PivotLook,
+    toolbar: Option<(&PivotView, &Offer)>,
+) {
+    if let Some((view, offer)) = toolbar {
+        build_toolbar(buffer, nodes, NodeId::ROOT, view, offer, texts, look);
+    }
+    build_pivot_table(buffer, nodes, NodeId::ROOT, label, model, texts, look);
+}
+
+fn build_pivot_table(
+    buffer: &mut PatchBuffer,
+    nodes: &mut NodeAllocator,
+    layout: NodeId,
+    label: Option<&str>,
+    model: Option<&PivotModel>,
+    texts: &GridTexts,
+    look: &dyn PivotLook,
+) {
     // Parts (issue #29) with the grid's names where there is one, so a page
     // styles the pivot from outside the shadow root: `table`, `caption`,
     // `header` (a column header cell), `row-header`, `row`, `total-row`, `cell`.
@@ -1331,6 +1381,11 @@ pub fn build_pivot(
                     attribute(buffer, th, "colspan", &dimensions.to_string());
                 }
                 if level == 0 {
+                    // The total's word is ours, not the page's: it claims our
+                    // language (the grid's total row does the same).
+                    if !texts.lang.is_empty() {
+                        attribute(buffer, th, "lang", &texts.lang);
+                    }
                     buffer.push(Patch::SetText {
                         node: th,
                         text: texts.total.clone(),

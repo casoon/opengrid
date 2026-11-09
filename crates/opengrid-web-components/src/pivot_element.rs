@@ -31,8 +31,7 @@ use opengrid_web_core::patch::{NodeAllocator, PatchBuffer};
 use opengrid_web_core::provider::provider;
 
 use crate::element::{
-    answer_size, apply, clear_root, describe, dispatch, dispatch_query, is_latest, next_request,
-    now,
+    answer_size, apply_into, describe, dispatch, dispatch_query, is_latest, next_request, now,
 };
 use crate::grid_element_events::VIEW_EVENT;
 use crate::pivot::{
@@ -267,11 +266,24 @@ fn render(
     let Some(document) = host.owner_document() else {
         return;
     };
-    // Every answer redraws the whole root, so the control a reader is on would
-    // be gone under them: it is found again by what it is, and the text typed
-    // into the filter field stays (#124).
+    // Every answer redraws the toolbar and the table, so the control a reader
+    // is on would be gone under them: it is found again by what it is, and the
+    // text typed into the filter field stays (#124).
     let kept = focused_control(&root);
-    clear_root(&root);
+    let texts = texts::texts(host);
+    // The status line is made once and then only changes its text: a live
+    // region that is rebuilt with its text already inside is announced
+    // unreliably (WCAG 4.1.3; the grid's status line says the same).
+    let Some((layout, status_line)) = layout_of(&root, &document) else {
+        return;
+    };
+    let mut child = layout.first_child();
+    while let Some(node) = child {
+        child = node.next_sibling();
+        if !node.is_same_node(Some(&status_line)) {
+            let _ = layout.remove_child(&node);
+        }
+    }
     // Kept and dropped with what is drawn, never apart from it: while a new
     // answer loads, or after an error, the table is empty and so is the export.
     remember(
@@ -287,7 +299,6 @@ fn render(
     let model = folded.as_ref();
 
     let label = host.get_attribute(LABEL_ATTRIBUTE);
-    let texts = texts::texts(host);
     let mut nodes = NodeAllocator::new();
     let mut buffer = PatchBuffer::new();
     // The toolbar is drawn in every state — loading, empty, an error — so a
@@ -295,18 +306,39 @@ fn render(
     let toolbar = host
         .has_attribute(TOOLBAR_ATTRIBUTE)
         .then(|| (view_of(host), offer(host).unwrap_or_default()));
-    pivot::build_pivot(
+    pivot::build_pivot_redraw(
         &mut buffer,
         &mut nodes,
         label.as_deref(),
         model,
-        status,
-        state,
         &texts,
         look,
         toolbar.as_ref().map(|(view, offer)| (view, offer)),
     );
-    apply(&root, document, &buffer);
+    // Built aside, then put around the status line: the toolbar before it, the
+    // table after it. The line itself is never removed.
+    let fragment = document.create_document_fragment();
+    apply_into(fragment.clone().into(), document, &buffer);
+    let table = fragment.last_child();
+    while let Some(node) = fragment.first_child() {
+        if table
+            .as_ref()
+            .is_some_and(|table| table.is_same_node(Some(&node)))
+        {
+            break;
+        }
+        let _ = layout.insert_before(&node, Some(&status_line));
+    }
+    if let Some(table) = table {
+        let _ = layout.append_child(&table);
+    }
+    let _ = status_line.set_attribute("data-state", state);
+    if texts.lang.is_empty() {
+        let _ = status_line.remove_attribute("lang");
+    } else {
+        let _ = status_line.set_attribute("lang", &texts.lang);
+    }
+    status_line.set_text_content(Some(status));
     if let Some((selector, typed)) = kept
         && let Ok(Some(control)) = root.query_selector(&selector)
         && let Ok(control) = control.dyn_into::<HtmlElement>()
@@ -317,6 +349,27 @@ fn render(
         }
         let _ = control.focus();
     }
+}
+
+/// The layout box and the status line in it, made on the first draw.
+fn layout_of(
+    root: &web_sys::ShadowRoot,
+    document: &web_sys::Document,
+) -> Option<(Element, Element)> {
+    if let Ok(Some(layout)) = root.query_selector(r#"[part="layout"]"#)
+        && let Ok(Some(status)) = layout.query_selector(r#":scope > [part="status"]"#)
+    {
+        return Some((layout, status));
+    }
+    let layout = document.create_element("div").ok()?;
+    layout.set_attribute("part", "layout").ok()?;
+    let status = document.create_element("p").ok()?;
+    for (name, value) in pivot::STATUS_ATTRIBUTES {
+        status.set_attribute(name, value).ok()?;
+    }
+    layout.append_child(&status).ok()?;
+    root.append_child(&layout).ok()?;
+    Some((layout, status))
 }
 
 /// The attributes a pivot's controls are known by, in the order they are

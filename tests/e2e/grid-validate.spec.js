@@ -23,7 +23,12 @@ const cellMarks = (page, row, col) =>
       const td = root.querySelector(`td[data-row="${row}"][data-col="${col}"]`);
       return {
         validation: td.getAttribute("data-validation"),
-        description: td.getAttribute("aria-description"),
+        // The sentences the cell is described by: what `aria-describedby` names.
+        description: (td.getAttribute("aria-describedby") ?? "")
+          .split(/\s+/)
+          .filter(Boolean)
+          .map((id) => root.getElementById(id)?.textContent ?? null),
+        legacy: td.getAttribute("aria-description"),
         invalid: td.getAttribute("aria-invalid"),
         text: td.textContent,
       };
@@ -68,7 +73,8 @@ test("a warning shows under the editor as the reader types, is said once, and do
   expect(await under(page)).toBeNull();
   expect(await cellMarks(page, 0, 2)).toMatchObject({
     validation: "warning",
-    description: "More than 60 seats is a hall.",
+    description: ["More than 60 seats is a hall."],
+    legacy: null,
     invalid: null,
     text: expect.stringContaining("5001"),
   });
@@ -110,7 +116,7 @@ test("a type the column cannot hold always blocks, and the page can report a fin
   );
   expect(await cellMarks(page, 3, 2)).toMatchObject({
     validation: "error",
-    description: "Seats must match the hall.",
+    description: ["Seats must match the hall."],
     invalid: "true",
   });
   expect(await status(page)).toContain("Seats must match the hall.");
