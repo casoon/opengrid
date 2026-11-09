@@ -926,6 +926,11 @@ export type Texts = Partial<Record<TextKey, string>> & {
  */
 export interface SelectionChangeDetail {
   rows: number[];
+  /**
+   * The same rows as runs of adjacent ones, ascending, both ends inclusive:
+   * select-all over 100 000 rows is `[{ from: 0, to: 99999 }]`.
+   */
+  ranges: Array<{ from: number; to: number }>;
   count: number;
   /** In a tree only: the selected nodes' keys, the shown ones first. */
   keys?: unknown[];
