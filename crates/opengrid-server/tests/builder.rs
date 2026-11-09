@@ -344,3 +344,113 @@ async fn an_endless_ready_source_meets_the_timeout() {
     assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE, "{body}");
     assert!(body.contains("took longer"), "{body}");
 }
+
+/// Issue #221: what a token's context does to a row filter is settled at
+/// startup. The context is text; a `bigint` column reads it as a number, so a
+/// numeric tenant works — and a value that is no number, a key the token does
+/// not carry, or an operator the column cannot answer stops `build`, instead
+/// of failing every request of that token with a 422.
+#[tokio::test]
+async fn a_row_filter_on_a_number_column_takes_a_numeric_context() {
+    let (connector, _) = Recording::new();
+    let server = Server::builder()
+        .source(
+            "orders",
+            connector,
+            SourcePolicy {
+                allowed_fields: vec!["customer".into()],
+                row_filter: Some(RowFilter::new("id", "eq", ":tenant")),
+            },
+        )
+        .token(TOKEN, [("tenant", "7")])
+        .build()
+        .await
+        .expect("a server");
+    let (status, body) = post(
+        server.router(),
+        "/query/orders",
+        r#"{"source":"orders","select":["customer"]}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(result_from_json(&body).unwrap().total_count, 1);
+}
+
+#[tokio::test]
+async fn a_context_that_does_not_fit_the_row_filter_does_not_build() {
+    let build = |filter: RowFilter, context: &[(&str, &str)]| {
+        let (connector, _) = Recording::new();
+        Server::builder()
+            .source(
+                "orders",
+                connector,
+                SourcePolicy {
+                    allowed_fields: Vec::new(),
+                    row_filter: Some(filter),
+                },
+            )
+            .token(TOKEN, context.iter().copied())
+            .build()
+    };
+    let message = |result: Result<Server, opengrid_server::RegistryError>| {
+        result
+            .err()
+            .map(|error| error.to_string())
+            .unwrap_or_default()
+    };
+
+    let not_a_number =
+        message(build(RowFilter::new("id", "eq", ":tenant"), &[("tenant", "acme")]).await);
+    assert!(not_a_number.contains("tenant"), "{not_a_number}");
+    let missing = message(build(RowFilter::new("id", "eq", ":tenant"), &[("other", "7")]).await);
+    assert!(missing.contains("tenant"), "{missing}");
+    let operator = message(
+        build(
+            RowFilter::new("id", "contains", ":tenant"),
+            &[("tenant", "7")],
+        )
+        .await,
+    );
+    assert!(!operator.is_empty(), "an operator the column cannot answer");
+    // The same filter with a context that fits builds.
+    assert!(
+        build(RowFilter::new("id", "eq", ":tenant"), &[("tenant", "7")])
+            .await
+            .is_ok()
+    );
+}
+
+/// Two tokens of one value would keep one context and silently give the first
+/// tenant the second's rows.
+#[tokio::test]
+async fn a_token_twice_does_not_build() {
+    let (connector, _) = Recording::new();
+    let result = Server::builder()
+        .source("orders", connector, SourcePolicy::default())
+        .token(TOKEN, [("tenant", "a")])
+        .token(TOKEN, [("tenant", "b")])
+        .build()
+        .await;
+    let message = result
+        .err()
+        .map(|error| error.to_string())
+        .unwrap_or_default();
+    assert!(message.contains("twice"), "{message}");
+}
+
+/// An origin that does not parse used to be dropped silently.
+#[tokio::test]
+async fn an_unparsable_origin_does_not_build() {
+    let (connector, _) = Recording::new();
+    let result = Server::builder()
+        .source("orders", connector, SourcePolicy::default())
+        .allow_origin("https://app.example.com")
+        .allow_origin("https://bad\norigin")
+        .build()
+        .await;
+    let message = result
+        .err()
+        .map(|error| error.to_string())
+        .unwrap_or_default();
+    assert!(message.contains("origin"), "{message}");
+}

@@ -415,8 +415,10 @@ fn on_connected(host: HtmlElement) {
         add_listeners(&root);
         // A provider that replaced the source this grid shows (issue #182).
         let replaced = Closure::<dyn FnMut(Event)>::new(on_source_replaced).into_js_value();
-        let _ = host
-            .add_event_listener_with_callback("opengrid-source-replaced", replaced.unchecked_ref());
+        let _ = host.add_event_listener_with_callback(
+            crate::grid_element_events::SOURCE_REPLACED_EVENT,
+            replaced.unchecked_ref(),
+        );
         runtime.borrow_mut().row_height = height;
         // A `group-by` in the markup is read before anything else happens; one
         // the grid refuses is said with the first result, and it runs ungrouped.
