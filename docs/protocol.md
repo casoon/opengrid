@@ -191,9 +191,10 @@ in:
    `max_cells` (and the P9 order sets one past `max_rows`), so a pivot over a high-cardinality
    dimension is `limit_exceeded` without the source sending every group; a tree built by the
    engine (the source does not answer trees itself, and every flat tree) has its scope counted
-   against `max_tree_rows` (default 1 000 000) before any row is read, for a level and for an
-   export; an Excel export has `max_xlsx_rows` (default 100 000, never above the 1 048 576 of a
-   sheet), because the workbook is built in memory before the first byte.
+   against `max_tree_rows` (default 5 000 000) before any row is read, for a level and for an
+   export; an Excel export has `max_xlsx_rows` (default 1 000 000, never above the 1 048 576 of a
+   sheet), because the file is assembled, and held in memory, before the first byte: it counts
+   against the timeout, which a million rows of ten columns exceed at the default 10 s.
 
 ## Proving a server
 

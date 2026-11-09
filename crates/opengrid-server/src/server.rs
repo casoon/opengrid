@@ -77,8 +77,8 @@ impl Default for Settings {
             allowed_origins: Vec::new(),
             max_export_rows: 1_000_000,
             max_concurrent_exports: None,
-            max_tree_rows: 1_000_000,
-            max_xlsx_rows: 100_000,
+            max_tree_rows: 5_000_000,
+            max_xlsx_rows: 1_000_000,
         }
     }
 }
@@ -160,15 +160,16 @@ impl ServerBuilder {
     /// The most rows a tree may consist of (its scope) for the server to
     /// answer a level of it or export it, when the source does not answer trees
     /// itself: the engine builds a tree from all of its rows. Counted before the
-    /// rows are read; over it the request is `limit_exceeded`. Default 1 000 000.
+    /// rows are read; over it the request is `limit_exceeded`. Default 5 000 000.
     pub fn max_tree_rows(mut self, rows: u64) -> Self {
         self.settings.max_tree_rows = rows;
         self
     }
 
     /// The most rows an Excel export may have, below the 1 048 576 a sheet
-    /// holds: the whole workbook is built in memory before its first byte,
-    /// once per running export. Default 100 000.
+    /// holds (that stays the hard bound): the workbook is assembled before its
+    /// first byte, so the file is held in memory once per running export and
+    /// the time counts against the server's timeout. Default 1 000 000.
     pub fn max_xlsx_rows(mut self, rows: u64) -> Self {
         self.settings.max_xlsx_rows = rows;
         self
@@ -280,5 +281,19 @@ impl ServerBuilder {
         Ok(Server {
             state: Arc::new(state),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Settings;
+
+    /// Issue #218: the owner's defaults. The Excel one stays under the sheet's
+    /// 1 048 575 rows, which is the hard bound whatever is set.
+    #[test]
+    fn the_bounds_of_work_have_their_decided_defaults() {
+        let settings = Settings::default();
+        assert_eq!(settings.max_xlsx_rows, 1_000_000);
+        assert_eq!(settings.max_tree_rows, 5_000_000);
     }
 }
