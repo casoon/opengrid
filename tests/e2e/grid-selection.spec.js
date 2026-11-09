@@ -69,7 +69,13 @@ test("Shift+Space extends from the last plain selection", async ({ page }) => {
 test("Ctrl+A selects every matching row, not only the loaded ones", async ({ page }) => {
   await open(page);
   await focusCell(page, 'td[data-row="0"][data-col="0"]');
+  await page.evaluate(() => {
+    document.addEventListener("opengrid-selection-change", (event) => {
+      window.__rowsAreAnArray = Array.isArray(event.detail.rows);
+    });
+  });
   await page.keyboard.press("Control+a");
+  expect(await page.evaluate(() => window.__rowsAreAnArray)).toBe(true);
 
   const seen = await events(page);
   const total = await page.evaluate(
@@ -82,6 +88,8 @@ test("Ctrl+A selects every matching row, not only the loaded ones", async ({ pag
       ) - 1,
   );
   expect(seen.at(-1).count).toBe(total);
+  // The event's shape is the contract: a plain array of the row numbers.
+  expect(seen.at(-1).rows).toEqual(Array.from({ length: total }, (_, row) => row));
   expect(seen.at(-1).count).toBeGreaterThan(await page.evaluate(
     () => document.querySelector("opengrid-grid").shadowRoot.querySelectorAll("tbody tr").length,
   ));

@@ -3730,6 +3730,20 @@ fn dispatch_cell_change(
     }
 }
 
+#[wasm_bindgen::prelude::wasm_bindgen(inline_js = "
+export function __opengrid_numbers(values) {
+    const list = new Array(values.length);
+    for (let at = 0; at < list.length; at += 1) {
+        list[at] = values[at];
+    }
+    return list;
+}
+")]
+extern "C" {
+    #[wasm_bindgen::prelude::wasm_bindgen(js_name = __opengrid_numbers)]
+    fn numbers_to_array(values: &[f64]) -> js_sys::Array;
+}
+
 /// Fires `opengrid-selection-change` on the host.
 ///
 /// **The event contract (point 35), which every later event follows:**
@@ -3745,10 +3759,11 @@ fn dispatch_cell_change(
 /// * `detail` is plain JSON-ish data — no Rust types, no live references:
 ///   `{ rows: [u64], count: number }`.
 fn dispatch_selection(host: &HtmlElement, rows: &[u64], keys: Option<&[opengrid_json::Json]>) {
-    let list = js_sys::Array::new();
-    for row in rows {
-        list.push(&JsValue::from_f64(*row as f64));
-    }
+    // One call and a loop in JavaScript, not one call per row: "select all"
+    // over 100 000 rows names them all. The event still carries a plain array
+    // of numbers (`Array.from` over a typed array was slower than the calls).
+    let numbers: Vec<f64> = rows.iter().map(|row| *row as f64).collect();
+    let list = numbers_to_array(&numbers);
     let detail = js_sys::Object::new();
     let _ = js_sys::Reflect::set(&detail, &JsValue::from_str("rows"), &list);
     // A tree counts its selected nodes — shown or not — and names them by key.
