@@ -19,6 +19,40 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-11-09
+
+**Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).
+**Browsers:** @@BROWSERS@@
+
+The first release with the Rust crates on crates.io: the engine, the connectors and
+`opengrid-server`, fourteen crates at the npm package's version. The rest is hardening after a
+review of the whole project: the server bounds its work before doing it, tells a caller nothing
+about the database and refuses a wrong configuration at startup; PostgreSQL connects over TLS and
+both SQL connectors end a statement nobody waits for; the grid keeps its focus, its selection and
+its editor through new answers, scrolls a result of any length and does less work per frame.
+
+**Module sizes** (brotli, `just measure-modules`): @@SIZES@@
+
+**What breaks:**
+- Rust: `DataSourceError` gained `Data`, `ErrorCode` gained `Data`, `QueryError` gained
+  `OffsetTooLarge` and `ListTooLong`, `SchemaError` one variant, so an exhaustive `match` must
+  handle them; `Limits` has the new field `max_list_values` and `AppState` a new field, so a struct
+  literal needs them; `Schema::check` refuses a column named `__og_…` or `__grouping_…`.
+- Server: `ServerBuilder::build` fails for a token that does not fit a row filter, a token handed
+  in twice and an invalid `allow_origin`. A backend failure reaches the client as one sentence and a
+  reference, not as the database's text. A tree with a key twice or a cycle answers `data` / `422`
+  (it was `backend` / `502`). A `POST /query` without `limit` gets `max_limit`. A tree over five
+  million rows, an Excel export over a million rows and a list of more than 1 000 values are
+  refused unless the bound is raised. PostgreSQL's `connect` refuses `sslmode=require`; use
+  `connect_with_tls`.
+- Elements: `set_texts(host, {})` no longer resets the texts (`null` does). The default wording of
+  `subtreeCell` and `subtreeOnly` and the name of a disabled add button changed. `page-size="0"`
+  means no paging. Results above 312 500 rows scroll through a scaled scroll bar.
+- npm: `engines.node` is `>=22.12.0`; the peer ranges are `vue >=3.4.20` and
+  `@types/react >=18.3.0`.
+- MCP: `opengrid_query` answers 500 rows at most per call, and a server source over `http://` is
+  refused unless it is on the machine itself.
+
 ### Added
 
 - **PostgreSQL:** `PostgresDataSource::connect_with` and `PoolOptions` set the pool size and the wait,
@@ -100,11 +134,6 @@ Two things belong in every release entry and are easy to leave out:
   runs 3.6 ms instead of 11.7 ms, `<opengrid-table>` draws 5 000 rows 20 % faster, and extending a range
   over a large selection no longer takes quadratic time. The DOM, the events and the texts are
   the same.
-- **Server:** the defaults of the two bounds from [#218](https://github.com/casoon/opengrid/issues/218)
-  are larger: `max_xlsx_rows` 1 000 000 (it was 100 000; the 1 048 576 of an Excel sheet stays the
-  hard bound) and `max_tree_rows` 5 000 000 (it was 1 000 000). Both are still set per server. A
-  million rows of ten columns take about 65 MiB while the workbook is made (100 000 rows: 14 MiB)
-  but about 25 s, which is past the default timeout of 10 s: raise `timeout` for such exports.
 - **API:** `opengrid-source-replaced` is frozen, typed in `OpengridEventMap` and in the events table
   of the API reference, which says that `loader.js` dispatches it on the grid without bubbling
   ([#234](https://github.com/casoon/opengrid/issues/234)). A test now reads the module's
@@ -144,7 +173,6 @@ Two things belong in every release entry and are easy to leave out:
   The tint is `Canvas` there and browsers drop `box-shadow`, so a selected row looked like any
   other unless the `selection` column was on. It now keeps a 4px `Highlight` border on its first
   cell.
-
 - **Server and connectors, hardening** ([#222](https://github.com/casoon/opengrid/issues/222)).
   `max_payload_bytes` above axum's 2 MiB is honoured (the router carries the limit; an oversize body
   is still the `limit_exceeded` wire error), every answer has `Cache-Control: no-store` and
@@ -200,8 +228,8 @@ Two things belong in every release entry and are easy to leave out:
   (T1, T3) is told to the caller in full instead of hidden as an outage, and the local engine's
   `TooLarge` is `LimitExceeded` now. **What breaks:** `DataSourceError` has a new variant (an
   exhaustive `match` no longer compiles), `AppState` a new field, and a client that parsed the
-  database text out of a `backend` message no longer can. A tree error still travels as `backend`;
-  a code of its own would be a wire change ([#219](https://github.com/casoon/opengrid/issues/219)).
+  database text out of a `backend` message no longer can. A tree error has the code `data`, see
+  *Changed* ([#219](https://github.com/casoon/opengrid/issues/219)).
 - **Grid:** a grid that was removed from the page is collected after its popups were opened
   ([#227](https://github.com/casoon/opengrid/issues/227)). The listeners of the column list, the
   filter dialog, the grouping menu and the operator menu held the grid, so one open of any of them
@@ -220,10 +248,12 @@ Two things belong in every release entry and are easy to leave out:
   the sets' sum), so a pivot over a high-cardinality dimension no longer reads every group; the
   overflow is `limit_exceeded` (it was a hidden `backend` error in the default pivot path). A tree the
   engine builds has its scope counted against the new `ServerBuilder::max_tree_rows` (default
-  1 000 000) before its rows are read, for a level and for an export. The new
-  `ServerBuilder::max_xlsx_rows` (default 100 000) bounds an Excel export below the sheet's 1 048 576
-  rows, since the whole workbook is built in memory. **What breaks:** a tree over a million rows,
-  and an Excel export over 100 000 rows, are refused unless the bound is raised
+  5 000 000) before its rows are read, for a level and for an export. The new
+  `ServerBuilder::max_xlsx_rows` (default 1 000 000) bounds an Excel export below the sheet's 1 048 576
+  rows, since the whole workbook is built in memory: a million rows of ten columns take about
+  65 MiB while it is made, and about 25 s, which is past the default timeout of 10 s, so raise
+  `timeout` for such exports. **What breaks:** a tree over five million rows, and an Excel export
+  over a million rows, are refused unless the bound is raised
   ([#218](https://github.com/casoon/opengrid/issues/218)).
 - **Grid: a result of any length can be scrolled to its last row** ([#284](https://github.com/casoon/opengrid/issues/284)).
   The sizer is `rows * row-height` and a browser caps the height of an element (Firefox at about
@@ -258,7 +288,6 @@ Two things belong in every release entry and are easy to leave out:
   `aria-description` (ARIA 1.3 draft); a finding no longer overwrites the context on a tree's first
   cell. The *Add filter* dialog is `aria-modal="true"`, and what it says about a refused value goes
   through the status line instead of a second `role="alert"`.
-
 - **Planner:** a tree the client builds (the source has no trees, or leaves the sort or the paging
   to the client) lost the query's sort when it was not paged, and a tree the source answered but
   could not sort or page came back as plain rows without `children`, `match` and `orphans`. The
@@ -266,13 +295,12 @@ Two things belong in every release entry and are easy to leave out:
   scope and sums too, which it did not, so a scoped or summing tree failed with an unknown column.
   The hybrid conformance run now covers the tree and list cases
   ([#211](https://github.com/casoon/opengrid/issues/211)).
-
 - **Grid: the ARIA of grouping, selection and sorting** ([#229](https://github.com/casoon/opengrid/issues/229)).
   Group rows and grouped data rows carry `aria-posinset` / `aria-setsize` (the total row none), the
   `<table>` carries `aria-multiselectable="true"` while selection is on, rows carry no
   `aria-selected` while grouped (selection is off there), and only the primary sort key sets
   `aria-sort`: further keys show their order and direction in the header's marks, which stay
-  `aria-hidden` — they are not spoken (there is no text to speak them with yet).
+  `aria-hidden` — the text key `sortKey` says them, see *Changed*.
 - **Engine:** a decimal `sum` of 39 digits was returned as a `decimal(38, s)` that neither wire form
   could read back; it is now an overflow error, like an `int64` sum past its limit. A decimal pushed
   into a column of another scale was stored with a different meaning (100 at scale 0 became `1.00`);
@@ -302,7 +330,6 @@ Two things belong in every release entry and are easy to leave out:
   browser showed `1,234.5` while the screen reader spoke German. The locale is now the explicit
   `locale`, then the nearest `lang` of the page (through shadow roots), then the browser's — and a
   change of `lang` on the page re-resolves the formats and redraws the grid, table and pivot.
-
 - **Grid:** scrolling while a cell was being edited closed the editor in the grid's state but left
   the `<input>` on screen, where `Enter` and `Escape` no longer reached it and the typed value was
   lost. A scroll now leaves the editor open ([#224](https://github.com/casoon/opengrid/issues/224)).
@@ -1354,7 +1381,8 @@ tested.
   tested: React 18 rendering on the server, SvelteKit, Nuxt, Next.js and Astro
   as real applications. A Vite production build needs `loadOpengrid({ moduleUrl })`.
 
-[Unreleased]: https://github.com/casoon/opengrid/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/casoon/opengrid/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/casoon/opengrid/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/casoon/opengrid/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/casoon/opengrid/compare/v0.12.0...v0.13.0
 [0.13.0-mcp]: https://github.com/casoon/opengrid/releases/tag/opengrid-mcp-v0.13.0
