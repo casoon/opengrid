@@ -20,6 +20,10 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Added
 
+- **PostgreSQL:** `PostgresDataSource::connect_with` and `PoolOptions` set the pool size and the wait,
+  create and recycle timeouts, so `max_concurrent_exports` can be sized against a known pool. TLS is
+  not part of this ([#220](https://github.com/casoon/opengrid/issues/220), awaiting a decision on the
+  dependency).
 - **Editing through `connect` and the framework components** ([#206](https://github.com/casoon/opengrid/issues/206)).
   New options `actions` and `validators` (functions compare by identity, as in `formats`) and the
   callbacks `onRowAdd`, `onPaste`, `onBulkChange`, `onRowAction`, `onSourceReplaced`. `onRowAdd`
@@ -72,16 +76,15 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Fixed
 
-- **Pivot and grid: live region, language, names and descriptions** ([#231](https://github.com/casoon/opengrid/issues/231)).
-  `<opengrid-pivot>` keeps its status line across answers and changes only its text, where it built
-  a fresh `role="status"` with the text already inside on every answer (WCAG 4.1.3); the toolbar and
-  the table are drawn around it. The grand total carries our `lang`, and the filter field is named
-  by a hidden node with our `lang` instead of `aria-label`. A validation sentence and a tree's
-  "context" are hidden nodes the cell is described by (`aria-describedby`) instead of
-  `aria-description` (ARIA 1.3 draft); a finding no longer overwrites the context on a tree's first
-  cell. The *Add filter* dialog is `aria-modal="true"`, and what it says about a refused value goes
-  through the status line instead of a second `role="alert"`.
-
+- **Grid:** loading the source again leaves nothing of the old one behind
+  ([#226](https://github.com/casoon/opengrid/issues/226)). The selection is cleared (and the
+  `opengrid-selection-change` event and the status line say so), a tree asks for its levels again
+  instead of keeping the old ones, and a facet lists the new source's values. A result with fewer
+  rows no longer leaves selected rows that are not there. The rows the reader added and the undo
+  history now survive what rebuilds the grid (moving or hiding a column, `tree`, applying a view),
+  following their columns by name; a changed `datasource` still starts clean. `<opengrid-table>` and
+  `<opengrid-pivot>` re-run their query when `loadRows` or `load` replaces their source, which only
+  the grid did.
 - **Server and connectors, hardening** ([#222](https://github.com/casoon/opengrid/issues/222)).
   `max_payload_bytes` above axum's 2 MiB is honoured (the router carries the limit; an oversize body
   is still the `limit_exceeded` wire error), every answer has `Cache-Control: no-store` and
@@ -112,6 +115,16 @@ Two things belong in every release entry and are easy to leave out:
   refused as `ValueTypeMismatch`, although rule S8 allows comparing an integer with a decimal. It is
   now read at the column's scale (an overflow of the precision is still a validation error); a float
   literal on a decimal column stays an error ([#210](https://github.com/casoon/opengrid/issues/210)).
+- **Pivot and grid: live region, language, names and descriptions** ([#231](https://github.com/casoon/opengrid/issues/231)).
+  `<opengrid-pivot>` keeps its status line across answers and changes only its text, where it built
+  a fresh `role="status"` with the text already inside on every answer (WCAG 4.1.3); the toolbar and
+  the table are drawn around it. The grand total carries our `lang`, and the filter field is named
+  by a hidden node with our `lang` instead of `aria-label`. A validation sentence and a tree's
+  "context" are hidden nodes the cell is described by (`aria-describedby`) instead of
+  `aria-description` (ARIA 1.3 draft); a finding no longer overwrites the context on a tree's first
+  cell. The *Add filter* dialog is `aria-modal="true"`, and what it says about a refused value goes
+  through the status line instead of a second `role="alert"`.
+
 - **Planner:** a tree the client builds (the source has no trees, or leaves the sort or the paging
   to the client) lost the query's sort when it was not paged, and a tree the source answered but
   could not sort or page came back as plain rows without `children`, `match` and `orphans`. The

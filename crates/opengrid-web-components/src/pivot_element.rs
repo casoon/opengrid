@@ -63,10 +63,26 @@ fn on_connected(host: HtmlElement) {
         let _ = root.add_event_listener_with_callback("click", callback.unchecked_ref());
         let keys = Closure::<dyn FnMut(Event)>::new(on_menu_key).into_js_value();
         let _ = root.add_event_listener_with_callback("keydown", keys.unchecked_ref());
+        // A provider that replaced the source this pivot shows (issue #226).
+        let replaced = Closure::<dyn FnMut(Event)>::new(on_source_replaced).into_js_value();
+        let _ = host.add_event_listener_with_callback(
+            crate::grid_element_events::SOURCE_REPLACED_EVENT,
+            replaced.unchecked_ref(),
+        );
     }
     // The view it starts with is not a change.
     report_view(&host, false);
     run(&host);
+}
+
+/// The source this pivot shows was replaced: the same view is asked again.
+fn on_source_replaced(event: Event) {
+    if let Some(host) = event
+        .current_target()
+        .and_then(|target| target.dyn_into::<HtmlElement>().ok())
+    {
+        run(&host);
+    }
 }
 
 fn on_attribute_changed(

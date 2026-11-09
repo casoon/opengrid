@@ -46,6 +46,23 @@ pub struct PostgresDataSource {
     tree_pushdown: bool,
 }
 
+/// How the connection pool is sized and how long it waits (all optional; the
+/// default is the pool library's: `4 x CPUs` connections, no timeout).
+///
+/// The connect timeout of one connection is the DSN's own `connect_timeout=`;
+/// `create_timeout` bounds the pool's wait for a new connection as a whole.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PoolOptions {
+    /// At most this many connections.
+    pub max_size: Option<usize>,
+    /// How long a request waits for a free connection before it fails.
+    pub wait_timeout: Option<std::time::Duration>,
+    /// How long opening a new connection may take.
+    pub create_timeout: Option<std::time::Duration>,
+    /// How long checking a pooled connection before reuse may take.
+    pub recycle_timeout: Option<std::time::Duration>,
+}
+
 impl PostgresDataSource {
     /// Connects to `url` (a libpq connection string) for `table`.
     ///
@@ -53,8 +70,30 @@ impl PostgresDataSource {
     /// contract the queries are validated against, and reading it from the
     /// database would make that contract change under the caller's feet.
     pub fn connect(url: &str, table: &str, schema: Schema) -> Result<Self, DataSourceError> {
+        Self::connect_with(url, table, schema, PoolOptions::default())
+    }
+
+    /// The same with the pool sized and timed by the operator, so
+    /// `max_concurrent_exports` can be set against a known pool
+    /// ([`pool_size`](Self::pool_size)).
+    pub fn connect_with(
+        url: &str,
+        table: &str,
+        schema: Schema,
+        options: PoolOptions,
+    ) -> Result<Self, DataSourceError> {
         let mut config = Config::new();
         config.url = Some(url.to_owned());
+        let mut pool_config = deadpool_postgres::PoolConfig::default();
+        if let Some(max_size) = options.max_size {
+            pool_config.max_size = max_size;
+        }
+        pool_config.timeouts = deadpool_postgres::Timeouts {
+            wait: options.wait_timeout,
+            create: options.create_timeout,
+            recycle: options.recycle_timeout,
+        };
+        config.pool = Some(pool_config);
         let pool = config
             .create_pool(Some(Runtime::Tokio1), NoTls)
             .map_err(|error| DataSourceError::Backend {
