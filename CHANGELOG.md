@@ -155,6 +155,11 @@ Two things belong in every release entry and are easy to leave out:
   thread (up to two minutes) instead of panicking. `opengrid-datasource-postgres` depends on `tokio` (already in the build) to send the cancel
   request, and SQLite queries of one connector still run one after the other
   ([#217](https://github.com/casoon/opengrid/issues/217)).
+- **Grid:** with a far row focused, the last row of the result is drawn again
+  ([#309](https://github.com/casoon/opengrid/issues/309)). The focused row keeps its own slot while
+  the rows scroll; when that left the window one slot short, the window lost its last row, so a click
+  in row 3 followed by a scroll to the end showed no last row. The row dropped is now never the
+  first or last row of the result (and so the first row stays too, with a focus far below).
 - **Server:** a backend failure reaches the browser as one fixed sentence and a reference
   (`the data source failed (reference og-…)`), no longer as the database's text, which can name a
   table, a hidden column or a tenant's value. New `ServerBuilder::on_error(hook)` receives the full

@@ -1072,7 +1072,7 @@ fn render(host: &HtmlElement, focus_after: bool) {
         } else {
             focus.and_then(|row| borrowed.slots.iter().position(|slot| *slot == Some(row)))
         };
-        let slots = grid::assign_pool(&borrowed.slots, focus, &rows, pool);
+        let slots = grid::assign_pool(&borrowed.slots, focus, &rows, pool, total);
         let sorts = borrowed.state.sort_keys();
         (sorts, slots, pinned_slot)
     };

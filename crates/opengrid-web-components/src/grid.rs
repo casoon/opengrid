@@ -1291,12 +1291,15 @@ pub fn window_rows(offset: u64, total_count: u64, pool: u64) -> Vec<u64> {
 ///   survives scrolling.
 /// * Remaining rows fill the free slots in order. If the pinned row leaves no
 ///   room for the whole window, one window row is dropped from the edge farthest
-///   from the focus (still invisible thanks to the overscan).
+///   from the focus (still invisible thanks to the overscan) — but never the first
+///   or the last row of the result (`total`), which a window that reaches it must
+///   draw (#309).
 pub fn assign_pool(
     old: &[Option<u64>],
     focus: Option<u64>,
     rows: &[u64],
     pool: usize,
+    total: u64,
 ) -> Vec<Option<u64>> {
     use std::collections::HashSet;
 
@@ -1321,10 +1324,19 @@ pub fn assign_pool(
         let drop = to_place.len() - capacity;
         // The focus is below the window when it scrolls down past it: drop the
         // rows at the top (smallest), otherwise drop the bottom (largest).
+        // A window that ends at the last row keeps it, one that starts at row 0
+        // keeps that: the edge that is not an end of the result is the one to drop.
+        let at_start = rows.first() == Some(&0);
+        let at_end = rows.last().is_some_and(|last| last + 1 == total);
         let focus_below = focus
             .map(|focus| rows.last().is_none_or(|last| focus > *last))
             .unwrap_or(false);
-        if focus_below {
+        let drop_top = match (at_start, at_end) {
+            (false, true) => true,
+            (true, false) => false,
+            _ => focus_below,
+        };
+        if drop_top {
             to_place.drain(0..drop);
         } else {
             let keep = to_place.len() - drop;
@@ -5309,7 +5321,7 @@ mod tests {
             },
         );
         let state = state_with(&["Gamma", "Alpha"], 5, 0, 4);
-        let slots = assign_pool(&[None; 4], None, &window_rows(0, 5, 4), 4);
+        let slots = assign_pool(&[None; 4], None, &window_rows(0, 5, 4), 4, 5);
 
         let mut buffer = PatchBuffer::new();
         patch_grid(
@@ -5381,7 +5393,7 @@ mod tests {
             },
         );
         let state = state_with(&["Gamma"], 1, 0, 1);
-        let slots = assign_pool(&[None], None, &window_rows(0, 1, 1), 1);
+        let slots = assign_pool(&[None], None, &window_rows(0, 1, 1), 1, 1);
 
         let mut buffer = PatchBuffer::new();
         patch_grid(
@@ -5437,7 +5449,7 @@ mod tests {
             },
         );
         let state = state_with(&["Gamma"], 1, 0, 1);
-        let slots = assign_pool(&[None], None, &window_rows(0, 1, 1), 1);
+        let slots = assign_pool(&[None], None, &window_rows(0, 1, 1), 1, 1);
 
         let mut buffer = PatchBuffer::new();
         patch_grid(
@@ -5996,7 +6008,7 @@ mod tests {
             },
         );
         let state = state_with(&["Gamma"], 1, 0, 1);
-        let slots = assign_pool(&[None], None, &window_rows(0, 1, 1), 1);
+        let slots = assign_pool(&[None], None, &window_rows(0, 1, 1), 1, 1);
 
         let mut buffer = PatchBuffer::new();
         patch_grid(
@@ -6052,7 +6064,7 @@ mod tests {
             },
         );
         let state = state_with(&["Gamma", "Alpha"], 5, 0, 2);
-        let slots = assign_pool(&[None, None], None, &window_rows(0, 5, 2), 2);
+        let slots = assign_pool(&[None, None], None, &window_rows(0, 5, 2), 2, 5);
 
         let mut buffer = PatchBuffer::new();
         patch_grid(
@@ -6105,7 +6117,13 @@ mod tests {
         );
         let total = 3_000_000;
         let state = state_with(&["Gamma", "Alpha"], total, total - 2, 2);
-        let slots = assign_pool(&[None, None], None, &window_rows(total - 2, total, 2), 2);
+        let slots = assign_pool(
+            &[None, None],
+            None,
+            &window_rows(total - 2, total, 2),
+            2,
+            total,
+        );
         let shift = squeezed_px(total, 32);
 
         let mut buffer = PatchBuffer::new();
@@ -6186,7 +6204,7 @@ mod tests {
             },
         );
         let state = state_with(&["Gamma", "Alpha"], 5, 0, 3);
-        let slots = assign_pool(&[None, None, None], None, &window_rows(0, 5, 3), 3);
+        let slots = assign_pool(&[None, None, None], None, &window_rows(0, 5, 3), 3, 5);
 
         let mut buffer = PatchBuffer::new();
         patch_grid(
@@ -6247,7 +6265,7 @@ mod tests {
         let old = [Some(20), Some(21), Some(22), Some(6)];
         let focus = Some(6);
         let rows = window_rows(20, 100, 4);
-        let slots = assign_pool(&old, focus, &rows, 4);
+        let slots = assign_pool(&old, focus, &rows, 4, 100);
         let pinned = old.iter().position(|slot| *slot == focus);
 
         let mut buffer = PatchBuffer::new();
@@ -6663,7 +6681,7 @@ mod tests {
     /// A fresh assignment fills the free slots in order.
     #[test]
     fn assignment_fills_free_slots() {
-        let slots = assign_pool(&[None; 3], None, &[0, 1, 2], 3);
+        let slots = assign_pool(&[None; 3], None, &[0, 1, 2], 3, 3);
         assert_eq!(slots, [Some(0), Some(1), Some(2)]);
     }
 
@@ -6671,7 +6689,7 @@ mod tests {
     #[test]
     fn assignment_keeps_existing_rows() {
         let old = [Some(0), Some(1), Some(2)];
-        let slots = assign_pool(&old, None, &[0, 1, 2, 3], 3);
+        let slots = assign_pool(&old, None, &[0, 1, 2, 3], 3, 4);
         assert_eq!(slots, [Some(0), Some(1), Some(2)]);
     }
 
@@ -6830,16 +6848,44 @@ mod tests {
     #[test]
     fn assignment_pins_the_focused_row() {
         let old = [Some(6), Some(20), Some(21), Some(22)];
-        let slots = assign_pool(&old, Some(6), &[20, 21, 22, 23], 4);
+        let slots = assign_pool(&old, Some(6), &[20, 21, 22, 23], 4, 100);
         assert_eq!(slots[0], Some(6));
         assert!(!slots.contains(&Some(23)));
+    }
+
+    /// A far pin does not cost the last row of the result (#309): the window
+    /// ends at it, so the row dropped is the one at the top.
+    #[test]
+    fn a_far_pin_keeps_the_last_row_of_the_result() {
+        let old = [Some(3), None, None, None];
+        let rows = window_rows(96, 100, 4);
+        let slots = assign_pool(&old, Some(3), &rows, 4, 100);
+        assert_eq!(slots, [Some(3), Some(97), Some(98), Some(99)]);
+    }
+
+    /// Nor the first row, when the pin is far below a window at the start.
+    #[test]
+    fn a_far_pin_keeps_the_first_row_of_the_result() {
+        let old = [Some(50), None, None, None];
+        let rows = window_rows(0, 100, 4);
+        let slots = assign_pool(&old, Some(50), &rows, 4, 100);
+        assert_eq!(slots, [Some(50), Some(0), Some(1), Some(2)]);
+    }
+
+    /// A pin inside the window at the end costs nothing.
+    #[test]
+    fn a_pin_inside_the_window_at_the_end_loses_no_row() {
+        let old = [Some(96), Some(97), Some(98), Some(99)];
+        let rows = window_rows(96, 100, 4);
+        let slots = assign_pool(&old, Some(97), &rows, 4, 100);
+        assert_eq!(slots, [Some(96), Some(97), Some(98), Some(99)]);
     }
 
     /// When nothing is pinned the window fills the pool, dropping the far edge.
     #[test]
     fn assignment_scrolls_without_focus() {
         let old = [Some(0), Some(1), Some(2), Some(3)];
-        let slots = assign_pool(&old, None, &[10, 11, 12, 13], 4);
+        let slots = assign_pool(&old, None, &[10, 11, 12, 13], 4, 100);
         assert_eq!(slots, [Some(10), Some(11), Some(12), Some(13)]);
     }
 }
