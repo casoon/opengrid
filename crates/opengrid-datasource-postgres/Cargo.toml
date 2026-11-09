@@ -21,6 +21,9 @@ opengrid-connector = { path = "../opengrid-connector" }
 # decimal exact (point 26).
 tokio-postgres = "0.7"
 deadpool-postgres = "0.14"
+# Already in the build through both; the lease spawns its cancel request
+# (issue #217).
+tokio = { version = "1", features = ["rt"] }
 opengrid-json = { path = "../opengrid-json" }
 
 [dev-dependencies]

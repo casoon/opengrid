@@ -962,6 +962,7 @@ dependencies = [
  "opengrid-query",
  "opengrid-types",
  "rusqlite",
+ "tokio",
 ]
 
 [[package]]

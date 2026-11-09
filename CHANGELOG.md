@@ -101,6 +101,15 @@ Two things belong in every release entry and are easy to leave out:
   a new public field (a struct literal without `..Limits::default()` no longer compiles),
   `QueryError` has two new variants, `SchemaError` one, and `Schema::check` refuses a column named
   `__og_…` or `__grouping_…`, which the connectors use for helper columns.
+- **Connectors:** a query the server gave up on (its timeout, a client that left) kept running in the
+  database. PostgreSQL now gets a cancel request for the connection when the request is dropped
+  halfway (`/query`, `/pivot`, a pushed-down tree) and the connection is closed instead of reused.
+  SQLite ran on the async thread, to the end, so the timeout could not fire and one slow query held
+  every other request; it now runs on a thread of its own and a dropped request interrupts the
+  statement. `opengrid_conformance::block_on` waits for a future that is woken from another
+  thread (up to two minutes) instead of panicking. `opengrid-datasource-postgres` depends on `tokio` (already in the build) to send the cancel
+  request, and SQLite queries of one connector still run one after the other
+  ([#217](https://github.com/casoon/opengrid/issues/217)).
 - **Server:** a backend failure reaches the browser as one fixed sentence and a reference
   (`the data source failed (reference og-…)`), no longer as the database's text, which can name a
   table, a hidden column or a tenant's value. New `ServerBuilder::on_error(hook)` receives the full
