@@ -31,6 +31,12 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Changed
 
+- **Engine:** the hot paths no longer allocate per row. `in` looks each cell up in a set of the
+  literals instead of comparing the whole column once per literal (500 values over 1M rows: 2229 ms
+  to 19 ms), `min`/`max` reuse one buffer per group (1M rows by country: 154 ms to 102 ms), and a
+  tree keys its nodes on the typed value and builds the paths of the returned page only (100 000
+  nodes: roots 24 ms to 8 ms, flat tree 49 ms to 30 ms; native release build). The answers are the
+  same ([#214](https://github.com/casoon/opengrid/issues/214)).
 - **Server:** `ServerBuilder::build` now fails at startup for what used to fail on every request or
   silently: a token whose context does not fit a source's row filter (a `tenant_id bigint` filter
   never worked, the context was always sent as text; it is now read as the column's type), a token
