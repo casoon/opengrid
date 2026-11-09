@@ -31,6 +31,10 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Changed
 
+- **Engine:** `load_csv` reads the file record by record into the column builders instead of
+  scanning every record first. The peak memory of loading the 1M-row demo file (85 MB) drops from
+  431 MiB to 159 MiB (native, release build, maximum resident set size); the result is the same
+  ([#215](https://github.com/casoon/opengrid/issues/215)).
 - **Server:** `ServerBuilder::build` now fails at startup for what used to fail on every request or
   silently: a token whose context does not fit a source's row filter (a `tenant_id bigint` filter
   never worked, the context was always sent as text; it is now read as the column's type), a token
