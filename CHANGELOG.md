@@ -76,6 +76,12 @@ Two things belong in every release entry and are easy to leave out:
   `#[wasm_bindgen]` exports from the source and holds them against the frozen functions and an
   explicit internal list, so a new export cannot slip past the freeze. The docs and types no longer
   count events or functions.
+- **Grid:** `opengrid-selection-change` carries `ranges` beside `rows`: the selected rows as runs of
+  adjacent rows, `{ from, to }`, ascending, both ends inclusive, so a page can take "select all" over
+  100 000 rows as one range instead of walking the list. `rows` and `count` are unchanged; in a
+  tree `ranges` follow `rows`. **Public API:** the detail gains the field `ranges`
+  (`SelectionChangeDetail` in `loader.d.ts`, the events table in `docs/api.md`), additive
+  ([#235](https://github.com/casoon/opengrid/issues/235)).
 - **Packages:** the peer range of `vue` is `>=3.4.20` and that of `@types/react` is `>=18.3.0`
   ([#237](https://github.com/casoon/opengrid/issues/237)). The shipped Vue types import
   `DefineSetupFnComponent`, which Vue only has from 3.4.20; a project on 3.3 or early 3.4 got a

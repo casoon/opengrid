@@ -1116,7 +1116,7 @@ exception to the first part: `loader.js` dispatches it on the element, without `
 
 | Event | `detail` |
 |---|---|
-| `opengrid-selection-change` | `{ rows: number[], count: number }` — logical row numbers, ascending. In a [tree](#tree) also `keys`: the selected nodes by key, and `count` counts them. |
+| `opengrid-selection-change` | `{ rows: number[], ranges: { from: number, to: number }[], count: number }` — logical row numbers, ascending, and the same rows as `ranges`: runs of adjacent rows, ascending, both ends inclusive (select-all over 100 000 rows is one range, `{ from: 0, to: 99999 }`). In a [tree](#tree) `ranges` follow `rows`, the nodes shown; also `keys`: the selected nodes by key, and `count` counts them. |
 | `opengrid-bulk-change` | `{ keys, column, value }` — one value was set for the selected rows; see [Setting a value for the selected rows](#setting-a-value-for-the-selected-rows). |
 | `opengrid-paste` | `{ changes: [{ key?, row, column, value, previous }], added: [{ values, provisionalKey }] }` — a pasted block was applied; see [Pasting](#pasting). |
 | `opengrid-row-add` | `{ values, provisionalKey, undo?, redo? }` — a record was entered in the new row; see [Adding rows](#adding-rows). |
