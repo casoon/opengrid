@@ -358,7 +358,7 @@ reflow case of WCAG 1.4.10, the toolbar wraps instead.
 | Filter row | A switch (`aria-pressed`). Hiding the row gives its height to the viewport, and `PageUp`/`PageDown` step by what is really there. Whether the row shows is part of the [view](#the-view) as `filterRow`, **on** by default — there is no attribute for it, because a boolean attribute is off by default and the row has always been there. |
 | Columns | The column list moves here from the filter row, so it stays reachable when the row is hidden. |
 | Density | Three buttons, the pressed one is the grid's `density`. |
-| + Filter | Opens *Add filter*, a non-modal `role="dialog"`: *Column*, *Condition* (the operators the column's type allows), *Value*, *Cancel*, *Apply*. The focus moves to *Column*; `Tab` cycles inside; *Apply* or `Enter` in *Value* writes the column's entry in the filter row — the one place a filter lives — and closes; `Escape`, *Cancel* or a click outside close without a change. A value the column cannot take is named in the dialog, which stays open. The focus returns to the button. |
+| + Filter | Opens *Add filter*, a `role="dialog"` with `aria-modal="true"` (`Tab` does not leave it): *Column*, *Condition* (the operators the column's type allows), *Value*, *Cancel*, *Apply*. The focus moves to *Column*; `Tab` cycles inside; *Apply* or `Enter` in *Value* writes the column's entry in the filter row — the one place a filter lives — and closes; `Escape`, *Cancel* or a click outside close without a change. A value the column cannot take is named in the dialog, which stays open, and said in the status line — the one live region. The focus returns to the button. |
 | + Group | Opens a `role="menu"` of the groupable columns not grouped yet, with the column menu's keys (`↓`/`↑`, `Home`/`End`, `Enter`/`Space`, `Escape`, `Tab`). A pick adds the next grouping level, as `group-by` does. With two levels the button is `aria-disabled` and says why. |
 | Chips | One per active filter, in words (`country is DE`), and one for the grouping. Each has a remove button **named for its filter** — `Remove country is DE` — and "Remove all" clears filters and grouping. A removal is said once, with the result that follows; the focus moves to the next chip, never to the document. |
 
@@ -598,7 +598,7 @@ loader.module.set_validators(grid, {
 The function runs on every keystroke in the editor and once more on commit; `value` is the text as it
 stands (as `opengrid-cell-change` gives it) and `row` the record as loaded, by field name. It
 answers `null`, or `{ level: "warning" | "error", message }`. The message shows under the editor,
-stays on the cell (`data-validation`, with `aria-description`; an `error` is also `aria-invalid`) until
+stays on the cell (`data-validation`, described by a hidden node through `aria-describedby`; an `error` is also `aria-invalid`) until
 the next result, and is said once, politely, in the status line.
 
 **A finding does not block the commit** — the reader may save a duplicate and fix it later — unless
@@ -676,7 +676,7 @@ the guide [A tree in the grid](../guides/tree/).
 | Keys | On a node's first cell `→` opens it, and on an open node goes to its first child; `←` closes an open node, and on a closed node or a leaf goes to its parent. `Enter` and `Space` keep their grid meaning — `Space` selects the node. |
 | Pointer | A click on a node's first cell, where the chevron is, opens or closes it. |
 | Spoken | `aria-level` (depth), `aria-posinset` / `aria-setsize` (its place among its siblings), `aria-expanded` only where there is something to open, `aria-busy` while the children load. Opening and closing is said once, with the result, as `groupExpanded` / `groupCollapsed`. |
-| Filter | A match keeps the path to it: its ancestors are shown as **context**, muted and described with `treeContext`. The status line counts matches, not the context. |
+| Filter | A match keeps the path to it: its ancestors are shown as **context**, muted and described with `treeContext`, through `aria-describedby`. The status line counts matches, not the context. |
 | Orphans | A row whose parent does not exist is a root, and the status line says how many there are (`treeOrphans`). |
 | Order | Siblings are sorted by the grid's sort; the hierarchy is never broken by it. |
 | Summaries | A column's aggregate — from `set_columns`, the column menu or the view's `aggregates`, as in groups — is shown on every node **with children** as its subtree's summary beside its own value: `120 · Σ 1,450`, said `subtreeCell` ("120. Sum of the subtree: 1,450"). Over the node and all its descendants, from the raw rows, and with a filter over the matches only — context does not count (rule T7). A leaf shows its own value. |

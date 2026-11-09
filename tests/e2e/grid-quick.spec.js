@@ -38,6 +38,10 @@ test("+ Filter opens a dialog, Tab stays inside, Enter in the value applies", as
       expanded: root.querySelector('[part="add-filter"]').getAttribute("aria-expanded"),
     })),
   ).toEqual({ role: "dialog", name: "Add filter", expanded: "true" });
+  // Tab stays inside, and the dialog says it is modal.
+  expect(
+    await shadow(page, (root) => root.querySelector('[part="filter-dialog"]').getAttribute("aria-modal")),
+  ).toBe("true");
 
   // Tab from the last control comes back to the first, Shift+Tab the other way.
   await shadow(page, (root) => root.querySelector('[data-dialog-action="apply"]').focus());
@@ -92,9 +96,14 @@ test("a value the column cannot take is named in the dialog, which stays open", 
     const line = root.querySelector('[part="filter-dialog"] [data-dialog-problem]');
     return { text: line.textContent, hidden: line.hidden, role: line.getAttribute("role") };
   });
-  expect(problem).toMatchObject({ hidden: false, role: "alert" });
+  // The sentence stays on the screen, and is *said* by the one live region,
+  // the status line — a second `role="alert"` would be a second voice.
+  expect(problem).toMatchObject({ hidden: false, role: null });
   expect(problem.text).toContain("1.5");
-  expect(await status(page)).toBe("200 Treffer");
+  await expect.poll(() => status(page)).toContain("1.5");
+  expect(
+    await shadow(page, (root) => root.querySelectorAll('[role="alert"], [aria-live]').length),
+  ).toBe(1);
 });
 
 test("+ Group is a menu with the column menu's keys, and a pick adds a level", async ({ page }) => {
