@@ -238,13 +238,9 @@ test("a frame that changes no row writes only what changed", async ({ page }) =>
   });
   expect(same.text).toBe(0);
   // And of the attributes only the two the selection changes: the rest of the
-  // set a row is patched with is already as it should be. (The presentation
-  // markers are the element's, not the frame's.)
-  expect(
-    same.attributes
-      .filter((name) => !/data-(align|mono|emphasis|muted)|aria-readonly/.test(name))
-      .sort(),
-  ).toEqual(["TR.aria-selected", "TR.data-selected"]);
+  // set a row is patched with is already as it should be, and so are the
+  // columns' markers, which belong to a result and not to a frame.
+  expect(same.attributes.sort()).toEqual(["TR.aria-selected", "TR.data-selected"]);
 
   // Not vacuous: a scroll recycles rows, and their text does change.
   const moved = await writesDuring(page, async () => {
