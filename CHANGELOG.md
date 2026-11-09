@@ -182,6 +182,15 @@ Two things belong in every release entry and are easy to leave out:
   answer that lands, and an answer no longer pulls the focus back from a filter field or a toolbar
   button the reader moved to. The grouped grand total is asked again when a newer query cut the
   first one short ([#223](https://github.com/casoon/opengrid/issues/223)).
+- **Grid:** attributes mean their value, not their presence
+  ([#233](https://github.com/casoon/opengrid/issues/233)). `page-size="0"` (or a word) is no paging
+  and no longer refuses `group-by`, `tree`, `add-row` or the grouping in the column menu; a
+  `row-key` that names no field no longer offers bulk editing or puts `key: null` into events.
+  `set_texts` now does what the API reference says: it adds to the texts an earlier call set
+  instead of starting from the defaults again (**behaviour change:** `set_texts(host, {})` no longer
+  resets the texts; `set_texts(host, null)` does, and `connect` uses it so that its `texts` option
+  still means all of them). The pivot mirrors a changed `label` instead of asking its provider again, as
+  the grid and the table do.
 - **Grid:** with a `row-key`, undo and redo of a record that was not among the loaded rows (a filter
   or a scroll had moved it out) wrote the old value into whichever record sat in its former position.
   The grid is not written to then; the event reaches the page with the record's `key`. A value the

@@ -354,6 +354,9 @@ pub fn set_values(host: &HtmlElement, values: JsValue) {
 /// so they are announced in the language they are written in. Never onto the
 /// data: the cells are the page's, in the page's language.
 ///
+/// A call adds to the texts an earlier one set; a key left out keeps what it was.
+/// `set_texts(host, null)` takes them all back to the English defaults.
+///
 /// Exported as `set_texts` beside `set_provider`, and like it, it takes effect
 /// immediately: the grid rebuilds, because its labels are part of the one-time
 /// skeleton (the filter row, the scroll offset and the focus are carried
@@ -361,9 +364,18 @@ pub fn set_values(host: &HtmlElement, values: JsValue) {
 /// right words from its first paint.
 #[wasm_bindgen(js_name = set_texts)]
 pub fn set_texts(host: &HtmlElement, values: JsValue) {
-    let mut new = texts::from_js(&values);
-    // The column titles come from `set_columns`, not from the texts (#66).
-    new.titles = texts::texts(host).titles.clone();
+    // Over what the host has: the texts of an earlier call stay (issue #233).
+    // `null` starts again from the defaults, the one way back.
+    let current = texts::texts(host);
+    let base = if values.is_null() || values.is_undefined() {
+        texts::GridTexts {
+            titles: current.titles.clone(),
+            ..Default::default()
+        }
+    } else {
+        current.as_ref().clone()
+    };
+    let new = texts::from_js(base, &values);
     texts::store(host, Rc::new(new));
     if host.shadow_root().is_none() {
         // Not connected yet — `connectedCallback` will read the stored texts.
@@ -816,7 +828,7 @@ fn forget_requests(id: u32) {
 ///
 /// A label change is not a render cycle: it touches the two affected nodes
 /// directly instead of rebuilding the table.
-fn update_label(root: &ShadowRoot, label: Option<&str>) {
+pub(crate) fn update_label(root: &ShadowRoot, label: Option<&str>) {
     let Ok(Some(table)) = root.query_selector("table") else {
         return;
     };
