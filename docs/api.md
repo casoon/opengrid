@@ -524,7 +524,8 @@ editor as on any cell, `Enter` goes on to the next column, and `Enter` in the la
 `values` by field name and a `provisionalKey`, the row appears at once marked unsaved, and a fresh
 new row holds the focus in its first column. The page answers with `set_row_state`; the message of
 an `error` is said in the status line, as `set_cell_state` says one. An added row is read-only; the
-page loads fresh rows (`loadRows`) and the saved ones are the source's from then on.
+page loads fresh rows (`loadRows`) and the saved ones are the source's from then on. Added rows and
+the undo history stay when the columns are moved or hidden; another `datasource` ends them.
 
 A field that is not nullable in the schema is marked required in the new row. Adding without a
 value for one is refused: nothing fires, the cell is marked invalid and the status line says
@@ -1094,7 +1095,7 @@ the same for `/query`, `/pivot`, `/source` and `/export`:
 The events fire on the host, `bubbles` and `composed` (without `composed` they would
 not leave a shadow root the page wrapped the element in), and none is
 `cancelable` — they report what has already happened. `opengrid-source-replaced` is the
-exception to the first part: `loader.js` dispatches it on the grid, without `bubbles`.
+exception to the first part: `loader.js` dispatches it on the element, without `bubbles`.
 
 | Event | `detail` |
 |---|---|
@@ -1105,7 +1106,7 @@ exception to the first part: `loader.js` dispatches it on the grid, without `bub
 | `opengrid-row-action` | `{ id, row, key? }` — an action was activated; `key` is the `row-key` value. |
 | `opengrid-cell-change` | `{ row, column, value, previous }` — everything needed to persist it. With `row-key` also `key`: the record's value of that field, `null` when the result does not carry it. |
 | `opengrid-view-change` | `{ view }` — the whole [view](#the-view) after the change. Scrolling and selecting are not view changes. On `<opengrid-pivot>` the view is its `rows`, `columns`, `values`, `sort`, `collapsed` and `filter`. |
-| `opengrid-source-replaced` | `{ name }` — an engine provider replaced the source this grid shows; the grid re-runs its query. Dispatched by `loader.js`, on the grid only, not bubbling; `connect` hands it to `onSourceReplaced`. |
+| `opengrid-source-replaced` | `{ name }` — an engine provider replaced the source this element shows; the grid, table and pivot re-run their query, the grid clears its selection and history and asks a tree and the facets again. Dispatched by `loader.js` on every element on that `datasource`, not bubbling; `connect` hands it to `onSourceReplaced`. |
 | `opengrid-query` | `{ kind, ms, rows, total, bytes, form, memory }` after **every** answer of the provider, on the grid and the pivot (issue #70): where it ran (the provider's `kind`), the round trip in milliseconds measured in the tab, rows answered and matches before paging, the answer's size as it arrived and its form (`binary` or `json`), and the element module's WASM memory. Measured always, sent nowhere — what the page does with it is the page's. |
 
 **The component edits; the page saves.** There is no write path: the engine's

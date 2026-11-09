@@ -1,0 +1,15 @@
+{
+  "expect": "OffsetTooLarge",
+  "query": {
+    "source": "orders",
+    "select": [
+      "customer"
+    ],
+    "sort": [
+      {
+        "field": "customer"
+      }
+    ],
+    "offset": 9223372036854775808
+  }
+}
