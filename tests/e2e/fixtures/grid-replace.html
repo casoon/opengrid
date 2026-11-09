@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>opengrid replaced source fixture</title>
+    <style>
+      opengrid-grid {
+        --og-row-height: 32px;
+        display: block;
+        height: 260px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid replaced source fixture</h1>
+      <!-- Issue #226: what a grid, a tree, a table and a pivot do when the
+           source they show is loaded again, and what a rebuild keeps. -->
+      <opengrid-grid
+        id="plain"
+        label="Rooms"
+        datasource="rooms"
+        columns="id,name,zone,seats"
+        window-size="12"
+        row-key="id"
+        selection
+        facets
+        add-row
+      ></opengrid-grid>
+      <opengrid-grid
+        id="tree"
+        label="Units"
+        datasource="units"
+        columns="name,zone"
+        tree="parent_id"
+        window-size="12"
+      ></opengrid-grid>
+      <opengrid-table id="table" label="Rooms" datasource="rooms" columns="id,name,zone"></opengrid-table>
+      <opengrid-pivot
+        id="pivot"
+        label="Rooms by zone"
+        datasource="rooms"
+        rows="zone"
+        values='[{"fn":"count","as":"n"}]'
+      ></opengrid-pivot>
+    </main>
+    <script type="module">
+      import { loadOpengrid, createLocalProvider } from "/packages/opengrid/loader.js";
+      import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+
+      window.__selection = [];
+      document.addEventListener("opengrid-selection-change", (event) =>
+        window.__selection.push(event.detail.rows),
+      );
+      window.__changes = [];
+      document.addEventListener("opengrid-cell-change", (event) => window.__changes.push(event.detail));
+      window.__added = [];
+      document.addEventListener("opengrid-row-add", (event) => window.__added.push(event.detail));
+
+      const field = (name, type, nullable = false) => ({ name, type, nullable });
+      const schemas = {
+        rooms: JSON.stringify({
+          fields: [field("id", "int64"), field("name", "utf8"), field("zone", "utf8"), field("seats", "int64", true)],
+        }),
+        units: JSON.stringify({
+          fields: [field("id", "int64"), field("parent_id", "int64", true), field("name", "utf8"), field("zone", "utf8")],
+        }),
+      };
+      schemas.rooms2 = schemas.rooms;
+      window.__rooms = (n, zone = "north") =>
+        Array.from({ length: n }, (_, index) => ({
+          id: index + 1,
+          name: `R${index + 1}`,
+          zone: index % 2 ? "south" : zone,
+          seats: 10 * (index + 1),
+        }));
+
+      async function start() {
+        await init();
+        const provider = createLocalProvider(new Engine());
+        await provider.loadRows("rooms", window.__rooms(8), schemas.rooms);
+        await provider.loadRows(
+          "units",
+          [
+            { id: 1, parent_id: null, name: "Alpha", zone: "north" },
+            { id: 2, parent_id: 1, name: "Alpha child", zone: "north" },
+            { id: 3, parent_id: null, name: "Beta", zone: "south" },
+          ],
+          schemas.units,
+        );
+        const loader = await loadOpengrid();
+        window.__module = loader.module;
+        loader.module.set_columns(document.getElementById("plain"), { zone: { facet: "list" } });
+        window.__replace = (name, rows) => provider.loadRows(name, rows, schemas[name]);
+        for (const id of ["plain", "tree", "table", "pivot"]) {
+          loader.module.set_provider(document.getElementById(id), provider);
+        }
+        window.__ready = true;
+      }
+
+      window.__opengridReady = start();
+    </script>
+  </body>
+</html>

@@ -104,6 +104,45 @@ impl History {
         }
     }
 
+    /// The shown columns changed (see `AddedRows::remap`): a cell edit follows
+    /// its column to the new place, and one in a column that is no longer shown
+    /// goes — nobody can see what undoing it would do.
+    pub fn remap(&mut self, from: &[Option<usize>]) {
+        let place = |col: usize| from.iter().position(|old| *old == Some(col));
+        let pick = |values: &[Value]| -> Vec<Value> {
+            from.iter()
+                .map(|old| {
+                    old.and_then(|old| values.get(old))
+                        .cloned()
+                        .unwrap_or(Value::Null)
+                })
+                .collect()
+        };
+        let edit = |edit: &mut CellEdit| match place(edit.col) {
+            Some(col) => {
+                edit.col = col;
+                true
+            }
+            None => false,
+        };
+        for steps in [&mut self.undo, &mut self.redo] {
+            steps.retain_mut(|step| match step {
+                Step::Cell(cell) => edit(cell),
+                Step::Added(entry) => {
+                    entry.values = pick(&entry.values);
+                    true
+                }
+                Step::Paste { edits, added } => {
+                    edits.retain_mut(edit);
+                    for entry in added.iter_mut() {
+                        entry.values = pick(&entry.values);
+                    }
+                    !edits.is_empty() || !added.is_empty()
+                }
+            });
+        }
+    }
+
     pub fn can_undo(&self) -> bool {
         !self.undo.is_empty()
     }
