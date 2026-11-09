@@ -3489,6 +3489,34 @@ fn sync_descriptions(host: &HtmlElement) {
             }
         }
     }
+    // A further sort key's header is described by its place.
+    if let Ok(headers) = root.query_selector_all("th[aria-describedby]") {
+        for index in 0..headers.length() {
+            let Some(th) = headers
+                .item(index)
+                .and_then(|node| node.dyn_into::<Element>().ok())
+            else {
+                continue;
+            };
+            let Some(id) = th.get_attribute("aria-describedby") else {
+                continue;
+            };
+            let Some(position) = id
+                .strip_prefix(grid::SORT_KEY_ID_PREFIX)
+                .and_then(|position| position.parse().ok())
+            else {
+                continue;
+            };
+            description_node(
+                &document,
+                &store,
+                &id,
+                &tree_context.sort_key(position),
+                Some(&tree_context.lang),
+            );
+            wanted.push(id);
+        }
+    }
     let context = root
         .query_selector(&format!(
             r#"[aria-describedby~="{}"]"#,

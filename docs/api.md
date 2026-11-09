@@ -1336,6 +1336,7 @@ loader.module.set_texts(host, { lang: "de", loading: "Wird geladen …" });
 | `aggregateSum` / `aggregateAvg` / `aggregateCount` / `aggregateMin` / `aggregateMax` / `aggregateRange` | `Sum` / `Average` / `Count` / `Minimum` / `Maximum` / `Range` | |
 | `columnMenu` | `{column} column menu` | `{column}` |
 | `sortAscending` / `sortDescending` | `Sort ascending` / `Sort descending` | |
+| `sortKey` | `Sort key {position}` — a further sort key's place (1-based), said by its column header through `aria-describedby`; the primary key carries `aria-sort` | `{position}` |
 | `filterColumn` | `Filter …` | |
 | `aggregateGroup` / `aggregateNone` | `Aggregate in groups` / `No aggregate` | |
 | `groupByColumn` / `groupSecondLevel` / `ungroupColumn` | `Group by this column` / `Group as second level` / `Remove this grouping` | |

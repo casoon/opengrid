@@ -106,6 +106,20 @@ async function ariaSorts(page) {
   );
 }
 
+/** What a header is described by (`aria-describedby`), or null; the words of the nodes it names. */
+async function headerDescription(page, column) {
+  return page.evaluate((column) => {
+    const root = document.querySelector("opengrid-grid").shadowRoot;
+    const th = root.querySelector(`thead th[data-col="${column}"]`);
+    const ids = th.getAttribute("aria-describedby");
+    if (ids === null) return null;
+    return ids
+      .split(/\s+/)
+      .map((id) => root.getElementById(id)?.textContent ?? "(missing)")
+      .join(" ");
+  }, column);
+}
+
 /** The visible sort direction glyph of a column (empty when unsorted). */
 async function sortDirection(page, column) {
   return page.evaluate(
@@ -302,6 +316,42 @@ test("Shift+Enter from a header adds and removes an additional sort key", async 
     "none",
   ]);
   expect(await columnText(page, 2)).toEqual(["5.00", "10.00", "20.00", "30.00", "40.00"]);
+});
+
+test("a further sort key says its place through aria-describedby, the primary one has aria-sort", async ({
+  page,
+}) => {
+  // Issue #229: `aria-sort` names one header (ARIA 1.2), so the order of the
+  // others would be spoken nowhere. Three keys: customer, amount, then the first column.
+  await focusIn(page, 'th[data-col="1"]');
+  await page.keyboard.press("Enter");
+  await focusIn(page, 'th[data-col="2"]');
+  await page.keyboard.press("Shift+Enter");
+  await focusIn(page, 'th[data-col="0"]');
+  await page.keyboard.press("Shift+Enter");
+  await expect.poll(() => sortIndex(page, 0)).toBe("3");
+
+  expect(await ariaSorts(page)).toEqual(["none", "ascending", "none", "none"]);
+  expect(await headerDescription(page, 1)).toBeNull();
+  await expect.poll(() => headerDescription(page, 2)).toBe("Sort key 2");
+  expect(await headerDescription(page, 0)).toBe("Sort key 3");
+  expect(await headerDescription(page, 3)).toBeNull();
+
+  // Taking the primary key away moves the others up: amount leads, the first
+  // column is second, and the description follows the position.
+  await focusIn(page, 'th[data-col="1"]');
+  await page.keyboard.press("Shift+Enter");
+  await page.keyboard.press("Shift+Enter");
+  await expect.poll(() => sortIndex(page, 1)).toBe("");
+  await expect.poll(() => headerDescription(page, 0)).toBe("Sort key 2");
+  expect(await ariaSorts(page)).toEqual(["none", "none", "ascending", "none"]);
+  expect(await headerDescription(page, 2)).toBeNull();
+  expect(await headerDescription(page, 1)).toBeNull();
+
+  // Back to one key: nothing is described.
+  await focusIn(page, 'th[data-col="2"]');
+  await page.keyboard.press("Enter");
+  await expect.poll(() => headerDescription(page, 0)).toBeNull();
 });
 
 test("the header shows the sort direction, not only aria-sort", async ({ page }) => {

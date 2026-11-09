@@ -768,6 +768,7 @@ export type TextKey =
   | "columnMenu"
   | "sortAscending"
   | "sortDescending"
+  | "sortKey"
   | "filterColumn"
   | "aggregateGroup"
   | "aggregateNone"
