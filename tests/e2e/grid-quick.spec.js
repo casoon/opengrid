@@ -140,6 +140,11 @@ test("+ Group is a menu with the column menu's keys, and a pick adds a level", a
   await expect
     .poll(() => shadow(page, (root) => root.querySelector('[part="add-grouping"]').getAttribute("aria-disabled")))
     .toBe("true");
+  // Disabled, it still answers to what it shows (WCAG 2.5.3): the visible text
+  // first, then why it does nothing.
+  expect(await shadow(page, (root) => root.querySelector('[part="add-grouping"]').getAttribute("aria-label"))).toBe(
+    "+ Group. Grouped by two columns already",
+  );
 });
 
 test("has no axe violations with the dialog open, nor with the menu open", async ({ page }) => {

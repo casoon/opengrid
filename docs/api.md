@@ -1374,10 +1374,10 @@ loader.module.set_texts(host, { lang: "de", loading: "Wird geladen …" });
 | `addFilter` / `addFilterTitle` | `+ Filter` / `Add filter` — the toolbar's button and the dialog's title | |
 | `filterColumnLabel` / `filterConditionLabel` / `filterValueLabel` | `Column` / `Condition` / `Value` | |
 | `cancel` / `apply` | `Cancel` / `Apply` | |
-| `addGrouping` / `groupingFull` | `+ Group` / `Grouped by two columns already` — the button, and its name when no level can be added | |
+| `addGrouping` / `groupingFull` | `+ Group` / `Grouped by two columns already` — the button, and the reason that follows its text in its name when no level can be added (`+ Group. Grouped by two columns already`) | |
 | `pivotToolbar` / `pivotRows` / `pivotColumns` / `pivotMeasures` | `Pivot fields` / `Rows` / `Columns` / `Measures` — the pivot's field toolbar and its three groups | |
 | `addRow` / `addColumn` / `addMeasure` | `+ Row` / `+ Column` / `+ Measure` | |
-| `columnFull` / `nothingToAdd` | `Two column fields already` / `Nothing left to add` — an add button's name when it cannot add | |
+| `columnFull` / `nothingToAdd` | `Two column fields already` / `Nothing left to add` — the reason that follows an add button's text in its name when it cannot add (`+ Row. Nothing left to add`) | |
 | `fieldRemove` / `fieldEarlier` / `fieldLater` | `Remove {field}` / `Move {field} earlier` / `Move {field} later` | `{field}` |
 | `pivotFilters` / `pivotFilterLabel` / `pivotFilterHint` | `Filters` / `Add a filter` / `field = value · Enter` — the pivot's filter group, its field's name and hint | |
 | `treeContext` | `context` — a tree's row shown only because a match is below it | |

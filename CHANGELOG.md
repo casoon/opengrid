@@ -157,6 +157,17 @@ Two things belong in every release entry and are easy to leave out:
   a new public field (a struct literal without `..Limits::default()` no longer compiles),
   `QueryError` has two new variants, `SchemaError` one, and `Schema::check` refuses a column named
   `__og_…` or `__grouping_…`, which the connectors use for helper columns.
+- **Grid and pivot a11y: a disabled add button answers to what it shows** ([#306](https://github.com/casoon/opengrid/issues/306)).
+  axe-core 4.14 reports `label-content-name-mismatch` (WCAG 2.5.3, Label in Name) on `+ Group`
+  (`part="add-grouping"`) when it is `aria-disabled`, and on the pivot's `+ Row`, `+ Column` and
+  `+ Measure` (`part="add-field"`): the `aria-label` was the reason alone ("Nothing left to add"),
+  so a speaker saying "click + Row" did not match the name. The accessible name is now the visible
+  text, then the reason: `+ Row. Nothing left to add`. The reasons are the texts `groupingFull`,
+  `treeGroupIgnored`, `columnFull` and `nothingToAdd`, unchanged and still translatable; no key is
+  new or gone, but the name is now `{addGrouping|addRow|addColumn|addMeasure}. {reason}`, so a page
+  or test that read the whole name as the bare reason sees the longer one. A node's cell in a tree
+  that shows a subtree summary (`10 · Σ 15`, said "10. Sum of the subtree: 15") is not changed yet:
+  which name it should have is open on the issue.
 - **Connectors:** a query the server gave up on (its timeout, a client that left) kept running in the
   database. PostgreSQL now gets a cancel request for the connection when the request is dropped
   halfway (`/query`, `/pivot`, a pushed-down tree) and the connection is closed instead of reused.

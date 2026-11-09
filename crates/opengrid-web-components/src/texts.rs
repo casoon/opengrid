@@ -1257,6 +1257,12 @@ impl GridTexts {
     }
 }
 
+/// The name of a button that cannot act: its visible text first (WCAG 2.5.3,
+/// Label in Name), then the reason it cannot.
+pub(crate) fn reasoned(visible: &str, reason: &str) -> String {
+    format!("{visible}. {reason}")
+}
+
 /// Replaces every `{name}` in `template`.
 fn fill(template: &str, name: &str, value: &str) -> String {
     template.replace(&format!("{{{name}}}"), value)
@@ -1536,6 +1542,15 @@ mod tests {
         assert_eq!(texts.loading, "Loading …");
         assert_eq!(texts.empty, "No matches");
         assert_eq!(texts.clear, "Clear");
+    }
+
+    /// A button that cannot act keeps its visible text in its name (WCAG 2.5.3).
+    #[test]
+    fn a_disabled_button_is_named_by_its_text_first() {
+        let texts = GridTexts::default();
+        let name = reasoned(&texts.add_grouping, &texts.grouping_full);
+        assert_eq!(name, "+ Group. Grouped by two columns already");
+        assert!(name.starts_with(&texts.add_grouping));
     }
 
     /// One match is not "1 matches".

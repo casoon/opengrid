@@ -21,7 +21,7 @@ use opengrid_web_core::patch::{NodeAllocator, NodeId, Patch, PatchBuffer};
 
 use crate::shared::element;
 
-use crate::texts::GridTexts;
+use crate::texts::{GridTexts, reasoned};
 
 /// The custom element name (E1).
 pub const PIVOT_TAG: &str = "opengrid-pivot";
@@ -555,11 +555,14 @@ pub fn build_toolbar(
                 buffer,
                 button,
                 "aria-label",
-                if full {
-                    &texts.column_full
-                } else {
-                    &texts.nothing_to_add
-                },
+                &reasoned(
+                    add,
+                    if full {
+                        &texts.column_full
+                    } else {
+                        &texts.nothing_to_add
+                    },
+                ),
             );
         }
         buffer.push(Patch::SetText {
@@ -2062,6 +2065,13 @@ mod tests {
         // the column axis — nothing left to offer does.
         assert!(!markup.contains("Two column fields already"));
         assert_eq!(markup.matches("Nothing left to add").count(), 3);
+        // The name starts with the visible text (WCAG 2.5.3).
+        for add in ["+ Row", "+ Column", "+ Measure"] {
+            assert!(
+                markup.contains(&format!("{add}. Nothing left to add")),
+                "{add}: {markup}"
+            );
+        }
 
         let two = PivotView {
             rows: vec!["country".to_owned()],
@@ -2080,7 +2090,10 @@ mod tests {
             &PlainLook,
         );
         let markup = format!("{:?}", buffer.patches());
-        assert!(markup.contains("Two column fields already"), "{markup}");
+        assert!(
+            markup.contains("+ Column. Two column fields already"),
+            "{markup}"
+        );
     }
 
     /// A filter's chips are its clauses, said in words; they join back to one
