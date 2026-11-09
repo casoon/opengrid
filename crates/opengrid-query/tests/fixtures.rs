@@ -210,3 +210,28 @@ fn a_flat_tree_refuses_a_field_with_the_name_of_its_columns() {
         other => panic!("expected TreeFlatColumnTaken, got {other:?}"),
     }
 }
+
+/// Issue #222: `in`, `has_all`, `and` and `or` are bounded by
+/// `Limits::max_list_values`, not only by the size of the request.
+#[test]
+fn a_list_or_a_junction_past_the_maximum_is_refused() {
+    let limits = Limits {
+        max_list_values: 3,
+        ..Limits::default()
+    };
+    let check = |filter: &str| {
+        let json = format!(r#"{{"source":"orders","select":["customer"],"filter":{filter}}}"#);
+        let query: Query = opengrid_json::from_str(&json).unwrap();
+        query.validate(&orders(), &limits)
+    };
+    let eq = r#"{"field":"customer","op":"eq","value":"a"}"#;
+    assert!(check(r#"{"field":"customer","op":"in","value":["a","b","c"]}"#).is_ok());
+    let error = check(r#"{"field":"customer","op":"in","value":["a","b","c","d"]}"#).unwrap_err();
+    assert_eq!(error.code(), "ListTooLong", "{error}");
+    assert_eq!(error.path(), Some("filter.value"));
+    assert!(check(&format!(r#"{{"and":[{eq},{eq},{eq}]}}"#)).is_ok());
+    let error = check(&format!(r#"{{"and":[{eq},{eq},{eq},{eq}]}}"#)).unwrap_err();
+    assert_eq!(error.code(), "ListTooLong", "{error}");
+    let error = check(&format!(r#"{{"or":[{eq},{eq},{eq},{eq}]}}"#)).unwrap_err();
+    assert_eq!(error.code(), "ListTooLong", "{error}");
+}

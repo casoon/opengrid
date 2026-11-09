@@ -235,7 +235,7 @@ fn answer(
         let mut sql = Builder::default();
         Compiler::scoped(&mut sql);
         sql.push(&format!(" SELECT count(*) FROM scoped WHERE {KEY} = "));
-        sql.param(under, key_type);
+        sql.param(under, key_type)?;
         if count(connection, &sql)? == 0 {
             return Ok(empty(query, tree, matches, orphans));
         }
@@ -253,7 +253,7 @@ fn answer(
         match &tree.under {
             Some(under) => {
                 sql.push(&format!("c.{PARENT} = "));
-                sql.param(under, key_type);
+                sql.param(under, key_type)?;
             }
             None => sql.push(&is_root()),
         }
@@ -294,10 +294,10 @@ fn answer(
         sql.param(
             &Value::Int64(query.limit.map_or(-1, |limit| limit as i64)),
             DataType::Int64,
-        );
+        )?;
         if let Some(offset) = query.offset {
             sql.push(" OFFSET ");
-            sql.param(&Value::Int64(offset as i64), DataType::Int64);
+            sql.param(&Value::Int64(offset as i64), DataType::Int64)?;
         }
     }
 
@@ -364,7 +364,7 @@ fn subtree_aggregates(
                 sql.push(", ");
             }
             sql.push("(");
-            sql.param(&Value::Int64(*row), DataType::Int64);
+            sql.param(&Value::Int64(*row), DataType::Int64)?;
             sql.push(")");
         }
         sql.push(&format!(

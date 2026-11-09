@@ -126,6 +126,9 @@ pub struct Schema {
     fields: Vec<Field>,
 }
 
+/// The name prefixes no field may have: the connectors' helper columns.
+const RESERVED_PREFIXES: [&str; 2] = ["__og_", "__grouping_"];
+
 impl Schema {
     /// Builds a schema from fields in projection order.
     pub fn new(fields: Vec<Field>) -> Self {
@@ -207,6 +210,18 @@ impl Schema {
     /// required column derived from one that may be NULL.
     pub fn check(&self) -> Result<(), SchemaError> {
         for field in &self.fields {
+            // The connectors build helper columns under these prefixes (a
+            // tree's key, a pivot's grouping bits); a column of the same name
+            // would collide with one (issue #222).
+            if let Some(prefix) = RESERVED_PREFIXES
+                .iter()
+                .find(|prefix| field.name.as_str().starts_with(**prefix))
+            {
+                return Err(SchemaError::ReservedName {
+                    field: field.name.to_string(),
+                    prefix,
+                });
+            }
             let Some(derivation) = &field.from else {
                 continue;
             };
@@ -362,6 +377,18 @@ mod tests {
             chained.check(),
             Err(SchemaError::DerivedSource { .. })
         ));
+
+        for reserved in ["__og_key", "__og_row", "__grouping_country"] {
+            let taken = Schema::new(vec![Field::new(name(reserved), DataType::Int64)]);
+            assert!(
+                matches!(taken.check(), Err(SchemaError::ReservedName { .. })),
+                "{reserved}"
+            );
+        }
+        assert_eq!(
+            Schema::new(vec![Field::new(name("og_key"), DataType::Int64)]).check(),
+            Ok(())
+        );
 
         let mut wrong_type = derived_schema();
         wrong_type.fields[3].data_type = DataType::Utf8;

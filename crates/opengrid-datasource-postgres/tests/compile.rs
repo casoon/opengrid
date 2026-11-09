@@ -311,3 +311,28 @@ fn a_pivot_compiles_into_one_statement() {
     }
     insta::assert_snapshot!("pivot_sql", report);
 }
+
+/// Issue #222: a dotted table name is one name; a schema is given on its own,
+/// and each part is quoted by itself.
+#[test]
+fn a_table_in_a_schema_is_quoted_part_by_part() {
+    let checked = cases().into_iter().next().expect("a case");
+    let plain = compiler().compile(&checked.query).expect("compiles").sql;
+    assert!(plain.contains(r#"FROM "orders""#), "{plain}");
+
+    let dotted = PostgresCompiler::new("public.orders", schema())
+        .compile(&checked.query)
+        .expect("compiles")
+        .sql;
+    assert!(dotted.contains(r#"FROM "public.orders""#), "{dotted}");
+
+    let qualified = PostgresCompiler::new("orders", schema())
+        .in_namespace("sales")
+        .compile(&checked.query)
+        .expect("compiles")
+        .sql;
+    assert!(
+        qualified.contains(r#"FROM "sales"."orders""#),
+        "{qualified}"
+    );
+}

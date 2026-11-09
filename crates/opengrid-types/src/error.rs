@@ -44,6 +44,8 @@ pub enum SchemaError {
     WrongType { field: String, data_type: DataType },
     /// A required field is derived from one that may be NULL.
     NotNullable { field: String, source: String },
+    /// A field has a name the connectors use for their helper columns.
+    ReservedName { field: String, prefix: &'static str },
 }
 
 impl fmt::Display for SchemaError {
@@ -74,6 +76,11 @@ impl fmt::Display for SchemaError {
             SchemaError::NotNullable { field, source } => write!(
                 f,
                 "field {field:?} is required but derived from {source:?}, which may be NULL"
+            ),
+            SchemaError::ReservedName { field, prefix } => write!(
+                f,
+                "field {field:?} starts with {prefix:?}, which the connectors reserve for \
+                 their helper columns"
             ),
         }
     }
