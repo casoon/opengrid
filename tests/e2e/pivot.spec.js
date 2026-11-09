@@ -218,7 +218,10 @@ test.describe("pivot", () => {
       .poll(() =>
         page.evaluate(
           () =>
-            !!document.querySelector("opengrid-pivot").shadowRoot.querySelector("[data-filter-input]"),
+            !!document.querySelector("opengrid-pivot").shadowRoot.querySelector("[data-filter-input]") &&
+            !!document
+              .querySelector("opengrid-pivot")
+              .shadowRoot.querySelector("tbody tr[data-total]:last-child th"),
         ),
       )
       .toBe(true);
@@ -850,7 +853,7 @@ test.describe("pivot field toolbar", () => {
     // One change, one report; the focus is back on the button — which says
     // now that every field is in use.
     expect(await page.evaluate(() => window.__views.map((view) => view.rows))).toEqual([["country", "customer"]]);
-    await expect.poll(() => focused(page)).toMatchObject({ part: "add-field", name: "Nothing left to add" });
+    await expect.poll(() => focused(page)).toMatchObject({ part: "add-field", name: "+ Row. Nothing left to add" });
   });
 
   test("a field moves and goes, and the focus stays with it", async ({ page }) => {
