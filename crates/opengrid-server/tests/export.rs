@@ -47,7 +47,7 @@ async fn app() -> axum::Router {
         .allow_origin("http://127.0.0.1:8080")
         .token(DE, [("country", "DE")])
         .token(FR, [("country", "FR")])
-        .token(ALL, no_context())
+        .token(ALL, [("country", "-")])
         .source(
             "orders",
             fixture(),

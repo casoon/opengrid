@@ -105,6 +105,20 @@ query against the schema narrowed to `allowed_fields`, added the row filter with
 the token's context, and validated the result against the full schema. A connector only ever
 sees a `ValidatedQuery` that already carries every rule — it cannot forget one.
 
+One rule a connector must carry out itself: for a tree, the tenant rule is **only** in
+`tree.scope`, not in `query.filter` (a filter would turn the tree into a filtered one — T5 shows
+the ancestors of a match as context, and a flat export grows a `match` column). A connector that
+reports the capability `tree` therefore has to apply `tree.scope` to every row it reads, as the
+SQLite and PostgreSQL references do; one that honours only `query.filter` leaks other tenants'
+rows. A connector without the capability is asked for the rows of the scope through
+`Connector::tree`, whose default applies it.
+
+Startup. `Server::builder().build()` checks every token against every source's row filter: the
+context value is read as the filtered column's type (`"7"` for a `bigint` tenant), and a value of
+another type, a key the token does not carry or an operator the column cannot answer is a build
+error, as are a token value handed in twice and an `allow_origin` that is not a valid header
+value.
+
 ## A server in another language
 
 The Rust contract helps Rust programs. A server written in .NET, Java or Node implements the

@@ -35,8 +35,21 @@ Two things belong in every release entry and are easy to leave out:
   scanning every record first. The peak memory of loading the 1M-row demo file (85 MB) drops from
   431 MiB to 159 MiB (native, release build, maximum resident set size); the result is the same
   ([#215](https://github.com/casoon/opengrid/issues/215)).
+- **Server:** `ServerBuilder::build` now fails at startup for what used to fail on every request or
+  silently: a token whose context does not fit a source's row filter (a `tenant_id bigint` filter
+  never worked, the context was always sent as text; it is now read as the column's type), a token
+  value handed in twice (the last context replaced the first's, so the first tenant got the second's
+  rows), and an `allow_origin` that is not a valid header value (it was dropped). **What breaks:** a
+  server that was configured with any of these now refuses to start
+  ([#221](https://github.com/casoon/opengrid/issues/221)).
 - **Docs:** the project site uses the current shared theme (0.12.6) and ends with a link to the
   quickstart.
+- **API:** `opengrid-source-replaced` is frozen, typed in `OpengridEventMap` and in the events table
+  of the API reference, which says that `loader.js` dispatches it on the grid without bubbling
+  ([#234](https://github.com/casoon/opengrid/issues/234)). A test now reads the module's
+  `#[wasm_bindgen]` exports from the source and holds them against the frozen functions and an
+  explicit internal list, so a new export cannot slip past the freeze. The docs and types no longer
+  count events or functions.
 - **Packages:** the peer range of `vue` is `>=3.4.20` and that of `@types/react` is `>=18.3.0`
   ([#237](https://github.com/casoon/opengrid/issues/237)). The shipped Vue types import
   `DefineSetupFnComponent`, which Vue only has from 3.4.20; a project on 3.3 or early 3.4 got a
