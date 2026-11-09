@@ -4,8 +4,13 @@
 // the model's when it next syncs (E40).
 import { randomUUID } from "node:crypto";
 
+/** How many sessions the server keeps; the least recently used goes first (#242). */
+export const MAX_SESSIONS = 100;
+
 export class Sessions {
-  constructor() {
+  constructor(max = MAX_SESSIONS) {
+    this.max = max;
+    // A Map iterates in insertion order: the first key is the least recently used.
     this.sessions = new Map();
   }
 
@@ -26,11 +31,19 @@ export class Sessions {
       modelRevision: 1,
     };
     this.sessions.set(session.id, session);
+    while (this.sessions.size > this.max) {
+      this.sessions.delete(this.sessions.keys().next().value);
+    }
     return session;
   }
 
   get(id) {
-    return this.sessions.get(id);
+    const session = this.sessions.get(id);
+    if (session) {
+      this.sessions.delete(id);
+      this.sessions.set(id, session);
+    }
+    return session;
   }
 
   /** The model's view: the selection goes with the old one, as in the grid. */

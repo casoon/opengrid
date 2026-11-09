@@ -33,6 +33,10 @@ Two things belong in every release entry and are easy to leave out:
 
 - **Docs:** the project site uses the current shared theme (0.12.6) and ends with a link to the
   quickstart.
+- **MCP:** `opengrid_query` answers a window of 500 rows at most, the server keeps 100 sessions
+  (the least recently used goes first), the `view` of the tools is a typed schema instead of any
+  object, and a server source over `http://` is refused unless it is on the machine itself
+  ([#242](https://github.com/casoon/opengrid/issues/242)).
 
 ### Fixed
 
