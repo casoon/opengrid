@@ -290,6 +290,11 @@ SELECT "id" AS "id", "amount" AS "amount" FROM "orders" WHERE "amount" = $1::tex
   params:
     $1 = Decimal(Decimal { value: 99999999999, scale: 2 })
 
+# s8-integer-literal-on-decimal [S8]
+SELECT "id" AS "id", "amount" AS "amount" FROM "orders" WHERE "amount" > $1::text::numeric(12,2)
+  params:
+    $1 = Decimal(Decimal { value: 5000, scale: 2 })
+
 # s8-negative-decimals-order-exactly [S8]
 SELECT "id" AS "id", "amount" AS "amount" FROM "orders" WHERE "amount" < $1::text::numeric(12,2) ORDER BY "amount" ASC NULLS LAST
   params:
