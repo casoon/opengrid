@@ -48,3 +48,42 @@ pub fn aggregate_from(token: &str) -> Option<Summary> {
         _ => return None,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_token_reads_back_to_the_summary_that_wrote_it() {
+        for token in ["sum", "avg", "count", "min", "max", "range"] {
+            let summary = aggregate_from(token).expect(token);
+            assert_eq!(summary.as_str(), token);
+        }
+    }
+
+    #[test]
+    fn an_unknown_or_miscased_token_is_no_summary() {
+        for token in ["", "median", "SUM", "Range", " sum"] {
+            assert_eq!(aggregate_from(token), None, "{token:?}");
+        }
+    }
+
+    /// A range is not an aggregate of the query model: it is asked as the
+    /// smallest and the largest value, in that order, and the grid joins them.
+    #[test]
+    fn a_range_asks_min_then_max_and_the_others_ask_themselves() {
+        assert_eq!(
+            Summary::Range.functions(),
+            &[AggregateFn::Min, AggregateFn::Max]
+        );
+        for function in [
+            AggregateFn::Sum,
+            AggregateFn::Avg,
+            AggregateFn::Count,
+            AggregateFn::Min,
+            AggregateFn::Max,
+        ] {
+            assert_eq!(Summary::Fn(function).functions(), &[function]);
+        }
+    }
+}

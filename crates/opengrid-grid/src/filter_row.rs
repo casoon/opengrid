@@ -196,3 +196,243 @@ pub fn literal(text: &str, data_type: DataType) -> Option<opengrid_json::Json> {
         DataType::ListUtf8 | DataType::ListInt64 => literal(text, data_type.element()?),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use opengrid_json::Json;
+    use opengrid_types::Field;
+
+    fn name(text: &str) -> FieldName {
+        FieldName::new(text).unwrap()
+    }
+
+    fn schema() -> Schema {
+        Schema::new(vec![
+            Field::new(name("city"), DataType::Utf8),
+            Field::new(name("seats"), DataType::Int64),
+            Field::new(name("day"), DataType::Date),
+            Field::new(name("tags"), DataType::ListUtf8),
+            Field::new(name("ids"), DataType::ListInt64),
+        ])
+    }
+
+    fn entry(column: &str, op: FilterOp, value: &str) -> FilterEntry {
+        FilterEntry {
+            column: column.into(),
+            op,
+            value: value.into(),
+        }
+    }
+
+    fn cmp(op: CmpOp) -> FilterOp {
+        FilterOp::Cmp(op)
+    }
+
+    #[test]
+    fn an_operator_token_reads_back_including_the_tests_that_are_no_comparison() {
+        for token in [
+            "eq",
+            "ne",
+            "lt",
+            "lte",
+            "gt",
+            "gte",
+            "in",
+            "contains",
+            "starts_with",
+            "has",
+            "has_all",
+            "is_null",
+            "is_not_null",
+            "is_empty",
+        ] {
+            assert_eq!(FilterOp::parse(token).expect(token).as_str(), token);
+        }
+        assert_eq!(FilterOp::parse("like"), None);
+        assert_eq!(FilterOp::parse(""), None);
+    }
+
+    #[test]
+    fn a_literal_is_written_in_the_notation_of_its_column() {
+        assert_eq!(
+            literal(" ab ", DataType::Utf8),
+            Some(Json::String("ab".into()))
+        );
+        assert_eq!(literal("42", DataType::Int64), Some(Json::from(42i64)));
+        assert_eq!(literal("-7", DataType::Int64), Some(Json::from(-7i64)));
+        assert_eq!(literal("1.5", DataType::Int64), None);
+        assert_eq!(literal("x", DataType::Int64), None);
+        assert_eq!(literal("true", DataType::Bool), Some(Json::Bool(true)));
+        assert_eq!(literal("0", DataType::Bool), Some(Json::Bool(false)));
+        assert_eq!(literal("yes", DataType::Bool), None);
+    }
+
+    #[test]
+    fn a_float_takes_numbers_and_the_three_words_but_no_other_text() {
+        assert!(matches!(
+            literal("2.5", DataType::Float64),
+            Some(Json::Number(_))
+        ));
+        for word in ["NaN", "Infinity", "-Infinity"] {
+            assert_eq!(
+                literal(word, DataType::Float64),
+                Some(Json::String(word.into()))
+            );
+        }
+        assert_eq!(literal("abc", DataType::Float64), None);
+    }
+
+    #[test]
+    fn a_decimal_travels_as_a_string_and_only_digits_pass() {
+        let decimal = DataType::Decimal {
+            precision: 10,
+            scale: 2,
+        };
+        assert_eq!(
+            literal("-12.50", decimal),
+            Some(Json::String("-12.50".into()))
+        );
+        assert_eq!(literal("+3", decimal), Some(Json::String("+3".into())));
+        for bad in ["", ".5", "1.2.3", "1e3", "1,5", "--1", "abc"] {
+            assert_eq!(literal(bad, decimal), None, "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn a_date_is_year_month_day_and_a_timestamp_ends_in_z() {
+        assert_eq!(
+            literal("2026-11-09", DataType::Date),
+            Some(Json::String("2026-11-09".into()))
+        );
+        for bad in [
+            "2026-1-9",
+            "09.11.2026",
+            "2026-11-09T00:00:00Z",
+            "abcd-ef-gh",
+        ] {
+            assert_eq!(literal(bad, DataType::Date), None, "{bad:?}");
+        }
+        let stamp = "2026-11-09T10:00:00Z";
+        assert_eq!(
+            literal(stamp, DataType::Timestamp),
+            Some(Json::String(stamp.into()))
+        );
+        assert_eq!(literal("2026-11-09T10:00:00", DataType::Timestamp), None);
+        assert_eq!(literal("2026-11-09", DataType::Timestamp), None);
+    }
+
+    #[test]
+    fn a_list_column_is_asked_with_one_of_its_elements() {
+        assert_eq!(
+            literal("red", DataType::ListUtf8),
+            Some(Json::String("red".into()))
+        );
+        assert_eq!(literal("3", DataType::ListInt64), Some(Json::from(3i64)));
+        assert_eq!(literal("three", DataType::ListInt64), None);
+    }
+
+    #[test]
+    fn blank_values_and_unknown_columns_make_no_filter() {
+        let entries = [
+            entry("city", cmp(CmpOp::Eq), "   "),
+            entry("nowhere", cmp(CmpOp::Eq), "x"),
+            entry("not a name", cmp(CmpOp::Eq), "x"),
+        ];
+        assert_eq!(filter_expr(&entries, &schema()), Ok(None));
+        assert_eq!(filter_expr(&[], &schema()), Ok(None));
+    }
+
+    #[test]
+    fn entries_are_anded_in_order_with_typed_literals() {
+        let entries = [
+            entry("city", cmp(CmpOp::Contains), "Ber"),
+            entry("seats", cmp(CmpOp::Gte), "10"),
+        ];
+        assert_eq!(
+            filter_expr(&entries, &schema()),
+            Ok(Some(FilterExpr::And(vec![
+                FilterExpr::Cmp {
+                    field: name("city"),
+                    op: CmpOp::Contains,
+                    value: Json::String("Ber".into()),
+                },
+                FilterExpr::Cmp {
+                    field: name("seats"),
+                    op: CmpOp::Gte,
+                    value: Json::from(10i64),
+                },
+            ])))
+        );
+    }
+
+    /// The null tests and `is_empty` take no value, so a blank one still counts.
+    #[test]
+    fn the_operators_without_a_value_do_not_need_one() {
+        let entries = [
+            entry("city", FilterOp::IsNull, ""),
+            entry("seats", FilterOp::IsNotNull, ""),
+            entry("tags", FilterOp::IsEmpty, ""),
+        ];
+        assert_eq!(
+            filter_expr(&entries, &schema()),
+            Ok(Some(FilterExpr::And(vec![
+                FilterExpr::IsNull {
+                    field: name("city")
+                },
+                FilterExpr::IsNotNull {
+                    field: name("seats")
+                },
+                FilterExpr::IsEmpty {
+                    field: name("tags")
+                },
+            ])))
+        );
+    }
+
+    /// What a column cannot accept is not sent: every such entry is reported,
+    /// and none of the good ones goes out beside them.
+    #[test]
+    fn what_a_column_cannot_accept_is_reported_and_nothing_is_sent() {
+        let entries = [
+            entry("city", cmp(CmpOp::Eq), "Berlin"),
+            entry("seats", cmp(CmpOp::Eq), "many"),
+            entry("day", cmp(CmpOp::Eq), "tomorrow"),
+        ];
+        assert_eq!(
+            filter_expr(&entries, &schema()),
+            Err(vec![
+                FilterProblem {
+                    column: "seats".into(),
+                    value: "many".into()
+                },
+                FilterProblem {
+                    column: "day".into(),
+                    value: "tomorrow".into()
+                },
+            ])
+        );
+    }
+
+    #[test]
+    fn has_all_splits_at_commas_and_types_each_element() {
+        let entries = [entry("ids", cmp(CmpOp::HasAll), " 1, 2 ,,3 ")];
+        assert_eq!(
+            filter_expr(&entries, &schema()),
+            Ok(Some(FilterExpr::And(vec![FilterExpr::Cmp {
+                field: name("ids"),
+                op: CmpOp::HasAll,
+                value: Json::Array(vec![Json::from(1i64), Json::from(2i64), Json::from(3i64)]),
+            }])))
+        );
+        // One element that is no integer spoils the list.
+        let bad = [entry("ids", cmp(CmpOp::HasAll), "1,x")];
+        assert_eq!(
+            filter_expr(&bad, &schema()),
+            Err(vec![FilterProblem {
+                column: "ids".into(),
+                value: "1,x".into()
+            }])
+        );
+    }
+}
