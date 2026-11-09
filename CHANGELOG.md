@@ -66,6 +66,15 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Fixed
 
+- **Grid:** loading the source again leaves nothing of the old one behind
+  ([#226](https://github.com/casoon/opengrid/issues/226)). The selection is cleared (and the
+  `opengrid-selection-change` event and the status line say so), a tree asks for its levels again
+  instead of keeping the old ones, and a facet lists the new source's values. A result with fewer
+  rows no longer leaves selected rows that are not there. The rows the reader added and the undo
+  history now survive what rebuilds the grid (moving or hiding a column, `tree`, applying a view),
+  following their columns by name; a changed `datasource` still starts clean. `<opengrid-table>` and
+  `<opengrid-pivot>` re-run their query when `loadRows` or `load` replaces their source, which only
+  the grid did.
 - **Server:** a backend failure reaches the browser as one fixed sentence and a reference
   (`the data source failed (reference og-…)`), no longer as the database's text, which can name a
   table, a hidden column or a tenant's value. New `ServerBuilder::on_error(hook)` receives the full

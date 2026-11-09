@@ -34,6 +34,16 @@ use crate::history::History;
 use crate::saving::{CellState, Finding, Level, Saves};
 use crate::{CellRef, Patch, Window};
 
+/// What the reader did that the source does not know: the rows added and the
+/// edit history, with the columns they were made under (issue #226). A rebuild
+/// of the grid hands them to the state that replaces this one.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Edits {
+    added: AddedRows,
+    history: History,
+    columns: Vec<FieldName>,
+}
+
 /// What the grid is currently showing (plan point 41).
 ///
 /// The four states are mutually exclusive and cover every moment of a query's
@@ -482,6 +492,40 @@ impl GridState {
         self.saves = saves;
     }
 
+    /// Hands the added rows and the history to the state that replaces this
+    /// one (see [`take_saves`](Self::take_saves)).
+    pub fn take_edits(&mut self) -> Edits {
+        Edits {
+            added: std::mem::take(&mut self.added),
+            history: std::mem::take(&mut self.history),
+            columns: self
+                .schema
+                .fields()
+                .iter()
+                .map(|f| f.name.clone())
+                .collect(),
+        }
+    }
+
+    /// Takes over what an earlier state held. The columns may have been moved,
+    /// hidden or shown since: values and edits follow their column by name.
+    pub fn restore_edits(&mut self, mut edits: Edits) {
+        let from: Vec<Option<usize>> = self
+            .schema
+            .fields()
+            .iter()
+            .map(|field| edits.columns.iter().position(|name| *name == field.name))
+            .collect();
+        let same = edits.columns.len() == from.len()
+            && from.iter().enumerate().all(|(new, old)| *old == Some(new));
+        if !same {
+            edits.added.remap(&from);
+            edits.history.remap(&from);
+        }
+        self.added = edits.added;
+        self.history = edits.history;
+    }
+
     fn column_of(&self, name: &FieldName) -> Option<usize> {
         self.schema
             .fields()
@@ -717,6 +761,17 @@ impl GridState {
         self.page_offset = first;
         self.page = result.columns;
         self.status = status;
+        // A result with fewer rows leaves no selection behind on rows that are
+        // not there (issue #226).
+        let rows = self.row_count();
+        let kept = self.selection.partition_point(|row| *row < rows);
+        if kept < self.selection.len() {
+            self.selection.truncate(kept);
+            patches.push(Patch::Selection(self.selection.clone()));
+        }
+        if self.anchor.is_some_and(|anchor| anchor >= rows) {
+            self.anchor = None;
+        }
         patches
     }
 
@@ -1479,6 +1534,7 @@ mod selection_tests {
 mod edit_tests {
     use super::tests::{result, schema};
     use super::*;
+    use opengrid_types::DataType;
 
     fn grid() -> GridState {
         let mut state = GridState::new(schema());
@@ -1685,5 +1741,73 @@ mod edit_tests {
             !state.announce_selection_cleared(),
             "said once, not on every result"
         );
+    }
+
+    /// Issue #226: a result with fewer rows leaves no selection on rows that
+    /// are not there, and no anchor to extend from.
+    #[test]
+    fn a_smaller_result_clamps_the_selection() {
+        let mut state = GridState::new(schema());
+        state.apply_result(result(&[(1, "DE", 10)], 100));
+        state.toggle_selection(3);
+        state.toggle_selection(90);
+        let patches = state.apply_result(result(&[(1, "DE", 10)], 10));
+        assert_eq!(state.selection(), [3]);
+        assert!(patches.contains(&Patch::Selection(vec![3])));
+        // The anchor (90) is gone: `Shift` is a plain toggle.
+        state.extend_selection(5);
+        assert_eq!(state.selection(), [3, 5]);
+        assert!(
+            state
+                .apply_result(result(&[(1, "DE", 10)], 10))
+                .iter()
+                .all(|patch| !matches!(patch, Patch::Selection(_))),
+            "nothing to drop, nothing said"
+        );
+    }
+
+    /// Issue #226: a rebuild hands the added rows and the history on, and they
+    /// follow their column when columns move or go.
+    #[test]
+    fn edits_survive_a_rebuild_by_column_name() {
+        let mut old = grid();
+        old.set_add_row(true);
+        old.added_mut().set_draft(0, Value::Int64(7));
+        old.added_mut().set_draft(1, Value::Utf8("FR".into()));
+        old.added_mut().set_draft(2, Value::Int64(9));
+        let provisional = old.added_mut().fire().unwrap().provisional.clone();
+        old.history_mut().record(crate::Step::Cell(crate::CellEdit {
+            row: 0,
+            col: 2,
+            key: None,
+            before: Value::Int64(1),
+            after: Value::Int64(2),
+        }));
+        old.history_mut().record(crate::Step::Cell(crate::CellEdit {
+            row: 0,
+            col: 1,
+            key: None,
+            before: Value::Utf8("a".into()),
+            after: Value::Utf8("b".into()),
+        }));
+        let edits = old.take_edits();
+        assert!(old.added().rows().is_empty() && !old.history().can_undo());
+
+        // `country` is hidden, `amount` now comes first.
+        let mut fresh = GridState::new(Schema::new(vec![
+            Field::new(FieldName::new("amount").unwrap(), DataType::Int64),
+            Field::required(FieldName::new("id").unwrap(), DataType::Int64),
+        ]));
+        fresh.restore_edits(edits);
+        let row = &fresh.added().rows()[0];
+        assert_eq!(row.provisional, provisional);
+        assert_eq!(row.values, [Value::Int64(9), Value::Int64(7)]);
+        assert_eq!(fresh.added().draft().len(), 2);
+        // The edit in `amount` moved with it; the one in `country` is gone.
+        match fresh.history_mut().take_undo() {
+            Some(crate::Step::Cell(edit)) => assert_eq!(edit.col, 0),
+            other => panic!("expected the amount edit, got {other:?}"),
+        }
+        assert!(!fresh.history().can_undo());
     }
 }
