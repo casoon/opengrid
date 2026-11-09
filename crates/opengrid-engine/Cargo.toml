@@ -24,7 +24,7 @@ opengrid-json = { workspace = true }
 [dev-dependencies]
 opengrid-conformance = { path = "../opengrid-conformance" }
 proptest = "1"
-criterion = "0.5"
+criterion = "0.8"
 xtask = { path = "../xtask" }
 
 [[bench]]
