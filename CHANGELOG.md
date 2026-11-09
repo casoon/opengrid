@@ -36,6 +36,10 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Fixed
 
+- **Columns:** the binary wire reader no longer panics on forged counts and lengths: a row count of
+  `u64::MAX` overflowed `rows + 1` in a text or list column, and path lengths of a flat tree that wrap
+  around `u64` passed the sum check and then indexed out of range. Both are now a decode error, so a
+  hostile or broken server cannot trap the page ([#212](https://github.com/casoon/opengrid/issues/212)).
 - **Planner:** a tree the client builds (the source has no trees, or leaves the sort or the paging
   to the client) lost the query's sort when it was not paged, and a tree the source answered but
   could not sort or page came back as plain rows without `children`, `match` and `orphans`. The
