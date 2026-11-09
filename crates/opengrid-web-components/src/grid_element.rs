@@ -217,6 +217,9 @@ struct GridRuntime {
     replaced: Option<Option<Value>>,
     /// A paste shown and not yet applied (issue #184).
     paste: Option<paste::Pending>,
+    /// Bumped by every result of the whole query (not by a scroll's window): a
+    /// paste prepared against an earlier one lands on other rows (issue #228).
+    epoch: u64,
     /// The finding the live region has said for the cell being edited, so it is
     /// said once (issue #188).
     validation_said: Option<String>,
@@ -310,6 +313,7 @@ fn fresh_runtime(
         scroll_echo: None,
         replaced: None,
         paste: None,
+        epoch: 0,
         validation_said: None,
     }
 }
@@ -368,6 +372,10 @@ fn reset_runtime(host: &HtmlElement) {
         runtime.pending_offset = None;
         runtime.raf_pending = false;
         runtime.scroll_top = 0;
+        // The preview went with the DOM (`clear_root`); what it would apply
+        // names cells of a layout that is gone.
+        runtime.paste = None;
+        runtime.epoch += 1;
         // A rebuild (columns, texts, presentation) is not a reason to close
         // every group the reader opened: the same grouping keeps its expanded
         // set, and only its counts are asked for again.
@@ -1240,6 +1248,7 @@ fn settle(
     let Some(runtime) = runtime(host) else {
         return;
     };
+    let mut paste_dropped = false;
     // Rows of the selection that the result no longer has (issue #226).
     let mut shrunk = None;
     {
@@ -1249,6 +1258,12 @@ fn settle(
         if runtime.generation != generation {
             runtime.pending_focus |= focus;
             return;
+        }
+        // Another result for the whole query: the rows a shown paste would
+        // land on are other rows now (issue #228).
+        if kind == QueryKind::Data {
+            runtime.epoch += 1;
+            paste_dropped = runtime.paste.take().is_some();
         }
         match outcome {
             Ok(result) => {
@@ -1285,9 +1300,18 @@ fn settle(
             }
         }
     }
+    if paste_dropped {
+        if let Some(root) = host.shadow_root() {
+            paste::close_preview(&root);
+        }
+        runtime
+            .borrow_mut()
+            .state
+            .set_notice(texts(host).paste_discarded.clone());
+    }
     let focus = {
         let mut runtime = runtime.borrow_mut();
-        let asked = focus || std::mem::take(&mut runtime.pending_focus);
+        let asked = focus || paste_dropped || std::mem::take(&mut runtime.pending_focus);
         asked && may_take_focus(host)
     };
     // The first result brings the real schema, and a `set_columns` made before
