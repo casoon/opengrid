@@ -31,6 +31,10 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Changed
 
+- **Engine:** `load_csv` reads the file record by record into the column builders instead of
+  scanning every record first. The peak memory of loading the 1M-row demo file (85 MB) drops from
+  431 MiB to 159 MiB (native, release build, maximum resident set size); the result is the same
+  ([#215](https://github.com/casoon/opengrid/issues/215)).
 - **Server:** `ServerBuilder::build` now fails at startup for what used to fail on every request or
   silently: a token whose context does not fit a source's row filter (a `tenant_id bigint` filter
   never worked, the context was always sent as text; it is now read as the column's type), a token
@@ -40,6 +44,12 @@ Two things belong in every release entry and are easy to leave out:
   ([#221](https://github.com/casoon/opengrid/issues/221)).
 - **Docs:** the project site uses the current shared theme (0.12.6) and ends with a link to the
   quickstart.
+- **Packaging:** a bundler's production build finds the WebAssembly modules and the worker by
+  itself ([#238](https://github.com/casoon/opengrid/issues/238)). `loader.js` and `worker.js`
+  import the packaged glue statically and the worker is started with the
+  `new Worker(new URL(...))` form, so `loadOpengrid()` and `createWorkerProvider()` work in a Vite
+  build without `moduleUrl` or `workerUrl`; the options still replace the defaults. Before, such a
+  build fell back to the plain table and could not start the engine's worker.
 - **API:** `opengrid-source-replaced` is frozen, typed in `OpengridEventMap` and in the events table
   of the API reference, which says that `loader.js` dispatches it on the grid without bubbling
   ([#234](https://github.com/casoon/opengrid/issues/234)). A test now reads the module's
@@ -51,6 +61,8 @@ Two things belong in every release entry and are easy to leave out:
   `DefineSetupFnComponent`, which Vue only has from 3.4.20; a project on 3.3 or early 3.4 got a
   type error from our own `.d.ts`. `just types` now also checks the packed adapters against the
   lowest Vue, React and Svelte the ranges allow.
+- **npm:** `engines.node` of `@casoon/opengrid` is `>=22.12.0` (it was `>=18`, which is past its end of life), the same as `@casoon/opengrid-mcp`.
+- **Contributors:** the changelog's release headings use the Keep a Changelog form `## [x.y.z] - date`, and the version links at the end of the file work.
 
 ### Fixed
 
@@ -63,6 +75,16 @@ Two things belong in every release entry and are easy to leave out:
   thread (up to two minutes) instead of panicking. `opengrid-datasource-postgres` depends on `tokio` (already in the build) to send the cancel
   request, and SQLite queries of one connector still run one after the other
   ([#217](https://github.com/casoon/opengrid/issues/217)).
+- **Server:** a backend failure reaches the browser as one fixed sentence and a reference
+  (`the data source failed (reference og-…)`), no longer as the database's text, which can name a
+  table, a hidden column or a tenant's value. New `ServerBuilder::on_error(hook)` receives the full
+  cause under the same reference, and every refused token with its reason (never the token); there
+  is no logging without it. `DataSourceError::Data` is new: a tree with a key twice or a cycle
+  (T1, T3) is told to the caller in full instead of hidden as an outage, and the local engine's
+  `TooLarge` is `LimitExceeded` now. **What breaks:** `DataSourceError` has a new variant (an
+  exhaustive `match` no longer compiles), `AppState` a new field, and a client that parsed the
+  database text out of a `backend` message no longer can. A tree error still travels as `backend`;
+  a code of its own would be a wire change ([#219](https://github.com/casoon/opengrid/issues/219)).
 - **Columns:** the binary wire reader no longer panics on forged counts and lengths: a row count of
   `u64::MAX` overflowed `rows + 1` in a text or list column, and path lengths of a flat tree that wrap
   around `u64` passed the sum check and then indexed out of range. Both are now a decode error, so a
@@ -105,7 +127,7 @@ Two things belong in every release entry and are easy to leave out:
 - **Docs:** rustdoc builds without warnings again: broken and private intra-doc links in the
   crate docs now point at public paths or are plain code spans.
 
-## [0.14.0] — 2026-10-26
+## [0.14.0] - 2026-10-26
 
 **Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).
 **Browsers:** Chromium (the whole e2e suite: 1231 passed). Firefox and WebKit on Linux
@@ -207,7 +229,7 @@ workflow with npm Trusted Publishing.
   hero shows a tighter capture of the grid from the live demo, with a narrower one on phones.
 - **Releases:** the npm packages are published by a Release workflow on the tag, with npm Trusted Publishing (provenance, no token), after approval in the `npm` environment; `pnpm release` now checks the commit and sets the tag.
 
-## `@casoon/opengrid-mcp` [0.13.0] — 2026-10-14
+## [0.13.0-mcp] - 2026-10-14
 
 **Not yet tried in a host.** No chat client has rendered the view yet — Claude Desktop
 included; the e2e suite runs it in a test host of its own, and the release installs the
@@ -222,7 +244,7 @@ on one view; the rows stay with the server. Sources are a CSV with schema or a s
 CSP allows no WebAssembly. Published alone, under the tag `opengrid-mcp-v0.13.0`; from the
 next release on it comes out with `@casoon/opengrid`, with the same version.
 
-## [0.13.0] — 2026-10-10
+## [0.13.0] - 2026-10-10
 
 **Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).
 **Browsers:** Chromium (the whole e2e suite: 1155 passed). Firefox and WebKit on Linux (`gh workflow run ci.yml -f browsers=true`): 1141 passed, 19 skipped by design — no failures; the two of [#157](https://github.com/casoon/opengrid/issues/157) are gone.
@@ -281,7 +303,7 @@ level and path. Beside it, two Firefox fixes the new browser run found.
   stop of its own before the first button. It is out of the tab order now; every button is still
   reached by `Tab` and scrolls into view.
 
-## [0.12.0] — 2026-10-09
+## [0.12.0] - 2026-10-09
 
 **Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).
 **Browsers:** Chromium (the whole e2e suite: 1138 passed; a GC test of the Angular example passed on
@@ -323,7 +345,7 @@ bound; the engine is unchanged.
   `script-src 'self' 'wasm-unsafe-eval'; style-src 'self'` with editing, choices, read-only
   columns, widths and scrolling.
 
-## [0.11.0] — 2026-10-08
+## [0.11.0] - 2026-10-08
 
 **Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).
 **Browsers:** Chromium (the whole e2e suite: 1127 passed), WebKit (`just e2e-browsers` on macOS:
@@ -358,7 +380,7 @@ which this release raises (`scripts/module-budget.txt`); the engine is unchanged
   - States and values name records, so they outlive sorting, filtering and reloading; another
     `row-key` or `datasource` forgets them. A guide: *Saving edits from the page*.
 
-## [0.10.0] — 2026-10-02
+## [0.10.0] - 2026-10-02
 
 **Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).
 **Browsers:** Chromium (the whole e2e suite: 1116 passed; the 480 px filter test, a known flake, passed on its own rerun). WebKit and Firefox: **not run** for this release.
@@ -428,7 +450,7 @@ the tree in the grid and in the engine is most of it; `view_query`'s share is 5.
   `set_formats` built its formatters with `new Function`, which throws without `'unsafe-eval'`. They
   come from a static snippet now; no code is built at run time.
 
-## [0.9.0] — 2026-10-01
+## [0.9.0] - 2026-10-01
 
 **Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).
 **Browsers:** Chromium (the whole e2e suite, 1053 passed) and WebKit (Playwright's, not Safari:
@@ -473,7 +495,7 @@ what a browser draws as a table in about a second.
   with a sentence. The toolbar offers "+ Column" until there are two; `columnFull` reads "Two
   column fields already". Conformance cases with two column dimensions run on every path.
 
-## [0.8.1] — 2026-09-30
+## [0.8.1] - 2026-09-30
 
 **Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).
 **Browsers:** Chromium, the whole e2e suite. A fix to the types; nothing breaks.
@@ -485,7 +507,7 @@ what a browser draws as a table in about a second.
   `View | PivotView`. It is two overloads now: without a type argument the grid's `View`,
   with one (`get_view<PivotView>(pivot)`) the pivot's.
 
-## [0.8.0] — 2026-09-30
+## [0.8.0] - 2026-09-30
 
 **Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).
 **Browsers:** Chromium (the whole e2e suite, 1047 passed) and WebKit (Playwright's, not Safari:
@@ -546,7 +568,7 @@ the fields and filtering — each from the keyboard, each part of the view.
   plus "Remove all". The types come from a pivot the provider already answers (the pivot has no
   schema of its own). Three new text keys: `pivotFilters`, `pivotFilterLabel`, `pivotFilterHint`.
 
-## [0.7.2] — 2026-09-30
+## [0.7.2] - 2026-09-30
 
 **Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).
 **Browsers:** Chromium, the whole e2e suite. A fix to the toolbar's column list; nothing breaks.
@@ -560,7 +582,7 @@ the fields and filtering — each from the keyboard, each part of the view.
   back to the button), a click outside or the button. It no longer opens inline and pushes the
   toolbar aside.
 
-## [0.7.1] — 2026-09-30
+## [0.7.1] - 2026-09-30
 
 **Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).
 **Browsers:** Chromium, the whole e2e suite. A fix to the filter row of 0.7.0; nothing breaks.
@@ -571,7 +593,7 @@ the fields and filtering — each from the keyboard, each part of the view.
   wrote the placeholder `is` into every column it did not filter, so a text column showed
   *is* instead of *contains*. It is back on its type's default now, as after a reset.
 
-## [0.7.0] — 2026-09-30
+## [0.7.0] - 2026-09-30
 
 **Screen-reader pairings tested: none yet** — the VoiceOver pass is prepared and not yet run
 ([issue #5](https://github.com/casoon/opengrid/issues/5)). **Browsers:** Chromium and
@@ -596,7 +618,7 @@ menu), the engine unchanged at 115.2 KiB.
   **What breaks:** `filter-operator` is a `<button>` now, not a `<select>`; a page script that
   set its `value` sets nothing. The new part `operator-menu` is the menu.
 
-## [0.6.0] — 2026-09-29
+## [0.6.0] - 2026-09-29
 
 **Screen-reader pairings tested: none yet** — the VoiceOver pass is prepared and not yet run
 ([issue #5](https://github.com/casoon/opengrid/issues/5)). **Browsers:** Chromium, the whole
@@ -675,7 +697,7 @@ Playwright's Firefox does not start on the release machine.
   couldn't tell from an empty one. The waiting table now carries `aria-busy="true"`, and
   the table with its answer doesn't.
 
-## [0.5.0] — 2026-09-28
+## [0.5.0] - 2026-09-28
 
 **Screen-reader pairings tested: none yet** — unchanged since 0.1.0
 ([issue #5](https://github.com/casoon/opengrid/issues/5)). **Browsers:** Chromium, the whole
@@ -745,7 +767,7 @@ engine 122.6 → 124.9 KiB (the resource report's measuring, #70).
   columns' minimum widths — a column without a width of its own no longer shrinks to a few
   pixels, the grid scrolls sideways instead.
 
-## [0.4.0] — 2026-09-28
+## [0.4.0] - 2026-09-28
 
 **Screen-reader pairings tested: none yet** — unchanged since 0.1.0
 ([issue #5](https://github.com/casoon/opengrid/issues/5)). **Browsers:** as in 0.1.0.
@@ -842,7 +864,7 @@ unchanged): the crate `opengrid-arrow-engine` is now `opengrid-engine`. `load_cs
 fail, and `execute::QueryResult` carries a `table`. `opengrid-types` has no `arrow`
 feature any more.
 
-## [0.3.0] — 2026-09-27
+## [0.3.0] - 2026-09-27
 
 **Screen-reader pairings tested: none yet** — unchanged since 0.1.0
 ([issue #5](https://github.com/casoon/opengrid/issues/5)). **Browsers:** as in 0.1.0.
@@ -881,7 +903,7 @@ feature any more.
 changes. A page that styled `::part(status)` as a line above the rows finds it in the
 footer now.
 
-## [0.2.0] — 2026-09-27
+## [0.2.0] - 2026-09-27
 
 **Screen-reader pairings tested: none yet** — unchanged since 0.1.0
 ([issue #5](https://github.com/casoon/opengrid/issues/5)). **Browsers:** as in 0.1.0.
@@ -900,7 +922,7 @@ Replace the import — `from "@casoon/opengrid-react"` becomes
 `from "@casoon/opengrid/react"` — and drop the package from `dependencies`. The
 components, their props and their events are unchanged.
 
-## [0.1.0] — 2026-09-26
+## [0.1.0] - 2026-09-26
 
 The first release: `@casoon/opengrid`, `@casoon/opengrid-react`,
 `@casoon/opengrid-vue`, `@casoon/opengrid-svelte` and the `opengrid-*` crates,
@@ -1136,3 +1158,23 @@ tested.
   in all three adapters; Vite's development server only checked by hand; not
   tested: React 18 rendering on the server, SvelteKit, Nuxt, Next.js and Astro
   as real applications. A Vite production build needs `loadOpengrid({ moduleUrl })`.
+
+[Unreleased]: https://github.com/casoon/opengrid/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/casoon/opengrid/compare/v0.13.0...v0.14.0
+[0.13.0]: https://github.com/casoon/opengrid/compare/v0.12.0...v0.13.0
+[0.13.0-mcp]: https://github.com/casoon/opengrid/releases/tag/opengrid-mcp-v0.13.0
+[0.12.0]: https://github.com/casoon/opengrid/compare/v0.11.0...v0.12.0
+[0.11.0]: https://github.com/casoon/opengrid/compare/v0.10.0...v0.11.0
+[0.10.0]: https://github.com/casoon/opengrid/compare/v0.9.0...v0.10.0
+[0.9.0]: https://github.com/casoon/opengrid/compare/v0.8.1...v0.9.0
+[0.8.1]: https://github.com/casoon/opengrid/compare/v0.8.0...v0.8.1
+[0.8.0]: https://github.com/casoon/opengrid/compare/v0.7.2...v0.8.0
+[0.7.2]: https://github.com/casoon/opengrid/compare/v0.7.1...v0.7.2
+[0.7.1]: https://github.com/casoon/opengrid/compare/v0.7.0...v0.7.1
+[0.7.0]: https://github.com/casoon/opengrid/compare/v0.6.0...v0.7.0
+[0.6.0]: https://github.com/casoon/opengrid/compare/v0.5.0...v0.6.0
+[0.5.0]: https://github.com/casoon/opengrid/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/casoon/opengrid/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/casoon/opengrid/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/casoon/opengrid/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/casoon/opengrid/releases/tag/v0.1.0

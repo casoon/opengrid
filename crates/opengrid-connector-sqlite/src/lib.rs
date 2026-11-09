@@ -688,6 +688,13 @@ fn sqlite(error: rusqlite::Error) -> DataSourceError {
     backend(format!("SQLite: {error}"))
 }
 
+/// The data breaks a tree rule: the caller is told, it is no outage.
+fn data(message: impl Into<String>) -> DataSourceError {
+    DataSourceError::Data {
+        message: message.into(),
+    }
+}
+
 fn backend(message: impl Into<String>) -> DataSourceError {
     DataSourceError::Backend {
         message: message.into(),

@@ -43,7 +43,7 @@ pub struct QueryResult {
 }
 
 /// What the executor refuses to do.
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ExecuteError {
     /// The query names a column the data does not carry.
     MissingField { field: String },
