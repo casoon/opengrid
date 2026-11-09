@@ -355,6 +355,7 @@ pub fn set_values(host: &HtmlElement, values: JsValue) {
 /// data: the cells are the page's, in the page's language.
 ///
 /// A call adds to the texts an earlier one set; a key left out keeps what it was.
+/// `set_texts(host, null)` takes them all back to the English defaults.
 ///
 /// Exported as `set_texts` beside `set_provider`, and like it, it takes effect
 /// immediately: the grid rebuilds, because its labels are part of the one-time
@@ -364,7 +365,17 @@ pub fn set_values(host: &HtmlElement, values: JsValue) {
 #[wasm_bindgen(js_name = set_texts)]
 pub fn set_texts(host: &HtmlElement, values: JsValue) {
     // Over what the host has: the texts of an earlier call stay (issue #233).
-    let new = texts::from_js(texts::texts(host).as_ref().clone(), &values);
+    // `null` starts again from the defaults, the one way back.
+    let current = texts::texts(host);
+    let base = if values.is_null() || values.is_undefined() {
+        texts::GridTexts {
+            titles: current.titles.clone(),
+            ..Default::default()
+        }
+    } else {
+        current.as_ref().clone()
+    };
+    let new = texts::from_js(base, &values);
     texts::store(host, Rc::new(new));
     if host.shadow_root().is_none() {
         // Not connected yet — `connectedCallback` will read the stored texts.

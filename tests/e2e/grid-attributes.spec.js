@@ -65,6 +65,16 @@ test("set_texts adds to the texts an earlier call set", async ({ page }) => {
   await expect.poll(words).toEqual({ clear: "Leeren", group: "Filter hier" });
 });
 
+test("set_texts(host, null) takes the texts back to the defaults", async ({ page }) => {
+  await page.goto("/tests/e2e/fixtures/grid-texts.html");
+  await page.waitForFunction(() => window.__opengridReady);
+  const clear = () => shadow(page, "opengrid-grid", (root) => root.querySelector('[part="filter-clear"]')?.textContent);
+  await page.evaluate(() => window.__setTexts({ clear: "Leeren" }));
+  await expect.poll(clear).toBe("Leeren");
+  await page.evaluate(() => window.__setTexts(null));
+  await expect.poll(clear).toBe("Clear");
+});
+
 test("a pivot's label is mirrored, not asked again", async ({ page }) => {
   await page.goto("/tests/e2e/fixtures/pivot-local.html");
   await page.waitForFunction(() => window.__ready === true);

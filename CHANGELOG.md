@@ -138,7 +138,8 @@ Two things belong in every release entry and are easy to leave out:
   `row-key` that names no field no longer offers bulk editing or puts `key: null` into events.
   `set_texts` now does what the API reference says: it adds to the texts an earlier call set
   instead of starting from the defaults again (**behaviour change:** `set_texts(host, {})` no longer
-  resets the texts). The pivot mirrors a changed `label` instead of asking its provider again, as
+  resets the texts; `set_texts(host, null)` does, and `connect` uses it so that its `texts` option
+  still means all of them). The pivot mirrors a changed `label` instead of asking its provider again, as
   the grid and the table do.
 - **Grid:** with a `row-key`, undo and redo of a record that was not among the loaded rows (a filter
   or a scroll had moved it out) wrote the old value into whichever record sat in its former position.

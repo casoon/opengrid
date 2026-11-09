@@ -34,7 +34,7 @@ instead.
 | Function | What it does |
 |---|---|
 | `set_provider(host, provider)` | Attaches the data source. `provider.execute(queryJson, mode, { signal })` answers the result as JSON or in the [binary form](#the-binary-result-form) (`Uint8Array`, `ArrayBuffer`), or a Promise of either; the third argument is optional, and so is everything else. |
-| `set_texts(host, texts)` | Overrides any subset of the [texts](#texts); a second call adds to the first, and a key left out keeps what it was. Call it **before** `set_provider` and the component renders the right words from its first paint. |
+| `set_texts(host, texts)` | Overrides any subset of the [texts](#texts); a second call adds to the first, a key left out keeps what it was, and `null` takes them all back to the English defaults. Call it **before** `set_provider` and the component renders the right words from its first paint. |
 | `set_formats(host, formats)` | Per-column display formatting — see [`<opengrid-grid>`](#opengrid-grid). |
 | `set_choices(host, choices)` | Per-column editor choices: `{ customer: ["Alpha", "Beta"] }` turns that column's editor into a type-ahead combobox; an entry may be `{ value, label }`. A list column is edited only with choices — see [Lists](#lists). |
 | `get_view(host)` / `set_view(host, view, options?)` | Reads and applies the whole [view](#the-view) in one step; `options.notice` is said with the result. |
