@@ -17,6 +17,7 @@ permissions:
 jobs:
   publish-npm:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment: npm
     permissions:
       contents: read
@@ -25,11 +26,13 @@ jobs:
     steps:
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: "22.23"
           registry-url: https://registry.npmjs.org
 
+      # Pinned: this job holds `id-token: write`, so it must not run whatever
+      # npm shipped today. Bump deliberately; 11.x keeps `./dist/<file>` working.
       - name: Update npm (Trusted Publishing needs >= 11.5)
-        run: npm install -g npm@latest
+        run: npm install -g npm@11.21.2
 
       - name: Download the tarballs CI built for this commit
         env:
