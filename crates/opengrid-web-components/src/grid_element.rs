@@ -2278,18 +2278,22 @@ fn open_columns(root: &ShadowRoot, focus_first: bool) {
     place_under(&panel, &button);
     if !panel.has_attribute("data-watched") {
         let _ = panel.set_attribute("data-watched", "");
-        let owner = root.clone();
+        // Holds nothing of the grid: a closure that names the root keeps a
+        // removed grid alive (issue #227), so it finds the root from the event.
         let closed = Closure::<dyn FnMut(Event)>::new(move |event: Event| {
             let open = js_sys::Reflect::get(&event, &JsValue::from_str("newState"))
                 .ok()
                 .and_then(|state| state.as_string())
                 .is_some_and(|state| state == "open");
-            if !open && let Ok(Some(button)) = owner.query_selector("[part=\"columns-toggle\"]") {
+            if !open
+                && let Some(root) = root_of_target(&event)
+                && let Ok(Some(button)) = root.query_selector("[part=\"columns-toggle\"]")
+            {
                 let _ = button.set_attribute("aria-expanded", "false");
             }
-        });
-        let _ = panel.add_event_listener_with_callback("toggle", closed.as_ref().unchecked_ref());
-        closed.forget();
+        })
+        .into_js_value();
+        let _ = panel.add_event_listener_with_callback("toggle", closed.unchecked_ref());
     }
     if focus_first
         && let Ok(Some(first)) = panel.query_selector("input[type=\"checkbox\"]")
@@ -4514,6 +4518,22 @@ fn on_focus_in(event: Event) {
 }
 
 /// The shadow root a delegated listener was installed on.
+/// The shadow root the event's target sits in.
+///
+/// A listener that outlives its popup finds the grid from the event instead of
+/// holding it: a closure that captures the host, the root or a button in the
+/// grid is a root of its own and keeps a removed grid from being collected
+/// (issue #227).
+fn root_of_target(event: &Event) -> Option<ShadowRoot> {
+    event
+        .target()?
+        .dyn_into::<Element>()
+        .ok()?
+        .get_root_node()
+        .dyn_into::<ShadowRoot>()
+        .ok()
+}
+
 fn current_shadow_root(event: &Event) -> Option<ShadowRoot> {
     event.current_target()?.dyn_into::<ShadowRoot>().ok()
 }
@@ -7625,14 +7645,18 @@ fn show_quick(root: &ShadowRoot, popup: &HtmlElement, key: &str) {
     };
     let _ = button.set_attribute("aria-expanded", "true");
     place_under(popup, &button);
-    let owner = button.clone();
+    let key = key.to_owned();
     let closed = Closure::<dyn FnMut(Event)>::new(move |event: Event| {
         let open = js_sys::Reflect::get(&event, &JsValue::from_str("newState"))
             .ok()
             .and_then(|state| state.as_string())
             .is_some_and(|state| state == "open");
         if !open {
-            let _ = owner.set_attribute("aria-expanded", "false");
+            if let Some(root) = root_of_target(&event)
+                && let Some(button) = quick_button(&root, &key)
+            {
+                let _ = button.set_attribute("aria-expanded", "false");
+            }
             if let Some(popup) = event
                 .target()
                 .and_then(|target| target.dyn_into::<Element>().ok())
@@ -7640,9 +7664,9 @@ fn show_quick(root: &ShadowRoot, popup: &HtmlElement, key: &str) {
                 popup.remove();
             }
         }
-    });
-    let _ = popup.add_event_listener_with_callback("toggle", closed.as_ref().unchecked_ref());
-    closed.forget();
+    })
+    .into_js_value();
+    let _ = popup.add_event_listener_with_callback("toggle", closed.unchecked_ref());
 }
 
 /// Closes an open quick popup; with `refocus`, the focus goes back to its button.
@@ -7743,7 +7767,6 @@ fn open_filter_dialog(host: &HtmlElement) {
     {
         let _ = column.focus();
     }
-    let owner = host.clone();
     let changed = Closure::<dyn FnMut(Event)>::new(move |event: Event| {
         let Some(target) = event
             .target()
@@ -7760,13 +7783,19 @@ fn open_filter_dialog(host: &HtmlElement) {
             return;
         };
         match target.get_attribute("data-dialog").as_deref() {
-            Some("column") => fill_conditions(&owner, &dialog, &target.value()),
+            Some("column") => {
+                if let Some(root) = root_of_target(&event)
+                    && let Ok(owner) = root.host().dyn_into::<HtmlElement>()
+                {
+                    fill_conditions(&owner, &dialog, &target.value());
+                }
+            }
             Some("op") => show_value_field(&dialog, &target.value()),
             _ => {}
         }
-    });
-    let _ = dialog.add_event_listener_with_callback("change", changed.as_ref().unchecked_ref());
-    changed.forget();
+    })
+    .into_js_value();
+    let _ = dialog.add_event_listener_with_callback("change", changed.unchecked_ref());
 }
 
 /// The conditions `column`'s type allows — the filter row's own list — and the
@@ -8154,14 +8183,17 @@ fn open_operator_menu(host: &HtmlElement, col: usize, last: bool) {
     let _ = button.set_attribute("aria-expanded", "true");
     place_under(&menu, &button);
     // A click outside closes the popover by itself; the button must say so.
-    let owner = button.clone();
     let closed = Closure::<dyn FnMut(Event)>::new(move |event: Event| {
         let open = js_sys::Reflect::get(&event, &JsValue::from_str("newState"))
             .ok()
             .and_then(|state| state.as_string())
             .is_some_and(|state| state == "open");
         if !open {
-            let _ = owner.set_attribute("aria-expanded", "false");
+            if let Some(root) = root_of_target(&event)
+                && let Some(operator) = OperatorControl::of(&root, col)
+            {
+                let _ = operator.element().set_attribute("aria-expanded", "false");
+            }
             if let Some(popup) = event
                 .target()
                 .and_then(|target| target.dyn_into::<Element>().ok())
@@ -8169,9 +8201,9 @@ fn open_operator_menu(host: &HtmlElement, col: usize, last: bool) {
                 popup.remove();
             }
         }
-    });
-    let _ = menu.add_event_listener_with_callback("toggle", closed.as_ref().unchecked_ref());
-    closed.forget();
+    })
+    .into_js_value();
+    let _ = menu.add_event_listener_with_callback("toggle", closed.unchecked_ref());
 
     let selector = if last {
         "[role=\"menuitemradio\"]:last-child"
