@@ -3251,6 +3251,19 @@ pub fn patch_grid(
                 .map_or("none", |position| aria_sort(sorts[position].1))
                 .to_owned(),
         });
+        // A further key says its place instead: a hidden node the element keeps
+        // (`SORT_KEY_ID_PREFIX`), the header described by it.
+        match key.filter(|position| *position > 0) {
+            Some(position) => buffer.push(Patch::SetAttribute {
+                node: header.cell,
+                name: "aria-describedby".to_owned(),
+                value: format!("{SORT_KEY_ID_PREFIX}{}", position + 1),
+            }),
+            None => buffer.push(Patch::RemoveAttribute {
+                node: header.cell,
+                name: "aria-describedby".to_owned(),
+            }),
+        }
         buffer.push(Patch::SetAttribute {
             node: header.cell,
             name: "tabindex".to_owned(),
@@ -4298,6 +4311,10 @@ fn patch_tree_row(
 /// The id of the hidden node that says "context", which the first cell of a
 /// tree row shown only for the match below it is described by.
 pub const TREE_CONTEXT_ID: &str = "og-tree-context";
+
+/// The id prefix of the hidden nodes that say a header's place among several
+/// sort keys; the 1-based position follows.
+pub const SORT_KEY_ID_PREFIX: &str = "og-sort-key-";
 
 /// The id prefix of the hidden nodes that hold a cell's validation sentence.
 pub const FINDING_ID_PREFIX: &str = "og-finding-";

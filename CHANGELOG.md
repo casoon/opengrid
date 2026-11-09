@@ -54,6 +54,11 @@ Two things belong in every release entry and are easy to leave out:
   ([#221](https://github.com/casoon/opengrid/issues/221)).
 - **Docs:** the project site uses the current shared theme (0.12.6) and ends with a link to the
   quickstart.
+- **Grid:** a further sort key says its place to a screen reader. `aria-sort` stays on the primary
+  key only (ARIA 1.2); the header of the second and later keys is described by "Sort key 2", "Sort key
+  3" … through `aria-describedby` and a hidden node. **Public API:** the new text key `sortKey`
+  (`Sort key {position}`, 1-based) for `set_texts`, documented in `docs/api.md`
+  ([#229](https://github.com/casoon/opengrid/issues/229)).
 - **Packaging:** a bundler's production build finds the WebAssembly modules and the worker by
   itself ([#238](https://github.com/casoon/opengrid/issues/238)). `loader.js` and `worker.js`
   import the packaged glue statically and the worker is started with the
