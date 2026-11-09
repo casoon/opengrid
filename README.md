@@ -57,9 +57,9 @@ as the npm package, so give every `opengrid-*` crate the same one:
 
 ```toml
 [dependencies]
-opengrid-server = "0.14"           # the gateway, as a library
-opengrid-connector-sqlite = "0.14" # or opengrid-datasource-postgres
-opengrid-engine = "0.14"           # the engine alone, native
+opengrid-server = "0.15"           # the gateway, as a library
+opengrid-connector-sqlite = "0.15" # or opengrid-datasource-postgres
+opengrid-engine = "0.15"           # the engine alone, native
 ```
 
 While the version is 0.x, a minor bump may break the Rust API
@@ -175,7 +175,7 @@ shown with `get_pivot`. See [Export](https://github.com/casoon/opengrid/blob/mai
 - [Guides](https://github.com/casoon/opengrid/tree/main/docs/guides) and the
   [project page](https://casoon.github.io/opengrid/)
 - [In a chat client](https://github.com/casoon/opengrid/blob/main/docs/guides/mcp.md) —
-  the grid as an MCP App, `@casoon/opengrid-mcp` (not released yet)
+  the grid as an MCP App, [`@casoon/opengrid-mcp`](https://www.npmjs.com/package/@casoon/opengrid-mcp)
 
 ## Accessible and machine-readable: the aim
 
