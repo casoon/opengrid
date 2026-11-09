@@ -130,6 +130,27 @@ test("sorting drops the selection, and says so", async ({ page }) => {
     .toContain("Selection cleared");
 });
 
+test("the table says several rows can be selected, and each row says whether it is", async ({
+  page,
+}) => {
+  // `Shift`+`Space` and `Ctrl`+`A` select several (ARIA 1.2 grid).
+  await open(page);
+  const state = () =>
+    page.evaluate(() => {
+      const root = document.querySelector("opengrid-grid").shadowRoot;
+      return {
+        multi: root.querySelector("table").getAttribute("aria-multiselectable"),
+        rows: [...root.querySelectorAll("tbody tr[aria-rowindex]")].map((tr) =>
+          tr.getAttribute("aria-selected"),
+        ),
+      };
+    });
+  const before = await state();
+  expect(before.multi).toBe("true");
+  expect(before.rows.length).toBeGreaterThan(0);
+  for (const selected of before.rows) expect(selected).toBe("false");
+});
+
 test("has no axe violations with a selection", async ({ page }) => {
   await open(page);
   await focusCell(page, 'td[data-row="2"][data-col="0"]');

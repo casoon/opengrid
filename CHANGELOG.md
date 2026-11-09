@@ -135,6 +135,13 @@ Two things belong in every release entry and are easy to leave out:
   scope and sums too, which it did not, so a scoped or summing tree failed with an unknown column.
   The hybrid conformance run now covers the tree and list cases
   ([#211](https://github.com/casoon/opengrid/issues/211)).
+
+- **Grid: the ARIA of grouping, selection and sorting** ([#229](https://github.com/casoon/opengrid/issues/229)).
+  Group rows and grouped data rows carry `aria-posinset` / `aria-setsize` (the total row none), the
+  `<table>` carries `aria-multiselectable="true"` while selection is on, rows carry no
+  `aria-selected` while grouped (selection is off there), and only the primary sort key sets
+  `aria-sort`: further keys show their order and direction in the header's marks, which stay
+  `aria-hidden` — they are not spoken (there is no text to speak them with yet).
 - **Engine:** a decimal `sum` of 39 digits was returned as a `decimal(38, s)` that neither wire form
   could read back; it is now an overflow error, like an `int64` sum past its limit. A decimal pushed
   into a column of another scale was stored with a different meaning (100 at scale 0 became `1.00`);

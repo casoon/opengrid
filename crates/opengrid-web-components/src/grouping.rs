@@ -138,6 +138,10 @@ pub enum Item {
         expanded: bool,
         /// One value per requested aggregate (point 63).
         aggregates: Vec<Value>,
+        /// Its place among the groups of its level inside the same parent,
+        /// 1-based, and how many there are — `aria-posinset`/`aria-setsize`.
+        position: u64,
+        siblings: u64,
     },
     /// The grand total over every matching row (point 63) — the last position
     /// of the list, so the keys and a screen reader reach it like any row.
@@ -153,6 +157,9 @@ pub enum Item {
         keys: Vec<Json>,
         /// Its index inside that group, in the current sort.
         offset: u64,
+        /// How many rows that group has — `aria-setsize`, with `offset + 1`
+        /// as `aria-posinset`.
+        size: u64,
     },
 }
 
@@ -418,6 +425,8 @@ impl Grouping {
                 count: group.count,
                 expanded: self.is_open(&path),
                 aggregates: group.aggregates.clone(),
+                position: index as u64 + 1,
+                siblings: groups.len() as u64,
             });
         }
         let mut rest = inside - 1;
@@ -426,10 +435,12 @@ impl Grouping {
             return Some(Item::Row {
                 keys: vec![group.key.clone()],
                 offset: rest,
+                size: group.count,
             });
         }
 
-        for child in group.children.iter().flatten() {
+        let siblings = group.children.iter().flatten().count() as u64;
+        for (child_index, child) in group.children.iter().flatten().enumerate() {
             let size = self.child_size(&group.id(), child);
             if rest < size {
                 let keys = vec![group.key.clone(), child.key.clone()];
@@ -441,11 +452,14 @@ impl Grouping {
                         count: child.count,
                         expanded: size > 1,
                         aggregates: child.aggregates.clone(),
+                        position: child_index as u64 + 1,
+                        siblings,
                     }
                 } else {
                     Item::Row {
                         keys,
                         offset: rest - 1,
+                        size: child.count,
                     }
                 });
             }
@@ -492,7 +506,7 @@ impl Grouping {
         let mut out: Vec<Fetch> = Vec::new();
         let end = start.saturating_add(count).min(self.len());
         for position in start..end {
-            let Some(Item::Row { keys, offset }) = self.item_at(position) else {
+            let Some(Item::Row { keys, offset, .. }) = self.item_at(position) else {
                 continue;
             };
             if let Some(last) = out.last_mut()
@@ -763,7 +777,8 @@ mod tests {
             grouping.item_at(2),
             Some(Item::Row {
                 keys: vec![key("FR")],
-                offset: 0
+                offset: 0,
+                size: 1
             })
         );
         assert!(matches!(grouping.item_at(3), Some(Item::Group { .. })));
@@ -784,7 +799,8 @@ mod tests {
             grouping.item_at(11),
             Some(Item::Row {
                 keys: vec![Json::Null],
-                offset: 1
+                offset: 1,
+                size: 2
             })
         );
         assert!(matches!(grouping.item_at(12), Some(Item::Total { .. })));
@@ -963,7 +979,8 @@ mod tests {
             grouping.item_at(4),
             Some(Item::Row {
                 keys: vec![key("DE"), Json::Null],
-                offset: 1
+                offset: 1,
+                size: 2
             })
         );
         assert_eq!(grouping.position_of(&[key("DE"), Json::Null]), Some(2));
