@@ -105,6 +105,10 @@ pub struct GridTexts {
     pub column_menu: String,
     pub sort_ascending: String,
     pub sort_descending: String,
+    /// A further sort key's place, said by its column header (issue #229). May
+    /// use `{position}`, 1-based: the primary key is key 1 and carries
+    /// `aria-sort` instead.
+    pub sort_key: String,
     /// The entry that jumps to the column's filter field.
     pub filter_column: String,
     /// The group of aggregate choices in the menu.
@@ -391,6 +395,7 @@ pub(crate) const KEYS: &[&str] = &[
     "columnMenu",
     "sortAscending",
     "sortDescending",
+    "sortKey",
     "filterColumn",
     "aggregateGroup",
     "aggregateNone",
@@ -593,6 +598,7 @@ impl Default for GridTexts {
             column_menu: "{column} column menu".to_owned(),
             sort_ascending: "Sort ascending".to_owned(),
             sort_descending: "Sort descending".to_owned(),
+            sort_key: "Sort key {position}".to_owned(),
             filter_column: "Filter …".to_owned(),
             aggregate_group: "Aggregate in groups".to_owned(),
             aggregate_none: "No aggregate".to_owned(),
@@ -1172,6 +1178,11 @@ impl GridTexts {
         )
     }
 
+    /// What a header says of its place among several sort keys.
+    pub fn sort_key(&self, position: u64) -> String {
+        fill(&self.sort_key, "position", &position.to_string())
+    }
+
     /// A column that cannot move any further.
     pub fn column_at_edge(&self, column: &str) -> String {
         fill(&self.column_at_edge, "column", self.column(column))
@@ -1346,6 +1357,7 @@ mod host {
         overwrite(&mut texts.column_menu, string("columnMenu"));
         overwrite(&mut texts.sort_ascending, string("sortAscending"));
         overwrite(&mut texts.sort_descending, string("sortDescending"));
+        overwrite(&mut texts.sort_key, string("sortKey"));
         overwrite(&mut texts.filter_column, string("filterColumn"));
         overwrite(&mut texts.aggregate_group, string("aggregateGroup"));
         overwrite(&mut texts.aggregate_none, string("aggregateNone"));
@@ -1527,6 +1539,14 @@ mod tests {
     }
 
     /// One match is not "1 matches".
+    #[test]
+    fn a_sort_key_names_its_place() {
+        let mut texts = GridTexts::default();
+        assert_eq!(texts.sort_key(2), "Sort key 2");
+        texts.sort_key = "Sortierschlüssel {position}".to_owned();
+        assert_eq!(texts.sort_key(3), "Sortierschlüssel 3");
+    }
+
     #[test]
     fn the_count_line_has_a_singular() {
         let texts = GridTexts::default();
