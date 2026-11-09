@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>opengrid grid scroll bench</title>
+    <style>
+      opengrid-grid {
+        display: block;
+        height: 720px;
+        --og-row-height: 32px;
+      }
+    </style>
+  </head>
+  <body>
+    <opengrid-grid
+      label="Bench"
+      datasource="bench"
+      columns="id,region,amount,day,note,qty,ratio,flag,city,code"
+    ></opengrid-grid>
+    <script type="module">
+      // Issue #235: what the grid costs per scroll frame, per filter and for
+      // Ctrl+A, over 100 000 rows and 10 columns from the real engine. The
+      // page only sets up; scripts/measure-grid.mjs drives and measures it.
+      import { loadOpengrid, createLocalProvider } from "/packages/opengrid/loader.js";
+      import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+
+      const ROWS = 100_000;
+      const REGIONS = ["north", "east", "south", "west", "centre"];
+      const CITIES = ["Berlin", "Hamburg", "Köln", "München", "Leipzig", "Essen", "Dresden"];
+
+      function csv() {
+        const lines = ["id,region,amount,day,note,qty,ratio,flag,city,code"];
+        for (let id = 1; id <= ROWS; id += 1) {
+          const cents = ((id * 7919) % 2_000_001) - 1_000_000;
+          const sign = cents < 0 ? "-" : "";
+          const abs = Math.abs(cents);
+          const amount = `${sign}${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, "0")}`;
+          const day = new Date(Date.UTC(2020, 0, 1) + (id % 1500) * 86_400_000)
+            .toISOString()
+            .slice(0, 10);
+          lines.push(
+            [
+              id,
+              REGIONS[(id * 7) % 5],
+              amount,
+              day,
+              `note ${id % 89}`,
+              id % 977,
+              ((id * 31) % 1000) / 7,
+              id % 3 === 0 ? "true" : "false",
+              CITIES[id % 7],
+              `C-${String(id % 10000).padStart(5, "0")}`,
+            ].join(","),
+          );
+        }
+        return `${lines.join("\n")}\n`;
+      }
+
+      const schema = JSON.stringify({
+        fields: [
+          { name: "id", type: "int64", nullable: false },
+          { name: "region", type: "utf8", nullable: true },
+          { name: "amount", type: { decimal: { precision: 12, scale: 2 } }, nullable: true },
+          { name: "day", type: "date", nullable: true },
+          { name: "note", type: "utf8", nullable: true },
+          { name: "qty", type: "int64", nullable: true },
+          { name: "ratio", type: "float64", nullable: true },
+          { name: "flag", type: "bool", nullable: true },
+          { name: "city", type: "utf8", nullable: true },
+          { name: "code", type: "utf8", nullable: true },
+        ],
+      });
+
+      async function start() {
+        const loader = await loadOpengrid();
+        await init();
+        const engine = new Engine();
+        const provider = createLocalProvider(engine);
+        await provider.load("bench", new TextEncoder().encode(csv()), schema);
+        loader.module.set_provider(document.querySelector("opengrid-grid"), provider);
+      }
+
+      // The DOM writes the grid makes, counted at the prototype the WASM glue
+      // calls through. `window.__writes` is read and reset by the script.
+      const writes = { setAttribute: 0, removeAttribute: 0, textContent: 0, style: 0, append: 0 };
+      window.__writes = writes;
+      const wrap = (proto, name, key) => {
+        const original = proto[name];
+        proto[name] = function (...args) {
+          writes[key] += 1;
+          return original.apply(this, args);
+        };
+      };
+      wrap(Element.prototype, "setAttribute", "setAttribute");
+      wrap(Element.prototype, "removeAttribute", "removeAttribute");
+      wrap(Node.prototype, "appendChild", "append");
+      const textContent = Object.getOwnPropertyDescriptor(Node.prototype, "textContent");
+      Object.defineProperty(Node.prototype, "textContent", {
+        ...textContent,
+        set(value) {
+          writes.textContent += 1;
+          textContent.set.call(this, value);
+        },
+      });
+      const cssText = Object.getOwnPropertyDescriptor(CSSStyleDeclaration.prototype, "cssText");
+      Object.defineProperty(CSSStyleDeclaration.prototype, "cssText", {
+        ...cssText,
+        set(value) {
+          writes.style += 1;
+          cssText.set.call(this, value);
+        },
+      });
+      wrap(CSSStyleDeclaration.prototype, "setProperty", "style");
+
+      window.__opengridReady = start();
+    </script>
+  </body>
+</html>
