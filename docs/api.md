@@ -264,6 +264,9 @@ header is a real `checkbox` inside the header cell — a `columnheader` may not
 carry `aria-checked` — and it is tri-state: empty, `mixed`, checked. The
 per-row mark is decoration; the row itself says `aria-selected`, and a second
 voice per row would double every announcement.
+The table carries `aria-multiselectable="true"` (`Shift`+`Space` and `Ctrl`+`A` select
+several); while grouped, where selection is off, neither the table nor a row says anything
+of a selection.
 
 Column visibility is a panel under its button (*Columns*, in the filter row, or in
 the toolbar when there is one): a checkbox per column, including the hidden ones —
@@ -462,8 +465,10 @@ column. The menu opens below its header and never covers it.
 ```
 
 While `group-by` is set, the grid is a **`treegrid`**: group headers carry
-`aria-level` and `aria-expanded`, data rows sit one level below the innermost
-group. It stays **virtualized** — the group query answers each group's row
+`aria-level`, `aria-expanded` and `aria-posinset` / `aria-setsize` (the group's place among
+the groups of its level, so a pooled window of rows still says "group 3 of 7"), data rows sit one
+level below the innermost group with their own place among that group's rows. The total row is
+no group and carries neither. It stays **virtualized** — the group query answers each group's row
 count, and from the counts and the open groups the display list is arithmetic,
 so `aria-rowcount` is still one number and scrolling still adds no DOM rows.
 The rows of a visible window are fetched per group they belong to: one query per

@@ -72,6 +72,13 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Fixed
 
+- **Grid: the ARIA of grouping, selection and sorting** ([#229](https://github.com/casoon/opengrid/issues/229)).
+  Group rows and grouped data rows carry `aria-posinset` / `aria-setsize` (the total row none), the
+  `<table>` carries `aria-multiselectable="true"` while selection is on, rows carry no
+  `aria-selected` while grouped (selection is off there), and only the primary sort key sets
+  `aria-sort`: further keys show their order and direction in the header's marks, which stay
+  `aria-hidden` — they are not spoken (there is no text to speak them with yet).
+
 - **Server and connectors, hardening** ([#222](https://github.com/casoon/opengrid/issues/222)).
   `max_payload_bytes` above axum's 2 MiB is honoured (the router carries the limit; an oversize body
   is still the `limit_exceeded` wire error), every answer has `Cache-Control: no-store` and
