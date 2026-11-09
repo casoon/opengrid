@@ -54,9 +54,9 @@ test("a grid put back in the page takes the row height its new place gives it", 
   expect(rows.map((row) => row.top)).toEqual([0, 64, 128]);
 });
 
-// The row height is read when the grid connects. A page that changes the
-// property later (a theme switch, a class on a parent) gets rows that overlap.
-test.fixme("a row height changed while the grid stays in the page moves the rows to it (#283)", async ({
+// A page that changes the property later (a theme switch, a class on a parent)
+// gets rows placed at the new height, not rows that overlap.
+test("a row height changed while the grid stays in the page moves the rows to it", async ({
   page,
 }) => {
   await setHeight(page, "64px");
@@ -66,12 +66,12 @@ test.fixme("a row height changed while the grid stays in the page moves the rows
   expect(rows.map((row) => row.top)).toEqual([0, 64, 128]);
 });
 
-// `parse_row_height` reads whole pixels; 40.5px falls back to the default and
-// the rows are drawn 40.5px high at 42px intervals.
-test.fixme("a fractional row height is the height the rows are placed at (#283)", async ({ page }) => {
+// The window math is in whole pixels; 40.5px is rounded up, not dropped for
+// the default.
+test("a fractional row height is the height the rows are placed at", async ({ page }) => {
   await setHeight(page, "40.5px");
-  await moveGrid(page);
 
+  await expect.poll(async () => (await geometry(page)).sizer).not.toBe(200 * 48);
   const { sizer, rows } = await geometry(page);
   const step = rows[1].top - rows[0].top;
   // The page asked for 40.5px. The grid may round it, but not to the default:

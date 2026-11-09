@@ -1201,7 +1201,7 @@ declaration on the element wins over an inherited value.
 | `--og-radius` | `12px` | the corners of the grid's boxes |
 | `--og-pad` | `8px` | horizontal padding inside a cell |
 | `--og-focus-width` | `2px` | the focus ring |
-| `--og-row-height` | `42px` | a data row; **goes into the window math** |
+| `--og-row-height` | `42px` | a data row; **goes into the window math**, a change at runtime is followed, a fractional length is rounded up |
 | `--og-header-height` | `--og-row-height` | the header row |
 | `--og-filter-height` | `40px` | the filter row |
 | `--og-status-height` | `24px` | the footer with the status line, as a minimum |

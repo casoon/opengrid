@@ -2465,12 +2465,44 @@ fn observe_columns(root: &ShadowRoot) {
             .and_then(|root| root.host().dyn_into::<HtmlElement>().ok());
         if let Some(host) = host {
             align_filter(&host);
+            follow_row_height(&host);
         }
     })
     .into_js_value();
     if let Ok(observer) = web_sys::ResizeObserver::new(callback.unchecked_ref()) {
         observer.observe(&table);
+        // A custom property cannot be observed, but the rows it sizes can: the
+        // first pool row changes its box when `--og-row-height` changes, even
+        // where the header has a height of its own.
+        if let Ok(Some(row)) = root.query_selector("tbody tr") {
+            observer.observe(&row);
+        }
     }
+}
+
+/// Takes up a `--og-row-height` that changed while the grid stays in the page
+/// (a theme switch, a class on a parent): the sizer, the rows' places and the
+/// window follow it, the way they do after a `density` change. Called when the
+/// table or a row changed its size; most of the time the height is the same and
+/// nothing happens.
+fn follow_row_height(host: &HtmlElement) {
+    let Some(runtime) = runtime(host) else {
+        return;
+    };
+    let height = resolve_row_height(host);
+    {
+        let mut runtime = runtime.borrow_mut();
+        if runtime.row_height == height {
+            return;
+        }
+        runtime.row_height = height;
+    }
+    sync_page_window(host, &runtime);
+    if !is_paging(host) {
+        window_from_scroll(&runtime);
+    }
+    render(host, false);
+    run_query(host, QueryKind::Data, false);
 }
 
 fn measured_width(host: &HtmlElement, col: usize) -> Option<u32> {

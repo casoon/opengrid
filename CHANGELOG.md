@@ -144,6 +144,10 @@ Two things belong in every release entry and are easy to leave out:
   rows, since the whole workbook is built in memory. **What breaks:** a tree over a million rows,
   and an Excel export over 100 000 rows, are refused unless the bound is raised
   ([#218](https://github.com/casoon/opengrid/issues/218)).
+- **Grid: `--og-row-height` is followed at runtime and a fractional value counts** ([#283](https://github.com/casoon/opengrid/issues/283)).
+  A change while the grid stays in the page (a theme switch, a class on a parent) used to leave the
+  window math on the old height, so rows overlapped; the grid now notices it through the size of its
+  rows. A value like `40.5px` fell back to the default silently; it is now rounded up to 41 px.
 - **Query:** an integer literal on a `decimal` column (`{"field": "amount", "op": "gt", "value": 10}`) was
   refused as `ValueTypeMismatch`, although rule S8 allows comparing an integer with a decimal. It is
   now read at the column's scale (an overflow of the precision is still a validation error); a float
