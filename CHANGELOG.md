@@ -53,6 +53,10 @@ Two things belong in every release entry and are easy to leave out:
   a new public field (a struct literal without `..Limits::default()` no longer compiles),
   `QueryError` has two new variants, `SchemaError` one, and `Schema::check` refuses a column named
   `__og_…` or `__grouping_…`, which the connectors use for helper columns.
+- **Columns:** the binary wire reader no longer panics on forged counts and lengths: a row count of
+  `u64::MAX` overflowed `rows + 1` in a text or list column, and path lengths of a flat tree that wrap
+  around `u64` passed the sum check and then indexed out of range. Both are now a decode error, so a
+  hostile or broken server cannot trap the page ([#212](https://github.com/casoon/opengrid/issues/212)).
 - **Query:** an integer literal on a `decimal` column (`{"field": "amount", "op": "gt", "value": 10}`) was
   refused as `ValueTypeMismatch`, although rule S8 allows comparing an integer with a decimal. It is
   now read at the column's scale (an overflow of the precision is still a validation error); a float
