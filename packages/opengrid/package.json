@@ -69,10 +69,10 @@
     "CHANGELOG.md"
   ],
   "peerDependencies": {
-    "@types/react": ">=18",
+    "@types/react": ">=18.3.0",
     "react": ">=18",
     "svelte": "^5.0.0",
-    "vue": ">=3.3"
+    "vue": ">=3.4.20"
   },
   "peerDependenciesMeta": {
     "@types/react": {
