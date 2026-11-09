@@ -37,7 +37,8 @@ use std::time::Duration;
 
 use axum::Router;
 use axum::body::Bytes;
-use axum::extract::{Path, State};
+use axum::extract::rejection::BytesRejection;
+use axum::extract::{DefaultBodyLimit, Path, State};
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -180,11 +181,19 @@ impl AppState {
 /// origin would mean every site the user visits can spend that token.
 pub fn router(state: Arc<AppState>) -> Router {
     let origins = state.allowed_origins.clone();
+    let max_payload_bytes = state.max_payload_bytes;
     let mut router = Router::new()
         .route("/query/{source}", post(query))
         .route("/pivot/{source}", post(pivot))
         .route("/source/{source}", get(describe))
         .route("/export/{source}", post(crate::export::export))
+        // axum buffers a body under its own 2 MiB limit before a handler runs,
+        // so a configured size above that was capped and an unauthenticated
+        // client could make the server buffer 2 MiB a request (issue #222).
+        .layer(DefaultBodyLimit::max(max_payload_bytes))
+        // Every answer holds one tenant's rows: nothing may keep it, and a
+        // browser must not guess another type for it.
+        .layer(axum::middleware::map_response(keep_private))
         .with_state(state);
 
     if !origins.is_empty() {
@@ -206,6 +215,43 @@ pub fn router(state: Arc<AppState>) -> Router {
         );
     }
     router
+}
+
+/// `Cache-Control: no-store` and `X-Content-Type-Options: nosniff` on every answer.
+async fn keep_private(mut response: Response) -> Response {
+    let headers = response.headers_mut();
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    headers.insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    );
+    response
+}
+
+/// The request body, or the wire error for one that is over the payload limit
+/// (the limit is the router's `DefaultBodyLimit`) or could not be read.
+pub(crate) fn payload(
+    body: Result<Bytes, BytesRejection>,
+    state: &AppState,
+) -> Result<Bytes, Failure> {
+    body.map_err(|rejection| {
+        if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE {
+            WireError::new(
+                ErrorCode::LimitExceeded,
+                format!(
+                    "request body is over the limit of {} bytes",
+                    state.max_payload_bytes
+                ),
+            )
+            .into()
+        } else {
+            WireError::new(
+                ErrorCode::Malformed,
+                format!("request body: {}", rejection.body_text()),
+            )
+            .into()
+        }
+    })
 }
 
 /// An error on its way out: the wire form plus the status that goes with it.
@@ -243,8 +289,9 @@ async fn query(
     State(state): State<Arc<AppState>>,
     Path(source_name): Path<String>,
     headers: HeaderMap,
-    body: Bytes,
+    body: Result<Bytes, BytesRejection>,
 ) -> Result<Response, Failure> {
+    let body = payload(body, &state)?;
     let (source, validated) = admit(
         &state,
         &source_name,
@@ -394,18 +441,6 @@ pub(crate) fn admit(
 ) -> Result<(Arc<Source>, ValidatedQuery), Failure> {
     let context = authorize(state, headers)?;
 
-    if body.len() > state.max_payload_bytes {
-        return Err(WireError::new(
-            ErrorCode::LimitExceeded,
-            format!(
-                "request body is {} bytes, the limit is {}",
-                body.len(),
-                state.max_payload_bytes
-            ),
-        )
-        .into());
-    }
-
     let source = state.registry.get(source_name).ok_or_else(|| {
         WireError::new(
             ErrorCode::UnknownSource,
@@ -552,21 +587,10 @@ async fn pivot(
     State(state): State<Arc<AppState>>,
     Path(source_name): Path<String>,
     headers: HeaderMap,
-    body: Bytes,
+    body: Result<Bytes, BytesRejection>,
 ) -> Result<Response, Failure> {
+    let body = payload(body, &state)?;
     let context = authorize(&state, &headers)?;
-
-    if body.len() > state.max_payload_bytes {
-        return Err(WireError::new(
-            ErrorCode::LimitExceeded,
-            format!(
-                "request body is {} bytes, the limit is {}",
-                body.len(),
-                state.max_payload_bytes
-            ),
-        )
-        .into());
-    }
 
     let source = state.registry.get(&source_name).ok_or_else(|| {
         WireError::new(
@@ -694,7 +718,7 @@ fn authorize<'a>(
         .ok_or_else(|| refused("no Authorization header"))?
         .to_str()
         .ok()
-        .and_then(|value| value.strip_prefix("Bearer "))
+        .and_then(bearer_token)
         .ok_or_else(|| refused("the Authorization header is not a Bearer token"))?;
 
     state
@@ -703,6 +727,13 @@ fn authorize<'a>(
         .find(|(configured, _)| constant_time_eq(configured, presented))
         .map(|(_, context)| context)
         .ok_or_else(|| refused("an unknown token"))
+}
+
+/// The token after the `Bearer` scheme, which RFC 7235 matches without regard
+/// to case.
+fn bearer_token(value: &str) -> Option<&str> {
+    let (scheme, token) = value.split_once(' ')?;
+    scheme.eq_ignore_ascii_case("Bearer").then_some(token)
 }
 
 /// Compares two secrets without leaking where they differ.

@@ -88,7 +88,7 @@ impl CompiledQuery {
         if counting.group.is_empty() {
             let mut sql = Sql::default();
             sql.push("SELECT count(*) AS \"total_count\" FROM ");
-            sql.push(&quote_ident(&compiler.table)?);
+            sql.push(&compiler.table_ref()?);
             if let Some(filter) = &counting.filter {
                 sql.push(" WHERE ");
                 compiler.filter(filter, &mut sql)?;
@@ -149,6 +149,8 @@ impl std::error::Error for CompileError {}
 /// Compiles for one configured table.
 pub struct PostgresCompiler {
     table: String,
+    /// The schema the table lives in; none means the connection's search path.
+    namespace: Option<String>,
     schema: Schema,
 }
 
@@ -159,7 +161,28 @@ impl PostgresCompiler {
     pub fn new(table: impl Into<String>, schema: Schema) -> Self {
         Self {
             table: table.into(),
+            namespace: None,
             schema,
+        }
+    }
+
+    /// The table lives in the PostgreSQL schema `namespace`: `"namespace"."table"`
+    /// instead of `"table"`. Each part is quoted by itself, so a dot in a name
+    /// stays a dot in the name (issue #222).
+    pub fn in_namespace(mut self, namespace: impl Into<String>) -> Self {
+        self.namespace = Some(namespace.into());
+        self
+    }
+
+    /// The table as the statements name it.
+    fn table_ref(&self) -> Result<String, CompileError> {
+        match &self.namespace {
+            None => quote_ident(&self.table),
+            Some(namespace) => Ok(format!(
+                "{}.{}",
+                quote_ident(namespace)?,
+                quote_ident(&self.table)?
+            )),
         }
     }
 
@@ -184,7 +207,7 @@ impl QueryCompiler for PostgresCompiler {
         self.projection(query, &mut sql)?;
 
         sql.push(" FROM ");
-        sql.push(&quote_ident(&self.table)?);
+        sql.push(&self.table_ref()?);
 
         if let Some(filter) = &query.filter {
             sql.push(" WHERE ");
@@ -619,7 +642,7 @@ impl PostgresCompiler {
         }
 
         sql.push(" FROM ");
-        sql.push(&quote_ident(&self.table)?);
+        sql.push(&self.table_ref()?);
 
         if let Some(filter) = &deepest.filter {
             sql.push(" WHERE ");
@@ -738,7 +761,7 @@ impl PostgresCompiler {
             None => sql.push("TRUE"),
         }
         sql.push(&format!(" AS {TREE_MATCH} FROM "));
-        sql.push(&quote_ident(&self.table)?);
+        sql.push(&self.table_ref()?);
         if let Some(scope) = &tree.scope {
             sql.push(" WHERE ");
             self.filter(scope, &mut sql)?;
@@ -893,7 +916,7 @@ impl PostgresCompiler {
              JOIN scoped ON scoped.{TREE_ROW} = members.__og_r \
              JOIN {base} AS {TREE_BASE} ON {TREE_BASE}.ctid = scoped.{TREE_ROW} LEFT JOIN kids ON kids.__og_r = scoped.{TREE_ROW}), \
              page AS MATERIALIZED (SELECT *, row_number() OVER (ORDER BY ",
-            base = quote_ident(&self.table)?
+            base = self.table_ref()?
         ));
         // The order once for the numbering and once for the paging: an output
         // column is an input column of `level`, so its collation can be written.
@@ -944,7 +967,7 @@ impl PostgresCompiler {
                 " FROM below JOIN scoped ON scoped.{TREE_ROW} = below.__og_r \
                  JOIN {base} AS {TREE_BASE} ON {TREE_BASE}.ctid = scoped.{TREE_ROW} \
                  WHERE scoped.{TREE_MATCH} GROUP BY below.__og_t)",
-                base = quote_ident(&self.table)?
+                base = self.table_ref()?
             ));
             for field in tree.aggregate_schema.fields() {
                 output.push((field.name.as_str().to_owned(), field.data_type));

@@ -97,3 +97,34 @@ fn sqlite_answers_like_the_engine_where_it_differs_most() {
         .unwrap_or_else(|difference| panic!("{json}: {difference}"));
     }
 }
+
+/// Issue #222: a decimal is stored as a scaled 64-bit integer; one that does
+/// not fit is a backend error, where it used to wrap to another number.
+#[test]
+fn a_decimal_too_big_for_a_64_bit_integer_is_refused() {
+    use opengrid_types::{DataType, Decimal, Field, FieldName, Schema, Value};
+
+    let schema = Schema::new(vec![Field::required(
+        FieldName::new("amount").unwrap(),
+        DataType::Decimal {
+            precision: 38,
+            scale: 2,
+        },
+    )]);
+    let mut connection = Connection::open_in_memory().expect("an in-memory database");
+    create_table(&connection, "t", &schema).expect("the table");
+    let fits = QueryResult::new(
+        schema.clone(),
+        vec![vec![Value::Decimal(Decimal::new(12_345, 2))]],
+        0,
+    );
+    insert(&mut connection, "t", &schema, &fits).expect("a small decimal goes in");
+    // 10^20 at scale 2 is 10^22 stored: past i64.
+    let big = QueryResult::new(
+        schema.clone(),
+        vec![vec![Value::Decimal(Decimal::new(10i128.pow(20), 0))]],
+        0,
+    );
+    let error = insert(&mut connection, "t", &schema, &big).expect_err("does not fit");
+    assert!(error.to_string().contains("64-bit"), "{error}");
+}

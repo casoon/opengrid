@@ -82,6 +82,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::body::{Body, Bytes};
+use axum::extract::rejection::BytesRejection;
 use axum::extract::{Path, Query as Parameters, State};
 use axum::http::{HeaderMap, HeaderValue, Uri, header};
 use axum::response::Response;
@@ -153,9 +154,13 @@ pub(crate) async fn export(
     Path(source_name): Path<String>,
     uri: Uri,
     headers: HeaderMap,
-    body: Bytes,
+    body: Result<Bytes, BytesRejection>,
 ) -> Result<Response, Failure> {
-    let limits = Limits::new(state.max_export_rows, state.registry.limits.max_depth);
+    let body = crate::api::payload(body, &state)?;
+    let limits = Limits {
+        max_limit: state.max_export_rows,
+        ..state.registry.limits
+    };
     let (source, query) = admit(&state, &source_name, &headers, &body, &limits, None)?;
     let format = format_of(&uri, headers.get(header::ACCEPT))?;
     // A tree export builds the whole tree before it counts (issue #218).
