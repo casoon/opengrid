@@ -32,7 +32,7 @@ const REST_PROVIDER_METHODS: [&str; 3] = ["describe", "execute", "export"];
 
 /// The methods of the two engine providers — `stats` is what the engine holds
 /// (issue #70). The same list for both: a page swaps one for the other.
-const ENGINE_PROVIDER_METHODS: [&str; 8] = [
+const ENGINE_PROVIDER_METHODS: [&str; 7] = [
     "execute",
     "load",
     "loadRows",
@@ -49,7 +49,7 @@ const ERROR_FIELDS: [&str; 3] = ["status", "code", "path"];
 /// The `code`s of the server's error form — `ErrorCode` in
 /// `opengrid_datasource::wire`, a closed list; a test below holds the two
 /// together. The REST and pivot providers hand them on as they came.
-const SERVER_ERROR_CODES: [&str; 7] = [
+const SERVER_ERROR_CODES: [&str; 8] = [
     "validation",
     "unknown_source",
     "limit_exceeded",
