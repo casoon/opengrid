@@ -524,3 +524,91 @@ async fn a_query_without_a_limit_gets_the_maximum() {
     assert_eq!(result.row_count(), 20, "the page is cut at max_limit");
     assert_eq!(result.total_count, 50, "total_count counts before paging");
 }
+
+/// Issue #222: axum buffers a body under its own 2 MiB limit before the
+/// handler runs, so a configured `max_payload_bytes` above that used to be
+/// capped. The router now carries the configured limit itself.
+#[tokio::test]
+async fn a_payload_limit_above_two_mebibytes_is_honoured() {
+    let connector = LocalConnector::from_csv(
+        &opengrid_conformance::fixture_csv(),
+        &opengrid_conformance::suite_dir().join("data/orders.schema.json"),
+    )
+    .expect("the fixture");
+    let app = Server::builder()
+        .max_payload_bytes(4 * 1024 * 1024)
+        .token(TOKEN, [("country", "DE")])
+        .source("orders", connector, SourcePolicy::default())
+        .build()
+        .await
+        .expect("a server")
+        .router();
+    // A valid query padded with white space to 3 MiB.
+    let body = format!(
+        r#"{{"source":"orders","select":["id"],"limit":1}}{}"#,
+        " ".repeat(3 * 1024 * 1024)
+    );
+    let (status, answer) = post(app.clone(), "orders", Some(TOKEN), &body).await;
+    assert_eq!(status, StatusCode::OK, "{answer}");
+    let body = format!(
+        r#"{{"source":"orders","select":["id"],"limit":1}}{}"#,
+        " ".repeat(5 * 1024 * 1024)
+    );
+    let (status, answer) = post(app, "orders", Some(TOKEN), &body).await;
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+    assert_eq!(error_of(&answer).code, ErrorCode::LimitExceeded);
+}
+
+/// Issue #222: an answer holds one tenant's rows. It is not cached, and a
+/// browser does not guess its type; the scheme of `Authorization` is read
+/// without regard to case (RFC 7235).
+#[tokio::test]
+async fn answers_are_not_cached_and_the_scheme_is_case_insensitive() {
+    let app = app(false).await;
+    for scheme in ["Bearer", "bearer", "BEARER"] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/query/orders")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::AUTHORIZATION, format!("{scheme} {TOKEN}"))
+                    .body(Body::from(
+                        r#"{"source":"orders","select":["id"],"limit":1}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .expect("the router answers");
+        assert_eq!(response.status(), StatusCode::OK, "{scheme}");
+        assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
+        assert_eq!(
+            response.headers()[header::X_CONTENT_TYPE_OPTIONS],
+            "nosniff"
+        );
+    }
+    // An error answer carries them too, and a token with another scheme is no token.
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/query/orders")
+                .header(header::AUTHORIZATION, format!("Basic {TOKEN}"))
+                .body(Body::from("{}"))
+                .unwrap(),
+        )
+        .await
+        .expect("the router answers");
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
+}
+
+/// Issue #222: an offset past what a database number holds wrapped to a
+/// negative one in the connectors; the validator refuses it.
+#[tokio::test]
+async fn an_offset_past_the_database_range_is_a_validation_error() {
+    let body = r#"{"source":"orders","select":["id"],"sort":[{"field":"id","direction":"asc"}],"offset":9223372036854775808}"#;
+    let (status, answer) = post(app(false).await, "orders", Some(TOKEN), body).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{answer}");
+}

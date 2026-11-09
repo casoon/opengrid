@@ -105,6 +105,10 @@ query against the schema narrowed to `allowed_fields`, added the row filter with
 the token's context, and validated the result against the full schema. A connector only ever
 sees a `ValidatedQuery` that already carries every rule — it cannot forget one.
 
+Names. A column may not start with `__og_` or `__grouping_`: the connectors build helper columns
+under those prefixes, and `Schema::check` refuses such a field. A PostgreSQL table in a schema is
+`PostgresDataSource::connect_in_schema(url, "sales", "orders", schema)`; a dot inside the table
+name given to `connect` is part of the name.
 Errors. A connector fails with the kind that is true: `DataSourceError::Backend` for an outage
 (the caller never sees its text, only a reference), `LimitExceeded` when the caller can narrow the
 query, `Data` when the data breaks a rule the query relies on (a tree with a key twice or a

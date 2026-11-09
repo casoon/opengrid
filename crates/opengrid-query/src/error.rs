@@ -59,6 +59,15 @@ pub enum QueryError {
     OffsetWithoutSort,
     /// `limit` exceeds `Limits::max_limit`.
     LimitTooLarge { limit: u64, max_limit: u64 },
+    /// `offset` is more than a database number holds (`i64::MAX`).
+    OffsetTooLarge { offset: u64, max_offset: u64 },
+    /// An `in` / `has_all` list or an `and` / `or` with more than
+    /// `Limits::max_list_values` entries.
+    ListTooLong {
+        path: String,
+        len: usize,
+        max: usize,
+    },
     /// A tree query that also groups or aggregates at the top (rule T10) —
     /// a subtree's aggregates go in `tree.aggregate` (T7).
     TreeWithGroup,
@@ -94,6 +103,8 @@ impl QueryError {
             QueryError::SortUnknownColumn { .. } => "SortUnknownColumn",
             QueryError::OffsetWithoutSort => "OffsetWithoutSort",
             QueryError::LimitTooLarge { .. } => "LimitTooLarge",
+            QueryError::OffsetTooLarge { .. } => "OffsetTooLarge",
+            QueryError::ListTooLong { .. } => "ListTooLong",
             QueryError::TreeWithGroup => "TreeWithGroup",
             QueryError::TreeParentTypeMismatch { .. } => "TreeParentTypeMismatch",
             QueryError::TreeFlatWithUnder => "TreeFlatWithUnder",
@@ -117,11 +128,13 @@ impl QueryError {
             | QueryError::AggregateTypeMismatch { path, .. }
             | QueryError::AliasConflictsWithField { path, .. }
             | QueryError::DuplicateAlias { path, .. }
+            | QueryError::ListTooLong { path, .. }
             | QueryError::SortUnknownColumn { path, .. } => Some(path),
             QueryError::EmptyProjection
             | QueryError::FilterTooDeep { .. }
             | QueryError::OffsetWithoutSort
-            | QueryError::LimitTooLarge { .. } => None,
+            | QueryError::LimitTooLarge { .. }
+            | QueryError::OffsetTooLarge { .. } => None,
             QueryError::TreeWithGroup => Some("tree"),
             QueryError::TreeParentTypeMismatch { .. } => Some("tree.parent"),
             QueryError::TreeFlatWithUnder => Some("tree.under"),
@@ -196,6 +209,12 @@ impl fmt::Display for QueryError {
             QueryError::OffsetWithoutSort => f.write_str("offset requires a sort (rule S6)"),
             QueryError::LimitTooLarge { limit, max_limit } => {
                 write!(f, "limit {limit} exceeds the maximum of {max_limit}")
+            }
+            QueryError::OffsetTooLarge { offset, max_offset } => {
+                write!(f, "offset {offset} exceeds the maximum of {max_offset}")
+            }
+            QueryError::ListTooLong { path, len, max } => {
+                write!(f, "{path}: {len} entries exceed the maximum of {max}")
             }
             QueryError::TreeWithGroup => {
                 f.write_str(

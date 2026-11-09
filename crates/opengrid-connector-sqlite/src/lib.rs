@@ -263,7 +263,7 @@ pub fn insert(
                 .iter()
                 .zip(&rows.columns)
                 .map(|(field, column)| bind(&column[row], field.data_type))
-                .collect();
+                .collect::<Result<_, _>>()?;
             statement
                 .execute(rusqlite::params_from_iter(values.iter()))
                 .map_err(sqlite)?;
@@ -295,9 +295,10 @@ impl Builder {
         self.sql.push_str(text);
     }
 
-    fn param(&mut self, value: &Value, data_type: DataType) {
-        self.params.push(bind(value, data_type));
+    fn param(&mut self, value: &Value, data_type: DataType) -> Result<(), DataSourceError> {
+        self.params.push(bind(value, data_type)?);
         self.sql.push('?');
+        Ok(())
     }
 
     fn finish(self) -> Statement {
@@ -353,10 +354,10 @@ impl Compiler<'_> {
             sql.param(
                 &Value::Int64(query.limit.map_or(-1, |limit| limit as i64)),
                 DataType::Int64,
-            );
+            )?;
             if let Some(offset) = query.offset {
                 sql.push(" OFFSET ");
-                sql.param(&Value::Int64(offset as i64), DataType::Int64);
+                sql.param(&Value::Int64(offset as i64), DataType::Int64)?;
             }
         }
         Ok(sql.finish())
@@ -467,7 +468,7 @@ impl Compiler<'_> {
     }
 
     /// `column` holds `value` as an element.
-    fn has(column: &str, value: &Value, sql: &mut Builder) {
+    fn has(column: &str, value: &Value, sql: &mut Builder) -> Result<(), DataSourceError> {
         sql.push(&format!(
             "EXISTS (SELECT 1 FROM json_each({column}) WHERE value = "
         ));
@@ -477,8 +478,9 @@ impl Compiler<'_> {
                 Value::Int64(_) => DataType::Int64,
                 _ => DataType::Utf8,
             },
-        );
+        )?;
         sql.push(")");
+        Ok(())
     }
 
     fn filter(&self, filter: &ValidatedFilter, sql: &mut Builder) -> Result<(), DataSourceError> {
@@ -518,7 +520,7 @@ impl Compiler<'_> {
                 // `EXISTS` over a NULL list is false, not unknown (S1): the CASE
                 // keeps the NULL list out of `NOT has` too.
                 sql.push(&format!("(CASE WHEN {column} IS NULL THEN NULL ELSE "));
-                Self::has(&column, value, sql);
+                Self::has(&column, value, sql)?;
                 sql.push(" END)");
             }
             ValidatedFilter::HasAll { field, values } => {
@@ -527,7 +529,7 @@ impl Compiler<'_> {
                 sql.push(&format!("(CASE WHEN {column} IS NULL THEN NULL ELSE (1"));
                 for value in values {
                     sql.push(" AND ");
-                    Self::has(&column, value, sql);
+                    Self::has(&column, value, sql)?;
                 }
                 sql.push(") END)");
             }
@@ -552,7 +554,7 @@ impl Compiler<'_> {
                     if index > 0 {
                         sql.push(", ");
                     }
-                    sql.param(value, *data_type);
+                    sql.param(value, *data_type)?;
                 }
                 sql.push(")");
             }
@@ -567,17 +569,17 @@ impl Compiler<'_> {
                     // `instr` compares bytes, case-sensitively (S5).
                     CmpOp::Contains => {
                         sql.push(&format!("instr({column}, "));
-                        sql.param(value, *data_type);
+                        sql.param(value, *data_type)?;
                         sql.push(") > 0");
                     }
                     CmpOp::StartsWith => {
                         sql.push(&format!("instr({column}, "));
-                        sql.param(value, *data_type);
+                        sql.param(value, *data_type)?;
                         sql.push(") = 1");
                     }
                     _ => {
                         sql.push(&format!("{column} {} ", operator(*op)));
-                        sql.param(value, *data_type);
+                        sql.param(value, *data_type)?;
                     }
                 }
             }
@@ -615,8 +617,11 @@ fn operator(op: CmpOp) -> &'static str {
 }
 
 /// A value as SQLite stores it for a column of `data_type` (module docs).
-fn bind(value: &Value, data_type: DataType) -> Sql {
-    match value {
+///
+/// A decimal that does not fit SQLite's 64-bit integer is a backend error,
+/// not a wrapped number (issue #222).
+fn bind(value: &Value, data_type: DataType) -> Result<Sql, DataSourceError> {
+    Ok(match value {
         Value::Null => Sql::Null,
         Value::Bool(value) => Sql::Integer(i64::from(*value)),
         Value::Int64(value) => Sql::Integer(*value),
@@ -628,13 +633,22 @@ fn bind(value: &Value, data_type: DataType) -> Sql {
                 _ => value.scale(),
             };
             let shift = u32::from(scale.saturating_sub(value.scale()));
-            Sql::Integer((value.value() * 10i128.pow(shift)) as i64)
+            let scaled = 10i128
+                .checked_pow(shift)
+                .and_then(|factor| value.value().checked_mul(factor))
+                .and_then(|scaled| i64::try_from(scaled).ok())
+                .ok_or_else(|| {
+                    backend(format!(
+                        "a decimal of scale {scale} does not fit SQLite's 64-bit integer"
+                    ))
+                })?;
+            Sql::Integer(scaled)
         }
         Value::Utf8(value) => Sql::Text(value.clone()),
         Value::Date(value) => Sql::Integer(i64::from(value.days_since_epoch())),
         Value::Timestamp(value) => Sql::Integer(value.micros()),
         Value::List(_) => Sql::Text(opengrid_json::ToJson::to_json(value).to_string()),
-    }
+    })
 }
 
 /// A cell back into the type the query declared.
