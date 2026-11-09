@@ -7,6 +7,8 @@
 //! `false` rather than `unknown`.
 
 use std::cmp::Ordering;
+use std::collections::HashSet;
+use std::hash::Hash;
 
 use opengrid_columns::{Column, Table, Values};
 use opengrid_query::{CmpOp, ValidatedFilter};
@@ -47,17 +49,7 @@ pub(crate) fn evaluate(filter: &ValidatedFilter, table: &Table) -> Result<Mask, 
             field,
             data_type,
             values,
-        } => {
-            // Rule S2: `in` is the OR of equality against every list member, so
-            // an empty list matches nothing — and never errors.
-            let column = column(table, field)?;
-            let mut mask = vec![Some(false); rows];
-            for value in values {
-                let hit = compare(column, field, *data_type, CmpOp::Eq, value)?;
-                mask = or_kleene(&mask, &hit);
-            }
-            mask
-        }
+        } => in_list(column(table, field)?, field, *data_type, values)?,
         ValidatedFilter::IsNull { field } => null_mask(column(table, field)?),
         ValidatedFilter::IsNotNull { field } => not_kleene(&null_mask(column(table, field)?)),
         // A list column (issue #185). `has` and `has_all` follow rule S1: a NULL
@@ -110,6 +102,131 @@ fn null_mask(column: &Column) -> Mask {
 
 fn column<'a>(table: &'a Table, field: &FieldName) -> Result<&'a Column, ExecuteError> {
     super::column(table, field.as_str())
+}
+
+/// Rule S2: `in` is the OR of equality against every list member, so an empty
+/// list matches nothing — and never errors.
+///
+/// One pass over the rows against a set of the literals, with the Kleene
+/// result of that OR: a hit is true, a NULL cell is unknown, and a miss is
+/// unknown too when the list holds a NULL literal (`false or unknown`).
+fn in_list(
+    column: &Column,
+    field: &FieldName,
+    data_type: DataType,
+    values: &[Value],
+) -> Result<Mask, ExecuteError> {
+    if values.is_empty() {
+        return Ok(vec![Some(false); column.len()]);
+    }
+    if column.data_type() != data_type {
+        return Err(ExecuteError::TypeMismatch {
+            field: field.to_string(),
+            expected: data_type,
+            found: column.data_type(),
+        });
+    }
+    let mut has_null = false;
+    // The literals of one type, the first that does not fit reported as
+    // `compare` reports it.
+    macro_rules! literals {
+        ($variant:path, |$literal:ident| $key:expr) => {{
+            let mut set = HashSet::with_capacity(values.len());
+            for value in values {
+                match value {
+                    Value::Null => has_null = true,
+                    $variant($literal) => {
+                        set.insert($key);
+                    }
+                    other => {
+                        return Err(ExecuteError::Value {
+                            field: field.to_string(),
+                            message: format!("column {field} expects {data_type}, found {other:?}"),
+                        });
+                    }
+                }
+            }
+            set
+        }};
+    }
+    Ok(match column.values() {
+        Values::Bool(cells) => {
+            let set = literals!(Value::Bool, |literal| *literal);
+            members(column, &set, has_null, |at| cells[at])
+        }
+        Values::Int64(cells) => {
+            let set = literals!(Value::Int64, |literal| *literal);
+            members(column, &set, has_null, |at| cells[at])
+        }
+        Values::Decimal(cells) => {
+            let set = literals!(Value::Decimal, |literal| literal.value());
+            members(column, &set, has_null, |at| cells[at])
+        }
+        Values::Utf8 { .. } => {
+            let set = literals!(Value::Utf8, |literal| literal.as_bytes());
+            members(column, &set, has_null, |at| column.str(at).as_bytes())
+        }
+        Values::Date(cells) => {
+            let set = literals!(Value::Date, |literal| literal.days_since_epoch());
+            members(column, &set, has_null, |at| cells[at])
+        }
+        Values::Timestamp(cells) => {
+            let set = literals!(Value::Timestamp, |literal| literal.micros());
+            members(column, &set, has_null, |at| cells[at])
+        }
+        Values::Float64(cells) => {
+            // `compare` refuses a NULL float literal, so here it is no member.
+            let mut set = HashSet::with_capacity(values.len());
+            for value in values {
+                let Value::Float64(literal) = value else {
+                    return Err(wrong_literal(field, "float64", value));
+                };
+                set.insert(float_bits(*literal));
+            }
+            members(column, &set, false, |at| float_bits(cells[at]))
+        }
+        Values::ListInt64 { .. } | Values::ListUtf8 { .. } => {
+            return Err(ExecuteError::TypeMismatch {
+                field: field.to_string(),
+                expected: data_type,
+                found: column.data_type(),
+            });
+        }
+    })
+}
+
+/// The bits of a float under rule S7: one `NaN`, one zero.
+fn float_bits(number: f64) -> u64 {
+    if number.is_nan() {
+        f64::NAN.to_bits()
+    } else if number == 0.0 {
+        0
+    } else {
+        number.to_bits()
+    }
+}
+
+/// Whether each cell is in `set`; a NULL cell is unknown, and so is a miss when
+/// the list held a NULL literal.
+fn members<K: Hash + Eq>(
+    column: &Column,
+    set: &HashSet<K>,
+    has_null: bool,
+    cell: impl Fn(usize) -> K,
+) -> Mask {
+    (0..column.len())
+        .map(|row| {
+            if column.is_null(row) {
+                None
+            } else if set.contains(&cell(row)) {
+                Some(true)
+            } else if has_null {
+                None
+            } else {
+                Some(false)
+            }
+        })
+        .collect()
 }
 
 /// Compares one column against one literal.
@@ -311,6 +428,81 @@ fn not_kleene(mask: &[Option<bool>]) -> Mask {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `in` as rule S2 words it - the OR of an equality per member - which the
+    /// set-based `in_list` has to answer exactly like, NULLs and NaN included.
+    fn in_by_or(column: &Column, field: &FieldName, data_type: DataType, values: &[Value]) -> Mask {
+        let mut mask = vec![Some(false); column.len()];
+        for value in values {
+            let hit = compare(column, field, data_type, CmpOp::Eq, value).unwrap();
+            mask = or_kleene(&mask, &hit);
+        }
+        mask
+    }
+
+    #[test]
+    fn in_answers_like_the_or_of_equalities() {
+        use opengrid_types::{Field, Schema};
+        let name = FieldName::new("x").unwrap();
+        let cases: Vec<(DataType, Vec<Value>, Vec<Vec<Value>>)> = vec![
+            (
+                DataType::Int64,
+                vec![
+                    Value::Int64(1),
+                    Value::Null,
+                    Value::Int64(1),
+                    Value::Int64(3),
+                ],
+                vec![
+                    vec![Value::Int64(1)],
+                    vec![Value::Int64(2)],
+                    vec![Value::Null],
+                ],
+            ),
+            (
+                DataType::Utf8,
+                vec![Value::Utf8("a".into()), Value::Utf8("".into())],
+                vec![
+                    vec![Value::Utf8("a".into())],
+                    vec![Value::Utf8("b".into())],
+                    vec![Value::Null],
+                ],
+            ),
+            (
+                DataType::Float64,
+                vec![
+                    Value::Float64(f64::NAN),
+                    Value::Float64(0.0),
+                    Value::Null,
+                    Value::Float64(2.5),
+                ],
+                vec![
+                    vec![Value::Float64(-0.0), Value::Float64(f64::NAN)],
+                    vec![Value::Float64(2.5)],
+                ],
+            ),
+            (
+                DataType::Bool,
+                vec![Value::Bool(true), Value::Null],
+                vec![
+                    vec![Value::Bool(false)],
+                    vec![Value::Bool(true), Value::Null],
+                ],
+            ),
+        ];
+        for (data_type, cells, lists) in cases {
+            let schema = Schema::new(vec![Field::new(name.clone(), data_type)]);
+            let table = Table::from_values(&schema, &[cells]).unwrap();
+            let column = table.column_at(0);
+            for list in lists.iter().cloned().chain([vec![]]) {
+                assert_eq!(
+                    in_list(column, &name, data_type, &list).unwrap(),
+                    in_by_or(column, &name, data_type, &list),
+                    "{data_type:?} in {list:?}"
+                );
+            }
+        }
+    }
 
     /// Rule S7: NaN equals NaN, is greater than every number and less than none.
     #[test]
