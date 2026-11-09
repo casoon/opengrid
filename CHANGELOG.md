@@ -51,6 +51,12 @@ Two things belong in every release entry and are easy to leave out:
   scanning every record first. The peak memory of loading the 1M-row demo file (85 MB) drops from
   431 MiB to 159 MiB (native, release build, maximum resident set size); the result is the same
   ([#215](https://github.com/casoon/opengrid/issues/215)).
+- **Packaging:** the Cargo feature `pivot` pulls `opengrid-grid` and `opengrid-query`, so
+  `set_columns` and `set_formats` exist in a pivot-only build of `opengrid-web-components` too
+  (they were gated on `grid`, and a pivot-only build had no way to title its columns or format its
+  values). The pivot-only module grows from 125803 to 127991 B brotli (343738 to 351574 B raw);
+  `grid+pivot`, the module the packages ship, is the same to the byte raw (876486 B)
+  ([#234](https://github.com/casoon/opengrid/issues/234)).
 - **Server:** `ServerBuilder::build` now fails at startup for what used to fail on every request or
   silently: a token whose context does not fit a source's row filter (a `tenant_id bigint` filter
   never worked, the context was always sent as text; it is now read as the column's type), a token

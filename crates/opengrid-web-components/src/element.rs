@@ -98,7 +98,7 @@ pub fn set_provider(host: &HtmlElement, provider: JsValue) {
 /// Formatting is display only: the filter, the sort and every comparison keep
 /// working on the value, because a grid that sorted by what it printed would
 /// have stopped honouring rules S4, S8 and S9.
-#[cfg(feature = "grid")]
+#[cfg(any(feature = "grid", feature = "pivot"))]
 #[wasm_bindgen(js_name = set_formats)]
 pub fn set_formats(host: &HtmlElement, formats: JsValue) {
     crate::formats::set_formats_for(host, &formats);
@@ -106,6 +106,7 @@ pub fn set_formats(host: &HtmlElement, formats: JsValue) {
         return;
     }
     match host.tag_name().to_ascii_lowercase().as_str() {
+        #[cfg(feature = "grid")]
         "opengrid-grid" => crate::grid_element::rerender(host),
         #[cfg(feature = "pivot")]
         "opengrid-pivot" => crate::pivot_element::run(host),
@@ -179,7 +180,7 @@ pub fn set_row_state(host: &HtmlElement, provisional_key: &str, state: &str, det
 /// What the type already answers is not configurable: which filter operators a
 /// column offers is meaning, not taste. The alignment is taste, so it may be
 /// overridden.
-#[cfg(feature = "grid")]
+#[cfg(any(feature = "grid", feature = "pivot"))]
 #[wasm_bindgen(js_name = set_columns)]
 pub fn set_columns(host: &HtmlElement, columns: JsValue) {
     crate::presentation::set_columns_for(host, &columns);
@@ -188,6 +189,7 @@ pub fn set_columns(host: &HtmlElement, columns: JsValue) {
         return;
     }
     match host.tag_name().to_ascii_lowercase().as_str() {
+        #[cfg(feature = "grid")]
         "opengrid-grid" => crate::grid_element::recolumn(host),
         // The table checks it against the next answer (issue #29).
         TABLE_TAG => run_query(host, None, None),
