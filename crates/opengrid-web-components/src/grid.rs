@@ -931,12 +931,16 @@ pub fn parse_window_size(raw: Option<&str>) -> u64 {
 ///
 /// Accepts a `<number>px` value (e.g. `48px`); anything else — absent, a
 /// different unit, or zero — falls back to the default, so the window math
-/// always has a positive, well-defined height.
+/// always has a positive, well-defined height. A fractional length (`40.5px`)
+/// is rounded **up** to the next whole pixel: the window math is in whole
+/// pixels, and rounding up leaves rows the page drew 40.5px high a gap of half
+/// a pixel instead of an overlap.
 pub fn parse_row_height(raw: &str) -> u64 {
     raw.trim()
         .strip_suffix("px")
-        .and_then(|number| number.trim().parse::<u64>().ok())
-        .filter(|height| *height > 0)
+        .and_then(|number| number.trim().parse::<f64>().ok())
+        .filter(|height| height.is_finite() && *height > 0.0)
+        .map(|height| height.ceil() as u64)
         .unwrap_or(DEFAULT_ROW_HEIGHT)
 }
 
@@ -4571,6 +4575,10 @@ mod tests {
         assert_eq!(parse_row_height("48"), DEFAULT_ROW_HEIGHT);
         assert_eq!(parse_row_height("48em"), DEFAULT_ROW_HEIGHT);
         assert_eq!(parse_row_height("0px"), DEFAULT_ROW_HEIGHT);
+        assert_eq!(parse_row_height("-4px"), DEFAULT_ROW_HEIGHT);
+        assert_eq!(parse_row_height("NaNpx"), DEFAULT_ROW_HEIGHT);
+        assert_eq!(parse_row_height("40.5px"), 41);
+        assert_eq!(parse_row_height("40.0px"), 40);
         assert_eq!(parse_row_height(""), DEFAULT_ROW_HEIGHT);
     }
 
