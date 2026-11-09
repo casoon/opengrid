@@ -196,6 +196,11 @@ Two things belong in every release entry and are easy to leave out:
   refused as `ValueTypeMismatch`, although rule S8 allows comparing an integer with a decimal. It is
   now read at the column's scale (an overflow of the precision is still a validation error); a float
   literal on a decimal column stays an error ([#210](https://github.com/casoon/opengrid/issues/210)).
+- **Grid:** a filter control that has the focus stays in sight when the filter row is laid out again
+  (a window resized, a column shown). The widths and the indent changed under the control and the
+  row's own scroll position did not follow, so the control could end up beside the edge and stay
+  there (WCAG 2.4.11). Found by a spec that passed only on its retry
+  (`at 480px every filter control is in sight`, about 1 run in 20).
 - **Pivot and grid: live region, language, names and descriptions** ([#231](https://github.com/casoon/opengrid/issues/231)).
   `<opengrid-pivot>` keeps its status line across answers and changes only its text, where it built
   a fresh `role="status"` with the text already inside on every answer (WCAG 4.1.3); the toolbar and
