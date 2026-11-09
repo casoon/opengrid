@@ -41,6 +41,18 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Fixed
 
+- **Server and connectors, hardening** ([#222](https://github.com/casoon/opengrid/issues/222)).
+  `max_payload_bytes` above axum's 2 MiB is honoured (the router carries the limit; an oversize body
+  is still the `limit_exceeded` wire error), every answer has `Cache-Control: no-store` and
+  `X-Content-Type-Options: nosniff`, and the `Bearer` scheme matches without regard to case. An
+  `offset` past `i64::MAX` is a validation error (`OffsetTooLarge`) instead of a negative one in the
+  database, and `Limits::max_list_values` (default 1 000) bounds an `in`, `has_all`, `and` or `or`
+  (`ListTooLong`). A decimal that does not fit SQLite's 64-bit integer is a backend error instead of
+  a wrapped number. `PostgresDataSource::connect_in_schema` takes a table in a PostgreSQL schema.
+  The example server warns when it falls back to a public demo token. **What breaks:** `Limits` has
+  a new public field (a struct literal without `..Limits::default()` no longer compiles),
+  `QueryError` has two new variants, `SchemaError` one, and `Schema::check` refuses a column named
+  `__og_…` or `__grouping_…`, which the connectors use for helper columns.
 - **Query:** an integer literal on a `decimal` column (`{"field": "amount", "op": "gt", "value": 10}`) was
   refused as `ValueTypeMismatch`, although rule S8 allows comparing an integer with a decimal. It is
   now read at the column's scale (an overflow of the precision is still a validation error); a float

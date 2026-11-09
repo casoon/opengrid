@@ -61,9 +61,18 @@ fn fixture_schema_path() -> PathBuf {
 }
 
 /// A token from the environment, or the demo's value — in a real deployment
-/// the secret comes from the environment only.
+/// the secret comes from the environment only. The demo's value is public (the
+/// demo pages carry it), so using it says so on stderr; the presets listen on
+/// the loopback address only.
 fn token(variable: &str, demo: &str) -> String {
-    std::env::var(variable).unwrap_or_else(|_| demo.to_owned())
+    std::env::var(variable).unwrap_or_else(|_| {
+        eprintln!(
+            "warning: {variable} is not set, so the token is the public demo value {demo:?}. \
+             Anyone who can reach this port can read the data; set {variable} to a random \
+             secret of at least 32 characters before exposing the server."
+        );
+        demo.to_owned()
+    })
 }
 
 /// The remote demo (examples/remote-demo): two tenants, each sees its country.

@@ -105,6 +105,11 @@ query against the schema narrowed to `allowed_fields`, added the row filter with
 the token's context, and validated the result against the full schema. A connector only ever
 sees a `ValidatedQuery` that already carries every rule — it cannot forget one.
 
+Names. A column may not start with `__og_` or `__grouping_`: the connectors build helper columns
+under those prefixes, and `Schema::check` refuses such a field. A PostgreSQL table in a schema is
+`PostgresDataSource::connect_in_schema(url, "sales", "orders", schema)`; a dot inside the table
+name given to `connect` is part of the name.
+
 ## A server in another language
 
 The Rust contract helps Rust programs. A server written in .NET, Java or Node implements the
