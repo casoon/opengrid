@@ -29,6 +29,13 @@ jobs:
       - uses: extractions/setup-just@v2
       - run: just check
       - run: just wasm-check
+      # Advisories, licences, bans and sources (deny.toml). The advisory
+      # database is fetched fresh, so a new advisory can fail an unrelated PR;
+      # that is the point of the check.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+      - run: cargo deny check
       # E25 keeps `grid` and `pivot` as a way out for a consumer who wants only
       # one element. A feature nobody builds is a feature that stops building,
       # so both single-element modules are compiled here.
