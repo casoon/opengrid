@@ -130,6 +130,10 @@ Two things belong in every release entry and are easy to leave out:
   filter dialog, the grouping menu and the operator menu held the grid, so one open of any of them
   kept it, its shadow tree and its runtime for the life of the page. They now find the grid from the
   event they receive.
+- **Grid: the pager keeps the keyboard focus** ([#285](https://github.com/casoon/opengrid/issues/285)).
+  Pressing "Next" onto the last page (or "Previous" onto the first) disabled the button the focus
+  stood on and the browser dropped it to the document. It now moves to the nearest pager button that
+  still works.
 - **Columns:** the binary wire reader no longer panics on forged counts and lengths: a row count of
   `u64::MAX` overflowed `rows + 1` in a text or list column, and path lengths of a flat tree that wrap
   around `u64` passed the sum check and then indexed out of range. Both are now a decode error, so a
