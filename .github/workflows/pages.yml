@@ -34,7 +34,9 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - uses: extractions/setup-just@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
 
       # Pinned to the version the crate pins; a different CLI stops with a version error.
       - uses: taiki-e/install-action@v2
@@ -43,7 +45,8 @@ jobs:
 
       - name: Install binaryen ${{ env.BINARYEN_VERSION }}
         run: |
-          curl -fsSL "https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}/binaryen-version_${BINARYEN_VERSION}-x86_64-linux.tar.gz" | tar -xz
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 -o binaryen.tar.gz "https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}/binaryen-version_${BINARYEN_VERSION}-x86_64-linux.tar.gz"
+          tar -xzf binaryen.tar.gz
           echo "$PWD/binaryen-version_${BINARYEN_VERSION}/bin" >> "$GITHUB_PATH"
 
       - name: Build WASM modules
