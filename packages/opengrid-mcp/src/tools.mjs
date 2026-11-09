@@ -15,9 +15,51 @@ const VIEW_HTML = fileURLToPath(new URL("../dist/view.html", import.meta.url));
 export const SELECTION_LIMIT = 100;
 export const SELECTION_MAX = 500;
 
-const View = z.record(z.string(), z.unknown()).describe(
-  "A grid view, exactly the JSON of opengrid's get_view: sort, filters, columns, density, group, expanded, aggregates, filter_row, facets. Fields left out keep their defaults.",
-);
+/** The largest `limit` the grid's provider answers: a window, never a source (#242). */
+export const QUERY_LIMIT_MAX = 500;
+
+// ViewInput of loader.d.ts: any part of a view. Unknown keys pass through, so
+// that the engine's own refusal (which names the key) is what the model reads.
+const Value = z.union([z.string(), z.number(), z.boolean(), z.null()]);
+const View = z
+  .looseObject({
+    sort: z.array(z.object({ field: z.string(), direction: z.enum(["asc", "desc"]) })).optional(),
+    filters: z
+      .array(
+        z.object({
+          column: z.string(),
+          op: z.enum([
+            "eq", "ne", "gt", "gte", "lt", "lte", "contains", "starts_with",
+            "is_null", "is_not_null", "has", "has_all", "is_empty",
+          ]),
+          value: z.string(),
+        }),
+      )
+      .optional(),
+    columns: z
+      .object({
+        order: z.array(z.string()).optional(),
+        hidden: z.array(z.string()).optional(),
+        widths: z.record(z.string(), z.number()).optional(),
+      })
+      .optional(),
+    density: z.enum(["compact", "normal", "comfortable"]).optional(),
+    group: z.array(z.string()).optional(),
+    expanded: z.array(z.array(Value)).optional(),
+    aggregates: z.record(z.string(), z.enum(["sum", "avg", "count", "min", "max", "range"])).optional(),
+    filterRow: z.boolean().optional(),
+    facets: z
+      .record(
+        z.string(),
+        z.union([
+          z.object({ values: z.array(Value) }),
+          z.object({ min: z.string(), max: z.string() }),
+          z.object({ from: z.string(), to: z.string() }),
+        ]),
+      )
+      .optional(),
+  })
+  .describe("A grid view, the JSON of opengrid's get_view. Fields left out keep their defaults.");
 
 function answer(structured, text) {
   return { structuredContent: structured, content: [{ type: "text", text: text ?? JSON.stringify(structured) }] };
@@ -218,7 +260,10 @@ export function registerTools(server, data, sessions) {
       if (query.source !== session.source) {
         throw new DataError("validation", `the session's source is ${session.source}`, "query.source");
       }
-      return { content: [{ type: "text", text: await data.execute(query) }] };
+      // The tool is for the grid, but a host that ignores `visibility` shows it
+      // to the model: a window is all it may take, never a source in pieces.
+      const limit = Math.min(Number.isInteger(query.limit) ? query.limit : QUERY_LIMIT_MAX, QUERY_LIMIT_MAX);
+      return { content: [{ type: "text", text: await data.execute({ ...query, limit }) }] };
     }),
   );
 

@@ -72,6 +72,10 @@ Two things belong in every release entry and are easy to leave out:
   type error from our own `.d.ts`. `just types` now also checks the packed adapters against the
   lowest Vue, React and Svelte the ranges allow.
 - **npm:** `engines.node` of `@casoon/opengrid` is `>=22.12.0` (it was `>=18`, which is past its end of life), the same as `@casoon/opengrid-mcp`.
+- **MCP:** `opengrid_query` answers a window of 500 rows at most, the server keeps 100 sessions
+  (the least recently used goes first), the `view` of the tools is a typed schema instead of any
+  object, and a server source over `http://` is refused unless it is on the machine itself
+  ([#242](https://github.com/casoon/opengrid/issues/242)).
 - **Contributors:** the changelog's release headings use the Keep a Changelog form `## [x.y.z] - date`, and the version links at the end of the file work.
 
 ### Fixed
