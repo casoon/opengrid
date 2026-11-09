@@ -371,3 +371,60 @@ test("grids keep their column settings to themselves", async ({ page }) => {
   );
   expect(hidden).toEqual({ A: ["qty"], B: [], C: [] });
 });
+
+// Issue #227: the popups of the toolbar and the filter row listen for their own
+// `toggle`, and a listener that holds the grid keeps it from being collected.
+test("a removed grid is collected after its popups were opened", async ({ page, browserName }) => {
+  test.skip(browserName !== "chromium", NO_GC);
+  await page.evaluate(() => {
+    const grid = window.__grid();
+    grid.setAttribute("toolbar", "");
+    document.getElementById("a").append(grid);
+    window.__opengridModule.set_provider(grid, window.__provider());
+  });
+  await settled(page, "a");
+  const step = (selector) =>
+    page.evaluate((selector) => {
+      const root = document.querySelector("#a opengrid-grid").shadowRoot;
+      root.querySelector(selector).click();
+    }, selector);
+  const closeAll = async () => {
+    await page.evaluate(() => {
+      const root = document.querySelector("#a opengrid-grid").shadowRoot;
+      for (const popup of root.querySelectorAll("[popover]")) {
+        if (popup.matches(":popover-open")) popup.hidePopover();
+      }
+    });
+    // The `toggle` event of a closed popover is its own task.
+    await page.waitForTimeout(100);
+  };
+
+  // The column list, the filter dialog (and its column select), the grouping
+  // menu and a column's operator menu: every one adds a listener to a popup.
+  await step('[part="columns-toggle"]');
+  await closeAll();
+  await step('[part="add-filter"]');
+  await page.evaluate(() => {
+    const select = document
+      .querySelector("#a opengrid-grid")
+      .shadowRoot.querySelector('[data-dialog="column"]');
+    select.selectedIndex = 1;
+    select.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+  });
+  await closeAll();
+  await step('[part="add-grouping"]');
+  await closeAll();
+  await step('[part="filter-operator"][data-col="1"]');
+  await closeAll();
+  // They said so: nothing is left open or behind.
+  expect(
+    await page.evaluate(() => document.querySelector("#a opengrid-grid").shadowRoot.querySelectorAll("[popover]:popover-open").length),
+  ).toBe(0);
+
+  await page.evaluate(() => {
+    const grid = document.querySelector("#a opengrid-grid");
+    grid.remove();
+    window.__weak = { grid: new WeakRef(grid) };
+  });
+  expect(await collect(page, ["grid"])).toEqual([]);
+});

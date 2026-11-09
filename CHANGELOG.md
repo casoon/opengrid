@@ -120,6 +120,11 @@ Two things belong in every release entry and are easy to leave out:
   exhaustive `match` no longer compiles), `AppState` a new field, and a client that parsed the
   database text out of a `backend` message no longer can. A tree error still travels as `backend`;
   a code of its own would be a wire change ([#219](https://github.com/casoon/opengrid/issues/219)).
+- **Grid:** a grid that was removed from the page is collected after its popups were opened
+  ([#227](https://github.com/casoon/opengrid/issues/227)). The listeners of the column list, the
+  filter dialog, the grouping menu and the operator menu held the grid, so one open of any of them
+  kept it, its shadow tree and its runtime for the life of the page. They now find the grid from the
+  event they receive.
 - **Columns:** the binary wire reader no longer panics on forged counts and lengths: a row count of
   `u64::MAX` overflowed `rows + 1` in a text or list column, and path lengths of a flat tree that wrap
   around `u64` passed the sum check and then indexed out of range. Both are now a decode error, so a
