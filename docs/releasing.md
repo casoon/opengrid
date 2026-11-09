@@ -149,7 +149,7 @@ inventory.
 - [ ] Approve **Publish to npm** in the run of the Release workflow the tag started
       (environment `npm`). The workflow publishes **the tarballs from the CI run of the
       release commit**, never a rebuild, through npm Trusted Publishing: no token, and the
-      packages carry provenance. Interrupted halfway, run the job again: what is on npm is
+      packages carry provenance. The CI artifacts expire after 90 days: a tag set on a commit older than that fails the publish, correctly but surprisingly — release from a recent commit. Interrupted halfway, run the job again: what is on npm is
       skipped.
 
 ### `@casoon/opengrid-mcp`
