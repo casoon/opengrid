@@ -629,12 +629,5 @@ pub(super) fn dispatch(
     if let Some(step) = step {
         let _ = js_sys::Reflect::set(&detail, &JsValue::from_str(step), &JsValue::TRUE);
     }
-    let init = web_sys::CustomEventInit::new();
-    init.set_bubbles(true);
-    init.set_composed(true);
-    init.set_cancelable(false);
-    init.set_detail(&detail);
-    if let Ok(event) = web_sys::CustomEvent::new_with_event_init_dict(PASTE_EVENT, &init) {
-        let _ = host.dispatch_event(&event);
-    }
+    crate::element::dispatch(host, PASTE_EVENT, &detail);
 }

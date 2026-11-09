@@ -74,10 +74,16 @@ fn on_attribute_changed(
     host: HtmlElement,
     name: String,
     _old: Option<String>,
-    _new: Option<String>,
+    new: Option<String>,
 ) {
     match name.as_str() {
-        LABEL_ATTRIBUTE | DATASOURCE_ATTRIBUTE => run(&host),
+        // A label is not a render cycle (as on the table and the grid).
+        LABEL_ATTRIBUTE => {
+            if let Some(root) = host.shadow_root() {
+                crate::element::update_label(&root, new.as_deref());
+            }
+        }
+        DATASOURCE_ATTRIBUTE => run(&host),
         // What the toolbar shows and offers (issue #112).
         TOOLBAR_ATTRIBUTE | FIELDS_ATTRIBUTE | MEASURES_ATTRIBUTE => run(&host),
         // Display only: drawn again from what the pivot holds, nothing asked.

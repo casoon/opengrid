@@ -14,7 +14,7 @@ use opengrid_grid::paste::{Notation, parse_cell};
 /// Whether rows are selected on a grid that can name them: it has a `row-key`
 /// and shows plain rows. `F2` then means "set for the selected rows".
 pub(super) fn applicable(host: &HtmlElement, runtime: &GridRuntime) -> bool {
-    host.has_attribute(grid::ROW_KEY_ATTRIBUTE)
+    has_row_key(host)
         && !runtime.state.selection().is_empty()
         && runtime.grouping.is_none()
         && runtime.tree.is_none()
@@ -228,14 +228,7 @@ pub(super) fn apply(host: &HtmlElement) {
         ] {
             let _ = js_sys::Reflect::set(&detail, &JsValue::from_str(property), &item);
         }
-        let init = web_sys::CustomEventInit::new();
-        init.set_bubbles(true);
-        init.set_composed(true);
-        init.set_cancelable(false);
-        init.set_detail(&detail);
-        if let Ok(event) = web_sys::CustomEvent::new_with_event_init_dict(BULK_EVENT, &init) {
-            let _ = host.dispatch_event(&event);
-        }
+        crate::element::dispatch(&host, BULK_EVENT, &detail);
 
         runtime
             .borrow_mut()
