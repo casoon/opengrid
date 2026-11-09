@@ -1098,6 +1098,7 @@ the same for `/query`, `/pivot`, `/source` and `/export`:
 | `limit_exceeded` | `413` | Too big for the server: a body over `max_payload_bytes`, a query over the server's timeout, more rows than `max_export_rows`, an export without its first byte within the timeout. The same request usually fails again — a timeout may pass under less load. | Narrow the view. |
 | `busy` | `503` | `max_concurrent_exports` exports are already running. The request itself is fine. | Try again in a moment. |
 | `backend` | `502` | The source behind the server failed. | Try again later; the operator's log says why. |
+| `data` | `422` | The data breaks a rule the query relies on — a tree with a key twice or a cycle. The message names the rows. Retrying does not help. | Show the message to whoever owns the data. A client that does not know the code treats it like any failure. |
 
 **`exportRows`' own codes** never come from a server:
 

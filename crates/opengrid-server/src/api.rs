@@ -275,6 +275,8 @@ impl IntoResponse for Failure {
             ErrorCode::Busy => StatusCode::SERVICE_UNAVAILABLE,
             // The gateway is fine; the source behind it is not.
             ErrorCode::Backend => StatusCode::BAD_GATEWAY,
+            // The request is fine and the gateway too; the data breaks a rule.
+            ErrorCode::Data => StatusCode::UNPROCESSABLE_ENTITY,
         };
         (
             status,
@@ -542,7 +544,7 @@ pub(crate) async fn within_tree_bound(
 /// the operator: it can name a table, a column or a tenant's value). A
 /// `LimitExceeded` is the caller's to act on. A `Data` error (a tree with a
 /// cycle) is told in full too: it names the rows of the caller's own data, and
-/// it has no code of its own yet, so it travels as `backend` (issue #219).
+/// travels as `data` (issue #219), not as an outage.
 pub(crate) fn source_failed(error: DataSourceError, reporter: &Reporter) -> WireError {
     match error {
         DataSourceError::NoData => {
@@ -552,7 +554,7 @@ pub(crate) fn source_failed(error: DataSourceError, reporter: &Reporter) -> Wire
         DataSourceError::LimitExceeded { message } => {
             WireError::new(ErrorCode::LimitExceeded, message)
         }
-        DataSourceError::Data { message } => reporter.told(ErrorCode::Backend, message),
+        DataSourceError::Data { message } => reporter.told(ErrorCode::Data, message),
     }
 }
 

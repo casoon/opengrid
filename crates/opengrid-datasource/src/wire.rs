@@ -70,9 +70,15 @@ pub enum ErrorCode {
     Backend,
     /// The request body was not readable at all.
     Malformed,
+    /// The source's data breaks a rule the query relies on — a tree with a key
+    /// twice or a cycle (T1, T3). Neither the query's fault nor an outage: the
+    /// message names rows of the caller's own data and is meant to be read.
+    /// Added after the others (issue #219); a client that does not know it
+    /// should treat it as a general failure.
+    Data,
 }
 
-const ERROR_CODES: [(&str, ErrorCode); 7] = [
+const ERROR_CODES: [(&str, ErrorCode); 8] = [
     ("validation", ErrorCode::Validation),
     ("unknown_source", ErrorCode::UnknownSource),
     ("limit_exceeded", ErrorCode::LimitExceeded),
@@ -80,6 +86,7 @@ const ERROR_CODES: [(&str, ErrorCode); 7] = [
     ("unauthorized", ErrorCode::Unauthorized),
     ("backend", ErrorCode::Backend),
     ("malformed", ErrorCode::Malformed),
+    ("data", ErrorCode::Data),
 ];
 
 impl ErrorCode {
@@ -613,6 +620,7 @@ mod tests {
             (ErrorCode::Unauthorized, "unauthorized"),
             (ErrorCode::Backend, "backend"),
             (ErrorCode::Malformed, "malformed"),
+            (ErrorCode::Data, "data"),
         ] {
             let error = WireError::new(code, "a sentence");
             let json = error.to_json();

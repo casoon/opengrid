@@ -868,6 +868,18 @@ test.describe("a page tells the failures apart without reading the sentence", ()
       outcome.proxy = await answering(502, "<html>Bad Gateway</html>", () =>
         window.__rest.execute(JSON.stringify(query), ""),
       );
+      // 422 `data`: a tree cycle, told in full; and a code from a newer server
+      // than this loader: handed on as it came, a rejection like any other.
+      outcome.data = await answering(
+        422,
+        JSON.stringify({ error: { code: "data", message: "the tree has a cycle (rule T3): rows 3, 4" } }),
+        () => window.__rest.execute(JSON.stringify(query), ""),
+      );
+      outcome.unknownCode = await answering(
+        422,
+        JSON.stringify({ error: { code: "from_a_newer_server", message: "a sentence" } }),
+        () => window.__rest.execute(JSON.stringify(query), ""),
+      );
       return outcome;
     });
 
@@ -888,6 +900,8 @@ test.describe("a page tells the failures apart without reading the sentence", ()
     expect(outcome.tooBig).toEqual(refusal(413, "limit_exceeded"));
     expect(outcome.busy).toEqual(refusal(503, "busy"));
     expect(outcome.proxy).toEqual(refusal(502, null));
+    expect(outcome.data).toEqual(refusal(422, "data"));
+    expect(outcome.unknownCode).toEqual(refusal(422, "from_a_newer_server"));
   });
 
   test("exportRows' own refusals carry a code, the sentence unchanged", async ({ page }) => {
