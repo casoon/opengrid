@@ -300,6 +300,14 @@ loader.module.set_formats(host, {
 });
 ```
 
+Which locale an `Intl` format reads is decided in this order: the format's own
+`locale`, then the nearest `lang` attribute above the element (through shadow
+roots), then the browser's. A page with `lang="de"` therefore formats `1.234,5`
+in an English browser too, in agreement with the voice a screen reader uses. When
+a `lang` changes, the formats are resolved again and the element redraws; a
+format with an explicit `locale` does not move. A function format is the page's
+own and is never touched.
+
 A column without a format is rendered in Rust and never crosses the WASM/JS
 boundary. `Intl` takes a JavaScript number, so a decimal beyond 2^53 loses
 digits through the options form — such a column takes a function, which receives

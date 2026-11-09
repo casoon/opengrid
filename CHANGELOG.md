@@ -137,6 +137,12 @@ Two things belong in every release entry and are easy to leave out:
   The grid is not written to then; the event reaches the page with the record's `key`. A value the
   page sets with `set_values` now ends the undo and redo steps it overrides
   ([#225](https://github.com/casoon/opengrid/issues/225)).
+- **Formats follow the page's `lang`** ([#232](https://github.com/casoon/opengrid/issues/232)).
+  An `Intl` format without a `locale` read the browser's locale, so a `lang="de"` page in an English
+  browser showed `1,234.5` while the screen reader spoke German. The locale is now the explicit
+  `locale`, then the nearest `lang` of the page (through shadow roots), then the browser's — and a
+  change of `lang` on the page re-resolves the formats and redraws the grid, table and pivot.
+
 - **Grid:** scrolling while a cell was being edited closed the editor in the grid's state but left
   the `<input>` on screen, where `Enter` and `Escape` no longer reached it and the typed value was
   lost. A scroll now leaves the editor open ([#224](https://github.com/casoon/opengrid/issues/224)).
