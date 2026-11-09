@@ -140,8 +140,44 @@ impl SendDataSource for LocalDataSource {
     }
 }
 
+/// A tree that breaks its rules is a data error and a table too large for a
+/// kernel a limit — neither is an outage (issue #219).
+impl From<crate::execute::ExecuteError> for DataSourceError {
+    fn from(error: crate::execute::ExecuteError) -> Self {
+        backend(error)
+    }
+}
+
 fn backend(error: crate::execute::ExecuteError) -> DataSourceError {
-    DataSourceError::Backend {
-        message: format!("local engine: {error}"),
+    use crate::execute::ExecuteError;
+    match error {
+        ExecuteError::Tree { message } => DataSourceError::Data { message },
+        ExecuteError::TooLarge { message } => DataSourceError::LimitExceeded { message },
+        other => DataSourceError::Backend {
+            message: format!("local engine: {other}"),
+        },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::execute::ExecuteError;
+
+    #[test]
+    fn an_execute_error_keeps_its_kind() {
+        let message = || "m".to_owned();
+        assert_eq!(
+            backend(ExecuteError::Tree { message: message() }),
+            DataSourceError::Data { message: message() }
+        );
+        assert_eq!(
+            backend(ExecuteError::TooLarge { message: message() }),
+            DataSourceError::LimitExceeded { message: message() }
+        );
+        assert!(matches!(
+            backend(ExecuteError::MissingField { field: "x".into() }),
+            DataSourceError::Backend { .. }
+        ));
     }
 }

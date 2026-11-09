@@ -66,6 +66,16 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Fixed
 
+- **Server:** a backend failure reaches the browser as one fixed sentence and a reference
+  (`the data source failed (reference og-…)`), no longer as the database's text, which can name a
+  table, a hidden column or a tenant's value. New `ServerBuilder::on_error(hook)` receives the full
+  cause under the same reference, and every refused token with its reason (never the token); there
+  is no logging without it. `DataSourceError::Data` is new: a tree with a key twice or a cycle
+  (T1, T3) is told to the caller in full instead of hidden as an outage, and the local engine's
+  `TooLarge` is `LimitExceeded` now. **What breaks:** `DataSourceError` has a new variant (an
+  exhaustive `match` no longer compiles), `AppState` a new field, and a client that parsed the
+  database text out of a `backend` message no longer can. A tree error still travels as `backend`;
+  a code of its own would be a wire change ([#219](https://github.com/casoon/opengrid/issues/219)).
 - **Columns:** the binary wire reader no longer panics on forged counts and lengths: a row count of
   `u64::MAX` overflowed `rows + 1` in a text or list column, and path lengths of a flat tree that wrap
   around `u64` passed the sum check and then indexed out of range. Both are now a decode error, so a
