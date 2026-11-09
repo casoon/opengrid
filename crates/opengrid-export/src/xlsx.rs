@@ -63,7 +63,9 @@ impl XlsxWriter {
     /// `export` when Excel would not take it as a sheet name.
     pub fn new(sheet: &str) -> Result<Self, String> {
         let mut workbook = Workbook::new();
-        let worksheet = workbook.add_worksheet_with_constant_memory();
+        let worksheet = workbook
+            .add_worksheet_with_constant_memory()
+            .map_err(|error| error.to_string())?;
         if worksheet.set_name(sheet).is_err() {
             worksheet
                 .set_name("export")
