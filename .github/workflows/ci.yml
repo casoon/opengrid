@@ -136,7 +136,7 @@ jobs:
       # which is a WASM feature the tool predates, not a broken module.
       # The release download answers 5xx for minutes at a time now and then, so the
       # unpacked tool is cached; the download is the fallback.
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         id: binaryen
         with:
           path: binaryen-version_${{ env.BINARYEN_VERSION }}
@@ -191,7 +191,7 @@ jobs:
           tool: wasm-bindgen@0.2.126
       # The release download answers 5xx for minutes at a time now and then, so the
       # unpacked tool is cached; the download is the fallback.
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         id: binaryen
         with:
           path: binaryen-version_${{ env.BINARYEN_VERSION }}
@@ -255,7 +255,7 @@ jobs:
       # which is a WASM feature the tool predates, not a broken module.
       # The release download answers 5xx for minutes at a time now and then, so the
       # unpacked tool is cached; the download is the fallback.
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         id: binaryen
         with:
           path: binaryen-version_${{ env.BINARYEN_VERSION }}
@@ -317,7 +317,7 @@ jobs:
           tool: wasm-bindgen@0.2.126
       # The release download answers 5xx for minutes at a time now and then, so the
       # unpacked tool is cached; the download is the fallback.
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         id: binaryen
         with:
           path: binaryen-version_${{ env.BINARYEN_VERSION }}
