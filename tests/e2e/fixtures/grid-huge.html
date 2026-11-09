@@ -57,8 +57,12 @@
         // of a window past the 200 come back empty, which is all a test about
         // the scroll mechanics of a very long result needs.
         window.__total ??= 3_000_000;
+        // How many times the grid asked: a drag of the scroll bar must not ask
+        // more often than it scrolls.
+        window.__queries = 0;
         loader.module.set_provider(host, {
           execute: (queryJson) => {
+            window.__queries += 1;
             const result = JSON.parse(engine.execute(queryJson));
             return JSON.stringify({ ...result, total_count: window.__total });
           },

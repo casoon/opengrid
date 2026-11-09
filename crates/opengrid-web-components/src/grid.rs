@@ -43,6 +43,11 @@
 //!   `scrollTop / row_height` ([`visible_start`]) and the fetched window starts
 //!   [`OVERSCAN`] rows above it ([`window_offset`]), clamped so the last window
 //!   ends at the last row. The `<thead>` is `position: sticky`.
+//! * **Very long results** (issue #284). The sizer is never taller than
+//!   [`MAX_SIZER_PX`], because a browser caps the height of an element. Above
+//!   that the rows sit at `row * row_height - shift` and the first visible row
+//!   comes from `scrollTop + shift`; [`ScrollScale`] decides the shift. Below
+//!   it the shift is 0 and nothing above applies differently.
 //! * **Range fetching.** The provider is asked for exactly the window
 //!   (`limit` = pool, `offset` = window start), never the whole result.
 //! * **Focus pinning.** [`assign_pool`] keeps the slot that already holds the
@@ -663,6 +668,9 @@ pub struct Paging {
     pub rows: u64,
     /// The page size while paging; `None` while virtualizing.
     pub size: Option<u64>,
+    /// Pixels the rows sit higher than `row * row_height` in the sizer: 0
+    /// unless the result is taller than [`MAX_SIZER_PX`] (see [`ScrollScale`]).
+    pub shift: u64,
 }
 
 impl Paging {
@@ -672,7 +680,13 @@ impl Paging {
             base: 0,
             rows: total_count,
             size: None,
+            shift: 0,
         }
+    }
+
+    /// The same area with its rows lifted by `shift` pixels.
+    pub const fn shifted(self, shift: u64) -> Self {
+        Self { shift, ..self }
     }
 
     /// One page of `size` rows out of `total_count`, `page` counted from 0.
@@ -682,6 +696,7 @@ impl Paging {
             base,
             rows: (total_count - base).min(size),
             size: Some(size),
+            shift: 0,
         }
     }
 
@@ -1059,9 +1074,184 @@ pub fn parse_result_bytes(bytes: &[u8]) -> Result<QueryResult, String> {
 /// The first logical row visible at `scroll_top`.
 ///
 /// With rows at `r * row_height` and a sticky header, the row whose top is at or
-/// below the scroll offset is `scroll_top / row_height`.
+/// below the scroll offset is `scroll_top / row_height`. Past [`MAX_SIZER_PX`]
+/// the argument is the *virtual* top, `scroll_top + shift` (see [`ScrollScale`]).
 pub const fn visible_start(scroll_top: u64, row_height: u64) -> u64 {
     scroll_top / row_height
+}
+
+/// The tallest sizer the grid asks a browser for, in pixels.
+///
+/// A browser caps the height of an element: measured, Chromium 153 and WebKit
+/// 26.6 stop at 33 554 428 px, Firefox at about 17.9 million. 10 million leaves
+/// 40 % headroom below the lowest, and stays under 2^24, so every pixel offset
+/// written into a `translateY` is an exact `f32` in the compositor. It is
+/// 312 500 rows at 32 px. A result whose rows need more is scrolled through a
+/// [`ScrollScale`]; one that needs less is drawn exactly as before.
+pub const MAX_SIZER_PX: u64 = 10_000_000;
+
+/// The sizer's height: the rows' height, never more than [`MAX_SIZER_PX`].
+pub fn sizer_height(rows: u64, row_height: u64) -> u64 {
+    rows.saturating_mul(row_height).min(MAX_SIZER_PX)
+}
+
+/// How many pixels `rows` rows of `row_height` are taller than the sizer may be.
+pub fn squeezed_px(rows: u64, row_height: u64) -> u64 {
+    rows.saturating_mul(row_height).saturating_sub(MAX_SIZER_PX)
+}
+
+/// Whether `rows` rows of `row_height` need more than [`MAX_SIZER_PX`].
+pub fn is_capped(rows: u64, row_height: u64) -> bool {
+    squeezed_px(rows, row_height) > 0
+}
+
+/// The row `row`'s offset in the sizer: `row * row_height - shift`.
+///
+/// Unscaled (`capped` false, `shift` 0) it is the product, as it always was.
+/// Capped, a row whose place would lie outside the sizer — the focused row,
+/// pinned while the reader scrolled far away from it — is parked above the
+/// sizer (or at its last slot): negative overflow is not scrollable and a place
+/// inside the sizer far from the viewport is not seen, whereas a place at
+/// millions of pixels would stretch the scroll area.
+pub fn row_top(row: u64, row_height: u64, shift: u64, capped: bool) -> i64 {
+    let top = i128::from(row) * i128::from(row_height) - i128::from(shift);
+    if !capped {
+        return top as i64;
+    }
+    let last_slot = i128::from(MAX_SIZER_PX.saturating_sub(row_height));
+    top.clamp(-i128::from(MAX_SIZER_PX), last_slot) as i64
+}
+
+/// Where a scrolled viewport stands once a [`ScrollScale`] has read it: the
+/// browser's `scrollTop` and the pixels the rows are shifted by. The virtual
+/// position — what [`visible_start`] divides — is their sum.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Placement {
+    pub scroll_top: u64,
+    pub shift: u64,
+}
+
+impl Placement {
+    /// The scroll position in the unsqueezed result, in pixels.
+    pub const fn virtual_top(self) -> u64 {
+        self.scroll_top + self.shift
+    }
+}
+
+/// How a result taller than [`MAX_SIZER_PX`] is scrolled (issue #284).
+///
+/// The sizer is `MAX_SIZER_PX` high, the result `squeezed` pixels higher. A
+/// row sits at `row * row_height - shift` in the sizer and the first visible row
+/// comes from the *virtual* top, `scrollTop + shift`. Two maps keep the scroll
+/// bar and the wheel both honest:
+///
+/// * **Coarse.** A scroll that moved by more than a scroll bar's thumb can
+///   ([`Self::jump`]) maps proportionally, `virtual = scrollTop * (max + squeezed) / max`,
+///   so the thumb says where in the result the reader is. `scrollTop` 0 is row 0
+///   and `scrollTop` = max is the last row at the bottom edge, to the pixel.
+/// * **Fine.** Anything smaller — a wheel notch, a touch drag, `PageDown`, an arrow
+///   key — moves the virtual position by as many pixels as the browser moved
+///   `scrollTop`: a notch is a few rows, not thousands. The shift stays.
+///   Within [`Self::margin`] of either end of the scroll range the scroll position is put
+///   back to the proportional place of the virtual one (the shift absorbs the
+///   difference, so the rows do not move on screen), which is what lets the
+///   wheel run into row 0 and the last row.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ScrollScale {
+    /// `scrollHeight - clientHeight` of the viewport.
+    max_scroll: u64,
+    /// How many pixels the rows are taller than the sizer.
+    squeezed: u64,
+    client_height: u64,
+}
+
+impl ScrollScale {
+    /// The scale for `rows` rows of `row_height`, or `None` while they fit the
+    /// sizer or the viewport has no scroll range (not laid out).
+    pub fn new(rows: u64, row_height: u64, max_scroll: u64, client_height: u64) -> Option<Self> {
+        let squeezed = squeezed_px(rows, row_height);
+        (squeezed > 0 && max_scroll > 0).then_some(Self {
+            max_scroll,
+            squeezed,
+            client_height,
+        })
+    }
+
+    /// The virtual scroll range: the last position the rows can be scrolled to.
+    pub const fn virtual_range(&self) -> u64 {
+        self.max_scroll + self.squeezed
+    }
+
+    /// A scroll that moved further than this is a drag of the thumb: the least
+    /// the thumb can move is `max_scroll / client_height` pixels.
+    pub fn jump(&self) -> u64 {
+        (self.max_scroll / (2 * self.client_height.max(1))).max(4 * self.client_height)
+    }
+
+    /// A row this close to the virtual top, in pixels, is reached by the
+    /// browser's own scrolling (`scrollIntoView`); a further one needs the
+    /// position placed first.
+    pub fn near(&self) -> u64 {
+        4 * self.client_height
+    }
+
+    /// The distance from either end of the scroll range within which the scroll
+    /// position follows the virtual one.
+    pub fn margin(&self) -> u64 {
+        (2 * self.client_height).max(1000)
+    }
+
+    /// The virtual position the proportional map gives `scroll_top`.
+    pub fn coarse(&self, scroll_top: u64) -> u64 {
+        let scroll_top = u128::from(scroll_top.min(self.max_scroll));
+        (scroll_top * u128::from(self.virtual_range()) / u128::from(self.max_scroll)) as u64
+    }
+
+    /// The inverse of [`Self::coarse`]: `scroll_top_of(coarse(s)) == s`.
+    pub fn scroll_top_of(&self, virtual_top: u64) -> u64 {
+        let virtual_top = u128::from(virtual_top.min(self.virtual_range()));
+        let range = u128::from(self.virtual_range());
+        (virtual_top * u128::from(self.max_scroll)).div_ceil(range) as u64
+    }
+
+    /// The placement that shows `virtual_top` with the scroll position at its
+    /// proportional place.
+    pub fn place_virtual(&self, virtual_top: u64) -> Placement {
+        let virtual_top = virtual_top.min(self.virtual_range());
+        let scroll_top = self.scroll_top_of(virtual_top);
+        Placement {
+            scroll_top,
+            shift: virtual_top - scroll_top,
+        }
+    }
+
+    /// The placement after the viewport scrolled to `scroll_top` from
+    /// `previous`. When the answer's `scroll_top` differs, the caller sets it.
+    pub fn place(&self, previous: Placement, scroll_top: u64) -> Placement {
+        if scroll_top == 0 {
+            return Placement::default();
+        }
+        if scroll_top >= self.max_scroll {
+            return Placement {
+                scroll_top,
+                shift: self.squeezed,
+            };
+        }
+        if scroll_top.abs_diff(previous.scroll_top) > self.jump() {
+            return Placement {
+                scroll_top,
+                shift: self.coarse(scroll_top) - scroll_top,
+            };
+        }
+        let margin = self.margin();
+        if scroll_top < margin || scroll_top + margin > self.max_scroll {
+            return self.place_virtual(scroll_top + previous.shift);
+        }
+        Placement {
+            scroll_top,
+            shift: previous.shift.min(self.squeezed),
+        }
+    }
 }
 
 /// The window start for a visible row, keeping [`OVERSCAN`] rows above it.
@@ -3081,6 +3271,11 @@ pub fn patch_grid(
     let fields = state.schema().fields();
     // The rows shown: the result's and the ones the reader added (issue #183).
     let total_count = state.row_count();
+    let place = RowPlace {
+        row_height,
+        shift: paging.shift,
+        capped: paging.size.is_none() && is_capped(paging.rows, row_height),
+    };
 
     // **The one place the role is decided** (F2): a grouped grid is a
     // `treegrid`, an ungrouped one a `grid`. Kept here, and nowhere else, so
@@ -3102,7 +3297,11 @@ pub fn patch_grid(
         name: "style".to_owned(),
         value: format!(
             "position: relative; height: {}px;",
-            paging.rows * row_height
+            if paging.size.is_some() {
+                paging.rows * row_height
+            } else {
+                sizer_height(paging.rows, row_height)
+            }
         ),
     });
     buffer.push(Patch::SetAttribute {
@@ -3307,6 +3506,12 @@ pub fn patch_grid(
             // standing on would show nothing: `aria-selected` touches neither
             // identity nor focus.
             if let Some(row) = slots.get(slot).copied().flatten() {
+                // Past [`MAX_SIZER_PX`] the rows move with the shift, the pinned
+                // one too: only its `transform` is written, which neither
+                // blurs nor re-reads it.
+                if place.capped {
+                    set_style(buffer, row_nodes.row, &row_style(row, place));
+                }
                 // A group header is exactly what the focus stands on when it is
                 // toggled — the fourth time the pin of point 17 meets a feature
                 // (phase E (i)). Its own label and `aria-expanded` are rewritten;
@@ -3324,7 +3529,7 @@ pub fn patch_grid(
                 // closed: its state is rewritten, its place is not.
                 if let Some(entry) = tree.and_then(|tree| tree.entry_at(row)) {
                     let local = row.saturating_sub(paging.base);
-                    patch_tree_row(buffer, row_nodes, entry, local, row_height);
+                    patch_tree_row(buffer, row_nodes, entry, local, place);
                 }
                 let selected = state.is_selected(row);
                 selection_attributes(buffer, row_nodes.row, selected, grouping.is_none());
@@ -3353,7 +3558,7 @@ pub fn patch_grid(
         match slots.get(slot).copied().flatten() {
             Some(row) => {
                 let local = row.saturating_sub(paging.base);
-                set_style(buffer, row_nodes.row, &row_style(local, row_height));
+                set_style(buffer, row_nodes.row, &row_style(local, place));
                 buffer.push(Patch::SetAttribute {
                     node: row_nodes.row,
                     name: "aria-rowindex".to_owned(),
@@ -3456,7 +3661,7 @@ pub fn patch_grid(
                 // A tree's node (issue #135): its depth, its place among its
                 // siblings, whether it opens — the treegrid's own words.
                 if let Some(entry) = tree.and_then(|tree| tree.entry_at(row)) {
-                    patch_tree_row(buffer, row_nodes, entry, local, row_height);
+                    patch_tree_row(buffer, row_nodes, entry, local, place);
                 }
                 // A slot that showed the total carried our `lang` on its label;
                 // a value in it is the page's word again.
@@ -4219,8 +4424,20 @@ fn patch_pager(
 ///
 /// The static `position: absolute` box comes from the shadow stylesheet; only
 /// the logical offset is per-row.
-fn row_style(row: u64, row_height: u64) -> String {
-    format!("transform: translateY({}px);", row * row_height)
+fn row_style(row: u64, place: RowPlace) -> String {
+    format!(
+        "transform: translateY({}px);",
+        row_top(row, place.row_height, place.shift, place.capped)
+    )
+}
+
+/// What puts a row at its place: the pixel height of a row and, for a result
+/// taller than [`MAX_SIZER_PX`], the shift and the clamping of [`row_top`].
+#[derive(Clone, Copy)]
+struct RowPlace {
+    row_height: u64,
+    shift: u64,
+    capped: bool,
 }
 
 /// The attributes a tree's node carries (issue #135, plan point 123):
@@ -4235,7 +4452,7 @@ fn patch_tree_row(
     row_nodes: &GridRowNodes,
     entry: &crate::tree::Entry,
     local: u64,
-    row_height: u64,
+    place: RowPlace,
 ) {
     let row = row_nodes.row;
     let set = |buffer: &mut PatchBuffer, name: &str, value: String| {
@@ -4258,11 +4475,7 @@ fn patch_tree_row(
     set_style(
         buffer,
         row,
-        &format!(
-            "{} --og-depth: {};",
-            row_style(local, row_height),
-            entry.depth
-        ),
+        &format!("{} --og-depth: {};", row_style(local, place), entry.depth),
     );
     if entry.children > 0 {
         set(buffer, "aria-expanded", entry.expanded.to_string());
@@ -5819,6 +6032,89 @@ mod tests {
         )));
     }
 
+    /// Past the limit the sizer stops at it and the rows sit by the shift, while
+    /// `aria-rowindex` and `aria-rowcount` stay logical (issue #284).
+    #[test]
+    fn a_capped_sizer_keeps_logical_row_indexes() {
+        let schema = initial_schema(&["customer".to_owned()]);
+        let mut nodes = NodeAllocator::new();
+        let mut buffer = PatchBuffer::new();
+        let view = build_grid(
+            &mut buffer,
+            &mut nodes,
+            &GridSkeleton {
+                label: None,
+                schema: &schema,
+                pool: 2,
+                texts: &GridTexts::default(),
+                declared: &[],
+                presentation: &Default::default(),
+                selection: false,
+                column_menu: false,
+                toolbar: false,
+                facets: false,
+                search: false,
+                actions: &[],
+            },
+        );
+        let total = 3_000_000;
+        let state = state_with(&["Gamma", "Alpha"], total, total - 2, 2);
+        let slots = assign_pool(&[None, None], None, &window_rows(total - 2, total, 2), 2);
+        let shift = squeezed_px(total, 32);
+
+        let mut buffer = PatchBuffer::new();
+        patch_grid(
+            &mut buffer,
+            &view,
+            &state,
+            &slots,
+            ActiveCell::Header { col: 0 },
+            &[],
+            None,
+            32,
+            &GridTexts::default(),
+            &crate::formats::Plain,
+            Paging::whole(state.total_count()).shifted(shift),
+            None,
+            None,
+        );
+        let attribute = |node: NodeId, wanted: &str| {
+            buffer.patches().iter().find_map(|patch| match patch {
+                Patch::SetAttribute {
+                    node: at,
+                    name,
+                    value,
+                } if *at == node && name == wanted => Some(value.clone()),
+                _ => None,
+            })
+        };
+        assert_eq!(
+            attribute(view.tbody, "style").as_deref(),
+            Some("position: relative; height: 10000000px;")
+        );
+        assert_eq!(
+            attribute(view.table, "aria-rowcount").as_deref(),
+            Some("3000001")
+        );
+        assert_eq!(
+            attribute(view.rows[0].row, "aria-rowindex").as_deref(),
+            Some("3000000")
+        );
+        assert_eq!(
+            attribute(view.rows[1].row, "aria-rowindex").as_deref(),
+            Some("3000001")
+        );
+        // The last row sits in the last slot of the sizer.
+        assert_eq!(
+            attribute(view.rows[1].row, "style").as_deref(),
+            Some("transform: translateY(9999968px);")
+        );
+        assert_eq!(
+            attribute(view.rows[0].row, "style").as_deref(),
+            Some("transform: translateY(9999936px);")
+        );
+    }
+
     /// A non-default row height drives both the sizer and the row offsets.
     #[test]
     fn a_custom_row_height_rescales_the_sizer_and_the_rows() {
@@ -6195,6 +6491,127 @@ mod tests {
         assert_eq!(window_rows(90, 100, 10), (90..100).collect::<Vec<_>>());
         // A pool shorter than the overscan still contains its row.
         assert_eq!(window_offset_for_row(2, 5, 2), 1);
+    }
+
+    /// A result that fits the sizer is not scaled at all (issue #284).
+    #[test]
+    fn a_result_that_fits_the_sizer_has_no_scale() {
+        // 312 500 rows of 32px are exactly the limit.
+        assert_eq!(sizer_height(312_500, 32), MAX_SIZER_PX);
+        assert!(!is_capped(312_500, 32));
+        assert!(ScrollScale::new(312_500, 32, 9_999_000, 800).is_none());
+        assert!(is_capped(312_501, 32));
+        assert_eq!(squeezed_px(312_501, 32), 32);
+        assert_eq!(sizer_height(312_501, 32), MAX_SIZER_PX);
+        assert_eq!(sizer_height(3_000_000, 32), MAX_SIZER_PX);
+        assert_eq!(sizer_height(10, 32), 320);
+        // Unscaled, a row sits at the product, as it always did.
+        assert_eq!(row_top(7, 32, 0, false), 224);
+        // An unlaid-out viewport has no scroll range to scale.
+        assert!(ScrollScale::new(3_000_000, 32, 0, 0).is_none());
+    }
+
+    /// The proportional map is monotone, exact at both ends and invertible.
+    #[test]
+    fn the_coarse_map_is_monotone_and_exact_at_the_ends() {
+        let scale = ScrollScale::new(3_000_000, 32, 9_999_700, 300).unwrap();
+        let range = 9_999_700 + (96_000_000 - MAX_SIZER_PX);
+        assert_eq!(scale.virtual_range(), range);
+        assert_eq!(scale.coarse(0), 0);
+        assert_eq!(scale.coarse(9_999_700), range);
+        assert_eq!(scale.scroll_top_of(0), 0);
+        assert_eq!(scale.scroll_top_of(range), 9_999_700);
+        // Past the ends the map stays on them.
+        assert_eq!(scale.coarse(u64::MAX), range);
+        assert_eq!(scale.scroll_top_of(u64::MAX), 9_999_700);
+        let mut last = 0;
+        for scroll_top in (0..=9_999_700).step_by(99_997) {
+            let virtual_top = scale.coarse(scroll_top);
+            assert!(virtual_top >= last, "monotone at {scroll_top}");
+            assert!(virtual_top >= scroll_top);
+            // There and back is the same place.
+            assert_eq!(scale.scroll_top_of(virtual_top), scroll_top);
+            last = virtual_top;
+        }
+        // The other way round never leaves the range and is monotone too.
+        let mut last = 0;
+        for virtual_top in (0..=range).step_by(1_234_567) {
+            let scroll_top = scale.scroll_top_of(virtual_top);
+            assert!(scroll_top >= last && scroll_top <= 9_999_700);
+            assert!(scroll_top <= virtual_top);
+            last = scroll_top;
+        }
+        // The last scroll position shows the end of the result.
+        let at_end = scale.place_virtual(scale.virtual_range());
+        assert_eq!(at_end.scroll_top, 9_999_700);
+        assert_eq!(at_end.virtual_top(), range);
+    }
+
+    /// A drag of the thumb maps proportionally; a wheel notch moves a few rows.
+    #[test]
+    fn a_jump_is_proportional_and_a_small_move_is_fine() {
+        let scale = ScrollScale::new(3_000_000, 32, 9_999_700, 300).unwrap();
+        let start = Placement::default();
+        // Dragging the thumb to the middle lands in the middle of the result.
+        let middle = scale.place(start, 4_999_850);
+        assert_eq!(middle.scroll_top, 4_999_850);
+        let row = visible_start(middle.virtual_top(), 32);
+        assert!((1_499_000..=1_501_000).contains(&row), "row {row}");
+        // A wheel notch from there is 100 virtual pixels, three rows.
+        let after = scale.place(middle, 4_999_950);
+        assert_eq!(after.shift, middle.shift);
+        assert_eq!(after.virtual_top() - middle.virtual_top(), 100);
+        // The very ends are the ends.
+        assert_eq!(scale.place(middle, 0), Placement::default());
+        let end = scale.place(middle, 9_999_700);
+        assert_eq!(end.virtual_top(), scale.virtual_range());
+        assert_eq!(end.shift, 96_000_000 - MAX_SIZER_PX);
+    }
+
+    /// Near an end the scroll position follows the virtual one, so the wheel can
+    /// run into row 0 and into the last row from anywhere.
+    #[test]
+    fn the_wheel_reaches_both_ends_after_a_jump() {
+        let scale = ScrollScale::new(3_000_000, 32, 9_999_700, 300).unwrap();
+        // Dragged to a spot near the top, then the wheel up: row 0 is reachable.
+        let mut at = scale.place(Placement::default(), 70_000);
+        let mut steps = 0;
+        while at.virtual_top() > 0 {
+            let moved = scale.place(at, at.scroll_top.saturating_sub(100));
+            assert!(moved.virtual_top() <= at.virtual_top(), "never turns back");
+            steps += 1;
+            assert!(steps < 2_000_000, "the wheel gets there");
+            at = moved;
+        }
+        assert_eq!(at, Placement::default());
+        // And down to the last row from the middle.
+        let mut at = scale.place(Placement::default(), 5_000_000);
+        let mut steps = 0;
+        while at.virtual_top() < scale.virtual_range() {
+            let moved = scale.place(at, (at.scroll_top + 100).min(9_999_700));
+            assert!(moved.virtual_top() >= at.virtual_top(), "never turns back");
+            steps += 1;
+            assert!(steps < 5_000_000, "the wheel gets there");
+            at = moved;
+        }
+        assert_eq!(at.virtual_top(), scale.virtual_range());
+        assert!(at.scroll_top <= 9_999_700);
+    }
+
+    /// A row's place is the product minus the shift; far away it is parked.
+    #[test]
+    fn a_far_row_is_parked_outside_the_sizer() {
+        assert_eq!(row_top(1_000, 32, 31_000, true), 1_000);
+        // Above the viewport by millions of pixels: above the sizer, not scrollable.
+        assert_eq!(row_top(5, 32, 80_000_000, true), -(MAX_SIZER_PX as i64));
+        // Below it: the last slot inside the sizer, never past its end.
+        assert_eq!(row_top(2_999_999, 32, 0, true), (MAX_SIZER_PX - 32) as i64);
+        // The last row at the last scroll position sits in the last slot exactly.
+        let squeezed = squeezed_px(3_000_000, 32);
+        assert_eq!(
+            row_top(2_999_999, 32, squeezed, true),
+            (MAX_SIZER_PX - 32) as i64
+        );
     }
 
     /// A fresh assignment fills the free slots in order.
