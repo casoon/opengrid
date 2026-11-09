@@ -45,7 +45,15 @@
 # Raised the same day from 280500: list columns (#185: chips in the cell, the
 # combobox editor with its choices and refusals, the list operators in the
 # filter row, the texts) grew it by 8.0 KiB, to 286622 B.
-grid+pivot    289000  # 286622 B, 2026-10-26, #185
+# Raised 2026-11-09 from 289000: the review fixes of this round grew the
+# element module by 5.8 KiB, to 292573 B — the grid keeps its editor, pinned
+# row and focus across answers (#223, #224), undo and a source replace follow
+# records by key and column (#225, #226), paste knows read-only columns (#228),
+# page-size, row-key and set_texts judge one value (#233), the ARIA of grouped
+# rows, the forced-colours selection, the pivot's persistent status node and
+# the Intl formats following `lang` (#229-#232), and the frame crosses into the
+# DOM once and writes only what differs (#235).
+grid+pivot    295500  # 292573 B, 2026-11-09, #223-#235
 # Raised 2026-09-30 from 108000: the bound was not raised with 0.7.0, which
 # shipped the engine at 115.2 KiB already (CHANGELOG); rule P9's sorted
 # grouping sets and order sets (#108) added the rest, to 121610 B.
@@ -63,4 +71,10 @@ grid+pivot    289000  # 286622 B, 2026-10-26, #185
 # Raised the same day from 146400: the list types (#185: two list columns in the
 # column buffers and the binary form, `has`, `has_all`, `is_empty`, their
 # validation) grew the engine by 4.0 KiB, to 149014 B.
-engine        151000  # 149014 B, 2026-10-26, #185
+# Raised 2026-11-09 from 151000: the review fixes of this round grew the engine
+# by 3.4 KiB, to 152538 B — an integer literal on a decimal column (#210), the
+# wire reader's checked counts (#212), the 38-digit bound of a decimal sum and
+# the scale check on push (#213), typed `in` sets and min/max without a buffer
+# per row (#214), the CSV read record by record (#215) and the planner placing
+# a tree whole on the client (#211).
+engine        154100  # 152538 B, 2026-11-09, #210-#215
