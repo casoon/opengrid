@@ -14,6 +14,12 @@ allow = [
     "Unicode-3.0",
     "Unlicense",
     "Zlib",
+    # The `tls` feature of opengrid-datasource-postgres (issue #220): rustls
+    # with the `ring` provider (ring: Apache-2.0 AND ISC; rustls-webpki and
+    # untrusted: ISC) and the Mozilla root certificates (webpki-roots: the
+    # list is data, under CDLA-Permissive-2.0). All permissive.
+    "ISC",
+    "CDLA-Permissive-2.0",
 ]
 # LGPL-2.1-or-later appears only inside an OR expression; see the check output.
 

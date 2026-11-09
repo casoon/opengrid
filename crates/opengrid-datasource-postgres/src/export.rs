@@ -44,13 +44,14 @@ use deadpool_postgres::Object;
 use opengrid_datasource::{DataSourceError, QueryResult};
 use opengrid_query::ValidatedQuery;
 use opengrid_types::{DataType, Schema};
+use tokio_postgres::CancelToken;
 use tokio_postgres::types::ToSql;
-use tokio_postgres::{CancelToken, NoTls};
 
 use crate::compiler::{CompiledQuery, QueryCompiler};
 use crate::source::{
     PostgresDataSource, backend, columns_of, compile, text_params, texts, wrap_for_reading,
 };
+use crate::tls::Canceller;
 
 /// The cursor's name. One export per connection, so one name is enough.
 const CURSOR: &str = "opengrid_export";
@@ -61,6 +62,8 @@ pub struct PostgresExport {
     /// `Some` until the export is dropped; only `Drop` takes it.
     client: Option<Object>,
     cancel: CancelToken,
+    /// Sends the cancel request, over TLS when the connection uses it.
+    canceller: Canceller,
     /// The statement `/query` would run, wrapped to read every column as text.
     statement: CompiledQuery,
     counting: CompiledQuery,
@@ -74,7 +77,7 @@ pub struct PostgresExport {
 }
 
 /// Stops the statement an export is running, from outside it.
-pub struct ExportCanceller(CancelToken);
+pub struct ExportCanceller(CancelToken, Canceller);
 
 impl ExportCanceller {
     /// Asks PostgreSQL to cancel whatever the export's connection is running.
@@ -82,7 +85,7 @@ impl ExportCanceller {
     /// left to cancel, and a failed request changes nothing about the export,
     /// which is being dropped anyway.
     pub async fn cancel(&self) {
-        let _ = self.0.cancel_query(NoTls).await;
+        self.1.cancel(self.0.clone()).await;
     }
 }
 
@@ -122,6 +125,7 @@ impl PostgresDataSource {
         let export = PostgresExport {
             client: Some(client),
             cancel,
+            canceller: self.canceller.clone(),
             statement,
             counting,
             output,
@@ -155,7 +159,7 @@ impl PostgresExport {
 
     /// What stops this export's running statement from outside.
     pub fn canceller(&self) -> ExportCanceller {
-        ExportCanceller(self.cancel.clone())
+        ExportCanceller(self.cancel.clone(), self.canceller.clone())
     }
 
     /// Counts the rows the export will have — after the query's `offset` and

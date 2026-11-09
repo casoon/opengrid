@@ -45,7 +45,10 @@ impl PostgresDataSource {
             .schema_of(tree.key.as_str())
             .ok_or_else(|| backend(format!("no column {:?}", tree.key.as_str())))?;
 
-        let mut lease = Lease::new(self.pool.get().await.map_err(backend)?);
+        let mut lease = Lease::new(
+            self.pool.get().await.map_err(backend)?,
+            self.canceller.clone(),
+        );
         let outcome = self.tree_level(&mut lease, query, tree, key_type).await;
         drop(lease.release());
         outcome

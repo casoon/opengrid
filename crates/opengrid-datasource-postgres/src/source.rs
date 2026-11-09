@@ -27,8 +27,9 @@ use deadpool_postgres::{Config, Pool, Runtime};
 use opengrid_datasource::{DataSourceCapabilities, DataSourceError, QueryResult, SendDataSource};
 use opengrid_query::ValidatedQuery;
 use opengrid_types::{DataType, Schema, Value};
-use tokio_postgres::NoTls;
+use tokio_postgres::tls::{MakeTlsConnect, TlsConnect};
 use tokio_postgres::types::ToSql;
+use tokio_postgres::{NoTls, Socket};
 
 use opengrid_pivot::{PivotResult, ValidatedPivotQuery};
 
@@ -36,6 +37,7 @@ use crate::compiler::{
     CompileError, CompiledQuery, GROUPING_PREFIX, PostgresCompiler, QueryCompiler, quote_ident,
 };
 use crate::lease::Lease;
+use crate::tls::Canceller;
 
 /// A table in a PostgreSQL database, behind the `DataSource` contract.
 pub struct PostgresDataSource {
@@ -45,6 +47,9 @@ pub struct PostgresDataSource {
     /// A tree's level in SQL rather than in the engine (issue #132); off
     /// unless asked for, see [`PostgresDataSource::with_tree_pushdown`].
     tree_pushdown: bool,
+    /// Sends the cancel request of a dropped request (issue #217), over TLS
+    /// when the connections use it (issue #220).
+    pub(crate) canceller: Canceller,
 }
 
 /// How the connection pool is sized and how long it waits (all optional; the
@@ -83,8 +88,78 @@ impl PostgresDataSource {
         schema: Schema,
         options: PoolOptions,
     ) -> Result<Self, DataSourceError> {
+        // A URL that asks for TLS must not end up without it: refused here, at
+        // the start, and not at the first query.
+        if sslmode(url) == Some(tokio_postgres::config::SslMode::Require) {
+            return Err(DataSourceError::Backend {
+                message: "the connection string asks for TLS (sslmode=require), but this \
+                          connection has none: use connect_with_tls"
+                    .to_owned(),
+            });
+        }
+        Self::build(url, table, schema, options, NoTls, Canceller::plain(), None)
+    }
+
+    /// The same, over TLS (issue #220). `tls` is any `tokio-postgres` TLS
+    /// connector: [`rustls_connector`](crate::rustls_connector) with the `tls`
+    /// feature, `postgres-native-tls`, or your own.
+    ///
+    /// **TLS is required, not tried.** Left to the connection string,
+    /// `sslmode=prefer` (libpq's default) falls back to a connection in clear
+    /// text when the server does not answer TLS — which anyone on the path can
+    /// make it do. With a connector given, the connection is made with
+    /// `sslmode=require` whatever the string says, and a string with
+    /// `sslmode=disable` is refused as a contradiction. The cancel request of a
+    /// dropped statement uses the same connector.
+    pub fn connect_with_tls<T>(
+        url: &str,
+        table: &str,
+        schema: Schema,
+        options: PoolOptions,
+        tls: T,
+    ) -> Result<Self, DataSourceError>
+    where
+        T: MakeTlsConnect<Socket> + Clone + Sync + Send + 'static,
+        T::Stream: Sync + Send,
+        T::TlsConnect: Sync + Send,
+        <T::TlsConnect as TlsConnect<Socket>>::Future: Send,
+    {
+        if sslmode(url) == Some(tokio_postgres::config::SslMode::Disable) {
+            return Err(DataSourceError::Backend {
+                message: "connect_with_tls with sslmode=disable in the connection string \
+                          contradicts itself"
+                    .to_owned(),
+            });
+        }
+        Self::build(
+            url,
+            table,
+            schema,
+            options,
+            tls.clone(),
+            Canceller::tls(tls),
+            Some(deadpool_postgres::SslMode::Require),
+        )
+    }
+
+    fn build<T>(
+        url: &str,
+        table: &str,
+        schema: Schema,
+        options: PoolOptions,
+        tls: T,
+        canceller: Canceller,
+        ssl_mode: Option<deadpool_postgres::SslMode>,
+    ) -> Result<Self, DataSourceError>
+    where
+        T: MakeTlsConnect<Socket> + Clone + Sync + Send + 'static,
+        T::Stream: Sync + Send,
+        T::TlsConnect: Sync + Send,
+        <T::TlsConnect as TlsConnect<Socket>>::Future: Send,
+    {
         let mut config = Config::new();
         config.url = Some(url.to_owned());
+        config.ssl_mode = ssl_mode;
         let mut pool_config = deadpool_postgres::PoolConfig::default();
         if let Some(max_size) = options.max_size {
             pool_config.max_size = max_size;
@@ -96,7 +171,7 @@ impl PostgresDataSource {
         };
         config.pool = Some(pool_config);
         let pool = config
-            .create_pool(Some(Runtime::Tokio1), NoTls)
+            .create_pool(Some(Runtime::Tokio1), tls)
             .map_err(|error| DataSourceError::Backend {
                 message: format!("connection pool: {error}"),
             })?;
@@ -105,6 +180,7 @@ impl PostgresDataSource {
             compiler: PostgresCompiler::new(table, schema.clone()),
             schema,
             tree_pushdown: false,
+            canceller,
         })
     }
 
@@ -153,7 +229,10 @@ impl PostgresDataSource {
         compiled: &CompiledQuery,
         output: &[(String, DataType)],
     ) -> Result<Vec<Vec<Option<String>>>, DataSourceError> {
-        let mut lease = Lease::new(self.pool.get().await.map_err(backend)?);
+        let mut lease = Lease::new(
+            self.pool.get().await.map_err(backend)?,
+            self.canceller.clone(),
+        );
         let sql = wrap_for_reading(&compiled.sql, output).map_err(compile)?;
         let params = text_params(&compiled.params);
         let refs: Vec<&(dyn ToSql + Sync)> = params
@@ -166,6 +245,13 @@ impl PostgresDataSource {
         drop(lease.release());
         Ok(texts(&outcome.map_err(backend)?, output.len()))
     }
+}
+
+/// The `sslmode` of a connection string, if it parses.
+fn sslmode(url: &str) -> Option<tokio_postgres::config::SslMode> {
+    url.parse::<tokio_postgres::Config>()
+        .ok()
+        .map(|config| config.get_ssl_mode())
 }
 
 /// Every cell of `rows` as the text PostgreSQL wrote, or NULL.

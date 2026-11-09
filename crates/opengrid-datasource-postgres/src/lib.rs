@@ -21,8 +21,11 @@ mod connector;
 mod export;
 mod lease;
 mod source;
+mod tls;
 mod tree;
 
 pub use compiler::{CompileError, CompiledQuery, PostgresCompiler, QueryCompiler, pg_type};
 pub use export::{ExportCanceller, PostgresExport};
 pub use source::{PoolOptions, PostgresDataSource};
+#[cfg(feature = "tls")]
+pub use tls::rustls_connector;
