@@ -167,7 +167,11 @@ in:
    error, and what a database says never reaches the caller (it can name tables, hidden columns
    and tenant values). The token stands for a context — the tenant, the account.
 2. **A mandatory row filter** from that context, added to every query, every pivot level and
-   every export before anything runs. No request can remove it.
+   every export before anything runs. No request can remove it. A context that does not fit the
+   filter (a value that is not the column's type, a missing key) is a startup error, not a
+   per-request one. For a tree the filter is the tree's `scope` only: putting it on the query's
+   filter as well was declined (#221), because it would change the answer (T5 context, the flat
+   `match` column).
 3. **A field allowlist.** A column the caller may not see does not exist for them: the same
    `422 unknown field` a typo gets, and it is missing from `GET /source`.
 4. **Bounds.** `max_limit` rows a page — a `/query` that names no `limit` gets `max_limit`, and

@@ -185,7 +185,9 @@ impl ServerBuilder {
 
     /// Asks every connector for its schema and checks everything that can be
     /// wrong before the first request: no sources, a name twice, an empty
-    /// token, an allowed field or a row filter the schema does not have.
+    /// or repeated token, an unparsable origin, an allowed field or a row
+    /// filter the schema does not have, a token whose context does not fit a
+    /// row filter.
     pub async fn build(self) -> Result<Server, RegistryError> {
         if self.sources.is_empty() {
             return Err(RegistryError::new(
@@ -214,9 +216,43 @@ impl ServerBuilder {
             sources.push(Source::new(&name, connector, schema, policy)?);
         }
 
+        // Two tokens of one value would keep only the last one's context: the
+        // first tenant would be handed the second's rows.
+        let mut tokens = BTreeMap::new();
+        for (value, context) in self.tokens {
+            if tokens.insert(value, context).is_some() {
+                return Err(RegistryError::new(
+                    "a token value is handed in twice (the second would replace the first's context)",
+                ));
+            }
+        }
+        // Every token against every source's row filter, so a context that
+        // does not fit fails here and not as a 422 on each request.
+        for (number, context) in tokens.values().enumerate() {
+            for source in &sources {
+                source
+                    .check_context(context, &self.limits)
+                    .map_err(|message| {
+                        RegistryError::new(format!(
+                            "source {:?}: the context of a token ({}. by value) does not fit its row filter: {message}",
+                            source.name,
+                            number + 1,
+                        ))
+                    })?;
+            }
+        }
+        // An origin that does not parse would be dropped silently, and the
+        // page behind it would see a CORS failure and nothing else.
+        for origin in &self.settings.allowed_origins {
+            if origin.parse::<axum::http::HeaderValue>().is_err() {
+                return Err(RegistryError::new(format!(
+                    "allow_origin {origin:?} is not a valid origin"
+                )));
+            }
+        }
+
         let registry = Registry::new(sources, self.limits, self.pivot_limits);
-        let mut state =
-            AppState::from_parts(registry, self.tokens.into_iter().collect(), &self.settings);
+        let mut state = AppState::from_parts(registry, tokens, &self.settings);
         if let Some(hook) = self.on_error {
             state.reporter = Reporter::with_hook(hook);
         }

@@ -24,7 +24,7 @@ use std::sync::Arc;
 use opengrid_connector::Connector;
 use opengrid_pivot::{PivotError, PivotLimits, PivotQuery, ValidatedPivotQuery};
 use opengrid_query::{CmpOp, FilterExpr, Limits, Query, ValidatedQuery};
-use opengrid_types::{FieldName, Schema};
+use opengrid_types::{DataSourceId, DataType, FieldName, Schema};
 
 /// One source the server will answer for.
 pub struct Source {
@@ -257,7 +257,7 @@ impl Source {
             // parent belongs to one is an orphan. On the query's filter it
             // would only stop matches, and T5 would show such a row as context.
             Some(filter) if query.tree.is_some() => {
-                let clause = build_row_filter(filter, context)?;
+                let clause = build_row_filter(filter, context, &self.full_schema)?;
                 let mut tree = query.tree.clone().expect("a tree");
                 tree.scope = Some(match tree.scope {
                     None => clause,
@@ -269,7 +269,7 @@ impl Source {
                 }
             }
             Some(filter) => {
-                let clause = build_row_filter(filter, context)?;
+                let clause = build_row_filter(filter, context, &self.full_schema)?;
                 let combined = match query.filter {
                     None => clause,
                     Some(existing) => FilterExpr::And(vec![existing, clause]),
@@ -288,6 +288,48 @@ impl Source {
 }
 
 impl Source {
+    /// Whether a token's context fits this source's row filter: the clause it
+    /// builds must exist and pass the validator against the full schema. A
+    /// mismatch (a missing key, a value that is not the column's type, an
+    /// operator the type does not answer) is then a startup error instead of a
+    /// 422 on every request of that token (issue #221).
+    pub fn check_context(
+        &self,
+        context: &BTreeMap<String, String>,
+        limits: &Limits,
+    ) -> Result<(), String> {
+        let Some(filter) = &self.row_filter else {
+            return Ok(());
+        };
+        let clause = match build_row_filter(filter, context, &self.full_schema) {
+            Ok(clause) => clause,
+            Err(PrepareError::Context(message)) => return Err(message),
+            Err(_) => unreachable!("a row filter fails as a context error"),
+        };
+        let query = Query {
+            source: DataSourceId::new("source").expect("a valid id"),
+            // The validator wants something selected; the first column will do.
+            select: self
+                .full_schema
+                .fields()
+                .iter()
+                .take(1)
+                .map(|field| field.name.clone())
+                .collect(),
+            filter: Some(clause),
+            group: Vec::new(),
+            aggregate: Vec::new(),
+            sort: Vec::new(),
+            offset: None,
+            limit: None,
+            tree: None,
+        };
+        query
+            .validate(&self.full_schema, limits)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    }
+
     /// The same two validations for a pivot (plan point 53).
     ///
     /// The mandatory row filter (E16) is added **before** the grouping sets are
@@ -308,7 +350,7 @@ impl Source {
         let pivot = match &self.row_filter {
             None => pivot,
             Some(filter) => {
-                let clause = build_row_filter(filter, context)?;
+                let clause = build_row_filter(filter, context, &self.full_schema)?;
                 let combined = match pivot.filter {
                     None => clause,
                     Some(existing) => FilterExpr::And(vec![existing, clause]),
@@ -336,10 +378,12 @@ fn pivot_validation(error: PivotError) -> PrepareError {
 }
 
 /// Builds the mandatory clause, resolving a `:key` value from the caller's
-/// context.
+/// context. The context value is text; it is read as the column's type, so a
+/// `tenant_id bigint` takes `"7"` (a list column: as its element type).
 fn build_row_filter(
     filter: &RowFilter,
     context: &BTreeMap<String, String>,
+    schema: &Schema,
 ) -> Result<FilterExpr, PrepareError> {
     let field = FieldName::new(&filter.field)
         .map_err(|error| PrepareError::Context(format!("row_filter field: {error}")))?;
@@ -359,9 +403,48 @@ fn build_row_filter(
                     "the token carries no context value {key:?} for the mandatory row filter"
                 ))
             })?;
-            opengrid_json::Json::from(resolved.as_str())
+            let data_type = schema
+                .field(&filter.field)
+                .map(|field| field.data_type)
+                .ok_or_else(|| {
+                    PrepareError::Context(format!(
+                        "row_filter names {:?}, which the schema does not have",
+                        filter.field
+                    ))
+                })?;
+            context_json(resolved, key, data_type)?
         }
     };
 
     Ok(FilterExpr::Cmp { field, op, value })
+}
+
+/// A context value as the JSON the filter's column takes: a number for a number
+/// column, a boolean for a boolean one, the text itself otherwise.
+fn context_json(
+    text: &str,
+    key: &str,
+    data_type: DataType,
+) -> Result<opengrid_json::Json, PrepareError> {
+    let mismatch = || {
+        PrepareError::Context(format!(
+            "the context value {key:?} is not a {data_type:?} for the mandatory row filter"
+        ))
+    };
+    Ok(match data_type.element().unwrap_or(data_type) {
+        DataType::Int64 => opengrid_json::Json::from(text.parse::<i64>().map_err(|_| mismatch())?),
+        DataType::Float64 => {
+            let number = text.parse::<f64>().map_err(|_| mismatch())?;
+            if !number.is_finite() {
+                return Err(mismatch());
+            }
+            opengrid_json::Json::from(number)
+        }
+        DataType::Bool => match text {
+            "true" => opengrid_json::Json::from(true),
+            "false" => opengrid_json::Json::from(false),
+            _ => return Err(mismatch()),
+        },
+        _ => opengrid_json::Json::from(text),
+    })
 }
