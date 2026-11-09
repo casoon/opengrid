@@ -48,48 +48,48 @@ async function openLate(page) {
   await expect(page.locator("opengrid-grid tbody tr").first()).toBeVisible();
 }
 
-// PageDown moves the focus past the loaded rows, which asks for a window and
-// wants the focus back with the answer.
-async function pageDownFar(page) {
+// Ctrl+End moves the focus to the last row, which is outside the loaded rows:
+// the grid asks for that window and wants the focus back with the answer. The
+// queries are held back until the test has asked for what it wants, so no
+// frame decides the order.
+async function ctrlEndHeld(page) {
   await shadow(page, (root) => root.querySelector('td[data-row="0"][data-col="0"]').focus());
   await page.evaluate(() => (window.__hold = true));
-  for (let i = 0; i < 4; i++) await page.keyboard.press("PageDown");
+  await page.keyboard.press("Control+End");
+  await expect.poll(() => page.evaluate(() => window.__held.length)).toBeGreaterThan(0);
 }
 
-test("a focus request survives the newer query that superseded its own", async ({ page }) => {
-  await openLate(page);
-  await pageDownFar(page);
-  // A scroll asks again, and asks for no focus.
-  await page.evaluate(() => {
-    document.querySelector("opengrid-grid").shadowRoot.querySelector('[part="viewport"]').scrollTop += 32;
-  });
-  await page.evaluate(() => {
+const release = (page) =>
+  page.evaluate(() => {
     window.__hold = false;
     window.__releaseAll();
   });
 
-  // The focus stands on the active cell — the one with the tab stop, far down
-  // the list — not on whatever cell the pool recycled under it.
+test("a focus request survives the newer query that superseded its own", async ({ page }) => {
+  await openLate(page);
+  await ctrlEndHeld(page);
+  const asked = await page.evaluate(() => window.__held.length);
+  // A second window query, which asks for no focus: `add-row` turns the new row
+  // on and asks for the window again. It supersedes the first one.
+  await page.evaluate(() => document.querySelector("opengrid-grid").setAttribute("add-row", ""));
+  await expect.poll(() => page.evaluate(() => window.__held.length)).toBeGreaterThan(asked);
+  await release(page);
+
+  // The focus stands on the active cell — the last row, the one with the tab
+  // stop — not on whatever cell the pool recycled under it.
   const stands = () =>
-    shadow(page, (root) => {
-      const focused = root.activeElement;
-      const stop = root.querySelector('tbody td[tabindex="0"]');
-      return { focused: focused?.dataset.row ?? null, stop: stop?.dataset.row ?? null };
-    });
-  await expect.poll(async () => {
-    const { focused, stop } = await stands();
-    return focused !== null && focused === stop && Number(stop) > 10;
-  }).toBe(true);
+    shadow(page, (root) => ({
+      focused: root.activeElement?.dataset.row ?? null,
+      stop: root.querySelector('tbody td[tabindex="0"]')?.dataset.row ?? null,
+    }));
+  await expect.poll(stands).toEqual({ focused: "59", stop: "59" });
 });
 
 test("an answer does not pull the focus back from a filter field the reader went to", async ({ page }) => {
   await openLate(page);
-  await pageDownFar(page);
+  await ctrlEndHeld(page);
   await shadow(page, (root) => root.querySelector('input[data-col="1"]').focus());
-  await page.evaluate(() => {
-    window.__hold = false;
-    window.__releaseAll();
-  });
+  await release(page);
   await page.waitForTimeout(300);
 
   expect(await focusedPart(page)).toMatchObject({ tag: "input", cell: false });
