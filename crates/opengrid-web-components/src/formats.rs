@@ -89,7 +89,7 @@ pub fn event_text(value: &Value) -> String {
 
 #[cfg(target_arch = "wasm32")]
 pub use host::formats;
-#[cfg(all(target_arch = "wasm32", feature = "grid"))]
+#[cfg(all(target_arch = "wasm32", any(feature = "grid", feature = "pivot")))]
 pub use host::set_formats_for;
 
 /// Per-host storage of the column formats.
@@ -175,23 +175,23 @@ export function __opengrid_intl_formatter(kind, locale, options) {
     extern "C" {
         #[wasm_bindgen(catch, js_name = __opengrid_intl_formatter)]
         fn intl_formatter(kind: &str, locale: &str, options: &JsValue) -> Result<JsValue, JsValue>;
-        #[cfg(feature = "grid")]
+        #[cfg(any(feature = "grid", feature = "pivot"))]
         #[wasm_bindgen(js_name = __opengrid_page_lang)]
         fn page_lang(host: &HtmlElement) -> String;
-        #[cfg(feature = "grid")]
+        #[cfg(any(feature = "grid", feature = "pivot"))]
         #[wasm_bindgen(js_name = __opengrid_follow_lang)]
         fn follow_lang(host: &HtmlElement, relocalize: &js_sys::Function);
     }
 
     /// The formats as the page gave them, before `Intl` options became
     /// functions — what a change of `lang` resolves again.
-    #[cfg(feature = "grid")]
+    #[cfg(any(feature = "grid", feature = "pivot"))]
     fn source_symbol() -> js_sys::Symbol {
         js_sys::Symbol::for_("opengrid.formats.source")
     }
 
     /// The page language the formats were resolved with.
-    #[cfg(feature = "grid")]
+    #[cfg(any(feature = "grid", feature = "pivot"))]
     fn lang_symbol() -> js_sys::Symbol {
         js_sys::Symbol::for_("opengrid.formats.lang")
     }
@@ -266,7 +266,7 @@ export function __opengrid_intl_formatter(kind, locale, options) {
 
     /// Resolves `value` — `Intl` options become functions here, once — and
     /// attaches the result to `host`, replacing any previous formats.
-    #[cfg(feature = "grid")]
+    #[cfg(any(feature = "grid", feature = "pivot"))]
     pub fn set_formats_for(host: &HtmlElement, value: &JsValue) {
         let lang = page_lang(host);
         let resolved = js_sys::Object::new();
@@ -287,7 +287,7 @@ export function __opengrid_intl_formatter(kind, locale, options) {
 
     /// Whether an `Intl` entry has no `locale` of its own, so the page's `lang`
     /// decides how it reads.
-    #[cfg(feature = "grid")]
+    #[cfg(any(feature = "grid", feature = "pivot"))]
     fn uses_page_lang(value: &JsValue) -> bool {
         let Some(object) = value.dyn_ref::<js_sys::Object>() else {
             return false;
@@ -303,7 +303,7 @@ export function __opengrid_intl_formatter(kind, locale, options) {
 
     /// Resolves the formats again when the page's language changes: the
     /// elements redraw with the numbers and dates of the new language.
-    #[cfg(feature = "grid")]
+    #[cfg(any(feature = "grid", feature = "pivot"))]
     fn follow(host: &HtmlElement) {
         thread_local! {
             static RELOCALIZE: js_sys::Function = wasm_bindgen::closure::Closure::<dyn FnMut(HtmlElement)>::new(

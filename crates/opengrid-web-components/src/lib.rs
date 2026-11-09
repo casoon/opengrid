@@ -54,7 +54,7 @@ pub(crate) mod grid;
 pub(crate) mod grouping;
 #[cfg(feature = "pivot")]
 pub(crate) mod pivot;
-#[cfg(feature = "grid")]
+#[cfg(any(feature = "grid", feature = "pivot"))]
 pub(crate) mod presentation;
 #[cfg(feature = "grid")]
 pub(crate) mod search;
