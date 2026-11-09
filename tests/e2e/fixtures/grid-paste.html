@@ -23,7 +23,9 @@
     </main>
     <script type="module">
       // Issue #184: pasting a block. The page is German (`lang="de"`), so a
-      // decimal is written `1.234,50`. `?add` sets `add-row`.
+      // decimal is written `1.234,50`. `?add` sets `add-row`, `?readonly` makes `price`
+      // the page's column, `?list` shows a list column `tags`, `?group` groups by `seats`
+      // (issue #228). `__hold` holds every query until `__release(index)`.
       import { loadOpengrid, createLocalProvider } from "/packages/opengrid/loader.js";
       import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
 
@@ -38,6 +40,7 @@
           { name: "price", type: { decimal: { precision: 12, scale: 2 } }, nullable: true },
           { name: "seats", type: "int64", nullable: true },
           { name: "note", type: "utf8", nullable: true },
+          { name: "tags", type: "list<utf8>", nullable: true },
         ],
       });
       const rows = Array.from({ length: 40 }, (_, index) => ({
@@ -46,13 +49,37 @@
         price: "1.00",
         seats: index,
         note: null,
+        tags: null,
       }));
-      const provider = createLocalProvider(new Engine());
-      await provider.loadRows("items", rows, schema);
+      const real = createLocalProvider(new Engine());
+      await real.loadRows("items", rows, schema);
+      // While `__hold` is set, a query waits until the test lets it go, by its
+      // place in the order they were asked.
+      window.__hold = false;
+      window.__held = [];
+      window.__release = (index) => window.__held[index]();
+      const provider = {
+        execute: (query, mode) => {
+          if (!window.__hold) return real.execute(query, mode);
+          return new Promise((resolve) => {
+            window.__held.push(() => resolve(real.execute(query, mode)));
+          });
+        },
+        watch: (host) => real.watch(host),
+      };
       const loader = await loadOpengrid();
       const host = document.querySelector("opengrid-grid");
       if (location.search.includes("add")) {
         host.setAttribute("add-row", "");
+      }
+      if (location.search.includes("list")) {
+        host.setAttribute("columns", "id,name,price,seats,note,tags");
+      }
+      if (location.search.includes("group")) {
+        host.setAttribute("group-by", "seats");
+      }
+      if (location.search.includes("readonly")) {
+        loader.module.set_columns(host, { price: { readonly: true } });
       }
       window.__module = loader.module;
       loader.module.set_provider(host, provider);

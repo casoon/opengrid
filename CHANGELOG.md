@@ -72,6 +72,13 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Fixed
 
+- **Grid:** pasting no longer writes into a column the page fills (`readonly`)
+  ([#228](https://github.com/casoon/opengrid/issues/228)). The preview shows those cells with the
+  reason and leaves them out, the live region names the column, and a block of nothing else closes
+  without an `opengrid-paste`. A preview is discarded when a new result for the whole query lands
+  (another sort or filter, a replaced source, a rebuild), and an answer that arrives after one does
+  not open one; before, `Enter` applied the block to rows that were no longer there. The preview's
+  query is no longer counted in the footer.
 - **Server and connectors, hardening** ([#222](https://github.com/casoon/opengrid/issues/222)).
   `max_payload_bytes` above axum's 2 MiB is honoured (the router carries the limit; an oversize body
   is still the `limit_exceeded` wire error), every answer has `Cache-Control: no-store` and

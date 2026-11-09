@@ -619,7 +619,11 @@ copies, or CSV — and anchors it at the focused cell. **Nothing changes yet:** 
 notation of the grid's language (`1.234,5` in German; the wire notation `1234.5` is understood
 too). A value that cannot be read is marked with the reason, and the live region says it:
 „12 rows, 2 values not readable“. `Enter` applies, `Escape` discards. A block with unreadable
-values is not applied.
+values is not applied. A column the page fills (`readonly` in `set_columns`) is not pasted into:
+its cells stay in the preview marked `aria-readonly` with the reason („price is read-only“), the
+sentence names the column, and the rest of the block is applied. The preview belongs to the rows it
+was read from: a new result for the whole query — another sort or filter, a source replaced, a
+rebuilt grid — discards it.
 
 Applying fires **one** `opengrid-paste` for the whole block: `changes` has one entry per cell of
 an existing row (`key` with `row-key`, `row` always, `column`, `value` as text, `previous`), and

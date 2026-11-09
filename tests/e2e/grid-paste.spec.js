@@ -157,3 +157,119 @@ test("with add-row the rows past the end become added rows, and a required colum
   expect(pasted.added[0].values).toMatchObject({ id: 41, name: "Late 2", price: "3.00", seats: 8 });
   expect(pasted.added[0].provisionalKey).toMatch(/^new-/);
 });
+
+// Issue #228: what a paste may not write into, and what it must not outlive.
+
+test("a read-only column is left out of the paste, with its reason in the preview", async ({ page }) => {
+  await open(page, "?readonly");
+  await focusCell(page, 0, 1);
+  await paste(page, "N1\t5,00\t7\n");
+  await expect.poll(() => summary(page)).toBe("1 row, price is read-only");
+  const left = await shadow(page, (root) => {
+    const cell = root.querySelector('[part="paste-preview"] td[aria-readonly="true"]');
+    return { text: cell?.textContent, invalid: cell?.hasAttribute("aria-invalid") };
+  });
+  expect(left.text).toContain("price is read-only");
+  expect(left.invalid).toBe(false);
+
+  // It does not block: the other cells are pasted, the read-only one never reaches the page.
+  await page.keyboard.press("Enter");
+  const [pasted] = await page.evaluate(() => window.__pasted);
+  expect(pasted.changes.map((change) => change.column)).toEqual(["name", "seats"]);
+  expect(await cell(page, 0, 2)).toContain("1.00");
+});
+
+test("a paste of read-only cells only has nothing to tell the page", async ({ page }) => {
+  await open(page, "?readonly");
+  await focusCell(page, 0, 2);
+  await paste(page, "500\n600\n");
+  await expect.poll(() => summary(page)).toBe("0 rows, price is read-only");
+  await page.keyboard.press("Enter");
+  expect(await page.evaluate(() => window.__pasted)).toHaveLength(0);
+  expect(await summary(page)).toBeNull();
+});
+
+// A list is picked from the page's choices, not read from text: the paste says so and waits.
+test("a list column is not written from the clipboard", async ({ page }) => {
+  await open(page, "?list");
+  await focusCell(page, 0, 5);
+  await paste(page, "a\n");
+  await expect.poll(() => summary(page)).toBe("0 rows, 1 value not readable");
+  await page.keyboard.press("Enter");
+  expect(await page.evaluate(() => window.__pasted)).toHaveLength(0);
+});
+
+test("a paste while filtered lands on the filtered rows", async ({ page }) => {
+  await open(page);
+  await shadow(page, (root) => {
+    const input = root.querySelector('input[data-col="1"]');
+    input.value = "Item 3";
+    input.focus();
+  });
+  await page.keyboard.press("Enter");
+  await expect.poll(() => cell(page, 1, 1)).toBe("Item 30");
+  await focusCell(page, 0, 1);
+  await paste(page, "Only\n");
+  await expect.poll(() => summary(page)).toBe("1 row");
+  await page.keyboard.press("Enter");
+  const [pasted] = await page.evaluate(() => window.__pasted);
+  expect(pasted.changes).toEqual([expect.objectContaining({ key: 3, row: 0, column: "name", value: "Only", previous: "Item 3" })]);
+});
+
+test("a grouped grid leaves the paste to the browser", async ({ page }) => {
+  await open(page, "?group");
+  // Open the group and stand on a record in it: a cell a paste could land on.
+  await focusCell(page, 0, 0);
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowDown");
+  expect(await shadow(page, (root) => root.activeElement?.closest("tr")?.getAttribute("aria-expanded"))).toBeNull();
+  expect(await shadow(page, (root) => root.activeElement?.tagName)).toBe("TD");
+  const prevented = await page.evaluate(() => {
+    const data = new DataTransfer();
+    data.setData("text/plain", "x\ty\n");
+    const event = new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true, composed: true });
+    document.querySelector("opengrid-grid").shadowRoot.activeElement.dispatchEvent(event);
+    return event.defaultPrevented;
+  });
+  expect(prevented).toBe(false);
+  expect(await summary(page)).toBeNull();
+});
+
+test("a preview does not add to the queries the footer counts", async ({ page }) => {
+  await open(page);
+  const footer = () => shadow(page, (root) => root.querySelector('[part="source"]').textContent);
+  const before = await footer();
+  expect(before).not.toBe("");
+  await focusCell(page, 0, 1);
+  await paste(page, "A\nB\n");
+  await expect.poll(() => summary(page)).toBe("2 rows");
+  expect(await footer()).toBe(before);
+});
+
+test("a result for another sort drops the preview, and an answer that comes too late shows none", async ({ page }) => {
+  await open(page);
+  await focusCell(page, 0, 1);
+  await paste(page, "A\nB\n");
+  await expect.poll(() => summary(page)).toBe("2 rows");
+
+  // The reader sorts: the positions the preview names hold other records.
+  await shadow(page, (root) => root.querySelector('th[data-col="1"]').focus());
+  await page.keyboard.press("Enter");
+  await expect.poll(() => summary(page)).toBeNull();
+  expect(await status(page)).toContain("Paste discarded");
+
+  // An answer for the rows of the old order lands after the sort's.
+  await page.evaluate(() => (window.__hold = true));
+  await focusCell(page, 0, 1);
+  await paste(page, "C\nD\n");
+  await expect.poll(() => page.evaluate(() => window.__held.length)).toBe(1);
+  await shadow(page, (root) => root.querySelector('th[data-col="1"]').focus());
+  await page.keyboard.press("Enter");
+  await expect.poll(() => page.evaluate(() => window.__held.length)).toBe(2);
+  await page.evaluate(() => window.__release(1));
+  await expect.poll(() => status(page)).not.toContain("Loading");
+  await page.evaluate(() => window.__release(0));
+  await expect.poll(() => status(page)).toContain("Paste discarded");
+  expect(await summary(page)).toBeNull();
+  expect(await page.evaluate(() => window.__pasted)).toHaveLength(0);
+});
