@@ -39,9 +39,18 @@ Two things belong in every release entry and are easy to leave out:
   `new Worker(new URL(...))` form, so `loadOpengrid()` and `createWorkerProvider()` work in a Vite
   build without `moduleUrl` or `workerUrl`; the options still replace the defaults. Before, such a
   build fell back to the plain table and could not start the engine's worker.
+- **Packages:** the peer range of `vue` is `>=3.4.20` and that of `@types/react` is `>=18.3.0`
+  ([#237](https://github.com/casoon/opengrid/issues/237)). The shipped Vue types import
+  `DefineSetupFnComponent`, which Vue only has from 3.4.20; a project on 3.3 or early 3.4 got a
+  type error from our own `.d.ts`. `just types` now also checks the packed adapters against the
+  lowest Vue, React and Svelte the ranges allow.
 
 ### Fixed
 
+- **Columns:** the binary wire reader no longer panics on forged counts and lengths: a row count of
+  `u64::MAX` overflowed `rows + 1` in a text or list column, and path lengths of a flat tree that wrap
+  around `u64` passed the sum check and then indexed out of range. Both are now a decode error, so a
+  hostile or broken server cannot trap the page ([#212](https://github.com/casoon/opengrid/issues/212)).
 - **Query:** an integer literal on a `decimal` column (`{"field": "amount", "op": "gt", "value": 10}`) was
   refused as `ValueTypeMismatch`, although rule S8 allows comparing an integer with a decimal. It is
   now read at the column's scale (an overflow of the precision is still a validation error); a float
