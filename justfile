@@ -109,6 +109,9 @@ types:
     bash scripts/check-adapter-package.sh react
     bash scripts/check-adapter-package.sh vue
     bash scripts/check-adapter-package.sh svelte
+    bash scripts/check-lowest-peers.sh react
+    bash scripts/check-lowest-peers.sh vue
+    bash scripts/check-lowest-peers.sh svelte
     bash scripts/check-core-install.sh
 
 # Größen der Elementmodule (beide Elemente, nur Grid, nur Pivot) und des Engine-Moduls — roh, gzip,
