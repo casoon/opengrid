@@ -135,6 +135,11 @@ answers a whole pivot in one statement, as PostgreSQL does, bounds the statement
 tree the engine builds is counted first (`max_tree_rows`); a connector that answers trees itself
 keeps the rows in the database.
 
+PostgreSQL pool. `PostgresDataSource::connect_with(url, table, schema, PoolOptions { max_size,
+wait_timeout, create_timeout, recycle_timeout })` sizes and times the pool; size
+`max_concurrent_exports` against `pool_size()`. TLS is not part of the crate yet: until it is
+(see issue #220), keep the database on a trusted network or behind a TLS-terminating proxy.
+
 ## A server in another language
 
 The Rust contract helps Rust programs. A server written in .NET, Java or Node implements the
