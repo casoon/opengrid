@@ -4,7 +4,8 @@ name: Release
 # checked (`publish-dry-run` → artifact `npm-packages`), never a rebuild. The
 # tag is set by `pnpm release` (docs/releasing.md → The release); the publish
 # waits for approval in the `npm` environment and uses npm Trusted Publishing,
-# so there is no token and the packages carry provenance.
+# so there is no token and the packages carry provenance. The Rust crates go to
+# crates.io from the second job, the same way (environment `crates-io`).
 on:
   push:
     tags:
@@ -65,3 +66,65 @@ jobs:
             # `./`: npm reads `dist/<file>` as the GitHub repository `dist/<file>`.
             npm publish --access public "./dist/$file"
           done
+
+  # The Rust crates (#241). Same gate as the npm job: the tag's commit needs a
+  # successful CI run on main, and the publish waits for approval in the
+  # `crates-io` environment. crates.io Trusted Publishing hands the job a token
+  # that lives for this run, so no token is stored. A published version cannot
+  # be replaced, only yanked; what the job sends is what the `check` job of CI
+  # already packed with `cargo publish --workspace --dry-run`. Not run for the
+  # MCP-only tag.
+  publish-crates:
+    if: startsWith(github.ref_name, 'v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: crates-io
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Require a successful CI run for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --branch main --event push \
+            --commit "$GITHUB_SHA" --status success --limit 1 --json databaseId -q '.[0].databaseId')
+          [ -n "$run" ] || { echo "no successful CI run on main for $GITHUB_SHA" >&2; exit 1; }
+
+      - name: The tag names the version of the crates
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "opengrid-types") | .version')
+          [ "$version" = "${GITHUB_REF_NAME#v}" ] || { echo "the crates are $version, the tag is $GITHUB_REF_NAME" >&2; exit 1; }
+
+      - name: Authenticate with crates.io (Trusted Publishing)
+        id: auth
+        uses: rust-lang/crates-io-auth-action@v1
+
+      - name: Publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          # Every crate that is not `publish = false` and not on crates.io at this
+          # version. A release interrupted halfway is finished by running the job
+          # again: what is published is skipped. `cargo publish` sends the selected
+          # crates in dependency order.
+          args=()
+          for name in $(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.publish != []) | .name'); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' -A "$GITHUB_REPOSITORY release" \
+              "https://crates.io/api/v1/crates/$name/$version")
+            case "$code" in
+              200) echo "$name@$version is on crates.io already — skipped" ;;
+              404) args+=(-p "$name") ;;
+              *) echo "crates.io answered $code for $name@$version" >&2; exit 1 ;;
+            esac
+          done
+          [ "${#args[@]}" -gt 0 ] || { echo "everything is published already"; exit 0; }
+          cargo publish --locked "${args[@]}"
