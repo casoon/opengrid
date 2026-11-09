@@ -39,9 +39,22 @@ Two things belong in every release entry and are easy to leave out:
   `#[wasm_bindgen]` exports from the source and holds them against the frozen functions and an
   explicit internal list, so a new export cannot slip past the freeze. The docs and types no longer
   count events or functions.
+- **Packages:** the peer range of `vue` is `>=3.4.20` and that of `@types/react` is `>=18.3.0`
+  ([#237](https://github.com/casoon/opengrid/issues/237)). The shipped Vue types import
+  `DefineSetupFnComponent`, which Vue only has from 3.4.20; a project on 3.3 or early 3.4 got a
+  type error from our own `.d.ts`. `just types` now also checks the packed adapters against the
+  lowest Vue, React and Svelte the ranges allow.
 
 ### Fixed
 
+- **Columns:** the binary wire reader no longer panics on forged counts and lengths: a row count of
+  `u64::MAX` overflowed `rows + 1` in a text or list column, and path lengths of a flat tree that wrap
+  around `u64` passed the sum check and then indexed out of range. Both are now a decode error, so a
+  hostile or broken server cannot trap the page ([#212](https://github.com/casoon/opengrid/issues/212)).
+- **Query:** an integer literal on a `decimal` column (`{"field": "amount", "op": "gt", "value": 10}`) was
+  refused as `ValueTypeMismatch`, although rule S8 allows comparing an integer with a decimal. It is
+  now read at the column's scale (an overflow of the precision is still a validation error); a float
+  literal on a decimal column stays an error ([#210](https://github.com/casoon/opengrid/issues/210)).
 - **Planner:** a tree the client builds (the source has no trees, or leaves the sort or the paging
   to the client) lost the query's sort when it was not paged, and a tree the source answered but
   could not sort or page came back as plain rows without `children`, `match` and `orphans`. The

@@ -66,7 +66,7 @@ async fn postgresql_answers_every_conformance_case() {
         version.split(" on ").next().unwrap_or("PostgreSQL"),
         failures.len()
     );
-    assert_eq!(ran, 53, "the suite has 53 cases");
+    assert_eq!(ran, 54, "the suite has 54 cases");
     assert!(
         failures.is_empty(),
         "{} of {ran} cases differ:\n{}",

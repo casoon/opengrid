@@ -267,8 +267,11 @@ pub fn decode_answer(bytes: &[u8]) -> Result<(Table, u64, Option<TreeSection>), 
                 .map(|_| reader.u64())
                 .collect::<Result<Vec<_>, _>>()?;
             let (keys, _) = reader.table()?;
-            let total: u64 = lengths.iter().sum();
-            if keys.schema().len() != 1 || keys.num_rows() as u64 != total {
+            // Lengths from the wire may add up past `u64`.
+            let total = lengths
+                .iter()
+                .try_fold(0u64, |total, length| total.checked_add(*length));
+            if keys.schema().len() != 1 || total != Some(keys.num_rows() as u64) {
                 return Err(WireError::new("the flat tree's paths do not add up"));
             }
             let key_type = keys.schema().fields()[0].data_type;
@@ -575,6 +578,14 @@ impl<'a> Reader<'a> {
             .ok_or_else(|| WireError::new("a length past what this machine can address"))
     }
 
+    /// The `count + 1` offsets of `count` entries; a count read from the bytes
+    /// may be the largest `usize`.
+    fn plus_one(count: usize) -> Result<usize, WireError> {
+        count
+            .checked_add(1)
+            .ok_or_else(|| WireError::new("a length past what this machine can address"))
+    }
+
     /// One `u64`.
     pub fn u64(&mut self) -> Result<u64, WireError> {
         Ok(u64::from_le_bytes(
@@ -701,7 +712,7 @@ impl<'a> Reader<'a> {
                 Values::Date(values)
             }
             DataType::Utf8 => {
-                let offsets = self.fixed(Self::times(rows, 1)? + 1, u32::from_le_bytes)?;
+                let offsets = self.fixed(Self::plus_one(rows)?, u32::from_le_bytes)?;
                 self.pad()?;
                 let length = *offsets.last().expect("rows + 1 offsets") as usize;
                 let text = std::str::from_utf8(self.take(length)?)
@@ -731,7 +742,7 @@ impl<'a> Reader<'a> {
             DataType::ListUtf8 => {
                 let offsets = self.list_offsets(rows)?;
                 let items = *offsets.last().expect("rows + 1 offsets") as usize;
-                let item_offsets = self.fixed(Self::times(items, 1)? + 1, u32::from_le_bytes)?;
+                let item_offsets = self.fixed(Self::plus_one(items)?, u32::from_le_bytes)?;
                 self.pad()?;
                 let length = *item_offsets.last().expect("items + 1 offsets") as usize;
                 let text = std::str::from_utf8(self.take(length)?)
@@ -756,7 +767,7 @@ impl<'a> Reader<'a> {
 
     /// The `rows + 1` offsets of a list column, checked to start at 0 and never fall.
     fn list_offsets(&mut self, rows: usize) -> Result<Vec<u32>, WireError> {
-        let offsets = self.fixed(Self::times(rows, 1)? + 1, u32::from_le_bytes)?;
+        let offsets = self.fixed(Self::plus_one(rows)?, u32::from_le_bytes)?;
         self.pad()?;
         if offsets[0] != 0 || offsets.windows(2).any(|pair| pair[0] > pair[1]) {
             return Err(WireError::new("the list offsets do not fit"));
@@ -950,6 +961,66 @@ mod tests {
         }
         assert!(reader.finish().is_ok(), "no flags word without a part");
         assert!(encode_tree_result(&table, 3, &flat).len() > bytes.len());
+    }
+
+    /// Issue #212: a row count read from the bytes is not trusted. The largest
+    /// ones used to overflow `rows + 1` (a panic in debug, a wrap to an empty
+    /// offsets vector and a panic on `last()` in release).
+    #[test]
+    fn a_forged_row_count_is_an_error_not_a_panic() {
+        for data_type in [
+            DataType::Utf8,
+            DataType::ListInt64,
+            DataType::ListUtf8,
+            DataType::Int64,
+            DataType::Bool,
+        ] {
+            for rows in [u64::MAX, u64::from(u32::MAX), u64::from(u32::MAX) + 1] {
+                let mut writer = Writer::new(Kind::Result);
+                writer.u64(0);
+                writer.u64(rows);
+                writer.u32_pair(1);
+                writer.string("c");
+                writer.type_header(data_type, false, false);
+                writer.u64(0);
+                let bytes = writer.finish();
+                assert!(decode_result(&bytes).is_err(), "{data_type:?} x {rows}");
+            }
+        }
+    }
+
+    /// Issue #212: path lengths of a flat tree that wrap around `u64` to the
+    /// number of key rows used to pass the check and then index out of range.
+    #[test]
+    fn forged_flat_path_lengths_are_an_error_not_a_panic() {
+        let schema = Schema::new(vec![Field::required(
+            FieldName::new("id").unwrap(),
+            DataType::Int64,
+        )]);
+        let table = Table::from_values(&schema, &[vec![Value::Int64(1), Value::Int64(2)]]).unwrap();
+        let tree = TreeSection {
+            children: vec![0, 0],
+            matched: vec![true, true],
+            matches: 2,
+            orphans: 0,
+            aggregates: None,
+            flat: Some(FlatSection {
+                levels: vec![7, 9],
+                paths: vec![vec![Value::Int64(10)], vec![Value::Int64(20)]],
+                key_type: DataType::Int64,
+                filtered: false,
+            }),
+        };
+        let mut bytes = encode_tree_result(&table, 2, &tree);
+        assert!(decode_answer(&bytes).is_ok());
+        let lengths: Vec<u8> = [1u64, 1].iter().flat_map(|n| n.to_le_bytes()).collect();
+        let at = bytes
+            .windows(lengths.len())
+            .position(|window| window == lengths)
+            .expect("the two path lengths");
+        let forged: Vec<u8> = [u64::MAX, 3].iter().flat_map(|n| n.to_le_bytes()).collect();
+        bytes[at..at + forged.len()].copy_from_slice(&forged);
+        assert!(decode_answer(&bytes).is_err());
     }
 
     use proptest::prelude::*;

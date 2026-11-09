@@ -11,6 +11,12 @@ on:
         type: boolean
         default: false
 
+# One run per ref: a new push to a PR cancels the superseded run. Not on main,
+# where every merge keeps its own result.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   CARGO_TERM_COLOR: always
   # Same wasm-opt the justfile is written against (E4).
@@ -19,6 +25,7 @@ env:
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -29,6 +36,13 @@ jobs:
       - uses: extractions/setup-just@v2
       - run: just check
       - run: just wasm-check
+      # Advisories, licences, bans and sources (deny.toml). The advisory
+      # database is fetched fresh, so a new advisory can fail an unrelated PR;
+      # that is the point of the check.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+      - run: cargo deny check
       # E25 keeps `grid` and `pivot` as a way out for a consumer who wants only
       # one element. A feature nobody builds is a feature that stops building,
       # so both single-element modules are compiled here.
@@ -37,6 +51,7 @@ jobs:
 
   postgres:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # The conformance suite against a real database (plan point 26, risk R4).
     # A service container, not `testcontainers`: the runner provides PostgreSQL,
     # the tests only need a connection string, and the same tests run locally
@@ -66,6 +81,7 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       # The MCP view's elements (#140, E40): wasm2js needs a module without
@@ -197,7 +213,7 @@ jobs:
           version: 10.26.0
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: "22.23"
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: just package
@@ -216,6 +232,7 @@ jobs:
 
   baselines:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     # Not with `browsers`: a run for the other engines is not a request for
     # new baselines.
     if: github.event_name == 'workflow_dispatch' && !inputs.browsers
