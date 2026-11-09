@@ -29,7 +29,14 @@ pub(super) struct Pending {
     added: Vec<Vec<Value>>,
     unreadable: usize,
     cut_off: usize,
+    /// Columns the page fills: a paste does not write into them (issue #228).
+    read_only: std::collections::BTreeSet<String>,
 }
+
+/// What the preview says about one pasted cell: the reason, and whether it
+/// blocks the paste (a value that cannot be read does; a read-only column only
+/// leaves its cells out).
+type Problem = (String, bool);
 
 /// The paste event: read the text, work out the block, show it.
 pub(super) fn on_paste(event: Event) {
@@ -139,9 +146,10 @@ async fn prepare(host: &HtmlElement, anchor: CellRef, rows: Vec<Vec<String>>) {
     let Some(source) = host.get_attribute(DATASOURCE_ATTRIBUTE) else {
         return;
     };
-    let (source_rows, add_row, schema, sorts, filter) = {
+    let (epoch, source_rows, add_row, schema, sorts, filter) = {
         let borrowed = runtime.borrow();
         (
+            borrowed.epoch,
             borrowed.state.total_count(),
             borrowed.state.added().enabled(),
             borrowed.state.schema().clone(),
@@ -166,7 +174,20 @@ async fn prepare(host: &HtmlElement, anchor: CellRef, rows: Vec<Vec<String>>) {
         let columns = columns_of(host);
         let query = grid::query_json(&source, &columns, &sorts, filter.as_ref(), first, covered);
         let mode = host.get_attribute(MODE_ATTRIBUTE).unwrap_or_default();
-        match ask(host, &provider, &runtime, &query, &mode).await {
+        // Not counted: the footer's query count is about the rows shown.
+        let answered = ask_uncounted(host, &provider, &query, &mode).await;
+        // Other rows sit in these positions now (a sort, a filter, a source
+        // replaced while the answer was on its way): what it holds is not what
+        // the block lands on.
+        if runtime.borrow().epoch != epoch {
+            runtime
+                .borrow_mut()
+                .state
+                .set_notice(texts.paste_discarded.clone());
+            render(host, false);
+            return;
+        }
+        match answered {
             Ok(result) => existing = Some(result),
             Err(message) => {
                 runtime.borrow_mut().state.set_notice(texts.error(&message));
@@ -183,13 +204,15 @@ async fn prepare(host: &HtmlElement, anchor: CellRef, rows: Vec<Vec<String>>) {
         added: Vec::new(),
         unreadable: 0,
         cut_off: 0,
+        read_only: Default::default(),
     };
-    // What the preview shows: per block row, per cell, the text and whether it read.
-    let mut shown: Vec<(bool, Vec<(String, Option<String>)>)> = Vec::new();
+    // What the preview shows: per block row, per cell, the text and what is
+    // wrong with it, if anything.
+    let mut shown: Vec<(bool, Vec<(String, Option<Problem>)>)> = Vec::new();
     for (index, cells) in rows.iter().enumerate() {
         let row = anchor.row + index as u64;
         let is_new = row >= source_rows;
-        let mut line: Vec<(String, Option<String>)> = Vec::new();
+        let mut line: Vec<(String, Option<Problem>)> = Vec::new();
         let mut values: Vec<Value> = vec![Value::Null; width];
         let mut cut = 0;
         if is_new && !add_row {
@@ -213,6 +236,16 @@ async fn prepare(host: &HtmlElement, anchor: CellRef, rows: Vec<Vec<String>>) {
                 cut += 1;
                 continue;
             };
+            // The page fills this column; a pasted value would be overwritten by
+            // the next one it sets, as an edit would (issue #153).
+            if presentation::styles(host).readonly(field.name.as_str()) {
+                pending.read_only.insert(field.name.as_str().to_owned());
+                line.push((
+                    text.clone(),
+                    Some((texts.bulk_readonly(field.name.as_str()), false)),
+                ));
+                continue;
+            }
             match parse_cell(text, field.data_type, field.nullable, &notation) {
                 Some(value) => {
                     if is_new {
@@ -247,7 +280,7 @@ async fn prepare(host: &HtmlElement, anchor: CellRef, rows: Vec<Vec<String>>) {
                     } else {
                         texts.paste_unreadable(text, &type_name(&texts, field.data_type))
                     };
-                    line.push((text.clone(), Some(reason)));
+                    line.push((text.clone(), Some((reason, true))));
                 }
             }
         }
@@ -288,6 +321,9 @@ fn summary(host: &HtmlElement, pending: &Pending) -> String {
     if pending.cut_off > 0 {
         parts.push(texts.paste_cut_off(pending.cut_off));
     }
+    for column in &pending.read_only {
+        parts.push(texts.bulk_readonly(column));
+    }
     parts.join(", ")
 }
 
@@ -298,7 +334,7 @@ fn show_preview(
     pending: &Pending,
     schema: &opengrid_types::Schema,
     first_col: usize,
-    shown: &[(bool, Vec<(String, Option<String>)>)],
+    shown: &[(bool, Vec<(String, Option<Problem>)>)],
 ) {
     let (Some(root), Some(document)) = (host.shadow_root(), host.owner_document()) else {
         return;
@@ -364,8 +400,13 @@ fn show_preview(
             for (text, problem) in line {
                 let Some(td) = make("td") else { continue };
                 td.set_text_content(Some(text));
-                if let Some(reason) = problem {
-                    let _ = td.set_attribute("aria-invalid", "true");
+                if let Some((reason, blocks)) = problem {
+                    let flag = if *blocks {
+                        "aria-invalid"
+                    } else {
+                        "aria-readonly"
+                    };
+                    let _ = td.set_attribute(flag, "true");
                     if let Some(note) = make("span") {
                         let _ = note.set_attribute("data-reason", "");
                         note.set_text_content(Some(&format!(" — {reason}")));
@@ -406,7 +447,7 @@ fn show_preview(
 }
 
 /// Removes the preview, if there is one.
-fn close_preview(root: &ShadowRoot) {
+pub(super) fn close_preview(root: &ShadowRoot) {
     if let Ok(Some(panel)) = root.query_selector("[part=\"paste-preview\"]") {
         panel.remove();
     }
@@ -498,6 +539,17 @@ fn apply(host: &HtmlElement) {
             render(host, false);
             return;
         }
+    }
+    // Every cell was left out (a read-only column, beyond the end): there is
+    // nothing to tell the page.
+    if runtime
+        .borrow()
+        .paste
+        .as_ref()
+        .is_some_and(|pending| pending.changes.is_empty() && pending.added.is_empty())
+    {
+        discard(host);
+        return;
     }
     let Some(pending) = runtime.borrow_mut().paste.take() else {
         return;

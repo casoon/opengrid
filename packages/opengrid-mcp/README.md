@@ -86,7 +86,7 @@ reached by URL and token:
 
 | Key | |
 |---|---|
-| `server.url` | the server; only the operator names it, never the model |
+| `server.url` | the server; only the operator names it, never the model. `https://…`; `http://` only for `localhost`, `127.0.0.1` and `[::1]`, because the token travels with every request |
 | `server.source` | the source's name there; absent, the name it has here |
 | `server.tokenEnv` / `server.token` | the bearer token — preferably from an environment variable, so it is not in the file |
 
@@ -128,6 +128,12 @@ inlined into one HTML file. The engine runs in the server, in Node.
 
 The grid only — no pivot, no tree. No editing: a surface through which a model
 could change data needs its own approval path.
+
+The rows the grid asks for come in windows of at most 500 (`limit` is cut to
+that): a host that shows the grid's app-only query tool to the model still does
+not hand it a source in one piece. The server keeps at most 100 sessions; past
+that, the least recently used goes, and a call naming it answers
+`unknown_session` — open the grid again.
 
 ## Licence
 

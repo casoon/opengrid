@@ -1921,6 +1921,11 @@ pub fn grid_css() -> String {
               keeps its sign. Elsewhere the select is native already. */
            [part=\"filter\"] select, select[part=\"editor\"] {{ appearance: auto;
                              background-image: none; }}
+           /* A forced palette drops `box-shadow` and the tint is `Canvas`, so
+              the bar of a selected row (above) would be gone and the row
+              looks like any other (WCAG 1.4.1, 1.4.11). A border is kept. */
+           tbody tr[data-selected=\"true\"] > :first-child {{
+                    border-inline-start: 4px solid Highlight; }}
          }}
          @media (prefers-reduced-motion: reduce) {{
            * {{ animation-duration: 0.01ms !important; animation-iteration-count: 1 !important;
@@ -3101,6 +3106,22 @@ pub fn patch_grid(
         name: "aria-rowcount".to_owned(),
         value: (paging.rows + 1).to_string(),
     });
+    // Rows can be selected, several at once (`Shift`+`Space`, `Ctrl`+`A`) —
+    // except while grouped, where a selection would name display positions.
+    // The table says so; the rows below say nothing of a selection they cannot
+    // have.
+    if grouping.is_none() {
+        buffer.push(Patch::SetAttribute {
+            node: nodes.table,
+            name: "aria-multiselectable".to_owned(),
+            value: "true".to_owned(),
+        });
+    } else {
+        buffer.push(Patch::RemoveAttribute {
+            node: nodes.table,
+            name: "aria-multiselectable".to_owned(),
+        });
+    }
     patch_pager(buffer, &nodes.pager, paging, total_count, texts);
 
     // The select-all header, in its three states (point 61).
@@ -3219,7 +3240,10 @@ pub fn patch_grid(
         buffer.push(Patch::SetAttribute {
             node: header.cell,
             name: "aria-sort".to_owned(),
+            // One header at a time (ARIA 1.2): the primary key. The others show
+            // their order and direction in the header's `aria-hidden` marks.
             value: key
+                .filter(|position| *position == 0)
                 .map_or("none", |position| aria_sort(sorts[position].1))
                 .to_owned(),
         });
@@ -3296,10 +3320,10 @@ pub fn patch_grid(
                 // closed: its state is rewritten, its place is not.
                 if let Some(entry) = tree.and_then(|tree| tree.entry_at(row)) {
                     let local = row.saturating_sub(paging.base);
-                    patch_tree_row(buffer, row_nodes, entry, local, row_height, texts);
+                    patch_tree_row(buffer, row_nodes, entry, local, row_height);
                 }
                 let selected = state.is_selected(row);
-                selection_attributes(buffer, row_nodes.row, selected);
+                selection_attributes(buffer, row_nodes.row, selected, grouping.is_none());
                 if let (Some(cell), Some(mark)) = (row_nodes.select, row_nodes.select_mark) {
                     buffer.push(Patch::SetAttribute {
                         node: cell,
@@ -3395,6 +3419,30 @@ pub fn patch_grid(
                         name: "aria-level".to_owned(),
                     }),
                 }
+                // Its place among the rows of its group: the pool holds about
+                // forty rows, so assistive technology cannot count them itself.
+                // A tree's node sets its own below.
+                match &item {
+                    Some(crate::grouping::Item::Row { offset, size, .. }) => {
+                        for (name, value) in
+                            [("aria-posinset", offset + 1), ("aria-setsize", *size)]
+                        {
+                            buffer.push(Patch::SetAttribute {
+                                node: row_nodes.row,
+                                name: name.to_owned(),
+                                value: value.to_string(),
+                            });
+                        }
+                    }
+                    _ => {
+                        for name in ["aria-posinset", "aria-setsize"] {
+                            buffer.push(Patch::RemoveAttribute {
+                                node: row_nodes.row,
+                                name: name.to_owned(),
+                            });
+                        }
+                    }
+                }
                 for name in ["aria-expanded", "data-kind", "data-level"] {
                     buffer.push(Patch::RemoveAttribute {
                         node: row_nodes.row,
@@ -3404,7 +3452,7 @@ pub fn patch_grid(
                 // A tree's node (issue #135): its depth, its place among its
                 // siblings, whether it opens — the treegrid's own words.
                 if let Some(entry) = tree.and_then(|tree| tree.entry_at(row)) {
-                    patch_tree_row(buffer, row_nodes, entry, local, row_height, texts);
+                    patch_tree_row(buffer, row_nodes, entry, local, row_height);
                 }
                 // A slot that showed the total carried our `lang` on its label;
                 // a value in it is the page's word again.
@@ -3419,7 +3467,7 @@ pub fn patch_grid(
                 // selection survive scrolling (point 35). `data-selected` is the
                 // styling hook; `aria-selected` is the announcement.
                 let selected = state.is_selected(row);
-                selection_attributes(buffer, row_nodes.row, selected);
+                selection_attributes(buffer, row_nodes.row, selected, grouping.is_none());
                 if let (Some(cell), Some(mark)) = (row_nodes.select, row_nodes.select_mark) {
                     buffer.push(Patch::SetAttribute {
                         node: cell,
@@ -3531,11 +3579,10 @@ pub fn patch_grid(
                                 name: "data-validation".to_owned(),
                                 value: finding.level.as_str().to_owned(),
                             });
-                            buffer.push(Patch::SetAttribute {
-                                node: *cell,
-                                name: "aria-description".to_owned(),
-                                value: finding.message.clone(),
-                            });
+                            // The sentence itself is a hidden node the cell is
+                            // described by (`aria-describedby`, ARIA 1.1): the
+                            // element writes it after the frame — see
+                            // `sync_descriptions`.
                         }
                         None => {
                             buffer.push(Patch::RemoveAttribute {
@@ -3547,7 +3594,7 @@ pub fn patch_grid(
                             if tree.is_none() {
                                 buffer.push(Patch::RemoveAttribute {
                                     node: *cell,
-                                    name: "aria-description".to_owned(),
+                                    name: "aria-describedby".to_owned(),
                                 });
                             }
                         }
@@ -3740,13 +3787,15 @@ fn patch_group_row(
     format: &dyn CellFormat,
 ) {
     use crate::grouping::Item;
-    let (label, level, expanded, aggregates, kind) = match item {
+    let (label, level, expanded, aggregates, kind, place) = match item {
         Item::Group {
             level,
             value,
             count,
             expanded,
             aggregates,
+            position,
+            siblings,
             ..
         } => {
             let column = grouping
@@ -3761,10 +3810,13 @@ fn patch_group_row(
                 Some(*expanded),
                 aggregates,
                 "group",
+                Some((*position, *siblings)),
             )
         }
+        // The grand total is a row of its own, not one of the groups: counting
+        // it in would make "group 3 of 7" say "of 8".
         Item::Total { count, aggregates } => {
-            (texts.total_row(*count), 1, None, aggregates, "total")
+            (texts.total_row(*count), 1, None, aggregates, "total", None)
         }
         Item::Row { .. } => return,
     };
@@ -3779,6 +3831,25 @@ fn patch_group_row(
             name: name.to_owned(),
             value,
         });
+    }
+    match place {
+        Some((position, siblings)) => {
+            for (name, value) in [("aria-posinset", position), ("aria-setsize", siblings)] {
+                buffer.push(Patch::SetAttribute {
+                    node: row_nodes.row,
+                    name: name.to_owned(),
+                    value: value.to_string(),
+                });
+            }
+        }
+        None => {
+            for name in ["aria-posinset", "aria-setsize"] {
+                buffer.push(Patch::RemoveAttribute {
+                    node: row_nodes.row,
+                    name: name.to_owned(),
+                });
+            }
+        }
     }
     match expanded {
         Some(expanded) => buffer.push(Patch::SetAttribute {
@@ -4051,7 +4122,18 @@ pub fn select_all_state(selected: usize, total_count: u64) -> CheckState {
     }
 }
 
-fn selection_attributes(buffer: &mut PatchBuffer, row: NodeId, selected: bool) {
+fn selection_attributes(buffer: &mut PatchBuffer, row: NodeId, selected: bool, offered: bool) {
+    // A grouped grid refuses `Space` and `Ctrl`+`A`: `aria-selected="false"`
+    // would say "this can be selected" about rows that cannot.
+    if !offered {
+        for name in ["aria-selected", "data-selected"] {
+            buffer.push(Patch::RemoveAttribute {
+                node: row,
+                name: name.to_owned(),
+            });
+        }
+        return;
+    }
     buffer.push(Patch::SetAttribute {
         node: row,
         name: "aria-selected".to_owned(),
@@ -4150,7 +4232,6 @@ fn patch_tree_row(
     entry: &crate::tree::Entry,
     local: u64,
     row_height: u64,
-    texts: &GridTexts,
 ) {
     let row = row_nodes.row;
     let set = |buffer: &mut PatchBuffer, name: &str, value: String| {
@@ -4194,20 +4275,28 @@ fn patch_tree_row(
         if let Some(first) = row_nodes.cells.first() {
             buffer.push(Patch::RemoveAttribute {
                 node: *first,
-                name: "aria-description".to_owned(),
+                name: "aria-describedby".to_owned(),
             });
         }
     } else {
         set(buffer, "data-context", String::new());
+        // The words are a hidden node the element keeps (`TREE_CONTEXT_ID`).
         if let Some(first) = row_nodes.cells.first() {
             buffer.push(Patch::SetAttribute {
                 node: *first,
-                name: "aria-description".to_owned(),
-                value: texts.tree_context.clone(),
+                name: "aria-describedby".to_owned(),
+                value: TREE_CONTEXT_ID.to_owned(),
             });
         }
     }
 }
+
+/// The id of the hidden node that says "context", which the first cell of a
+/// tree row shown only for the match below it is described by.
+pub const TREE_CONTEXT_ID: &str = "og-tree-context";
+
+/// The id prefix of the hidden nodes that hold a cell's validation sentence.
+pub const FINDING_ID_PREFIX: &str = "og-finding-";
 
 /// Hides a pool slot that holds no logical row in the current window.
 const ROW_HIDDEN_STYLE: &str = "display: none;";
@@ -4299,7 +4388,7 @@ fn set_lang(buffer: &mut PatchBuffer, node: NodeId, texts: &GridTexts) {
 /// `lang`, and the target points at it with `aria-labelledby`. A hidden element
 /// still names what refers to it, and the reference stays inside the shadow
 /// root (E8).
-fn label_by(
+pub(crate) fn label_by(
     buffer: &mut PatchBuffer,
     nodes: &mut NodeAllocator,
     parent: NodeId,
@@ -5110,7 +5199,8 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(aria, ["ascending", "descending"]);
+        // One header at a time (ARIA 1.2): the second key shows in the marks.
+        assert_eq!(aria, ["ascending", "none"]);
 
         let text_of = |node: NodeId| -> String {
             buffer
@@ -5570,6 +5660,12 @@ mod tests {
         assert!(
             !forced.contains("color-mix"),
             "a forced palette must resolve to system colours, not to a mix"
+        );
+        // A forced palette drops `box-shadow`: a selected row keeps a border.
+        assert!(
+            forced.contains("tr[data-selected=\"true\"] > :first-child")
+                && forced.contains("border-inline-start"),
+            "a selected row must stay visible under a forced palette"
         );
 
         // The focus ring does not hang off the accent: a pale accent would make

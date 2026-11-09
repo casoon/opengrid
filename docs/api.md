@@ -264,6 +264,9 @@ header is a real `checkbox` inside the header cell — a `columnheader` may not
 carry `aria-checked` — and it is tri-state: empty, `mixed`, checked. The
 per-row mark is decoration; the row itself says `aria-selected`, and a second
 voice per row would double every announcement.
+The table carries `aria-multiselectable="true"` (`Shift`+`Space` and `Ctrl`+`A` select
+several); while grouped, where selection is off, neither the table nor a row says anything
+of a selection.
 
 Column visibility is a panel under its button (*Columns*, in the filter row, or in
 the toolbar when there is one): a checkbox per column, including the hidden ones —
@@ -299,6 +302,14 @@ loader.module.set_formats(host, {
   qty: (text, value) => `${value} pcs`,
 });
 ```
+
+Which locale an `Intl` format reads is decided in this order: the format's own
+`locale`, then the nearest `lang` attribute above the element (through shadow
+roots), then the browser's. A page with `lang="de"` therefore formats `1.234,5`
+in an English browser too, in agreement with the voice a screen reader uses. When
+a `lang` changes, the formats are resolved again and the element redraws; a
+format with an explicit `locale` does not move. A function format is the page's
+own and is never touched.
 
 A column without a format is rendered in Rust and never crosses the WASM/JS
 boundary. `Intl` takes a JavaScript number, so a decimal beyond 2^53 loses
@@ -355,7 +366,7 @@ reflow case of WCAG 1.4.10, the toolbar wraps instead.
 | Filter row | A switch (`aria-pressed`). Hiding the row gives its height to the viewport, and `PageUp`/`PageDown` step by what is really there. Whether the row shows is part of the [view](#the-view) as `filterRow`, **on** by default — there is no attribute for it, because a boolean attribute is off by default and the row has always been there. |
 | Columns | The column list moves here from the filter row, so it stays reachable when the row is hidden. |
 | Density | Three buttons, the pressed one is the grid's `density`. |
-| + Filter | Opens *Add filter*, a non-modal `role="dialog"`: *Column*, *Condition* (the operators the column's type allows), *Value*, *Cancel*, *Apply*. The focus moves to *Column*; `Tab` cycles inside; *Apply* or `Enter` in *Value* writes the column's entry in the filter row — the one place a filter lives — and closes; `Escape`, *Cancel* or a click outside close without a change. A value the column cannot take is named in the dialog, which stays open. The focus returns to the button. |
+| + Filter | Opens *Add filter*, a `role="dialog"` with `aria-modal="true"` (`Tab` does not leave it): *Column*, *Condition* (the operators the column's type allows), *Value*, *Cancel*, *Apply*. The focus moves to *Column*; `Tab` cycles inside; *Apply* or `Enter` in *Value* writes the column's entry in the filter row — the one place a filter lives — and closes; `Escape`, *Cancel* or a click outside close without a change. A value the column cannot take is named in the dialog, which stays open, and said in the status line — the one live region. The focus returns to the button. |
 | + Group | Opens a `role="menu"` of the groupable columns not grouped yet, with the column menu's keys (`↓`/`↑`, `Home`/`End`, `Enter`/`Space`, `Escape`, `Tab`). A pick adds the next grouping level, as `group-by` does. With two levels the button is `aria-disabled` and says why. |
 | Chips | One per active filter, in words (`country is DE`), and one for the grouping. Each has a remove button **named for its filter** — `Remove country is DE` — and "Remove all" clears filters and grouping. A removal is said once, with the result that follows; the focus moves to the next chip, never to the document. |
 
@@ -462,8 +473,10 @@ column. The menu opens below its header and never covers it.
 ```
 
 While `group-by` is set, the grid is a **`treegrid`**: group headers carry
-`aria-level` and `aria-expanded`, data rows sit one level below the innermost
-group. It stays **virtualized** — the group query answers each group's row
+`aria-level`, `aria-expanded` and `aria-posinset` / `aria-setsize` (the group's place among
+the groups of its level, so a pooled window of rows still says "group 3 of 7"), data rows sit one
+level below the innermost group with their own place among that group's rows. The total row is
+no group and carries neither. It stays **virtualized** — the group query answers each group's row
 count, and from the counts and the open groups the display list is arithmetic,
 so `aria-rowcount` is still one number and scrolling still adds no DOM rows.
 The rows of a visible window are fetched per group they belong to: one query per
@@ -593,7 +606,7 @@ loader.module.set_validators(grid, {
 The function runs on every keystroke in the editor and once more on commit; `value` is the text as it
 stands (as `opengrid-cell-change` gives it) and `row` the record as loaded, by field name. It
 answers `null`, or `{ level: "warning" | "error", message }`. The message shows under the editor,
-stays on the cell (`data-validation`, with `aria-description`; an `error` is also `aria-invalid`) until
+stays on the cell (`data-validation`, described by a hidden node through `aria-describedby`; an `error` is also `aria-invalid`) until
 the next result, and is said once, politely, in the status line.
 
 **A finding does not block the commit** — the reader may save a duplicate and fix it later — unless
@@ -620,7 +633,11 @@ copies, or CSV — and anchors it at the focused cell. **Nothing changes yet:** 
 notation of the grid's language (`1.234,5` in German; the wire notation `1234.5` is understood
 too). A value that cannot be read is marked with the reason, and the live region says it:
 „12 rows, 2 values not readable“. `Enter` applies, `Escape` discards. A block with unreadable
-values is not applied.
+values is not applied. A column the page fills (`readonly` in `set_columns`) is not pasted into:
+its cells stay in the preview marked `aria-readonly` with the reason („price is read-only“), the
+sentence names the column, and the rest of the block is applied. The preview belongs to the rows it
+was read from: a new result for the whole query — another sort or filter, a source replaced, a
+rebuilt grid — discards it.
 
 Applying fires **one** `opengrid-paste` for the whole block: `changes` has one entry per cell of
 an existing row (`key` with `row-key`, `row` always, `column`, `value` as text, `previous`), and
@@ -667,7 +684,7 @@ the guide [A tree in the grid](../guides/tree/).
 | Keys | On a node's first cell `→` opens it, and on an open node goes to its first child; `←` closes an open node, and on a closed node or a leaf goes to its parent. `Enter` and `Space` keep their grid meaning — `Space` selects the node. |
 | Pointer | A click on a node's first cell, where the chevron is, opens or closes it. |
 | Spoken | `aria-level` (depth), `aria-posinset` / `aria-setsize` (its place among its siblings), `aria-expanded` only where there is something to open, `aria-busy` while the children load. Opening and closing is said once, with the result, as `groupExpanded` / `groupCollapsed`. |
-| Filter | A match keeps the path to it: its ancestors are shown as **context**, muted and described with `treeContext`. The status line counts matches, not the context. |
+| Filter | A match keeps the path to it: its ancestors are shown as **context**, muted and described with `treeContext`, through `aria-describedby`. The status line counts matches, not the context. |
 | Orphans | A row whose parent does not exist is a root, and the status line says how many there are (`treeOrphans`). |
 | Order | Siblings are sorted by the grid's sort; the hierarchy is never broken by it. |
 | Summaries | A column's aggregate — from `set_columns`, the column menu or the view's `aggregates`, as in groups — is shown on every node **with children** as its subtree's summary beside its own value: `120 · Σ 1,450`, said `subtreeCell` ("120. Sum of the subtree: 1,450"). Over the node and all its descendants, from the raw rows, and with a filter over the matches only — context does not count (rule T7). A leaf shows its own value. |

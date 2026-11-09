@@ -39,14 +39,19 @@
 //!
 //! # Blocking
 //!
-//! SQLite is a library, not a server: a query runs on the calling thread,
-//! behind a mutex. Fine for a file next to the server and moderate traffic; a
-//! busy server puts its SQLite work on a blocking thread pool.
+//! SQLite is a library, not a server: a query runs on the thread that calls it.
+//! The connector keeps its connection on a thread of its own and sends each
+//! query there (`worker`), so a slow query holds neither an async worker nor
+//! the server's timeout. **A request that ends ends its query:** when the
+//! future is dropped (the timeout, a client that left) a query that has not
+//! started is skipped and one that runs is interrupted (`sqlite3_interrupt`).
+//! Queries of one connector still run one after the other — one connection —
+//! so a file next to the server and moderate traffic is what it is for.
 
 use std::fmt::Write as _;
-use std::sync::Mutex;
 
 mod tree;
+mod worker;
 
 use opengrid_connector::{
     BoxFuture, Connector, DataSourceCapabilities, DataSourceError, QueryResult, Schema,
@@ -62,7 +67,7 @@ pub use rusqlite::Connection;
 
 /// A table in a SQLite database, answered by SQLite.
 pub struct SqliteConnector {
-    connection: Mutex<Connection>,
+    worker: worker::Worker,
     table: String,
     schema: Schema,
     /// A tree's level in SQL rather than in the engine (issue #132); off
@@ -92,7 +97,7 @@ impl SqliteConnector {
         quote(table)?;
         schema.check().map_err(|error| backend(error.to_string()))?;
         Ok(Self {
-            connection: Mutex::new(connection),
+            worker: worker::Worker::start(connection),
             table: table.to_owned(),
             schema,
             tree_pushdown: false,
@@ -112,61 +117,57 @@ impl SqliteConnector {
         self.tree_pushdown = on;
         self
     }
+}
 
-    /// One level of a tree, answered by SQLite (issue #132).
-    fn answer_tree(&self, query: &ValidatedQuery) -> Result<QueryResult, DataSourceError> {
-        let tree = query.tree.as_ref().expect("a tree query");
-        let compiler = Compiler {
-            table: &self.table,
-            schema: &self.schema,
-        };
-        let connection = self
-            .connection
-            .lock()
-            .map_err(|_| backend("the connection is poisoned"))?;
-        tree::level(&compiler, &connection, query, tree)
-    }
+/// One level of a tree, answered by SQLite (issue #132).
+fn answer_tree(
+    table: &str,
+    schema: &Schema,
+    connection: &Connection,
+    query: &ValidatedQuery,
+) -> Result<QueryResult, DataSourceError> {
+    let tree = query.tree.as_ref().expect("a tree query");
+    let compiler = Compiler { table, schema };
+    tree::level(&compiler, connection, query, tree)
+}
 
-    fn answer(&self, query: &ValidatedQuery) -> Result<QueryResult, DataSourceError> {
-        let compiler = Compiler {
-            table: &self.table,
-            schema: &self.schema,
-        };
-        let statement = compiler.query(query)?;
-        let counting = compiler.count(query)?;
-        let connection = self
-            .connection
-            .lock()
-            .map_err(|_| backend("the connection is poisoned"))?;
+fn answer(
+    table: &str,
+    schema: &Schema,
+    connection: &Connection,
+    query: &ValidatedQuery,
+) -> Result<QueryResult, DataSourceError> {
+    let compiler = Compiler { table, schema };
+    let statement = compiler.query(query)?;
+    let counting = compiler.count(query)?;
 
-        let fields = query.output_schema.fields();
-        let mut columns: Vec<Vec<Value>> = vec![Vec::new(); fields.len()];
-        let mut prepared = connection.prepare(&statement.sql).map_err(sqlite)?;
-        let mut rows = prepared
-            .query(rusqlite::params_from_iter(statement.params.iter()))
-            .map_err(sqlite)?;
-        while let Some(row) = rows.next().map_err(sqlite)? {
-            for (index, field) in fields.iter().enumerate() {
-                let cell: Sql = row.get(index).map_err(sqlite)?;
-                columns[index].push(read(cell, field.data_type, field.name.as_str())?);
-            }
+    let fields = query.output_schema.fields();
+    let mut columns: Vec<Vec<Value>> = vec![Vec::new(); fields.len()];
+    let mut prepared = connection.prepare(&statement.sql).map_err(sqlite)?;
+    let mut rows = prepared
+        .query(rusqlite::params_from_iter(statement.params.iter()))
+        .map_err(sqlite)?;
+    while let Some(row) = rows.next().map_err(sqlite)? {
+        for (index, field) in fields.iter().enumerate() {
+            let cell: Sql = row.get(index).map_err(sqlite)?;
+            columns[index].push(read(cell, field.data_type, field.name.as_str())?);
         }
-        drop(rows);
-        drop(prepared);
-
-        let total: i64 = connection
-            .query_row(
-                &counting.sql,
-                rusqlite::params_from_iter(counting.params.iter()),
-                |row| row.get(0),
-            )
-            .map_err(sqlite)?;
-        Ok(QueryResult::new(
-            query.output_schema.clone(),
-            columns,
-            u64::try_from(total).unwrap_or(0),
-        ))
     }
+    drop(rows);
+    drop(prepared);
+
+    let total: i64 = connection
+        .query_row(
+            &counting.sql,
+            rusqlite::params_from_iter(counting.params.iter()),
+            |row| row.get(0),
+        )
+        .map_err(sqlite)?;
+    Ok(QueryResult::new(
+        query.output_schema.clone(),
+        columns,
+        u64::try_from(total).unwrap_or(0),
+    ))
 }
 
 impl Connector for SqliteConnector {
@@ -201,12 +202,18 @@ impl Connector for SqliteConnector {
                 Box::pin(async move { Connector::tree(self, &query).await })
             }
             Some(_) => {
-                let answer = self.answer_tree(&query);
-                Box::pin(async move { answer })
+                let (table, schema) = (self.table.clone(), self.schema.clone());
+                Box::pin(
+                    self.worker
+                        .submit(move |connection| answer_tree(&table, &schema, connection, &query)),
+                )
             }
             None => {
-                let answer = self.answer(&query);
-                Box::pin(async move { answer })
+                let (table, schema) = (self.table.clone(), self.schema.clone());
+                Box::pin(
+                    self.worker
+                        .submit(move |connection| answer(&table, &schema, connection, &query)),
+                )
             }
         }
     }

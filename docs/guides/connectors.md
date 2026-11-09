@@ -129,6 +129,18 @@ another type, a key the token does not carry or an operator the column cannot an
 error, as are a token value handed in twice and an `allow_origin` that is not a valid header
 value.
 
+Bounds. A pivot's grouping sets arrive with a `limit` one past `max_cells`: a connector applies
+`limit` like any other query's and lets the pivot engine report the overflow (a connector that
+answers a whole pivot in one statement, as PostgreSQL does, bounds the statement by the sum). A
+tree the engine builds is counted first (`max_tree_rows`); a connector that answers trees itself
+keeps the rows in the database.
+
+Timeouts. The server drops a query's future when its timeout runs out or the client leaves. A
+connector must then end the work behind it, not only forget the future: the PostgreSQL reference
+sends a cancel request for the connection and discards it, the SQLite reference interrupts the
+statement (it runs on a thread of its own, one query after the other). A connector that leaves a
+statement running holds a database connection and its CPU for as long as it likes.
+
 PostgreSQL pool. `PostgresDataSource::connect_with(url, table, schema, PoolOptions { max_size,
 wait_timeout, create_timeout, recycle_timeout })` sizes and times the pool; size
 `max_concurrent_exports` against `pool_size()`. TLS is not part of the crate yet: until it is

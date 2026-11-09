@@ -217,6 +217,9 @@ struct GridRuntime {
     replaced: Option<Option<Value>>,
     /// A paste shown and not yet applied (issue #184).
     paste: Option<paste::Pending>,
+    /// Bumped by every result of the whole query (not by a scroll's window): a
+    /// paste prepared against an earlier one lands on other rows (issue #228).
+    epoch: u64,
     /// The finding the live region has said for the cell being edited, so it is
     /// said once (issue #188).
     validation_said: Option<String>,
@@ -310,6 +313,7 @@ fn fresh_runtime(
         scroll_echo: None,
         replaced: None,
         paste: None,
+        epoch: 0,
         validation_said: None,
     }
 }
@@ -379,6 +383,10 @@ fn reset_runtime(host: &HtmlElement) {
         runtime.pending_offset = None;
         runtime.raf_pending = false;
         runtime.scroll_top = 0;
+        // The preview went with the DOM (`clear_root`); what it would apply
+        // names cells of a layout that is gone.
+        runtime.paste = None;
+        runtime.epoch += 1;
         // A rebuild (columns, texts, presentation) is not a reason to close
         // every group the reader opened: the same grouping keeps its expanded
         // set, and only its counts are asked for again.
@@ -1014,6 +1022,7 @@ fn render(host: &HtmlElement, focus_after: bool) {
         fix_presentation(&root, &schema, &presentation::styles(host));
     }
     sync_chrome(host);
+    sync_descriptions(host);
     // The lists of list columns are chips, drawn over the text the frame wrote.
     if let Some(root) = host.shadow_root() {
         combo::draw_cells(host, &root);
@@ -1251,6 +1260,7 @@ fn settle(
     let Some(runtime) = runtime(host) else {
         return;
     };
+    let mut paste_dropped = false;
     // Rows of the selection that the result no longer has (issue #226).
     let mut shrunk = None;
     {
@@ -1260,6 +1270,12 @@ fn settle(
         if runtime.generation != generation {
             runtime.pending_focus |= focus;
             return;
+        }
+        // Another result for the whole query: the rows a shown paste would
+        // land on are other rows now (issue #228).
+        if kind == QueryKind::Data {
+            runtime.epoch += 1;
+            paste_dropped = runtime.paste.take().is_some();
         }
         match outcome {
             Ok(result) => {
@@ -1296,9 +1312,18 @@ fn settle(
             }
         }
     }
+    if paste_dropped {
+        if let Some(root) = host.shadow_root() {
+            paste::close_preview(&root);
+        }
+        runtime
+            .borrow_mut()
+            .state
+            .set_notice(texts(host).paste_discarded.clone());
+    }
     let focus = {
         let mut runtime = runtime.borrow_mut();
-        let asked = focus || std::mem::take(&mut runtime.pending_focus);
+        let asked = focus || paste_dropped || std::mem::take(&mut runtime.pending_focus);
         asked && may_take_focus(host)
     };
     // The first result brings the real schema, and a `set_columns` made before
@@ -2289,18 +2314,22 @@ fn open_columns(root: &ShadowRoot, focus_first: bool) {
     place_under(&panel, &button);
     if !panel.has_attribute("data-watched") {
         let _ = panel.set_attribute("data-watched", "");
-        let owner = root.clone();
+        // Holds nothing of the grid: a closure that names the root keeps a
+        // removed grid alive (issue #227), so it finds the root from the event.
         let closed = Closure::<dyn FnMut(Event)>::new(move |event: Event| {
             let open = js_sys::Reflect::get(&event, &JsValue::from_str("newState"))
                 .ok()
                 .and_then(|state| state.as_string())
                 .is_some_and(|state| state == "open");
-            if !open && let Ok(Some(button)) = owner.query_selector("[part=\"columns-toggle\"]") {
+            if !open
+                && let Some(root) = root_of_target(&event)
+                && let Ok(Some(button)) = root.query_selector("[part=\"columns-toggle\"]")
+            {
                 let _ = button.set_attribute("aria-expanded", "false");
             }
-        });
-        let _ = panel.add_event_listener_with_callback("toggle", closed.as_ref().unchecked_ref());
-        closed.forget();
+        })
+        .into_js_value();
+        let _ = panel.add_event_listener_with_callback("toggle", closed.unchecked_ref());
     }
     if focus_first
         && let Ok(Some(first)) = panel.query_selector("input[type=\"checkbox\"]")
@@ -3286,6 +3315,161 @@ fn key_from_js(state: &GridState, key: &JsValue) -> Option<Value> {
     Value::from_json_typed(&json, &data_type).ok()
 }
 
+/// Makes what a cell says about itself a node it is described by.
+///
+/// A validation sentence and a tree's "context" were `aria-description`, which
+/// is ARIA 1.3 draft with uneven support, and one attribute for two things: a
+/// finding on a tree's first cell overwrote the context. They are hidden text
+/// nodes now, in one hidden box in the shadow root, and a cell lists the ones
+/// it has in `aria-describedby` — the established pair (ARIA 1.1). The frame
+/// writes the cell's marks as patches; this runs after it, since a patch cannot
+/// make a node of its own.
+fn sync_descriptions(host: &HtmlElement) {
+    let (Some(runtime), Some(root), Some(document)) =
+        (runtime(host), host.shadow_root(), host.owner_document())
+    else {
+        return;
+    };
+    let borrowed = runtime.borrow();
+    let tree_context = texts(host);
+    let Some(store) = description_store(&root, &document) else {
+        return;
+    };
+    let mut wanted: Vec<String> = Vec::new();
+    // Every cell that carries a finding is described by it — and by the
+    // context, when the frame put that on it.
+    if let Ok(cells) = root.query_selector_all("td[data-validation]") {
+        for index in 0..cells.length() {
+            let Some(td) = cells
+                .item(index)
+                .and_then(|node| node.dyn_into::<HtmlElement>().ok())
+            else {
+                continue;
+            };
+            let (Some(row), Some(col)) = (
+                td.get_attribute("data-row")
+                    .and_then(|row| row.parse().ok()),
+                td.get_attribute("data-col")
+                    .and_then(|col| col.parse().ok()),
+            ) else {
+                continue;
+            };
+            let Some(finding) = borrowed.state.finding(CellRef::new(row, col)) else {
+                continue;
+            };
+            let id = format!("{}{row}-{col}", grid::FINDING_ID_PREFIX);
+            description_node(&document, &store, &id, &finding.message, None);
+            let mut ids: Vec<String> = td
+                .get_attribute("aria-describedby")
+                .unwrap_or_default()
+                .split_whitespace()
+                .filter(|token| !token.starts_with(grid::FINDING_ID_PREFIX))
+                .map(str::to_owned)
+                .collect();
+            ids.push(id.clone());
+            let _ = td.set_attribute("aria-describedby", &ids.join(" "));
+            wanted.push(id);
+        }
+    }
+    // A cell whose finding is gone loses its token — a tree's context stays.
+    if let Ok(cells) = root.query_selector_all(r#"td[aria-describedby]:not([data-validation])"#) {
+        for index in 0..cells.length() {
+            let Some(td) = cells
+                .item(index)
+                .and_then(|node| node.dyn_into::<Element>().ok())
+            else {
+                continue;
+            };
+            let kept: Vec<String> = td
+                .get_attribute("aria-describedby")
+                .unwrap_or_default()
+                .split_whitespace()
+                .filter(|token| !token.starts_with(grid::FINDING_ID_PREFIX))
+                .map(str::to_owned)
+                .collect();
+            if kept.is_empty() {
+                let _ = td.remove_attribute("aria-describedby");
+            } else {
+                let _ = td.set_attribute("aria-describedby", &kept.join(" "));
+            }
+        }
+    }
+    let context = root
+        .query_selector(&format!(
+            r#"[aria-describedby~="{}"]"#,
+            grid::TREE_CONTEXT_ID
+        ))
+        .ok()
+        .flatten()
+        .is_some();
+    if context {
+        description_node(
+            &document,
+            &store,
+            grid::TREE_CONTEXT_ID,
+            &tree_context.tree_context,
+            Some(&tree_context.lang),
+        );
+        wanted.push(grid::TREE_CONTEXT_ID.to_owned());
+    }
+    // Nodes nothing refers to any more.
+    let mut child = store.first_element_child();
+    while let Some(node) = child {
+        child = node.next_element_sibling();
+        if !wanted.contains(&node.id()) {
+            node.remove();
+        }
+    }
+}
+
+/// The hidden box the description nodes live in, made on first need.
+fn description_store(root: &web_sys::ShadowRoot, document: &web_sys::Document) -> Option<Element> {
+    if let Ok(Some(store)) = root.query_selector("[data-descriptions]") {
+        return Some(store);
+    }
+    let store = document.create_element("div").ok()?;
+    store.set_attribute("data-descriptions", "").ok()?;
+    store.set_attribute("hidden", "").ok()?;
+    root.append_child(&store).ok()?;
+    Some(store)
+}
+
+/// One description node: made if it is not there, its words and language set.
+fn description_node(
+    document: &web_sys::Document,
+    store: &Element,
+    id: &str,
+    text: &str,
+    lang: Option<&str>,
+) {
+    let node = match store
+        .query_selector(&format!(r#"[id="{id}"]"#))
+        .ok()
+        .flatten()
+    {
+        Some(node) => node,
+        None => {
+            let Ok(node) = document.create_element("span") else {
+                return;
+            };
+            node.set_id(id);
+            let _ = store.append_child(&node);
+            node
+        }
+    };
+    if node.text_content().as_deref() != Some(text) {
+        node.set_text_content(Some(text));
+    }
+    match lang.filter(|lang| !lang.trim().is_empty()) {
+        Some(lang) => {
+            let _ = node.set_attribute("lang", lang);
+        }
+        None => {
+            let _ = node.remove_attribute("lang");
+        }
+    }
+}
+
 /// Redraws one cell in place: the focused row's slot is pinned and the
 /// renderer leaves it alone (point 17), so the page's word on a cell there
 /// would otherwise wait for the focus to move.
@@ -3339,13 +3523,12 @@ fn redraw_cell(host: &HtmlElement, cell: CellRef) {
     match &finding {
         Some(finding) => {
             let _ = td.set_attribute("data-validation", finding.level.as_str());
-            let _ = td.set_attribute("aria-description", &finding.message);
         }
         None => {
             let _ = td.remove_attribute("data-validation");
-            // A tree's context is named in the same attribute (issue #135).
+            // A tree's context is named by the same attribute (issue #135).
             if !is_tree(host) {
-                let _ = td.remove_attribute("aria-description");
+                let _ = td.remove_attribute("aria-describedby");
             }
         }
     }
@@ -3362,6 +3545,8 @@ fn redraw_cell(host: &HtmlElement, cell: CellRef) {
     } else {
         let _ = td.remove_attribute("aria-invalid");
     }
+    drop(borrowed);
+    sync_descriptions(host);
 }
 
 /// [`crate::element::set_cell_state`] (issue #153).
@@ -4497,6 +4682,22 @@ fn on_focus_in(event: Event) {
 }
 
 /// The shadow root a delegated listener was installed on.
+/// The shadow root the event's target sits in.
+///
+/// A listener that outlives its popup finds the grid from the event instead of
+/// holding it: a closure that captures the host, the root or a button in the
+/// grid is a root of its own and keeps a removed grid from being collected
+/// (issue #227).
+fn root_of_target(event: &Event) -> Option<ShadowRoot> {
+    event
+        .target()?
+        .dyn_into::<Element>()
+        .ok()?
+        .get_root_node()
+        .dyn_into::<ShadowRoot>()
+        .ok()
+}
+
 fn current_shadow_root(event: &Event) -> Option<ShadowRoot> {
     event.current_target()?.dyn_into::<ShadowRoot>().ok()
 }
@@ -7601,14 +7802,18 @@ fn show_quick(root: &ShadowRoot, popup: &HtmlElement, key: &str) {
     };
     let _ = button.set_attribute("aria-expanded", "true");
     place_under(popup, &button);
-    let owner = button.clone();
+    let key = key.to_owned();
     let closed = Closure::<dyn FnMut(Event)>::new(move |event: Event| {
         let open = js_sys::Reflect::get(&event, &JsValue::from_str("newState"))
             .ok()
             .and_then(|state| state.as_string())
             .is_some_and(|state| state == "open");
         if !open {
-            let _ = owner.set_attribute("aria-expanded", "false");
+            if let Some(root) = root_of_target(&event)
+                && let Some(button) = quick_button(&root, &key)
+            {
+                let _ = button.set_attribute("aria-expanded", "false");
+            }
             if let Some(popup) = event
                 .target()
                 .and_then(|target| target.dyn_into::<Element>().ok())
@@ -7616,9 +7821,9 @@ fn show_quick(root: &ShadowRoot, popup: &HtmlElement, key: &str) {
                 popup.remove();
             }
         }
-    });
-    let _ = popup.add_event_listener_with_callback("toggle", closed.as_ref().unchecked_ref());
-    closed.forget();
+    })
+    .into_js_value();
+    let _ = popup.add_event_listener_with_callback("toggle", closed.unchecked_ref());
 }
 
 /// Closes an open quick popup; with `refocus`, the focus goes back to its button.
@@ -7668,6 +7873,8 @@ fn open_filter_dialog(host: &HtmlElement) {
         ("part", "filter-dialog"),
         ("role", "dialog"),
         ("popover", "auto"),
+        // Tab does not leave it (`on_dialog_key`): it says so.
+        ("aria-modal", "true"),
         ("aria-labelledby", "og-filter-dialog-title"),
     ] {
         let _ = dialog.set_attribute(name, value);
@@ -7680,7 +7887,7 @@ fn open_filter_dialog(host: &HtmlElement) {
          <label><span></span><select data-dialog=\"column\"></select></label>\
          <label><span></span><select data-dialog=\"op\"></select></label>\
          <label data-dialog-value><span></span><input data-dialog=\"value\"></label>\
-         <p data-dialog-problem role=\"alert\" hidden></p>\
+         <p data-dialog-problem hidden></p>\
          <div data-dialog-actions>\
            <button type=\"button\" data-dialog-action=\"cancel\"></button>\
            <button type=\"button\" data-dialog-action=\"apply\"></button>\
@@ -7719,7 +7926,6 @@ fn open_filter_dialog(host: &HtmlElement) {
     {
         let _ = column.focus();
     }
-    let owner = host.clone();
     let changed = Closure::<dyn FnMut(Event)>::new(move |event: Event| {
         let Some(target) = event
             .target()
@@ -7736,13 +7942,19 @@ fn open_filter_dialog(host: &HtmlElement) {
             return;
         };
         match target.get_attribute("data-dialog").as_deref() {
-            Some("column") => fill_conditions(&owner, &dialog, &target.value()),
+            Some("column") => {
+                if let Some(root) = root_of_target(&event)
+                    && let Ok(owner) = root.host().dyn_into::<HtmlElement>()
+                {
+                    fill_conditions(&owner, &dialog, &target.value());
+                }
+            }
             Some("op") => show_value_field(&dialog, &target.value()),
             _ => {}
         }
-    });
-    let _ = dialog.add_event_listener_with_callback("change", changed.as_ref().unchecked_ref());
-    changed.forget();
+    })
+    .into_js_value();
+    let _ = dialog.add_event_listener_with_callback("change", changed.unchecked_ref());
 }
 
 /// The conditions `column`'s type allows — the filter row's own list — and the
@@ -7853,6 +8065,8 @@ fn apply_filter_dialog(host: &HtmlElement) {
             line.set_text_content(Some(message));
             let _ = line.remove_attribute("hidden");
         }
+        // Said through the status line, the grid's one live region.
+        announce(host, message);
     };
     if grid::takes_value(&op) && value.trim().is_empty() {
         problem(&texts.query_missing_value.replace("{column}", &column));
@@ -8130,14 +8344,17 @@ fn open_operator_menu(host: &HtmlElement, col: usize, last: bool) {
     let _ = button.set_attribute("aria-expanded", "true");
     place_under(&menu, &button);
     // A click outside closes the popover by itself; the button must say so.
-    let owner = button.clone();
     let closed = Closure::<dyn FnMut(Event)>::new(move |event: Event| {
         let open = js_sys::Reflect::get(&event, &JsValue::from_str("newState"))
             .ok()
             .and_then(|state| state.as_string())
             .is_some_and(|state| state == "open");
         if !open {
-            let _ = owner.set_attribute("aria-expanded", "false");
+            if let Some(root) = root_of_target(&event)
+                && let Some(operator) = OperatorControl::of(&root, col)
+            {
+                let _ = operator.element().set_attribute("aria-expanded", "false");
+            }
             if let Some(popup) = event
                 .target()
                 .and_then(|target| target.dyn_into::<Element>().ok())
@@ -8145,9 +8362,9 @@ fn open_operator_menu(host: &HtmlElement, col: usize, last: bool) {
                 popup.remove();
             }
         }
-    });
-    let _ = menu.add_event_listener_with_callback("toggle", closed.as_ref().unchecked_ref());
-    closed.forget();
+    })
+    .into_js_value();
+    let _ = menu.add_event_listener_with_callback("toggle", closed.unchecked_ref());
 
     let selector = if last {
         "[role=\"menuitemradio\"]:last-child"

@@ -584,6 +584,12 @@ pub(crate) fn apply(root: &ShadowRoot, document: Document, buffer: &PatchBuffer)
     dom.apply_buffer(buffer);
 }
 
+/// [`apply`] into any node — a fragment, say — instead of the shadow root.
+pub(crate) fn apply_into(root: Node, document: Document, buffer: &PatchBuffer) {
+    let mut dom = Dom::new(WebRenderer::from_document(document), root);
+    dom.apply_buffer(buffer);
+}
+
 /// Removes every child of the root before a full re-render.
 ///
 /// One direct call, not one per cell: the patch language has no "clear"

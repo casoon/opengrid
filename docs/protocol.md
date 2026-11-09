@@ -186,6 +186,13 @@ in:
    `max_list_values` (1 000) entries are `422`. `max_limit` rows a page — a `/query` that names no `limit` gets `max_limit`, and
    `total_count` still counts every match — a body size, a timeout, and for exports a row bound and
    a bound on how many run at once — each a status with a sentence, never a truncated answer.
+   Work is bounded before it is done: a pivot's grouping sets are asked for with a limit one past
+   `max_cells` (and the P9 order sets one past `max_rows`), so a pivot over a high-cardinality
+   dimension is `limit_exceeded` without the source sending every group; a tree built by the
+   engine (the source does not answer trees itself, and every flat tree) has its scope counted
+   against `max_tree_rows` (default 1 000 000) before any row is read, for a level and for an
+   export; an Excel export has `max_xlsx_rows` (default 100 000, never above the 1 048 576 of a
+   sheet), because the workbook is built in memory before the first byte.
 
 ## Proving a server
 

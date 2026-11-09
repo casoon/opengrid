@@ -72,6 +72,10 @@ Two things belong in every release entry and are easy to leave out:
   type error from our own `.d.ts`. `just types` now also checks the packed adapters against the
   lowest Vue, React and Svelte the ranges allow.
 - **npm:** `engines.node` of `@casoon/opengrid` is `>=22.12.0` (it was `>=18`, which is past its end of life), the same as `@casoon/opengrid-mcp`.
+- **MCP:** `opengrid_query` answers a window of 500 rows at most, the server keeps 100 sessions
+  (the least recently used goes first), the `view` of the tools is a typed schema instead of any
+  object, and a server source over `http://` is refused unless it is on the machine itself
+  ([#242](https://github.com/casoon/opengrid/issues/242)).
 - **Contributors:** the changelog's release headings use the Keep a Changelog form `## [x.y.z] - date`, and the version links at the end of the file work.
 
 ### Fixed
@@ -85,6 +89,11 @@ Two things belong in every release entry and are easy to leave out:
   following their columns by name; a changed `datasource` still starts clean. `<opengrid-table>` and
   `<opengrid-pivot>` re-run their query when `loadRows` or `load` replaces their source, which only
   the grid did.
+- **Grid: a selected row is visible under forced colours** ([#230](https://github.com/casoon/opengrid/issues/230)).
+  The tint is `Canvas` there and browsers drop `box-shadow`, so a selected row looked like any
+  other unless the `selection` column was on. It now keeps a 4px `Highlight` border on its first
+  cell.
+
 - **Server and connectors, hardening** ([#222](https://github.com/casoon/opengrid/issues/222)).
   `max_payload_bytes` above axum's 2 MiB is honoured (the router carries the limit; an oversize body
   is still the `limit_exceeded` wire error), every answer has `Cache-Control: no-store` and
@@ -97,6 +106,15 @@ Two things belong in every release entry and are easy to leave out:
   a new public field (a struct literal without `..Limits::default()` no longer compiles),
   `QueryError` has two new variants, `SchemaError` one, and `Schema::check` refuses a column named
   `__og_…` or `__grouping_…`, which the connectors use for helper columns.
+- **Connectors:** a query the server gave up on (its timeout, a client that left) kept running in the
+  database. PostgreSQL now gets a cancel request for the connection when the request is dropped
+  halfway (`/query`, `/pivot`, a pushed-down tree) and the connection is closed instead of reused.
+  SQLite ran on the async thread, to the end, so the timeout could not fire and one slow query held
+  every other request; it now runs on a thread of its own and a dropped request interrupts the
+  statement. `opengrid_conformance::block_on` waits for a future that is woken from another
+  thread (up to two minutes) instead of panicking. `opengrid-datasource-postgres` depends on `tokio` (already in the build) to send the cancel
+  request, and SQLite queries of one connector still run one after the other
+  ([#217](https://github.com/casoon/opengrid/issues/217)).
 - **Server:** a backend failure reaches the browser as one fixed sentence and a reference
   (`the data source failed (reference og-…)`), no longer as the database's text, which can name a
   table, a hidden column or a tenant's value. New `ServerBuilder::on_error(hook)` receives the full
@@ -107,14 +125,39 @@ Two things belong in every release entry and are easy to leave out:
   exhaustive `match` no longer compiles), `AppState` a new field, and a client that parsed the
   database text out of a `backend` message no longer can. A tree error still travels as `backend`;
   a code of its own would be a wire change ([#219](https://github.com/casoon/opengrid/issues/219)).
+- **Grid:** a grid that was removed from the page is collected after its popups were opened
+  ([#227](https://github.com/casoon/opengrid/issues/227)). The listeners of the column list, the
+  filter dialog, the grouping menu and the operator menu held the grid, so one open of any of them
+  kept it, its shadow tree and its runtime for the life of the page. They now find the grid from the
+  event they receive.
 - **Columns:** the binary wire reader no longer panics on forged counts and lengths: a row count of
   `u64::MAX` overflowed `rows + 1` in a text or list column, and path lengths of a flat tree that wrap
   around `u64` passed the sum check and then indexed out of range. Both are now a decode error, so a
   hostile or broken server cannot trap the page ([#212](https://github.com/casoon/opengrid/issues/212)).
+- **Server:** pivots, trees and Excel exports are bounded before the work is done, not after it.
+  A pivot's grouping sets carry a limit one past `max_cells` (PostgreSQL's single statement one past
+  the sets' sum), so a pivot over a high-cardinality dimension no longer reads every group; the
+  overflow is `limit_exceeded` (it was a hidden `backend` error in the default pivot path). A tree the
+  engine builds has its scope counted against the new `ServerBuilder::max_tree_rows` (default
+  1 000 000) before its rows are read, for a level and for an export. The new
+  `ServerBuilder::max_xlsx_rows` (default 100 000) bounds an Excel export below the sheet's 1 048 576
+  rows, since the whole workbook is built in memory. **What breaks:** a tree over a million rows,
+  and an Excel export over 100 000 rows, are refused unless the bound is raised
+  ([#218](https://github.com/casoon/opengrid/issues/218)).
 - **Query:** an integer literal on a `decimal` column (`{"field": "amount", "op": "gt", "value": 10}`) was
   refused as `ValueTypeMismatch`, although rule S8 allows comparing an integer with a decimal. It is
   now read at the column's scale (an overflow of the precision is still a validation error); a float
   literal on a decimal column stays an error ([#210](https://github.com/casoon/opengrid/issues/210)).
+- **Pivot and grid: live region, language, names and descriptions** ([#231](https://github.com/casoon/opengrid/issues/231)).
+  `<opengrid-pivot>` keeps its status line across answers and changes only its text, where it built
+  a fresh `role="status"` with the text already inside on every answer (WCAG 4.1.3); the toolbar and
+  the table are drawn around it. The grand total carries our `lang`, and the filter field is named
+  by a hidden node with our `lang` instead of `aria-label`. A validation sentence and a tree's
+  "context" are hidden nodes the cell is described by (`aria-describedby`) instead of
+  `aria-description` (ARIA 1.3 draft); a finding no longer overwrites the context on a tree's first
+  cell. The *Add filter* dialog is `aria-modal="true"`, and what it says about a refused value goes
+  through the status line instead of a second `role="alert"`.
+
 - **Planner:** a tree the client builds (the source has no trees, or leaves the sort or the paging
   to the client) lost the query's sort when it was not paged, and a tree the source answered but
   could not sort or page came back as plain rows without `children`, `match` and `orphans`. The
@@ -122,6 +165,13 @@ Two things belong in every release entry and are easy to leave out:
   scope and sums too, which it did not, so a scoped or summing tree failed with an unknown column.
   The hybrid conformance run now covers the tree and list cases
   ([#211](https://github.com/casoon/opengrid/issues/211)).
+
+- **Grid: the ARIA of grouping, selection and sorting** ([#229](https://github.com/casoon/opengrid/issues/229)).
+  Group rows and grouped data rows carry `aria-posinset` / `aria-setsize` (the total row none), the
+  `<table>` carries `aria-multiselectable="true"` while selection is on, rows carry no
+  `aria-selected` while grouped (selection is off there), and only the primary sort key sets
+  `aria-sort`: further keys show their order and direction in the header's marks, which stay
+  `aria-hidden` — they are not spoken (there is no text to speak them with yet).
 - **Engine:** a decimal `sum` of 39 digits was returned as a `decimal(38, s)` that neither wire form
   could read back; it is now an overflow error, like an `int64` sum past its limit. A decimal pushed
   into a column of another scale was stored with a different meaning (100 at scale 0 became `1.00`);
@@ -146,9 +196,22 @@ Two things belong in every release entry and are easy to leave out:
   The grid is not written to then; the event reaches the page with the record's `key`. A value the
   page sets with `set_values` now ends the undo and redo steps it overrides
   ([#225](https://github.com/casoon/opengrid/issues/225)).
+- **Formats follow the page's `lang`** ([#232](https://github.com/casoon/opengrid/issues/232)).
+  An `Intl` format without a `locale` read the browser's locale, so a `lang="de"` page in an English
+  browser showed `1,234.5` while the screen reader spoke German. The locale is now the explicit
+  `locale`, then the nearest `lang` of the page (through shadow roots), then the browser's — and a
+  change of `lang` on the page re-resolves the formats and redraws the grid, table and pivot.
+
 - **Grid:** scrolling while a cell was being edited closed the editor in the grid's state but left
   the `<input>` on screen, where `Enter` and `Escape` no longer reached it and the typed value was
   lost. A scroll now leaves the editor open ([#224](https://github.com/casoon/opengrid/issues/224)).
+- **Grid:** pasting no longer writes into a column the page fills (`readonly`)
+  ([#228](https://github.com/casoon/opengrid/issues/228)). The preview shows those cells with the
+  reason and leaves them out, the live region names the column, and a block of nothing else closes
+  without an `opengrid-paste`. A preview is discarded when a new result for the whole query lands
+  (another sort or filter, a replaced source, a rebuild), and an answer that arrives after one does
+  not open one; before, `Enter` applied the block to rows that were no longer there. The preview's
+  query is no longer counted in the footer.
 - **Engine:** a date or timestamp text with a multi-byte character (a filter literal, a CSV cell, a
   wire value) panicked the parser — a wasm trap in the browser, a 500 on the server; it is now a
   validation error ([#209](https://github.com/casoon/opengrid/issues/209)).

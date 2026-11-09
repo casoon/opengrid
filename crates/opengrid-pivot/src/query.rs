@@ -282,8 +282,18 @@ impl PivotQuery {
             }
         }
 
-        let sets = grouping_sets(self, schema, query_limits)?;
-        let orders = order_sets(self, schema, query_limits)?;
+        // Bounded before anything runs (issue #218). A set's groups are the
+        // cells of its level at most, and an order set's the rows at most, so
+        // one past `max_cells` / `max_rows` is already a pivot that is too big
+        // - `assemble` says so - and the source never reads more.
+        let mut sets = grouping_sets(self, schema, query_limits)?;
+        for set in &mut sets {
+            set.limit = Some(one_past(limits.max_cells));
+        }
+        let mut orders = order_sets(self, schema, query_limits)?;
+        for (_, set) in &mut orders {
+            set.limit = Some(one_past(limits.max_rows));
+        }
         Ok(ValidatedPivotQuery {
             source: self.source.clone(),
             rows: self.rows.clone(),
@@ -295,6 +305,10 @@ impl PivotQuery {
             limits: *limits,
         })
     }
+}
+
+fn one_past(bound: usize) -> u64 {
+    u64::try_from(bound).unwrap_or(u64::MAX).saturating_add(1)
 }
 
 /// The `n+1` ordinary queries a pivot is made of, **deepest first**.
@@ -475,8 +489,11 @@ mod tests {
             "the grand total keeps the columns"
         );
         // No paging anywhere: a level is the whole level (S6 would forbid the
-        // offset anyway, but the point is that a pivot is not a page).
-        assert!(plan.sets.iter().all(|set| set.limit.is_none()));
+        // offset anyway, but the point is that a pivot is not a page). The
+        // limit is the bound that makes a too-big pivot an error: one past the
+        // cells (issue #218).
+        let bound = Some(PivotLimits::default().max_cells as u64 + 1);
+        assert!(plan.sets.iter().all(|set| set.limit == bound));
     }
 
     /// V1 allows two dimensions across the top (#120). The engine is generic;
