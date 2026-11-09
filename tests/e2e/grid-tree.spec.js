@@ -272,9 +272,13 @@ test("+ Group is aria-disabled in a tree, and says why", async ({ page }) => {
       const button = document
         .querySelector("opengrid-grid")
         .shadowRoot.querySelector('[data-toolbar="add-grouping"]');
-      return [button.getAttribute("aria-disabled"), button.getAttribute("aria-label")];
+      return [button.getAttribute("aria-disabled"), button.getAttribute("aria-label"), button.textContent];
     });
-  await expect.poll(button).toEqual(["true", "group-by is not used in a tree"]);
+  // The visible text first (WCAG 2.5.3), then why it does nothing.
+  await expect
+    .poll(button)
+    .toEqual(["true", "+ Group. group-by is not used in a tree", "+ Group"]);
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   // Pressing it opens no menu.
   await page.evaluate(() =>
     document

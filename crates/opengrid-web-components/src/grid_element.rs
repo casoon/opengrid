@@ -8835,13 +8835,20 @@ fn sync_quick_buttons(host: &HtmlElement, root: &ShadowRoot) {
             .is_some_and(|grouping| grouping.by().len() >= 2)
     });
     let texts = texts(host);
+    let visible = texts.add_grouping.as_str();
     if is_tree(host) {
         // A tree is its own hierarchy (issue #135): the button says why not.
         let _ = button.set_attribute("aria-disabled", "true");
-        let _ = button.set_attribute("aria-label", &texts.tree_group_ignored);
+        let _ = button.set_attribute(
+            "aria-label",
+            &crate::texts::reasoned(visible, &texts.tree_group_ignored),
+        );
     } else if full {
         let _ = button.set_attribute("aria-disabled", "true");
-        let _ = button.set_attribute("aria-label", &texts.grouping_full);
+        let _ = button.set_attribute(
+            "aria-label",
+            &crate::texts::reasoned(visible, &texts.grouping_full),
+        );
     } else if button.has_attribute("aria-disabled") {
         let _ = button.remove_attribute("aria-disabled");
         let _ = button.remove_attribute("aria-label");
