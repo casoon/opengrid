@@ -21,9 +21,15 @@ Two things belong in every release entry and are easy to leave out:
 ### Added
 
 - **PostgreSQL:** `PostgresDataSource::connect_with` and `PoolOptions` set the pool size and the wait,
-  create and recycle timeouts, so `max_concurrent_exports` can be sized against a known pool. TLS is
-  not part of this ([#220](https://github.com/casoon/opengrid/issues/220), awaiting a decision on the
-  dependency).
+  create and recycle timeouts, so `max_concurrent_exports` can be sized against a known pool.
+- **PostgreSQL over TLS** ([#220](https://github.com/casoon/opengrid/issues/220)).
+  `PostgresDataSource::connect_with_tls` takes any `tokio-postgres` TLS connector and **requires**
+  TLS (`sslmode=prefer` would fall back to clear text, so it is lifted to `require`; `disable` is
+  refused). The cancel request of a dropped statement goes over the same connector. The cargo
+  feature `tls` (off by default) adds `rustls_connector`: `rustls` with the `ring` provider, the
+  Mozilla roots and optionally a private authority's. `connect` refuses a string with
+  `sslmode=require` at once. New dependencies, only with the feature: `rustls`,
+  `tokio-postgres-rustls`, `webpki-roots`, `rustls-pki-types`.
 - **Editing through `connect` and the framework components** ([#206](https://github.com/casoon/opengrid/issues/206)).
   New options `actions` and `validators` (functions compare by identity, as in `formats`) and the
   callbacks `onRowAdd`, `onPaste`, `onBulkChange`, `onRowAction`, `onSourceReplaced`. `onRowAdd`

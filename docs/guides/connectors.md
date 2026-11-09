@@ -143,8 +143,20 @@ statement running holds a database connection and its CPU for as long as it like
 
 PostgreSQL pool. `PostgresDataSource::connect_with(url, table, schema, PoolOptions { max_size,
 wait_timeout, create_timeout, recycle_timeout })` sizes and times the pool; size
-`max_concurrent_exports` against `pool_size()`. TLS is not part of the crate yet: until it is
-(see issue #220), keep the database on a trusted network or behind a TLS-terminating proxy.
+`max_concurrent_exports` against `pool_size()`.
+
+PostgreSQL over TLS. Without the `tls` feature the connection is made in clear text, and a
+connection string with `sslmode=require` is refused at `connect` (use `connect_with_tls`). With
+`connect_with_tls(url, table, schema, PoolOptions::default(), tls)` the connection **requires** TLS:
+the string's `sslmode=prefer`, libpq's default, would fall back to clear text when the server does
+not answer TLS, so it is lifted to `require`, and `sslmode=disable` is refused as a contradiction.
+`tls` is any `tokio-postgres` TLS connector (`postgres-native-tls`, or your own); the cancel request
+of a dropped statement uses the same one. The cargo feature `tls` of `opengrid-datasource-postgres`
+(off by default) adds `rustls_connector(extra_roots_pem)`: `rustls` with the `ring` provider, which
+builds without system packages, trusting the Mozilla root certificates and, if you give them, the
+roots of a private certificate authority (PEM). The server certificate is verified against the host
+name of the connection string. The server and the examples do not enable the feature; a program that
+builds its sources does.
 
 ## A server in another language
 
