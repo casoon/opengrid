@@ -84,6 +84,11 @@ Two things belong in every release entry and are easy to leave out:
   runs 3.6 ms instead of 11.7 ms, `<opengrid-table>` draws 5 000 rows 20 % faster, and extending a range
   over a large selection no longer takes quadratic time. The DOM, the events and the texts are
   the same.
+- **Server:** the defaults of the two bounds from [#218](https://github.com/casoon/opengrid/issues/218)
+  are larger: `max_xlsx_rows` 1 000 000 (it was 100 000; the 1 048 576 of an Excel sheet stays the
+  hard bound) and `max_tree_rows` 5 000 000 (it was 1 000 000). Both are still set per server. A
+  million rows of ten columns take about 65 MiB while the workbook is made (100 000 rows: 14 MiB)
+  but about 25 s, which is past the default timeout of 10 s: raise `timeout` for such exports.
 - **API:** `opengrid-source-replaced` is frozen, typed in `OpengridEventMap` and in the events table
   of the API reference, which says that `loader.js` dispatches it on the grid without bubbling
   ([#234](https://github.com/casoon/opengrid/issues/234)). A test now reads the module's
