@@ -396,12 +396,7 @@ impl PostgresDataSource {
         if !pivot.sort.is_empty() {
             return opengrid_pivot::execute(self, pivot)
                 .await
-                .map_err(|error| match error {
-                    opengrid_pivot::ExecuteError::Source(error) => error,
-                    other => DataSourceError::Backend {
-                        message: other.to_string(),
-                    },
-                });
+                .map_err(DataSourceError::from);
         }
         let deepest = pivot.sets.first().ok_or_else(|| DataSourceError::Backend {
             message: "a pivot has at least one level".to_owned(),
@@ -479,9 +474,7 @@ impl PostgresDataSource {
             })
             .collect();
 
-        opengrid_pivot::assemble(pivot, &results).map_err(|error| DataSourceError::Backend {
-            message: error.to_string(),
-        })
+        opengrid_pivot::assemble(pivot, &results).map_err(DataSourceError::from)
     }
 }
 

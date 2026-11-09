@@ -36,6 +36,29 @@ impl From<DataSourceError> for ExecuteError {
     }
 }
 
+/// A pivot over a bound is a limit the caller can narrow (`LimitExceeded`),
+/// not an outage of the source (issue #218).
+impl From<PivotError> for DataSourceError {
+    fn from(error: PivotError) -> Self {
+        let message = error.to_string();
+        match error {
+            PivotError::TooManyColumns { .. }
+            | PivotError::TooManyRows { .. }
+            | PivotError::TooManyCells { .. } => DataSourceError::LimitExceeded { message },
+            _ => DataSourceError::Backend { message },
+        }
+    }
+}
+
+impl From<ExecuteError> for DataSourceError {
+    fn from(error: ExecuteError) -> Self {
+        match error {
+            ExecuteError::Source(error) => error,
+            ExecuteError::Pivot(error) => error.into(),
+        }
+    }
+}
+
 impl From<PivotError> for ExecuteError {
     fn from(error: PivotError) -> Self {
         ExecuteError::Pivot(error)
@@ -157,6 +180,27 @@ pub fn assemble(
     let depth = pivot.rows.len();
     let across = pivot.columns.len();
     let measures = pivot.values.len();
+
+    // The sets were asked for with a limit one past these bounds (issue #218):
+    // a level that reaches it is a pivot that is too big, whatever else is in
+    // the answer.
+    for result in &results[..pivot.sets.len()] {
+        if result.row_count() > pivot.limits.max_cells {
+            return Err(PivotError::TooManyCells {
+                rows: result.row_count(),
+                columns: 1,
+                maximum: pivot.limits.max_cells,
+            });
+        }
+    }
+    for result in &results[pivot.sets.len()..] {
+        if result.row_count() > pivot.limits.max_rows {
+            return Err(PivotError::TooManyRows {
+                found: result.row_count(),
+                maximum: pivot.limits.max_rows,
+            });
+        }
+    }
 
     // `sets` is deepest first, so `results[0]` is the detail level and the last
     // one is the grand total — which doubles as the catalogue of columns.

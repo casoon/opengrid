@@ -465,3 +465,40 @@ async fn an_xlsx_export_is_a_workbook() {
     assert_eq!(refused.status, StatusCode::BAD_REQUEST);
     assert!(error_of(&refused).message.contains("this export is XLSX"));
 }
+
+/// Issue #218: the workbook is built in memory before its first byte, so an
+/// Excel export has a bound of its own, below the sheet's.
+#[tokio::test]
+async fn an_xlsx_export_has_its_own_lower_bound() {
+    let app = Server::builder()
+        .max_xlsx_rows(5)
+        .token(ALL, [("country", "-")])
+        .source("open", fixture(), SourcePolicy::default())
+        .build()
+        .await
+        .expect("a server")
+        .router();
+    let body = r#"{"source":"open","select":["id"],"sort":[{"field":"id","direction":"asc"}]}"#;
+    let refused = send(
+        app.clone(),
+        "/export/open?format=xlsx",
+        Some(ALL),
+        &[],
+        body,
+    )
+    .await;
+    assert_eq!(
+        refused.status,
+        StatusCode::PAYLOAD_TOO_LARGE,
+        "{}",
+        refused.body
+    );
+    assert!(refused.body.contains("max_xlsx_rows"), "{}", refused.body);
+    // The same rows as CSV are fine, and so are five of them as a workbook.
+    let csv = send(app.clone(), "/export/open?format=csv", Some(ALL), &[], body).await;
+    assert_eq!(csv.status, StatusCode::OK);
+    let five =
+        r#"{"source":"open","select":["id"],"sort":[{"field":"id","direction":"asc"}],"limit":5}"#;
+    let workbook = send(app, "/export/open?format=xlsx", Some(ALL), &[], five).await;
+    assert_eq!(workbook.status, StatusCode::OK, "{}", workbook.body);
+}

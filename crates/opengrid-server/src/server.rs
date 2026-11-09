@@ -65,6 +65,8 @@ pub(crate) struct Settings {
     pub allowed_origins: Vec<String>,
     pub max_export_rows: u64,
     pub max_concurrent_exports: Option<usize>,
+    pub max_tree_rows: u64,
+    pub max_xlsx_rows: u64,
 }
 
 impl Default for Settings {
@@ -75,6 +77,8 @@ impl Default for Settings {
             allowed_origins: Vec::new(),
             max_export_rows: 1_000_000,
             max_concurrent_exports: None,
+            max_tree_rows: 1_000_000,
+            max_xlsx_rows: 100_000,
         }
     }
 }
@@ -150,6 +154,23 @@ impl ServerBuilder {
     /// The most rows one export may have.
     pub fn max_export_rows(mut self, rows: u64) -> Self {
         self.settings.max_export_rows = rows;
+        self
+    }
+
+    /// The most rows a tree may consist of (its scope) for the server to
+    /// answer a level of it or export it, when the source does not answer trees
+    /// itself: the engine builds a tree from all of its rows. Counted before the
+    /// rows are read; over it the request is `limit_exceeded`. Default 1 000 000.
+    pub fn max_tree_rows(mut self, rows: u64) -> Self {
+        self.settings.max_tree_rows = rows;
+        self
+    }
+
+    /// The most rows an Excel export may have, below the 1 048 576 a sheet
+    /// holds: the whole workbook is built in memory before its first byte,
+    /// once per running export. Default 100 000.
+    pub fn max_xlsx_rows(mut self, rows: u64) -> Self {
+        self.settings.max_xlsx_rows = rows;
         self
     }
 

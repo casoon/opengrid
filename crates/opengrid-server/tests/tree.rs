@@ -677,3 +677,33 @@ async fn a_cycle_is_told_to_the_caller_not_hidden_as_an_outage() {
         assert!(!error.contains("reference"), "{kind}: {error}");
     }
 }
+
+/// Issue #218: the engine builds a tree from all the rows of its scope, so the
+/// scope is counted against `max_tree_rows` before the rows are read - for a
+/// level the source cannot answer itself, for a flat tree, and for an export.
+#[tokio::test]
+async fn a_tree_over_max_tree_rows_is_refused_before_it_is_read() {
+    let level = r#"{"source":"tree","select":["id"],"tree":{"parent":"parent_id"}}"#;
+    let flat = r#"{"source":"tree","select":["id"],"tree":{"parent":"parent_id","flat":true}}"#;
+    for (kind, connector, query) in [
+        ("sqlite level", sqlite("tree"), level),
+        ("file flat", file("tree"), flat),
+    ] {
+        let bounded = Server::builder()
+            .max_tree_rows(3)
+            .token(TOKEN, [("region", "EU")])
+            .source("tree", Shared(connector), SourcePolicy::default())
+            .build()
+            .await
+            .expect("a server")
+            .router();
+        let error = ask(bounded.clone(), TOKEN, query).await.expect_err(kind);
+        assert!(error.contains("max_tree_rows"), "{kind}: {error}");
+        let (status, body) = export(bounded, TOKEN, "/export/tree?format=csv", query).await;
+        assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE, "{kind}: {body}");
+        assert!(body.contains("max_tree_rows"), "{kind}: {body}");
+    }
+    // The default bound leaves the fixture alone.
+    let app = app(vec![("tree", sqlite("tree"))], false).await;
+    assert!(ask(app, TOKEN, level).await.is_ok());
+}

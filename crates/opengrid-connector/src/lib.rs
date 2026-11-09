@@ -84,9 +84,7 @@ pub trait Connector: Send + Sync {
         Box::pin(async move {
             opengrid_pivot::execute(&AsSource(self), pivot)
                 .await
-                .map_err(|error| DataSourceError::Backend {
-                    message: error.to_string(),
-                })
+                .map_err(DataSourceError::from)
         })
     }
 
