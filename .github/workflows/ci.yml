@@ -33,7 +33,9 @@ jobs:
           components: clippy, rustfmt
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
-      - uses: extractions/setup-just@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
       - run: just check
       - run: just wasm-check
       # Advisories, licences, bans and sources (deny.toml). The advisory
@@ -97,7 +99,9 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
-      - uses: extractions/setup-just@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
       # wasm-bindgen CLI and wasm-opt are what `just wasm-build-components` needs
       # (plan/spezifikation/14-entscheidungen.md E4); both are pinned to the
       # versions the local toolchain uses so the module matches.
@@ -111,7 +115,8 @@ jobs:
       # which is a WASM feature the tool predates, not a broken module.
       - name: Install binaryen ${{ env.BINARYEN_VERSION }}
         run: |
-          curl -fsSL "https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}/binaryen-version_${BINARYEN_VERSION}-x86_64-linux.tar.gz" | tar -xz
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 -o binaryen.tar.gz "https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}/binaryen-version_${BINARYEN_VERSION}-x86_64-linux.tar.gz"
+          tar -xzf binaryen.tar.gz
           echo "$PWD/binaryen-version_${BINARYEN_VERSION}/bin" >> "$GITHUB_PATH"
       - uses: pnpm/action-setup@v4
         with:
@@ -148,13 +153,16 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
-      - uses: extractions/setup-just@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
       - uses: taiki-e/install-action@v2
         with:
           tool: wasm-bindgen@0.2.126
       - name: Install binaryen ${{ env.BINARYEN_VERSION }}
         run: |
-          curl -fsSL "https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}/binaryen-version_${BINARYEN_VERSION}-x86_64-linux.tar.gz" | tar -xz
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 -o binaryen.tar.gz "https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}/binaryen-version_${BINARYEN_VERSION}-x86_64-linux.tar.gz"
+          tar -xzf binaryen.tar.gz
           echo "$PWD/binaryen-version_${BINARYEN_VERSION}/bin" >> "$GITHUB_PATH"
       - uses: pnpm/action-setup@v4
         with:
@@ -195,7 +203,9 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
-      - uses: extractions/setup-just@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
       - uses: taiki-e/install-action@v2
         with:
           tool: wasm-bindgen@0.2.126
@@ -206,7 +216,8 @@ jobs:
       # which is a WASM feature the tool predates, not a broken module.
       - name: Install binaryen ${{ env.BINARYEN_VERSION }}
         run: |
-          curl -fsSL "https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}/binaryen-version_${BINARYEN_VERSION}-x86_64-linux.tar.gz" | tar -xz
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 -o binaryen.tar.gz "https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}/binaryen-version_${BINARYEN_VERSION}-x86_64-linux.tar.gz"
+          tar -xzf binaryen.tar.gz
           echo "$PWD/binaryen-version_${BINARYEN_VERSION}/bin" >> "$GITHUB_PATH"
       - uses: pnpm/action-setup@v4
         with:
@@ -250,13 +261,16 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
-      - uses: extractions/setup-just@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
       - uses: taiki-e/install-action@v2
         with:
           tool: wasm-bindgen@0.2.126
       - name: Install binaryen ${{ env.BINARYEN_VERSION }}
         run: |
-          curl -fsSL "https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}/binaryen-version_${BINARYEN_VERSION}-x86_64-linux.tar.gz" | tar -xz
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 -o binaryen.tar.gz "https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}/binaryen-version_${BINARYEN_VERSION}-x86_64-linux.tar.gz"
+          tar -xzf binaryen.tar.gz
           echo "$PWD/binaryen-version_${BINARYEN_VERSION}/bin" >> "$GITHUB_PATH"
       - uses: pnpm/action-setup@v4
         with:
