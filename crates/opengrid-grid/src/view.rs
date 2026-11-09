@@ -55,3 +55,42 @@ impl Window {
         row >= self.offset && row < self.end()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_cell_names_a_logical_row_and_orders_by_row_first() {
+        assert_eq!(CellRef::new(3, 1), CellRef { row: 3, col: 1 });
+        assert!(CellRef::new(2, 9) < CellRef::new(3, 0));
+        assert!(CellRef::new(3, 0) < CellRef::new(3, 1));
+    }
+
+    #[test]
+    fn a_window_holds_its_first_row_and_not_the_one_past_its_end() {
+        let window = Window::new(10, 5);
+        assert_eq!(window.end(), 15);
+        assert!(!window.contains(9));
+        assert!(window.contains(10));
+        assert!(window.contains(14));
+        assert!(!window.contains(15));
+    }
+
+    #[test]
+    fn an_empty_window_holds_nothing_and_the_default_is_empty() {
+        assert!(!Window::new(7, 0).contains(7));
+        assert_eq!(Window::default(), Window::new(0, 0));
+        assert!(!Window::default().contains(0));
+    }
+
+    /// The window is not clamped to the result: a reload can briefly disagree
+    /// with it, and the end must not wrap around.
+    #[test]
+    fn the_end_of_a_window_at_the_top_of_the_range_saturates() {
+        let window = Window::new(u64::MAX - 1, 10);
+        assert_eq!(window.end(), u64::MAX);
+        assert!(window.contains(u64::MAX - 1));
+        assert!(!window.contains(u64::MAX));
+    }
+}

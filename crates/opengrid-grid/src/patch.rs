@@ -69,3 +69,51 @@ pub enum Patch {
     /// own copy of the truth.
     Selection(Vec<u64>),
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A patch is plain data: the renderer compares and clones it, and a
+    /// transition that changed nothing yields an equal (empty) list.
+    #[test]
+    fn patches_compare_by_what_they_say() {
+        let cell = |row, value: i64| Patch::Cell {
+            cell: CellRef::new(row, 0),
+            value: Value::Int64(value),
+        };
+        assert_eq!(cell(1, 5), cell(1, 5));
+        assert_ne!(cell(1, 5), cell(1, 6));
+        assert_ne!(cell(1, 5), cell(2, 5));
+        assert_ne!(Patch::RowCount(3), Patch::RowCount(4));
+        assert_ne!(Patch::RowCount(3), Patch::Selection(vec![3]));
+    }
+
+    #[test]
+    fn a_selection_patch_carries_the_whole_selection_not_a_delta() {
+        let before = Patch::Selection(vec![1, 2]);
+        let after = Patch::Selection(vec![1, 2, 3]);
+        assert_ne!(before, after);
+        assert_eq!(after.clone(), after);
+    }
+
+    #[test]
+    fn focus_and_editing_may_have_no_cell() {
+        let focus = Patch::Focus {
+            from: None,
+            to: Some(CellRef::new(0, 0)),
+        };
+        assert_ne!(
+            focus,
+            Patch::Focus {
+                from: Some(CellRef::new(0, 0)),
+                to: None,
+            }
+        );
+        assert_ne!(
+            Patch::Editing(None),
+            Patch::Editing(Some(CellRef::new(0, 0)))
+        );
+        assert_ne!(Patch::Filter(None), Patch::Window(Window::new(0, 1)));
+    }
+}
