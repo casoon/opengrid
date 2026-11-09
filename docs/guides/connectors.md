@@ -132,7 +132,7 @@ value.
 Bounds. A pivot's grouping sets arrive with a `limit` one past `max_cells`: a connector applies
 `limit` like any other query's and lets the pivot engine report the overflow (a connector that
 answers a whole pivot in one statement, as PostgreSQL does, bounds the statement by the sum). A
-tree the engine builds is counted first (`max_tree_rows`); a connector that answers trees itself
+tree the engine builds is counted first (`max_tree_rows`, default 5 000 000); a connector that answers trees itself
 keeps the rows in the database.
 
 Timeouts. The server drops a query's future when its timeout runs out or the client leaves. A
