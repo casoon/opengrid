@@ -1298,14 +1298,14 @@ mod host {
         stored.unwrap_or_else(|| DEFAULT.with(Rc::clone))
     }
 
-    /// Reads a JS object into [`GridTexts`], keeping the default of every key it
-    /// does not carry.
+    /// Reads a JS object over `base`, keeping the text `base` has for every key
+    /// the object does not carry.
     ///
     /// A partial object is the normal case: a page that only wants a German
-    /// "Clear" should not have to restate the other ten texts. Keys are
-    /// camelCase, as JavaScript writes them.
-    pub(crate) fn from_js(value: &JsValue) -> GridTexts {
-        let mut texts = GridTexts::default();
+    /// "Clear" should not have to restate the other ten texts, and a second
+    /// call adds to the first. Keys are camelCase, as JavaScript writes them.
+    pub(crate) fn from_js(base: GridTexts, value: &JsValue) -> GridTexts {
+        let mut texts = base;
         let string = |key: &str| -> Option<String> {
             js_sys::Reflect::get(value, &JsValue::from_str(key))
                 .ok()

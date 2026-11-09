@@ -1921,6 +1921,11 @@ pub fn grid_css() -> String {
               keeps its sign. Elsewhere the select is native already. */
            [part=\"filter\"] select, select[part=\"editor\"] {{ appearance: auto;
                              background-image: none; }}
+           /* A forced palette drops `box-shadow` and the tint is `Canvas`, so
+              the bar of a selected row (above) would be gone and the row
+              looks like any other (WCAG 1.4.1, 1.4.11). A border is kept. */
+           tbody tr[data-selected=\"true\"] > :first-child {{
+                    border-inline-start: 4px solid Highlight; }}
          }}
          @media (prefers-reduced-motion: reduce) {{
            * {{ animation-duration: 0.01ms !important; animation-iteration-count: 1 !important;
@@ -5655,6 +5660,12 @@ mod tests {
         assert!(
             !forced.contains("color-mix"),
             "a forced palette must resolve to system colours, not to a mix"
+        );
+        // A forced palette drops `box-shadow`: a selected row keeps a border.
+        assert!(
+            forced.contains("tr[data-selected=\"true\"] > :first-child")
+                && forced.contains("border-inline-start"),
+            "a selected row must stay visible under a forced palette"
         );
 
         // The focus ring does not hang off the accent: a pale accent would make

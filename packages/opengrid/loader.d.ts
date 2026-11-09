@@ -39,7 +39,7 @@ export interface OpengridModule {
   /** Attaches the data source. Call {@link OpengridModule.set_texts} first. */
   set_provider(host: HTMLElement, provider: Provider): void;
   /** Overrides any subset of the texts; call it before `set_provider`. */
-  set_texts(host: HTMLElement, texts: Texts): void;
+  set_texts(host: HTMLElement, texts: Texts | null): void;
   /** Per-column display formatting. Never reaches a query. */
   set_formats(host: HTMLElement, formats: Formats): void;
   /** Per-column editor choices: `{ customer: ["Alpha", "Beta"] }`. */

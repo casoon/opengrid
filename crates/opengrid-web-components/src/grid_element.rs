@@ -330,6 +330,17 @@ fn row_key_of(host: &HtmlElement) -> Option<opengrid_types::FieldName> {
         .and_then(|name| opengrid_types::FieldName::new(name.trim()).ok())
 }
 
+/// Whether the host pages: a `page-size` that reads as a size. `page-size="0"`
+/// or a word is no paging, so it refuses nothing (issue #233).
+fn is_paging(host: &HtmlElement) -> bool {
+    grid::parse_page_size(host.get_attribute(PAGE_SIZE_ATTRIBUTE).as_deref()).is_some()
+}
+
+/// Whether the host names its records: a `row-key` that is a field name.
+fn has_row_key(host: &HtmlElement) -> bool {
+    row_key_of(host).is_some()
+}
+
 /// Resolves the `--og-row-height` custom property on the host.
 ///
 /// Whether this grid shows the selection column (point 61).
@@ -557,7 +568,7 @@ fn follow_replaced(runtime: &mut GridRuntime, key: Option<Value>) {
 /// a page is not the end of the list (issue #183).
 fn sync_add_row(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>) {
     let on = host.has_attribute(grid::ADD_ROW_ATTRIBUTE)
-        && !host.has_attribute(PAGE_SIZE_ATTRIBUTE)
+        && !is_paging(host)
         && !host.has_attribute(grid::TREE_ATTRIBUTE)
         && runtime.borrow().grouping.is_none();
     let mut borrowed = runtime.borrow_mut();
@@ -603,7 +614,7 @@ fn window_from_scroll(runtime: &Rc<RefCell<GridRuntime>>) {
 /// [`QueryKind::Window`] query, because what the result *is* has not changed.
 fn follow_active_row(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>) -> bool {
     // While paging, the window is the page, and the active row is on it.
-    if grid::parse_page_size(host.get_attribute(PAGE_SIZE_ATTRIBUTE).as_deref()).is_some() {
+    if is_paging(host) {
         return false;
     }
     {
@@ -2784,14 +2795,7 @@ fn fire_action(host: &HtmlElement, row: u64, index: usize) {
     ] {
         let _ = js_sys::Reflect::set(&detail, &JsValue::from_str(name), &value);
     }
-    let init = web_sys::CustomEventInit::new();
-    init.set_bubbles(true);
-    init.set_composed(true);
-    init.set_cancelable(false);
-    init.set_detail(&detail);
-    if let Ok(event) = web_sys::CustomEvent::new_with_event_init_dict(ROW_ACTION_EVENT, &init) {
-        let _ = host.dispatch_event(&event);
-    }
+    crate::element::dispatch(host, ROW_ACTION_EVENT, &detail);
 }
 
 /// A click on an action button.
@@ -2952,14 +2956,7 @@ fn dispatch_row_add(
     if let Some(step) = step {
         let _ = js_sys::Reflect::set(&detail, &JsValue::from_str(step), &JsValue::TRUE);
     }
-    let init = web_sys::CustomEventInit::new();
-    init.set_bubbles(true);
-    init.set_composed(true);
-    init.set_cancelable(false);
-    init.set_detail(&detail);
-    if let Ok(event) = web_sys::CustomEvent::new_with_event_init_dict(ROW_ADD_EVENT, &init) {
-        let _ = host.dispatch_event(&event);
-    }
+    crate::element::dispatch(host, ROW_ADD_EVENT, &detail);
 }
 
 /// [`crate::element::set_row_state`] (issue #183): what became of a row the
@@ -3317,7 +3314,7 @@ fn end_edit(host: &HtmlElement, commit: bool) {
 /// `null` when the result does not carry the field — and `None`, no `key` at
 /// all, without the attribute.
 fn row_key_js(host: &HtmlElement, state: &GridState, row: u64) -> Option<JsValue> {
-    host.has_attribute(grid::ROW_KEY_ATTRIBUTE).then(|| {
+    has_row_key(host).then(|| {
         state.row_key(row).map_or(JsValue::NULL, |value| {
             to_js(&opengrid_json::ToJson::to_json(value))
         })
@@ -3725,14 +3722,7 @@ fn dispatch_cell_change(
         let _ = js_sys::Reflect::set(&detail, &JsValue::from_str(key), &value);
     }
 
-    let init = web_sys::CustomEventInit::new();
-    init.set_bubbles(true);
-    init.set_composed(true);
-    init.set_cancelable(false);
-    init.set_detail(&detail);
-    if let Ok(event) = web_sys::CustomEvent::new_with_event_init_dict(CELL_EVENT, &init) {
-        let _ = host.dispatch_event(&event);
-    }
+    crate::element::dispatch(host, CELL_EVENT, &detail);
 }
 
 #[wasm_bindgen::prelude::wasm_bindgen(inline_js = "
@@ -3786,14 +3776,7 @@ fn dispatch_selection(host: &HtmlElement, rows: &[u64], keys: Option<&[opengrid_
         let _ = js_sys::Reflect::set(&detail, &JsValue::from_str("keys"), &list);
     }
 
-    let init = web_sys::CustomEventInit::new();
-    init.set_bubbles(true);
-    init.set_composed(true);
-    init.set_cancelable(false);
-    init.set_detail(&detail);
-    if let Ok(event) = web_sys::CustomEvent::new_with_event_init_dict(SELECTION_EVENT, &init) {
-        let _ = host.dispatch_event(&event);
-    }
+    crate::element::dispatch(host, SELECTION_EVENT, &detail);
 }
 
 /// `Enter`/`Space` on a header cell sorts by its column and re-runs the query;
@@ -4580,7 +4563,7 @@ fn on_scroll(event: Event) {
     }
     // While paging there is nothing to scroll into: the sizer is the page, and
     // the window belongs to the pager (point 38).
-    if grid::parse_page_size(host.get_attribute(PAGE_SIZE_ATTRIBUTE).as_deref()).is_some() {
+    if is_paging(&host) {
         return;
     }
     let Some(runtime) = runtime(&host) else {
@@ -5195,14 +5178,7 @@ pub(crate) fn dispatch_view(host: &HtmlElement) {
     let detail = js_sys::Object::new();
     let _ = js_sys::Reflect::set(&detail, &JsValue::from_str("view"), &to_js(&view.to_json()));
 
-    let init = web_sys::CustomEventInit::new();
-    init.set_bubbles(true);
-    init.set_composed(true);
-    init.set_cancelable(false);
-    init.set_detail(&detail);
-    if let Ok(event) = web_sys::CustomEvent::new_with_event_init_dict(VIEW_EVENT, &init) {
-        let _ = host.dispatch_event(&event);
-    }
+    crate::element::dispatch(host, VIEW_EVENT, &detail);
 }
 
 // ---------------------------------------------------------------------------
@@ -5294,7 +5270,7 @@ fn grouping_of(host: &HtmlElement) -> Result<Option<Grouping>, String> {
     if let Some(missing) = by.iter().find(|name| !shown.contains(name)) {
         return Err(texts.group_invalid(missing));
     }
-    if host.has_attribute(PAGE_SIZE_ATTRIBUTE) {
+    if is_paging(host) {
         return Err(format!(
             "{} ({PAGE_SIZE_ATTRIBUTE})",
             texts.group_invalid(&by.join(","))
@@ -5316,7 +5292,7 @@ fn editable_group_row(host: &HtmlElement, active: ActiveCell) -> bool {
         return false;
     };
     let borrowed = runtime.borrow();
-    host.has_attribute(grid::ROW_KEY_ATTRIBUTE)
+    has_row_key(host)
         && matches!(active, ActiveCell::Data(_))
         && active.row().is_some_and(|row| {
             matches!(
@@ -5345,7 +5321,7 @@ fn tree_of(host: &HtmlElement) -> Result<Option<Tree>, String> {
     else {
         return Ok(None);
     };
-    if host.has_attribute(PAGE_SIZE_ATTRIBUTE) {
+    if is_paging(host) {
         return Err(texts(host).tree_refused.clone());
     }
     let key = host
@@ -6217,7 +6193,7 @@ fn open_column_menu(host: &HtmlElement, col: usize) {
             sort,
             aggregate,
             group_by: &group_by,
-            can_group: !host.has_attribute(PAGE_SIZE_ATTRIBUTE),
+            can_group: !is_paging(host),
             visible: borrowed.state.schema().fields().len(),
             bulk: bulk::available(host, &borrowed, col),
         };

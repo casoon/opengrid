@@ -1110,7 +1110,14 @@ export function connect(host, options = {}) {
     // first query is the only one and asks for the right thing.
     if ("texts" in changed) {
       const texts = changed.texts ?? {};
-      write("texts", texts, stableKey(texts), (value) => module.set_texts(host, value));
+      write("texts", texts, stableKey(texts), (value) => {
+        // `set_texts` adds to the texts the element has; this option is all of
+        // them, so what an earlier value set and this one leaves out goes first.
+        module.set_texts(host, null);
+        if (Object.keys(value).length > 0) {
+          module.set_texts(host, value);
+        }
+      });
     }
     if ("formats" in changed) {
       const formats = changed.formats ?? {};
