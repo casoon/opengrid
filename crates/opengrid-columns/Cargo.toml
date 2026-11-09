@@ -4,12 +4,17 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "Column storage and kernels for the opengrid engine: typed columns, NULL bitmaps, gather and sort"
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+keywords = ["columnar", "columns", "data-grid", "opengrid"]
+categories = ["data-structures", "database-implementations"]
 
 [lints]
 workspace = true
 
 [dependencies]
-opengrid-types = { path = "../opengrid-types" }
+opengrid-types = { workspace = true }
 
 [dev-dependencies]
 proptest = "1"

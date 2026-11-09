@@ -17,6 +17,8 @@ version="${1:?usage: set-version.sh <x.y.z>}"
 
 # Cargo workspace: the first `version = "..."` under [workspace.package].
 perl -0pi -e "s/(\[workspace\.package\]\nversion = \")[^\"]+(\")/\${1}$version\${2}/" Cargo.toml
+# The internal crates, which crates.io wants versioned beside their path (#241).
+perl -pi -e "s/(path = \"crates\/opengrid-[a-z-]+\", version = \")[^\"]+(\")/\${1}$version\${2}/" Cargo.toml
 # The npm package; the framework adapters are its subpaths (#27).
 perl -0pi -e "s/(\"version\": \")[^\"]+(\")/\${1}$version\${2}/" packages/opengrid/package.json
 # The MCP server (#140) carries the same number.
@@ -26,6 +28,7 @@ perl -0pi -e "s/(version: ')[^']+(')/\${1}$version\${2}/" site/astro.config.mjs
 
 echo "set to $version:"
 grep -m1 -A1 '^\[workspace.package\]' Cargo.toml | tail -1
+grep -c "path = \"crates/opengrid-.*version = \"$version\"" Cargo.toml | sed "s/$/ internal crate dependencies at $version/"
 grep -m1 '"version"' packages/opengrid/package.json
 grep -m1 '"version"' packages/opengrid-mcp/package.json
 grep -m1 "version: '" site/astro.config.mjs

@@ -2,7 +2,8 @@
 
 Notable changes to `@casoon/opengrid` and the `opengrid-*` crates. The npm
 package and the crates carry the same version and are released together, so one
-entry covers both.
+entry covers both. The crates are published on [crates.io](https://crates.io);
+the npm package on npm.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 the versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
@@ -22,6 +23,10 @@ Two things belong in every release entry and are easy to leave out:
 
 - **PostgreSQL:** `PostgresDataSource::connect_with` and `PoolOptions` set the pool size and the wait,
   create and recycle timeouts, so `max_concurrent_exports` can be sized against a known pool.
+- **Rust crates on crates.io:** the portable crates, the connectors and `opengrid-server` (fourteen
+  in all) are published with every release at the npm package's version, through crates.io Trusted
+  Publishing; `opengrid-wasm` and the `opengrid-web-*` crates stay unpublished
+  ([#241](https://github.com/casoon/opengrid/issues/241), [releasing](docs/releasing.md#rust-crates)).
 - **PostgreSQL over TLS** ([#220](https://github.com/casoon/opengrid/issues/220)).
   `PostgresDataSource::connect_with_tls` takes any `tokio-postgres` TLS connector and **requires**
   TLS (`sslmode=prefer` would fall back to clear text, so it is lifted to `require`; `disable` is

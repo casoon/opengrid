@@ -4,12 +4,17 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "Portable grid state, view-model and change detection for opengrid"
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+keywords = ["data-grid", "view-model", "table", "opengrid"]
+categories = ["data-structures", "gui"]
 
 [lints]
 workspace = true
 
 [dependencies]
-opengrid-types = { path = "../opengrid-types" }
-opengrid-query = { path = "../opengrid-query" }
-opengrid-datasource = { path = "../opengrid-datasource" }
-opengrid-json = { path = "../opengrid-json" }
+opengrid-types = { workspace = true }
+opengrid-query = { workspace = true }
+opengrid-datasource = { workspace = true }
+opengrid-json = { workspace = true }

@@ -45,6 +45,10 @@ jobs:
         with:
           tool: cargo-deny
       - run: cargo deny check
+      # The crates that go to crates.io (#241), packed and built from their
+      # packages in dependency order, so a broken package never first shows
+      # in the release. Nothing is uploaded; `publish = false` crates are skipped.
+      - run: cargo publish --workspace --dry-run --locked
       # E25 keeps `grid` and `pivot` as a way out for a consumer who wants only
       # one element. A feature nobody builds is a feature that stops building,
       # so both single-element modules are compiled here.

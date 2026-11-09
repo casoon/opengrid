@@ -3,11 +3,16 @@ name = "opengrid-types"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Schemas, values and identifiers for opengrid"
+description = "Schemas, values and identifiers for the opengrid data and query engine"
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+keywords = ["data-grid", "schema", "query", "opengrid"]
+categories = ["data-structures", "database"]
 
 [lints]
 workspace = true
 
 [dependencies]
 # The one JSON codec (issue #41): the types' JSON forms for browser and server.
-opengrid-json = { path = "../opengrid-json" }
+opengrid-json = { workspace = true }

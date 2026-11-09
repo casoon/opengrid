@@ -1,7 +1,8 @@
 # Releasing opengrid
 
 What a release of `@casoon/opengrid` — one npm package, with the framework adapters as its
-subpaths `/react`, `/vue` and `/svelte` — consists of, in the order it happens.
+subpaths `/react`, `/vue` and `/svelte` — and of the `opengrid-*` crates on crates.io
+consists of, in the order it happens.
 
 Most of this is one command. The steps that are **not** a command are marked 👤 — they
 need a person, a real browser and, for the accessibility run, real assistive technology.
@@ -32,6 +33,8 @@ scheduled, and nothing below it should be read as a promise that it will be.
 
 - [ ] `just check` — fmt, clippy with `-D warnings`, the whole test suite
 - [ ] `just wasm-check` — every wasm-capable crate builds for `wasm32-unknown-unknown`
+- [ ] `cargo publish --workspace --dry-run --locked` — the crates pack and build from their
+      packages ([Rust crates](#rust-crates)); a published crate version cannot be replaced
 - [ ] `just e2e` — Playwright and axe-core, including `packaged.spec.js`, which loads the
       **packed** package rather than the repository; it also builds the React, Vue and Svelte
       examples, runs their specs, and runs `just types`, which checks the declarations, puts
@@ -124,7 +127,7 @@ inventory.
 ## The release
 
 - [ ] `just set-version <version>` — sets the version in every place that prints
-      one: the Cargo workspace, the npm package and the project page's header badge.
+      one: the Cargo workspace (and the versions of its internal crate dependencies), the npm package and the project page's header badge.
       They drifted once, and the page shows its version publicly, so this is one
       command rather than three files to remember. Between releases all of them keep the last released version.
 - [ ] Move the `Unreleased` section of [CHANGELOG.md](../CHANGELOG.md) under the new
@@ -162,6 +165,71 @@ tarball as `npx` would and asks it over stdio), and the release workflow publish
 `opengrid-mcp-vX.Y.Z`, for a version whose `@casoon/opengrid` is on npm already — the way
 its first release, 0.13.0, went out. Whether a host renders its view is not covered by a
 command; say in the changelog whether one was tried.
+
+### Rust crates
+
+Fourteen crates go to [crates.io](https://crates.io) with every release, at the version of
+the npm package: `opengrid-json`, `-types`, `-query`, `-columns`, `-datasource`, `-planner`,
+`-engine`, `-pivot`, `-grid`, `-export`, `-connector`, `-connector-sqlite`,
+`-datasource-postgres` and `-server`. Not published, by `publish = false`: `opengrid-wasm`,
+`opengrid-web-core` and `opengrid-web-components` (they only make sense inside the npm
+package), `opengrid-conformance`, `xtask` and `examples/server`. `cargo publish --workspace`
+skips those.
+
+- **Versions.** Every internal dependency of a published crate is declared once, with `path`
+  and `version`, under `[workspace.dependencies]` in the root `Cargo.toml`; `just set-version`
+  moves those numbers with the rest. Dev-dependencies stay `path` only: cargo drops them from
+  the package, which is why the unpublished `opengrid-conformance` and `xtask` can stay so.
+- **The semver promise.** A crate version cannot be replaced or deleted, only yanked
+  (`cargo yank --version X opengrid-<crate>`, which stops new dependents and breaks nobody).
+  So the dry run is read before the tag is set, not after. While the version is 0.x, a minor
+  bump may break the Rust API as well.
+- **Dry run.** `cargo publish --workspace --dry-run --locked` packs every crate and builds it
+  from its package, in dependency order, against the packages before it. CI runs it on every
+  push (`check`). Read a failure as: "missing field" is metadata in the crate's `Cargo.toml`;
+  "can't find crate" or an unresolved import is a file that is not in the package (look at
+  `cargo package -p <crate> --list`); a version error is a `path` dependency without
+  `version`.
+- **The release.** The `publish-crates` job of the Release workflow runs on every `v*` tag
+  (not on `opengrid-mcp-v*`), beside `publish-npm`. It needs a successful CI run of the
+  commit, waits for approval in the environment `crates-io` and gets a token that lives for
+  the run from crates.io Trusted Publishing (`rust-lang/crates-io-auth-action`), so no token
+  is stored. It publishes the crates not yet on crates.io at the tag's version, in
+  dependency order; interrupted halfway, run the job again. Approve **Publish to crates.io**
+  next to the npm one.
+
+#### Once, before the first release with crates
+
+These are the owner's steps; the workflow cannot do them.
+
+1. **GitHub:** create the environment `crates-io` (Settings → Environments) with a required
+   reviewer, like `npm`.
+2. **Names:** all fourteen `opengrid-*` names were free on crates.io on 2026-11-09 (the API
+   answered 404 for each). Names are taken by the first publish, so check again just before.
+3. **The first publish needs a token.** crates.io lets you register a Trusted Publisher only
+   for a crate that exists; as far as could be checked (the RFC and third-party reports, not
+   the crates.io documentation itself), there is no "pending" trusted publisher for a new
+   crate as there is on PyPI — look at a crate's Settings on crates.io once, in case that
+   changed. So the first version goes out by hand, once: create a granular API token on
+   crates.io (scopes `publish-new` and `publish-update`, crate pattern `opengrid-*`, expiry
+   one day), then from the tagged release commit on a clean `main`:
+   `CARGO_REGISTRY_TOKEN=… cargo publish --workspace --locked`. Revoke the token afterwards;
+   do not approve `publish-crates` for that tag (it would fail without a Trusted Publisher,
+   or skip, since every crate is on crates.io by then). crates.io limits how fast *new*
+   crates can be created (a burst, then one every few minutes); fourteen at once may hit
+   it. `cargo publish` then stops with the error; wait, and publish the rest with
+   `cargo publish --locked -p <crate> -p <crate> …` (an existing version is an error, so
+   name only the missing ones), or ask the crates.io team for a higher limit beforehand.
+4. **Then, for each of the fourteen crates:** crates.io → the crate → Settings → Trusted
+   Publishing → add: repository owner `casoon`, repository `opengrid`, workflow
+   `release.yml`, environment `crates-io`. From the next release on the workflow does it.
+   Optionally tick "Require trusted publishing" on each crate afterwards.
+
+Checking the workflow itself before the real release is not possible without a release: it
+runs on tags only, like `publish-npm`. What is checked beforehand is everything it runs
+except the token and the upload — the dry run above and the selection of the crates
+(`cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.publish != [])
+| .name'` lists the fourteen).
 
 ## After
 
