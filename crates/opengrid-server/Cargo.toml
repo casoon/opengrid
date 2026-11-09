@@ -24,7 +24,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time",
 tower = { version = "0.5", features = ["timeout"] }
 # CORS. A gateway whose whole purpose is to answer a browser on another origin
 # needs it; off by default, the application opts in per origin.
-tower-http = { version = "0.6", features = ["cors"] }
+tower-http = { version = "0.7", features = ["cors"] }
 
 # The export's response body (issue #2): a bounded channel the rows are
 # written into, a piece at a time. Already in the tree through axum; decided on
