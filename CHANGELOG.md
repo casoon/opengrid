@@ -20,6 +20,10 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Added
 
+- **PostgreSQL:** `PostgresDataSource::connect_with` and `PoolOptions` set the pool size and the wait,
+  create and recycle timeouts, so `max_concurrent_exports` can be sized against a known pool. TLS is
+  not part of this ([#220](https://github.com/casoon/opengrid/issues/220), awaiting a decision on the
+  dependency).
 - **Editing through `connect` and the framework components** ([#206](https://github.com/casoon/opengrid/issues/206)).
   New options `actions` and `validators` (functions compare by identity, as in `formats`) and the
   callbacks `onRowAdd`, `onPaste`, `onBulkChange`, `onRowAction`, `onSourceReplaced`. `onRowAdd`
@@ -31,6 +35,12 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Changed
 
+- **Engine:** the hot paths no longer allocate per row. `in` looks each cell up in a set of the
+  literals instead of comparing the whole column once per literal (500 values over 1M rows: 2229 ms
+  to 19 ms), `min`/`max` reuse one buffer per group (1M rows by country: 154 ms to 102 ms), and a
+  tree keys its nodes on the typed value and builds the paths of the returned page only (100 000
+  nodes: roots 24 ms to 8 ms, flat tree 49 ms to 30 ms; native release build). The answers are the
+  same ([#214](https://github.com/casoon/opengrid/issues/214)).
 - **Engine:** `load_csv` reads the file record by record into the column builders instead of
   scanning every record first. The peak memory of loading the 1M-row demo file (85 MB) drops from
   431 MiB to 159 MiB (native, release build, maximum resident set size); the result is the same
@@ -50,10 +60,6 @@ Two things belong in every release entry and are easy to leave out:
   `new Worker(new URL(...))` form, so `loadOpengrid()` and `createWorkerProvider()` work in a Vite
   build without `moduleUrl` or `workerUrl`; the options still replace the defaults. Before, such a
   build fell back to the plain table and could not start the engine's worker.
-- **MCP:** `opengrid_query` answers a window of 500 rows at most, the server keeps 100 sessions
-  (the least recently used goes first), the `view` of the tools is a typed schema instead of any
-  object, and a server source over `http://` is refused unless it is on the machine itself
-  ([#242](https://github.com/casoon/opengrid/issues/242)).
 - **API:** `opengrid-source-replaced` is frozen, typed in `OpengridEventMap` and in the events table
   of the API reference, which says that `loader.js` dispatches it on the grid without bubbling
   ([#234](https://github.com/casoon/opengrid/issues/234)). A test now reads the module's
@@ -66,10 +72,35 @@ Two things belong in every release entry and are easy to leave out:
   type error from our own `.d.ts`. `just types` now also checks the packed adapters against the
   lowest Vue, React and Svelte the ranges allow.
 - **npm:** `engines.node` of `@casoon/opengrid` is `>=22.12.0` (it was `>=18`, which is past its end of life), the same as `@casoon/opengrid-mcp`.
+- **MCP:** `opengrid_query` answers a window of 500 rows at most, the server keeps 100 sessions
+  (the least recently used goes first), the `view` of the tools is a typed schema instead of any
+  object, and a server source over `http://` is refused unless it is on the machine itself
+  ([#242](https://github.com/casoon/opengrid/issues/242)).
 - **Contributors:** the changelog's release headings use the Keep a Changelog form `## [x.y.z] - date`, and the version links at the end of the file work.
 
 ### Fixed
 
+- **Grid:** loading the source again leaves nothing of the old one behind
+  ([#226](https://github.com/casoon/opengrid/issues/226)). The selection is cleared (and the
+  `opengrid-selection-change` event and the status line say so), a tree asks for its levels again
+  instead of keeping the old ones, and a facet lists the new source's values. A result with fewer
+  rows no longer leaves selected rows that are not there. The rows the reader added and the undo
+  history now survive what rebuilds the grid (moving or hiding a column, `tree`, applying a view),
+  following their columns by name; a changed `datasource` still starts clean. `<opengrid-table>` and
+  `<opengrid-pivot>` re-run their query when `loadRows` or `load` replaces their source, which only
+  the grid did.
+- **Server and connectors, hardening** ([#222](https://github.com/casoon/opengrid/issues/222)).
+  `max_payload_bytes` above axum's 2 MiB is honoured (the router carries the limit; an oversize body
+  is still the `limit_exceeded` wire error), every answer has `Cache-Control: no-store` and
+  `X-Content-Type-Options: nosniff`, and the `Bearer` scheme matches without regard to case. An
+  `offset` past `i64::MAX` is a validation error (`OffsetTooLarge`) instead of a negative one in the
+  database, and `Limits::max_list_values` (default 1 000) bounds an `in`, `has_all`, `and` or `or`
+  (`ListTooLong`). A decimal that does not fit SQLite's 64-bit integer is a backend error instead of
+  a wrapped number. `PostgresDataSource::connect_in_schema` takes a table in a PostgreSQL schema.
+  The example server warns when it falls back to a public demo token. **What breaks:** `Limits` has
+  a new public field (a struct literal without `..Limits::default()` no longer compiles),
+  `QueryError` has two new variants, `SchemaError` one, and `Schema::check` refuses a column named
+  `__og_…` or `__grouping_…`, which the connectors use for helper columns.
 - **Server:** a backend failure reaches the browser as one fixed sentence and a reference
   (`the data source failed (reference og-…)`), no longer as the database's text, which can name a
   table, a hidden column or a tenant's value. New `ServerBuilder::on_error(hook)` receives the full
