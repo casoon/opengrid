@@ -16,8 +16,8 @@
     "release": "Prüft den Release-Commit und setzt den Tag; der Release-Workflow veröffentlicht die von der CI gebauten npm-Pakete (--dry-run: nur prüfen)"
   },
   "devDependencies": {
-    "@axe-core/playwright": "4.13.0",
-    "@playwright/test": "1.63.0",
+    "@axe-core/playwright": "4.14.0",
+    "@playwright/test": "1.65.0",
     "typescript": "6.0.3"
   }
 }
