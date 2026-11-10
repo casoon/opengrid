@@ -258,8 +258,11 @@ An interactive `<table role="grid">`: virtualized, keyboard-driven, filterable.
 | `Enter` / `Space` | selection header | select **every matching row**, or clear it |
 | `Ctrl`/`Cmd`+`A` | anywhere | select every matching row, not only the loaded page |
 | `Ctrl`/`Cmd`+`←`/`→` | header cell | move the column |
+| `Ctrl`/`Cmd`+`←`/`→` | band cell | move the band with all its columns ([Column bands](#column-bands)) |
 | `Ctrl`/`Cmd`+`Shift`+`←`/`→` | header cell | resize the column |
 | `Alt`+`Shift`+`←`/`→` | header cell | pin the column one step towards that side: let go of a pin at the other end, or pin it at this one ([Pinned columns](#pinned-columns)) |
+| `Alt`+`Shift`+`←`/`→` | band cell, or the header cell of a column in a band | pin the **band** one step towards that side |
+| `↑` / `↓` | header cell of a column in a band / band cell | go to the band / back to the column ([Column bands](#column-bands)) |
 | `Alt`+`↓`, `Shift`+`F10`, context-menu key | header cell | open the column menu (with `column-menu`) |
 
 On a right-to-left page `←` and `→` change places, and nothing else does:
@@ -364,6 +367,7 @@ loader.module.set_columns(host, {
 | `title` | What the column is **called** where a reader reads it: the header, the column list, the filter row's labels, the column menu, the "+ Filter" dialog and "+ Group" menu, group rows, chips, facet headings, search suggestions and every announcement. The page's words, in the page's language. The field name stays the identifier — the query, the view, the search expressions (`country = DE`), exports and events. An empty title is reported. |
 | `width` | The column's **starting** width in pixels. A reader's resize leads after that. |
 | `pin` | `start` or `end`: where the column **starts** pinned while the others scroll sideways. A reader's own pin leads after that. See [Pinned columns](#pinned-columns). The grid only; a table refuses it. |
+| `band` | The **band** the column stands under: a header above it that it shares with the other columns naming the same band, `band: "Address"`. The page's words, like `title`. See [Column bands](#column-bands). The grid only; a table refuses it. |
 | `align` | `start`, `end` or `center`. Numbers default to `end`, everything else to `start`. |
 | `mono` | Draw the values monospaced, so they line up character by character. |
 | `emphasis` / `muted` | Bold, or the muted ink. |
@@ -554,6 +558,65 @@ loader.module.set_columns(grid, {
 | `get_query`, exports | The columns in the order shown, the pinned ones at their end of the row. |
 
 Not here: pinned rows, and a total row that stays in place.
+
+### Column bands
+
+A band is a header above several columns — *Address* above street, city and postcode. A column
+names its band in `set_columns`, and the columns that name the same one share its header:
+
+```js
+loader.module.set_columns(host, {
+  street:   { band: "Address" },
+  city:     { band: "Address" },
+  postcode: { band: "Address", width: 96 },
+});
+```
+
+There is one level of bands. A band is **always in one piece**: its columns stand side by side.
+
+| | |
+|---|---|
+| The page | `band` is the band's name as the reader reads it, in the page's language. It asks nothing of the column's type. An empty name is reported like every other mistake in the call, and so are two columns of one band that `pin` at different ends. |
+| The header | Two rows as soon as one shown column has a band. The band's cell stands in the first row, across its columns; the header cells of its columns are in the second. The header cell of a column without a band spans both rows. Without a band the header is the one row it always is. |
+| The order | The columns of a band stand together where the **first** of them stands, in the order they have — also when `columns` or a view's `columns.order` names them apart. |
+| Moving | `Ctrl`/`Cmd`+`←`/`→` on the header cell of a column in a band moves the column **inside** its band and stops at the band's edge (`city is already at the end`). On the band's cell the same keys move the **band** with all its columns, past the column or the band beside it. A column without a band steps over a band as over one column; it never lands inside. A moved band is said like a moved column, with the place of its first column: `Address moved to position 2 of 6`. |
+| Hiding | A hidden column leaves its band; the band's cell spans the columns that are left. Hiding the last shown column of a band hides the band, and showing one again brings it back. |
+| Pinning | A band is [pinned](#pinned-columns) as a whole. `pin` on one of its columns in `set_columns`, `Alt`+`Shift`+`←`/`→` on the band's cell or on the header cell of one of its columns, and the column menu's *Pin* group all pin the band: its cell stays in place above its columns, in one piece. The status line names the band (`Address pinned at the start`), and the view holds the choice for each of its columns, `columns.pinned: { street: "start", city: "start", postcode: "start" }`. |
+| Widths, sorting, the menu | These belong to the columns: a band has no width of its own and sorts nothing. `Enter`, `Space` and the resize keys do nothing on a band's cell, and the column menu opens from the columns' header cells. |
+| The view | Nothing new: a band is the page's configuration, not the reader's choice. A view saved without bands is arranged under them when it is restored. |
+| The filter row, groups, totals | One field and one cell per column, as without bands. |
+| On paper, exports, `get_query` | The columns in the order shown, under one header row: the bands are not printed or exported. |
+| Looks | The band's cell is the part `band`; a line at either side shows which columns it spans. |
+
+**Keys in the header.** With bands the header is two rows, and its cells span: a band's cell
+several columns, the header cell of a column without a band both rows. The arrow keys move
+through it by what is on the screen.
+
+| Keys | On | Goes to |
+|---|---|---|
+| `↑` | header cell of a column in a band | the band's cell |
+| `↑` | band cell, or the header cell of a column without a band | nowhere: it is the first row |
+| `↓` | band cell | the header cell of the column the reader came up from — the band's first column when the cell was reached sideways or with the pointer |
+| `↓` | header cell | the first data row, same column |
+| `←` / `→` | band cell | the cell beside it in the first row: the next band's cell, or the header cell of a column without a band |
+| `←` / `→` | header cell | the header cell of the column beside it, in a band or not |
+| `Home` / `End` | band cell | the first / last cell of the first row |
+| `Home` / `End` | header cell | the first / last header cell of the columns |
+| `Ctrl`+`Home` | anywhere | the first cell of the first row |
+| `↑` | a cell of the first data row | the header cell of its column |
+
+`←` and `→` change places on a right-to-left page, as everywhere ([Right to left](#right-to-left)).
+Exactly one cell of the grid is in the tab sequence, a band's cell included.
+
+**What a screen reader is given.** The band's cell is a column header for its group of columns
+(`<th scope="colgroup">`, spanning them), and each data cell under a band names both its headers,
+the band first (`headers`): a cell is announced with its band and its column — *Address, City*.
+The header rows are counted: with bands `aria-rowcount` is the number of rows plus two and the
+first data row is `aria-rowindex="3"`. Every header cell says its `aria-colindex`, since the cells
+of the two header rows are not the columns in DOM order.
+
+Not here: more than one level of bands, and bands in `<opengrid-pivot>`, which has its own
+two-level header.
 
 ### Grouping
 
@@ -1589,7 +1652,7 @@ would make it invisible), a **selected row** carries an inset accent bar as well
 as the tint (colour alone would be 1.4.1), and `prefers-reduced-motion` beats a
 theme that animates a part.
 
-**Parts:** `action`, `action-cell`, `action-header`, `add-field`, `add-filter`, `add-grouping`, `body`, `bulk`, `bulk-apply`, `bulk-cancel`, `caption`, `cell`, `cell-error`, `cell-saved`, `cell-saving`, `chip`, `chip-calc`, `chip-move`, `chip-remove`, `chips`,
+**Parts:** `action`, `action-cell`, `action-header`, `add-field`, `add-filter`, `add-grouping`, `band`, `body`, `bulk`, `bulk-apply`, `bulk-cancel`, `caption`, `cell`, `cell-error`, `cell-saved`, `cell-saving`, `chip`, `chip-calc`, `chip-move`, `chip-remove`, `chips`,
 `chips-clear`, `column-menu`, `column-menu-button`, `column-toggle`, `columns`, `columns-toggle`, `density`, `drill-down`,
 `editor`, `empty`, `empty-reset`, `empty-text`, `facet`, `facet-bounds`, `facet-cost`, `facet-count`,
 `facet-pill`, `facet-pills`, `facet-value`, `facets`, `facets-head`, `facets-toggle`, `filter`,
@@ -1662,6 +1725,8 @@ directions.
 | `Ctrl`/`Cmd`+`Shift`+`→` | header cell | widen the column | narrow the column |
 | `Alt`+`Shift`+`←` | header cell | pin one step towards the start | one step towards the end |
 | `Alt`+`Shift`+`→` | header cell | pin one step towards the end | one step towards the start |
+| `←` / `→` | band cell | the cell before / the next cell of the first header row ([Column bands](#column-bands)) | the next cell / the cell before |
+| `Ctrl`/`Cmd`+`←` / `→` | band cell | move the band one place towards the start / the end | towards the end / the start |
 | `←` | a group's or node's first cell | close; on a closed node or a leaf, go to the parent | open; on an open node, go to its first child |
 | `→` | a group's or node's first cell | open; on an open node, go to its first child | close; on a closed node or a leaf, go to the parent |
 | `Home` / `End` | cell | the first / last cell of the row | the same: the first cell is the one on the right |

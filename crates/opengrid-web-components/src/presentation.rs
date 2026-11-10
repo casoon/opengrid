@@ -27,7 +27,7 @@
 //! is the whole test for whether something belongs here: could the grid work it
 //! out from the data? If yes, it is not configuration.
 
-use opengrid_grid::layout::Pin;
+use opengrid_grid::layout::{PageColumns, Pin};
 use opengrid_query::AggregateFn;
 use opengrid_types::{DataType, Schema};
 
@@ -142,6 +142,9 @@ pub struct ColumnPresentation {
     /// Where the column starts pinned (issue #316). The reader's choice leads
     /// after that, like a resize over `width`.
     pub pin: Option<Pin>,
+    /// The band the column stands under (issue #319): the header it shares
+    /// with the other columns that name the same one.
+    pub band: Option<String>,
 }
 
 /// A configuration this grid refuses, in words.
@@ -173,22 +176,35 @@ pub struct RawColumn {
     pub facet: Option<String>,
     pub readonly: Option<bool>,
     pub pin: Option<String>,
+    pub band: Option<String>,
 }
 
-/// Where a configuration pins, read from what the page asked for.
+/// Where a configuration pins and which columns it puts under a band, read
+/// from what the page asked for.
 ///
-/// Before the check, and on purpose: a pin decides the **order** of the
-/// columns, so it has to be known when the first query is built — and the
-/// check waits for the schema that query brings. A pin asks nothing of the
-/// type, so there is nothing the schema could refuse about it; a token that is
-/// no pin is none here and a problem in [`validate`].
-pub fn pins_of(raw: &[(String, RawColumn)]) -> Vec<(String, Pin)> {
-    raw.iter()
-        .filter_map(|(name, column)| {
-            let pin = Pin::parse(column.pin.as_deref()?)?;
-            Some((name.clone(), pin))
-        })
-        .collect()
+/// Before the check, and on purpose: a pin and a band decide the **order** of
+/// the columns, so they have to be known when the first query is built — and
+/// the check waits for the schema that query brings. Neither asks anything of
+/// the type, so there is nothing the schema could refuse about them; a token
+/// that is no pin is none here and a problem in [`validate`], and so is a band
+/// without a name.
+pub fn page_columns_of(raw: &[(String, RawColumn)]) -> PageColumns {
+    PageColumns {
+        pins: raw
+            .iter()
+            .filter_map(|(name, column)| {
+                let pin = Pin::parse(column.pin.as_deref()?)?;
+                Some((name.clone(), pin))
+            })
+            .collect(),
+        bands: raw
+            .iter()
+            .filter_map(|(name, column)| {
+                let band = column.band.as_deref()?.trim();
+                (!band.is_empty()).then(|| (name.clone(), band.to_owned()))
+            })
+            .collect(),
+    }
 }
 
 /// Checks a whole configuration against the schema.
@@ -259,6 +275,14 @@ pub fn validate(
             }
         }
 
+        if let Some(band) = &entry.band {
+            if band.trim().is_empty() {
+                problems.push(PresentationProblem::new(name, "has an empty band"));
+            } else {
+                column.band = Some(band.trim().to_owned());
+            }
+        }
+
         if let Some(token) = &entry.aggregate {
             match aggregate_from(token) {
                 Some(aggregate)
@@ -297,6 +321,25 @@ pub fn validate(
         out.push((name.clone(), column));
     }
 
+    // A band is pinned as a whole (issue #319): two of its columns pinned at
+    // different ends ask for a band in two pieces.
+    for (index, (name, column)) in out.iter().enumerate() {
+        let (Some(band), Some(pin)) = (&column.band, column.pin) else {
+            continue;
+        };
+        let first = out[..index]
+            .iter()
+            .find(|(_, other)| other.band.as_ref() == Some(band) && other.pin.is_some());
+        if let Some((other, earlier)) = first
+            && earlier.pin != Some(pin)
+        {
+            problems.push(PresentationProblem::new(
+                name,
+                format!("is pinned at another end than {other}, of the same band"),
+            ));
+        }
+    }
+
     if problems.is_empty() {
         Ok(out)
     } else {
@@ -305,9 +348,9 @@ pub fn validate(
 }
 
 /// [`validate`] for `<opengrid-table>` (issue #29): the same checks, and the
-/// grid's own options — `width`, `aggregate`, `facet`, `pin` — refused. The
-/// table has no resize, no groups, no facets and nothing that scrolls
-/// sideways, and an option that silently did nothing
+/// grid's own options — `width`, `aggregate`, `facet`, `pin`, `band` —
+/// refused. The table has no resize, no groups, no facets, nothing that
+/// scrolls sideways and one header row, and an option that silently did nothing
 /// would hide the mistake the same way an unknown column would.
 pub fn validate_for_table(
     raw: &[(String, RawColumn)],
@@ -322,6 +365,7 @@ pub fn validate_for_table(
             (entry.facet.is_some(), "facet"),
             (entry.readonly.is_some(), "readonly"),
             (entry.pin.is_some(), "pin"),
+            (entry.band.is_some(), "band"),
         ] {
             if given {
                 problems.push(PresentationProblem::new(
@@ -416,12 +460,21 @@ impl ColumnStyles {
         self.get(name).and_then(|column| column.width)
     }
 
-    /// Where the page pins, by field name (issue #316).
-    pub fn pins(&self) -> Vec<(String, Pin)> {
-        self.by_name
-            .iter()
-            .filter_map(|(name, column)| column.pin.map(|pin| (name.clone(), pin)))
-            .collect()
+    /// Where the page pins (issue #316) and its bands (issue #319), by field
+    /// name.
+    pub fn page_columns(&self) -> PageColumns {
+        PageColumns {
+            pins: self
+                .by_name
+                .iter()
+                .filter_map(|(name, column)| column.pin.map(|pin| (name.clone(), pin)))
+                .collect(),
+            bands: self
+                .by_name
+                .iter()
+                .filter_map(|(name, column)| column.band.clone().map(|band| (name.clone(), band)))
+                .collect(),
+        }
     }
 }
 
@@ -578,21 +631,77 @@ mod tests {
         let checked = validate(&raw(pinned("end")), &schema(), &[]).unwrap();
         assert_eq!(checked[0].1.pin, Some(Pin::End));
         let styles = ColumnStyles::new(checked);
-        assert_eq!(styles.pins(), [("amount".to_owned(), Pin::End)]);
         assert_eq!(
-            pins_of(&raw(pinned("start"))),
+            styles.page_columns().pins,
+            [("amount".to_owned(), Pin::End)]
+        );
+        assert_eq!(
+            page_columns_of(&raw(pinned("start"))).pins,
             [("amount".to_owned(), Pin::Start)]
         );
 
         let problems = validate(&raw(pinned("left")), &schema(), &[]).expect_err("is refused");
         assert_eq!(problems[0].reason, "left is not a pin");
-        assert!(pins_of(&raw(pinned("left"))).is_empty());
+        assert!(page_columns_of(&raw(pinned("left"))).pins.is_empty());
 
         let problems =
             validate_for_table(&raw(pinned("start")), &schema(), &[]).expect_err("is refused");
         assert_eq!(
             problems[0].reason,
             "pin belongs to the grid, not to a table"
+        );
+    }
+
+    /// A band is a name (issue #319): read before the schema is there, since
+    /// it decides the order of the columns; an empty one is named, a table
+    /// refuses the option, and two columns of one band pinned at different
+    /// ends are refused — a band is pinned as a whole.
+    #[test]
+    fn a_band_is_a_name_and_pinned_as_a_whole() {
+        let banded = |band: &str, pin: Option<&str>| RawColumn {
+            band: Some(band.to_owned()),
+            pin: pin.map(str::to_owned),
+            ..RawColumn::default()
+        };
+        let two = |first: RawColumn, second: RawColumn| {
+            vec![
+                ("customer".to_owned(), first),
+                ("amount".to_owned(), second),
+            ]
+        };
+        let asked = two(banded(" Order ", Some("end")), banded("Order", None));
+        let bands = [
+            ("customer".to_owned(), "Order".to_owned()),
+            ("amount".to_owned(), "Order".to_owned()),
+        ];
+        assert_eq!(page_columns_of(&asked).bands, bands);
+        let checked = validate(&asked, &schema(), &[]).expect("is accepted");
+        assert_eq!(checked[0].1.band.as_deref(), Some("Order"));
+        let page = ColumnStyles::new(checked).page_columns();
+        assert_eq!(page.bands, bands);
+        assert_eq!(page.pins, [("customer".to_owned(), Pin::End)]);
+
+        let problems = validate(&raw(banded("  ", None)), &schema(), &[]).expect_err("is refused");
+        assert_eq!(problems[0].reason, "has an empty band");
+        assert!(page_columns_of(&raw(banded("  ", None))).bands.is_empty());
+
+        let apart = two(banded("Order", Some("start")), banded("Order", Some("end")));
+        let problems = validate(&apart, &schema(), &[]).expect_err("is refused");
+        assert_eq!(
+            (problems[0].column.as_str(), problems[0].reason.as_str()),
+            (
+                "amount",
+                "is pinned at another end than customer, of the same band"
+            )
+        );
+        let alike = two(banded("Order", Some("end")), banded("Order", Some("end")));
+        assert!(validate(&alike, &schema(), &[]).is_ok());
+
+        let problems = validate_for_table(&raw(banded("Order", None)), &schema(), &[])
+            .expect_err("is refused");
+        assert_eq!(
+            problems[0].reason,
+            "band belongs to the grid, not to a table"
         );
     }
 
@@ -757,7 +866,7 @@ mod tests {
 }
 
 #[cfg(target_arch = "wasm32")]
-pub use host::{is_refused, page_pins, raw, refuse, set_columns_for, store, styles};
+pub use host::{is_refused, page_columns, raw, refuse, set_columns_for, store, styles};
 
 /// Per-host storage of the column presentation, mirroring the formats seam.
 #[cfg(target_arch = "wasm32")]
@@ -770,7 +879,7 @@ mod host {
     use wasm_bindgen::{JsCast, JsValue};
     use web_sys::HtmlElement;
 
-    use super::{ColumnStyles, Pin, RawColumn};
+    use super::{ColumnStyles, PageColumns, RawColumn};
 
     /// What a page asked for, per column, before it met the schema.
     type Raw = Rc<Vec<(String, RawColumn)>>;
@@ -794,13 +903,14 @@ mod host {
         REFUSED.with(|hosts| hosts.borrow_mut().retain(|host| *host != id));
     }
 
-    /// Where the page pins (issue #316): what it asked for ([`super::pins_of`]),
-    /// or — once that was refused — what the last accepted configuration says.
-    pub fn page_pins(host: &HtmlElement) -> Vec<(String, Pin)> {
+    /// Where the page pins (issue #316) and its bands (issue #319): what it
+    /// asked for ([`super::page_columns_of`]), or — once that was refused —
+    /// what the last accepted configuration says.
+    pub fn page_columns(host: &HtmlElement) -> PageColumns {
         if is_refused(host) {
-            styles(host).pins()
+            styles(host).page_columns()
         } else {
-            super::pins_of(&raw(host))
+            super::page_columns_of(&raw(host))
         }
     }
 
@@ -900,6 +1010,7 @@ mod host {
                         facet: text("facet"),
                         readonly: flag("readonly"),
                         pin: text("pin"),
+                        band: text("band"),
                     },
                 ));
             }

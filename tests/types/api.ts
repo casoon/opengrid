@@ -204,6 +204,10 @@ export async function page(): Promise<void> {
   module.set_view(grid, { columns: { pinned: { id: "none", customer: "start" } } });
   // @ts-expect-error — `none`, `start` or `end`
   module.set_view(grid, { columns: { pinned: { id: true } } });
+  // Column bands (issue #319): a column names the band it stands under.
+  module.set_columns(grid, { street: { band: "Address" }, city: { band: "Address", pin: "start" } });
+  // @ts-expect-error — a band is its name, one level
+  module.set_columns(grid, { street: { band: ["Contact", "Address"] } });
 
   // A grid's view flows into a place that takes a view, unwidened: the
   // pivot's overload must not turn it into `View | PivotView` (0.8.0 did).

@@ -84,7 +84,13 @@
 # Raised the same day from 318200: calculated measures in a pivot (#329: the
 # measure chip's button and its menu, the header's words, the export's
 # headers, the texts) grew it by 1.7 KiB, to 316842 B.
-grid+pivot    320000  # 316842 B, 2026-11-10, #329
+# Raised the same day from 320000: column bands (#319: the bands in the page's
+# part of the layout, kept in one piece and moved and pinned as a whole, the
+# second header row with its spans and what a cell names as its headers, the
+# keys across it, the pinned band's cell in the pins' sheet) grew the module
+# by 5.8 KiB, to 322828 B. The engine grew by 0.1 KiB to 155674 B, inside its
+# bound.
+grid+pivot    326000  # 322828 B, 2026-11-10, #319
 # Raised 2026-09-30 from 108000: the bound was not raised with 0.7.0, which
 # shipped the engine at 115.2 KiB already (CHANGELOG); rule P9's sorted
 # grouping sets and order sets (#108) added the rest, to 121610 B.

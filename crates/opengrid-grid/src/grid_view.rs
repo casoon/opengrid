@@ -669,7 +669,7 @@ mod tests {
         );
         let view = GridView::from_json(&json, &declared()).expect("reads back");
         assert_eq!(
-            view.columns.effective(&declared(), &[]),
+            view.columns.effective(&declared(), &Default::default()),
             ["id".to_owned(), "amount".to_owned()]
         );
 
