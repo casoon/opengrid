@@ -74,7 +74,14 @@
 # own queries for keys on the way. The bound holds some 200 B beyond the usual
 # 1 % for the pivot's XLSX export (#339), merged at the same time without a
 # bound of its own.
-grid+pivot    312100  # 308747 B, 2026-11-10, #322
+# Raised the same day from 312100: the module stood at 309074 B with the
+# pivot's XLSX export (#339). Pinned columns (#316: the pins in the layout and
+# the view, the cells' offsets and their sheet from the measured widths, the
+# filter row's fields kept above them, the keys and the menu's group, the
+# grid arranged anew around its view, the texts) grew it by 5.8 KiB, to
+# 315064 B. The engine, which holds the layout of a view, grew by 0.6 KiB to
+# 153366 B, inside its bound.
+grid+pivot    318200  # 315064 B, 2026-11-10, #316
 # Raised 2026-09-30 from 108000: the bound was not raised with 0.7.0, which
 # shipped the engine at 115.2 KiB already (CHANGELOG); rule P9's sorted
 # grouping sets and order sets (#108) added the rest, to 121610 B.

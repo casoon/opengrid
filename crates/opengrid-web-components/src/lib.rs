@@ -52,6 +52,8 @@ pub(crate) mod formats;
 pub(crate) mod grid;
 #[cfg(feature = "grid")]
 pub(crate) mod grouping;
+#[cfg(feature = "grid")]
+pub(crate) mod pins;
 #[cfg(feature = "pivot")]
 pub(crate) mod pivot;
 #[cfg(any(feature = "grid", feature = "pivot"))]

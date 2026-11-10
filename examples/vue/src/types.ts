@@ -22,7 +22,7 @@ export const nodes = [
     },
     onSelectionChange: (detail) => detail.count satisfies number,
     onCellChange: (detail) => detail.column satisfies string,
-    presentation: { amount: { aggregate: "sum" } },
+    presentation: { amount: { aggregate: "sum" }, id: { pin: "start" } },
   }),
   h(OpengridTable, { label: "Orders", datasource: "orders", columns: "id", defaultView: { density: "compact" } }),
   h(OpengridPivot, { datasource: "orders", rows: "country", columns: "ordered_year", values: "[]" }),

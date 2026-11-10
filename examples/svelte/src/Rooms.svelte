@@ -3,7 +3,7 @@
   // new row answered by `onrowadd`, a paste, an undo, a row action — and a
   // saved edit told through `bind:this`.
   import { OpengridGrid } from "@casoon/opengrid/svelte";
-  import { ROOM_ACTIONS, ROOM_VALIDATORS } from "./provider.js";
+  import { ROOM_ACTIONS, ROOM_COLUMNS, ROOM_VALIDATORS } from "./provider.js";
 
   let { provider } = $props();
   let grid;
@@ -22,6 +22,7 @@
   rowKey="id"
   addRow
   {provider}
+  presentation={ROOM_COLUMNS}
   actions={ROOM_ACTIONS}
   validators={ROOM_VALIDATORS}
   onrowadd={async (detail) => {

@@ -53,6 +53,8 @@ const ROOMS_SCHEMA = JSON.stringify({
 
 /** The rooms grid's options, stable across renders (rule 1 in docs/guides/frameworks.md). */
 export const ROOM_ACTIONS = [{ id: "remove", label: "Remove" }];
+/** `id` says which room a row is: it stays in place when the grid scrolls sideways (issue #316). */
+export const ROOM_COLUMNS = { id: { pin: "start" } };
 export const ROOM_VALIDATORS = {
   seats: (value) => (Number(value) < 0 ? { level: "error", message: "Seats cannot be negative." } : null),
 };

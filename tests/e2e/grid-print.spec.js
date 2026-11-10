@@ -323,7 +323,8 @@ test.describe("the print table", () => {
     expect(outcome.code).toBe("too_many_rows");
     expect(outcome.error).toContain("10001");
     expect(await printed(page)).toBeNull();
-    expect((await screen(page)).sheets).toBe(2);
+    // The look, the widths and the pins: no print sheet was added.
+    expect((await screen(page)).sheets).toBe(3);
   });
 
   test("rejects with the provider's error, and takes an earlier table away", async ({ page }) => {
