@@ -542,6 +542,12 @@ test("the workbook reads in the element's texts, the German ones included", asyn
   await page.evaluate(() =>
     window.__opengridModule.set_texts(document.querySelector("opengrid-pivot"), { total: "Alles" }),
   );
+  // The element draws its texts again before it has a table to hand out.
+  await page.waitForFunction(
+    () =>
+      window.__opengridModule.get_pivot(document.querySelector("opengrid-pivot"), { bom: false }) !==
+      null,
+  );
   const next = await workbook(page);
   expect(next.sent).toEqual({ format: "xlsx", ...german, total: "Alles" });
   expect(next.cells.get(`A${next.table.length}`)).toMatchObject({ value: "Alles" });
