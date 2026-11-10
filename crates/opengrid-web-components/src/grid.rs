@@ -3282,6 +3282,7 @@ pub fn patch_grid(
     paging: Paging,
     grouping: Option<&crate::grouping::Grouping>,
     tree: Option<&crate::tree::Tree>,
+    picked: Option<&crate::grouping::Picked>,
 ) {
     let fields = state.schema().fields();
     // The rows shown: the result's and the ones the reader added (issue #183).
@@ -3325,10 +3326,12 @@ pub fn patch_grid(
         value: (paging.rows + 1).to_string(),
     });
     // Rows can be selected, several at once (`Shift`+`Space`, `Ctrl`+`A`) —
-    // except while grouped, where a selection would name display positions.
-    // The table says so; the rows below say nothing of a selection they cannot
+    // except while grouped without a `row-key`, where a selection would name
+    // display positions (`picked` is the selection by key, issue #322). The
+    // table says so; the rows below say nothing of a selection they cannot
     // have.
-    if grouping.is_none() {
+    let offered = grouping.is_none() || picked.is_some();
+    if offered {
         buffer.push(Patch::SetAttribute {
             node: nodes.table,
             name: "aria-multiselectable".to_owned(),
@@ -3344,7 +3347,14 @@ pub fn patch_grid(
 
     // The select-all header, in its three states (point 61).
     if let Some(mark) = nodes.select_all_mark {
-        let all = select_all_state(state.selection().len(), total_count);
+        let all = match (grouping, picked) {
+            // By key the selection counts records, and "all" is every row
+            // of the filter — open or not.
+            (Some(grouping), Some(picked)) if picked.covers(grouping.row_count()) => CheckState::On,
+            (Some(_), Some(picked)) if !picked.is_empty() => CheckState::Mixed,
+            (Some(_), Some(_)) => CheckState::Off,
+            _ => select_all_state(state.selection().len(), total_count),
+        };
         buffer.push(Patch::SetAttribute {
             node: mark,
             name: "tabindex".to_owned(),
@@ -3560,7 +3570,7 @@ pub fn patch_grid(
                     patch_tree_row(buffer, row_nodes, entry, local, place);
                 }
                 let selected = state.is_selected(row);
-                selection_attributes(buffer, row_nodes.row, selected, grouping.is_none());
+                selection_attributes(buffer, row_nodes.row, selected, offered);
                 if let (Some(cell), Some(mark)) = (row_nodes.select, row_nodes.select_mark) {
                     buffer.push(Patch::SetAttribute {
                         node: cell,
@@ -3704,7 +3714,7 @@ pub fn patch_grid(
                 // selection survive scrolling (point 35). `data-selected` is the
                 // styling hook; `aria-selected` is the announcement.
                 let selected = state.is_selected(row);
-                selection_attributes(buffer, row_nodes.row, selected, grouping.is_none());
+                selection_attributes(buffer, row_nodes.row, selected, offered);
                 if let (Some(cell), Some(mark)) = (row_nodes.select, row_nodes.select_mark) {
                     buffer.push(Patch::SetAttribute {
                         node: cell,
@@ -5348,6 +5358,7 @@ mod tests {
             Paging::whole(state.total_count()),
             None,
             None,
+            None,
         );
 
         let attributes = |name: &str| -> Vec<String> {
@@ -5420,6 +5431,7 @@ mod tests {
             Paging::whole(state.total_count()),
             None,
             None,
+            None,
         );
         let sorts: Vec<&str> = buffer
             .patches()
@@ -5474,6 +5486,7 @@ mod tests {
             &GridTexts::default(),
             &crate::formats::Plain,
             Paging::whole(state.total_count()),
+            None,
             None,
             None,
         );
@@ -5673,6 +5686,7 @@ mod tests {
                 &GridTexts::default(),
                 &crate::formats::Plain,
                 Paging::whole(state.total_count()),
+                None,
                 None,
                 None,
             );
@@ -6035,6 +6049,7 @@ mod tests {
             Paging::whole(state.total_count()),
             None,
             None,
+            None,
         );
         let indexes: Vec<&str> = buffer
             .patches()
@@ -6089,6 +6104,7 @@ mod tests {
             &GridTexts::default(),
             &crate::formats::Plain,
             Paging::whole(state.total_count()),
+            None,
             None,
             None,
         );
@@ -6149,6 +6165,7 @@ mod tests {
             &GridTexts::default(),
             &crate::formats::Plain,
             Paging::whole(state.total_count()).shifted(shift),
+            None,
             None,
             None,
         );
@@ -6231,6 +6248,7 @@ mod tests {
             Paging::whole(state.total_count()),
             None,
             None,
+            None,
         );
 
         // The sizer is `total * 48`, not `total * 32`.
@@ -6291,6 +6309,7 @@ mod tests {
             &GridTexts::default(),
             &crate::formats::Plain,
             Paging::whole(100),
+            None,
             None,
             None,
         );
@@ -6752,6 +6771,7 @@ mod tests {
                 &GridTexts::default(),
                 &crate::formats::Plain,
                 Paging::whole(state.total_count()),
+                None,
                 None,
                 None,
             );

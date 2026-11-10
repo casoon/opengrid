@@ -167,6 +167,9 @@ struct GridRuntime {
     /// The filter the loaded groups were counted under — a different one means
     /// the counts are stale and the group query has to run again.
     groups_filter: Option<Option<FilterExpr>>,
+    /// The selection while grouped (issue #322): records by `row-key`. The
+    /// state shows it at the positions the records sit at in the window.
+    picked: grouping::Picked,
     /// The tree, while `tree` is set and allowed (plan point 123, E38).
     tree: Option<Tree>,
     /// The filter and order the loaded levels were asked under: another one
@@ -305,6 +308,7 @@ fn fresh_runtime(
         pending_focus: false,
         grouping: grouping_of(host).ok().flatten(),
         groups_filter: None,
+        picked: Default::default(),
         tree: tree_of(host).ok().flatten(),
         tree_asked: None,
         aggregate_choice: Default::default(),
@@ -517,6 +521,8 @@ fn on_source_replaced(event: Event) {
             runtime.state.history_mut().clear();
             // A selection names positions, and other records sit in them now.
             selection_dropped = !runtime.state.invalidate_selection().is_empty();
+            // A selection by key names records, and stays (issue #322).
+            runtime.picked.rows_changed();
             // The aggregates of a group come from the fresh rows too.
             runtime.groups_filter = None;
             if let Some(grouping) = runtime.grouping.as_mut() {
@@ -837,8 +843,24 @@ fn on_attribute_changed(
         }
         grid::ROW_KEY_ATTRIBUTE => {
             if let Some(runtime) = runtime(&host) {
-                runtime.borrow_mut().state.set_row_key(row_key_of(&host));
+                // Keys of another field name nothing (issue #322): a selection
+                // by key is dropped, and said.
+                let had_keys = {
+                    let mut borrowed = runtime.borrow_mut();
+                    borrowed.state.set_row_key(row_key_of(&host));
+                    borrowed.picked.clear()
+                };
+                if had_keys {
+                    let mut borrowed = runtime.borrow_mut();
+                    borrowed.state.set_selection(Vec::new());
+                    borrowed
+                        .state
+                        .set_notice(texts(&host).selection_cleared.clone());
+                }
                 render(&host, false);
+                if had_keys {
+                    dispatch_selection(&host, &[], Some(&[]));
+                }
             }
         }
         PAGE_SIZE_ATTRIBUTE => {
@@ -1102,6 +1124,7 @@ fn render(host: &HtmlElement, focus_after: bool) {
             paging,
             borrowed.grouping.as_ref(),
             borrowed.tree.as_ref(),
+            keyed(borrowed).then_some(&borrowed.picked),
         );
         if let Some(dom) = borrowed.dom.as_mut() {
             dom.apply_buffer(&buffer);
@@ -1406,6 +1429,7 @@ fn settle(
     let mut paste_dropped = false;
     // Rows of the selection that the result no longer has (issue #226).
     let mut shrunk = None;
+    let mut unkeyed = false;
     {
         let mut runtime = runtime.borrow_mut();
         // A newer scroll, key or filter superseded this query; its focus request
@@ -1423,6 +1447,19 @@ fn settle(
         match outcome {
             Ok(result) => {
                 learn_types(&mut runtime, &result.schema);
+                // The selection by key ends where the grid stops selecting by
+                // key — ungrouped, or without its `row-key` (issue #322): said
+                // with this result, like every dropped selection.
+                if !keyed(&runtime) {
+                    if runtime.picked.clear() {
+                        unkeyed = true;
+                        runtime.state.note_selection_dropped();
+                    }
+                } else if !runtime.picked.is_empty() {
+                    // A sort or a filter dropped the positions the records
+                    // sat at, not the selection: that is not said.
+                    runtime.state.set_selection(Vec::new());
+                }
                 // A window is the same result moved, so what the reader is in
                 // the middle of — an editor, unsaved marks — stays (issue #224).
                 let patches = if kind == QueryKind::Window {
@@ -1431,12 +1468,14 @@ fn settle(
                     runtime.state.apply_result(result)
                 };
                 if runtime.tree.is_none()
+                    && runtime.grouping.is_none()
                     && patches
                         .iter()
                         .any(|patch| matches!(patch, GridPatch::Selection(_)))
                 {
                     shrunk = Some(runtime.state.selection().to_vec());
                 }
+                show_picked(&mut runtime);
                 if let Some(key) = runtime.replaced.take() {
                     follow_replaced(&mut runtime, key);
                 } else if kind == QueryKind::Data {
@@ -1479,6 +1518,212 @@ fn settle(
     if let Some(rows) = shrunk {
         dispatch_selection(host, &rows, None);
     }
+    if unkeyed {
+        dispatch_selection(host, &[], Some(&[]));
+    }
+}
+
+/// Whether the grid selects by key right now (issue #322): it is grouped, and
+/// its records have a `row-key` among the columns.
+fn keyed(runtime: &GridRuntime) -> bool {
+    runtime.grouping.is_some() && runtime.state.row_key_type().is_some()
+}
+
+/// The record at display position `row` of a grouped grid: its key as an id,
+/// its innermost group and its place in it. `None` on a group header, on the
+/// total, without a `row-key` and for a row that is not loaded.
+fn record_at(runtime: &GridRuntime, row: u64) -> Option<(String, Vec<opengrid_json::Json>, u64)> {
+    let grouping::Item::Row { keys, offset, .. } = runtime.grouping.as_ref()?.item_at(row)? else {
+        return None;
+    };
+    let key = runtime.state.row_key(row)?;
+    Some((grouping::key_id(key), keys, offset))
+}
+
+/// Shows the selection by key at the positions its records sit at in the
+/// loaded window — the tree does the same with its nodes. A sort or a filter
+/// has dropped those positions and not the selection, so it is not said.
+fn show_picked(runtime: &mut GridRuntime) {
+    if !keyed(runtime) || (runtime.picked.is_empty() && runtime.state.selection().is_empty()) {
+        return;
+    }
+    let offset = runtime.state.window().offset;
+    let rows = (offset..offset + runtime.slots.len() as u64)
+        .filter(|row| record_at(runtime, *row).is_some_and(|(id, ..)| runtime.picked.contains(&id)))
+        .collect();
+    runtime.state.set_selection(rows);
+}
+
+/// Draws a changed selection by key and tells the page: `keys` and `count`
+/// name the records; `rows` and `ranges` are empty, because a display
+/// position names none.
+fn settle_picked(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>) {
+    let keys = {
+        let mut borrowed = runtime.borrow_mut();
+        show_picked(&mut borrowed);
+        borrowed.picked.keys()
+    };
+    render(host, false);
+    dispatch_selection(host, &[], Some(&keys));
+}
+
+/// The ids of the records in these slices of groups — `(keys, offset, limit)`,
+/// as a window's [`grouping::Fetch`] — asked of the source in the grid's
+/// order. `None` when the source fails (said in the status line) or when
+/// another result has come meanwhile: the slices were cut from the old one.
+async fn ids_of(
+    host: &HtmlElement,
+    runtime: &Rc<RefCell<GridRuntime>>,
+    slices: Vec<(Vec<opengrid_json::Json>, u64, u64)>,
+) -> Option<Vec<String>> {
+    let provider = provider(host)?;
+    let source = host.get_attribute(DATASOURCE_ATTRIBUTE)?;
+    let key_name = row_key_of(host)?;
+    let columns = columns_of(host);
+    let mode = host.get_attribute(MODE_ATTRIBUTE).unwrap_or_default();
+    let (mut sorts, filter, epoch) = {
+        let borrowed = runtime.borrow();
+        (
+            borrowed.state.sort_keys(),
+            effective_filter(host, &borrowed, None).ok()?,
+            borrowed.epoch,
+        )
+    };
+    // The same total order the rows of a group are paged under (S6).
+    if sorts.is_empty() {
+        sorts.push((columns.first()?.clone(), "asc"));
+    }
+    let mut ids = Vec::new();
+    for (keys, offset, limit) in slices {
+        let scoped = runtime
+            .borrow()
+            .grouping
+            .as_ref()?
+            .filter_for(&keys, filter.as_ref());
+        // Every row of the filter comes in pieces, and pieces need a total
+        // order: the key ends every tie. A group's slice keeps the order its
+        // rows are shown in.
+        let mut sorts = sorts.clone();
+        if keys.is_empty() && !sorts.iter().any(|(field, _)| field == key_name.as_str()) {
+            sorts.push((key_name.as_str().to_owned(), "asc"));
+        }
+        let mut at = offset;
+        while at < offset + limit {
+            // The largest `limit` a query may ask.
+            let piece = (offset + limit - at).min(crate::tree::MAX_LEVEL);
+            let query = grid::query_json(&source, &columns, &sorts, scoped.as_ref(), at, piece);
+            let result = match ask_uncounted(host, &provider, &query, &mode).await {
+                Ok(result) => result,
+                Err(message) => {
+                    announce(host, &texts(host).error(&message));
+                    return None;
+                }
+            };
+            if runtime.borrow().epoch != epoch {
+                return None;
+            }
+            let col = result
+                .schema
+                .fields()
+                .iter()
+                .position(|field| field.name == key_name)?;
+            ids.extend(result.columns.get(col)?.iter().map(grouping::key_id));
+            at += piece;
+        }
+    }
+    Some(ids)
+}
+
+/// `Space` on a data row of a grouped grid (issue #322): selects or deselects
+/// its record. With `extend` — `Shift` — every data row in the display list
+/// from the anchor to this one is selected: group headers in between are
+/// passed over, and a closed group has no rows there. Without an anchor in the
+/// display list — nothing toggled yet, its group closed, or other rows since —
+/// it is a plain toggle, as in an ungrouped grid.
+fn pick_row(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>, row: u64, extend: bool) {
+    let (target, range) = {
+        let borrowed = runtime.borrow();
+        let Some(target) = record_at(&borrowed, row) else {
+            return;
+        };
+        let anchor = borrowed.picked.anchor().filter(|_| extend);
+        let range = anchor.and_then(|(id, keys, offset)| {
+            let from = borrowed.grouping.as_ref()?.row_position(keys, *offset)?;
+            Some((id.clone(), from))
+        });
+        (target, range)
+    };
+    let Some((anchor, from)) = range else {
+        let (id, keys, offset) = target;
+        runtime.borrow_mut().picked.toggle(id, keys, offset);
+        settle_picked(host, runtime);
+        return;
+    };
+    let (low, high) = (from.min(row), from.max(row));
+    let slices = runtime
+        .borrow()
+        .grouping
+        .as_ref()
+        .map(|grouping| grouping.fetches(low, high - low + 1))
+        .unwrap_or_default()
+        .into_iter()
+        .map(|fetch| (fetch.keys, fetch.offset, fetch.limit))
+        .collect();
+    let (host, runtime) = (host.clone(), runtime.clone());
+    spawn_local(async move {
+        let Some(ids) = ids_of(&host, &runtime, slices).await else {
+            return;
+        };
+        // The anchor's row holds another record now (a sort, a filter, a
+        // change of the data): there is no range to speak of.
+        let at_anchor = if from <= row { ids.first() } else { ids.last() };
+        let changed = if at_anchor == Some(&anchor) {
+            runtime.borrow_mut().picked.add(ids)
+        } else {
+            let (id, keys, offset) = target;
+            runtime.borrow_mut().picked.toggle(id, keys, offset);
+            true
+        };
+        if changed {
+            settle_picked(&host, &runtime);
+        }
+    });
+}
+
+/// Selects **every row of the filter** in a grouped grid, whether its group
+/// is open or not (issue #322) — their keys are asked of the source. `toggle`
+/// is the selection header: with all of them selected already, it clears the
+/// selection instead, and it says the count either way.
+fn pick_all(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>, toggle: bool) {
+    let rows = {
+        let borrowed = runtime.borrow();
+        if !keyed(&borrowed) {
+            return;
+        }
+        borrowed.grouping.as_ref().map_or(0, Grouping::row_count)
+    };
+    let (host, runtime) = (host.clone(), runtime.clone());
+    spawn_local(async move {
+        let Some(ids) = ids_of(&host, &runtime, vec![(Vec::new(), 0, rows)]).await else {
+            return;
+        };
+        let changed = {
+            let mut borrowed = runtime.borrow_mut();
+            let all = !ids.is_empty() && ids.iter().all(|id| borrowed.picked.contains(id));
+            if toggle && all {
+                borrowed.picked.clear()
+            } else {
+                borrowed.picked.add(ids)
+            }
+        };
+        if changed {
+            settle_picked(&host, &runtime);
+        }
+        if toggle {
+            let count = runtime.borrow().picked.len() as u64;
+            announce(&host, &texts(&host).selected_all(count));
+        }
+    });
 }
 
 /// Whether a newer query has replaced this one; a focus request it carried is
@@ -2025,17 +2270,35 @@ fn on_key_down(event: KeyboardEvent) {
         return;
     }
     // Grouped, a position is a display position: a selection would name
-    // headers as well as rows and move on every toggle, so selection is off
-    // while `group-by` is set — recorded as an open question of point 62.
-    // Editing stays on with a `row-key` (issue #190): an edit names its record
-    // by the key, and only a data row opens an editor ([`begin_edit`]).
-    if is_grouped(&host)
-        && ((event.key() == " " && !editable_group_row(&host, active))
-            || (event.key() == "Enter" && !editable_group_row(&host, active))
-            || (event.key().eq_ignore_ascii_case("a") && (event.ctrl_key() || event.meta_key())))
-    {
-        event.prevent_default();
-        return;
+    // headers as well as rows and move on every toggle. So a grouped grid
+    // selects and edits by `row-key` (issues #322 and #190), on its data rows
+    // only — and without one it does neither.
+    if is_grouped(&host) {
+        let borrowed = runtime.borrow();
+        let keyed = keyed(&borrowed);
+        // The selection header, or a data row — its cells or its selection
+        // cell.
+        let picks = keyed
+            && match active {
+                ActiveCell::SelectAll => true,
+                ActiveCell::Header { .. } => false,
+                _ => active
+                    .row()
+                    .is_some_and(|row| record_at(&borrowed, row).is_some()),
+            };
+        drop(borrowed);
+        let refused = match event.key().as_str() {
+            " " => !picks,
+            "Enter" if matches!(active, ActiveCell::Data(_)) => !editable_group_row(&host, active),
+            "Enter" => !picks,
+            key => {
+                key.eq_ignore_ascii_case("a") && (event.ctrl_key() || event.meta_key()) && !keyed
+            }
+        };
+        if refused {
+            event.prevent_default();
+            return;
+        }
     }
     // In a tree a node is selected by its key, but an edit would still be
     // reported against a display position: `Enter` on a leaf opens no editor.
@@ -2069,6 +2332,10 @@ fn on_key_down(event: KeyboardEvent) {
         event.prevent_default();
         if is_tree(&host) {
             select_in_tree(&host, &runtime, Tree::select_shown);
+            return;
+        }
+        if is_grouped(&host) {
+            pick_all(&host, &runtime, false);
             return;
         }
         let patches = runtime.borrow_mut().state.select_all();
@@ -2168,6 +2435,10 @@ fn toggle_row(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>, row: u64, 
         });
         return;
     }
+    if is_grouped(host) {
+        pick_row(host, runtime, row, extend);
+        return;
+    }
     let patches = {
         let mut borrowed = runtime.borrow_mut();
         if extend {
@@ -2200,6 +2471,10 @@ fn toggle_all(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>) {
         }
         let count = runtime.borrow().state.selection().len() as u64;
         announce(host, &texts(host).selected_all(count));
+        return;
+    }
+    if is_grouped(host) {
+        pick_all(host, runtime, true);
         return;
     }
     let (patches, count) = {
@@ -2281,8 +2556,9 @@ fn move_with_key(
 /// Sorting and filtering do it as a side effect, so the page would otherwise
 /// keep acting on rows that are no longer selected.
 fn announce_if_cleared(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>) {
-    // A tree's selection names keys and stays (issue #135).
-    if runtime.borrow().tree.is_some() {
+    // A tree's selection names keys and stays (issue #135), and so does a
+    // grouped grid's (issue #322).
+    if runtime.borrow().tree.is_some() || !runtime.borrow().picked.is_empty() {
         return;
     }
     if runtime.borrow().state.selection().is_empty() {
@@ -4688,8 +4964,8 @@ fn on_filter_clear(event: Event) {
     if let Ok(Some(cell)) = target.closest("[data-select]")
         && let Ok(host) = root.host().dyn_into::<HtmlElement>()
         && let Some(runtime) = runtime(&host)
-        && !is_grouped(&host)
     {
+        // Grouped, both select by key or — without a `row-key` — not at all.
         match active_from_element(&cell) {
             Some(ActiveCell::SelectAll) => {
                 toggle_all(&host, &runtime);
@@ -5297,10 +5573,13 @@ pub(crate) fn write_view(host: &HtmlElement, value: &JsValue, notice: Option<Str
     // The selection goes with the old state. It is dropped on purpose — a view
     // carries none — but not silently (point 73): the fresh state is told, so
     // the result that follows says "Selection cleared" like a sort would.
-    // A tree's selection counts with the nodes it hides (issue #135).
+    // A tree's selection counts with the nodes it hides (issue #135), a
+    // grouped grid's with the rows of closed groups (issue #322).
+    let had_keys = runtime.borrow_mut().picked.clear();
     let had_selection = {
         let borrowed = runtime.borrow();
-        !borrowed.state.selection().is_empty()
+        had_keys
+            || !borrowed.state.selection().is_empty()
             || borrowed
                 .tree
                 .as_ref()
@@ -5428,7 +5707,7 @@ pub(crate) fn write_view(host: &HtmlElement, value: &JsValue, notice: Option<Str
     apply_widths(host);
     if had_selection {
         // The page hears it the same way it hears every other selection change.
-        let keys = is_tree(host).then_some(&[][..]);
+        let keys = (had_keys || is_tree(host)).then_some(&[][..]);
         dispatch_selection(host, &[], keys);
     }
     run_query(host, QueryKind::Data, had_focus);
@@ -5609,18 +5888,30 @@ fn regroup(host: &HtmlElement) {
     };
     let pool = pool_of(host);
     let grouping = grouping_of(host);
-    {
+    let dropped = {
         let mut borrowed = runtime.borrow_mut();
         borrowed.grouping = grouping.clone().ok().flatten();
         borrowed.groups_filter = None;
         borrowed.state.set_window(Window::new(0, pool));
         borrowed.set_active(ActiveCell::Header { col: 0 });
-        // Grouped, a position is a display position — a selection naming them
-        // would name headers as well as rows, and would move on every toggle.
-        borrowed.state.clear_selection();
+        // A selection by key names records and stays from one grouping to the
+        // next (issue #322); the result shows it where they sit then — or
+        // drops it, when the grid is ungrouped now ([`settle`]). A selection
+        // of positions cannot follow into a display list, where a position
+        // is a header as often as a row: it is dropped, and said.
+        let dropped = if borrowed.picked.is_empty() {
+            !borrowed.state.invalidate_selection().is_empty()
+        } else {
+            borrowed.state.set_selection(Vec::new());
+            false
+        };
         if let Err(message) = &grouping {
             borrowed.state.set_notice(message.clone());
         }
+        dropped
+    };
+    if dropped {
+        dispatch_selection(host, &[], None);
     }
     let viewport = runtime.borrow().viewport.clone();
     if let Some(viewport) = viewport {
@@ -5785,6 +6076,15 @@ fn run_grouped(
         let mut runtime = grid_runtime.borrow_mut();
         let generation = runtime.generation + 1;
         runtime.generation = generation;
+        // Another filter: what is selected by key stays (issue #322), but
+        // need not be among the rows any more.
+        if runtime
+            .groups_filter
+            .as_ref()
+            .is_some_and(|asked| asked != &filter)
+        {
+            runtime.picked.rows_changed();
+        }
         let need_groups = runtime.groups_filter.as_ref() != Some(&filter)
             || !runtime.grouping.as_ref().is_some_and(Grouping::is_loaded);
         (

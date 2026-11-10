@@ -329,3 +329,79 @@ test.describe("tree", () => {
     expect(after).toHaveLength(1);
   });
 });
+
+test.describe("selection while grouped (issue #322)", () => {
+  test("selecting a row says nothing, and opening a group says the group — never the selection", async ({
+    page,
+  }) => {
+    await open(page, "grid-group-select.html");
+    await expect.poll(() => announced(page).then((a) => a.at(-1))).toBe("200 matches");
+    await focusCell(page, 'td[data-row="0"][data-col="0"]');
+    await page.keyboard.press("Enter");
+    await expect(page.locator('opengrid-grid tbody tr[aria-level="2"]').first()).toBeVisible();
+    await focusCell(page, 'td[data-row="1"][data-col="0"]');
+    await page.keyboard.press("Enter");
+    await expect(page.locator('opengrid-grid tbody tr[aria-level="3"]').first()).toBeVisible();
+
+    // `aria-selected` on the row is the announcement, grouped or not.
+    const before = await announced(page);
+    await focusCell(page, 'td[data-row="2"][data-col="0"]');
+    await page.keyboard.press(" ");
+    await expect(page.locator('opengrid-grid tbody tr[aria-selected="true"]')).toHaveCount(1);
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Shift+ ");
+    await expect(page.locator('opengrid-grid tbody tr[aria-selected="true"]')).toHaveCount(2);
+    expect(await announced(page)).toEqual(before);
+
+    // The group closes over both rows: one sentence about the group, and not
+    // a word about a selection — nothing happened to it.
+    await focusCell(page, 'td[data-row="1"][data-col="0"]');
+    await page.keyboard.press("Enter");
+    await expect.poll(() => announced(page).then((a) => a.join("|"))).toContain("collapsed");
+    await page.keyboard.press("Enter");
+    await expect(page.locator('opengrid-grid tbody tr[aria-selected="true"]')).toHaveCount(2);
+    const said = (await announced(page)).slice(before.length);
+    expect(said.filter((text) => text.includes("collapsed"))).toHaveLength(1);
+    expect(said.filter((text) => text.includes("expanded"))).toHaveLength(1);
+    expect(said.join("|")).not.toMatch(/Selection cleared|selected/);
+  });
+
+  test("the selection header says how many rows, once", async ({ page }) => {
+    await open(page, "grid-group-select.html");
+    await expect.poll(() => announced(page).then((a) => a.at(-1))).toBe("200 matches");
+    // Every group is closed, so nothing on screen changes: the count is said.
+    await click(page, "select-mark");
+    await expect
+      .poll(() => announced(page).then((a) => a.join("|")))
+      .toContain("200 rows selected");
+    expect((await announced(page)).filter((text) => text.includes("rows selected"))).toHaveLength(1);
+  });
+
+  test("ungrouping says the selection is gone, once and with the result", async ({ page }) => {
+    await open(page, "grid-group-select.html");
+    await expect.poll(() => announced(page).then((a) => a.at(-1))).toBe("200 matches");
+    await focusCell(page, 'td[data-row="0"][data-col="0"]');
+    await page.keyboard.press("ControlOrMeta+a");
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          document
+            .querySelector("opengrid-grid")
+            .shadowRoot.querySelector('[part="select-mark"]')
+            .getAttribute("aria-checked"),
+        ),
+      )
+      .toBe("true");
+
+    await page.evaluate(() => document.querySelector("opengrid-grid").removeAttribute("group-by"));
+    await expect
+      .poll(() => announced(page).then((a) => a.join("|")))
+      .toContain("Selection cleared");
+    const said = await announcedStates(page);
+    const cleared = said.filter(([text]) => text.includes("Selection cleared"));
+    expect(cleared, "said exactly once").toHaveLength(1);
+    // With the result it belongs to, not instead of it.
+    expect(cleared[0]).toEqual(["200 matches · Selection cleared", "ready"]);
+    expect(said.at(-1)[1]).toBe("ready");
+  });
+});

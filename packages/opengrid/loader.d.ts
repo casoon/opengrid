@@ -923,6 +923,9 @@ export type Texts = Partial<Record<TextKey, string>> & {
  * `opengrid-selection-change`: logical row numbers, ascending. In a tree
  * (`tree` set) `rows` are the display positions of the selected nodes shown,
  * `keys` names every selected node by its key and `count` counts them.
+ * While grouped (`group-by` with `row-key`) `keys` are the `row-key` values
+ * of the selected records and `count` counts them; `rows` and `ranges` are
+ * empty, because a display position names no record.
  */
 export interface SelectionChangeDetail {
   rows: number[];
@@ -932,7 +935,10 @@ export interface SelectionChangeDetail {
    */
   ranges: Array<{ from: number; to: number }>;
   count: number;
-  /** In a tree only: the selected nodes' keys, the shown ones first. */
+  /**
+   * In a tree: the selected nodes' keys, the shown ones first. While
+   * grouped: the selected records' `row-key` values, in no particular order.
+   */
   keys?: unknown[];
 }
 
