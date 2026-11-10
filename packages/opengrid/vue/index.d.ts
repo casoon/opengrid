@@ -71,7 +71,7 @@ export interface OpengridGridProps extends Options {
   /** Switches from scrolling to paging. */
   pageSize?: number;
   mode?: Mode;
-  /** Up to two columns, outermost first: `"country,customer"`. */
+  /** Up to three columns, outermost first: `"country,customer"`. */
   groupBy?: string;
   /** The field holding a row's parent key: the rows show as a tree. */
   tree?: string;

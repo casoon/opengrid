@@ -144,8 +144,8 @@ pub fn entries(column: &Column<'_>, texts: &GridTexts) -> Vec<Entry> {
 /// The grouping a `group:*` action leaves behind.
 ///
 /// `first` makes this column the only level; `second` keeps the outermost level
-/// and puts this column under it; `remove` takes it out. At most two levels,
-/// as `group-by` allows.
+/// and puts this column under it; `remove` takes it out. A third level is
+/// added from the toolbar's *+ Group*, not from here.
 pub fn regrouped(action: &str, column: &str, group_by: &[String]) -> Vec<String> {
     match action {
         "group:first" => vec![column.to_owned()],

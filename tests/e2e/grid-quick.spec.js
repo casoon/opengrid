@@ -131,19 +131,29 @@ test("+ Group is a menu with the column menu's keys, and a pick adds a level", a
   await page.keyboard.press("Escape");
   expect(await focused(page)).toBe("add-grouping");
 
-  // A second level, then the button says there is no third.
+  // A second level and a third, then the button says there is no fourth.
   await page.keyboard.press("Enter");
   await expect.poll(() => focused(page)).toBe("id");
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("Enter");
   expect(await page.evaluate(() => document.querySelector("opengrid-grid").getAttribute("group-by"))).toBe("country,customer");
+  expect(
+    await shadow(page, (root) => root.querySelector('[part="add-grouping"]').getAttribute("aria-disabled")),
+  ).toBeNull();
+  await page.keyboard.press("Enter");
+  await expect.poll(() => focused(page)).toBe("id");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  expect(await page.evaluate(() => document.querySelector("opengrid-grid").getAttribute("group-by"))).toBe(
+    "country,customer,qty",
+  );
   await expect
     .poll(() => shadow(page, (root) => root.querySelector('[part="add-grouping"]').getAttribute("aria-disabled")))
     .toBe("true");
   // Disabled, it still answers to what it shows (WCAG 2.5.3): the visible text
   // first, then why it does nothing.
   expect(await shadow(page, (root) => root.querySelector('[part="add-grouping"]').getAttribute("aria-label"))).toBe(
-    "+ Group. Grouped by two columns already",
+    "+ Group. Grouped by three columns already",
   );
 });
 

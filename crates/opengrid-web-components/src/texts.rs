@@ -636,7 +636,7 @@ impl Default for GridTexts {
             cancel: "Cancel".to_owned(),
             apply: "Apply".to_owned(),
             add_grouping: "+ Group".to_owned(),
-            grouping_full: "Grouped by two columns already".to_owned(),
+            grouping_full: "Grouped by three columns already".to_owned(),
             pivot_toolbar: "Pivot fields".to_owned(),
             pivot_rows: "Rows".to_owned(),
             pivot_columns: "Columns".to_owned(),
@@ -1567,7 +1567,7 @@ mod tests {
     fn a_disabled_button_is_named_by_its_text_first() {
         let texts = GridTexts::default();
         let name = reasoned(&texts.add_grouping, &texts.grouping_full);
-        assert_eq!(name, "+ Group. Grouped by two columns already");
+        assert_eq!(name, "+ Group. Grouped by three columns already");
         assert!(name.starts_with(&texts.add_grouping));
     }
 
