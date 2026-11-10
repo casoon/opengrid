@@ -58,7 +58,14 @@
 # platform, `←` and `→` by what is on the screen, the filter row and the popups
 # measured from the right, the sheets' logical sides and mirrored marks) grew
 # it by 0.2 KiB, to 295650 B.
-grid+pivot    298600  # 295650 B, 2026-11-10, #320
+# Raised 2026-11-10 from 298600: selection by key for every grid with a
+# `row-key` (#322: the keys of a range and of "every row of the filter" asked
+# of the source, the selection in the view with its check against the source,
+# the event without positions, the drop where keys and positions meet) grew
+# the element module by 5.9 KiB over that measurement, to 301645 B; the bulk
+# change lost its own queries for keys on the way. Three grouping levels (#321)
+# are in the difference too: they were merged without a new measurement.
+grid+pivot    304700  # 301645 B, 2026-11-10, #322
 # Raised 2026-09-30 from 108000: the bound was not raised with 0.7.0, which
 # shipped the engine at 115.2 KiB already (CHANGELOG); rule P9's sorted
 # grouping sets and order sets (#108) added the rest, to 121610 B.

@@ -477,7 +477,10 @@ impl GridView {
                         .iter()
                         .all(|key| key.is_string() || key.is_number() || key.is_boolean()) =>
                 {
-                    selected = selected_keys(keys.iter().cloned());
+                    // As written: the element puts them in order
+                    // ([`selected_keys`]); the engine, which answers a view's
+                    // query, has no use for them.
+                    selected = keys.clone();
                 }
                 _ => problems.push(ViewProblem::new(
                     "selected",
@@ -654,9 +657,11 @@ mod tests {
         assert!(filled().to_json().get("selected").is_none());
         assert!(filled().to_json().get("selection").is_none());
 
-        // The keys round-trip, each once and in one order.
+        // The keys round-trip; in order they are each once, numbers first.
         let json = opengrid_json::json!({ "density": "normal", "selected": [7, "b", 3, 7, "a"] });
-        let view = GridView::from_json(&json, &declared()).expect("reads");
+        let mut view = GridView::from_json(&json, &declared()).expect("reads");
+        assert_eq!(view.selected.len(), 5);
+        view.selected = selected_keys(view.selected);
         assert_eq!(
             view.selected,
             opengrid_json::json!([3, 7, "a", "b"])

@@ -5570,7 +5570,12 @@ pub(crate) fn write_view(host: &HtmlElement, value: &JsValue, notice: Option<Str
 
     let declared = grid::parse_columns(host.get_attribute(COLUMNS_ATTRIBUTE).as_deref());
     let view = match GridView::from_json(&json, &declared) {
-        Ok(view) => view,
+        // The selection in the one order a view holds it, so that the same
+        // selection is the same view.
+        Ok(mut view) => {
+            view.selected = opengrid_grid::grid_view::selected_keys(view.selected);
+            view
+        }
         Err(problems) => {
             // Named, not swallowed: a view saved against another data source
             // would otherwise leave a grid that looks restored and is not.
