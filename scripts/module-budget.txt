@@ -62,13 +62,11 @@
 # value as a button, the cell's filter as a query, the event, its text) and
 # the grid's `filter` attribute (the wire filter read from JSON, and-ed onto
 # every query) grew it by 3.0 KiB, to 298764 B.
-# Raised the same day from 301800: selection by key for every grid with a
-# `row-key` (#322: the keys of a range and of "every row of the filter" asked
-# of the source, the selection in the view with its check against the source
-# under the page's filter, the event without positions, the drop where keys
-# and positions meet) grew it by 6.2 KiB, to 305098 B; the bulk change lost its
-# own queries for keys on the way.
-grid+pivot    308200  # 305098 B, 2026-11-10, #322
+# Raised the same day from 301800: the print path (#334: `prepare_print`, the
+# query for every match, the plain table with its caption, group headers and
+# tree indent, the two print sheets, the looks black on white on paper) grew
+# it by 3.3 KiB, to 302101 B.
+grid+pivot    305100  # 302101 B, 2026-11-10, #334
 # Raised 2026-09-30 from 108000: the bound was not raised with 0.7.0, which
 # shipped the engine at 115.2 KiB already (CHANGELOG); rule P9's sorted
 # grouping sets and order sets (#108) added the rest, to 121610 B.

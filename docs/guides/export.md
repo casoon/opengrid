@@ -1,6 +1,6 @@
 ---
 title: Exporting
-description: What an export holds and why it holds raw values, from the browser or from a server, a pivot as it is shown, the formula guard, and reading an export back.
+description: What an export holds and why it holds raw values, from the browser or from a server, a pivot as it is shown, printing and PDF, the formula guard, and reading an export back.
 order: 5
 ---
 
@@ -232,6 +232,47 @@ the subtotals and the grand total as rows with their labels, and NULL and the em
 in the element's own texts — `(no value)`, `(empty)`, or what `set_texts` made of them. The
 values are in the wire notation all the same. The details, and why the header is one line, are
 in [The public API → Exporting a pivot](../../api/#exporting-a-pivot).
+
+## Paper and PDF
+
+opengrid writes no PDF. It prints: the grid turns its view into a plain table, the browser puts
+it on paper, and "Save as PDF" in the print dialog makes the file — with the table's structure in
+it, where the browser writes tagged PDFs.
+
+```js
+printButton.addEventListener("click", async () => {
+  const loader = await loadOpengrid();
+  try {
+    await loader.module?.prepare_print(grid);
+  } catch (error) {
+    console.error(error);
+    status.textContent =
+      error.code === "too_many_rows" ? "Too many rows to print. Narrow the view." : "Printing failed.";
+    return;
+  }
+  window.print();
+});
+```
+
+`prepare_print` fetches every match of the view and builds the table; it shows on paper only, in
+place of the grid, and is gone after the print. It is not an export: the values are **as the grid
+shows them**, formatted for a reader, under the columns' titles, with a caption that names the
+grid, the number of matches and the filters. A grouped grid prints its groups open, each under a
+header row; a tree prints whole, indented by depth. More than 10 000 matches are refused — that
+is a file, not paper.
+
+Printing without it — the reader's own `Ctrl`+`P` — prints the grid as the screen shows it: a
+browser does not wait for a query before it prints. A page that wants every match on
+paper offers the button.
+
+Paper size, orientation and margins are the print dialog's and the page's:
+
+```css
+@page { size: A4 landscape; margin: 12mm; }
+```
+
+A table and a pivot are printed as they stand. The contract is in
+[The public API → Printing the view](../../api/#printing-the-view).
 
 ## The formula guard
 

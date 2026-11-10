@@ -754,6 +754,43 @@ test("under the page's filter: select-all is its rows, a view's key it hides nam
   expect(await headerCheck(page)).toBe("false");
 });
 
+test("the print table says nothing of the selection, and preparing it leaves the selection alone", async ({
+  page,
+}) => {
+  // Issue #334: paper has nothing to select. The fixture shows the selection
+  // column, and two records are selected.
+  await open(page);
+  await openAlpha(page);
+  const rows = await drawn(page);
+  const picked = [Number(rows[2].text), Number(rows[3].text)].sort((a, b) => a - b);
+  await press(page, 2, " ");
+  await press(page, 3, " ");
+  await expect.poll(() => selectedIds(page)).toEqual(picked);
+  const said = await events(page);
+
+  await page.evaluate(() => window.__module.prepare_print(document.querySelector("opengrid-grid")));
+  const printed = await shadow(page, (root) => {
+    const table = root.querySelector("[data-print]").shadowRoot.querySelector("table");
+    return {
+      head: [...table.querySelectorAll("thead th")].map((th) => th.textContent),
+      marked: table.querySelectorAll(
+        "[aria-selected], [data-selected], [data-select], [aria-checked], [aria-multiselectable]",
+      ).length,
+      rows: table.querySelectorAll("tbody tr").length,
+    };
+  });
+  // The shown columns and nothing before them: no selection column.
+  expect(printed.head).toEqual(["id", "customer", "country", "flag", "amount"]);
+  expect(printed.marked).toBe(0);
+  expect(printed.rows).toBeGreaterThan(200);
+
+  // The selection is what it was: on screen, for the page, in the view.
+  expect(await selectedIds(page)).toEqual(picked);
+  expect(await events(page)).toEqual(said);
+  expect((await view(page)).selected).toEqual(picked);
+  expect(await headerCheck(page)).toBe("mixed");
+});
+
 test("without a row-key a grouped grid selects nothing, as before", async ({ page }) => {
   await open(page, "?nokey");
   await openAlpha(page);
