@@ -20,9 +20,15 @@ check:
     cargo clippy --workspace --all-targets --all-features -- -D warnings
     cargo test --workspace --all-features
 
+# Die Crates, die für wasm32-unknown-unknown gebaut werden.
+WASM_CRATES := "-p opengrid-types -p opengrid-query -p opengrid-columns -p opengrid-engine -p opengrid-datasource -p opengrid-wasm -p opengrid-web-core -p opengrid-web-components -p opengrid-grid -p opengrid-export"
+
 # Build aller wasm-fähigen Crates für wasm32-unknown-unknown.
 wasm-check:
-    cargo build --target wasm32-unknown-unknown -p opengrid-types -p opengrid-query -p opengrid-columns -p opengrid-engine -p opengrid-datasource -p opengrid-wasm -p opengrid-web-core -p opengrid-web-components -p opengrid-grid -p opengrid-export
+    cargo build --target wasm32-unknown-unknown {{WASM_CRATES}}
+    # Clippy auch für das, was es nur auf wasm32 gibt: `just check` lintet nur das
+    # Host-Target, und der DOM-Code der Elemente wird dort gar nicht gebaut (#346).
+    cargo clippy --target wasm32-unknown-unknown {{WASM_CRATES}} -- -D warnings
 
 # Quellcode formatieren.
 fmt:
