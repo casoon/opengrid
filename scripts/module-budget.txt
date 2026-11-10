@@ -58,7 +58,11 @@
 # platform, `←` and `→` by what is on the screen, the filter row and the popups
 # measured from the right, the sheets' logical sides and mirrored marks) grew
 # it by 0.2 KiB, to 295650 B.
-grid+pivot    298600  # 295650 B, 2026-11-10, #320
+# Raised the same day from 298600: the print path (#334: `prepare_print`, the
+# query for every match, the plain table with its caption, group headers and
+# tree indent, the two print sheets, the looks black on white on paper) grew
+# it by 3.3 KiB, to 299063 B.
+grid+pivot    302100  # 299063 B, 2026-11-10, #334
 # Raised 2026-09-30 from 108000: the bound was not raised with 0.7.0, which
 # shipped the engine at 115.2 KiB already (CHANGELOG); rule P9's sorted
 # grouping sets and order sets (#108) added the rest, to 121610 B.

@@ -244,6 +244,24 @@ pub fn get_query(host: &HtmlElement) -> JsValue {
     crate::grid_element::read_query(host)
 }
 
+/// Every match of the grid's view as a plain table for paper (issue #334).
+///
+/// A virtualized grid holds a window of rows, so a stylesheet alone cannot
+/// print it, and `beforeprint` cannot wait for a query. The page calls this,
+/// awaits it and then prints: the grid asks for every match of its view — the
+/// query of `get_query` — and builds a native table that only `@media print`
+/// shows, in place of the grid. `afterprint` removes it.
+///
+/// Resolves with the number of rows in the table; with `null` where
+/// `get_query` answers `null`, and for the table and the pivot, which print
+/// whole as they are. Rejects with the provider's error, and with the code
+/// `too_many_rows` for more than 10 000 matches.
+#[cfg(feature = "grid")]
+#[wasm_bindgen(js_name = prepare_print)]
+pub fn prepare_print(host: &HtmlElement) -> js_sys::Promise {
+    crate::grid_element::prepare_print(host)
+}
+
 /// The pivot as it is shown, as CSV (issue #3).
 ///
 /// **The element exports what it shows, rather than handing out a query to

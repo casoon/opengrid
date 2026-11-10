@@ -41,6 +41,7 @@ instead.
 | `set_columns(host, columns)` | Per-column presentation — see [`<opengrid-grid>`](#opengrid-grid). |
 | `get_query(host)` | The query of the current view, without a window — what an [export](#exporting-the-view) sends. In a [tree](#tree), every node flat (`tree.flat`), with its level and path. |
 | `get_pivot(host, options)` | The pivot as it is shown, as CSV — see [exporting a pivot](#exporting-a-pivot). |
+| `prepare_print(host)` | Builds the grid's print table — every match of the view — and answers a Promise of its row count; see [printing the view](#printing-the-view). |
 | `set_cell_state(host, key, column, state, message?)` | What became of an edit the page saves: `saving`, `saved` or `error` — see [Saving edits](#saving-edits). |
 | `set_values(host, values)` | Values the page computes, `[{ key, column, value }]` — see [Saving edits](#saving-edits). |
 | `set_validators(host, validators)` | A function per column that runs while the reader types and says `null` or `{ level, message }` — see [Validation](#validation). |
@@ -1072,6 +1073,43 @@ would repeat each value over its measures anyway, or leave header cells empty �
 element refuses. `2025 · total` is also what a screen reader announces for such a cell: the
 group's header, then the column's.
 
+### Printing the view
+
+A grid holds a window of rows inside a scroller, so printing the page prints that window. For
+paper — and for a PDF, which the browser's print dialog writes — the grid builds a plain table of
+**every match**, and the page prints:
+
+```js
+const rows = await loader.module.prepare_print(grid);   // 200 — or null: nothing to prepare
+window.print();
+```
+
+`prepare_print(host)` asks the provider for every match of the view — the query of
+[`get_query`](#exporting-the-view), in one request — and builds a native `<table>` in the
+grid's shadow root. Only `@media print` shows it, in place of the grid; on the screen nothing
+changes, so the rows in view, the focus and the scroll position are what they were. The
+`afterprint` event removes the table. It has to be asked for, because a browser does not wait
+in `beforeprint` for a query to answer.
+
+| | |
+|---|---|
+| The table | A `<caption>`, a `<thead>` with a `<th scope="col">` per column — a browser repeats it on every page — and one `<tr>` per match, none split over two pages. No ARIA grid roles: on paper it is a table. |
+| Caption | The `label`, the number of matches and the view in the grid's own [texts](#texts), as its chips say them: `Orders · 42 matches · country is DE`. |
+| Columns | The shown columns in their order, under their `title`. The selection column, the action columns and every control are not printed. |
+| Values | As the grid shows them, through `set_formats` — not the raw values of an export. They are the source's: an edit the page has not saved is not in them. |
+| Colours | Black on white, with lines, whatever the look — a dark `theme` and the page's own tokens included. |
+| Grouped | Every group open: a header row per group, `country: DE (12 rows)`, then its rows. Group and total summaries are not printed. |
+| A [tree](#tree) | Whole and flat, every node open, the first column indented by depth. With a filter, a node that is only the way to a match says so after its name: `Sales (context)`. Subtree summaries are not printed. |
+| `page-size` | Is not a page of paper: every match is printed, not the page the reader is on. |
+| Resolves | With the number of rows in the table. With `null` — and nothing is built — where `get_query` answers `null`, and for `<opengrid-table>` and `<opengrid-pivot>`, which hold all their rows and print as they are. |
+| Rejects | With the provider's error; and with an `Error` whose `code` is `too_many_rows` when the view has more than 10 000 matches, before a table is built — narrow the view, or [export](#exporting-the-view) it. A rejection leaves no table. |
+| Lifetime | Until `afterprint`, or the next `prepare_print`. It is the view of the moment it was asked for: call it right before `window.print()`. |
+| Without it | Printing the page prints the grid as the screen shows it — the rows in view, with its controls — in black on white. |
+| Paper | Size, orientation and margins are the print dialog's and the page's `@page` rule; the grid has no option for them. |
+
+`<opengrid-table>` and `<opengrid-pivot>` need no preparation: they are tables already. On paper
+they are black on white as well, and the pivot's field toolbar is left out.
+
 ## Errors
 
 A rejection of `createRestProvider` (`describe`, `execute`, `export`), of `createPivotProvider`
@@ -1124,7 +1162,7 @@ the same for `/query`, `/pivot`, `/source` and `/export`:
 | `backend` | `502` | The source behind the server failed. | Try again later; the operator's log says why. |
 | `data` | `422` | The data breaks a rule the query relies on — a tree with a key twice or a cycle. The message names the rows. Retrying does not help. | Show the message to whoever owns the data. A client that does not know the code treats it like any failure. |
 
-**`exportRows`' own codes** never come from a server:
+**`exportRows`' own codes** never come from a server (`prepare_print` rejects with `too_many_rows` too, at its own bound):
 
 | `code` | What happened | What a page does |
 |---|---|---|
