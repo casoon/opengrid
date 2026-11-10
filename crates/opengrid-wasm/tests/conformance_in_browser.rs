@@ -1,22 +1,27 @@
 #![cfg(target_arch = "wasm32")]
 //! The conformance suite, answered by the WASM build in a real browser.
 //!
-//! Point 10's DoD asks for at least three conformance cases run in the browser.
-//! This is the same suite the native runner uses — same case files, same
-//! `check_case` validation, same `compare` (decimal exact, floats with
-//! tolerance, `NaN == NaN`) — only the engine under test is the one compiled to
-//! WebAssembly and driven through the `DataSource` trait.
+//! Every case file of `opengrid-conformance/cases/` runs here — the query cases,
+//! 54 of them when this was written — with the same `check_case` validation and
+//! the same `compare` (decimal exact, floats with tolerance, `NaN == NaN`) the
+//! native runner uses; only the engine under test is the one compiled to
+//! WebAssembly and driven through the `DataSource` trait. The list of tests is
+//! written by `build.rs`, one per file, because a browser test has no filesystem:
+//! a case that is added runs here without anyone adding it.
+//!
+//! What does not run here: the pivot, tree and list cases, which the engine
+//! answers natively (`tests/pivot.rs`, `tests/tree.rs`, the engine's own tests).
 //!
 //! The query and the expectation come from the committed case JSON, not from a
 //! copy: a case that changes changes this test. The dataset and its schema are
-//! the conformance fixtures, embedded at compile time because a browser test has
-//! no filesystem.
+//! the conformance fixtures, embedded at compile time.
 //!
-//! Run with `just wasm-test` (headless Chrome). On the host target the file
-//! compiles to nothing — `wasm-bindgen` cannot call a browser there — so
-//! `just check` stays green and `just wasm-test` is the gate that runs it.
-//! The demo's own query is pinned on the host side in `tests/demo_query.rs`;
-//! here it is checked for the properties the demo page displays.
+//! Run with `just wasm-test` (headless Chrome), which the `e2e` job of the CI
+//! runs. On the host target the file compiles to nothing — `wasm-bindgen` cannot
+//! call a browser there — so `just check` stays green and `just wasm-test` is the
+//! gate that runs it. The demo's own query is pinned on the host side in
+//! `tests/demo_query.rs`; here it is checked for the properties the demo page
+//! displays.
 
 use opengrid_conformance::{Case, RowOrder, Table, check_case, compare};
 use opengrid_types::Value;
@@ -69,39 +74,8 @@ fn check(case_json: &str) {
     }
 }
 
-/// S1 — the `or` of two ids, ordered by `id`.
-#[wasm_bindgen_test]
-fn s1_or_of_two_ids() {
-    check(include_str!(
-        "../../opengrid-conformance/cases/s1-or-of-two-ids.json"
-    ));
-}
-
-/// S5 — `contains` is case-sensitive.
-#[wasm_bindgen_test]
-fn s5_contains_is_case_sensitive() {
-    check(include_str!(
-        "../../opengrid-conformance/cases/s5-contains-is-case-sensitive.json"
-    ));
-}
-
-/// S10 — the empty string is a value and forms its own group.
-#[wasm_bindgen_test]
-fn s10_empty_string_is_not_the_null_group() {
-    check(include_str!(
-        "../../opengrid-conformance/cases/s10-empty-string-is-not-the-null-group.json"
-    ));
-}
-
-/// S11 — an aggregate over a NULL-only set still answers one row, and it is
-/// `Null`. This one goes through the aggregate path in the browser, which the
-/// three cases above do not reach except in `s10`.
-#[wasm_bindgen_test]
-fn s11_aggregates_on_all_null_set() {
-    check(include_str!(
-        "../../opengrid-conformance/cases/s11-aggregates-on-all-null-set.json"
-    ));
-}
+// One test per case file of the suite, written by `build.rs`.
+include!(concat!(env!("OUT_DIR"), "/cases.rs"));
 
 /// The demo path end to end: the default query, through the WASM build.
 ///
