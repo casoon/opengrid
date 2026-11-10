@@ -94,9 +94,9 @@ All from `loader.js`, all the same shape:
 |---|---|
 | `createLocalProvider(engine)` | The engine on the main thread. `load(name, bytes, schema)`, `loadRows(name, rows, schema)` ([Data you already have](../guides/data-you-have/)), `execute`, `pivot` (see below), `stats()`, `terminate()` (a no-op here). `watch(host)` is what `set_provider` calls; a page does not. |
 | `createWorkerProvider({ moduleUrl?, wasmUrl?, workerUrl? })` | The engine in a module worker; started lazily, once. Every option is optional: without `moduleUrl` it is the engine the package ships under `engine/`, without `workerUrl` the package's `worker.js`. The same methods as the local provider; `terminate()` stops the worker. `moduleUrl` and `wasmUrl` are strings, since they travel to the worker by `postMessage`. A bundler follows the defaults; `moduleUrl` and `workerUrl` are for serving the files from elsewhere — see [Frameworks → Bundlers](../guides/frameworks/#what-every-adapter-does-the-same-way). |
-| `createRestProvider({ url, source, token })` | `POST /query/{source}` of an `opengrid-server`. Also offers `describe()` → `{ name, schema, capabilities, pivot_limits }`, and `export(query, options)` → a `Blob` from `POST /export/{source}` ([below](#over-a-server-one-request)). |
+| `createRestProvider({ url, source, token })` | `POST /query/{source}` of an `opengrid-server`. Also offers `describe()` → `{ name, schema, capabilities, pivot_limits }`, and `export(query, options)` → a `Blob` from `POST /export/{source}` ([below](#over-a-server-one-request)), and `exportPivot(pivotQuery, options)` as the pivot provider does. |
 | `createHybridProvider({ remote, planner, mode, onPlan })` | Splits each query between a remote source and the engine in the tab. `onPlan` receives the plan before anything is sent. |
-| `createPivotProvider({ url, source, token })` | `POST /pivot/{source}` — a whole pivot in one request. |
+| `createPivotProvider({ url, source, token })` | `POST /pivot/{source}` — a whole pivot in one request. Also offers `exportPivot(pivotQuery, options)` → the pivot as an XLSX `Blob` from `POST /pivot/{source}?format=xlsx` ([exporting a pivot](#exportpivotprovider-host-options)). |
 
 **What the engine holds** — `stats()` of the local and the worker provider (issue #70) answers
 `{ kind, memory, sources: [{ name, rows, columns, bytes }] }`: the engine module's WASM
@@ -1169,6 +1169,30 @@ arrive as a row of text in number columns. A CSV has no merged cells either, so 
 would repeat each value over its measures anyway, or leave header cells empty — the silence the
 element refuses. `2025 · total` is also what a screen reader announces for such a cell: the
 group's header, then the column's.
+
+#### `exportPivot(provider, host, options)`
+
+The pivot as an XLSX file. A workbook is written by `opengrid-server`, so this is the one export
+of a pivot that asks: the element's view goes to the server as a pivot query, and the answer is
+the file.
+
+```js
+import { exportPivot } from "@casoon/opengrid";
+
+const blob = await exportPivot(provider, pivot, { format: "xlsx" }); // a Blob; the file name is the page's
+```
+
+| | |
+|---|---|
+| `provider` | One that exports on the server: `createPivotProvider` or `createRestProvider`, both with `exportPivot(pivotQuery, options)` → `POST /pivot/{source}?format=xlsx`. Any other — the engine in the tab or a worker, the hybrid provider — is a `TypeError` before anything is sent. The method has a query and no element, so it alone also takes `texts` (`total`, `subtotal`, `noValue`, `emptyValue`); a page that calls it with a query of its own hands them over, or gets the English defaults. |
+| `host` | An `<opengrid-pivot>` in the document, with a `datasource`. Its [view](#opengrid-pivot) is the query: `rows`, `columns`, `values`, `sort`, `filter`. Folded groups are exported, as in the CSV. |
+| `format` | `"xlsx"`, and required; anything else is a `TypeError` — a pivot's CSV is `get_pivot`. |
+| Labels | The element's own [texts](#texts), as in the table and in the CSV: `Total`, `Total DE`, `(no value)`, `(empty)`, or what `set_texts` made of them. They are read from the element and sent with the request; the page passes nothing, and `texts` is not an option here. |
+| `signal` | Aborts the request: an `AbortError`, no `Blob`. |
+| The sheet | The CSV's table: one header row with its names (`2025 · total`), the same columns and rows in the same order, a total's label in the first dimension column and the columns it spans empty. No merged cells, no outline levels. Named after the source, the header row frozen. |
+| Cells | Typed as in [every workbook](../guides/export/#xlsx): a number, a decimal with its scale, a date, in a measure and in a dimension column alike. A NULL measure is an empty cell; a NULL or empty dimension value is its label, as text. A text is a string, never a formula. |
+| Rules | The server's for `/pivot`, unchanged — the token, `allowed_fields`, the tenant's `row_filter`, the pivot's limits — and an export's: `max_xlsx_rows`, and `busy` when too many exports run. |
+| The answer | The server's, now: if the data moved since the table was drawn, the file is the newer pivot. A server that does not write a pivot as XLSX is an `Error` saying so. |
 
 ### Printing the view
 

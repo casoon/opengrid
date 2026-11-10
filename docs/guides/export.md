@@ -19,6 +19,7 @@ them.
 | `exportRows(provider, query, options)` | Every match of a query, as a `Blob` of CSV or JSON — or XLSX, written by a server. | Through any provider, in pieces — or in one request where the provider can. |
 | `createRestProvider(…).export(query, options)` | The same, from `POST /export/{source}`. | On an `opengrid-server`, streamed. `exportRows` uses it by itself. |
 | `get_pivot(host, options)` | An `<opengrid-pivot>` as it is shown, as CSV text. | In the element, without a request. |
+| `exportPivot(provider, host, options)` | The same pivot as an XLSX file, a `Blob`. | On an `opengrid-server`, in one request. |
 
 ## What is exported
 
@@ -232,6 +233,38 @@ the subtotals and the grand total as rows with their labels, and NULL and the em
 in the element's own texts — `(no value)`, `(empty)`, or what `set_texts` made of them. The
 values are in the wire notation all the same. The details, and why the header is one line, are
 in [The public API → Exporting a pivot](../../api/#exporting-a-pivot).
+
+### A pivot as a workbook
+
+An XLSX file is written by the server, for a pivot as for the grid's rows. `exportPivot` asks the
+server for the pivot the element shows and answers the workbook:
+
+```js
+import { exportPivot } from "@casoon/opengrid";
+
+// The provider the pivot has: createPivotProvider, or a createRestProvider on the same source.
+const blob = await exportPivot(provider, pivot, { format: "xlsx" });
+```
+
+The sheet is the CSV's table: **one header row** with the same names (`2025 · total`), the same
+rows in the same order, subtotals and the grand total as rows with their labels. No merged cells
+and no outline levels, so it sorts and filters in a spreadsheet and reads row by row with a
+screen reader. What a workbook adds is the type of each cell, as in
+[the table above](#xlsx): a number or a date is one, in a measure and in a dimension
+column alike, and a NULL measure is an empty cell. A label is a string, never a formula.
+
+Three things to know:
+
+- **The server answers again.** The CSV is the answer the element holds; the workbook is the
+  element's view — its `rows`, `columns`, `values`, `sort` and `filter` — asked of the server
+  once more, under the same rules and limits as the pivot itself. If the data moved since the
+  table was drawn, the file is the newer answer.
+- **The words are the element's.** The totals and the NULL and empty groups read as in the
+  table: `exportPivot` reads the element's texts — its defaults, or what `set_texts` made of
+  them — and sends them with the request. The page hands over nothing.
+- **Only with a server.** A pivot over the engine in the tab or in a worker has no
+  `exportPivot`; asking is a `TypeError` before anything is sent, as XLSX of `exportRows` is
+  there. Its CSV is `get_pivot` everywhere.
 
 ## Paper and PDF
 

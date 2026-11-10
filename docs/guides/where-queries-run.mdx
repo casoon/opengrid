@@ -83,6 +83,7 @@ curl -X POST 'http://127.0.0.1:8081/export/orders?format=csv&delimiter=%3B' \
 | Too many at once | More than `max_concurrent_exports` running is a `503` (code `busy`) before any database work. |
 | Streaming | PostgreSQL is read through a cursor, 10 000 rows at a time, into a bounded response body that holds two pieces. A slow client slows the reading down instead of filling memory; a client that goes away is noticed at the next piece, and the transaction and its cursor end. The local engine runs the query once and holds its answer — as columns, not as values — for the length of the download, handing out slices of it. |
 | A failure midway | After the first byte there is no status left to send, so the connection is broken off without the end of the body: a client sees an error, never a shorter file that looks whole — a failure of the source, a client too slow, a bug in the server alike. That needs HTTP/1.1 chunked or HTTP/2 on every hop: a proxy that answers the client in HTTP/1.0 turns the break into an ordinary end of file. Behind nginx, set `proxy_http_version 1.1;`. |
+| A pivot | `POST /pivot/{source}?format=xlsx` answers a pivot as a workbook: the pivot's own request and rules, answered whole within the timeout and written as one flat sheet ([Exporting → A pivot as a workbook](../export/#a-pivot-as-a-workbook)). It is bounded by the pivot's limits and `max_xlsx_rows`, and takes a place among `max_concurrent_exports` while it runs. |
 
 ### For operators
 

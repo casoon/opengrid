@@ -437,7 +437,138 @@ async fn one_export_too_many_is_busy() {
         "{}",
         error.message
     );
+
+    // A pivot's workbook is an export too (issue #331) and is turned away
+    // the same way; the pivot itself takes no place and is answered.
+    let count = r#"{"source":"rows","rows":[],"columns":[],"values":[{"fn":"count","as":"n"}]}"#;
+    let workbook = send(
+        app.clone(),
+        "/pivot/rows?format=xlsx",
+        Some(ALL),
+        &[],
+        count,
+    )
+    .await;
+    assert_eq!(
+        workbook.status,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "{}",
+        workbook.body
+    );
+    assert_eq!(error_of(&workbook).code, ErrorCode::Busy);
+    let pivot = send(app.clone(), "/pivot/rows", Some(ALL), &[], count).await;
+    assert_eq!(pivot.status, StatusCode::OK, "{}", pivot.body);
     drop(held);
+}
+
+const BY_CUSTOMER: &str = r#"{"source":"orders","rows":["customer"],"columns":[],"values":[{"field":"amount","fn":"sum","as":"total"}]}"#;
+
+/// The rows of a pivot answered in the wire form.
+fn pivot_rows(answer: &Answer) -> usize {
+    assert_eq!(answer.status, StatusCode::OK, "{}", answer.body);
+    opengrid_pivot::pivot_from_json(&answer.body)
+        .expect("a pivot")
+        .0
+        .row_count()
+}
+
+/// Issue #331: `POST /pivot/{source}?format=xlsx` answers the pivot as a
+/// workbook, with an export's headers — through the pivot's own door, so the
+/// token, `allowed_fields` and the tenant's filter hold as they do for the
+/// pivot. The cells are pinned in `opengrid-export`'s tests, and opened once
+/// over HTTP in tests/e2e/pivot-export.spec.js.
+#[tokio::test]
+async fn a_pivot_is_a_workbook_when_asked_for_xlsx() {
+    let pivot = |query: &'static str, token: Option<&'static str>, body: &'static str| async move {
+        send(
+            app().await,
+            &format!("/pivot/orders{query}"),
+            token,
+            &[],
+            body,
+        )
+        .await
+    };
+    let answer = pivot("?format=xlsx", Some(DE), BY_CUSTOMER).await;
+    assert_eq!(answer.status, StatusCode::OK, "{}", answer.body);
+    assert_eq!(
+        answer.headers[header::CONTENT_TYPE],
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+    assert_eq!(
+        answer.headers[header::CONTENT_DISPOSITION],
+        "attachment; filename=\"orders.xlsx\"; filename*=UTF-8''orders.xlsx"
+    );
+    assert_eq!(&answer.bytes[..2], b"PK", "a ZIP archive");
+
+    // The rows are the pivot's, for this caller: as many as the wire form
+    // answers the same token, and not the other tenant's number.
+    let rows = |answer: &Answer| answer.headers["x-total-count"].to_str().unwrap().to_owned();
+    let german = pivot_rows(&pivot("", Some(DE), BY_CUSTOMER).await);
+    let french = pivot_rows(&pivot("", Some(FR), BY_CUSTOMER).await);
+    assert_ne!(german, french, "the fixture tells the tenants apart");
+    assert_eq!(rows(&answer), german.to_string());
+    let other = pivot("?format=xlsx", Some(FR), BY_CUSTOMER).await;
+    assert_eq!(rows(&other), french.to_string());
+
+    // The element's words are parameters; anything else is refused, and so is
+    // another format — never answered as the wire form in silence.
+    let worded = pivot(
+        "?format=xlsx&total=Summe&subtotal=Summe%20%7Bvalue%7D&noValue=-&emptyValue=leer",
+        Some(DE),
+        BY_CUSTOMER,
+    )
+    .await;
+    assert_eq!(worded.status, StatusCode::OK, "{}", worded.body);
+    for query in ["?format=csv", "?format=xlsx&delimiter=%3B"] {
+        let refused = pivot(query, Some(DE), BY_CUSTOMER).await;
+        assert_eq!(refused.status, StatusCode::BAD_REQUEST, "{query}");
+        assert_eq!(error_of(&refused).code, ErrorCode::Malformed);
+    }
+
+    // The pivot's door: no token, and a column outside `allowed_fields`.
+    let anonymous = pivot("?format=xlsx", None, BY_CUSTOMER).await;
+    assert_eq!(anonymous.status, StatusCode::UNAUTHORIZED);
+    let hidden = pivot(
+        "?format=xlsx",
+        Some(DE),
+        r#"{"source":"orders","rows":["country"],"columns":[],"values":[{"fn":"count","as":"n"}]}"#,
+    )
+    .await;
+    assert_eq!(
+        hidden.status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "{}",
+        hidden.body
+    );
+}
+
+/// A pivot's workbook stays under `max_xlsx_rows`, like every Excel export.
+#[tokio::test]
+async fn a_pivots_workbook_has_the_xlsx_bound() {
+    let app = Server::builder()
+        .max_xlsx_rows(2)
+        .token(ALL, [("country", "-")])
+        .source("open", fixture(), SourcePolicy::default())
+        .build()
+        .await
+        .expect("a server")
+        .router();
+    let body =
+        r#"{"source":"open","rows":["country"],"columns":[],"values":[{"fn":"count","as":"n"}]}"#;
+    let refused = send(app.clone(), "/pivot/open?format=xlsx", Some(ALL), &[], body).await;
+    assert_eq!(
+        refused.status,
+        StatusCode::PAYLOAD_TOO_LARGE,
+        "{}",
+        refused.body
+    );
+    assert!(refused.body.contains("max_xlsx_rows"), "{}", refused.body);
+    // The grand total alone is one row.
+    let total = r#"{"source":"open","rows":[],"columns":[],"values":[{"fn":"count","as":"n"}]}"#;
+    let workbook = send(app, "/pivot/open?format=xlsx", Some(ALL), &[], total).await;
+    assert_eq!(workbook.status, StatusCode::OK, "{}", workbook.body);
+    assert_eq!(workbook.headers["x-total-count"], "1");
 }
 
 /// XLSX (issue #72): a workbook with the export's headers, and Excel's row

@@ -39,7 +39,7 @@ use axum::Router;
 use axum::body::Bytes;
 use axum::extract::rejection::BytesRejection;
 use axum::extract::{DefaultBodyLimit, Path, State};
-use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
+use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, Uri, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use opengrid_datasource::DataSourceError;
@@ -585,9 +585,13 @@ fn prepare_failed(error: PrepareError, reporter: &Reporter) -> Failure {
 /// `result`, plus the level of each row and what each generated column stands
 /// for. Without those two a client could not tell a subtotal from a real NULL
 /// group (S10/P2).
+///
+/// `?format=xlsx` answers the same pivot as a workbook instead (issue #331,
+/// `crate::export`): everything up to the answer is this door, unchanged.
 async fn pivot(
     State(state): State<Arc<AppState>>,
     Path(source_name): Path<String>,
+    uri: Uri,
     headers: HeaderMap,
     body: Result<Bytes, BytesRejection>,
 ) -> Result<Response, Failure> {
@@ -623,6 +627,12 @@ async fn pivot(
             context,
         )
         .map_err(|error| prepare_failed(error, &state.reporter))?;
+    // A workbook is an export: its parameters and its place among the running
+    // exports are settled before the source is asked anything.
+    let workbook = match crate::export::pivot_words(&uri)? {
+        Some(words) => Some((words, crate::export::place(&state)?)),
+        None => None,
+    };
 
     let executed = tokio::time::timeout(state.timeout, source.data.pivot(&prepared))
         .await
@@ -638,6 +648,9 @@ async fn pivot(
 
     let result = executed.map_err(|error| source_failed(error, &state.reporter))?;
 
+    if let Some((words, permit)) = workbook {
+        return crate::export::pivot_workbook(&state, &source_name, result, words, permit).await;
+    }
     if wants_columns(&headers) {
         return Ok(columns_response(opengrid_pivot::pivot_to_bytes(
             &result, &rows,

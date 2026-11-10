@@ -5,7 +5,8 @@
 use std::io::Read;
 
 use opengrid_datasource::QueryResult;
-use opengrid_export::XlsxWriter;
+use opengrid_export::{CsvOptions, PivotLabels, XlsxWriter, pivot_csv};
+use opengrid_pivot::{PivotColumn, PivotResult};
 use opengrid_types::{DataType, Date, Decimal, Field, FieldName, Schema, Timestamp, Value};
 
 fn field(name: &str, data_type: DataType) -> Field {
@@ -206,4 +207,208 @@ fn an_empty_answer_is_a_sheet_with_its_header() {
     )));
     assert_eq!(cells.len(), 2);
     assert_eq!(cells["B1"].text, "note");
+}
+
+/// The element's English defaults.
+struct English;
+
+impl PivotLabels for English {
+    fn dimension(&self, value: Option<&str>) -> String {
+        match value {
+            None => "(no value)".to_owned(),
+            Some("") => "(empty)".to_owned(),
+            Some(text) => text.to_owned(),
+        }
+    }
+    fn total(&self) -> String {
+        "Total".to_owned()
+    }
+    fn subtotal(&self, value: &str) -> String {
+        format!("Total {value}")
+    }
+}
+
+/// Two row dimensions — a text and a date — under one column dimension with a
+/// NULL value, and a decimal measure: three data rows (a formula for a name,
+/// the empty string, NULL), each with its subtotal, and the grand total.
+fn pivot() -> PivotResult {
+    let text = |value: &str| Value::Utf8(value.to_owned());
+    let day = |day: u32| Value::Date(Date::from_ymd(2026, 9, day).unwrap());
+    let amount = |cents: i128| Value::Decimal(Decimal::new(cents, 2));
+    let measure = FieldName::new("total").unwrap();
+    let fields = vec![
+        field("customer", DataType::Utf8),
+        field("day", DataType::Date),
+        field("total_0", DataType::decimal(20, 2).unwrap()),
+        field("total_1", DataType::decimal(20, 2).unwrap()),
+    ];
+    let null = Value::Null;
+    let columns = vec![
+        vec![
+            text("=cmd"),
+            text("=cmd"),
+            text(""),
+            text(""),
+            null.clone(),
+            null.clone(),
+            null.clone(),
+        ],
+        vec![
+            day(28),
+            null.clone(),
+            null.clone(),
+            null.clone(),
+            day(29),
+            null.clone(),
+            null.clone(),
+        ],
+        vec![
+            amount(1250),
+            amount(1250),
+            amount(300),
+            amount(300),
+            null.clone(),
+            null.clone(),
+            amount(1550),
+        ],
+        vec![
+            null.clone(),
+            null.clone(),
+            amount(-5),
+            amount(-5),
+            amount(700),
+            amount(700),
+            amount(695),
+        ],
+    ];
+    PivotResult {
+        data: QueryResult::new(Schema::new(fields), columns, 7),
+        row_levels: vec![2, 1, 2, 1, 2, 1, 0],
+        columns: vec![
+            PivotColumn {
+                path: vec![Value::Int64(2025)],
+                measure: measure.clone(),
+            },
+            PivotColumn {
+                path: vec![Value::Null],
+                measure,
+            },
+        ],
+    }
+}
+
+/// Issue #331: a pivot's sheet is its CSV — one header row, the same rows in
+/// the same order — with the cells typed.
+#[test]
+fn a_pivot_is_the_flat_sheet_its_csv_is_with_typed_cells() {
+    const COLUMNS: [&str; 4] = ["A", "B", "C", "D"];
+    let pivot = pivot();
+    let mut writer = XlsxWriter::new("orders").unwrap();
+    writer.write_pivot(&pivot, &English).unwrap();
+    let file = writer.finish().unwrap();
+    let cells = cells(&file);
+
+    // The same grid as the CSV: every line a row, every non-empty field a
+    // cell at its place, and no cell anywhere else.
+    let options = CsvOptions {
+        bom: false,
+        protect_formulas: false,
+        ..CsvOptions::default()
+    };
+    let csv = pivot_csv(&pivot, &English, &options);
+    let lines: Vec<Vec<&str>> = csv.lines().map(|line| line.split(',').collect()).collect();
+    assert_eq!(lines.len(), 8, "{csv}");
+    let mut filled = 0;
+    for (row, line) in lines.iter().enumerate() {
+        for (column, field) in line.iter().enumerate() {
+            let reference = format!("{}{}", COLUMNS[column], row + 1);
+            assert_eq!(
+                cells.contains_key(&reference),
+                !field.is_empty(),
+                "{reference} against {field:?}"
+            );
+            filled += usize::from(!field.is_empty());
+        }
+    }
+    assert_eq!(cells.len(), filled);
+    // The header line is the CSV's, as text.
+    assert_eq!(
+        lines[0],
+        ["customer", "day", "2025 · total", "(no value) · total"]
+    );
+    for (column, name) in lines[0].iter().enumerate() {
+        let cell = &cells[&format!("{}1", COLUMNS[column])];
+        assert_eq!(
+            (cell.kind.as_deref(), cell.text.as_str()),
+            (Some("inlineStr"), *name)
+        );
+    }
+
+    let cell = |reference: &str| {
+        let cell = &cells[reference];
+        (cell.kind.as_deref(), cell.text.as_str())
+    };
+    // A data row: the name is a string — never a formula —, the date a date,
+    // the measure a number with its scale.
+    assert_eq!(cell("A2"), (Some("inlineStr"), "=cmd"));
+    assert_eq!(cell("B2"), (None, "46293"));
+    assert!(cells["B2"].styled, "a date carries its format");
+    assert_eq!(cell("C2"), (None, "12.5"));
+    assert!(cells["C2"].styled, "a decimal carries its scale");
+    assert!(!cells.contains_key("D2"), "a NULL measure is an empty cell");
+    // Its subtotal: the label, then the dimension it spans left empty.
+    assert_eq!(cell("A3"), (Some("inlineStr"), "Total =cmd"));
+    assert!(!cells.contains_key("B3"));
+    assert_eq!(cell("C3"), (None, "12.5"));
+    // The empty string and NULL are named, in a text column and in a date
+    // column alike; a negative number stays a number.
+    assert_eq!(cell("A4"), (Some("inlineStr"), "(empty)"));
+    assert_eq!(cell("B4"), (Some("inlineStr"), "(no value)"));
+    assert_eq!(cell("D4"), (None, "-0.05"));
+    assert_eq!(cell("A5"), (Some("inlineStr"), "Total (empty)"));
+    assert_eq!(cell("A6"), (Some("inlineStr"), "(no value)"));
+    assert_eq!(cell("B6"), (None, "46294"));
+    assert_eq!(cell("A7"), (Some("inlineStr"), "Total (no value)"));
+    // The grand total.
+    assert_eq!(cell("A8"), (Some("inlineStr"), "Total"));
+    assert!(!cells.contains_key("B8"));
+    assert_eq!((cell("C8"), cell("D8")), ((None, "15.5"), (None, "6.95")));
+
+    // One flat sheet: nothing merged, no outline, no formula.
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&file[..])).unwrap();
+    let mut xml = String::new();
+    archive
+        .by_name("xl/worksheets/sheet1.xml")
+        .unwrap()
+        .read_to_string(&mut xml)
+        .unwrap();
+    for absent in ["<mergeCell", "outlineLevel", "<f>"] {
+        assert!(!xml.contains(absent), "{absent} in the sheet");
+    }
+}
+
+/// A pivot without a row dimension is its grand total, a row of measures.
+#[test]
+fn a_pivot_without_a_row_dimension_is_one_row_of_measures() {
+    let pivot = PivotResult {
+        data: QueryResult::new(
+            Schema::new(vec![field("n", DataType::Int64)]),
+            vec![vec![Value::Int64(50)]],
+            1,
+        ),
+        row_levels: vec![0],
+        columns: vec![PivotColumn {
+            path: Vec::new(),
+            measure: FieldName::new("n").unwrap(),
+        }],
+    };
+    let mut writer = XlsxWriter::new("orders").unwrap();
+    writer.write_pivot(&pivot, &English).unwrap();
+    let cells = cells(&writer.finish().unwrap());
+    assert_eq!(cells.len(), 2);
+    assert_eq!(cells["A1"].text, "n");
+    assert_eq!(
+        (cells["A2"].kind.as_deref(), cells["A2"].text.as_str()),
+        (None, "50")
+    );
 }
