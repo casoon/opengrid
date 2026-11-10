@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "type": "layers",
+  "title": "The layers of opengrid, from the query model up",
+  "description": "At the bottom a query model: typed columns, a query as a JSON document and columnar results. On it the engine in Rust, which filters, sorts, groups and builds pivots and trees, with a planner that splits a query between a server and the tab. The engine is built for three targets: WebAssembly in the tab, native code inside opengrid-server, and SQL for PostgreSQL and SQLite. Only the top layer, the three Web Components, knows about a browser.",
+  "source": "crates/*/Cargo.toml: only opengrid-web-core and opengrid-web-components depend on web-sys and js-sys",
+  "width": 860,
+  "height": 560,
+  "mobile": { "width": 360, "height": 680 },
+  "layers": {
+    "layers": [
+      {
+        "id": "model",
+        "label": "Query model",
+        "items": ["Typed columns", "Query as JSON", "Columnar results"],
+        "note": "No expression strings and no SQL: a query is data."
+      },
+      {
+        "id": "engine",
+        "label": "Engine in Rust",
+        "items": ["Filter, sort, group", "Pivot", "Tree", "Planner", "Export"],
+        "note": "Knows no browser: these crates pull neither web-sys nor js-sys."
+      },
+      {
+        "id": "targets",
+        "label": "Where it runs",
+        "items": ["WebAssembly in the tab", "Native in opengrid-server", "SQL for PostgreSQL and SQLite"]
+      },
+      {
+        "id": "elements",
+        "label": "Web Components",
+        "items": ["opengrid-table", "opengrid-grid", "opengrid-pivot"],
+        "note": "The only layer that touches the DOM."
+      }
+    ]
+  }
+}

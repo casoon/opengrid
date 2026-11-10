@@ -1,0 +1,52 @@
+---
+import { renderSpec } from '../diagrams';
+
+// Counted from the case files at build time, like TestCounts: one bar per rule S1–S15.
+const cases = import.meta.glob('../../../crates/opengrid-conformance/cases/*.json');
+
+// Short names of the rules in docs/guides/query-semantics.mdx.
+const rules: Record<string, string> = {
+  S1: 'NULL in comparisons',
+  S2: 'in lists',
+  S3: 'NULL ordering',
+  S4: 'Binary collation',
+  S5: 'Case-sensitive text',
+  S6: 'Multi-column sort, paging',
+  S7: 'NaN and -0.0',
+  S8: 'Exact decimals',
+  S9: 'Dates and timestamps',
+  S10: 'NULL as a group',
+  S11: 'Aggregates and NULL',
+  S12: 'Aggregate result types',
+  S13: 'Unicode normalisation',
+  S14: 'Empty string is a value',
+  S15: 'Derived date parts',
+};
+
+const counts = new Map<string, number>();
+for (const path of Object.keys(cases)) {
+  const rule = `S${/\/s(\d+)-[^/]*$/.exec(path)?.[1]}`;
+  counts.set(rule, (counts.get(rule) ?? 0) + 1);
+}
+const ids = [...counts.keys()].sort((a, b) => Number(a.slice(1)) - Number(b.slice(1)));
+const total = Object.keys(cases).length;
+
+const html = renderSpec(
+  {
+    schemaVersion: 1,
+    type: 'bar',
+    orientation: 'horizontal',
+    title: `${total} query conformance cases, by the rule they pin`,
+    description:
+      'Each case is a JSON file with a query and the expected answer. The same files run against the native engine, the WebAssembly build in a browser, the hybrid path and PostgreSQL.',
+    source: 'crates/opengrid-conformance/cases/, counted when this site was built',
+    categoryAxis: { title: 'Rule' },
+    valueAxis: { title: 'Cases', format: 'number' },
+    categories: ids.map((id) => (rules[id] ? `${id} ${rules[id]}` : id)),
+    series: [{ name: 'Cases', values: ids.map((id) => counts.get(id)) }],
+  },
+  'conformance-cases',
+);
+---
+
+<Fragment set:html={html} />
