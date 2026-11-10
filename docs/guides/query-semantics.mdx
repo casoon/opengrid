@@ -67,6 +67,67 @@ The cases are in `list-cases/` over `lists.csv`; the engine, SQLite and PostgreS
 The file names say the rest — `s7-nan-sorts-after-numbers.json`,
 `s9-timestamp-microsecond-precision.json` — and each file is short enough to read.
 
+## Calculated measures in a pivot
+
+A pivot's measure is an aggregate; with `calc` it is shown as a calculation over the pivot's
+cells instead: `{ "field": "qty", "fn": "sum", "as": "share", "calc": "share_of_row" }`. The
+calculations are part of the pivot's contract — the engine, SQLite and PostgreSQL compute them,
+not the element that shows them — and three rules fix what they mean. Their cases are in
+`pivot-cases/`, against the same `orders` dataset, each with the whole expected pivot.
+
+| Rule | What the cases pin |
+|---|---|
+| P10 | A share is defined for `sum` and `count`; a share of `avg`, `min` or `max` is refused. A running total takes all five, where the aggregate's result is a number. A calculated measure is a measure like any other: its own alias, its own column, beside its aggregate when the pivot names both. A `sort` by it orders by its aggregate |
+| P11 | `share_of_row`, `share_of_column`, `share_of_total`: the cell divided by its row's total, its column's total or the grand total — a `float64` fraction, NULL where the cell is NULL or the total is NULL or zero. Subtotal rows and the total row follow the same rule |
+| P12 | `running_total`: the sum of the row's cells — the aggregate's values, whichever aggregate — up to and including the column, in the columns' order, starting again in every row; subtotal and total rows the same, over their own cells. NULL adds nothing; before the row's first value the cell stays NULL. The type is the aggregate's own |
+
+**Which total.** A row's total is the sum of its cells across every generated column — with two
+column dimensions, across all of them. A column's total is that column's cell in the grand total
+row; the grand total is the grand total row's total. There is no share of the parent group: a
+row two levels down is still divided by the column's cell in the grand total row. In the grand
+total row a share of the column is therefore 1 and a share of the total is the column's part of
+everything; in a subtotal row each is the subtotal's own part. Without a column dimension a row
+is its own total — a share of the row is 1, and a share of the column equals the share of the
+total.
+
+**Why a share is for `sum` and `count` only.** A share divides by a total, and the total is
+added up from the cells: only a sum or a count of the parts is the sum or the count of the whole
+— which keeps every share what the raw rows give (a subtotal is asked for, never rolled up; the
+average of averages is not an average). A share of `avg`, `min` or `max` is an error that names
+the measure, before anything runs.
+
+**A running total takes every aggregate** whose result is a number: it claims no total of the
+raw rows, it adds up what the cells show. Over `avg` it is the sum of the averages so far, over
+`min` or `max` the sum of the smallest or largest values so far; a subtotal or total row adds up
+its own cells, so its running total is not the sum of the rows above it. `min` or `max` of a
+text, a date, a timestamp or a boolean is no number, and its running total is refused, naming
+the measure.
+
+**What a share is.** A fraction, not a percentage: `0.25`, as `float64`, whatever the measure's
+type; percent signs and digits are the page's format. A row's shares of its row total add up to
+1, to within floating point — the suite compares a float within a relative `1e-9`. A share is
+plain division, so negative values give shares below 0 or above 1 (`50.00` of a total of
+`-12295.67` is `-0.0041`); only a total of exactly zero, or NULL, gives NULL. An empty cell
+follows from what it holds: a `sum` of nothing is NULL and so is its share, a `count` of nothing
+is 0 and its share is `0.0`. NaN is a value, not NULL: a `sum` of `float64` that is NaN makes the
+shares of it NaN.
+
+**What a running total is.** It runs along the generated columns as they are ordered — values
+ascending, NULL last — across both column dimensions without starting again at the outer one,
+and anew in every row. A cell no row falls into exists, as in every pivot: for a `sum` it is NULL
+and the running total carries on unchanged past it (or stays NULL, before the first value); for
+a `count` it is 0, which is a value from the first column on; for `avg`, `min` and `max` it is
+NULL, as for a `sum`. The type is the aggregate's own result type (S12): an integer sum stays
+`int64` and a decimal sum its 38-digit decimal, exact to the last digit; `avg` is `float64`;
+`min` and `max` keep their column's type, a decimal its precision. A running total that outgrows
+its type — 64 bits, or the digits of its decimal — is an error (`limit_exceeded`), never a
+wrapped or widened number.
+
+**Order and limits.** A calculation changes cells, not rows or columns: a calculated measure
+counts towards `max_columns` and `max_cells` as the one column per column value it is.
+`sort … by` a calculated measure orders the rows by its aggregate over the whole row, as for any
+measure — the order of a pivot never depends on what a measure is shown as.
+
 ## How much is tested
 
 Counted from the repository when this site was built:

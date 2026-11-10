@@ -11,7 +11,7 @@ pub const ORDERS_SCHEMA: &str =
     include_str!("../../../opengrid-conformance/data/orders.schema.json");
 
 /// Every committed pivot case, embedded: a browser test has no filesystem.
-pub const CASES: [&str; 11] = [
+pub const CASES: [&str; 25] = [
     include_str!(
         "../../../opengrid-conformance/pivot-cases/p1-a-pivot-is-rows-crossed-with-columns.json"
     ),
@@ -39,6 +39,46 @@ pub const CASES: [&str; 11] = [
         "../../../opengrid-conformance/pivot-cases/p9-a-measure-sorts-by-the-whole-row.json"
     ),
     include_str!("../../../opengrid-conformance/pivot-cases/p9-each-level-has-its-own-order.json"),
+    include_str!(
+        "../../../opengrid-conformance/pivot-cases/p10-a-calculated-measure-stands-beside-its-aggregate.json"
+    ),
+    include_str!(
+        "../../../opengrid-conformance/pivot-cases/p10-a-sort-by-a-calculated-measure-orders-by-its-aggregate.json"
+    ),
+    include_str!(
+        "../../../opengrid-conformance/pivot-cases/p11-a-nan-total-is-not-a-null-total.json"
+    ),
+    include_str!(
+        "../../../opengrid-conformance/pivot-cases/p11-a-share-of-a-null-or-zero-total-is-null.json"
+    ),
+    include_str!(
+        "../../../opengrid-conformance/pivot-cases/p11-a-share-of-negative-values-leaves-zero-to-one.json"
+    ),
+    include_str!(
+        "../../../opengrid-conformance/pivot-cases/p11-a-share-of-the-column-total-is-one-in-the-total-row.json"
+    ),
+    include_str!("../../../opengrid-conformance/pivot-cases/p11-a-share-of-the-grand-total.json"),
+    include_str!(
+        "../../../opengrid-conformance/pivot-cases/p11-a-subtotal-row-follows-the-same-rule.json"
+    ),
+    include_str!(
+        "../../../opengrid-conformance/pivot-cases/p11-without-a-column-dimension-a-row-is-its-own-total.json"
+    ),
+    include_str!(
+        "../../../opengrid-conformance/pivot-cases/p12-a-running-total-of-decimals-is-exact.json"
+    ),
+    include_str!(
+        "../../../opengrid-conformance/pivot-cases/p12-a-running-total-of-averages-adds-up-the-cells.json"
+    ),
+    include_str!(
+        "../../../opengrid-conformance/pivot-cases/p12-a-running-total-of-min-and-max-keeps-the-columns-type.json"
+    ),
+    include_str!(
+        "../../../opengrid-conformance/pivot-cases/p12-a-running-total-runs-across-both-column-dimensions.json"
+    ),
+    include_str!(
+        "../../../opengrid-conformance/pivot-cases/p12-a-running-total-starts-again-in-every-row.json"
+    ),
 ];
 
 pub fn engine() -> Engine {

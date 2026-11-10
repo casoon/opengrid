@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>opengrid — pivot demo, calculated measures</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        margin: 2rem;
+        max-width: 60rem;
+      }
+      opengrid-pivot::part(row total-row) {
+        background: #eef1f5;
+        font-weight: 600;
+      }
+      opengrid-pivot::part(table) {
+        border-collapse: collapse;
+      }
+      opengrid-pivot::part(header),
+      opengrid-pivot::part(row-header),
+      opengrid-pivot::part(cell) {
+        border: 1px solid #ccc;
+        padding: 0.25rem 0.5rem;
+        text-align: start;
+      }
+      opengrid-pivot::part(cell) {
+        text-align: end;
+        font-variant-numeric: tabular-nums;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>opengrid — calculated measures</h1>
+    <p>
+      Rows: country · columns: year · the quantity, and the same quantity as
+      each country's share of its year. A measure with <code>calc</code> is
+      shown as a share of its row, its column or the grand total, or as a
+      running total along the columns — computed by the source, here the
+      engine in a worker, by the rules a server follows too.
+    </p>
+    <p>
+      In the toolbar, the button beside a measure's name says what the measure
+      is shown as and changes it. A share is a fraction between 0 and 1; this
+      page formats it as a percentage, for every measure that is shown as one.
+    </p>
+    <p>
+      Serve the page with <code>just serve-demo</code>. The pivot without
+      calculations is <a href="browser.html">browser.html</a>.
+    </p>
+
+    <opengrid-pivot
+      toolbar
+      label="Quantity by country and year"
+      datasource="orders"
+      rows="country"
+      columns="ordered_year"
+      fields="country,customer,ordered_year"
+      measures='[{"field":"qty","fn":"sum","as":"quantity"},{"field":"qty","fn":"sum","as":"share","calc":"share_of_column"},{"fn":"count","as":"orders"}]'
+      values='[{"field":"qty","fn":"sum","as":"quantity"},{"field":"qty","fn":"sum","as":"share","calc":"share_of_column"}]'
+    ></opengrid-pivot>
+
+    <script type="module">
+      import { loadOpengrid, createWorkerProvider } from "/packages/opengrid/loader.js";
+
+      const provider = createWorkerProvider();
+      const [csv, schema] = await Promise.all([
+        fetch("/crates/opengrid-conformance/data/orders.csv").then((response) => response.arrayBuffer()),
+        fetch("/crates/opengrid-conformance/data/orders.schema.json").then((response) => response.text()),
+      ]);
+      await provider.load("orders", csv, schema);
+
+      const loader = await loadOpengrid();
+      const pivot = document.querySelector("opengrid-pivot");
+      loader.module.set_columns(pivot, {
+        country: { title: "Country" },
+        ordered_year: { title: "Year" },
+        quantity: { title: "Quantity" },
+        share: { title: "Quantity" },
+        orders: { title: "Orders" },
+      });
+
+      // A share is a fraction (0.25); percent and digits are the page's
+      // format. Which measures are shares changes with the reader's choice in
+      // the toolbar, so the formats follow the view.
+      const percent = { kind: "number", style: "percent", maximumFractionDigits: 1 };
+      const number = { kind: "number" };
+      const format = (values) =>
+        loader.module.set_formats(
+          pivot,
+          Object.fromEntries(values.map(({ as, calc }) => [as, calc?.startsWith("share_of_") ? percent : number])),
+        );
+      format(loader.module.get_view(pivot).values);
+      pivot.addEventListener("opengrid-view-change", ({ detail }) => format(detail.view.values));
+
+      loader.module.set_provider(pivot, provider);
+    </script>
+  </body>
+</html>

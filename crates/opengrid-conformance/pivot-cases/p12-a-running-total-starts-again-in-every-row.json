@@ -1,0 +1,180 @@
+{
+  "id": "p12-a-running-total-starts-again-in-every-row",
+  "rule": "P12",
+  "pivot": {
+    "source": "orders",
+    "rows": [
+      "country"
+    ],
+    "columns": [
+      "ordered_month"
+    ],
+    "values": [
+      {
+        "field": "qty",
+        "fn": "sum",
+        "as": "running",
+        "calc": "running_total"
+      },
+      {
+        "fn": "count",
+        "as": "counted",
+        "calc": "running_total"
+      }
+    ],
+    "filter": {
+      "field": "country",
+      "op": "in",
+      "value": [
+        "DE",
+        "FR"
+      ]
+    }
+  },
+  "expected": {
+    "columns": [
+      {
+        "path": [
+          1
+        ],
+        "measure": "running"
+      },
+      {
+        "path": [
+          1
+        ],
+        "measure": "counted"
+      },
+      {
+        "path": [
+          2
+        ],
+        "measure": "running"
+      },
+      {
+        "path": [
+          2
+        ],
+        "measure": "counted"
+      },
+      {
+        "path": [
+          5
+        ],
+        "measure": "running"
+      },
+      {
+        "path": [
+          5
+        ],
+        "measure": "counted"
+      },
+      {
+        "path": [
+          6
+        ],
+        "measure": "running"
+      },
+      {
+        "path": [
+          6
+        ],
+        "measure": "counted"
+      },
+      {
+        "path": [
+          11
+        ],
+        "measure": "running"
+      },
+      {
+        "path": [
+          11
+        ],
+        "measure": "counted"
+      },
+      {
+        "path": [
+          12
+        ],
+        "measure": "running"
+      },
+      {
+        "path": [
+          12
+        ],
+        "measure": "counted"
+      },
+      {
+        "path": [
+          null
+        ],
+        "measure": "running"
+      },
+      {
+        "path": [
+          null
+        ],
+        "measure": "counted"
+      }
+    ],
+    "rows": [
+      [
+        "DE",
+        2,
+        2,
+        2,
+        2,
+        167,
+        13,
+        167,
+        13,
+        258,
+        15,
+        259,
+        16,
+        259,
+        16
+      ],
+      [
+        "FR",
+        null,
+        0,
+        4,
+        1,
+        4,
+        1,
+        172,
+        8,
+        172,
+        9,
+        172,
+        9,
+        177,
+        10
+      ],
+      [
+        null,
+        2,
+        2,
+        6,
+        3,
+        171,
+        14,
+        339,
+        21,
+        430,
+        24,
+        431,
+        25,
+        436,
+        26
+      ]
+    ],
+    "levels": [
+      1,
+      1,
+      0
+    ]
+  }
+}

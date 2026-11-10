@@ -1060,6 +1060,7 @@ dependencies = [
  "opengrid-datasource",
  "opengrid-engine",
  "opengrid-json",
+ "opengrid-pivot",
  "opengrid-query",
  "opengrid-types",
  "rusqlite",

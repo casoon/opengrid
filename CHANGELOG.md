@@ -75,6 +75,12 @@ Two things belong in every release entry and are easy to leave out:
   asking the source which of the keys still name a record; those that do not are dropped and said
   (new text `selectionMissing`). Selecting fires `opengrid-selection-change` only
   ([#322](https://github.com/casoon/opengrid/issues/322)).
+- **Pivot:** calculated measures. A measure with `calc` is shown as its share of the row, the
+  column or the grand total (`sum`, `count`), or as a running total along the columns (also `avg`,
+  `min`, `max`) — computed by the source,
+  chosen from a measure's chip in the toolbar, named in the headers and the exports
+  ([#329](https://github.com/casoon/opengrid/issues/329),
+  [Calculated measures](docs/api.md#calculated-measures)).
 - **Texts:** a German translation ships with the npm package as `@casoon/opengrid/texts/de` — every
   text of the grid, the table and the pivot, with `lang: "de"`, to hand to `set_texts` or to the
   `texts` of `connect`; a page that does not import it does not load it
@@ -108,6 +114,11 @@ Two things belong in every release entry and are easy to leave out:
 - **Grid:** setting `group-by` on a grid that selects by position now says `Selection cleared` and
   fires `opengrid-selection-change` when it drops a selection; it was dropped silently
   ([#322](https://github.com/casoon/opengrid/issues/322)).
+- **Pivot (Rust):** a pivot's measure is `opengrid_pivot::Measure` — an `Aggregate` and its
+  optional `Calc`. **What breaks:** `PivotQuery::values` and `ValidatedPivotQuery::values` are
+  `Vec<Measure>` (they were `Vec<Aggregate>`; the aggregate is `measure.aggregate`), and
+  `PivotError` gained `Calc`, so an exhaustive `match` must handle it. The wire form is unchanged
+  for a pivot without `calc` ([#329](https://github.com/casoon/opengrid/issues/329)).
 - **Grid:** `group-by`, the view's `group` and the toolbar's *+ Group* take three grouping levels; a
   fourth is refused as the third was. The default wording of `groupingFull` is now
   `Grouped by three columns already` ([#321](https://github.com/casoon/opengrid/issues/321)).

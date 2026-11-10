@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>opengrid calculated measures fixture</title>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid calculated measures fixture</h1>
+      <!-- Issue #329: a pivot over a table small enough to reckon by hand —
+           the one in crates/opengrid-pivot/tests/calculated.rs, row for row.
+           `?dir=rtl` turns the page right to left. -->
+      <opengrid-pivot
+        label="Units by zone, region and year"
+        datasource="sales"
+        rows="zone,region"
+        columns="year"
+        toolbar
+        fields="zone,region,year"
+        measures='[{"field":"units","fn":"sum","as":"sold"},{"fn":"count","as":"n"},{"field":"units","fn":"avg","as":"mean"}]'
+        values='[{"field":"units","fn":"sum","as":"sold"}]'
+      ></opengrid-pivot>
+    </main>
+    <script type="module">
+      import { loadOpengrid, createLocalProvider } from "/packages/opengrid/loader.js";
+      import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+
+      if (new URLSearchParams(location.search).get("dir") === "rtl") {
+        document.documentElement.dir = "rtl";
+      }
+      await init();
+      const schema = JSON.stringify({
+        fields: [
+          { name: "zone", type: "utf8", nullable: false },
+          { name: "region", type: "utf8", nullable: false },
+          { name: "year", type: "int64", nullable: false },
+          { name: "amount", type: { decimal: { precision: 10, scale: 2 } }, nullable: true },
+          { name: "units", type: "int64", nullable: true },
+        ],
+      });
+      const provider = createLocalProvider(new Engine());
+      await provider.loadRows(
+        "sales",
+        [
+          { zone: "A", region: "N", year: 2023, amount: "10.00", units: 1 },
+          { zone: "A", region: "N", year: 2024, amount: "30.00", units: 3 },
+          { zone: "A", region: "N", year: 2025, amount: null, units: null },
+          { zone: "A", region: "S", year: 2023, amount: null, units: null },
+          { zone: "A", region: "S", year: 2024, amount: "20.00", units: 2 },
+          { zone: "A", region: "S", year: 2025, amount: null, units: null },
+          { zone: "B", region: "W", year: 2023, amount: "5.50", units: 5 },
+          { zone: "B", region: "W", year: 2024, amount: "-5.50", units: -5 },
+          { zone: "B", region: "E", year: 2024, amount: null, units: null },
+        ],
+        schema,
+      );
+      const loader = await loadOpengrid();
+      loader.module.set_provider(document.querySelector("opengrid-pivot"), provider);
+      window.__opengridModule = loader.module;
+      window.__ready = true;
+    </script>
+  </body>
+</html>

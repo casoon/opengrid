@@ -1,0 +1,140 @@
+{
+  "id": "p10-a-calculated-measure-stands-beside-its-aggregate",
+  "rule": "P10",
+  "pivot": {
+    "source": "orders",
+    "rows": [
+      "country"
+    ],
+    "columns": [
+      "ordered_year"
+    ],
+    "values": [
+      {
+        "field": "qty",
+        "fn": "sum",
+        "as": "total"
+      },
+      {
+        "field": "qty",
+        "fn": "sum",
+        "as": "share",
+        "calc": "share_of_row"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      {
+        "path": [
+          2025
+        ],
+        "measure": "total"
+      },
+      {
+        "path": [
+          2025
+        ],
+        "measure": "share"
+      },
+      {
+        "path": [
+          2026
+        ],
+        "measure": "total"
+      },
+      {
+        "path": [
+          2026
+        ],
+        "measure": "share"
+      },
+      {
+        "path": [
+          null
+        ],
+        "measure": "total"
+      },
+      {
+        "path": [
+          null
+        ],
+        "measure": "share"
+      }
+    ],
+    "rows": [
+      [
+        "",
+        null,
+        null,
+        114,
+        1.0,
+        null,
+        null
+      ],
+      [
+        "DE",
+        1,
+        0.003861003861003861,
+        258,
+        0.9961389961389961,
+        null,
+        null
+      ],
+      [
+        "FR",
+        null,
+        null,
+        172,
+        0.9717514124293786,
+        5,
+        0.02824858757062147
+      ],
+      [
+        "GB",
+        null,
+        null,
+        195,
+        1.0,
+        null,
+        null
+      ],
+      [
+        "US",
+        null,
+        null,
+        210,
+        1.0,
+        null,
+        null
+      ],
+      [
+        null,
+        null,
+        null,
+        269,
+        1.0,
+        null,
+        null
+      ],
+      [
+        null,
+        1,
+        0.0008169934640522876,
+        1218,
+        0.9950980392156863,
+        5,
+        0.004084967320261438
+      ]
+    ],
+    "levels": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      0
+    ]
+  }
+}

@@ -40,6 +40,11 @@ opengrid-query = { path = "../opengrid-query", optional = true }
 opengrid-json = { path = "../opengrid-json" }
 # The binary result form a provider may answer in (E35, issue #38).
 opengrid-columns = { path = "../opengrid-columns" }
+# `get_pivot` reads the shown answer back into a `PivotResult` for the export
+# (issue #3), and the pivot's model names a measure's calculation by the
+# contract's own `Calc` (issue #329) — portable, so the model stays
+# host-testable.
+opengrid-pivot = { path = "../opengrid-pivot" }
 
 # Pinned to the CLI that builds the modules (E4/R7).
 [target.'cfg(target_arch = "wasm32")'.dependencies]
@@ -49,9 +54,6 @@ js-sys = "0.3"
 # CSV and JSON of a result for an export (point 83): one notation for the
 # browser and the server.
 opengrid-export = { path = "../opengrid-export" }
-# `get_pivot` reads the shown answer back into a `PivotResult` for the export
-# (issue #3); already built as a dependency of `opengrid-export`.
-opengrid-pivot = { path = "../opengrid-pivot" }
 web-sys = { version = "0.3", features = [
     # The print table leaves with `afterprint`, once (issue #334).
     "AddEventListenerOptions",

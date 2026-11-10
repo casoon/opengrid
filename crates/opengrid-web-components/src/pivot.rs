@@ -15,6 +15,7 @@
 //! the host and in the browser through the renderer.
 
 use opengrid_json::{Json as Value, json};
+use opengrid_pivot::Calc;
 
 use opengrid_web_core::element::{LABEL_ATTRIBUTE, mirror_label};
 use opengrid_web_core::patch::{NodeAllocator, NodeId, Patch, PatchBuffer};
@@ -395,6 +396,36 @@ pub enum FieldAction {
     Remove(Axis, String),
     /// Moves a field one place, later or earlier.
     Move(Axis, String, bool),
+    /// Shows the measure with this alias as a calculation (issue #329), or
+    /// as itself again.
+    ShowAs(String, Option<Calc>),
+}
+
+/// What the measure `value` is shown as: its `calc`, when the contract has it.
+pub fn calc_of(value: &Value) -> Option<Calc> {
+    value["calc"].as_str().and_then(Calc::from_name)
+}
+
+/// The calculated measures among `values`, by alias — what the headers and
+/// the export name them by.
+pub fn calcs(values: &[Value]) -> Vec<(String, Calc)> {
+    values
+        .iter()
+        .filter_map(|value| Some((value["as"].as_str()?.to_owned(), calc_of(value)?)))
+        .collect()
+}
+
+/// The calculations a reader is offered for `value` (rule P10): all four for
+/// a sum and a count, the running total alone for an average, a smallest and
+/// a largest value — a share of those the engine refuses. Whether a smallest
+/// or largest value is a number at all, the pivot cannot know without the
+/// schema; the engine says so if it is not.
+pub fn offered(value: &Value) -> &'static [Calc] {
+    match value["fn"].as_str() {
+        Some("sum" | "count") => &Calc::ALL,
+        Some("avg" | "min" | "max") => &[Calc::RunningTotal],
+        _ => &[],
+    }
 }
 
 /// The names on `axis` of `view`: dimensions, or measure aliases.
@@ -433,6 +464,20 @@ pub fn apply_field(view: &PivotView, offer: &Offer, action: &FieldAction) -> Piv
         FieldAction::Remove(Axis::Values, alias) => next
             .values
             .retain(|value| alias_of(value).as_deref() != Some(alias)),
+        FieldAction::ShowAs(alias, calc) => {
+            if let Some(Value::Object(measure)) = next
+                .values
+                .iter_mut()
+                .find(|value| alias_of(value).as_deref() == Some(alias))
+            {
+                match calc {
+                    Some(calc) => measure.insert("calc".to_owned(), calc.as_str()),
+                    None => {
+                        measure.remove("calc");
+                    }
+                }
+            }
+        }
         FieldAction::Move(axis, name, later) => {
             let position = names(&next, *axis).iter().position(|other| other == name);
             if let Some(from) = position {
@@ -523,6 +568,32 @@ pub fn build_toolbar(
                 node: text,
                 text: title.clone(),
             });
+            // What the measure is shown as (issue #329): a menu button whose
+            // text is the choice and whose name says of which measure.
+            if let Some(measure) = view
+                .values
+                .iter()
+                .find(|value| axis == Axis::Values && value["as"].as_str() == Some(name))
+                .filter(|value| !offered(value).is_empty())
+            {
+                let calc = calc_of(measure);
+                let button = element(buffer, nodes, Some(chip), "button");
+                attribute(buffer, button, "part", "chip-calc");
+                attribute(buffer, button, "type", "button");
+                attribute(buffer, button, "data-calc", name);
+                attribute(buffer, button, "aria-haspopup", "menu");
+                attribute(buffer, button, "aria-expanded", "false");
+                attribute(
+                    buffer,
+                    button,
+                    "aria-label",
+                    &texts.pivot_show_as(&title, calc),
+                );
+                buffer.push(Patch::SetText {
+                    node: button,
+                    text: texts.calc(calc).to_owned(),
+                });
+            }
             if index + 1 < chosen.len() {
                 chip_button(
                     buffer,
@@ -917,8 +988,9 @@ impl PivotView {
     }
 }
 
-/// A measure as the contract writes it: `fn` and `as` are names, `field` is
-/// one when it is there. Whether the source has it is the engine's to say.
+/// A measure as the contract writes it: `fn` and `as` are names, `field` and
+/// `calc` are when they are there. Whether the source has the field, and the
+/// contract the calculation, is the engine's to say.
 fn is_measure(value: &Value) -> bool {
     let Some(measure) = value.as_object() else {
         return false;
@@ -926,9 +998,11 @@ fn is_measure(value: &Value) -> bool {
     let name = |key: &str| measure.get(key).and_then(Value::as_str).is_some();
     name("fn")
         && name("as")
-        && measure
-            .get("field")
-            .is_none_or(|field| field.as_str().is_some())
+        && ["field", "calc"].iter().all(|key| {
+            measure
+                .get(key)
+                .is_none_or(|value| value.as_str().is_some())
+        })
 }
 
 /// How the page wants the pivot to read (issue #104): its titles for fields
@@ -981,6 +1055,9 @@ pub struct PivotModel {
     pub collapsed: Vec<Vec<Value>>,
     /// Whether every value is a button to the rows behind it (issue #330).
     pub drill_down: bool,
+    /// The calculated measures the request asked for, by alias (issue #329):
+    /// the answer does not say, and a header names them by what they show.
+    pub calcs: Vec<(String, Calc)>,
     pub columns: Vec<ColumnHeader>,
     /// Per row: how many row dimensions are set. See
     /// [`opengrid_pivot::PivotResult::row_levels`] — a subtotal is marked by
@@ -1029,6 +1106,16 @@ impl PivotModel {
             .iter()
             .take_while(|column| &column.path == first)
             .count()
+    }
+
+    /// A measure's header: its title, and what it is shown as when it is
+    /// calculated — `Quantity · share of row`, joined as a path is.
+    pub fn measure_title(&self, look: &dyn PivotLook, texts: &GridTexts, alias: &str) -> String {
+        let title = look.title(alias);
+        match self.calcs.iter().find(|(measure, _)| measure == alias) {
+            Some((_, calc)) => format!("{title} \u{b7} {}", texts.calc(Some(*calc))),
+            None => title,
+        }
     }
 
     /// The distinct column-dimension values, in order.
@@ -1092,6 +1179,7 @@ pub fn parse_result(json: &str) -> Result<PivotModel, String> {
         sort: Vec::new(),
         collapsed: Vec::new(),
         drill_down: false,
+        calcs: Vec::new(),
         columns,
         levels,
         rows,
@@ -1371,7 +1459,7 @@ fn build_pivot_table(
                 }
                 buffer.push(Patch::SetText {
                     node: th,
-                    text: look.title(&column.measure),
+                    text: model.measure_title(look, texts, &column.measure),
                 });
             }
         } else {
@@ -1391,7 +1479,7 @@ fn build_pivot_table(
                     buffer,
                     nodes,
                     th,
-                    &look.title(&column.measure),
+                    &model.measure_title(look, texts, &column.measure),
                     aria_sort,
                     ("data-sort-by", &column.measure),
                 );
@@ -2160,6 +2248,203 @@ mod tests {
             markup.contains("+ Column. Two column fields already"),
             "{markup}"
         );
+    }
+
+    /// Issue #329: a measure's chip has a button that says what the measure
+    /// is shown as and of which measure. A sum and a count are offered all
+    /// four calculations, an average and a smallest value the running total.
+    #[test]
+    fn a_measure_chip_offers_what_it_is_shown_as() {
+        let view = PivotView::from_attributes(
+            Some("country"),
+            Some("ordered_year"),
+            Some(
+                r#"[{"field":"qty","fn":"sum","as":"total"},
+                    {"field":"qty","fn":"sum","as":"share","calc":"share_of_row"},
+                    {"fn":"count","as":"n"},
+                    {"field":"qty","fn":"avg","as":"mean"}]"#,
+            ),
+            None,
+            None,
+            None,
+        );
+        struct Titled;
+        impl PivotLook for Titled {
+            fn title(&self, name: &str) -> String {
+                if name == "total" { "Quantity" } else { name }.to_owned()
+            }
+            fn text(&self, name: &str, value: &Value) -> String {
+                PlainLook.text(name, value)
+            }
+        }
+        let mut nodes = NodeAllocator::new();
+        let mut buffer = PatchBuffer::new();
+        build_toolbar(
+            &mut buffer,
+            &mut nodes,
+            NodeId::ROOT,
+            &view,
+            &Offer::default(),
+            &GridTexts::default(),
+            &Titled,
+        );
+        let markup = format!("{:?}", buffer.patches());
+        assert_eq!(
+            markup.matches("value: \"chip-calc\"").count(),
+            4,
+            "{markup}"
+        );
+        assert_eq!(offered(&view.values[0]), &Calc::ALL);
+        assert_eq!(offered(&view.values[2]), &Calc::ALL);
+        for function in ["avg", "min", "max"] {
+            assert_eq!(
+                offered(&json!({ "field": "qty", "fn": function, "as": "m" })),
+                &[Calc::RunningTotal],
+                "P10: no share of {function}"
+            );
+        }
+        assert!(offered(&json!({ "fn": "median", "as": "m" })).is_empty());
+        for (alias, name) in [
+            ("total", "Show Quantity as: value"),
+            ("share", "Show share as: share of row"),
+            ("n", "Show n as: value"),
+            ("mean", "Show mean as: value"),
+        ] {
+            assert!(
+                markup.contains(&format!("name: \"data-calc\", value: \"{alias}\"")),
+                "{alias}: {markup}"
+            );
+            assert!(
+                markup.contains(&format!("value: \"{name}\"")),
+                "{name}: {markup}"
+            );
+        }
+        // The visible text is the choice, and the name ends with it (WCAG 2.5.3).
+        assert!(markup.contains("text: \"share of row\""), "{markup}");
+        assert_eq!(
+            markup
+                .matches("name: \"aria-haspopup\", value: \"menu\"")
+                .count(),
+            7
+        );
+    }
+
+    /// Choosing a calculation writes `calc` into the measure and nothing
+    /// else; choosing the value takes it out again. A sort by the measure
+    /// stays — it orders by the aggregate either way (P10).
+    #[test]
+    fn showing_a_measure_as_a_calculation_is_one_clean_view() {
+        let view = PivotView::from_attributes(
+            Some("country"),
+            Some("ordered_year"),
+            Some(r#"[{"field":"qty","fn":"sum","as":"total"},{"fn":"count","as":"n"}]"#),
+            Some(r#"[{"field":"country","by":"total","direction":"desc"}]"#),
+            None,
+            None,
+        );
+        let shared = apply_field(
+            &view,
+            &Offer::default(),
+            &FieldAction::ShowAs("total".into(), Some(Calc::ShareOfColumn)),
+        );
+        assert_eq!(
+            shared.attributes()[2],
+            r#"[{"field":"qty","fn":"sum","as":"total","calc":"share_of_column"},{"fn":"count","as":"n"}]"#
+        );
+        assert_eq!(shared.sort, view.sort);
+        assert_eq!(
+            calcs(&shared.values),
+            vec![("total".to_owned(), Calc::ShareOfColumn)]
+        );
+        // The view reads back with it, and from the attribute.
+        assert_eq!(PivotView::from_json(&shared.to_json()), Ok(shared.clone()));
+        assert_eq!(
+            PivotView::from_attributes(
+                Some("country"),
+                Some("ordered_year"),
+                Some(&shared.attributes()[2]),
+                Some(&shared.attributes()[3]),
+                None,
+                None
+            ),
+            shared
+        );
+        let plain = apply_field(
+            &shared,
+            &Offer::default(),
+            &FieldAction::ShowAs("total".into(), None),
+        );
+        assert_eq!(plain, view);
+        // A `calc` that is not a name is not a measure.
+        assert!(
+            PivotView::from_json(&json!({ "values": [{ "fn": "count", "as": "n", "calc": 1 }] }))
+                .is_err()
+        );
+    }
+
+    /// A calculated measure's header says what it shows, after its title —
+    /// under a column value and as a sort button without one.
+    #[test]
+    fn a_calculated_measure_is_headed_by_what_it_shows() {
+        let mut nested = model();
+        nested.calcs = vec![("total".to_owned(), Calc::ShareOfRow)];
+        let markup = markup(Some(&nested));
+        let headers = markup
+            .matches("text: \"total \u{b7} share of row\"")
+            .count();
+        assert_eq!(headers, nested.columns.len(), "{markup}");
+        assert!(!markup.contains("text: \"total\""), "{markup}");
+
+        let mut flat = drilled();
+        flat.columns.truncate(1);
+        flat.columns[0].path.clear();
+        flat.calcs = vec![("n".to_owned(), Calc::RunningTotal)];
+        let mut nodes = NodeAllocator::new();
+        let mut buffer = PatchBuffer::new();
+        let german = GridTexts {
+            running_total: "laufende Summe".to_owned(),
+            ..GridTexts::default()
+        };
+        build_pivot(
+            &mut buffer,
+            &mut nodes,
+            None,
+            Some(&flat),
+            "",
+            "ready",
+            &german,
+            &PlainLook,
+            None,
+        );
+        let markup = format!("{:?}", buffer.patches());
+        assert!(
+            markup.contains("text: \"n \u{b7} laufende Summe\""),
+            "{markup}"
+        );
+        assert!(
+            markup.contains("name: \"data-sort-by\", value: \"n\""),
+            "{markup}"
+        );
+    }
+
+    /// The rows behind a calculated cell are the cell's own (issue #330): the
+    /// event does not change with what the measure is shown as, but for the
+    /// value it carries.
+    #[test]
+    fn a_calculated_cell_still_names_the_rows_behind_it() {
+        let plain = drilled();
+        let mut shared = drilled();
+        shared.calcs = vec![("n".to_owned(), Calc::ShareOfRow)];
+        // DE / open under 2025: 2 of the row's 2 — its share is 1.
+        shared.rows[0][2] = json!(1.0);
+        let before = drill_down(&plain, "orders", None, 0, 0).unwrap();
+        let after = drill_down(&shared, "orders", None, 0, 0).unwrap();
+        assert_eq!(after["query"], before["query"]);
+        assert_eq!(after["row"], before["row"]);
+        assert_eq!(after["column"], before["column"]);
+        assert_eq!(after["measure"], "n");
+        assert_eq!(after["value"], json!(1.0));
+        assert_eq!(before["value"], json!(2));
     }
 
     /// A filter's chips are its clauses, said in words; they join back to one
