@@ -289,14 +289,10 @@ test("Shift+Space reaches past the loaded window, and falls back to a toggle wit
       },
       position,
     );
-  await scrollTo(46);
+  await scrollTo(40);
   await expect.poll(async () => (await drawn(page)).some((row) => row.position === 40)).toBe(true);
   expect((await drawn(page)).some((row) => row.position === 20)).toBe(false);
-  // Without scrolling to the cell: the window stays the one just checked.
-  await shadow(page, (root) =>
-    root.querySelector('td[data-row="40"][data-col="0"]').focus({ preventScroll: true }),
-  );
-  await page.keyboard.press("Shift+ ");
+  await press(page, 40, "Shift+ ");
   await expect.poll(async () => (await heard(page)).count).toBe(40);
   const de = (await heard(page)).keys;
   expect(new Set(de).size).toBe(40);
