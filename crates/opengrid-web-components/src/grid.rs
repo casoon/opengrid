@@ -1322,6 +1322,15 @@ pub fn window_offset_for_row(row: u64, total_count: u64, pool: u64) -> u64 {
     row.saturating_sub(lead).min(max_offset)
 }
 
+/// Keeps a window offset inside `[0, total_count - pool]`.
+///
+/// For an offset that already is a window start, when the list under it got
+/// shorter: unlike [`window_offset_for_row`] it takes no [`OVERSCAN`] lead off,
+/// so a start that fits stays where it is.
+pub fn clamp_window_offset(offset: u64, total_count: u64, pool: u64) -> u64 {
+    offset.min(total_count.saturating_sub(pool))
+}
+
 /// The logical rows of a window, hidded by `total_count`.
 pub fn window_rows(offset: u64, total_count: u64, pool: u64) -> Vec<u64> {
     let end = offset.saturating_add(pool).min(total_count);
@@ -7004,6 +7013,17 @@ mod tests {
         assert_eq!(window_rows(90, 100, 10), (90..100).collect::<Vec<_>>());
         // A pool shorter than the overscan still contains its row.
         assert_eq!(window_offset_for_row(2, 5, 2), 1);
+    }
+
+    #[test]
+    fn clamping_a_window_offset_takes_no_lead_off() {
+        // A start that fits is kept: running it through the row math again would
+        // take the overscan off a second time (#342).
+        assert_eq!(clamp_window_offset(40, 58, 12), 40);
+        assert_eq!(clamp_window_offset(46, 58, 12), 46);
+        // The list got shorter under the window: the last window that fits.
+        assert_eq!(clamp_window_offset(46, 30, 12), 18);
+        assert_eq!(clamp_window_offset(5, 3, 12), 0);
     }
 
     /// A result that fits the sizer is not scaled at all (issue #284).
