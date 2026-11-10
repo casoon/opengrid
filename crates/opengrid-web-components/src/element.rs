@@ -24,7 +24,7 @@ use wasm_bindgen::closure::Closure;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::{JsFuture, spawn_local};
-use web_sys::{Document, Element, Event, HtmlElement, Node, ShadowRoot};
+use web_sys::{Document, Element, Event, HtmlElement, KeyboardEvent, Node, ShadowRoot};
 
 use opengrid_web_core::element::{
     ARIA_LABEL_ATTRIBUTE, LABEL_ATTRIBUTE, attach_open_shadow_root, define, mirror_label,
@@ -998,4 +998,76 @@ pub(crate) fn place_under(popup: &HtmlElement, button: &HtmlElement) {
     let _ = popup
         .style()
         .set_property("top", &format!("{}px", anchor.bottom() + GAP));
+}
+
+/// What a key asks of an open menu, beyond moving in it.
+pub(crate) enum MenuAct {
+    /// Enter or Space: pick the item at this position of the list given to
+    /// [`menu_key`] — the one with the focus, or the first when none has it.
+    Pick(usize),
+    /// Escape: close the menu and give the focus back to what opened it.
+    Escape,
+    /// Tab: close the menu. Not prevented, so the focus moves on from there:
+    /// a menu is not a dialog, and traps nothing.
+    Tab,
+}
+
+/// The items of a menu: what matches `selector` inside it, as elements.
+pub(crate) fn menu_items(menu: &Element, selector: &str) -> Vec<HtmlElement> {
+    menu.query_selector_all(selector)
+        .map(|list| {
+            (0..list.length())
+                .filter_map(|index| list.item(index))
+                .filter_map(|node| node.dyn_into::<HtmlElement>().ok())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The keys of the menu-button pattern, for every menu the elements open.
+///
+/// The arrows move the focus round the `items`, Home and End go to the first
+/// and the last; those are done here and answer `None`. Enter, Space, Escape
+/// and Tab are the caller's to carry out, because what a pick does and how a
+/// menu closes differs from one menu to the next. Every key the pattern knows
+/// is consumed, Tab excepted; any other key is left alone.
+pub(crate) fn menu_key(
+    event: &KeyboardEvent,
+    items: &[HtmlElement],
+    target: &Element,
+) -> Option<MenuAct> {
+    let count = items.len().max(1);
+    let at = items
+        .iter()
+        .position(|item| item.is_same_node(Some(target)))
+        .unwrap_or(0);
+    let go = |index: usize| {
+        if let Some(item) = items.get(index) {
+            let _ = item.focus();
+        }
+    };
+    let act = match event.key().as_str() {
+        "ArrowDown" => {
+            go((at + 1) % count);
+            None
+        }
+        "ArrowUp" => {
+            go((at + count - 1) % count);
+            None
+        }
+        "Home" => {
+            go(0);
+            None
+        }
+        "End" => {
+            go(items.len().saturating_sub(1));
+            None
+        }
+        "Enter" | " " => Some(MenuAct::Pick(at)),
+        "Escape" => Some(MenuAct::Escape),
+        "Tab" => return Some(MenuAct::Tab),
+        _ => return None,
+    };
+    event.prevent_default();
+    act
 }
