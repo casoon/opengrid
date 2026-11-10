@@ -66,7 +66,7 @@ pub fn groupable(data_type: DataType) -> bool {
 /// Reads `group-by`: a trimmed, de-duplicated list of at most [`MAX_LEVELS`].
 ///
 /// Answers `Err` with the offending text when the list is longer — silently
-/// grouping by the first two of three would look like it worked.
+/// grouping by the first three of four would look like it worked.
 pub fn parse_group_by(raw: Option<&str>) -> Result<Vec<String>, String> {
     let mut out: Vec<String> = Vec::new();
     for name in raw.unwrap_or("").split(',') {
@@ -88,7 +88,7 @@ pub fn parse_group_by(raw: Option<&str>) -> Result<Vec<String>, String> {
 /// `Value::to_string` always writes the same value the same way.
 pub type Path = Vec<String>;
 
-/// One group of either level.
+/// One group of any level.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Group {
     /// The key as the wire writes it — what a filter literal is made of.
@@ -97,12 +97,14 @@ pub struct Group {
     pub value: Value,
     /// Data rows in the group, across all its subgroups.
     pub count: u64,
-    /// The level-2 groups, once fetched. `None` until the group is expanded for
-    /// the first time on a two-level grid; always `None` on the second level
-    /// and on a one-level grid.
+    /// The groups of the next level, once fetched. `None` until the group is
+    /// expanded for the first time; always `None` on the innermost level.
     pub children: Option<Vec<Group>>,
     /// One value per requested aggregate (point 63), in the grouping's order.
     pub aggregates: Vec<Value>,
+    /// Positions the group takes in the display list, its header included —
+    /// set by the layout, and read only while every group above it is open.
+    size: u64,
 }
 
 impl Group {
@@ -114,6 +116,7 @@ impl Group {
             count,
             children: None,
             aggregates: Vec::new(),
+            size: 1,
         }
     }
 
@@ -127,7 +130,7 @@ impl Group {
 pub enum Item {
     /// A group header.
     Group {
-        /// 1 or 2.
+        /// 1 for the outermost.
         level: usize,
         /// The keys down to this group, as JSON.
         keys: Vec<Json>,
@@ -212,7 +215,7 @@ impl Grouping {
         &self.by
     }
 
-    /// Number of levels, 1 or 2.
+    /// Number of levels, 1 to [`MAX_LEVELS`].
     pub fn levels(&self) -> usize {
         self.by.len()
     }
@@ -258,31 +261,38 @@ impl Grouping {
         self.total = Some(total);
     }
 
-    /// Sets the level-2 groups of the level-1 group `key`.
-    pub fn set_children(&mut self, key: &Json, children: Vec<Group>) {
-        if let Some(group) = self
-            .groups
-            .as_mut()
-            .and_then(|groups| groups.iter_mut().find(|group| &group.key == key))
-        {
+    /// Sets the groups under the group with these keys.
+    pub fn set_children(&mut self, keys: &[Json], children: Vec<Group>) {
+        if let Some(group) = find(self.groups.as_mut(), keys) {
             group.children = Some(children);
         }
         self.relayout();
     }
 
-    /// Level-1 groups that are expanded on a two-level grid but whose level-2
-    /// groups have not been fetched yet — what has to be asked before the
-    /// display list is complete.
-    pub fn missing_children(&self) -> Vec<Json> {
-        if self.levels() < 2 {
-            return Vec::new();
+    /// The keys of every open group above the innermost level whose groups
+    /// have not been fetched yet — what has to be asked before the display
+    /// list is complete. Only where it shows: nothing is asked under a closed
+    /// group, or under one that is itself not fetched yet.
+    pub fn missing_children(&self) -> Vec<Vec<Json>> {
+        let mut out = Vec::new();
+        self.missing(self.groups.as_deref(), &mut Vec::new(), &mut out);
+        out
+    }
+
+    fn missing(&self, groups: Option<&[Group]>, keys: &mut Vec<Json>, out: &mut Vec<Vec<Json>>) {
+        if keys.len() + 1 >= self.levels() {
+            return;
         }
-        self.groups
-            .iter()
-            .flatten()
-            .filter(|group| group.children.is_none() && self.is_open(&[group.id()]))
-            .map(|group| group.key.clone())
-            .collect()
+        for group in groups.into_iter().flatten() {
+            keys.push(group.key.clone());
+            if self.is_open(&keys.iter().map(Json::to_string).collect::<Path>()) {
+                match &group.children {
+                    Some(children) => self.missing(Some(children), keys, out),
+                    None => out.push(keys.clone()),
+                }
+            }
+            keys.pop();
+        }
     }
 
     /// The expanded paths, as JSON key lists (for the view of point 59).
@@ -324,39 +334,13 @@ impl Grouping {
         self.expanded.contains(path)
     }
 
-    /// Rows a level-1 group occupies in the display list, its header included.
-    fn size_of(&self, group: &Group) -> u64 {
-        let path = [group.id()];
-        if !self.is_open(&path) {
-            return 1;
-        }
-        if self.levels() < 2 {
-            return 1 + group.count;
-        }
-        // Not fetched yet: the header alone, until the level-2 query answers.
-        let Some(children) = &group.children else {
-            return 1;
-        };
-        1 + children
-            .iter()
-            .map(|child| self.child_size(&group.id(), child))
-            .sum::<u64>()
-    }
-
-    fn child_size(&self, parent: &str, child: &Group) -> u64 {
-        if self.is_open(&[parent.to_owned(), child.id()]) {
-            1 + child.count
-        } else {
-            1
-        }
-    }
-
     fn relayout(&mut self) {
         let mut starts = Vec::new();
         let mut at = 0u64;
-        for group in self.groups.iter().flatten() {
+        let levels = self.by.len();
+        for group in self.groups.iter_mut().flatten() {
             starts.push(at);
-            at += self.size_of(group);
+            at += layout(&self.expanded, levels, &mut Vec::new(), group);
         }
         starts.push(at);
         self.starts = starts;
@@ -395,10 +379,10 @@ impl Grouping {
 
     /// What sits at `position`, or `None` past the end.
     ///
-    /// Binary search over the level-1 starts, then a walk inside one group — so
+    /// Binary search over the level-1 starts, then a walk down one group — so
     /// the cost is logarithmic in the number of groups, not linear in rows.
     pub fn item_at(&self, position: u64) -> Option<Item> {
-        let groups = self.groups.as_ref()?;
+        let mut groups: &[Group] = self.groups.as_ref()?;
         if position >= self.len() {
             return None;
         }
@@ -409,63 +393,47 @@ impl Grouping {
             });
         }
         // The last start that is <= position.
-        let index = match self.starts.binary_search(&position) {
+        let mut index = match self.starts.binary_search(&position) {
             Ok(exact) => exact,
             Err(after) => after - 1,
         };
-        let group = groups.get(index)?;
-        let inside = position - self.starts[index];
-        let path = [group.id()];
-
-        if inside == 0 {
-            return Some(Item::Group {
-                level: 1,
-                keys: vec![group.key.clone()],
-                value: group.value.clone(),
-                count: group.count,
-                expanded: self.is_open(&path),
-                aggregates: group.aggregates.clone(),
-                position: index as u64 + 1,
-                siblings: groups.len() as u64,
-            });
-        }
-        let mut rest = inside - 1;
-
-        if self.levels() < 2 {
-            return Some(Item::Row {
-                keys: vec![group.key.clone()],
-                offset: rest,
-                size: group.count,
-            });
-        }
-
-        let siblings = group.children.iter().flatten().count() as u64;
-        for (child_index, child) in group.children.iter().flatten().enumerate() {
-            let size = self.child_size(&group.id(), child);
-            if rest < size {
-                let keys = vec![group.key.clone(), child.key.clone()];
-                return Some(if rest == 0 {
-                    Item::Group {
-                        level: 2,
-                        keys,
-                        value: child.value.clone(),
-                        count: child.count,
-                        expanded: size > 1,
-                        aggregates: child.aggregates.clone(),
-                        position: child_index as u64 + 1,
-                        siblings,
-                    }
-                } else {
-                    Item::Row {
-                        keys,
-                        offset: rest - 1,
-                        size: child.count,
-                    }
+        let mut rest = position - self.starts[index];
+        let mut keys = Vec::new();
+        let mut path = Path::new();
+        loop {
+            let group = groups.get(index)?;
+            keys.push(group.key.clone());
+            path.push(group.id());
+            if rest == 0 {
+                return Some(Item::Group {
+                    level: keys.len(),
+                    keys,
+                    value: group.value.clone(),
+                    count: group.count,
+                    expanded: self.is_open(&path),
+                    aggregates: group.aggregates.clone(),
+                    position: index as u64 + 1,
+                    siblings: groups.len() as u64,
                 });
             }
-            rest -= size;
+            rest -= 1;
+            if keys.len() == self.levels() {
+                return Some(Item::Row {
+                    keys,
+                    offset: rest,
+                    size: group.count,
+                });
+            }
+            // One level down: the group under this one that holds the position.
+            groups = group.children.as_deref()?;
+            index = groups.iter().position(|child| {
+                let inside = rest < child.size;
+                if !inside {
+                    rest -= child.size;
+                }
+                inside
+            })?;
         }
-        None
     }
 
     /// Where the header of the group with these keys sits, if it is visible.
@@ -473,28 +441,28 @@ impl Grouping {
     /// Test-only: it is how the tests **prove** what the element relies on
     /// without asking — a group's own position does not move when it opens
     /// (only what comes after it does), so the focus can simply stay where it
-    /// is; a level-2 group, though, loses its place when its parent closes.
+    /// is; a group below the first level, though, loses its place when a
+    /// group above it closes.
     #[cfg(test)]
     pub fn position_of(&self, keys: &[Json]) -> Option<u64> {
-        let groups = self.groups.as_ref()?;
-        let first = keys.first()?;
-        let index = groups.iter().position(|group| &group.key == first)?;
-        let start = self.starts[index];
-        let Some(second) = keys.get(1) else {
-            return Some(start);
-        };
-        let group = &groups[index];
-        if !self.is_open(&[group.id()]) {
-            return None;
-        }
-        let mut at = start + 1;
-        for child in group.children.iter().flatten() {
-            if &child.key == second {
-                return Some(at);
+        let mut groups: &[Group] = self.groups.as_ref()?;
+        let mut at = 0;
+        let mut path = Path::new();
+        for (depth, key) in keys.iter().enumerate() {
+            let index = groups.iter().position(|group| &group.key == key)?;
+            at += groups[..index].iter().map(|group| group.size).sum::<u64>();
+            if depth + 1 == keys.len() {
+                break;
             }
-            at += self.child_size(&group.id(), child);
+            path.push(groups[index].id());
+            if !self.is_open(&path) {
+                return None;
+            }
+            // Past the header of the group it is in.
+            at += 1;
+            groups = groups[index].children.as_deref()?;
         }
-        None
+        Some(at)
     }
 
     /// The row slices a window of `count` positions from `start` needs.
@@ -555,6 +523,38 @@ impl Grouping {
             _ => Some(FilterExpr::And(parts)),
         }
     }
+}
+
+/// The group with these keys, one level per key.
+fn find<'a>(groups: Option<&'a mut Vec<Group>>, keys: &[Json]) -> Option<&'a mut Group> {
+    let (first, rest) = keys.split_first()?;
+    let group = groups?.iter_mut().find(|group| &group.key == first)?;
+    if rest.is_empty() {
+        Some(group)
+    } else {
+        find(group.children.as_mut(), rest)
+    }
+}
+
+/// Sets the positions `group` and every group that shows under it take, and
+/// answers the group's own: its header and, while it is open, its rows — on
+/// the innermost level — or its groups. Not fetched yet: the header alone,
+/// until the query for its groups answers.
+fn layout(expanded: &BTreeSet<Path>, levels: usize, path: &mut Path, group: &mut Group) -> u64 {
+    path.push(group.id());
+    let mut size = 1;
+    if expanded.contains(&*path) {
+        if path.len() == levels {
+            size += group.count;
+        } else {
+            for child in group.children.iter_mut().flatten() {
+                size += layout(expanded, levels, path, child);
+            }
+        }
+    }
+    path.pop();
+    group.size = size;
+    size
 }
 
 /// The alias the *i*-th aggregate is asked under.
@@ -944,10 +944,10 @@ mod tests {
         // Open, but its subgroups have not been asked for yet: header only
         // (DE, FR, total).
         assert_eq!(grouping.len(), 3);
-        assert_eq!(grouping.missing_children(), vec![key("DE")]);
+        assert_eq!(grouping.missing_children(), vec![vec![key("DE")]]);
 
         grouping.set_children(
-            &key("DE"),
+            &[key("DE")],
             vec![Group::new(text("Alpha"), 3), Group::new(Value::Null, 2)],
         );
         assert!(grouping.missing_children().is_empty());
@@ -969,7 +969,7 @@ mod tests {
         let mut grouping = two_level();
         grouping.toggle(&[key("DE")]);
         grouping.set_children(
-            &key("DE"),
+            &[key("DE")],
             vec![Group::new(text("Alpha"), 3), Group::new(Value::Null, 2)],
         );
         grouping.toggle(&[key("DE"), Json::Null]);
@@ -1015,14 +1015,121 @@ mod tests {
     }
 
     #[test]
-    fn group_by_takes_at_most_two_and_refuses_a_third() {
+    fn group_by_takes_at_most_three_and_refuses_a_fourth() {
         assert_eq!(
             parse_group_by(Some(" country , customer ")),
             Ok(vec!["country".to_owned(), "customer".to_owned()])
         );
         assert_eq!(parse_group_by(Some("a,a")), Ok(vec!["a".to_owned()]));
         assert_eq!(parse_group_by(None), Ok(Vec::new()));
-        assert_eq!(parse_group_by(Some("a,b,c")), Err("a,b,c".to_owned()));
+        assert_eq!(
+            parse_group_by(Some("a,b,c")),
+            Ok(vec!["a".to_owned(), "b".to_owned(), "c".to_owned()])
+        );
+        assert_eq!(parse_group_by(Some("a,b,c,d")), Err("a,b,c,d".to_owned()));
+    }
+
+    fn year(year: i64) -> Json {
+        Group::new(Value::Int64(year), 0).key
+    }
+
+    /// DE 5 (Alpha 3: 2026 2, 2027 1; Beta 2), FR 2 — three levels, with DE
+    /// and DE/Alpha open and fetched.
+    fn three_level() -> Grouping {
+        let mut grouping = Grouping::new(vec![
+            "country".to_owned(),
+            "customer".to_owned(),
+            "year".to_owned(),
+        ]);
+        grouping.set_groups(vec![Group::new(text("DE"), 5), Group::new(text("FR"), 2)]);
+        grouping.toggle(&[key("DE")]);
+        grouping.set_children(
+            &[key("DE")],
+            vec![Group::new(text("Alpha"), 3), Group::new(text("Beta"), 2)],
+        );
+        grouping.toggle(&[key("DE"), key("Alpha")]);
+        grouping.set_children(
+            &[key("DE"), key("Alpha")],
+            vec![
+                Group::new(Value::Int64(2026), 2),
+                Group::new(Value::Int64(2027), 1),
+            ],
+        );
+        grouping
+    }
+
+    #[test]
+    fn a_third_level_says_its_level_and_its_place_among_its_siblings() {
+        let mut grouping = three_level();
+        grouping.toggle(&[key("DE"), key("Alpha"), year(2027)]);
+        // DE, Alpha, 2026, 2027, its row, Beta, FR, total.
+        assert_eq!(grouping.len(), 8);
+        let places: Vec<(usize, u64, u64, bool)> = (0..7)
+            .filter_map(|position| match grouping.item_at(position) {
+                Some(Item::Group {
+                    level,
+                    position,
+                    siblings,
+                    expanded,
+                    ..
+                }) => Some((level, position, siblings, expanded)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            places,
+            [
+                (1, 1, 2, true),
+                (2, 1, 2, true),
+                (3, 1, 2, false),
+                (3, 2, 2, true),
+                (2, 2, 2, false),
+                (1, 2, 2, false),
+            ]
+        );
+        // The row carries the keys of all three levels: its filter.
+        let keys = vec![key("DE"), key("Alpha"), year(2027)];
+        assert_eq!(
+            grouping.item_at(4),
+            Some(Item::Row {
+                keys: keys.clone(),
+                offset: 0,
+                size: 1
+            })
+        );
+        assert_eq!(grouping.position_of(&keys), Some(3));
+        assert_eq!(grouping.position_of(&[key("DE"), key("Beta")]), Some(5));
+        assert_eq!(
+            grouping.fetches(0, 8),
+            vec![Fetch {
+                keys,
+                offset: 0,
+                limit: 1,
+                position: 4
+            }]
+        );
+    }
+
+    #[test]
+    fn groups_are_missing_only_where_they_show() {
+        let mut grouping = three_level();
+        // Beta is open and not fetched; nothing is asked on the innermost
+        // level, whose groups open onto rows.
+        grouping.toggle(&[key("DE"), key("Beta")]);
+        grouping.toggle(&[key("DE"), key("Alpha"), year(2026)]);
+        assert_eq!(
+            grouping.missing_children(),
+            vec![vec![key("DE"), key("Beta")]]
+        );
+        // Under a closed group nothing shows, so nothing is asked — and it
+        // takes one position, whatever is open inside it.
+        grouping.toggle(&[key("DE")]);
+        assert!(grouping.missing_children().is_empty());
+        assert_eq!(grouping.len(), 3);
+        // Open again, it is as the reader left it: DE, Alpha, 2026 and its
+        // two rows, 2027, Beta, FR, total.
+        grouping.toggle(&[key("DE")]);
+        assert_eq!(grouping.len(), 9);
     }
 
     #[test]

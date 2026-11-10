@@ -74,7 +74,7 @@ export default {
   "cancel": "Abbrechen",
   "apply": "Anwenden",
   "addGrouping": "+ Gruppieren",
-  "groupingFull": "Schon nach zwei Spalten gruppiert",
+  "groupingFull": "Schon nach drei Spalten gruppiert",
   "pivotToolbar": "Pivot-Felder",
   "pivotRows": "Zeilen",
   "pivotColumns": "Spalten",

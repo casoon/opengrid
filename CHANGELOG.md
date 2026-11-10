@@ -30,6 +30,12 @@ Two things belong in every release entry and are easy to leave out:
   `texts` of `connect`; a page that does not import it does not load it
   ([#333](https://github.com/casoon/opengrid/issues/333), [Texts](docs/api.md#texts)).
 
+### Changed
+
+- **Grid:** `group-by`, the view's `group` and the toolbar's *+ Group* take three grouping levels; a
+  fourth is refused as the third was. The default wording of `groupingFull` is now
+  `Grouped by three columns already` ([#321](https://github.com/casoon/opengrid/issues/321)).
+
 ## [0.15.0] - 2026-11-09
 
 **Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).
