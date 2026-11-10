@@ -27,7 +27,8 @@ a query against the shared `orders` dataset and the exact expected answer.
 The same case files run against
 
 - the local engine, natively (`crates/opengrid-engine/tests/conformance_engine.rs`),
-- the WASM build in headless Chrome (`crates/opengrid-wasm/tests/conformance_in_browser.rs`),
+- the WASM build in headless Chrome (`crates/opengrid-wasm/tests/conformance_in_browser.rs`): one
+  test per case file, listed when the crate is built, so a new case runs there too,
 - the hybrid path, with a source that refuses what it does not declare
   (`crates/opengrid-engine/tests/conformance_hybrid.rs`),
 - PostgreSQL (`crates/opengrid-datasource-postgres/tests/conformance_postgres.rs`) — this one
