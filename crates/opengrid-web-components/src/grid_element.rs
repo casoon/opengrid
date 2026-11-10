@@ -95,7 +95,10 @@ mod print;
 mod validate;
 use opengrid_web_core::renderer::{Dom, WebRenderer};
 
-use crate::element::{answer_size, clear_root, describe, dispatch_query, now, place_under};
+use crate::element::{
+    MenuAct, answer_size, clear_root, describe, dispatch_query, menu_items, menu_key, now,
+    place_under,
+};
 use crate::grid::{
     self, ActiveCell, COLUMNS_ATTRIBUTE, DATASOURCE_ATTRIBUTE, FilterEntry, GRID_TAG, GridKey,
     GridNodes, GridSkeleton, MODE_ATTRIBUTE, PAGE_SIZE_ATTRIBUTE, ROW_HEIGHT_PROPERTY,
@@ -7803,53 +7806,14 @@ fn on_menu_key(host: &HtmlElement, event: &KeyboardEvent, target: &Element) {
     let Ok(Some(menu)) = target.closest("[part=\"column-menu\"]") else {
         return;
     };
-    let Ok(items) = menu.query_selector_all("[role^=\"menuitem\"]") else {
-        return;
-    };
-    let items: Vec<HtmlElement> = (0..items.length())
-        .filter_map(|index| items.item(index))
-        .filter_map(|node| node.dyn_into::<HtmlElement>().ok())
-        .collect();
+    let items = menu_items(&menu, "[role^=\"menuitem\"]");
     if items.is_empty() {
         return;
     }
-    let at = items
-        .iter()
-        .position(|item| item.is_same_node(Some(target)))
-        .unwrap_or(0);
-    let go = |index: usize| {
-        let _ = items[index].focus();
-    };
-    match event.key().as_str() {
-        "ArrowDown" => {
-            event.prevent_default();
-            go((at + 1) % items.len());
-        }
-        "ArrowUp" => {
-            event.prevent_default();
-            go((at + items.len() - 1) % items.len());
-        }
-        "Home" => {
-            event.prevent_default();
-            go(0);
-        }
-        "End" => {
-            event.prevent_default();
-            go(items.len() - 1);
-        }
-        "Enter" | " " => {
-            event.prevent_default();
-            activate_menu_item(host, &items[at]);
-        }
-        "Escape" => {
-            event.prevent_default();
-            close_column_menu(host, true);
-        }
-        // Not prevented: the focus goes back to the header and `Tab` then moves
-        // on from there, as it always does from a header cell. No trap — it is
-        // a menu, not a dialog.
-        "Tab" => close_column_menu(host, true),
-        _ => {}
+    match menu_key(event, &items, target) {
+        Some(MenuAct::Pick(at)) => activate_menu_item(host, &items[at]),
+        Some(MenuAct::Escape | MenuAct::Tab) => close_column_menu(host, true),
+        None => {}
     }
 }
 
@@ -9756,50 +9720,16 @@ fn on_group_menu_key(host: &HtmlElement, event: &KeyboardEvent, target: &Element
     let Ok(Some(menu)) = target.closest("[part=\"grouping-menu\"]") else {
         return;
     };
-    let Ok(items) = menu.query_selector_all("[role=\"menuitem\"]") else {
-        return;
-    };
-    let items: Vec<HtmlElement> = (0..items.length())
-        .filter_map(|index| items.item(index))
-        .filter_map(|node| node.dyn_into::<HtmlElement>().ok())
-        .collect();
+    let items = menu_items(&menu, "[role=\"menuitem\"]");
     if items.is_empty() {
         return;
     }
-    let at = items
-        .iter()
-        .position(|item| item.is_same_node(Some(target)))
-        .unwrap_or(0);
-    let go = |index: usize| {
-        let _ = items[index].focus();
-    };
-    match event.key().as_str() {
-        "ArrowDown" => {
-            event.prevent_default();
-            go((at + 1) % items.len());
+    match menu_key(event, &items, target) {
+        Some(MenuAct::Pick(at)) => pick_grouping(host, &items[at]),
+        Some(MenuAct::Escape | MenuAct::Tab) => {
+            close_quick(host, "grouping-menu", "add-grouping", true)
         }
-        "ArrowUp" => {
-            event.prevent_default();
-            go((at + items.len() - 1) % items.len());
-        }
-        "Home" => {
-            event.prevent_default();
-            go(0);
-        }
-        "End" => {
-            event.prevent_default();
-            go(items.len() - 1);
-        }
-        "Enter" | " " => {
-            event.prevent_default();
-            pick_grouping(host, &items[at]);
-        }
-        "Escape" => {
-            event.prevent_default();
-            close_quick(host, "grouping-menu", "add-grouping", true);
-        }
-        "Tab" => close_quick(host, "grouping-menu", "add-grouping", true),
-        _ => {}
+        None => {}
     }
 }
 
@@ -9955,50 +9885,14 @@ fn on_operator_menu_key(host: &HtmlElement, event: &KeyboardEvent, target: &Elem
     let Ok(Some(menu)) = target.closest("[part=\"operator-menu\"]") else {
         return;
     };
-    let Ok(items) = menu.query_selector_all("[role=\"menuitemradio\"]") else {
-        return;
-    };
-    let items: Vec<HtmlElement> = (0..items.length())
-        .filter_map(|index| items.item(index))
-        .filter_map(|node| node.dyn_into::<HtmlElement>().ok())
-        .collect();
+    let items = menu_items(&menu, "[role=\"menuitemradio\"]");
     if items.is_empty() {
         return;
     }
-    let at = items
-        .iter()
-        .position(|item| item.is_same_node(Some(target)))
-        .unwrap_or(0);
-    let go = |index: usize| {
-        let _ = items[index].focus();
-    };
-    match event.key().as_str() {
-        "ArrowDown" => {
-            event.prevent_default();
-            go((at + 1) % items.len());
-        }
-        "ArrowUp" => {
-            event.prevent_default();
-            go((at + items.len() - 1) % items.len());
-        }
-        "Home" => {
-            event.prevent_default();
-            go(0);
-        }
-        "End" => {
-            event.prevent_default();
-            go(items.len() - 1);
-        }
-        "Enter" | " " => {
-            event.prevent_default();
-            pick_operator(host, &items[at]);
-        }
-        "Escape" => {
-            event.prevent_default();
-            close_operator_menu(host, true);
-        }
-        "Tab" => close_operator_menu(host, true),
-        _ => {}
+    match menu_key(event, &items, target) {
+        Some(MenuAct::Pick(at)) => pick_operator(host, &items[at]),
+        Some(MenuAct::Escape | MenuAct::Tab) => close_operator_menu(host, true),
+        None => {}
     }
 }
 
