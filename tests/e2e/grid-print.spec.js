@@ -244,6 +244,27 @@ test.describe("the print table", () => {
     expect(ids).toEqual([...ids].sort((a, b) => b - a));
   });
 
+  test("holds the page's filter, as every query of the grid does", async ({ page }) => {
+    await page.evaluate(() =>
+      document
+        .querySelector("opengrid-grid")
+        .setAttribute("filter", JSON.stringify({ field: "country", op: "eq", value: "DE" })),
+    );
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => document.querySelector("opengrid-grid").shadowRoot.querySelector('[part="status"]').textContent,
+        ),
+      )
+      .toContain("52 matches");
+    expect(await prepare(page)).toEqual({ rows: 52 });
+    const table = await printed(page);
+    expect(table.rows).toHaveLength(53);
+    expect(new Set(table.rows.slice(1).map((row) => row[2]))).toEqual(new Set(["td:DE"]));
+    // It is the page's, not the reader's: no chip names it, so the caption does not either.
+    expect(table.caption).toBe("Orders \u00b7 52 matches");
+  });
+
   test("prints a grouped grid with every group open under its header", async ({ page }) => {
     await page.evaluate(() =>
       document.querySelector("opengrid-grid").setAttribute("group-by", "country,customer"),

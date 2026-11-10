@@ -57,6 +57,8 @@ export interface OpengridGridProps extends ConnectOptions, ElementProps {
   treeKey?: string;
   /** The field that names a record: `key` in the editing events. */
   rowKey?: string;
+  /** The page's filter, as the wire's JSON; and-ed onto every query, not in the view. */
+  filter?: string;
   /** An empty row after the last one to type a new record into (`onRowAdd`). */
   addRow?: boolean;
   search?: boolean;
@@ -98,6 +100,8 @@ export interface OpengridPivotProps extends PivotConnectOptions, ElementProps {
   measures?: string;
   /** The filter on the raw rows, as the wire's JSON; part of the view. */
   filter?: string;
+  /** Makes every value a button that calls `onDrillDown`. */
+  drillDown?: boolean;
   theme?: Theme;
 }
 

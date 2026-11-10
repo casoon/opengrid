@@ -54,6 +54,10 @@ export function Page() {
       <OpengridTable label="Orders" datasource="orders" columns="id" defaultView={{ density: "compact" }} />
       <Rooms />
       <OpengridPivot datasource="orders" rows="country" columns="ordered_year" values="[]" />
+      <OpengridGrid filter='{"field":"country","op":"eq","value":"DE"}' />
+      {/* @ts-expect-error — the filter is the wire's JSON as text, like the pivot's */}
+      <OpengridGrid filter={{ field: "country", op: "eq", value: "DE" }} />
+      <OpengridPivot drillDown onDrillDown={(detail) => detail.query.source satisfies string} />
       {/* @ts-expect-error — a density is one of three */}
       <OpengridGrid density="tight" />
       {/* @ts-expect-error — the size is a number */}

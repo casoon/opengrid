@@ -50,6 +50,7 @@
     onpaste,
     onbulkchange,
     onrowaction,
+    ondrilldown,
     onsourcereplaced,
     ...rest
   } = $props();
@@ -84,6 +85,7 @@
         onPaste: (detail) => onpaste?.(detail),
         onBulkChange: (detail) => onbulkchange?.(detail),
         onRowAction: (detail) => onrowaction?.(detail),
+        onDrillDown: (detail) => ondrilldown?.(detail),
         onSourceReplaced: (detail) => onsourcereplaced?.(detail),
       };
       if (!connection) {
