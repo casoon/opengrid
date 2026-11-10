@@ -1,5 +1,5 @@
 /**
- * Vue components for `@casoon/opengrid` (plan point 78, E32).
+ * Vue components for `@casoon/opengrid`.
  *
  * The same thin shell as the React adapter: the component renders the custom
  * element with its attributes, and hands everything else — provider, texts,
@@ -26,7 +26,7 @@
  *   back is no change, so the loop ends there.
  * - **`<KeepAlive>` detaches, it does not unmount:** the connection stays, and
  *   the element brings back its own view and selection when it returns
- *   (docs/api.md §Connecting, plan point 74). Only an unmount disconnects. A
+ *   (docs/api.md §Connecting). Only an unmount disconnects. A
  *   view that changed while the grid was away waited in `connect` (there is no
  *   view to set on a detached element); reactivation hands it over.
  * - **Watchers run after the render** (`flush: "post"`), so the element has

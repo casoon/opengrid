@@ -1,6 +1,5 @@
 /**
- * @casoon/opengrid loader (plan point 13, plan/spezifikation/08-rendering.md
- * §JavaScript-Minimum).
+ * @casoon/opengrid loader: the small amount of JavaScript the elements need.
  *
  * The browser loads exactly this file plus the WASM module. `loader.js` does
  * three small things and no domain logic:
@@ -11,7 +10,7 @@
  *      because of a missing `.wasm`.
  *
  * The fallback is intentionally the same empty skeleton the Rust element
- * renders; point 14 replaces it once the table carries data.
+ * renders; the Rust element replaces it once the table carries data.
  *
  * Point 19 adds the two providers. Both expose the same tiny shape the elements
  * consume (`load`, `execute`, `terminate`), so a page switches between the
@@ -19,7 +18,7 @@
  *
  *   createWorkerProvider()                        engine in a module worker
  *   createLocalProvider(engine)                   engine on the main thread
- *   createRestProvider({ url, source, token })    opengrid-server über HTTP (point 27)
+ *   createRestProvider({ url, source, token })    opengrid-server over HTTP
  *
  * A provider's `execute` answers the result JSON **or** the binary result form
  * (decision E35, a `Uint8Array`): the elements and `exportRows` read both. The
@@ -28,7 +27,7 @@
  * when it answers JSON.
  *
  * Every provider's `execute(queryJson, mode, { signal })` may take an
- * `AbortSignal` as its third argument (point 84). The providers that talk HTTP
+ * `AbortSignal` as its third argument. The providers that talk HTTP
  * hand it to `fetch`, so an aborted export leaves no request running; the tab
  * and the worker cannot stop a query that has started and ignore it — the
  * caller drops their answer.
@@ -37,7 +36,7 @@
  * single worker of V1 (no pool, no SharedArrayBuffer).
  */
 
-// The packaged glue (point 40 pins the path), imported statically: a bundler
+// The packaged glue (its path is fixed by the package), imported statically: a bundler
 // follows the import, and the `new URL("…_bg.wasm", import.meta.url)` inside the
 // glue, so the `.wasm` ends up in its output. `moduleUrl` replaces it.
 import * as packaged from "./pkg/opengrid_web_components.js";
@@ -53,8 +52,7 @@ let loading;
  * @param {string} [options.wasmUrl] explicit `.wasm` URL, if it is not next to the glue.
  * @returns {Promise<{fallback: boolean, module?: object}>} whether the DOM fallback was
  *   installed, and the loaded WASM module so a page can call its exports —
- *   `set_provider` (point 14) and `set_texts` (point 48, call it first: it
- *   rebuilds the component).
+ *   `set_provider` and `set_texts` (call it first: it rebuilds the component).
  */
 export function loadOpengrid(options = {}) {
   if (!loading) {
@@ -89,7 +87,7 @@ async function start({ moduleUrl, wasmUrl } = {}) {
  *
  * Not exported: `loadOpengrid` installs it when the module fails to load, and a
  * page that reaches for it directly is asking for the broken state on purpose
- * (plan point 39 — an export is a promise).
+ * (an export is a promise).
  *
  * @param {string} [name] the element to define.
  */
@@ -277,7 +275,7 @@ export function createWorkerProvider({
  * The grids on an engine provider's sources (issue #182).
  *
  * `watch(host)` is called by `set_provider`; the host is held weakly, so a
- * removed grid is still collected (point 74). Loading a source — under a new
+ * removed grid is still collected. Loading a source — under a new
  * name or over a loaded one, which replaces it — tells every watching grid on
  * that name with an `opengrid-source-replaced` event — it re-runs its query and
  * keeps its view.
@@ -319,7 +317,7 @@ function rowsJson(rows) {
 /**
  * A provider over an engine that is already initialised on the main thread.
  *
- * The fallback path of the elements (point 14): no worker, the same shape as
+ * The fallback path of the elements: no worker, the same shape as
  * `createWorkerProvider`, so a page can swap the two without changing the grid.
  *
  * @param {object} engine the loaded `Engine` from the engine module.
@@ -361,14 +359,14 @@ export function createLocalProvider(engine) {
 }
 
 /**
- * A provider that talks to an `opengrid-server` over HTTP (plan point 27).
+ * A provider that talks to an `opengrid-server` over HTTP.
  *
  * The same shape as `createLocalProvider` and `createWorkerProvider`, so a page
  * swaps local for remote without touching the grid: `set_provider` sees one
  * `execute(queryJson)` either way. The difference is only where the work
  * happens — and that the answer can fail for reasons a local engine never has.
  *
- * The server's error form (point 23) is unwrapped here: a failed request
+ * The server's error form (docs/protocol.md, Errors) is unwrapped here: a failed request
  * rejects with the server's own sentence, so the grid's status line shows
  * "unknown source …" rather than "HTTP 404". The `Error` also carries the
  * HTTP `status` and the form's `code` and `path` (issue #16), so a page can
@@ -400,7 +398,7 @@ export function createRestProvider({ url, source, token } = {}) {
     /**
      * What the server says this source is: `{ name, schema, capabilities }`.
      *
-     * A planner needs both halves before it can split anything (point 28) — the
+     * A planner needs both halves before it can split anything — the
      * schema to validate against, the capabilities to know what may be pushed.
      * The schema is the one this token is allowed to see.
      */
@@ -601,7 +599,7 @@ async function answerOf(response) {
 /**
  * A failed request as the `Error` it rejects with (issue #16). The message is
  * the server's own sentence, or the status when the body is not the error
- * form of point 23. The fields are what a page branches on without reading
+ * form of docs/protocol.md (Errors). The fields are what a page branches on without reading
  * the sentence: `status` always, `code` and `path` when the error form has
  * them.
  */
@@ -641,7 +639,7 @@ function coded(code, message) {
 }
 
 /**
- * A provider that asks an `opengrid-server` for a whole **pivot** (point 53).
+ * A provider that asks an `opengrid-server` for a whole **pivot**.
  *
  * The same shape as every other provider — `execute(json)` in, JSON out — so
  * `set_provider` is unchanged; only the endpoint and the body differ. What comes
@@ -691,7 +689,7 @@ export function createPivotProvider({ url, source, token } = {}) {
 
 /**
  * A provider that splits each query between a remote source and the engine in
- * this tab (plan point 28, plan/spezifikation/05-planner.md).
+ * this tab.
  *
  * Three steps, all of them JSON:
  *
@@ -766,7 +764,7 @@ const NO_ROWS = '{"total_count":0,"columns":[]}';
 
 /**
  * Every match of `query`, fetched through `provider` in pieces, as a `Blob` of
- * CSV or JSON (plan point 84).
+ * CSV or JSON.
  *
  * The browser half of exporting the view: `get_query(host)` says what the
  * reader sees, this fetches all of it and writes it in the notation the server
@@ -1109,8 +1107,7 @@ function aborted() {
 }
 
 /**
- * Supplies an element from one options object, and keeps it supplied (plan
- * point 76).
+ * Supplies an element from one options object, and keeps it supplied.
  *
  * Every page — and every framework adapter — would otherwise have to know the
  * rules of the module functions itself: wait for the module; set the texts

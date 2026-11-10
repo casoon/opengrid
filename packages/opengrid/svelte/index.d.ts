@@ -1,5 +1,5 @@
 /**
- * Types for `@casoon/opengrid/svelte` (plan point 79).
+ * Types for `@casoon/opengrid/svelte`.
  *
  * The props are the element's attributes in camelCase plus the options of
  * `connect` from `@casoon/opengrid`, with the callbacks in Svelte's own

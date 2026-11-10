@@ -1,5 +1,5 @@
 /**
- * Types for `@casoon/opengrid/vue` (plan point 78).
+ * Types for `@casoon/opengrid/vue`.
  *
  * The props are the element's attributes in camelCase plus the options of
  * `connect` from `@casoon/opengrid`; the callbacks are Vue events instead:

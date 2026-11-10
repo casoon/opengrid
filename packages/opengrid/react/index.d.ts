@@ -1,5 +1,5 @@
 /**
- * Types for `@casoon/opengrid/react` (plan point 77).
+ * Types for `@casoon/opengrid/react`.
  *
  * The props are the element's attributes in camelCase plus the options of
  * `connect` from `@casoon/opengrid` — no names of their own. Everything else
