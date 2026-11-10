@@ -80,6 +80,12 @@ not events:
 | Svelte | `onrowadd` | `oncellchange`, `onpaste`, `onbulkchange`, `onrowaction`, `onsourcereplaced` | `bind:this` |
 | Angular | `[rowAdd]` | the element's own: `(opengrid-paste)` and so on | `#grid="opengrid"` |
 
+A pivot's [drill-down](../../api/#drilling-down) is the same two things — the attribute and
+the event: `drillDown` with `onDrillDown` in React, `drill-down` with `@drill-down` in Vue,
+`drillDown` with `ondrilldown` in Svelte, and in Angular the element's own `drill-down` and
+`(opengrid-drill-down)`. The grid that shows the rows takes the event's filter as its
+`filter` — a string of JSON, as the attribute is: `filter={JSON.stringify(detail.query.filter)}`.
+
 ```jsx
 const ACTIONS = [{ id: "remove", label: "Remove" }];
 

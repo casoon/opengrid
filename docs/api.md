@@ -183,6 +183,7 @@ connection.disconnect();              // the listeners go; the element keeps its
 | `onViewChange`, `onSelectionChange`, `onCellChange` | the [events](#events) of the same names; each callback receives the `detail` (for the view: the view itself) |
 | `actions`, `validators` | `set_actions`, `set_validators` — the grid only |
 | `onPaste`, `onBulkChange`, `onRowAction`, `onSourceReplaced` | `opengrid-paste`, `opengrid-bulk-change`, `opengrid-row-action`, `opengrid-source-replaced`; each callback receives the `detail` |
+| `onDrillDown` | `opengrid-drill-down` — the pivot only, with its `drill-down` attribute; the callback receives the `detail` |
 | `onRowAdd` | `opengrid-row-add`, and its answer is `set_row_state`: return `{ state: "saved", key }` or `{ state: "error", message }`, or a promise of one — the row shows `saving` until it settles; resolved with nothing, it is saved, and a rejection is an `error` with its message. No answer at all leaves the row unsaved for the page; an undone add is not answered |
 
 The connection also carries `set_cell_state` and `set_values` as `setCellState(key, column, state, message?)` and `setValues(values)` — the grid only; before the module has loaded, they wait for it.
@@ -233,6 +234,7 @@ An interactive `<table role="grid">`: virtualized, keyboard-driven, filterable.
 | `tree` | Shows the rows as a **tree**: the field that holds a row's parent key, `tree="parent_id"`. See [Tree](#tree). |
 | `tree-key` | The field the parent key refers to. `id` when absent. |
 | `row-key` | The field that names a record: `opengrid-cell-change` carries its value as `key`, and `set_cell_state` and `set_values` name rows by it. See [Saving edits](#saving-edits). |
+| `filter` | The **page's filter**, as the wire's JSON: `{"field":"country","op":"eq","value":"DE"}`, `{"and":[…]}`. And-ed onto every query the grid sends; not the reader's and not in the view. See [The page's filter](#the-pages-filter). |
 | `search` | Puts a **search field** above the grid: free text, or a filter written out. See [Search](#search). |
 | `facets` | Shows the **facet sidebar** — the facets a page configured with `set_columns`. See [Facets](#facets). |
 | `toolbar` | Puts a **toolbar** above the grid: the active filters and the grouping as chips, a switch for the filter row, the column list, the density. Opt-in. See [Toolbar](#toolbar). |
@@ -402,6 +404,29 @@ reflow case of WCAG 1.4.10, the toolbar wraps instead.
 The chips are a display of the view, not a second truth about the filters: they
 are drawn from it, and redrawn only when what they say changed.
 
+### The page's filter
+
+```html
+<opengrid-grid datasource="orders" columns="id,customer,qty"
+               filter='{"field":"country","op":"eq","value":"DE"}'></opengrid-grid>
+```
+
+`filter` restricts the grid to a part of its source — the orders of one country, the
+rows behind a pivot's cell ([Drilling down](#drilling-down)). It is a filter object as
+the [protocol](../protocol/) writes it, the same notation as the pivot's `filter`: a
+comparison, `is_null`, `and`, `or`, `not`, nested as needed; the empty string is a
+value (`"op":"eq","value":""`) and not NULL.
+
+| | |
+|---|---|
+| Where it holds | In **every** query the grid sends: the rows, the counts, group rows and their aggregates, a tree's levels, the facets' values and counts, the keys behind "select all", and `get_query` — so an export is the same rows. It is and-ed with what the reader filters; the reader works inside it. |
+| Whose it is | The page's. It is not shown in the filter row or as a chip, "clear filters" leaves it, the empty state offers no reset for it, it is not in `get_view`/`set_view`, and changing it fires no `opengrid-view-change`. |
+| Changing it | Asks again, as a filter of the reader's does: the first rows, the selection dropped (and said), the facets' values listed anew. Removing the attribute removes the filter. |
+| What does not hold | Text that is not a filter object is said in the status line and nothing is asked — never a grid that silently shows every row. A filter the source refuses (an unknown field, a value of the wrong type) is the provider's error, in the status line like any refused query. |
+| Not access control | The filter is written by the page and readable and changeable in the browser. What a reader **may** see is decided by the server's row filter; this only chooses what the page shows. |
+
+A framework component takes it as the `filter` prop, a string, as the pivot's.
+
 ### Empty state
 
 When a result has no rows, the viewport says why, in one of two sentences:
@@ -562,11 +587,11 @@ What selecting by key does, with `row-key`:
 |---|---|
 | `Space` on a data row, or its selection cell | Selects or deselects the record. |
 | `Shift`+`Space` | Selects every data row from the last toggled row to this one, keeping what is selected. While grouped these are the rows **in the display list**: group headers in between are passed over, and a closed group has no rows in the list, so none of its rows are taken. When the last toggled row is not in the list — nothing toggled yet, its group closed, or another record in its place after a sort or a filter — it is a plain toggle. |
-| `Ctrl`/`Cmd`+`A`, the selection header | **Every row of the filter** — while grouped, whether its group is open or not. The header clears the selection when all of them are selected already, and says the count (`selectedAll`). |
+| `Ctrl`/`Cmd`+`A`, the selection header | **Every row of the filter** — [the page's](#the-pages-filter) and the reader's together, and while grouped, whether its group is open or not. The header clears the selection when all of them are selected already, and says the count (`selectedAll`). |
 | A group header | Is not selected and selects nothing: `Enter`, `Space` and a click open and close it. The total is not selected either. `aria-selected` is on data rows only. |
 | Opening and closing a group | Never changes what is selected. The rows of a closed group stay selected, and show it when it opens again. |
 | Sort, filter, a scroll, another page, grouping, ungrouping, another `group-by` | The selection stays: a key names a record, not a position. After a filter it can hold records that match no longer; the header then shows `mixed`. |
-| Another `row-key`, a `row-key` added or taken away, a replaced source | The selection is **dropped**, said in the status line (`selectionCleared`) and reported with an `opengrid-selection-change` that holds nothing — keys of another field name nothing, positions and keys do not turn into each other, and whether a record is in a new source nobody has asked. |
+| Another `row-key`, a `row-key` added or taken away, a replaced source, another page [`filter`](#the-pages-filter) | The selection is **dropped**, said in the status line (`selectionCleared`) and reported with an `opengrid-selection-change` that holds nothing — keys of another field name nothing, positions and keys do not turn into each other, and whether a record is in a new source, or under another page filter, nobody has asked. |
 | The event | `{ count, keys }`: `keys` are the `row-key` values of the selected records, in no particular order, and `count` counts them. There is **no `rows` and no `ranges`** — a position names no record, and most selected records are not loaded. |
 | The source | A selected record is known by its key alone, so the keys behind a `Shift` range that reaches past the loaded rows and behind "every row" are asked of the source, in the grid's order: one query per group a range touches, the rows of the filter in pieces of 10 000. |
 
@@ -580,7 +605,7 @@ same event and view.
 | `get_view` | `selected` is the list of selected keys — a snapshot, like the rest of the view. It is left out while nothing is selected, and always for a selection by position. |
 | Selecting | fires `opengrid-selection-change` and **never** `opengrid-view-change`: a page that stores the view on every view change stores the selection as it was then. |
 | `set_view` | replaces the selection with the view's. A view without `selected` selects nothing, the rule of every absent field of a view — the selection there was is dropped and said. In a grid that selects by position `selected` is not used. |
-| Untrusted keys | The keys are checked before anything is selected: `selected` must be a list of strings, numbers and booleans, or the view is refused like one that names an unknown column. Then the **source is asked** which of them name a record — only keys of the key column's type are asked, in pieces of 1 000 — and only those are selected. |
+| Untrusted keys | The keys are checked before anything is selected: `selected` must be a list of strings, numbers and booleans, or the view is refused like one that names an unknown column. Then the **source is asked** which of them name a record — only keys of the key column's type are asked, in pieces of 1 000 — and only those are selected. The check runs under [the page's `filter`](#the-pages-filter), which says which records this grid has: a record it hides names none here. The reader's filter does not count — a selected record may be filtered out of sight. |
 | What is missing | Keys that name no record are dropped, and said once with the result: `17 matches · 3 selected rows no longer exist` (`selectionMissing`). `opengrid-selection-change` fires with what remains. |
 | A failed check | is said as an error with the result, and nothing is selected — not a silently empty selection. |
 | Cost | A view with `selected` costs the check beside its one query: one query per 1 000 keys, and one for the key column's type when no result has told it yet. |
@@ -825,6 +850,7 @@ and the row and column limits are what make rendering the whole thing safe.
 | `fields` | The fields a reader may pivot by, comma-separated. |
 | `measures` | The measures a reader may add, as the contract's JSON: `[{"field":"amount","fn":"sum","as":"revenue"}]`. |
 | `filter` | The filter on the raw rows, as the wire's JSON: `{"field":"country","op":"eq","value":"DE"}`, `{"and":[…]}`. The reader's filter field and chips write it. |
+| `drill-down` | Makes every value a button that fires `opengrid-drill-down` with the rows behind it — see [Drilling down](#drilling-down). Presence is what counts. Opt-in, and not part of the view. |
 
 `rows`/`columns` are the two **axes** here, as in every pivot; in the grid
 `columns` is the projection. The words are standard in their own context, so
@@ -942,6 +968,77 @@ there are no column subtotals.
 `get_pivot(host)` exports the table as it is shown, as CSV — see
 [exporting a pivot](#exporting-a-pivot). Its headers and values stay the raw
 names and values: titles and formats are display.
+
+### Drilling down
+
+A pivot cell is a number; `drill-down` lets a reader ask which rows it is made of.
+The pivot shows no rows itself: it fires **`opengrid-drill-down`** with the cell's
+filter, and the page shows the rows — where and how is the page's.
+
+```html
+<opengrid-pivot drill-down datasource="orders" rows="country" columns="ordered_year"
+                values='[{"fn":"count","as":"orders"}]'></opengrid-pivot>
+```
+
+With the attribute every value is a native button (`part="drill-down"`): a click,
+`Enter` or `Space` fires the event, and the buttons are in the tab order like the sort
+and fold buttons — a native table has no arrow keys of its own. A button is named by the
+value and what pressing it does, `12, show rows` (the text `pivotDrillDown`). A cell
+without a value has no button. Without the attribute a pivot has none at all — a
+button nobody listens to would be a control that does nothing — so a page sets it
+together with its listener.
+
+| `detail` | |
+|---|---|
+| `query` | The rows behind the cell, as the wire writes a query: `{ source, filter }`. `source` is the pivot's `datasource`. |
+| `query.filter` | The pivot's own `filter`, clause by clause, and-ed with one clause per dimension the cell lies in: the row dimensions down to the row's level, then every column dimension — `{"and":[{"field":"country","op":"eq","value":"DE"},{"field":"ordered_year","op":"eq","value":2025}]}`. One clause alone is that clause; none — the grand total of a pivot without a column dimension and without a filter — and `query` has no `filter`. |
+| `row`, `column` | The cell's row and column group, as paths of keys like `collapsed` has them, NULL as `null`. A subtotal's `row` is shorter than `rows`, the grand total's is `[]`. |
+| `measure`, `value` | The measure's alias and the cell's value as the answer carried it. |
+
+- **NULL and the empty string stay two groups.** A NULL key is
+  `{"field":"country","op":"is_null"}` — `eq null` would match nothing (S1) — and the
+  empty string is `{"field":"country","op":"eq","value":""}` (S14).
+- **A total filters by what it lies in.** A subtotal names its group's dimensions and
+  not the ones below it; the grand total names no row dimension. A subtotal row never
+  becomes an `is_null` on the dimensions it sums over.
+- **The count.** The rows `query` answers are the rows the cell was computed from, so
+  a `count` without a field is their number. A measure over a field skips that field's
+  NULLs, as in every aggregate; the rows include them.
+
+**Showing the rows in a grid.** `query.filter` is what the grid's
+[`filter`](#the-pages-filter) attribute takes: the grid then shows the cell's rows, and
+what the reader sorts and filters stays inside them.
+
+```js
+let cell;
+pivot.addEventListener("opengrid-drill-down", ({ detail }) => {
+  cell = pivot.shadowRoot.activeElement;           // the pressed button
+  panel.hidden = false;                            // first: a grid measures its viewport
+  const { filter } = detail.query;
+  if (filter) grid.setAttribute("filter", JSON.stringify(filter));
+  else grid.removeAttribute("filter");             // the grand total, nothing filtered
+  heading.focus();                                 // tabindex="-1", names the cell
+});
+back.addEventListener("click", () => {
+  panel.hidden = true;
+  (cell?.isConnected ? cell : pivot.shadowRoot.querySelector('[part="drill-down"]'))?.focus();
+});
+```
+
+A grid that has its provider from the start asks for every row before the first cell
+is pressed; the demo gives it its provider with the first event. A pivot on
+`createPivotProvider` answers pivots only: its grid takes a `createRestProvider` of the
+same source.
+
+**The focus** is on the pressed button when the event fires — the pivot gives it the
+focus where a browser does not on a click — and the pivot draws nothing, so a page
+that shows the rows without moving the focus leaves the reader where they were. A
+page that moves it — to a heading over the rows, as above, since the rows may be far
+from the cell in the tab order — remembers `pivot.shadowRoot.activeElement` in its
+listener and focuses it again when the reader leaves the rows. A new answer makes
+the buttons anew: the remembered one is then no longer connected, and the pivot's
+first `[part="drill-down"]` is where to go back to. `examples/pivot-demo/browser.html`
+does all of it.
 
 ## The view
 
@@ -1203,6 +1300,7 @@ exception to the first part: `loader.js` dispatches it on the element, without `
 | `opengrid-row-add` | `{ values, provisionalKey, undo?, redo? }` — a record was entered in the new row; see [Adding rows](#adding-rows). |
 | `opengrid-row-action` | `{ id, row, key? }` — an action was activated; `key` is the `row-key` value. |
 | `opengrid-cell-change` | `{ row, column, value, previous }` — everything needed to persist it. With `row-key` also `key`: the record's value of that field, `null` when the result does not carry it. |
+| `opengrid-drill-down` | `{ query: { source, filter? }, row, column, measure, value }` — a value of an `<opengrid-pivot>` with `drill-down` was pressed; `query` is the rows behind the cell, as the wire writes a query. See [Drilling down](#drilling-down). |
 | `opengrid-view-change` | `{ view }` — the whole [view](#the-view) after the change. Scrolling and selecting are not view changes. On `<opengrid-pivot>` the view is its `rows`, `columns`, `values`, `sort`, `collapsed` and `filter`. |
 | `opengrid-source-replaced` | `{ name }` — an engine provider replaced the source this element shows; the grid, table and pivot re-run their query, the grid clears its selection and history and asks a tree and the facets again. Dispatched by `loader.js` on every element on that `datasource`, not bubbling; `connect` hands it to `onSourceReplaced`. |
 | `opengrid-query` | `{ kind, ms, rows, total, bytes, form, memory }` after **every** answer of the provider, on the grid and the pivot (issue #70): where it ran (the provider's `kind`), the round trip in milliseconds measured in the tab, rows answered and matches before paging, the answer's size as it arrived and its form (`binary` or `json`), and the element module's WASM memory. Measured always, sent nowhere — what the page does with it is the page's. |
@@ -1347,7 +1445,7 @@ as the tint (colour alone would be 1.4.1), and `prefers-reduced-motion` beats a
 theme that animates a part.
 
 **Parts:** `action`, `action-cell`, `action-header`, `add-field`, `add-filter`, `add-grouping`, `body`, `bulk`, `bulk-apply`, `bulk-cancel`, `caption`, `cell`, `cell-error`, `cell-saved`, `cell-saving`, `chip`, `chip-move`, `chip-remove`, `chips`,
-`chips-clear`, `column-menu`, `column-menu-button`, `column-toggle`, `columns`, `columns-toggle`, `density`,
+`chips-clear`, `column-menu`, `column-menu-button`, `column-toggle`, `columns`, `columns-toggle`, `density`, `drill-down`,
 `editor`, `empty`, `empty-reset`, `empty-text`, `facet`, `facet-bounds`, `facet-cost`, `facet-count`,
 `facet-pill`, `facet-pills`, `facet-value`, `facets`, `facets-head`, `facets-toggle`, `filter`,
 `filter-clear`, `filter-dialog`, `filter-operator`, `filter-row-toggle`, `filter-value`, `footer`,
@@ -1372,6 +1470,7 @@ rest of their look is the page's, through their parts (issue #29):
 | `add-field`, `field-menu` | — | an axis's add button, and its menu |
 | `row`, `total-row` | a body row | a body row; `total-row` a subtotal or the grand total |
 | `cell` | a value | a value |
+| `drill-down` | — | a value's button, with `drill-down` |
 
 ```css
 opengrid-table::part(cell) { padding: 0.25rem 0.5rem; border-bottom: 1px solid #ddd; }
@@ -1509,6 +1608,7 @@ boolean reads — that is `set_formats`.
 | `columnFull` / `nothingToAdd` | `Two column fields already` / `Nothing left to add` — the reason that follows an add button's text in its name when it cannot add (`+ Row. Nothing left to add`) | |
 | `fieldRemove` / `fieldEarlier` / `fieldLater` | `Remove {field}` / `Move {field} earlier` / `Move {field} later` | `{field}` |
 | `pivotFilters` / `pivotFilterLabel` / `pivotFilterHint` | `Filters` / `Add a filter` / `field = value · Enter` — the pivot's filter group, its field's name and hint | |
+| `pivotDrillDown` | `{value}, show rows` — the name of a value's button in a pivot with `drill-down`: "12, show rows". `{value}` is the cell's visible text, so the name contains it (WCAG 2.5.3) | `{value}` |
 | `treeContext` | `context` — a tree's row shown only because a match is below it | |
 | `subtreeCell` | `{shown}, {aggregate} of the subtree` — what a node's cell says when it also shows its subtree's summary: "120 · Σ 1,450, Sum of the subtree". `{shown}` is the cell's visible text, so the name contains it (WCAG 2.5.3); German: `{shown}, {aggregate} im Teilbaum`. A text you set **without** `{shown}` is used exactly as written, and its name then does not contain the visible text — your decision. | `{shown}`, `{value}`, `{aggregate}`, `{total}` |
 | `subtreeOnly` | `{shown}, {aggregate} of the subtree` — the same for a node without a value of its own: "Σ 1,450, Sum of the subtree" | `{shown}`, `{aggregate}`, `{total}` |

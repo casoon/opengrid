@@ -924,6 +924,38 @@ fn on_attribute_changed(
             run_query(&host, QueryKind::Data, false);
             dispatch_view(&host);
         }
+        // The page's filter (issue #330): other rows exist, as after a filter
+        // of the reader's — the first window, no selection, the facets' values
+        // listed anew. It is not the reader's, so the view has not changed.
+        grid::FILTER_ATTRIBUTE => {
+            let Some(runtime) = runtime(&host) else {
+                return;
+            };
+            let pool = pool_of(&host);
+            let selection_dropped;
+            let keys_dropped;
+            {
+                let mut runtime = runtime.borrow_mut();
+                runtime.page = 0;
+                runtime.state.set_window(Window::new(0, pool));
+                // A selection names positions, and other records sit in them now.
+                selection_dropped = !runtime.state.invalidate_selection().is_empty();
+                // One by key goes too (issue #322): the page's filter says
+                // which records this grid has, as a replaced source does.
+                keys_dropped = runtime.picked.clear();
+                if keys_dropped {
+                    runtime.state.note_selection_dropped();
+                }
+                runtime.facet_domain.clear();
+                runtime.facet_counts.clear();
+            }
+            if keys_dropped {
+                dispatch_keys(&host, &[]);
+            } else if selection_dropped {
+                announce_if_cleared(&host, &runtime);
+            }
+            run_query(&host, QueryKind::Data, false);
+        }
         // `write_view` sets it on its way and owns the single query after.
         grid::GROUP_BY_ATTRIBUTE if applying_view() => {}
         grid::GROUP_BY_ATTRIBUTE => regroup(&host),
@@ -5883,8 +5915,9 @@ fn restore_then_query(
         let none = ids.is_empty();
         let keys = {
             let mut borrowed = runtime.borrow_mut();
-            // Under a filter the records need not be among the rows.
-            let filtered = !matches!(effective_filter(&host, &borrowed, None), Ok(None));
+            // Under a filter of the reader's the records need not be among
+            // the rows; the page's filter they were asked under.
+            let filtered = !matches!(reader_filter(&host, &borrowed, None), Ok(None));
             let borrowed = &mut *borrowed;
             // Said with the result of the view's query ([`settle`]).
             borrowed.restore_said = said;
@@ -5915,6 +5948,9 @@ fn restore_then_query(
 /// Which of `keys` name a record of the source, as ids — asked by the key
 /// field (`tree-key` in a tree, else `row-key`) in pieces a filter list may
 /// hold. A key that is not of the field's type names none, and is not asked.
+/// Under the page's `filter` (issue #330): it says which records this grid
+/// has, so a record it hides is none of them. The reader's filter does not
+/// count — a selected record may well be filtered out of sight.
 async fn known_ids(
     host: &HtmlElement,
     runtime: &Rc<RefCell<GridRuntime>>,
@@ -5937,6 +5973,7 @@ async fn known_ids(
         return Ok(Vec::new());
     };
     let mode = host.get_attribute(MODE_ATTRIBUTE).unwrap_or_default();
+    let page = page_filter(host)?;
     let select = [field.as_str().to_owned()];
     let sorts = [(field.as_str().to_owned(), "asc")];
     let known = runtime.borrow().known.get(field.as_str()).cloned();
@@ -5959,10 +5996,14 @@ async fn known_ids(
         .collect();
     let mut ids = Vec::new();
     for piece in typed.chunks(PIECE) {
-        let filter = FilterExpr::Cmp {
+        let among = FilterExpr::Cmp {
             field: field.clone(),
             op: CmpOp::In,
             value: opengrid_json::Json::Array(piece.to_vec()),
+        };
+        let filter = match page.clone() {
+            Some(page) => FilterExpr::And(vec![page, among]),
+            None => among,
         };
         let query = grid::query_json(&source, &select, &sorts, Some(&filter), 0, PIECE as u64);
         let result = ask_uncounted(host, &provider, &query, &mode).await?;
@@ -7715,11 +7756,41 @@ fn clear_chips(host: &HtmlElement) {
 // Facets (point 66)
 // ---------------------------------------------------------------------------
 
-/// The filter a query runs under: the filter row's **and** every facet's —
+/// The filter a query runs under: the page's `filter` attribute **and** what
+/// the reader chose ([`reader_filter`]). Every query of the grid takes its
+/// filter from here, so the page's filter holds for all of them (issue #330).
+fn effective_filter(
+    host: &HtmlElement,
+    runtime: &GridRuntime,
+    except: Option<&str>,
+) -> Result<Option<FilterExpr>, String> {
+    let reader = reader_filter(host, runtime, except)?;
+    Ok(match (page_filter(host)?, reader) {
+        (Some(page), Some(reader)) => Some(FilterExpr::And(vec![page, reader])),
+        (page, reader) => page.or(reader),
+    })
+}
+
+/// The page's `filter` attribute as an expression: absent or empty is none,
+/// and what is not a filter is a sentence for the status line — never a grid
+/// that silently shows every row.
+fn page_filter(host: &HtmlElement) -> Result<Option<FilterExpr>, String> {
+    let raw = host
+        .get_attribute(grid::FILTER_ATTRIBUTE)
+        .unwrap_or_default();
+    if raw.trim().is_empty() {
+        return Ok(None);
+    }
+    opengrid_json::from_str::<FilterExpr>(&raw)
+        .map(Some)
+        .map_err(|error| format!("the filter attribute is not a filter: {error}"))
+}
+
+/// What the reader filters by: the filter row's **and** every facet's —
 /// except `except`, which is how a facet is counted without its own
 /// restriction. A bound that is not a value of its column is a sentence for the
 /// status line, not a silently dropped half of a range.
-fn effective_filter(
+fn reader_filter(
     host: &HtmlElement,
     runtime: &GridRuntime,
     except: Option<&str>,
@@ -7841,12 +7912,14 @@ fn refresh_facets(host: &HtmlElement) {
         (runtime.facet_generation, plan)
     };
 
+    // A facet lists the values of the rows the page shows, not of the source.
+    let domain = page_filter(host).ok().flatten();
     let host = host.clone();
     spawn_local(async move {
         let mut queries = 0usize;
         for (column, needs_domain, filter) in plan {
             if needs_domain {
-                let query = grouping::group_query_json(&source, &column, None, &[]);
+                let query = grouping::group_query_json(&source, &column, domain.as_ref(), &[]);
                 queries += 1;
                 let Ok(result) = ask_uncounted(&host, &provider, &query, &mode).await else {
                     continue;
@@ -8620,7 +8693,8 @@ fn draw_empty(host: &HtmlElement, root: &ShadowRoot, runtime: &Rc<RefCell<GridRu
         // Rows the reader added are rows: the empty state would cover them.
         let empty = matches!(borrowed.state.status(), GridStatus::Empty)
             && borrowed.state.added().is_empty();
-        let filtered = effective_filter(host, &borrowed, None).is_ok_and(|filter| filter.is_some());
+        // The reader's filters alone: the reset takes back nothing of the page's.
+        let filtered = reader_filter(host, &borrowed, None).is_ok_and(|filter| filter.is_some());
         (empty, filtered)
     };
     if !empty {

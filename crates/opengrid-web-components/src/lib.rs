@@ -99,6 +99,9 @@ pub(crate) mod grid_element_events {
     pub const PASTE_EVENT: &str = "opengrid-paste";
     /// Fired when one value was set for the selected rows (issue #187).
     pub const BULK_EVENT: &str = "opengrid-bulk-change";
+    /// Fired when a pivot's value was pressed for the rows behind it
+    /// (issue #330).
+    pub const DRILL_DOWN_EVENT: &str = "opengrid-drill-down";
     /// Dispatched by `loader.js` on the grids of a source an engine provider
     /// replaced (issue #182); the grid listens for it. It does not bubble.
     pub const SOURCE_REPLACED_EVENT: &str = "opengrid-source-replaced";

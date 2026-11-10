@@ -703,6 +703,57 @@ test("an ungrouped grid restores a view's selection too", async ({ page }) => {
   expect(await status(page)).toBe("200 matches · 1 selected rows no longer exist");
 });
 
+test("under the page's filter: select-all is its rows, a view's key it hides names no record, and changing it drops the selection", async ({
+  page,
+}) => {
+  // Issue #330: `filter` is the page's, and-ed onto every query — the ones
+  // that ask for keys among them. It says which records this grid has.
+  await open(page);
+  const pageFilter = (country) =>
+    page.evaluate((country) => {
+      window.__queries.length = 0;
+      document
+        .querySelector("opengrid-grid")
+        .setAttribute("filter", JSON.stringify({ field: "country", op: "eq", value: country }));
+    }, country);
+  await pageFilter("DE");
+  await expect.poll(() => status(page)).toBe("52 matches");
+
+  await press(page, 0, "ControlOrMeta+a");
+  await expect.poll(async () => (await heard(page))?.count).toBe(52);
+  expect(await headerCheck(page)).toBe("true");
+  // The keys were asked under the page's filter.
+  const all = await page.evaluate(() =>
+    window.__queries.map((query) => JSON.parse(query)).filter((query) => query.limit === 52),
+  );
+  expect(all).toHaveLength(1);
+  expect(all[0].filter).toEqual({ field: "country", op: "eq", value: "DE" });
+
+  // 61 is an order from DE, 4 one from FR: the page's filter hides it, so
+  // for this grid it is no record.
+  const saved = await view(page);
+  await page.evaluate(() => (window.__queries.length = 0));
+  await setView(page, { ...saved, selected: [61, 4] });
+  await expect.poll(() => status(page)).toBe("52 matches · 1 selected rows no longer exist");
+  expect((await events(page)).at(-1)).toEqual({ count: 1, keys: [61] });
+  const checked = await page.evaluate(() =>
+    window.__queries.map((query) => JSON.parse(query)).filter((query) => JSON.stringify(query).includes('"in"')),
+  );
+  expect(checked.map((query) => query.filter)).toEqual([
+    { and: [{ field: "country", op: "eq", value: "DE" }, { field: "id", op: "in", value: [4, 61] }] },
+  ]);
+  // One selected of 52, and the header knows: the page's filter is not a
+  // reader's filter the record could be hidden by.
+  expect(await headerCheck(page)).toBe("mixed");
+
+  // Another page filter: other records, so the selection goes — and is said.
+  await pageFilter("FR");
+  await expect.poll(() => status(page)).toBe("46 matches · Selection cleared");
+  expect((await events(page)).at(-1)).toEqual({ count: 0, keys: [] });
+  expect("selected" in (await view(page))).toBe(false);
+  expect(await headerCheck(page)).toBe("false");
+});
+
 test("without a row-key a grouped grid selects nothing, as before", async ({ page }) => {
   await open(page, "?nokey");
   await openAlpha(page);

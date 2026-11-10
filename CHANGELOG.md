@@ -25,6 +25,14 @@ Two things belong in every release entry and are easy to leave out:
   `<opengrid-pivot>`, taken from `dir` on the element or an ancestor: the columns run from the
   right, and in the grid `←` and `→` follow what is on the screen
   ([#320](https://github.com/casoon/opengrid/issues/320), [Right to left](docs/api.md#right-to-left)).
+- **Grid:** `filter`, the page's filter — a wire filter as JSON, and-ed onto every query the grid
+  sends. It is not the reader's: no chip, not in the view, and "remove all" leaves it
+  ([#330](https://github.com/casoon/opengrid/issues/330), [The page's filter](docs/api.md#the-pages-filter)).
+- **Pivot:** the rows behind a cell. With `drill-down`, every value is a button that fires
+  `opengrid-drill-down` with the cell's filter — NULL and empty-string groups apart, totals by the
+  dimensions they lie in, the pivot's own filter included — and the page shows the rows, in a grid
+  through its `filter`; `onDrillDown` in `connect` and the framework components
+  ([#330](https://github.com/casoon/opengrid/issues/330), [Drilling down](docs/api.md#drilling-down)).
 - **Grid:** a grouped grid with `row-key` selects rows: opening and closing a group never changes
   what is selected, a group header is not selected, and select-all takes every row of the filter,
   open or not ([#322](https://github.com/casoon/opengrid/issues/322)).

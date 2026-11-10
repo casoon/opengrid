@@ -29,6 +29,13 @@ export const table: ComponentProps<typeof OpengridTable> = {
   defaultView: { density: "compact" },
 };
 export const pivot: ComponentProps<typeof OpengridPivot> = { rows: "country", values: "[]" };
+export const gridFiltered: ComponentProps<typeof OpengridGrid> = {
+  filter: '{"field":"country","op":"eq","value":"DE"}',
+};
+export const pivotDrilled: ComponentProps<typeof OpengridPivot> = {
+  drillDown: true,
+  ondrilldown: (detail) => detail.query.source satisfies string,
+};
 export const pivotView: ComponentProps<typeof OpengridPivot> = {
   view: { rows: ["country"], values: [{ fn: "count", as: "n" }] },
   onviewchange: (view: PivotView) => view.values,
