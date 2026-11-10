@@ -42,6 +42,13 @@ Two things belong in every release entry and are easy to leave out:
   texts `pinGroup`, `pinNone`, `pinStart`, `pinEnd`, `columnPinnedStart`, `columnPinnedEnd`,
   `columnUnpinned` and `pinsReleased`
   ([#316](https://github.com/casoon/opengrid/issues/316), [Pinned columns](docs/api.md#pinned-columns)).
+- **Grid:** lookup columns. `lookup: { key: label }` in `set_columns` gives a `utf8` or `int64`
+  column that stores keys the labels a reader reads: the cell and a group's header show the label,
+  the editor is the combobox over the labels, the filter row and the "+ Filter" dialog offer a
+  choice among them, and `list` and `pills` facets list them. The value stays the key — in the
+  query, the view, the events and every export — and the column **sorts and groups by the key, not
+  by the label**; its only aggregate is `count`
+  ([#326](https://github.com/casoon/opengrid/issues/326), [Lookup columns](docs/api.md#lookup-columns)).
 - **Grid:** `filter`, the page's filter — a wire filter as JSON, and-ed onto every query the grid
   sends. It is not the reader's: no chip, not in the view, and "remove all" leaves it
   ([#330](https://github.com/casoon/opengrid/issues/330), [The page's filter](docs/api.md#the-pages-filter)).

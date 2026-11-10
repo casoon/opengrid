@@ -1237,7 +1237,7 @@ fn submit_filter(host: &HtmlElement, text: String) {
                 return;
             }
         };
-        let entries = match crate::search::parse(&text, &texts.query_and, &schema) {
+        let entries = match crate::search::parse(&text, &texts.query_and, &schema, &[]) {
             Ok(entries) => entries,
             Err(problem) => {
                 say(&host, &texts.query_problem(&problem));

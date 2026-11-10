@@ -29,7 +29,10 @@
 
 use opengrid_grid::layout::Pin;
 use opengrid_query::AggregateFn;
-use opengrid_types::{DataType, Schema};
+use std::collections::HashMap;
+use std::rc::Rc;
+
+use opengrid_types::{DataType, Schema, Value};
 
 /// Which way a column's values line up.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -74,12 +77,15 @@ impl Align {
 pub use opengrid_grid::facets::FacetKind;
 
 /// Whether a facet kind makes sense for a column of this type.
-fn facet_fits(kind: FacetKind, data_type: DataType) -> bool {
+///
+/// A lookup column (issue #326) lists its keys by their labels, whatever the
+/// keys' type; a span of keys is not a span of labels, so it takes no range.
+fn facet_fits(kind: FacetKind, data_type: DataType, lookup: bool) -> bool {
     match kind {
         FacetKind::List | FacetKind::Pills => {
-            matches!(data_type, DataType::Utf8 | DataType::Bool)
+            lookup || matches!(data_type, DataType::Utf8 | DataType::Bool)
         }
-        FacetKind::Range => is_numeric(data_type),
+        FacetKind::Range => is_numeric(data_type) && !lookup,
         FacetKind::Period => matches!(data_type, DataType::Date | DataType::Timestamp),
     }
 }
@@ -114,6 +120,66 @@ pub fn aggregates_for(data_type: DataType) -> Vec<Summary> {
     out
 }
 
+/// [`aggregates_for`], for a column that may be a lookup (issue #326): a key
+/// is counted and nothing else — it is not an amount, and the smallest key is
+/// not the first label.
+pub fn aggregates_of(data_type: DataType, lookup: bool) -> Vec<Summary> {
+    if lookup {
+        vec![Summary::Fn(AggregateFn::Count)]
+    } else {
+        aggregates_for(data_type)
+    }
+}
+
+/// The labels of a column that stores keys (issue #326): what the page gave
+/// `set_columns` as `lookup`, key → label.
+///
+/// The label is display. The key stays the value: in the query, the sort, the
+/// groups, the view and every export. A key is held as the text the value is
+/// written with ([`crate::formats::plain_text`]), which is how a JavaScript
+/// object names it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Lookup {
+    /// In the order the page's map lists them: the order of the options.
+    entries: Vec<(String, String)>,
+    by_key: HashMap<String, usize>,
+}
+
+impl Lookup {
+    /// The first label stands where the page named a key twice (`7` and `07`
+    /// of a number column).
+    fn new(pairs: Vec<(String, String)>) -> Self {
+        let mut lookup = Self::default();
+        for (key, label) in pairs {
+            if !lookup.by_key.contains_key(&key) {
+                lookup.by_key.insert(key.clone(), lookup.entries.len());
+                lookup.entries.push((key, label));
+            }
+        }
+        lookup
+    }
+
+    /// The label of `key`, if the map names it.
+    pub fn label(&self, key: &str) -> Option<&str> {
+        self.by_key.get(key).map(|at| self.entries[*at].1.as_str())
+    }
+
+    /// What a cell holding `value` shows: its label; the key itself where the
+    /// map does not name it; nothing for NULL.
+    pub fn text(&self, value: &Value) -> String {
+        let key = crate::formats::plain_text(value);
+        match self.label(&key) {
+            Some(label) if !matches!(value, Value::Null) => label.to_owned(),
+            _ => key,
+        }
+    }
+
+    /// `(key, label)`, in the page's order.
+    pub fn entries(&self) -> &[(String, String)] {
+        &self.entries
+    }
+}
+
 /// Everything a page may say about one column.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ColumnPresentation {
@@ -142,6 +208,8 @@ pub struct ColumnPresentation {
     /// Where the column starts pinned (issue #316). The reader's choice leads
     /// after that, like a resize over `width`.
     pub pin: Option<Pin>,
+    /// The labels of the keys this column stores (issue #326).
+    pub lookup: Option<Rc<Lookup>>,
 }
 
 /// A configuration this grid refuses, in words.
@@ -173,6 +241,9 @@ pub struct RawColumn {
     pub facet: Option<String>,
     pub readonly: Option<bool>,
     pub pin: Option<String>,
+    /// The `lookup` as `(key, label)` pairs; a label that is no string is
+    /// empty here. `Some(None)`: something was given that is no plain object.
+    pub lookup: Option<Option<Vec<(String, String)>>>,
 }
 
 /// Where a configuration pins, read from what the page asked for.
@@ -259,14 +330,70 @@ pub fn validate(
             }
         }
 
+        let lookup = entry.lookup.is_some();
+        match &entry.lookup {
+            None => {}
+            Some(None) => problems.push(PresentationProblem::new(
+                name,
+                "lookup is not a map of keys to labels",
+            )),
+            Some(Some(_))
+                if data_type.is_some_and(|data_type| {
+                    !matches!(data_type, DataType::Utf8 | DataType::Int64)
+                }) =>
+            {
+                problems.push(PresentationProblem::new(
+                    name,
+                    "a lookup needs a utf8 or int64 column",
+                ));
+            }
+            Some(Some(pairs)) => {
+                let before = problems.len();
+                let mut checked = Vec::with_capacity(pairs.len());
+                for (given, label) in pairs {
+                    // The key as the column writes it: `07` names the number 7.
+                    let key = match data_type {
+                        Some(DataType::Int64) => given
+                            .trim()
+                            .parse::<i64>()
+                            .ok()
+                            .map(|number| number.to_string()),
+                        _ => Some(given.clone()),
+                    };
+                    match key {
+                        None => problems.push(PresentationProblem::new(
+                            name,
+                            format!("lookup: {given} is not a value of this column"),
+                        )),
+                        Some(key) if key.is_empty() => {
+                            problems.push(PresentationProblem::new(name, "lookup has an empty key"))
+                        }
+                        Some(key) if label.trim().is_empty() => problems.push(
+                            PresentationProblem::new(name, format!("lookup: {key} has no label")),
+                        ),
+                        Some(key) => checked.push((key, label.clone())),
+                    }
+                }
+                if problems.len() == before {
+                    column.lookup = Some(Rc::new(Lookup::new(checked)));
+                }
+            }
+        }
+
         if let Some(token) = &entry.aggregate {
             match aggregate_from(token) {
                 Some(aggregate)
-                    if data_type
-                        .is_none_or(|data_type| aggregates_for(data_type).contains(&aggregate)) =>
+                    if (!lookup || aggregate == Summary::Fn(AggregateFn::Count))
+                        && data_type.is_none_or(|data_type| {
+                            aggregates_for(data_type).contains(&aggregate)
+                        }) =>
                 {
                     column.aggregate = Some(aggregate);
                 }
+                Some(_) if lookup => problems.push(PresentationProblem::new(
+                    name,
+                    format!("{token} is not an aggregate for a lookup column"),
+                )),
                 Some(_) => problems.push(PresentationProblem::new(
                     name,
                     format!("{token} is not an aggregate for this type"),
@@ -280,9 +407,15 @@ pub fn validate(
 
         if let Some(token) = &entry.facet {
             match FacetKind::parse(token) {
-                Some(facet) if data_type.is_none_or(|data_type| facet_fits(facet, data_type)) => {
+                Some(facet)
+                    if data_type.is_none_or(|data_type| facet_fits(facet, data_type, lookup)) =>
+                {
                     column.facet = Some(facet)
                 }
+                Some(FacetKind::Range) if lookup => problems.push(PresentationProblem::new(
+                    name,
+                    format!("{token} is not a facet for a lookup column"),
+                )),
                 Some(_) => problems.push(PresentationProblem::new(
                     name,
                     format!("{token} is not a facet for this type"),
@@ -322,6 +455,7 @@ pub fn validate_for_table(
             (entry.facet.is_some(), "facet"),
             (entry.readonly.is_some(), "readonly"),
             (entry.pin.is_some(), "pin"),
+            (entry.lookup.is_some(), "lookup"),
         ] {
             if given {
                 problems.push(PresentationProblem::new(
@@ -367,8 +501,14 @@ impl ColumnStyles {
     /// `::part(cell)`.
     pub fn markers(&self, name: &str, data_type: DataType) -> Vec<(&'static str, String)> {
         let presentation = self.get(name);
+        // A lookup column shows labels, which are text whatever the keys are
+        // (issue #326): it lines up like text unless the page says otherwise.
         let align = presentation
-            .and_then(|column| column.align)
+            .and_then(|column| {
+                column
+                    .align
+                    .or_else(|| column.lookup.as_ref().map(|_| Align::Start))
+            })
             .unwrap_or_else(|| Align::of(data_type));
         let mut markers = vec![("data-align", align.as_str().to_owned())];
         if let Some(column) = presentation {
@@ -410,6 +550,11 @@ impl ColumnStyles {
     /// Whether the page fills this column, so it never opens an editor.
     pub fn readonly(&self, name: &str) -> bool {
         self.get(name).is_some_and(|column| column.readonly)
+    }
+
+    /// The labels of a column that stores keys (issue #326), if it has any.
+    pub fn lookup(&self, name: &str) -> Option<&Rc<Lookup>> {
+        self.get(name).and_then(|column| column.lookup.as_ref())
     }
 
     pub fn width(&self, name: &str) -> Option<u32> {
@@ -747,6 +892,173 @@ mod tests {
         assert_eq!(problems[0].column, "nope");
     }
 
+    fn lookup_of(column: &str, pairs: &[(&str, &str)]) -> Vec<(String, RawColumn)> {
+        vec![(
+            column.to_owned(),
+            RawColumn {
+                lookup: Some(Some(
+                    pairs
+                        .iter()
+                        .map(|(key, label)| ((*key).to_owned(), (*label).to_owned()))
+                        .collect(),
+                )),
+                ..RawColumn::default()
+            },
+        )]
+    }
+
+    /// The contract of issue #326 in one place: a key shows its label, a key
+    /// the map does not name shows itself, NULL shows nothing — and the
+    /// options keep the page's order.
+    #[test]
+    fn a_lookup_shows_the_label_of_a_key_and_the_key_where_it_has_none() {
+        let styles = ColumnStyles::new(
+            validate(
+                &lookup_of("id", &[("2", "Beta"), ("07", "Seven"), ("1", "Alpha")]),
+                &schema(),
+                &[],
+            )
+            .expect("is accepted"),
+        );
+        let lookup = styles.lookup("id").expect("the column has a lookup");
+        assert_eq!(lookup.text(&Value::Int64(1)), "Alpha");
+        // `07` names the number 7, as the column writes it.
+        assert_eq!(lookup.text(&Value::Int64(7)), "Seven");
+        assert_eq!(lookup.text(&Value::Int64(3)), "3", "no label: the key");
+        assert_eq!(lookup.text(&Value::Null), "", "NULL is not a key");
+        assert_eq!(lookup.label("2"), Some("Beta"));
+        assert_eq!(lookup.label("3"), None);
+        let keys: Vec<&str> = lookup
+            .entries()
+            .iter()
+            .map(|(key, _)| key.as_str())
+            .collect();
+        assert_eq!(keys, ["2", "7", "1"], "the page's order, not the keys'");
+        assert!(styles.lookup("customer").is_none());
+        // Labels are text: a number column of keys lines up like text, unless
+        // the page says otherwise.
+        assert_eq!(
+            styles.markers("id", DataType::Int64)[0],
+            ("data-align", "start".to_owned())
+        );
+        let mut ended = lookup_of("id", &[("1", "Alpha")]);
+        ended[0].1.align = Some("end".to_owned());
+        assert_eq!(
+            ColumnStyles::new(validate(&ended, &schema(), &[]).unwrap())
+                .markers("id", DataType::Int64)[0],
+            ("data-align", "end".to_owned())
+        );
+
+        // Text keys are taken as they are, and NULL stays empty even where
+        // the map names the empty text of another column's notation.
+        let text = ColumnStyles::new(
+            validate(&lookup_of("customer", &[("DE", "Germany")]), &schema(), &[]).unwrap(),
+        );
+        let lookup = text.lookup("customer").unwrap();
+        assert_eq!(lookup.text(&Value::Utf8("DE".to_owned())), "Germany");
+        assert_eq!(lookup.text(&Value::Utf8("de".to_owned())), "de");
+    }
+
+    /// The configuration narrows: a lookup that cannot be one is named, every
+    /// mistake of it at once.
+    #[test]
+    fn a_lookup_that_does_not_fit_its_column_is_refused() {
+        let reasons = |raw: &[(String, RawColumn)]| -> Vec<String> {
+            validate(raw, &schema(), &[])
+                .expect_err("is refused")
+                .into_iter()
+                .map(|problem| problem.reason)
+                .collect()
+        };
+        assert_eq!(
+            reasons(&lookup_of("id", &[("abc", "A"), ("1", ""), ("2", "Two")])),
+            [
+                "lookup: abc is not a value of this column",
+                "lookup: 1 has no label"
+            ]
+        );
+        assert_eq!(
+            reasons(&lookup_of("customer", &[("", "Nobody")])),
+            ["lookup has an empty key"]
+        );
+        assert_eq!(
+            reasons(&lookup_of("amount", &[("1", "One")])),
+            ["a lookup needs a utf8 or int64 column"]
+        );
+        assert_eq!(
+            reasons(&lookup_of("ordered_on", &[("2026-01-01", "New year")])),
+            ["a lookup needs a utf8 or int64 column"]
+        );
+        let not_a_map = vec![(
+            "id".to_owned(),
+            RawColumn {
+                lookup: Some(None),
+                ..RawColumn::default()
+            },
+        )];
+        assert_eq!(
+            reasons(&not_a_map),
+            ["lookup is not a map of keys to labels"]
+        );
+        // A table shows no labels: the option is the grid's.
+        let problems = validate_for_table(&lookup_of("id", &[("1", "One")]), &schema(), &[])
+            .expect_err("is refused");
+        assert_eq!(
+            problems[0].reason,
+            "lookup belongs to the grid, not to a table"
+        );
+    }
+
+    /// A key is counted and listed, not added up or spanned: a number column
+    /// with a lookup takes the facets of a text column and `count` alone.
+    #[test]
+    fn a_lookup_column_is_counted_and_listed_whatever_its_keys_are() {
+        let with = |aggregate: Option<&str>, facet: Option<&str>| {
+            let mut raw = lookup_of("id", &[("1", "One")]);
+            raw[0].1.aggregate = aggregate.map(str::to_owned);
+            raw[0].1.facet = facet.map(str::to_owned);
+            validate(&raw, &schema(), &[])
+        };
+        for facet in ["list", "pills"] {
+            let accepted = with(Some("count"), Some(facet)).expect("is accepted");
+            assert_eq!(accepted[0].1.facet.map(|kind| kind.as_str()), Some(facet));
+        }
+        assert_eq!(
+            with(None, Some("range")).unwrap_err()[0].reason,
+            "range is not a facet for a lookup column"
+        );
+        for aggregate in ["sum", "avg", "min", "max", "range"] {
+            assert_eq!(
+                with(Some(aggregate), None).unwrap_err()[0].reason,
+                format!("{aggregate} is not an aggregate for a lookup column")
+            );
+        }
+        // Without a lookup the same column is a number like any other.
+        assert!(
+            validate(
+                &[(
+                    "id".to_owned(),
+                    RawColumn {
+                        aggregate: Some("sum".to_owned()),
+                        facet: Some("range".to_owned()),
+                        ..RawColumn::default()
+                    }
+                )],
+                &schema(),
+                &[]
+            )
+            .is_ok()
+        );
+        assert_eq!(
+            aggregates_of(DataType::Int64, true),
+            [Summary::Fn(AggregateFn::Count)]
+        );
+        assert_eq!(
+            aggregates_of(DataType::Int64, false),
+            aggregates_for(DataType::Int64)
+        );
+    }
+
     /// A column nobody configured still gets its alignment, and nothing else.
     #[test]
     fn an_unconfigured_column_carries_only_its_alignment() {
@@ -887,6 +1199,31 @@ mod host {
                     .and_then(|value| value.as_f64())
                     .filter(|width| *width > 0.0)
                     .map(|width| width as u32);
+                // A plain object, key → label. Anything else that was given
+                // — an array, a `Map`, a string — is kept as "not a map", so
+                // the check can say so.
+                let lookup = js_sys::Reflect::get(&entry, &JsValue::from_str("lookup"))
+                    .ok()
+                    .filter(|value| !value.is_undefined())
+                    .map(|value| {
+                        let object = value.dyn_ref::<js_sys::Object>().filter(|_| {
+                            !js_sys::Array::is_array(&value)
+                                && !value.is_instance_of::<js_sys::Map>()
+                                && !value.is_function()
+                        })?;
+                        Some(
+                            js_sys::Object::entries(object)
+                                .iter()
+                                .filter_map(|pair| {
+                                    let pair: js_sys::Array = pair.unchecked_into();
+                                    Some((
+                                        pair.get(0).as_string()?,
+                                        pair.get(1).as_string().unwrap_or_default(),
+                                    ))
+                                })
+                                .collect(),
+                        )
+                    });
                 out.push((
                     name,
                     RawColumn {
@@ -900,6 +1237,7 @@ mod host {
                         facet: text("facet"),
                         readonly: flag("readonly"),
                         pin: text("pin"),
+                        lookup,
                     },
                 ));
             }

@@ -132,6 +132,13 @@ just serve-demo   # then open http://127.0.0.1:8080/examples/grid-demo/</code></
 
         const host = document.querySelector("opengrid-grid");
         const provider = { execute: (queryJson) => engine.execute(queryJson) };
+        // A lookup column: `country` stores a code and shows the country's
+        // name. The filter row offers the names; the query, the sort and an
+        // export keep the code — so the column sorts DE, FR, GB, US, which is
+        // not the order of the names. A code without a name here shows as it is.
+        loader.module.set_columns(host, {
+          country: { title: "Country", lookup: { DE: "Germany", FR: "France", GB: "United Kingdom", US: "United States" } },
+        });
         loader.module.set_provider(host, provider);
 
         // For manual testing: the states that have no UI of their own —

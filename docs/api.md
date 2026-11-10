@@ -733,12 +733,12 @@ labels.
 
 | | By | |
 |---|---|---|
-| Cell | label | A key the map does not name shows **the key itself**; NULL shows nothing. The label leads over a format of `set_formats` for the column. |
+| Cell | label | A key the map does not name shows **the key itself**; NULL shows nothing. The label leads over a format of `set_formats` for the column. Labels are text, so the column lines up at the start, number keys included, unless `align` says otherwise. |
 | Sort | key | See above. |
 | Grouping | key | The groups are the keys, in the keys' order; a group's header names it by its label, `Customer: Alpha GmbH (12 rows)`. |
-| Aggregate | key | `count` only: a key is not an amount, and the smallest key is not the first label. Any other aggregate is refused for the column. |
-| Editor | label | The ARIA **combobox** of [Lists](#lists) over the map's labels, in the map's order: typing filters them, `Enter` picks, and a text that is none of the labels is refused under the editor. What is committed is the key, and `opengrid-cell-change` carries the key as its `value`. Where the page also gave the column `set_choices`, those choices are what the editor offers. |
-| Filter row | label | The column's value is **a choice among the map's labels**, with *is* and *is not* (and the null checks where the column may be null). The filter it writes compares the key, and the view's `filters` hold the key. The "+ Filter" dialog offers the same choice, and a filter's chip names the label. |
+| Aggregate | key | `count` only: a key is not an amount, and the smallest key is not the first label. Any other aggregate is refused for the column — in `set_columns`, and from a view — and the column menu offers none. |
+| Editor | label | The ARIA **combobox** of [Lists](#lists) over the map's labels, in the map's order: typing filters them, `Enter` picks, and a text that is none of the labels is refused under the editor. What is committed is the key, and `opengrid-cell-change` carries the key as its `value`. Where the page also gave the column `set_choices`, those choices are what the editor offers, named by the map's labels where they have none of their own. |
+| Filter row | label | The column's value is **a choice among the map's labels**, with *is* and *is not* (and the null checks where the column may be null). The filter it writes compares the key, and the view's `filters` hold the key. The "+ Filter" dialog offers the same choice, and a filter's chip names the label. A filter on a key the map does not name — a view saved under other labels — stays, named by the key. |
 | Facets | label | `list` and `pills` fit a lookup column of either type, and list the keys **the rows hold**, by label, in the keys' order. The selection in the view is the keys. `range` is refused: a span of keys is not a span of labels. |
 | Search | key | An expression compares the stored value — `customer_id = 2`, with `=` and `≠` only — and the free-text search reads values, as everywhere ([Search](#search)): a label is not found by it. |
 | `get_query`, export | key | [`get_query`](#exporting-the-view) and `exportRows` hand out the stored values, as for every column: what a file is read back from. |

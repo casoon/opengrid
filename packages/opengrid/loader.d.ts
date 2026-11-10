@@ -653,6 +653,14 @@ export interface ColumnConfig {
    * its cells are announced as read-only. The grid only.
    */
   readonly?: boolean;
+  /**
+   * The labels of the keys the column stores, key → label: the cell, the
+   * editor, the filter row and the facets show and choose by label. The value
+   * stays the key — in the query, the view, events and exports — and **the
+   * column sorts and groups by the key, not by the label**. For a `utf8` or
+   * `int64` column. The grid only.
+   */
+  lookup?: Record<string | number, string>;
 }
 
 /** What `set_cell_state` says became of an edit. */

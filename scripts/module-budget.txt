@@ -81,7 +81,12 @@
 # grid arranged anew around its view, the texts) grew it by 5.8 KiB, to
 # 315064 B. The engine, which holds the layout of a view, grew by 0.6 KiB to
 # 153366 B, inside its bound.
-grid+pivot    318200  # 315064 B, 2026-11-10, #316
+# Raised the same day from 318200: lookup columns (#326: the map of a column's
+# labels read and checked in `set_columns`, the label in the cell's text, the
+# filter row's choice among the labels and the dialog's, the editor's choices
+# from the map, the chips' labels, the operators and the aggregates of a
+# column of keys) grew it by 3.0 KiB, to 318127 B — 73 B under the old bound.
+grid+pivot    321300  # 318127 B, 2026-11-10, #326
 # Raised 2026-09-30 from 108000: the bound was not raised with 0.7.0, which
 # shipped the engine at 115.2 KiB already (CHANGELOG); rule P9's sorted
 # grouping sets and order sets (#108) added the rest, to 121610 B.

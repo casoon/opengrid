@@ -201,6 +201,15 @@ export async function page(): Promise<void> {
   module.set_columns(grid, { id: { pin: "start" }, amount: { pin: "end", width: 120 } });
   // @ts-expect-error — a pin names an end of the row, not a side
   module.set_columns(grid, { id: { pin: "left" } });
+  // Lookup columns (issue #326): a label per stored key, by text or by number.
+  module.set_columns(grid, {
+    country: { lookup: { DE: "Germany", FR: "France" }, facet: "list" },
+    customer_id: { title: "Customer", lookup: { 1: "Alpha GmbH", 2: "Beta AG" } },
+  });
+  // @ts-expect-error — a label is text
+  module.set_columns(grid, { customer_id: { lookup: { 1: 10 } } });
+  // @ts-expect-error — a map of keys to labels, not a list of pairs
+  module.set_columns(grid, { customer_id: { lookup: [{ value: 1, label: "Alpha" }] } });
   module.set_view(grid, { columns: { pinned: { id: "none", customer: "start" } } });
   // @ts-expect-error — `none`, `start` or `end`
   module.set_view(grid, { columns: { pinned: { id: true } } });

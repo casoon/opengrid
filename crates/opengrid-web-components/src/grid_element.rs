@@ -1188,7 +1188,7 @@ fn render(host: &HtmlElement, focus_after: bool) {
             pinned_slot,
             borrowed.row_height,
             &texts(host),
-            &Formatter::new(&formats(host), borrowed.state.schema()),
+            &formatter(host, borrowed.state.schema()),
             paging,
             borrowed.grouping.as_ref(),
             borrowed.tree.as_ref(),
@@ -1204,7 +1204,7 @@ fn render(host: &HtmlElement, focus_after: bool) {
         let styles = presentation::styles(host);
         let decorated = Decorated::of(&schema, &styles);
         if runtime.borrow().decorated.as_ref() != Some(&decorated) {
-            fix_operator_choices(&root, &schema);
+            fix_operator_choices(&root, &schema, &styles);
             fix_presentation(&root, &schema, &styles);
             runtime.borrow_mut().decorated = Some(decorated);
         }
@@ -3868,6 +3868,12 @@ pub(crate) fn write_row_state(
 /// Where `set_choices` stores what the page supplied.
 pub(crate) const CHOICES_KEY: &str = "__opengridChoices";
 
+/// How this grid's cells become text: the page's formats, and the label of a
+/// key where the column has a lookup (issue #326).
+fn formatter(host: &HtmlElement, schema: &opengrid_types::Schema) -> Formatter {
+    Formatter::new(&formats(host), schema).with_lookups(&presentation::styles(host), schema)
+}
+
 /// Opens the editor on the focused data cell (plan point 37).
 ///
 /// The editor is an ordinary form control inside the cell, typed after the
@@ -4163,9 +4169,7 @@ fn end_edit(host: &HtmlElement, commit: bool) {
             borrowed
                 .state
                 .cell(cell)
-                .map(|value| {
-                    Formatter::new(&formats(host), borrowed.state.schema()).text(cell.col, value)
-                })
+                .map(|value| formatter(host, borrowed.state.schema()).text(cell.col, value))
                 .unwrap_or_default()
         };
         td.set_text_content(Some(&text));
@@ -4404,9 +4408,7 @@ fn redraw_cell(host: &HtmlElement, cell: CellRef) {
         let text = borrowed
             .state
             .cell(cell)
-            .map(|value| {
-                Formatter::new(&formats(host), borrowed.state.schema()).text(cell.col, value)
-            })
+            .map(|value| formatter(host, borrowed.state.schema()).text(cell.col, value))
             .unwrap_or_default();
         td.set_text_content(Some(&text));
         let _ = td.remove_attribute("data-validating");
@@ -4792,7 +4794,23 @@ impl ValueControl {
     fn set_value(&self, value: &str) {
         match self {
             Self::Input(input) => input.set_value(value),
-            Self::Choice(choice) => choice.set_value(value),
+            Self::Choice(choice) => {
+                choice.set_value(value);
+                // A key the lookup does not name — a view saved before the
+                // page's map changed — is still the filter: it gets an option
+                // of its own, named by the key as a cell names it
+                // (issue #326). A boolean's three options are always there.
+                if choice.value() != value
+                    && let Some(option) = choice
+                        .owner_document()
+                        .and_then(|document| document.create_element("option").ok())
+                {
+                    let _ = option.set_attribute("value", value);
+                    option.set_text_content(Some(value));
+                    let _ = choice.append_child(&option);
+                    choice.set_value(value);
+                }
+            }
         }
     }
 
@@ -5017,7 +5035,7 @@ fn on_filter_change(event: Event) {
         return;
     };
     let schema = runtime.borrow().state.schema().clone();
-    fix_operator_choices(&root, &schema);
+    fix_operator_choices(&root, &schema, &presentation::styles(&host));
 }
 
 /// What [`fix_operator_choices`] and [`fix_presentation`] work from: the
@@ -5091,12 +5109,20 @@ fn fix_presentation(
     }
 }
 
-fn fix_operator_choices(root: &ShadowRoot, schema: &opengrid_types::Schema) {
+fn fix_operator_choices(
+    root: &ShadowRoot,
+    schema: &opengrid_types::Schema,
+    styles: &presentation::ColumnStyles,
+) {
     for (col, field) in schema.fields().iter().enumerate() {
         let Some(operator) = OperatorControl::of(root, col) else {
             continue;
         };
-        let allowed = grid::operators_for(field.data_type, field.nullable);
+        let allowed = grid::operators_of(
+            field.data_type,
+            field.nullable,
+            styles.lookup(field.name.as_str()).is_some(),
+        );
         let chosen = operator
             .element()
             .get_attribute("data-op")
@@ -6637,12 +6663,19 @@ fn effective_aggregates(
         else {
             continue;
         };
-        if presentation::aggregates_for(field.data_type).contains(&function) {
+        // A lookup column is counted and nothing else (issue #326).
+        let lookup = configured.lookup(name).is_some();
+        if presentation::aggregates_of(field.data_type, lookup).contains(&function) {
             chosen.push((name.to_owned(), function));
         } else {
             refused.push(format!(
-                "{name}: {} is not an aggregate for this type",
-                function.as_str()
+                "{name}: {} is not an aggregate for {}",
+                function.as_str(),
+                if lookup {
+                    "a lookup column"
+                } else {
+                    "this type"
+                }
             ));
         }
     }
@@ -7048,7 +7081,7 @@ fn toggle_group(host: &HtmlElement, position: u64) {
             &column,
             schema.fields(),
             &texts,
-            &Formatter::new(&formats(host), &schema),
+            &formatter(host, &schema),
         );
         texts.group_toggled(&label, count, open)
     };
@@ -7349,7 +7382,7 @@ fn toggle_tree(host: &HtmlElement, position: u64) {
             &column,
             schema.fields(),
             &texts,
-            &Formatter::new(&formats(host), &schema),
+            &formatter(host, &schema),
         );
         texts.group_toggled(&label, count, open)
     };
@@ -7459,6 +7492,7 @@ fn open_column_menu(host: &HtmlElement, col: usize) {
             visible: borrowed.state.schema().fields().len(),
             bulk: bulk::available(host, &borrowed, col),
             pin: pin_of(host, &name),
+            lookup: presentation::styles(host).lookup(&name).is_some(),
         };
         (crate::column_menu::entries(&column, &texts), name)
     };
@@ -7909,10 +7943,17 @@ fn chips_of(host: &HtmlElement) -> Vec<Chip> {
             .unwrap_or(0);
         let operator = texts.operator(index, token);
         let text = if grid::takes_value(token) {
+            // A lookup column's filter holds the key and is read by its label
+            // (issue #326).
+            let styles = presentation::styles(host);
+            let value = entry.value.trim();
             format!(
                 "{} {operator} {}",
                 texts.column(&entry.column),
-                entry.value.trim()
+                styles
+                    .lookup(&entry.column)
+                    .and_then(|lookup| lookup.label(value))
+                    .unwrap_or(value)
             )
         } else {
             format!("{} {operator}", texts.column(&entry.column))
@@ -8367,7 +8408,7 @@ fn facet_label(
         column,
         schema.fields(),
         &texts(host),
-        &Formatter::new(&formats(host), schema),
+        &formatter(host, schema),
     )
 }
 
@@ -9031,7 +9072,13 @@ fn apply_search(host: &HtmlElement) {
 
     if crate::search::looks_like_query(&value) {
         let schema = runtime.borrow().state.schema().clone();
-        match crate::search::parse(&value, &texts.query_and, &schema) {
+        let styles = presentation::styles(host);
+        let lookups: Vec<String> = columns
+            .iter()
+            .filter(|name| styles.lookup(name).is_some())
+            .cloned()
+            .collect();
+        match crate::search::parse(&value, &texts.query_and, &schema, &lookups) {
             Ok(entries) => {
                 // Written into the filter row's own fields and applied by its
                 // own code: one place a filter lives (F5).
@@ -9309,7 +9356,9 @@ fn fill_conditions(host: &HtmlElement, dialog: &HtmlElement, column: &str) {
     };
     select.set_inner_html("");
     let document = select.owner_document();
-    for op in grid::operators_for(field.data_type, field.nullable) {
+    let styles = presentation::styles(host);
+    let lookup = styles.lookup(column);
+    for op in grid::operators_of(field.data_type, field.nullable, lookup.is_some()) {
         let index = crate::shared::FILTER_OPERATORS
             .iter()
             .position(|token| *token == op)
@@ -9322,6 +9371,31 @@ fn fill_conditions(host: &HtmlElement, dialog: &HtmlElement, column: &str) {
             option.set_text_content(Some(&texts.operator(index, op)));
             let _ = select.append_child(&option);
         }
+    }
+    // The value is typed into a field — or, for a lookup column, chosen among
+    // its labels as in the filter row (issue #326): the control is made anew
+    // for the column, inside the label that names it.
+    if let Ok(Some(old)) = dialog.query_selector("[data-dialog=\"value\"]")
+        && let Some(control) = document.as_ref().and_then(|document| {
+            document
+                .create_element(if lookup.is_some() { "select" } else { "input" })
+                .ok()
+        })
+    {
+        let _ = control.set_attribute("data-dialog", "value");
+        for (key, label) in lookup.iter().flat_map(|lookup| lookup.entries()) {
+            if let Some(option) = document
+                .as_ref()
+                .and_then(|document| document.create_element("option").ok())
+            {
+                let _ = option.set_attribute("value", key);
+                option.set_text_content(Some(label));
+                // The label is the page's word, not ours.
+                let _ = option.set_attribute("lang", "");
+                let _ = control.append_child(&option);
+            }
+        }
+        let _ = old.replace_with_with_node_1(&control);
     }
     if let Ok(Some(input)) = dialog.query_selector("[data-dialog=\"value\"]")
         && let Ok(input) = input.dyn_into::<HtmlInputElement>()

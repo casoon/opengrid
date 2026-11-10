@@ -130,7 +130,16 @@ pub fn looks_like_query(input: &str) -> bool {
 }
 
 /// Parses an expression into filter entries, checked against the schema.
-pub fn parse(input: &str, and_word: &str, schema: &Schema) -> Result<Vec<FilterEntry>, Problem> {
+///
+/// `lookups` names the columns whose values are keys with labels (issue #326):
+/// an expression compares the stored key, and such a column takes `=` and `≠`
+/// only, as its field in the filter row does.
+pub fn parse(
+    input: &str,
+    and_word: &str,
+    schema: &Schema,
+    lookups: &[String],
+) -> Result<Vec<FilterEntry>, Problem> {
     let mut out: Vec<FilterEntry> = Vec::new();
     for clause in clauses(input, and_word) {
         let clause = clause.trim();
@@ -163,7 +172,8 @@ pub fn parse(input: &str, and_word: &str, schema: &Schema) -> Result<Vec<FilterE
             .find(|(candidate, _)| *candidate == symbol)
             .map(|(_, token)| *token)
             .unwrap_or("eq");
-        if !crate::grid::operators_for(field.data_type, true).contains(&token) {
+        let lookup = lookups.iter().any(|name| name == column);
+        if !crate::grid::operators_of(field.data_type, true, lookup).contains(&token) {
             return Err(Problem::WrongOperator {
                 column: column.to_owned(),
                 operator: symbol.to_owned(),
@@ -273,7 +283,7 @@ mod tests {
     #[test]
     fn the_prototype_example_becomes_two_filter_row_entries() {
         assert_eq!(
-            parse("country = DE und amount \u{2265} 10", "und", &schema()),
+            parse("country = DE und amount \u{2265} 10", "und", &schema(), &[]),
             Ok(vec![
                 entry("country", "eq", "DE"),
                 entry("amount", "gte", "10")
@@ -284,7 +294,7 @@ mod tests {
     #[test]
     fn the_english_word_works_on_a_translated_page_too() {
         assert_eq!(
-            parse("country = DE and amount >= 10", "und", &schema()),
+            parse("country = DE and amount >= 10", "und", &schema(), &[]),
             Ok(vec![
                 entry("country", "eq", "DE"),
                 entry("amount", "gte", "10")
@@ -295,13 +305,33 @@ mod tests {
     #[test]
     fn an_operator_needs_no_spaces() {
         assert_eq!(
-            parse("amount>=10", "and", &schema()),
+            parse("amount>=10", "and", &schema(), &[]),
             Ok(vec![entry("amount", "gte", "10")])
         );
         assert_eq!(
-            parse("customer~lph", "and", &schema()),
+            parse("customer~lph", "and", &schema(), &[]),
             Ok(vec![entry("customer", "contains", "lph")])
         );
+    }
+
+    /// A lookup column is compared by its key, with `=` and `≠` only
+    /// (issue #326): `~` on it is the wrong operator, as in its filter field.
+    #[test]
+    fn a_lookup_column_takes_is_and_is_not() {
+        let lookups = ["customer".to_owned()];
+        assert_eq!(
+            parse("customer != A1", "and", &schema(), &lookups),
+            Ok(vec![entry("customer", "ne", "A1")])
+        );
+        assert_eq!(
+            parse("customer ~ lph", "and", &schema(), &lookups),
+            Err(Problem::WrongOperator {
+                column: "customer".to_owned(),
+                operator: "~".to_owned()
+            })
+        );
+        // The other columns are what they were.
+        assert!(parse("country ~ D", "and", &schema(), &lookups).is_ok());
     }
 
     #[test]
@@ -310,6 +340,7 @@ mod tests {
             "country != US and amount < 5 and customer ^ Al",
             "and",
             &schema(),
+            &[],
         )
         .unwrap();
         assert_eq!(got.len(), 3);
@@ -319,30 +350,30 @@ mod tests {
     #[test]
     fn what_does_not_parse_is_named() {
         assert_eq!(
-            parse("", "and", &schema()),
+            parse("", "and", &schema(), &[]),
             Err(Problem::UnknownColumn(String::new()))
         );
         assert_eq!(
-            parse("country", "and", &schema()),
+            parse("country", "and", &schema(), &[]),
             Err(Problem::MissingValue("country".to_owned()))
         );
         assert_eq!(
-            parse("country =", "and", &schema()),
+            parse("country =", "and", &schema(), &[]),
             Err(Problem::MissingValue("country".to_owned()))
         );
         assert_eq!(
-            parse("nope = 1", "and", &schema()),
+            parse("nope = 1", "and", &schema(), &[]),
             Err(Problem::UnknownColumn("nope".to_owned()))
         );
         assert_eq!(
-            parse("amount ~ 1", "and", &schema()),
+            parse("amount ~ 1", "and", &schema(), &[]),
             Err(Problem::WrongOperator {
                 column: "amount".to_owned(),
                 operator: "~".to_owned()
             })
         );
         assert_eq!(
-            parse("amount > abc", "and", &schema()),
+            parse("amount > abc", "and", &schema(), &[]),
             Err(Problem::WrongValue {
                 column: "amount".to_owned(),
                 value: "abc".to_owned()
@@ -353,7 +384,7 @@ mod tests {
     #[test]
     fn the_last_clause_on_a_column_stands() {
         assert_eq!(
-            parse("amount > 1 and amount < 5", "and", &schema()),
+            parse("amount > 1 and amount < 5", "and", &schema(), &[]),
             Ok(vec![entry("amount", "lt", "5")])
         );
     }
@@ -390,14 +421,14 @@ mod tests {
     #[test]
     fn a_character_that_grows_when_lower_cased_does_not_break_the_split() {
         assert_eq!(
-            parse("customer = İstanbul and amount > 1", "and", &schema()),
+            parse("customer = İstanbul and amount > 1", "and", &schema(), &[]),
             Ok(vec![
                 entry("customer", "eq", "İstanbul"),
                 entry("amount", "gt", "1")
             ])
         );
         assert_eq!(
-            parse("customer = X AND amount > 1", "and", &schema()).map(|e| e.len()),
+            parse("customer = X AND amount > 1", "and", &schema(), &[]).map(|e| e.len()),
             Ok(2)
         );
     }
