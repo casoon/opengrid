@@ -1,0 +1,180 @@
+{
+  "id": "p12-a-running-total-of-averages-adds-up-the-cells",
+  "rule": "P12",
+  "pivot": {
+    "source": "orders",
+    "rows": [
+      "country"
+    ],
+    "columns": [
+      "ordered_month"
+    ],
+    "values": [
+      {
+        "field": "qty",
+        "fn": "avg",
+        "as": "mean"
+      },
+      {
+        "field": "qty",
+        "fn": "avg",
+        "as": "running",
+        "calc": "running_total"
+      }
+    ],
+    "filter": {
+      "field": "country",
+      "op": "in",
+      "value": [
+        "DE",
+        "FR"
+      ]
+    }
+  },
+  "expected": {
+    "columns": [
+      {
+        "path": [
+          1
+        ],
+        "measure": "mean"
+      },
+      {
+        "path": [
+          1
+        ],
+        "measure": "running"
+      },
+      {
+        "path": [
+          2
+        ],
+        "measure": "mean"
+      },
+      {
+        "path": [
+          2
+        ],
+        "measure": "running"
+      },
+      {
+        "path": [
+          5
+        ],
+        "measure": "mean"
+      },
+      {
+        "path": [
+          5
+        ],
+        "measure": "running"
+      },
+      {
+        "path": [
+          6
+        ],
+        "measure": "mean"
+      },
+      {
+        "path": [
+          6
+        ],
+        "measure": "running"
+      },
+      {
+        "path": [
+          11
+        ],
+        "measure": "mean"
+      },
+      {
+        "path": [
+          11
+        ],
+        "measure": "running"
+      },
+      {
+        "path": [
+          12
+        ],
+        "measure": "mean"
+      },
+      {
+        "path": [
+          12
+        ],
+        "measure": "running"
+      },
+      {
+        "path": [
+          null
+        ],
+        "measure": "mean"
+      },
+      {
+        "path": [
+          null
+        ],
+        "measure": "running"
+      }
+    ],
+    "rows": [
+      [
+        "DE",
+        2.0,
+        2.0,
+        null,
+        2.0,
+        15.0,
+        17.0,
+        null,
+        17.0,
+        45.5,
+        62.5,
+        1.0,
+        63.5,
+        null,
+        63.5
+      ],
+      [
+        "FR",
+        null,
+        null,
+        4.0,
+        4.0,
+        null,
+        4.0,
+        24.0,
+        28.0,
+        null,
+        28.0,
+        null,
+        28.0,
+        5.0,
+        33.0
+      ],
+      [
+        null,
+        2.0,
+        2.0,
+        4.0,
+        6.0,
+        15.0,
+        21.0,
+        24.0,
+        45.0,
+        45.5,
+        90.5,
+        1.0,
+        91.5,
+        5.0,
+        96.5
+      ]
+    ],
+    "levels": [
+      1,
+      1,
+      0
+    ]
+  }
+}

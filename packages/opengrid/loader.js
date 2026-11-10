@@ -508,6 +508,13 @@ export function createRestProvider({ url, source, token } = {}) {
 const PIVOT_TEXTS = ["noValue", "emptyValue", "total", "subtotal"];
 
 /**
+ * What a calculated measure is shown as (issue #329), after `PIVOT_TEXTS` in
+ * the order `pivot_words` gives them. Sent only with a query that has one: a
+ * server from before calculated measures refuses a parameter it does not know.
+ */
+const PIVOT_CALC_TEXTS = ["shareOfRow", "shareOfColumn", "shareOfTotal", "runningTotal"];
+
+/**
  * `POST /pivot/{source}?format=xlsx`: a pivot as an XLSX file, a `Blob`
  * (issue #331) — what `exportPivot` of the REST and the pivot provider does.
  *
@@ -518,7 +525,8 @@ const PIVOT_TEXTS = ["noValue", "emptyValue", "total", "subtotal"];
  * and an export's: `max_xlsx_rows`, and a place among the running exports.
  *
  * `texts` are the words for a total and for a NULL or empty group, under the
- * keys of {@link PIVOT_TEXTS}; any other key is ignored. `exportPivot` reads
+ * keys of {@link PIVOT_TEXTS}, and — for a query with a calculated measure —
+ * the words of {@link PIVOT_CALC_TEXTS}; any other key is ignored. `exportPivot` reads
  * them from the element; a page that calls this method with a query of its
  * own hands them over, or gets the server's English defaults.
  *
@@ -541,7 +549,8 @@ async function pivotWorkbook(endpoint, headers, pivotQuery, options = {}) {
     );
   }
   const parameters = new URLSearchParams({ format });
-  for (const key of PIVOT_TEXTS) {
+  const calculated = Array.isArray(pivotQuery?.values) && pivotQuery.values.some((value) => value?.calc);
+  for (const key of calculated ? [...PIVOT_TEXTS, ...PIVOT_CALC_TEXTS] : PIVOT_TEXTS) {
     if (typeof texts?.[key] === "string") {
       parameters.set(key, texts[key]);
     }
@@ -1088,9 +1097,9 @@ export async function exportPivot(provider, host, options = {}) {
   if (view.filter) {
     query.filter = view.filter;
   }
-  // The element's words, in the order of `PIVOT_TEXTS`.
+  // The element's words, in the order of `PIVOT_TEXTS` and `PIVOT_CALC_TEXTS`.
   const words = loaded.module.pivot_words(host);
-  const texts = Object.fromEntries(PIVOT_TEXTS.map((key, index) => [key, words[index]]));
+  const texts = Object.fromEntries([...PIVOT_TEXTS, ...PIVOT_CALC_TEXTS].map((key, index) => [key, words[index]]));
   return provider.exportPivot(query, { ...options, texts });
 }
 

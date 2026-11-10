@@ -942,7 +942,7 @@ and the row and column limits are what make rendering the whole thing safe.
 | `label`, `datasource`, `theme` | As in the grid. |
 | `rows` | Comma-separated row dimensions, outermost first. |
 | `columns` | Comma-separated column dimensions, outermost first. V1 allows **two**. |
-| `values` | The measures, as the contract's own JSON — not an invented shorthand. |
+| `values` | The measures, as the contract's own JSON — not an invented shorthand. A measure with `calc` is [calculated](#calculated-measures). |
 | `sort` | How each level is ordered, as the wire's JSON: `[{"field":"country","by":"total","direction":"desc"}]`. The reader's sort buttons write it. |
 | `collapsed` | The folded groups, a JSON list of group paths: `[["DE"],["FR","Beta"]]`, NULL as `null`. The reader's fold buttons write it. |
 | `toolbar` | Shows the field toolbar — see below. Presence is what counts. |
@@ -1014,6 +1014,53 @@ says it with the grid's texts `groupCollapsed` / `groupExpanded`. The focus stay
 on the button. The folded groups are the `collapsed` attribute and part of the
 view; a path that matches no group folds nothing. The export stays the whole
 pivot, as the grid's export ignores its open groups.
+
+#### Calculated measures
+
+A measure is an aggregate; with `calc` it is shown as a share or as a running total instead:
+
+```html
+<opengrid-pivot datasource="orders" rows="country" columns="ordered_year"
+  values='[{"field":"qty","fn":"sum","as":"total"},
+           {"field":"qty","fn":"sum","as":"share","calc":"share_of_row"}]'></opengrid-pivot>
+```
+
+| `calc` | The cell shows |
+|---|---|
+| `share_of_row` | its part of the row's total across every column |
+| `share_of_column` | its part of the column's total — the column's cell in the grand total row |
+| `share_of_total` | its part of the grand total |
+| `running_total` | the sum of the row's cells up to and including its column; it starts again in every row |
+
+The source computes it — the engine in the tab as a server does, by the same rules
+([P10–P12](../guides/query-semantics/#calculated-measures-in-a-pivot)) — so a calculated value
+is a value like any other: in the table, in `get_pivot`'s CSV and in the XLSX. A share goes with
+`fn` `sum` and `count`; a running total also with `avg`, `min` and `max` over a number, where it
+adds up what the cells show. Anything else the source refuses, and the pivot's status line says
+so. Subtotals and the total row follow the same rule as the rows above them, over their own
+cells.
+
+- **A share is a fraction**, `0.25`, and NULL — an empty cell — where its total is NULL or zero.
+  Percent and digits are the page's: `set_formats(pivot, { share: { kind: "number", style:
+  "percent", maximumFractionDigits: 1 } })`, by the measure's alias. A running total keeps its
+  measure's type and takes the format the measure would.
+- **The header says it.** A calculated measure's column header is its title followed by what it
+  shows, in the element's [texts](#texts): `Quantity · share of row`. The CSV and the XLSX head
+  the column the same way after its path and alias, `2025 · share · share of row`.
+- **Sorting** by a calculated measure orders the rows by its aggregate, as for any measure.
+- **Drilling down** from a calculated cell names the cell's own rows, as from any cell — for a
+  running total the rows of its column, the last part added, not the columns before it — and
+  `value` is the calculated value.
+
+With `toolbar`, a measure's chip has a button that names what the measure is shown as — `value`
+at first; its name is "Show Quantity as: value". It opens a menu of the choices its function
+has, the one in use checked (`menuitemradio`), with the keys of the add menu: the value and the
+four calculations for `sum` and `count`, the value and the running total for `avg`, `min` and
+`max`. The pivot does not know the source's schema, so it offers the running total of a `min`
+or `max` over text as well; the source refuses it, in the status line.
+Choosing writes `calc` into `values`, so it is one query and one `opengrid-view-change`, and the
+focus comes back to the button, which now names the new choice. A page that formats shares as
+percentages listens to that event and sets the format of a measure whose `calc` changed.
 
 **Choosing the fields.** With `toolbar`, the reader chooses the rows, the
 column and the measures — without dragging, from the keyboard. Per axis a
@@ -1092,7 +1139,7 @@ together with its listener.
 | `query` | The rows behind the cell, as the wire writes a query: `{ source, filter }`. `source` is the pivot's `datasource`. |
 | `query.filter` | The pivot's own `filter`, clause by clause, and-ed with one clause per dimension the cell lies in: the row dimensions down to the row's level, then every column dimension — `{"and":[{"field":"country","op":"eq","value":"DE"},{"field":"ordered_year","op":"eq","value":2025}]}`. One clause alone is that clause; none — the grand total of a pivot without a column dimension and without a filter — and `query` has no `filter`. |
 | `row`, `column` | The cell's row and column group, as paths of keys like `collapsed` has them, NULL as `null`. A subtotal's `row` is shorter than `rows`, the grand total's is `[]`. |
-| `measure`, `value` | The measure's alias and the cell's value as the answer carried it. |
+| `measure`, `value` | The measure's alias and the cell's value as the answer carried it — of a [calculated measure](#calculated-measures), the calculated value. |
 
 - **NULL and the empty string stay two groups.** A NULL key is
   `{"field":"country","op":"is_null"}` — `eq null` would match nothing (S1) — and the
@@ -1303,7 +1350,7 @@ const blob = csv && new Blob([csv], { type: "text/csv;charset=utf-8" }); // the 
 | | |
 |---|---|
 | Columns | The row dimensions, then one column per generated column, in the table's order. |
-| Header | **One line.** A generated column is named by its value and its measure, `2025 · total`; without a column dimension, by its measure. |
+| Header | **One line.** A generated column is named by its value and its measure, `2025 · total`; without a column dimension, by its measure. A [calculated measure](#calculated-measures) is followed by what it shows, in the element's texts: `2025 · share · share of row`. |
 | Rows | Every row the table shows, in its order: data rows, subtotals, the grand total. |
 | Subtotals | Their label — `Total DE`, `Total` — in the first dimension column; the dimension columns it spans are empty fields. There is no level column, as the table has none: a subtotal is known by its label alone, so a group literally named `Total` looks like the grand total. |
 | Labels | The element's own [texts](#texts): NULL is `(no value)`, the empty string `(empty)`, as in the table, and a page's `set_texts` changes both. With non-empty texts a data row's dimension cell is never empty, so an empty one means "spanned by the total"; a text set to `""` gives that up. |
@@ -1339,7 +1386,7 @@ const blob = await exportPivot(provider, pivot, { format: "xlsx" }); // a Blob; 
 
 | | |
 |---|---|
-| `provider` | One that exports on the server: `createPivotProvider` or `createRestProvider`, both with `exportPivot(pivotQuery, options)` → `POST /pivot/{source}?format=xlsx`. Any other — the engine in the tab or a worker, the hybrid provider — is a `TypeError` before anything is sent. The method has a query and no element, so it alone also takes `texts` (`total`, `subtotal`, `noValue`, `emptyValue`); a page that calls it with a query of its own hands them over, or gets the English defaults. |
+| `provider` | One that exports on the server: `createPivotProvider` or `createRestProvider`, both with `exportPivot(pivotQuery, options)` → `POST /pivot/{source}?format=xlsx`. Any other — the engine in the tab or a worker, the hybrid provider — is a `TypeError` before anything is sent. The method has a query and no element, so it alone also takes `texts` (`total`, `subtotal`, `noValue`, `emptyValue`, and for calculated measures `shareOfRow`, `shareOfColumn`, `shareOfTotal`, `runningTotal`); a page that calls it with a query of its own hands them over, or gets the English defaults. |
 | `host` | An `<opengrid-pivot>` in the document, with a `datasource`. Its [view](#opengrid-pivot) is the query: `rows`, `columns`, `values`, `sort`, `filter`. Folded groups are exported, as in the CSV. |
 | `format` | `"xlsx"`, and required; anything else is a `TypeError` — a pivot's CSV is `get_pivot`. |
 | Labels | The element's own [texts](#texts), as in the table and in the CSV: `Total`, `Total DE`, `(no value)`, `(empty)`, or what `set_texts` made of them. They are read from the element and sent with the request; the page passes nothing, and `texts` is not an option here. |
@@ -1605,7 +1652,7 @@ would make it invisible), a **selected row** carries an inset accent bar as well
 as the tint (colour alone would be 1.4.1), and `prefers-reduced-motion` beats a
 theme that animates a part.
 
-**Parts:** `action`, `action-cell`, `action-header`, `add-field`, `add-filter`, `add-grouping`, `band`, `body`, `bulk`, `bulk-apply`, `bulk-cancel`, `caption`, `cell`, `cell-error`, `cell-saved`, `cell-saving`, `chip`, `chip-move`, `chip-remove`, `chips`,
+**Parts:** `action`, `action-cell`, `action-header`, `add-field`, `add-filter`, `add-grouping`, `band`, `body`, `bulk`, `bulk-apply`, `bulk-cancel`, `caption`, `cell`, `cell-error`, `cell-saved`, `cell-saving`, `chip`, `chip-calc`, `chip-move`, `chip-remove`, `chips`,
 `chips-clear`, `column-menu`, `column-menu-button`, `column-toggle`, `columns`, `columns-toggle`, `density`, `drill-down`,
 `editor`, `empty`, `empty-reset`, `empty-text`, `facet`, `facet-bounds`, `facet-cost`, `facet-count`,
 `facet-pill`, `facet-pills`, `facet-value`, `facets`, `facets-head`, `facets-toggle`, `filter`,
@@ -1628,6 +1675,7 @@ rest of their look is the page's, through their parts (issue #29):
 | `group-toggle`, `group-mark` | — | a group's fold button in its subtotal's row header, and its mark |
 | `toolbar`, `field-group`, `menu-label` | — | the field toolbar, one axis's group, its visible name |
 | `chip`, `chip-move`, `chip-remove` | — | a chosen field, its move buttons, its remove button |
+| `chip-calc` | — | a measure chip's button for what the measure is shown as |
 | `add-field`, `field-menu` | — | an axis's add button, and its menu |
 | `row`, `total-row` | a body row | a body row; `total-row` a subtotal or the grand total |
 | `cell` | a value | a value |
@@ -1776,6 +1824,9 @@ boolean reads — that is `set_formats`.
 | `fieldRemove` / `fieldEarlier` / `fieldLater` | `Remove {field}` / `Move {field} earlier` / `Move {field} later` | `{field}` |
 | `pivotFilters` / `pivotFilterLabel` / `pivotFilterHint` | `Filters` / `Add a filter` / `field = value · Enter` — the pivot's filter group, its field's name and hint | |
 | `pivotDrillDown` | `{value}, show rows` — the name of a value's button in a pivot with `drill-down`: "12, show rows". `{value}` is the cell's visible text, so the name contains it (WCAG 2.5.3) | `{value}` |
+| `pivotShowAs` | `Show {field} as: {calc}` — the name of a measure chip's button in the pivot's toolbar, and of its menu: "Show Quantity as: share of row". `{calc}` is the button's visible text, so the name contains it (WCAG 2.5.3) | `{field}`, `{calc}` |
+| `calcValue` | `value` — a measure shown as it is, in that button and its menu | |
+| `shareOfRow` / `shareOfColumn` / `shareOfTotal` / `runningTotal` | `share of row` / `share of column` / `share of total` / `running total` — what a [calculated measure](#calculated-measures) is shown as: in the button and its menu, after the measure's title in its column header, and in the headers of the CSV and the XLSX | |
 | `treeContext` | `context` — a tree's row shown only because a match is below it | |
 | `subtreeCell` | `{shown}, {aggregate} of the subtree` — what a node's cell says when it also shows its subtree's summary: "120 · Σ 1,450, Sum of the subtree". `{shown}` is the cell's visible text, so the name contains it (WCAG 2.5.3); German: `{shown}, {aggregate} im Teilbaum`. A text you set **without** `{shown}` is used exactly as written, and its name then does not contain the visible text — your decision. | `{shown}`, `{value}`, `{aggregate}`, `{total}` |
 | `subtreeOnly` | `{shown}, {aggregate} of the subtree` — the same for a node without a value of its own: "Σ 1,450, Sum of the subtree" | `{shown}`, `{aggregate}`, `{total}` |

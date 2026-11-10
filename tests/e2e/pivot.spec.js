@@ -1039,6 +1039,44 @@ test.describe("pivot in the browser", () => {
     expect(worker).toEqual(server);
   });
 
+  test("a calculated measure is the same from the worker and from the server (issue #329)", async ({ page }) => {
+    // A share and a running total beside the sum they are made of: the
+    // server computes them and so does the engine in the worker, cell by cell.
+    const calculated = async (fixture) => {
+      await cells(page, fixture);
+      await page.evaluate(() =>
+        document.querySelector("opengrid-pivot").setAttribute(
+          "values",
+          JSON.stringify([
+            { field: "qty", fn: "sum", as: "total" },
+            { field: "qty", fn: "sum", as: "share", calc: "share_of_column" },
+            { field: "amount", fn: "sum", as: "running", calc: "running_total" },
+          ]),
+        ),
+      );
+      await page.waitForFunction(() => {
+        const root = document.querySelector("opengrid-pivot").shadowRoot;
+        return (
+          root.querySelector('[part="status"]').dataset.state === "ready" &&
+          [...root.querySelectorAll("thead th")].some((th) => th.textContent === "running · running total")
+        );
+      });
+      return page.evaluate(() =>
+        [...document.querySelector("opengrid-pivot").shadowRoot.querySelectorAll("tr")].map((row) =>
+          [...row.querySelectorAll("th, td")].map((cell) => cell.textContent),
+        ),
+      );
+    };
+    const server = await calculated("pivot.html");
+    const worker = await calculated("pivot-worker.html");
+    expect(worker).toEqual(server);
+    // DE: 258 of the 1218 of 2026, and the grand total row is all of it.
+    const de = server.find((row) => row[0] === "DE");
+    expect(Number(de[5])).toBeCloseTo(258 / 1218, 12);
+    const total = server.at(-1);
+    expect([1, 2, 4, 5, 7, 8].map((at) => Number(total[at]))).toEqual([1, 1, 1218, 1, 5, 1]);
+  });
+
   test("a pivot from the worker has no axe violations", async ({ page }) => {
     await cells(page, "pivot-worker.html");
     const { violations } = await new AxeBuilder({ page }).include("opengrid-pivot").analyze();

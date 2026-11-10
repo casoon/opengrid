@@ -81,13 +81,16 @@
 # grid arranged anew around its view, the texts) grew it by 5.8 KiB, to
 # 315064 B. The engine, which holds the layout of a view, grew by 0.6 KiB to
 # 153366 B, inside its bound.
-# Raised the same day from 318200: column bands (#319: the bands in the page's
+# Raised the same day from 318200: calculated measures in a pivot (#329: the
+# measure chip's button and its menu, the header's words, the export's
+# headers, the texts) grew it by 1.7 KiB, to 316842 B.
+# Raised the same day from 320000: column bands (#319: the bands in the page's
 # part of the layout, kept in one piece and moved and pinned as a whole, the
 # second header row with its spans and what a cell names as its headers, the
 # keys across it, the pinned band's cell in the pins' sheet) grew the module
-# by 6.2 KiB, to 321423 B. The engine grew by 0.2 KiB to 153572 B, inside its
+# by 5.8 KiB, to 322828 B. The engine grew by 0.1 KiB to 155674 B, inside its
 # bound.
-grid+pivot    324600  # 321423 B, 2026-11-10, #319
+grid+pivot    326000  # 322828 B, 2026-11-10, #319
 # Raised 2026-09-30 from 108000: the bound was not raised with 0.7.0, which
 # shipped the engine at 115.2 KiB already (CHANGELOG); rule P9's sorted
 # grouping sets and order sets (#108) added the rest, to 121610 B.
@@ -111,4 +114,9 @@ grid+pivot    324600  # 321423 B, 2026-11-10, #319
 # the scale check on push (#213), typed `in` sets and min/max without a buffer
 # per row (#214), the CSV read record by record (#215) and the planner placing
 # a tree whole on the client (#211).
-engine        154100  # 152538 B, 2026-11-09, #210-#215
+# Raised 2026-11-10 from 154100: the engine stood at 153366 B with the layout
+# of pinned columns (#316). Calculated measures in a pivot (#329: the measure
+# with its `calc`, its validation, and the shares and running totals over the
+# assembled cells — in the engine, since every source's pivot is assembled
+# there) grew it by 2.1 KiB, to 155524 B.
+engine        157100  # 155524 B, 2026-11-10, #329
