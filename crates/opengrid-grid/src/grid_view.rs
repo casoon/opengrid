@@ -87,10 +87,8 @@ pub struct GridView {
 /// not), everything else by its JSON text. So the same selection is the same
 /// list, whatever order it was made or handed in.
 pub fn selected_keys(keys: impl IntoIterator<Item = Value>) -> Vec<Value> {
-    let mut keyed: Vec<(String, Value)> = keys
-        .into_iter()
-        .map(|key| (key.to_string(), key))
-        .collect();
+    let mut keyed: Vec<(String, Value)> =
+        keys.into_iter().map(|key| (key.to_string(), key)).collect();
     keyed.sort_by(|a, b| match (a.1.as_f64(), b.1.as_f64()) {
         (Some(x), Some(y)) => x.total_cmp(&y).then_with(|| a.0.cmp(&b.0)),
         (Some(_), None) => std::cmp::Ordering::Less,
@@ -481,7 +479,10 @@ impl GridView {
                 {
                     selected = selected_keys(keys.iter().cloned());
                 }
-                _ => problems.push(ViewProblem::new("selected", "selected is not a list of keys")),
+                _ => problems.push(ViewProblem::new(
+                    "selected",
+                    "selected is not a list of keys",
+                )),
             }
         }
 
@@ -534,6 +535,7 @@ mod tests {
             aggregates: vec![("amount".to_owned(), "avg".to_owned())],
             filter_row: false,
             facets: opengrid_json::json!({ "customer": { "values": [null, "Alpha"] } }),
+            selected: Vec::new(),
         }
     }
 
@@ -657,11 +659,22 @@ mod tests {
         let view = GridView::from_json(&json, &declared()).expect("reads");
         assert_eq!(
             view.selected,
-            opengrid_json::json!([3, 7, "a", "b"]).as_array().unwrap().clone()
+            opengrid_json::json!([3, 7, "a", "b"])
+                .as_array()
+                .unwrap()
+                .clone()
         );
-        assert_eq!(view.to_json()["selected"], opengrid_json::json!([3, 7, "a", "b"]));
+        assert_eq!(
+            view.to_json()["selected"],
+            opengrid_json::json!([3, 7, "a", "b"])
+        );
         // Numbers by value, not by text.
-        let numbers = selected_keys(opengrid_json::json!([10, 9, 100]).as_array().unwrap().clone());
+        let numbers = selected_keys(
+            opengrid_json::json!([10, 9, 100])
+                .as_array()
+                .unwrap()
+                .clone(),
+        );
         assert_eq!(Value::Array(numbers), opengrid_json::json!([9, 10, 100]));
         let again = GridView::from_json(&view.to_json(), &declared()).expect("reads");
         assert_eq!(again, view);

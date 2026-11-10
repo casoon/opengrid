@@ -88,6 +88,11 @@ test("the column menu offers it only with rows selected, and it reaches rows tha
   // Everything selected, 40 rows of which 12 are loaded.
   await focusCell(page, 0, 3);
   await page.keyboard.press("Control+a");
+  // With a `row-key` the selection is the records' keys: those of the rows
+  // that are not loaded are asked of the source (issue #322).
+  await expect
+    .poll(() => shadow(page, (root) => root.querySelector('[part="select-mark"]').getAttribute("aria-checked")))
+    .toBe("true");
   await shadow(page, (root) => root.querySelector('th[data-col="3"]').focus());
   await page.keyboard.press("Alt+ArrowDown");
   await expect

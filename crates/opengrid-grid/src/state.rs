@@ -588,6 +588,16 @@ impl GridState {
         vec![Patch::Status(self.status.clone())]
     }
 
+    /// Says this too with the result just applied, after what that result
+    /// already carries — and not again with the next one (issue #322: what a
+    /// restored view's selection lost belongs to the view's result).
+    pub fn append_notice(&mut self, text: String) {
+        self.notice = Some(match self.notice.take() {
+            Some(notice) => format!("{notice} · {text}"),
+            None => text,
+        });
+    }
+
     /// Says something once, with the result that follows — not before it: the
     /// page's reason for a new view (issue #146) belongs to the result it
     /// explains, and a loading line carrying it would say it twice.

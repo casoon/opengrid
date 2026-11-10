@@ -236,12 +236,8 @@ test("the selection names nodes by key, and stays when they close", async ({ pag
   await press(page, 'td[data-row="3"][data-col="0"]', " ");
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("Shift+ ");
-  expect(await last()).toEqual({
-    rows: [3, 4],
-    ranges: [{ from: 3, to: 4 }],
-    count: 2,
-    keys: [2, 3],
-  });
+  // By key, and nothing else: a position names no node (issue #322).
+  expect(await last()).toEqual({ count: 2, keys: [2, 3] });
   expect(await selected()).toEqual(["North", "South"]);
 
   // Closing Sales hides them; they stay selected, by key.
@@ -262,6 +258,53 @@ test("the selection names nodes by key, and stays when they close", async ({ pag
   // Ctrl+A: every node shown, all five.
   await press(page, 'td[data-row="0"][data-col="0"]', "Control+a");
   expect((await last()).count).toBe(5);
+});
+
+test("the selected nodes travel in the view, and a key that names no node is dropped and said", async ({
+  page,
+}) => {
+  // Issue #322: a tree selects by `tree-key`, so its view carries `selected`.
+  await page.evaluate(() => {
+    window.__selections = [];
+    document
+      .querySelector("opengrid-grid")
+      .addEventListener("opengrid-selection-change", (event) => window.__selections.push(event.detail));
+  });
+  const view = () =>
+    page.evaluate(() => window.__opengridModule.get_view(document.querySelector("opengrid-grid")));
+  const selected = () =>
+    page.evaluate(() =>
+      [...document.querySelector("opengrid-grid").shadowRoot.querySelectorAll('tbody tr[aria-selected="true"]')]
+        .map((tr) => tr.querySelector('td[data-col="0"]').textContent)
+        .sort(),
+    );
+  expect("selected" in (await view())).toBe(false);
+
+  await press(page, 'td[data-row="2"][data-col="0"]', "ArrowRight");
+  await expect.poll(() => names(page)).toContain("North");
+  await press(page, 'td[data-row="3"][data-col="0"]', " ");
+  const saved = await view();
+  expect(saved.selected).toEqual([2]);
+
+  // On a fresh page the view opens Sales and selects North again; 999 names
+  // no node and "x" is not a key of this column.
+  await page.reload();
+  await page.waitForFunction(() => window.__opengridReady && window.__opengridModule);
+  await settled(page);
+  await page.evaluate(() => {
+    window.__selections = [];
+    document
+      .querySelector("opengrid-grid")
+      .addEventListener("opengrid-selection-change", (event) => window.__selections.push(event.detail));
+  });
+  await page.evaluate(
+    (view) => window.__opengridModule.set_view(document.querySelector("opengrid-grid"), view),
+    { ...saved, selected: [2, 999, "x"] },
+  );
+  await expect.poll(() => selected()).toEqual(["North"]);
+  expect(await page.evaluate(() => window.__selections)).toEqual([{ count: 1, keys: [2] }]);
+  expect(await status(page)).toContain("2 selected rows no longer exist");
+  expect((await view()).selected).toEqual([2]);
 });
 
 test("+ Group is aria-disabled in a tree, and says why", async ({ page }) => {

@@ -377,23 +377,33 @@ test.describe("selection while grouped (issue #322)", () => {
     expect((await announced(page)).filter((text) => text.includes("rows selected"))).toHaveLength(1);
   });
 
-  test("ungrouping says the selection is gone, once and with the result", async ({ page }) => {
+  test("a dropped selection by key is said once, with the result; ungrouping does not drop it", async ({
+    page,
+  }) => {
     await open(page, "grid-group-select.html");
     await expect.poll(() => announced(page).then((a) => a.at(-1))).toBe("200 matches");
     await focusCell(page, 'td[data-row="0"][data-col="0"]');
     await page.keyboard.press("ControlOrMeta+a");
-    await expect
-      .poll(() =>
-        page.evaluate(() =>
-          document
-            .querySelector("opengrid-grid")
-            .shadowRoot.querySelector('[part="select-mark"]')
-            .getAttribute("aria-checked"),
-        ),
-      )
-      .toBe("true");
+    const checked = () =>
+      page.evaluate(() =>
+        document
+          .querySelector("opengrid-grid")
+          .shadowRoot.querySelector('[part="select-mark"]')
+          .getAttribute("aria-checked"),
+      );
+    await expect.poll(checked).toBe("true");
 
+    // Ungrouped, the 200 records are still the selected ones: nothing to say.
     await page.evaluate(() => document.querySelector("opengrid-grid").removeAttribute("group-by"));
+    await expect(page.locator('opengrid-grid tbody tr[aria-selected="true"]').first()).toBeVisible();
+    expect((await announced(page)).join("|")).not.toContain("Selection cleared");
+
+    // A view without `selected` drops them.
+    await page.evaluate(() => {
+      const host = document.querySelector("opengrid-grid");
+      const { selected, ...view } = window.__module.get_view(host);
+      window.__module.set_view(host, { ...view, density: "compact" });
+    });
     await expect
       .poll(() => announced(page).then((a) => a.join("|")))
       .toContain("Selection cleared");

@@ -56,6 +56,10 @@
       loader.module.set_provider(host, {
         execute: (queryJson) => {
           window.__queries.push(queryJson);
+          // A test can make the source refuse the check of a view's keys.
+          if (window.__failChecks && JSON.parse(queryJson).filter?.op === "in") {
+            return Promise.reject(new Error("check refused"));
+          }
           return engine.execute(queryJson);
         },
       });

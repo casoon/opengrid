@@ -1,12 +1,16 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 
-// Selecting rows while grouped (issue #322).
+// Selecting by key (issue #322).
 //
 // A display position names a header as often as a row and moves with every
 // group that opens, so a grouped grid selects records by their `row-key` — and
 // without one it selects nothing. The claim under test is the issue's own:
 // opening and closing a group never changes what is selected.
+//
+// The same model holds for every grid with a `row-key`, grouped or not: the
+// selection is the records' keys, the event is `{ count, keys }`, and the view
+// carries it as `selected`.
 //
 // The fixture groups the 200 conformance rows by country and customer: DE has
 // 52 rows and nine customers, the first of them Alpha with six rows.
@@ -107,8 +111,8 @@ test("Space selects a record by its key, and only data rows say aria-selected", 
 
   await press(page, 3, " ", 1);
   await expect.poll(() => selectedIds(page)).toEqual([id]);
-  // The page hears the record, not a place: `rows` and `ranges` are empty.
-  expect(await events(page)).toEqual([{ rows: [], ranges: [], count: 1, keys: [id] }]);
+  // The page hears the record, not a place: no `rows`, no `ranges`.
+  expect(await events(page)).toEqual([{ count: 1, keys: [id] }]);
 
   for (const row of await drawn(page)) {
     if (row.kind === "row") {
@@ -162,7 +166,7 @@ test("two levels: opening and closing a group never changes what is selected", a
   await press(page, 5, " ");
   await expect.poll(() => selectedIds(page)).toEqual(picked);
   const said = await events(page);
-  expect(said.at(-1)).toMatchObject({ count: 2, rows: [], ranges: [] });
+  expect(said.at(-1)).toEqual({ count: 2, keys: picked });
 
   // Alpha closes over both, and opens again.
   await press(page, 1, "Enter");
@@ -329,10 +333,11 @@ test("select-all is every row of the filter, open or not — and the header clea
   // Every group is closed: not one data row is loaded.
   await press(page, 0, "ControlOrMeta+a");
   await expect.poll(async () => (await heard(page))?.count).toBe(200);
-  const all = await heard(page);
-  expect(all.keys).toEqual(Array.from({ length: 200 }, (_, index) => index + 1));
-  expect(all.rows).toEqual([]);
-  expect(all.ranges).toEqual([]);
+  // The keys come in their own order: 2 before 10.
+  expect((await events(page)).at(-1)).toEqual({
+    count: 200,
+    keys: Array.from({ length: 200 }, (_, index) => index + 1),
+  });
   expect(await headerCheck(page)).toBe("true");
   // `Ctrl`+`A` again changes nothing, and says nothing.
   await press(page, 0, "ControlOrMeta+a");
@@ -440,7 +445,19 @@ test("sorting keeps a selection by key, and does not say it was cleared", async 
   await expect.poll(async () => (await heard(page)).keys).toEqual(expected);
 });
 
-test("another grouping keeps the selection; ungrouping drops it, and says so", async ({ page }) => {
+const view = (page) =>
+  page.evaluate(() => window.__module.get_view(document.querySelector("opengrid-grid")));
+
+const setView = (page, view, options) =>
+  page.evaluate(
+    ({ view, options }) =>
+      window.__module.set_view(document.querySelector("opengrid-grid"), view, options),
+    { view, options },
+  );
+
+test("grouping, regrouping and ungrouping keep a selection by key; another row-key drops it", async ({
+  page,
+}) => {
   await open(page);
   await openAlpha(page);
   const rows = await drawn(page);
@@ -455,8 +472,6 @@ test("another grouping keeps the selection; ungrouping drops it, and says so", a
     document.querySelector("opengrid-grid").setAttribute("group-by", "customer"),
   );
   await expect.poll(async () => (await drawn(page))[0]?.text).toMatch(/^customer: Alpha/);
-  expect(await events(page)).toEqual(said);
-  expect(await status(page)).not.toContain("Selection cleared");
   expect(await headerCheck(page)).toBe("mixed");
   await press(page, 0, "Enter");
   await expect.poll(async () => (await drawn(page))[1]?.kind).toBe("row");
@@ -464,57 +479,228 @@ test("another grouping keeps the selection; ungrouping drops it, and says so", a
   // the rows the window shows.
   expect((await selectedIds(page)).every((id) => picked.includes(id))).toBe(true);
 
-  // Ungrouped, a row is a position again: keys do not turn into positions.
+  // Ungrouped, the grid still selects by key: the same two records, at the
+  // rows they sit at now.
   await page.evaluate(() => document.querySelector("opengrid-grid").removeAttribute("group-by"));
+  await expect.poll(() => rowcount(page)).toBe(201);
+  await expect.poll(() => status(page)).toBe("200 matches");
+  expect(await headerCheck(page)).toBe("mixed");
+  expect((await view(page)).selected).toEqual(picked);
+  await shadow(
+    page,
+    (root, position) => {
+      const height = root.querySelector("tbody td").getBoundingClientRect().height;
+      root.querySelector('[part~="viewport"]').scrollTop = position * height;
+    },
+    picked[0] - 1,
+  );
+  await expect.poll(() => selectedIds(page)).toContain(picked[0]);
+
+  // And grouped again. Not one of the three switches was a selection change,
+  // and none said the selection was cleared.
+  await page.evaluate(() =>
+    document.querySelector("opengrid-grid").setAttribute("group-by", "country,customer"),
+  );
+  await expect.poll(() => rowcount(page)).toBe(7);
+  // The focus is still on the cell it was on: moved away, so that focusing
+  // the first group again is a focus the grid hears of.
+  await shadow(page, (root) => root.querySelector('th[data-col="1"]').focus());
+  await openAlpha(page);
+  await expect.poll(() => selectedIds(page)).toEqual(picked);
+  expect(await events(page)).toEqual(said);
+  expect(await status(page)).not.toContain("Selection cleared");
+
+  // Keys of another field name nothing: dropped, said, and the page is told.
+  await page.evaluate(() => document.querySelector("opengrid-grid").setAttribute("row-key", "amount"));
   await expect.poll(() => status(page)).toContain("Selection cleared");
-  expect(await status(page)).toContain("200 matches");
-  expect((await events(page)).at(-1)).toEqual({ rows: [], ranges: [], count: 0, keys: [] });
+  expect((await events(page)).at(-1)).toEqual({ count: 0, keys: [] });
   expect(await events(page)).toHaveLength(said.length + 1);
-  expect(
-    await shadow(page, (root) => root.querySelectorAll('tbody tr[aria-selected="true"]').length),
-  ).toBe(0);
+  expect(await selectedIds(page)).toEqual([]);
 });
 
-test("grouping an ungrouped grid drops its selection of positions, and says so", async ({ page }) => {
-  await open(page);
+test("without a row-key, grouping an ungrouped grid drops its selection of positions, and says so", async ({
+  page,
+}) => {
+  await open(page, "?nokey");
   await page.evaluate(() => document.querySelector("opengrid-grid").removeAttribute("group-by"));
   await expect.poll(() => rowcount(page)).toBe(201);
   await press(page, 1, " ");
-  await expect.poll(async () => (await events(page)).at(-1)?.rows).toEqual([1]);
+  // By position: the row's number, and the range it makes.
+  await expect
+    .poll(async () => (await events(page)).at(-1))
+    .toEqual({ rows: [1], ranges: [{ from: 1, to: 1 }], count: 1 });
+  expect((await view(page)).selected).toBeUndefined();
 
   await page.evaluate(() =>
     document.querySelector("opengrid-grid").setAttribute("group-by", "country"),
   );
   await expect.poll(() => rowcount(page)).toBe(7);
   await expect.poll(() => status(page)).toContain("Selection cleared");
-  // The page hears it as the ungrouped grid's own: positions, none left.
   expect((await events(page)).at(-1)).toEqual({ rows: [], ranges: [], count: 0 });
-  // Nothing was carried over into the groups.
-  await press(page, 0, "Enter");
-  await expect.poll(async () => (await drawn(page))[1]?.kind).toBe("row");
-  expect(await selectedIds(page)).toEqual([]);
   expect(await headerCheck(page)).toBe("false");
 });
 
-test("applying a view drops a selection by key, like any other", async ({ page }) => {
+test("an ungrouped grid with a row-key selects by key: a sort keeps it, Shift takes the rows between", async ({
+  page,
+}) => {
+  await open(page, "?menu");
+  await page.evaluate(() => document.querySelector("opengrid-grid").removeAttribute("group-by"));
+  await expect.poll(() => rowcount(page)).toBe(201);
+  await expect.poll(async () => (await drawn(page))[0]?.text).toBe("1");
+
+  // Rows 2 to 5 are the records 3 to 6.
+  await press(page, 2, " ");
+  await expect.poll(() => events(page)).toEqual([{ count: 1, keys: [3] }]);
+  await press(page, 5, "Shift+ ");
+  await expect.poll(async () => (await events(page)).at(-1)).toEqual({ count: 4, keys: [3, 4, 5, 6] });
+  expect(await selectedIds(page)).toEqual([3, 4, 5, 6]);
+  expect(await headerCheck(page)).toBe("mixed");
+  const said = await events(page);
+
+  // Sorted the other way round, the four are somewhere else — and selected.
+  await shadow(page, (root) => root.querySelector('th[data-col="0"]').focus());
+  await page.keyboard.press("Enter");
+  await expect.poll(async () => (await drawn(page))[0]?.text).toBe("200");
+  expect(await selectedIds(page)).toEqual([]);
+  expect(await status(page)).not.toContain("Selection cleared");
+  expect(await events(page)).toEqual(said);
+  expect((await view(page)).selected).toEqual([3, 4, 5, 6]);
+  await page.keyboard.press("Enter");
+  await expect.poll(async () => (await drawn(page))[0]?.text).toBe("1");
+  await expect.poll(() => selectedIds(page)).toEqual([3, 4, 5, 6]);
+
+  // The anchor's row holds another record after a sort: `Shift` only toggles.
+  await page.keyboard.press("Enter");
+  await expect.poll(async () => (await drawn(page))[0]?.text).toBe("200");
+  await press(page, 7, "Shift+ ");
+  await expect.poll(async () => (await events(page)).at(-1)).toEqual({ count: 5, keys: [3, 4, 5, 6, 193] });
+
+  // Every row of the filter, and the header clears it again.
+  await press(page, 0, "ControlOrMeta+a");
+  await expect.poll(async () => (await events(page)).at(-1).count).toBe(200);
+  await expect.poll(() => headerCheck(page)).toBe("true");
+  await shadow(page, (root) => root.querySelector('[part="select-mark"]').click());
+  await expect.poll(async () => (await events(page)).at(-1)).toEqual({ count: 0, keys: [] });
+  await expect.poll(() => status(page)).toContain("0 rows selected");
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+});
+
+test("the view carries the selection as selected, and selecting is no view change", async ({ page }) => {
+  await open(page);
+  await page.evaluate(() => {
+    window.__views = [];
+    document.addEventListener("opengrid-view-change", (event) => window.__views.push(event.detail.view));
+  });
+  // Nothing selected: the field is not there.
+  expect("selected" in (await view(page))).toBe(false);
+
+  await openAlpha(page);
+  const rows = await drawn(page);
+  const picked = [Number(rows[2].text), Number(rows[3].text)].sort((a, b) => a - b);
+  const before = (await page.evaluate(() => window.__views)).length;
+  await press(page, 2, " ");
+  await press(page, 3, " ");
+  await expect.poll(async () => (await heard(page))?.count).toBe(2);
+  expect((await view(page)).selected).toEqual(picked);
+  // Two selections, two selection events — and not one view change.
+  expect(await page.evaluate(() => window.__views)).toHaveLength(before);
+
+  // Setting the view it has costs nothing and says nothing.
+  const saved = await view(page);
+  await page.evaluate(() => window.__queries.splice(0));
+  const said = await events(page);
+  await setView(page, saved);
+  await page.waitForTimeout(200);
+  expect(await page.evaluate(() => window.__queries)).toEqual([]);
+  expect(await events(page)).toEqual(said);
+});
+
+test("set_view restores the selection after asking the source, and says what is gone", async ({
+  page,
+}) => {
   await open(page);
   await openAlpha(page);
+  const rows = await drawn(page);
+  const picked = [Number(rows[2].text), Number(rows[3].text)].sort((a, b) => a - b);
   await press(page, 2, " ");
-  await expect.poll(async () => (await heard(page))?.count).toBe(1);
+  await press(page, 3, " ");
+  await expect.poll(async () => (await heard(page))?.count).toBe(2);
+  const saved = await view(page);
 
-  const view = await page.evaluate(() => {
-    const host = document.querySelector("opengrid-grid");
-    const view = window.__module.get_view(host);
-    // The view carries the grouping and what is open — and no selection.
-    window.__module.set_view(host, { ...view, density: "compact" });
-    return view;
-  });
-  expect(view.selected).toBeUndefined();
-  expect(view.selection).toBeUndefined();
+  // Deselected, and the saved view brings both back: no key is missing, so
+  // nothing is said about the selection.
+  await press(page, 2, " ");
+  await press(page, 3, " ");
+  await expect.poll(async () => (await heard(page)).count).toBe(0);
+  await page.evaluate(() => window.__queries.splice(0));
+  await setView(page, saved);
+  await expect.poll(async () => (await events(page)).at(-1)).toEqual({ count: 2, keys: picked });
+  await expect.poll(() => selectedIds(page)).toEqual(picked);
+  expect(await status(page)).not.toMatch(/Selection cleared|no longer exist/);
+  expect((await view(page)).selected).toEqual(picked);
+  // The source was asked for exactly these keys, by the key column.
+  const asked = await page.evaluate(() =>
+    window.__queries.map((query) => JSON.parse(query)).filter((query) => query.filter?.op === "in"),
+  );
+  expect(asked).toHaveLength(1);
+  expect(asked[0]).toMatchObject({ select: ["id"], filter: { field: "id", op: "in", value: picked } });
+
+  // Keys are a page's word. 9999 names no record; "x", 1.5 and true are not
+  // even ids — none of the three is asked for, and none is selected.
+  await page.evaluate(() => window.__queries.splice(0));
+  await setView(
+    page,
+    { ...saved, selected: [picked[0], 9999, "x", 1.5, true, 7] },
+    { notice: "Saved view applied" },
+  );
+  await expect
+    .poll(() => status(page))
+    .toBe("200 matches · Saved view applied · 4 selected rows no longer exist");
+  expect((await events(page)).at(-1)).toEqual({ count: 2, keys: [7, picked[0]].sort((a, b) => a - b) });
+  const checked = await page.evaluate(() =>
+    window.__queries.map((query) => JSON.parse(query)).filter((query) => query.filter?.op === "in"),
+  );
+  expect(checked.map((query) => query.filter.value)).toEqual([[7, picked[0], 9999].sort((a, b) => a - b)]);
+  await expect.poll(() => selectedIds(page)).toEqual([picked[0]]);
+
+  // A view without `selected` selects nothing: dropped, and said.
+  const { selected, ...bare } = saved;
+  expect(selected).toEqual(picked);
+  await setView(page, { ...bare, density: "compact" });
   await expect.poll(() => status(page)).toContain("Selection cleared");
-  expect((await events(page)).at(-1)).toEqual({ rows: [], ranges: [], count: 0, keys: [] });
-  await expect.poll(async () => (await drawn(page))[2]?.kind).toBe("row");
-  expect(await selectedIds(page)).toEqual([]);
+  expect((await events(page)).at(-1)).toEqual({ count: 0, keys: [] });
+  expect("selected" in (await view(page))).toBe(false);
+});
+
+test("a selected that is not a list of keys refuses the view; a failed check is said and selects nothing", async ({
+  page,
+}) => {
+  await open(page);
+  const saved = await view(page);
+  await setView(page, { ...saved, density: "compact", selected: [[1], { id: 2 }] });
+  await expect.poll(() => status(page)).toContain("selected is not a list of keys");
+  // Not applied at all: the density is the old one.
+  expect((await view(page)).density).toBe("normal");
+  expect(await events(page)).toEqual([]);
+
+  // The source fails the check: an error with the result, and no selection.
+  await page.evaluate(() => (window.__failChecks = true));
+  await setView(page, { ...saved, selected: [1, 2] });
+  await expect.poll(() => status(page)).toMatch(/^200 matches · .*check refused/);
+  expect(await events(page)).toEqual([]);
+  expect("selected" in (await view(page))).toBe(false);
+  expect(await headerCheck(page)).toBe("false");
+});
+
+test("an ungrouped grid restores a view's selection too", async ({ page }) => {
+  await open(page);
+  await page.evaluate(() => document.querySelector("opengrid-grid").removeAttribute("group-by"));
+  await expect.poll(() => rowcount(page)).toBe(201);
+  const saved = await view(page);
+  await setView(page, { ...saved, selected: [2, 4, 500] });
+  await expect.poll(async () => (await events(page)).at(-1)).toEqual({ count: 2, keys: [2, 4] });
+  await expect.poll(() => selectedIds(page)).toEqual([2, 4]);
+  expect(await status(page)).toBe("200 matches · 1 selected rows no longer exist");
 });
 
 test("without a row-key a grouped grid selects nothing, as before", async ({ page }) => {

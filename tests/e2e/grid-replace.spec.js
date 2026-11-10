@@ -54,7 +54,8 @@ test("a replaced source clears the selection and says so", async ({ page }) => {
   await page.keyboard.press("Space");
   await page.keyboard.press("ArrowUp");
   await page.keyboard.press("Space");
-  expect((await page.evaluate(() => window.__selection)).at(-1)).toEqual([4, 5]);
+  // The records in rows 4 and 5, by their `row-key`.
+  expect((await page.evaluate(() => window.__selection)).at(-1)).toEqual([5, 6]);
 
   await page.evaluate((rows) => window.__replace("rooms", rows), east(3));
   await expect.poll(() => column(page, "plain", 1)).toEqual(["E1", "E2", "E3", ""]);

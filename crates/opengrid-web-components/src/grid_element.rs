@@ -173,6 +173,9 @@ struct GridRuntime {
     /// A view's selection, until the source has said which of its keys name
     /// a record (issue #322).
     restore: Option<Restore>,
+    /// What the check of a view's selection found — keys that name no record,
+    /// or that it failed — to be said with the result that follows.
+    restore_said: Option<String>,
     /// Bumped by every view applied: an older view's check is void.
     view_round: u64,
     /// The tree, while `tree` is set and allowed (plan point 123, E38).
@@ -315,6 +318,7 @@ fn fresh_runtime(
         groups_filter: None,
         picked: Default::default(),
         restore: None,
+        restore_said: None,
         view_round: 0,
         tree: tree_of(host).ok().flatten(),
         tree_asked: None,
@@ -1500,6 +1504,11 @@ fn settle(
                     shrunk = Some(runtime.state.selection().to_vec());
                 }
                 show_picked(&mut runtime);
+                if kind == QueryKind::Data
+                    && let Some(said) = runtime.restore_said.take()
+                {
+                    runtime.state.append_notice(said);
+                }
                 if let Some(key) = runtime.replaced.take() {
                     follow_replaced(&mut runtime, key);
                 } else if kind == QueryKind::Data {
@@ -5669,7 +5678,10 @@ pub(crate) fn write_view(host: &HtmlElement, value: &JsValue, notice: Option<Str
     reset_runtime(host);
     // The page's reason, said with the result (issue #146).
     if let Some(notice) = &notice {
-        runtime.borrow_mut().state.notice_with_result(notice.clone());
+        runtime
+            .borrow_mut()
+            .state
+            .notice_with_result(notice.clone());
     }
     ensure_skeleton(host);
     {
@@ -5796,7 +5808,6 @@ pub(crate) fn write_view(host: &HtmlElement, value: &JsValue, notice: Option<Str
         runtime.borrow_mut().restore = Some(Restore {
             keys: view.selected.clone(),
             had_selection,
-            notice,
             asked: false,
         });
     } else if had_selection {
@@ -5819,8 +5830,6 @@ struct Restore {
     /// Whether the view replaced a selection: one that ends up empty was
     /// dropped, and is said.
     had_selection: bool,
-    /// The page's reason for the view, said with the same result.
-    notice: Option<String>,
     /// The source is being asked; queries wait until it has answered.
     asked: bool,
 }
@@ -5872,12 +5881,8 @@ fn restore_then_query(
             // Under a filter the records need not be among the rows.
             let filtered = !matches!(effective_filter(&host, &borrowed, None), Ok(None));
             let borrowed = &mut *borrowed;
-            if let Some(said) = said {
-                borrowed.state.notice_with_result(match restore.notice {
-                    Some(notice) => format!("{notice} · {said}"),
-                    None => said,
-                });
-            }
+            // Said with the result of the view's query ([`settle`]).
+            borrowed.restore_said = said;
             if none && restore.had_selection {
                 borrowed.state.note_selection_dropped();
             }
@@ -5919,9 +5924,11 @@ async fn known_ids(
             None => row_key_of(host),
         }
     };
-    let (Some(provider), Some(source), Some(field)) =
-        (provider(host), host.get_attribute(DATASOURCE_ATTRIBUTE), field)
-    else {
+    let (Some(provider), Some(source), Some(field)) = (
+        provider(host),
+        host.get_attribute(DATASOURCE_ATTRIBUTE),
+        field,
+    ) else {
         return Ok(Vec::new());
     };
     let mode = host.get_attribute(MODE_ATTRIBUTE).unwrap_or_default();
@@ -5954,7 +5961,14 @@ async fn known_ids(
         };
         let query = grid::query_json(&source, &select, &sorts, Some(&filter), 0, PIECE as u64);
         let result = ask_uncounted(host, &provider, &query, &mode).await?;
-        ids.extend(result.columns.first().into_iter().flatten().map(grouping::key_id));
+        ids.extend(
+            result
+                .columns
+                .first()
+                .into_iter()
+                .flatten()
+                .map(grouping::key_id),
+        );
     }
     Ok(ids)
 }
