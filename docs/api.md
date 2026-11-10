@@ -16,7 +16,7 @@ like.
 
 - [Loading](#loading) · [Providers](#providers) · [Connecting](#connecting)
 - [`<opengrid-grid>`](#opengrid-grid) · [`<opengrid-table>`](#opengrid-table) · [`<opengrid-pivot>`](#opengrid-pivot)
-- [The view](#the-view) · [Errors](#errors) · [Events](#events) · [Styling](#styling) · [Texts](#texts)
+- [The view](#the-view) · [Errors](#errors) · [Events](#events) · [Styling](#styling) · [Right to left](#right-to-left) · [Texts](#texts)
 
 ## Loading
 
@@ -257,6 +257,9 @@ An interactive `<table role="grid">`: virtualized, keyboard-driven, filterable.
 | `Ctrl`/`Cmd`+`←`/`→` | header cell | move the column |
 | `Ctrl`/`Cmd`+`Shift`+`←`/`→` | header cell | resize the column |
 | `Alt`+`↓`, `Shift`+`F10`, context-menu key | header cell | open the column menu (with `column-menu`) |
+
+On a right-to-left page `←` and `→` change places, and nothing else does:
+[Right to left](#right-to-left).
 
 With `selection` set, the column is the **start of the row**: `Home` and
 `Ctrl`+`Home` go there, and `←` from the first data column reaches it. Its
@@ -1321,6 +1324,56 @@ opengrid-pivot::part(total-row) { font-weight: 600; }
 cells, and `set_columns` gives a column its `title` and its `align`, `mono`, `emphasis`
 and `muted`. The grid's own options — `width`, `aggregate`, `facet` — are refused for a
 table, in the same alert as any other mistake, not ignored.
+
+## Right to left
+
+The three elements take the direction from the platform: `dir="rtl"` on the element or on any
+ancestor, usually on `<html>`. There is no attribute of their own for it.
+
+```html
+<html lang="ar" dir="rtl">
+  …
+  <opengrid-grid label="…" datasource="orders" columns="id,customer,amount"></opengrid-grid>
+```
+
+Right to left, the first column stands on the right and the row reads towards the left; the
+selection column, a group's or a node's indent and mark, the bar of a selected row, the sort mark
+and the column menu's button, the toolbar, the facet sidebar and the popups all follow. A column
+with `align: "start"` is right-aligned and one with `align: "end"` — every number — left-aligned.
+A grid wider than its columns' room scrolls from the right edge. In `<opengrid-table>` and
+`<opengrid-pivot>` the columns, the alignment, a group's fold mark and the field toolbar follow
+the same way; neither has keys of its own that name a side.
+
+**Keys in `<opengrid-grid>`.** `←` and `→` follow what is on the screen, as the WAI-ARIA grid and
+treegrid patterns ask; every other key names a place in reading order and is the same in both
+directions.
+
+| Keys | On | Left to right | Right to left |
+|---|---|---|---|
+| `←` | cell | the cell before | the next cell |
+| `→` | cell | the next cell | the cell before |
+| `Ctrl`/`Cmd`+`←` | header cell | move the column one place towards the start | one place towards the end |
+| `Ctrl`/`Cmd`+`→` | header cell | move the column one place towards the end | one place towards the start |
+| `Ctrl`/`Cmd`+`Shift`+`←` | header cell | narrow the column | widen the column |
+| `Ctrl`/`Cmd`+`Shift`+`→` | header cell | widen the column | narrow the column |
+| `←` | a group's or node's first cell | close; on a closed node or a leaf, go to the parent | open; on an open node, go to its first child |
+| `→` | a group's or node's first cell | open; on an open node, go to its first child | close; on a closed node or a leaf, go to the parent |
+| `Home` / `End` | cell | the first / last cell of the row | the same: the first cell is the one on the right |
+| `Ctrl`+`Home` / `Ctrl`+`End` | cell | the first cell / the last cell of the last row | the same |
+| `↑` `↓` `PageUp` `PageDown` `Tab`, and every other key | | | the same |
+
+**What is supported.**
+
+- The direction is read from the computed `direction` whenever it is needed, so a `dir` that
+  changes while the element is in the page is followed: the layout at once, the keys with the
+  next key, a popup the next time it opens, the filter row's place under the columns the next
+  time the grid lays it out (a resize, a column shown or resized).
+- Set the direction with `dir`, not with the CSS property `direction` alone: the marks that
+  point sideways and the alignment are mirrored with `:dir(rtl)`, which reads the attribute.
+- The texts are not translated by the direction; they are the page's ([Texts](#texts)). The
+  default English ones in a right-to-left line are ordered by the browser, like any Latin text.
+- The order of letters inside a cell is the browser's (the Unicode bidirectional algorithm);
+  the elements add nothing to it.
 
 ## Texts
 

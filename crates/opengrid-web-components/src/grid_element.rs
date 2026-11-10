@@ -1910,12 +1910,23 @@ fn on_key_down(event: KeyboardEvent) {
     // the `borrow_mut` inside panic, and a panic in an event handler is a
     // silently dead key.
     let active = runtime.borrow().active;
+    // `←` and `→` by what the reader sees (issue #320): in a right-to-left
+    // layout the next cell is on the left, so the two change places — for
+    // moving, for a column's place and width, and for a group or a node.
+    // `Home` and `End` name the row's ends and stay as they are.
+    let pressed = event.key();
+    let sideways = matches!(pressed.as_str(), "ArrowLeft" | "ArrowRight");
+    let key = match pressed.as_str() {
+        "ArrowLeft" if crate::element::is_rtl(&host) => "ArrowRight",
+        "ArrowRight" if crate::element::is_rtl(&host) => "ArrowLeft",
+        other => other,
+    };
     if (event.ctrl_key() || event.meta_key())
-        && matches!(event.key().as_str(), "ArrowLeft" | "ArrowRight")
+        && sideways
         && let ActiveCell::Header { col } = active
     {
         event.prevent_default();
-        let by = if event.key() == "ArrowLeft" { -1 } else { 1 };
+        let by = if key == "ArrowLeft" { -1 } else { 1 };
         if event.shift_key() {
             resize_column(&host, col, by * WIDTH_STEP as i32);
         } else {
@@ -1930,7 +1941,7 @@ fn on_key_down(event: KeyboardEvent) {
     // is a dead end.
     if let Some((position, expanded)) = active_group(&host) {
         let on_first = matches!(active, ActiveCell::Data(cell) if cell.col == 0);
-        let toggles = match event.key().as_str() {
+        let toggles = match key {
             "Enter" | " " => true,
             "ArrowRight" => on_first && !expanded,
             "ArrowLeft" => on_first && expanded,
@@ -1953,7 +1964,7 @@ fn on_key_down(event: KeyboardEvent) {
     {
         let on_first = matches!(active, ActiveCell::Data(cell) if cell.col == 0);
         let opens = entry.children > 0;
-        match event.key().as_str() {
+        match key {
             "ArrowRight" if on_first && opens && !entry.expanded => {
                 event.prevent_default();
                 toggle_tree(&host, position);
@@ -2087,7 +2098,7 @@ fn on_key_down(event: KeyboardEvent) {
         return;
     }
 
-    match (event.key().as_str(), event.ctrl_key()) {
+    match (key, event.ctrl_key()) {
         ("Enter", _) => {
             event.prevent_default();
             // On a header `Enter` sorts, as it always has; on a data cell it
@@ -2549,6 +2560,9 @@ fn align_filter(host: &HtmlElement) {
     };
     // Every measurement first, every write after: a write between two reads
     // makes the browser lay the page out again for the next read.
+    // Right to left (issue #320) the same distances are measured from the right
+    // edges: the row's inside, and the first column's start.
+    let rtl = crate::element::is_rtl(&filter);
     let table_left = table.get_bounding_client_rect().left();
     let mut first = None;
     let mut groups = Vec::new();
@@ -2563,7 +2577,7 @@ fn align_filter(host: &HtmlElement) {
             continue;
         };
         let rect = header.get_bounding_client_rect();
-        first.get_or_insert(rect.left() - table_left);
+        first.get_or_insert(if rtl { rect.right() } else { rect.left() } - table_left);
         if let Ok(Some(operator)) =
             root.query_selector(&format!("[part=\"filter-operator\"][data-col=\"{col}\"]"))
             && let Some(group) = operator.parent_element()
@@ -2581,22 +2595,27 @@ fn align_filter(host: &HtmlElement) {
         .ok()
         .flatten()
         .map_or(0, |viewport| viewport.scroll_left());
-    let indent = table_left + f64::from(scrolled)
-        - filter.get_bounding_client_rect().left()
-        - f64::from(filter.client_left())
-        + first;
+    // A viewport scrolled right to left has a negative `scrollLeft`; the sum
+    // is where the column stands unscrolled in both directions.
+    let column = table_left + f64::from(scrolled) + first;
+    let inside = filter.get_bounding_client_rect().left() + f64::from(filter.client_left());
+    let indent = if rtl {
+        inside + f64::from(filter.client_width()) - column
+    } else {
+        column - inside
+    };
     for (group, width) in groups {
         // Through the CSSOM, like every style the grid writes: a page
         // whose `style-src` lacks 'unsafe-inline' refuses the attribute.
         group.style().set_css_text(&format!(
             "display: inline-flex; align-items: center; gap: 0.25rem; flex: none; \
-             box-sizing: border-box; padding-right: 0.25rem; width: {width:.2}px;"
+             box-sizing: border-box; padding-inline-end: 0.25rem; width: {width:.2}px;"
         ));
     }
     if let Ok(filter) = filter.dyn_into::<HtmlElement>() {
         let _ = filter
             .style()
-            .set_property("padding-left", &format!("{:.2}px", indent.max(0.0)));
+            .set_property("padding-inline-start", &format!("{:.2}px", indent.max(0.0)));
         keep_focus_in_sight(&root, &filter);
     }
 }
@@ -6574,27 +6593,12 @@ fn place_menu(root: &ShadowRoot, menu: &HtmlElement, col: usize) {
     };
     let cell = header.get_bounding_client_rect();
     let own = menu.get_bounding_client_rect();
-    let (width, height) = web_sys::window()
-        .map(|window| {
-            (
-                window
-                    .inner_width()
-                    .ok()
-                    .and_then(|value| value.as_f64())
-                    .unwrap_or(1024.0),
-                window
-                    .inner_height()
-                    .ok()
-                    .and_then(|value| value.as_f64())
-                    .unwrap_or(768.0),
-            )
-        })
-        .unwrap_or((1024.0, 768.0));
+    let height = web_sys::window()
+        .and_then(|window| window.inner_height().ok())
+        .and_then(|value| value.as_f64())
+        .unwrap_or(768.0);
     const GAP: f64 = 4.0;
-    let mut left = cell.left();
-    if left + own.width() > width - GAP {
-        left = (cell.right() - own.width()).max(GAP);
-    }
+    let left = crate::element::popup_left(&cell, &own, crate::element::is_rtl(&header));
     let mut top = cell.bottom() + GAP;
     if top + own.height() > height - GAP && cell.top() - own.height() - GAP >= GAP {
         top = cell.top() - own.height() - GAP;

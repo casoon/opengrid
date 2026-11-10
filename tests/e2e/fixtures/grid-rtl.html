@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>opengrid right-to-left grid fixture</title>
+    <style>
+      /* Issue #320: a page that reads right to left. Nothing here tells the
+         grids so — they take the direction from `dir` on the document. The
+         words stay English (the texts are the page's, issue #333), so the
+         assertions read the same as everywhere else.
+         `#flat` is narrower than its columns, so it scrolls sideways; the
+         other two show what points sideways: a group and a tree's node. */
+      opengrid-grid {
+        display: block;
+        height: 300px;
+        margin-block-end: 16px;
+      }
+      #flat {
+        max-width: 440px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid right-to-left grid fixture</h1>
+      <opengrid-grid
+        id="flat"
+        label="Orders"
+        datasource="orders"
+        columns="id,customer,country,amount,qty,ordered_on"
+        selection
+        column-menu
+        window-size="12"
+      ></opengrid-grid>
+      <opengrid-grid
+        id="grouped"
+        label="Orders by country"
+        datasource="orders"
+        columns="id,customer,country,amount"
+        group-by="country"
+        window-size="12"
+      ></opengrid-grid>
+      <opengrid-grid
+        id="tree"
+        label="Organisation"
+        datasource="tree"
+        columns="name,region,revenue"
+        tree="parent_id"
+        window-size="12"
+      ></opengrid-grid>
+    </main>
+    <script type="module">
+      import { loadOpengrid } from "/packages/opengrid/loader.js";
+      import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+
+      async function start() {
+        const loader = await loadOpengrid();
+        await init();
+        const engine = new Engine();
+        const load = async (name, schema, csv) =>
+          engine.load_csv(
+            name,
+            new Uint8Array(await (await fetch(csv)).arrayBuffer()),
+            await (await fetch(schema)).text(),
+          );
+        await load(
+          "orders",
+          "/crates/opengrid-conformance/data/orders.schema.json",
+          "/tests/e2e/fixtures/grid-virtual.csv",
+        );
+        await load(
+          "tree",
+          "/crates/opengrid-conformance/data/tree.schema.json",
+          "/crates/opengrid-conformance/data/tree.csv",
+        );
+        // Six columns of 150 px in 440 px: the viewport scrolls sideways.
+        loader.module.set_columns(
+          document.querySelector("#flat"),
+          Object.fromEntries(
+            ["id", "customer", "country", "amount", "qty", "ordered_on"].map((name) => [name, { width: 150 }]),
+          ),
+        );
+        for (const host of document.querySelectorAll("opengrid-grid")) {
+          loader.module.set_provider(host, { kind: "local", execute: (queryJson) => engine.execute(queryJson) });
+        }
+        window.__opengridModule = loader.module;
+        return { fallback: loader.fallback };
+      }
+
+      window.__opengridReady = start();
+    </script>
+  </body>
+</html>
