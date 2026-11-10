@@ -944,12 +944,13 @@ fn open_field_menu(host: &HtmlElement, button: &Element) {
     let view = view_of(host);
     if let Some(alias) = &shown {
         let _ = menu.set_attribute("data-calc-of", alias);
-        let current = view
+        let measure = view
             .values
             .iter()
-            .find(|value| value["as"].as_str() == Some(alias))
-            .and_then(pivot::calc_of);
-        for calc in std::iter::once(None).chain(opengrid_pivot::Calc::ALL.map(Some)) {
+            .find(|value| value["as"].as_str() == Some(alias));
+        let current = measure.and_then(pivot::calc_of);
+        let offered = measure.map_or(&[][..], pivot::offered);
+        for calc in std::iter::once(None).chain(offered.iter().copied().map(Some)) {
             if let Ok(item) = document.create_element("div") {
                 let _ = item.set_attribute("role", "menuitemradio");
                 let _ = item.set_attribute("aria-checked", &(calc == current).to_string());

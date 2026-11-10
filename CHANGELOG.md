@@ -49,8 +49,9 @@ Two things belong in every release entry and are easy to leave out:
   asking the source which of the keys still name a record; those that do not are dropped and said
   (new text `selectionMissing`). Selecting fires `opengrid-selection-change` only
   ([#322](https://github.com/casoon/opengrid/issues/322)).
-- **Pivot:** calculated measures. A `sum` or `count` with `calc` is shown as its share of the row,
-  the column or the grand total, or as a running total along the columns — computed by the source,
+- **Pivot:** calculated measures. A measure with `calc` is shown as its share of the row, the
+  column or the grand total (`sum`, `count`), or as a running total along the columns (also `avg`,
+  `min`, `max`) — computed by the source,
   chosen from a measure's chip in the toolbar, named in the headers and the exports
   ([#329](https://github.com/casoon/opengrid/issues/329),
   [Calculated measures](docs/api.md#calculated-measures)).

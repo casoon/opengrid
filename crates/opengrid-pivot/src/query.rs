@@ -5,7 +5,7 @@ use opengrid_query::{
     Aggregate, AggregateFn, Collation, FilterExpr, Limits, NullsOrder, Query, QueryError, Sort,
     SortDirection, ValidatedQuery,
 };
-use opengrid_types::{DataSourceId, FieldName, Schema};
+use opengrid_types::{DataSourceId, DataType, FieldName, Schema};
 
 /// What to pivot: rows down the side, columns across the top, measures inside.
 ///
@@ -41,8 +41,10 @@ pub struct Measure {
 ///
 /// Every one is computed from the pivot's own cells, after the aggregation,
 /// in [`crate::assemble`] — the one place every source's pivot goes through.
-/// That needs the aggregate to be additive across columns, so a calculation
-/// is defined for `sum` and `count` and refused for the rest (P10).
+/// A share divides by a total added up from the cells, which is the aggregate
+/// of the whole only for `sum` and `count`: shares are refused for the rest.
+/// A running total adds up what the cells show, so it takes any aggregate
+/// whose result is a number (P10).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Calc {
     /// The cell as a fraction of its row's total across every column (P11).
@@ -368,10 +370,13 @@ impl PivotQuery {
             seen.push(field);
         }
 
-        // P10: a calculation adds a row's or a column's cells up, and only a
-        // sum and a count of the parts are the sum and the count of the whole.
+        // P10: a share divides by a total added up from the cells, and only
+        // a sum and a count of the parts are the sum and the count of the
+        // whole. A running total adds up what the cells show, whatever the
+        // aggregate — its type is checked below, once the sets know it.
         for value in &self.values {
             if let Some(calc) = value.calc
+                && calc != Calc::RunningTotal
                 && !matches!(
                     value.aggregate.function,
                     AggregateFn::Sum | AggregateFn::Count
@@ -417,6 +422,33 @@ impl PivotQuery {
         // one past `max_cells` / `max_rows` is already a pivot that is too big
         // - `assemble` says so - and the source never reads more.
         let mut sets = grouping_sets(self, schema, query_limits)?;
+        // P10: a running total is a sum of the cells, so the cells are
+        // numbers — the smallest text or the latest date cannot be added up.
+        for value in &self.values {
+            let result = sets[0]
+                .output_schema
+                .field(value.aggregate.alias.as_str())
+                .map(|field| field.data_type);
+            if value.calc == Some(Calc::RunningTotal)
+                && !matches!(
+                    result,
+                    Some(DataType::Int64 | DataType::Float64 | DataType::Decimal { .. })
+                )
+            {
+                return Err(PivotError::Calc {
+                    measure: value.aggregate.alias.to_string(),
+                    reason: format!(
+                        "running_total needs a number, and {} of {} is none",
+                        value.aggregate.function.as_str(),
+                        value
+                            .aggregate
+                            .field
+                            .as_ref()
+                            .map_or("the rows", |field| field.as_str())
+                    ),
+                });
+            }
+        }
         for set in &mut sets {
             set.limit = Some(one_past(limits.max_cells));
         }

@@ -236,7 +236,7 @@ test.describe("pivot calculated measures, the toolbar", () => {
         .addEventListener("opengrid-view-change", (event) => window.__views.push(event.detail.view.values));
     });
 
-  test("a sum and a count offer it, an average does not", async ({ page }) => {
+  test("a sum and a count offer every calculation, an average the running total", async ({ page }) => {
     await open(page);
     await show(page, [SOLD, { fn: "count", as: "n" }, { field: "units", fn: "avg", as: "mean" }]);
     const buttons = await inside(page, (root) =>
@@ -251,8 +251,66 @@ test.describe("pivot calculated measures, the toolbar", () => {
     expect(buttons).toEqual([
       ["sold", "value", "Show sold as: value", "menu", "false"],
       ["n", "value", "Show n as: value", "menu", "false"],
+      ["mean", "value", "Show mean as: value", "menu", "false"],
     ]);
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+
+    // No share of an average (P10): its menu has the value and the running total.
+    await focus(page, 'button[data-calc="mean"]');
+    await page.keyboard.press("Enter");
+    expect(await menu(page)).toEqual({
+      role: "menu",
+      name: "Show mean as: value",
+      items: [
+        ["menuitemradio", "value", "true"],
+        ["menuitemradio", "running total", "false"],
+      ],
+    });
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
+    await expect.poll(() => values(page)).toContain('{"field":"units","fn":"avg","as":"mean","calc":"running_total"}');
+    await expect.poll(() => state(page)).toBe("ready");
+    await expect
+      .poll(() => focused(page))
+      .toMatchObject({ part: "chip-calc", name: "Show mean as: running total" });
+    // By hand: avg(units) is N 1·3·–, S –·2·–, A 1·2.5·–, W 5·-5, B 5·-5·–,
+    // Total 3·0·–; each row adds up its own cells. The third measure of each
+    // year is the average's running total.
+    const running = (await body(page)).map((row) =>
+      [2, 5, 8].map((at) => (row.cells[at] === "" ? null : Number(row.cells[at]))),
+    );
+    expect(running).toEqual([
+      [1, 4, 4],
+      [null, 2, 2],
+      [1, 3.5, 3.5],
+      [null, null, null],
+      [5, 0, 0],
+      [5, 0, 0],
+      [3, 3, 3],
+    ]);
+  });
+
+  test("a running total of what is no number is refused in the status line", async ({ page }) => {
+    await open(page);
+    await page.evaluate(() =>
+      document
+        .querySelector("opengrid-pivot")
+        .setAttribute("values", '[{"field":"region","fn":"max","as":"last","calc":"running_total"}]'),
+    );
+    await expect.poll(() => state(page)).toBe("error");
+    expect(await status(page)).toContain("measure last: running_total needs a number, and max of region is none");
+    // A largest amount is one: 10.00·30.00·– for N, to the cent.
+    await show(page, [{ field: "amount", fn: "max", as: "most", calc: "running_total" }]);
+    expect((await body(page)).map((row) => row.cells)).toEqual([
+      ["10.00", "40.00", "40.00"],
+      ["", "20.00", "20.00"],
+      ["10.00", "40.00", "40.00"],
+      ["", "", ""],
+      ["5.50", "0.00", "0.00"],
+      ["5.50", "0.00", "0.00"],
+      ["10.00", "40.00", "40.00"],
+    ]);
   });
 
   test("a reader chooses a share from the keyboard, and takes it back", async ({ page }) => {

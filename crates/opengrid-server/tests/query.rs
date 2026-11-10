@@ -474,6 +474,28 @@ async fn a_calculated_measure_is_computed_over_the_callers_rows() {
         error.message
     );
 
+    // … while its running total is answered, as floats; and the running total
+    // of a largest text is refused the same way as the share.
+    let running = averaged.replace("share_of_column", "running_total");
+    let (status, answer) = post_pivot(app(false).await, "orders", Some(TOKEN), &running).await;
+    assert_eq!(status, StatusCode::OK, "{answer}");
+    let answer: opengrid_json::Json = opengrid_json::from_str(&answer).expect("JSON");
+    assert_eq!(
+        answer["result"]["columns"][1]["type"], "float64",
+        "{answer}"
+    );
+    let text = r#"{"source":"orders","rows":["country"],"columns":["ordered_year"],
+        "values":[{"field":"customer","fn":"max","as":"last","calc":"running_total"}]}"#;
+    let (status, answer) = post_pivot(app(false).await, "orders", Some(TOKEN), text).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{answer}");
+    let error = error_of(&answer);
+    assert_eq!(error.code, ErrorCode::Validation);
+    assert!(
+        error.message.contains("measure last") && error.message.contains("needs a number"),
+        "{}",
+        error.message
+    );
+
     // A calculation the contract does not have is not a pivot query.
     let unknown = shares.replace("share_of_column", "share_of_parent");
     let (status, answer) = post_pivot(app(false).await, "orders", Some(TOKEN), &unknown).await;

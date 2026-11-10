@@ -415,10 +415,17 @@ pub fn calcs(values: &[Value]) -> Vec<(String, Calc)> {
         .collect()
 }
 
-/// Whether a reader is offered a calculation for `value`: rule P10 defines
-/// one for a sum and a count, and the engine refuses the rest.
-fn calculable(value: &Value) -> bool {
-    matches!(value["fn"].as_str(), Some("sum" | "count"))
+/// The calculations a reader is offered for `value` (rule P10): all four for
+/// a sum and a count, the running total alone for an average, a smallest and
+/// a largest value — a share of those the engine refuses. Whether a smallest
+/// or largest value is a number at all, the pivot cannot know without the
+/// schema; the engine says so if it is not.
+pub fn offered(value: &Value) -> &'static [Calc] {
+    match value["fn"].as_str() {
+        Some("sum" | "count") => &Calc::ALL,
+        Some("avg" | "min" | "max") => &[Calc::RunningTotal],
+        _ => &[],
+    }
 }
 
 /// The names on `axis` of `view`: dimensions, or measure aliases.
@@ -567,7 +574,7 @@ pub fn build_toolbar(
                 .values
                 .iter()
                 .find(|value| axis == Axis::Values && value["as"].as_str() == Some(name))
-                .filter(|value| calculable(value))
+                .filter(|value| !offered(value).is_empty())
             {
                 let calc = calc_of(measure);
                 let button = element(buffer, nodes, Some(chip), "button");
@@ -2243,8 +2250,9 @@ mod tests {
         );
     }
 
-    /// Issue #329: a `sum` or `count` chip has a button that says what the
-    /// measure is shown as and of which measure; an average has none.
+    /// Issue #329: a measure's chip has a button that says what the measure
+    /// is shown as and of which measure. A sum and a count are offered all
+    /// four calculations, an average and a smallest value the running total.
     #[test]
     fn a_measure_chip_offers_what_it_is_shown_as() {
         let view = PivotView::from_attributes(
@@ -2283,13 +2291,24 @@ mod tests {
         let markup = format!("{:?}", buffer.patches());
         assert_eq!(
             markup.matches("value: \"chip-calc\"").count(),
-            3,
+            4,
             "{markup}"
         );
+        assert_eq!(offered(&view.values[0]), &Calc::ALL);
+        assert_eq!(offered(&view.values[2]), &Calc::ALL);
+        for function in ["avg", "min", "max"] {
+            assert_eq!(
+                offered(&json!({ "field": "qty", "fn": function, "as": "m" })),
+                &[Calc::RunningTotal],
+                "P10: no share of {function}"
+            );
+        }
+        assert!(offered(&json!({ "fn": "median", "as": "m" })).is_empty());
         for (alias, name) in [
             ("total", "Show Quantity as: value"),
             ("share", "Show share as: share of row"),
             ("n", "Show n as: value"),
+            ("mean", "Show mean as: value"),
         ] {
             assert!(
                 markup.contains(&format!("name: \"data-calc\", value: \"{alias}\"")),
@@ -2300,17 +2319,13 @@ mod tests {
                 "{name}: {markup}"
             );
         }
-        assert!(
-            !markup.contains("name: \"data-calc\", value: \"mean\""),
-            "P10: no calculation of an average"
-        );
         // The visible text is the choice, and the name ends with it (WCAG 2.5.3).
         assert!(markup.contains("text: \"share of row\""), "{markup}");
         assert_eq!(
             markup
                 .matches("name: \"aria-haspopup\", value: \"menu\"")
                 .count(),
-            6
+            7
         );
     }
 

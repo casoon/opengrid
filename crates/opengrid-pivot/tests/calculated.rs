@@ -364,18 +364,14 @@ fn a_running_total_beside_its_measure() {
     assert_eq!(measures, ["u", "r", "n"]);
 }
 
-/// P10: a calculation is defined for `sum` and `count`. The average, the
-/// smallest and the largest of the parts are not those of the whole, so they
-/// are refused — by name, before anything runs.
+/// P10: a share is defined for `sum` and `count`. The average, the smallest
+/// and the largest of the parts are not those of the whole, so a share of
+/// them is refused — by name, before anything runs. A running total adds up
+/// what the cells show and takes all five.
 #[test]
-fn a_calculation_is_refused_for_what_cannot_be_added_up() {
+fn a_share_is_refused_for_what_cannot_be_added_up() {
     for function in ["avg", "min", "max"] {
-        for calc in [
-            "share_of_row",
-            "share_of_column",
-            "share_of_total",
-            "running_total",
-        ] {
+        for calc in ["share_of_row", "share_of_column", "share_of_total"] {
             let error = validate(
                 &format!(r#"[{{"field":"units","fn":"{function}","as":"m","calc":"{calc}"}}]"#),
                 &PivotLimits::default(),
@@ -403,6 +399,147 @@ fn a_calculation_is_refused_for_what_cannot_be_added_up() {
             "{function}"
         );
     }
+    for function in ["sum", "count", "avg", "min", "max"] {
+        for field in ["units", "amount"] {
+            assert!(
+                validate(
+                    &format!(
+                        r#"[{{"field":"{field}","fn":"{function}","as":"m","calc":"running_total"}}]"#
+                    ),
+                    &PivotLimits::default(),
+                )
+                .is_ok(),
+                "a running total of {function}({field})"
+            );
+        }
+    }
+}
+
+/// P10: a running total is a sum, so the cells have to be numbers. The
+/// smallest or largest text cannot be added up; counting it can.
+#[test]
+fn a_running_total_of_what_is_not_a_number_is_refused() {
+    for function in ["min", "max"] {
+        let error = validate(
+            &format!(r#"[{{"field":"region","fn":"{function}","as":"m","calc":"running_total"}}]"#),
+            &PivotLimits::default(),
+        )
+        .expect_err("text is not added up");
+        let message = error.to_string();
+        assert!(
+            matches!(error, PivotError::Calc { .. })
+                && message.contains("measure m")
+                && message.contains("running_total needs a number")
+                && message.contains(&format!("{function} of region")),
+            "{function}: {message}"
+        );
+        // Without the calculation the same measure is fine.
+        assert!(
+            validate(
+                &format!(r#"[{{"field":"region","fn":"{function}","as":"m"}}]"#),
+                &PivotLimits::default()
+            )
+            .is_ok()
+        );
+    }
+    assert!(
+        validate(
+            r#"[{"field":"region","fn":"count","as":"m","calc":"running_total"}]"#,
+            &PivotLimits::default()
+        )
+        .is_ok(),
+        "a count of text is a number"
+    );
+}
+
+/// P12 over an average: the cells are `avg(units)` — N 1·3·NULL, S NULL·2·NULL,
+/// A 1·2.5·NULL, W 5·-5, B 5·-5·NULL, Total 3·0·NULL — and the running total
+/// is their sum so far, a float. Each row adds up its own cells: the total
+/// row's 3·3·3 is not the sum of the rows above it.
+#[test]
+fn a_running_total_of_averages() {
+    let result = answer(r#"[{"field":"units","fn":"avg","as":"r","calc":"running_total"}]"#);
+    assert_cells(
+        &result,
+        [
+            [f(1.0), f(4.0), f(4.0)],
+            [NULL, f(2.0), f(2.0)],
+            [f(1.0), f(3.5), f(3.5)],
+            [NULL, NULL, NULL],
+            [f(5.0), f(0.0), f(0.0)],
+            [f(5.0), f(0.0), f(0.0)],
+            [f(3.0), f(3.0), f(3.0)],
+        ],
+    );
+    for field in &result.data.schema.fields()[2..] {
+        assert_eq!(field.data_type, DataType::Float64, "the type of an average");
+    }
+}
+
+/// P12 over the smallest and the largest value. `min(units)`: N 1·3·NULL,
+/// S NULL·2·NULL, A 1·2·NULL, W 5·-5, B 5·-5·NULL, Total 1·-5·NULL.
+/// `max(amount)`: N 10.00·30.00·NULL, S NULL·20.00·NULL, A 10.00·30.00·NULL,
+/// W 5.50·-5.50, B the same, Total 10.00·30.00·NULL. The type stays the
+/// column's: an integer, and the decimal of ten digits.
+#[test]
+fn a_running_total_of_the_smallest_and_the_largest() {
+    let least = answer(r#"[{"field":"units","fn":"min","as":"r","calc":"running_total"}]"#);
+    assert_cells(
+        &least,
+        [
+            [int(1), int(4), int(4)],
+            [NULL, int(2), int(2)],
+            [int(1), int(3), int(3)],
+            [NULL, NULL, NULL],
+            [int(5), int(0), int(0)],
+            [int(5), int(0), int(0)],
+            [int(1), int(-4), int(-4)],
+        ],
+    );
+    let most = answer(r#"[{"field":"amount","fn":"max","as":"r","calc":"running_total"}]"#);
+    assert_cells(
+        &most,
+        [
+            [dec(1000), dec(4000), dec(4000)],
+            [NULL, dec(2000), dec(2000)],
+            [dec(1000), dec(4000), dec(4000)],
+            [NULL, NULL, NULL],
+            [dec(550), dec(0), dec(0)],
+            [dec(550), dec(0), dec(0)],
+            [dec(1000), dec(4000), dec(4000)],
+        ],
+    );
+    for field in &most.data.schema.fields()[2..] {
+        assert_eq!(
+            field.data_type,
+            DataType::Decimal {
+                precision: 10,
+                scale: 2
+            },
+            "min and max keep the column's type (S12)"
+        );
+    }
+}
+
+/// The largest value keeps its column's ten digits, so a running total of
+/// two of the largest amounts that fit does not: refused, not widened.
+#[test]
+fn a_running_total_past_its_decimals_digits_is_refused() {
+    let csv = "zone,region,year,amount,units\nA,N,2023,99999999.99,1\nA,N,2024,0.01,1\n";
+    let run = |values: &str| {
+        let table = load_csv(csv.as_bytes(), &schema(), CsvOptions::default()).expect("the table");
+        let validated = validate(values, &PivotLimits::default()).expect("valid");
+        block_on(execute(&LocalDataSource::new(table), &validated))
+    };
+    let message = run(r#"[{"field":"amount","fn":"max","as":"r","calc":"running_total"}]"#)
+        .expect_err("eleven digits in a decimal of ten")
+        .to_string();
+    assert!(
+        message.contains("measure r") && message.contains("running_total"),
+        "{message}"
+    );
+    // The sum has 38 digits (S12), and there it fits.
+    assert!(run(r#"[{"field":"amount","fn":"sum","as":"r","calc":"running_total"}]"#).is_ok());
 }
 
 /// A calculation the wire does not know is not a pivot: the reader says which

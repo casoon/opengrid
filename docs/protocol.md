@@ -97,8 +97,9 @@ The pivot query is `{ source, rows, columns, values: [{ field, fn, as, calc? }],
 `calc` shows a measure as a calculation over the pivot's cells: `share_of_row`,
 `share_of_column`, `share_of_total` or `running_total`. A share's column is `float64`, a
 fraction between 0 and 1, NULL where its total is NULL or zero; a running total keeps the
-measure's type. It is defined for `fn` `sum` and `count` — with any other it is a `validation`
-error — and a name the contract does not have is `malformed`. The source computes it; the answer
+aggregate's result type. A share is defined for `fn` `sum` and `count`; a running total also for
+`avg`, `min` and `max`, where the result is a number. Anything else is a `validation` error that
+names the measure, and a name the contract does not have is `malformed`. The source computes it; the answer
 has the same shape, the calculated values in the measure's columns. The rules are
 [P10–P12](../guides/query-semantics/#calculated-measures-in-a-pivot). A measure without `calc`
 is written without the key, so a server from before it reads a pivot as it always did.

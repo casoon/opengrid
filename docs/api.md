@@ -936,9 +936,11 @@ A measure is an aggregate; with `calc` it is shown as a share or as a running to
 
 The source computes it — the engine in the tab as a server does, by the same rules
 ([P10–P12](../guides/query-semantics/#calculated-measures-in-a-pivot)) — so a calculated value
-is a value like any other: in the table, in `get_pivot`'s CSV and in the XLSX. `calc` goes with
-`fn` `sum` and `count`; with any other the pivot's status line says so. Subtotals and the total
-row follow the same rule as the rows above them.
+is a value like any other: in the table, in `get_pivot`'s CSV and in the XLSX. A share goes with
+`fn` `sum` and `count`; a running total also with `avg`, `min` and `max` over a number, where it
+adds up what the cells show. Anything else the source refuses, and the pivot's status line says
+so. Subtotals and the total row follow the same rule as the rows above them, over their own
+cells.
 
 - **A share is a fraction**, `0.25`, and NULL — an empty cell — where its total is NULL or zero.
   Percent and digits are the page's: `set_formats(pivot, { share: { kind: "number", style:
@@ -952,9 +954,12 @@ row follow the same rule as the rows above them.
   running total the rows of its column, the last part added, not the columns before it — and
   `value` is the calculated value.
 
-With `toolbar`, every `sum` and `count` chip of the measures has a button that names what the
-measure is shown as — `value` at first; its name is "Show Quantity as: value". It opens a menu
-of the five choices, the one in use checked (`menuitemradio`), with the keys of the add menu.
+With `toolbar`, a measure's chip has a button that names what the measure is shown as — `value`
+at first; its name is "Show Quantity as: value". It opens a menu of the choices its function
+has, the one in use checked (`menuitemradio`), with the keys of the add menu: the value and the
+four calculations for `sum` and `count`, the value and the running total for `avg`, `min` and
+`max`. The pivot does not know the source's schema, so it offers the running total of a `min`
+or `max` over text as well; the source refuses it, in the status line.
 Choosing writes `calc` into `values`, so it is one query and one `opengrid-view-change`, and the
 focus comes back to the button, which now names the new choice. A page that formats shares as
 percentages listens to that event and sets the format of a measure whose `calc` changed.

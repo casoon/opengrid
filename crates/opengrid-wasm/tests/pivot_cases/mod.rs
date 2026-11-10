@@ -11,7 +11,7 @@ pub const ORDERS_SCHEMA: &str =
     include_str!("../../../opengrid-conformance/data/orders.schema.json");
 
 /// Every committed pivot case, embedded: a browser test has no filesystem.
-pub const CASES: [&str; 23] = [
+pub const CASES: [&str; 25] = [
     include_str!(
         "../../../opengrid-conformance/pivot-cases/p1-a-pivot-is-rows-crossed-with-columns.json"
     ),
@@ -66,6 +66,12 @@ pub const CASES: [&str; 23] = [
     ),
     include_str!(
         "../../../opengrid-conformance/pivot-cases/p12-a-running-total-of-decimals-is-exact.json"
+    ),
+    include_str!(
+        "../../../opengrid-conformance/pivot-cases/p12-a-running-total-of-averages-adds-up-the-cells.json"
+    ),
+    include_str!(
+        "../../../opengrid-conformance/pivot-cases/p12-a-running-total-of-min-and-max-keeps-the-columns-type.json"
     ),
     include_str!(
         "../../../opengrid-conformance/pivot-cases/p12-a-running-total-runs-across-both-column-dimensions.json"

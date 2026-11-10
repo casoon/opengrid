@@ -348,7 +348,7 @@ pub fn assemble(
         }
     }
 
-    calculate(pivot, &mut cells, depth, column_keys.len())?;
+    calculate(pivot, &fields, &mut cells, depth, column_keys.len())?;
 
     let total = paths.len() as u64;
     Ok(PivotResult {
@@ -368,6 +368,7 @@ pub fn assemble(
 /// the last row.
 fn calculate(
     pivot: &ValidatedPivotQuery,
+    fields: &[Field],
     cells: &mut [Vec<Value>],
     depth: usize,
     groups: usize,
@@ -388,6 +389,12 @@ fn calculate(
             .map(|group| depth + group * measures + offset)
             .collect();
         let rows = cells.first().map_or(0, Vec::len);
+        // How many digits a decimal total may have: its column's precision —
+        // 38 for a sum (S12), the field's own for a smallest or largest value.
+        let digits = match columns.first().map(|column| fields[*column].data_type) {
+            Some(DataType::Decimal { precision, .. }) => u32::from(precision),
+            _ => 38,
+        };
 
         if calc == Calc::RunningTotal {
             // P12: along the columns in their order, anew in every row — one
@@ -396,7 +403,7 @@ fn calculate(
             let mut running = vec![Value::Null; rows];
             for &column in &columns {
                 for (cell, running) in cells[column].iter_mut().zip(&mut running) {
-                    *running = add(running, cell).ok_or_else(too_big)?;
+                    *running = add(running, cell, digits).ok_or_else(too_big)?;
                     *cell = running.clone();
                 }
             }
@@ -409,7 +416,7 @@ fn calculate(
         let mut row_totals = vec![Value::Null; rows];
         for &column in &columns {
             for (cell, total) in cells[column].iter().zip(&mut row_totals) {
-                *total = add(total, cell).ok_or_else(too_big)?;
+                *total = add(total, cell, digits).ok_or_else(too_big)?;
             }
         }
         // The grand total row is the last one (P6).
@@ -430,16 +437,16 @@ fn calculate(
 }
 
 /// `total + value`, NULL adding nothing (S11); `None` when the sum does not
-/// fit its type. Both are cells of one measure, so they have one type.
-fn add(total: &Value, value: &Value) -> Option<Value> {
+/// fit its type — 64 bits, or the `digits` of its decimal. Both are cells of
+/// one measure, so they have one type.
+fn add(total: &Value, value: &Value, digits: u32) -> Option<Value> {
     Some(match (total, value) {
         (total, Value::Null) => total.clone(),
         (Value::Null, value) => value.clone(),
         (Value::Int64(total), Value::Int64(value)) => Value::Int64(total.checked_add(*value)?),
         (Value::Decimal(total), Value::Decimal(value)) => {
             let sum = total.value().checked_add(value.value())?;
-            // S12: a decimal sum has 38 digits and no more.
-            if sum.unsigned_abs() >= 10u128.pow(38) {
+            if sum.unsigned_abs() >= 10u128.pow(digits) {
                 return None;
             }
             Value::Decimal(Decimal::new(sum, total.scale()))

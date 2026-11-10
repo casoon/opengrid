@@ -760,8 +760,9 @@ export interface PivotMeasure {
   fn: string;
   as: string;
   /**
-   * Shows the measure as a calculation over the pivot's cells. For `sum` and
-   * `count`; the source refuses it for any other aggregate.
+   * Shows the measure as a calculation over the pivot's cells. A share is for
+   * `sum` and `count`; a running total also for `avg`, `min` and `max` over a
+   * number. The source refuses anything else.
    */
   calc?: PivotCalc;
 }
