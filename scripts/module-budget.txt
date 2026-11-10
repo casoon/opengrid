@@ -98,4 +98,8 @@ grid+pivot    312100  # 308747 B, 2026-11-10, #322
 # the scale check on push (#213), typed `in` sets and min/max without a buffer
 # per row (#214), the CSV read record by record (#215) and the planner placing
 # a tree whole on the client (#211).
-engine        154100  # 152538 B, 2026-11-09, #210-#215
+# Raised 2026-11-10 from 154100: calculated measures in a pivot (#329: the
+# measure with its `calc`, its validation, and the shares and running totals
+# over the assembled cells — in the engine, since every source's pivot is
+# assembled there) grew the engine by 1.5 KiB over 152701 B, to 154208 B.
+engine        155700  # 154208 B, 2026-11-10, #329

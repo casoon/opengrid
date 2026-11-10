@@ -499,6 +499,54 @@ test("the workbook of the pivot is its CSV's table, with typed cells", async ({ 
   expect(xml).not.toContain("<f>");
 });
 
+test("a calculated measure is in the workbook as it is in the CSV, named and typed (issue #329)", async ({
+  page,
+}) => {
+  await open(page);
+  await page.evaluate(() => {
+    const pivot = document.querySelector("opengrid-pivot");
+    window.__opengridModule.set_texts(pivot, { shareOfRow: "part of the row" });
+    window.__opengridModule.set_view(pivot, {
+      rows: ["country"],
+      columns: ["ordered_year"],
+      values: [
+        { field: "qty", fn: "sum", as: "total" },
+        { field: "qty", fn: "sum", as: "share", calc: "share_of_row" },
+        { field: "amount", fn: "sum", as: "running", calc: "running_total" },
+      ],
+    });
+  });
+  await page.waitForFunction(() =>
+    window.__opengridModule
+      .get_pivot(document.querySelector("opengrid-pivot"), { bom: false })
+      ?.startsWith("country,2025 · total,2025 · share · part of the row,2025 · running · running total,"),
+  );
+
+  const { table, cells, sent } = await workbook(page);
+  // The words for the calculations went along, the page's own among them.
+  expect(sent).toEqual({
+    format: "xlsx",
+    noValue: "(no value)",
+    emptyValue: "(empty)",
+    total: "Total",
+    subtotal: "Total {value}",
+    shareOfRow: "part of the row",
+    shareOfColumn: "share of column",
+    shareOfTotal: "share of total",
+    runningTotal: "running total",
+  });
+  // The sheet is the CSV's table: the same headers, a share a number cell.
+  const seen = expectSheetIsTable(cells, table, { dimensions: 1 });
+  expect(seen.number).toBeGreaterThan(20);
+  expect(cells.get("C1")).toMatchObject({ type: "inlineStr", value: "2025 · share · part of the row" });
+  expect(cells.get("D1")).toMatchObject({ value: "2025 · running · running total" });
+  // DE in 2025: 1 of its 259, and its amount so far.
+  const de = table.findIndex((record) => record[0] === "DE");
+  expect(Number(cells.get(`C${de + 1}`).value)).toBeCloseTo(1 / 259, 12);
+  expect(cells.get(`C${de + 1}`).type).toBeUndefined();
+  expect(Number(cells.get(`D${de + 1}`).value)).toBe(10);
+});
+
 test("the workbook reads in the element's texts, the German ones included", async ({ page }) => {
   await open(page);
   // The translation the package ships, set the way a page sets it — and
