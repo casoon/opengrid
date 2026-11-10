@@ -27,7 +27,7 @@ mod source;
 pub mod wire;
 
 pub use capabilities::DataSourceCapabilities;
-pub use error::DataSourceError;
+pub use error::{DataSourceError, tree_cycle, tree_duplicate_key};
 /// The columns a flat tree's export adds (T8) — named once, in the query crate.
 pub use opengrid_query::FLAT_COLUMNS;
 pub use result::{FlatTree, QueryResult, TreeLevel};

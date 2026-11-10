@@ -87,14 +87,6 @@ fn cell_identity(column: &Column, row: usize) -> Option<Identity<'_>> {
     })
 }
 
-/// The key as a sentence names it.
-fn named(value: &Value) -> String {
-    match value {
-        Value::Utf8(text) => format!("{text:?}"),
-        other => opengrid_json::to_string(other),
-    }
-}
-
 /// Runs `query`, whose tree part is `tree`, against `table`.
 pub(crate) fn execute(
     table: &Table,
@@ -128,10 +120,7 @@ pub(crate) fn execute(
             && by_key.insert(id, row as u32).is_some()
         {
             return Err(ExecuteError::Tree {
-                message: format!(
-                    "tree: the key {} appears more than once (rule T1)",
-                    named(&keys.value(row))
-                ),
+                message: opengrid_datasource::tree_duplicate_key(&keys.value(row)),
             });
         }
     }
@@ -176,10 +165,7 @@ pub(crate) fn execute(
         }
         if mark[at] == Mark::Walking && parent_of[at].is_some() && path.contains(&at) {
             return Err(ExecuteError::Tree {
-                message: format!(
-                    "tree: the parents of {} lead back to it — a cycle (rule T3)",
-                    named(&keys.value(at))
-                ),
+                message: opengrid_datasource::tree_cycle(&keys.value(at)),
             });
         }
         for node in path.drain(..) {
