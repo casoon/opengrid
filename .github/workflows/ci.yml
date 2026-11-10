@@ -352,7 +352,10 @@ jobs:
       - run: pnpm --filter "./examples/*" build
       - name: Regenerate the Linux baselines
         run: pnpm exec playwright test --config tests/e2e/playwright.config.js --update-snapshots
+      # Also after a failed test: this job does not build the MCP view, so its
+      # specs fail here, and without this the baselines were never uploaded.
       - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
         with:
           name: linux-baselines
           path: tests/e2e/__screenshots__/*-linux.png
