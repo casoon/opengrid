@@ -853,7 +853,7 @@ fn write_filter_entries(root: &ShadowRoot, entries: &[FilterEntry]) {
                 operator.set_value(entry.op.as_str());
             }
         }
-        if let Some(control) = ValueControl::of(&root, col) {
+        if let Some(control) = ValueControl::of(root, col) {
             control.set_value(&entry.value);
         }
     }
@@ -5245,7 +5245,7 @@ fn fix_operator_choices(root: &ShadowRoot, schema: &opengrid_types::Schema) {
 
         // The two operators that take no value say so: their input is disabled
         // rather than silently ignored.
-        if let Some(control) = ValueControl::of(&root, col) {
+        if let Some(control) = ValueControl::of(root, col) {
             control.set_disabled(!grid::takes_value(&op));
         }
     }
@@ -8208,7 +8208,7 @@ fn reset_filter_column(root: &ShadowRoot, col: usize) {
     if let Some(operator) = OperatorControl::of(root, col) {
         operator.reset();
     }
-    if let Some(control) = ValueControl::of(&root, col) {
+    if let Some(control) = ValueControl::of(root, col) {
         control.set_value("");
         control.set_disabled(false);
     }

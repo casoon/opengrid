@@ -11,6 +11,10 @@ use super::*;
 use crate::texts::GridTexts;
 use opengrid_grid::paste::{Notation, parse_cell, split_block};
 
+/// One row of the preview: whether it is a new record, and per cell its text and
+/// what is wrong with it, if anything.
+type PreviewRow = (bool, Vec<(String, Option<Problem>)>);
+
 /// What a paste would change in one existing row.
 pub(super) struct Change {
     row: u64,
@@ -208,7 +212,7 @@ async fn prepare(host: &HtmlElement, anchor: CellRef, rows: Vec<Vec<String>>) {
     };
     // What the preview shows: per block row, per cell, the text and what is
     // wrong with it, if anything.
-    let mut shown: Vec<(bool, Vec<(String, Option<Problem>)>)> = Vec::new();
+    let mut shown: Vec<PreviewRow> = Vec::new();
     for (index, cells) in rows.iter().enumerate() {
         let row = anchor.row + index as u64;
         let is_new = row >= source_rows;
@@ -334,7 +338,7 @@ fn show_preview(
     pending: &Pending,
     schema: &opengrid_types::Schema,
     first_col: usize,
-    shown: &[(bool, Vec<(String, Option<Problem>)>)],
+    shown: &[PreviewRow],
 ) {
     let (Some(root), Some(document)) = (host.shadow_root(), host.owner_document()) else {
         return;

@@ -1283,6 +1283,10 @@ fn cell(look: &dyn PivotLook, measure: &str, value: &Value) -> String {
 /// `scope="colgroup"`, measures under them with `scope="col"` — and one when
 /// there is not. Every data row starts with `<th scope="row">`, so each cell is
 /// announced with the row it is in and the column it is under.
+///
+/// Only the tests and the API listing (`api.rs`) build a pivot whole; the element
+/// redraws it with [`build_pivot_redraw`].
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub fn build_pivot(
     buffer: &mut PatchBuffer,
