@@ -30,7 +30,8 @@ mod result;
 
 pub use engine::{ExecuteError, PivotEngine, assemble, execute};
 pub use query::{
-    PivotError, PivotLimits, PivotQuery, PivotSort, ValidatedPivotQuery, grouping_sets,
+    Calc, Measure, PivotError, PivotLimits, PivotQuery, PivotSort, ValidatedPivotQuery,
+    grouping_sets,
 };
 pub use result::{
     PivotColumn, PivotReadError, PivotResult, pivot_from_bytes, pivot_from_json, pivot_to_bytes,

@@ -1,0 +1,103 @@
+{
+  "id": "p10-a-sort-by-a-calculated-measure-orders-by-its-aggregate",
+  "rule": "P10",
+  "pivot": {
+    "source": "orders",
+    "rows": [
+      "country"
+    ],
+    "columns": [
+      "ordered_year"
+    ],
+    "values": [
+      {
+        "field": "qty",
+        "fn": "sum",
+        "as": "share",
+        "calc": "share_of_row"
+      }
+    ],
+    "sort": [
+      {
+        "field": "country",
+        "by": "share",
+        "direction": "desc"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      {
+        "path": [
+          2025
+        ],
+        "measure": "share"
+      },
+      {
+        "path": [
+          2026
+        ],
+        "measure": "share"
+      },
+      {
+        "path": [
+          null
+        ],
+        "measure": "share"
+      }
+    ],
+    "rows": [
+      [
+        null,
+        null,
+        1.0,
+        null
+      ],
+      [
+        "DE",
+        0.003861003861003861,
+        0.9961389961389961,
+        null
+      ],
+      [
+        "US",
+        null,
+        1.0,
+        null
+      ],
+      [
+        "GB",
+        null,
+        1.0,
+        null
+      ],
+      [
+        "FR",
+        null,
+        0.9717514124293786,
+        0.02824858757062147
+      ],
+      [
+        "",
+        null,
+        1.0,
+        null
+      ],
+      [
+        null,
+        0.0008169934640522876,
+        0.9950980392156863,
+        0.004084967320261438
+      ]
+    ],
+    "levels": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      0
+    ]
+  }
+}

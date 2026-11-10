@@ -81,7 +81,10 @@
 # grid arranged anew around its view, the texts) grew it by 5.8 KiB, to
 # 315064 B. The engine, which holds the layout of a view, grew by 0.6 KiB to
 # 153366 B, inside its bound.
-grid+pivot    318200  # 315064 B, 2026-11-10, #316
+# Raised the same day from 318200: calculated measures in a pivot (#329: the
+# measure chip's button and its menu, the header's words, the export's
+# headers, the texts) grew it by 1.7 KiB, to 316842 B.
+grid+pivot    320000  # 316842 B, 2026-11-10, #329
 # Raised 2026-09-30 from 108000: the bound was not raised with 0.7.0, which
 # shipped the engine at 115.2 KiB already (CHANGELOG); rule P9's sorted
 # grouping sets and order sets (#108) added the rest, to 121610 B.
@@ -105,4 +108,9 @@ grid+pivot    318200  # 315064 B, 2026-11-10, #316
 # the scale check on push (#213), typed `in` sets and min/max without a buffer
 # per row (#214), the CSV read record by record (#215) and the planner placing
 # a tree whole on the client (#211).
-engine        154100  # 152538 B, 2026-11-09, #210-#215
+# Raised 2026-11-10 from 154100: the engine stood at 153366 B with the layout
+# of pinned columns (#316). Calculated measures in a pivot (#329: the measure
+# with its `calc`, its validation, and the shares and running totals over the
+# assembled cells — in the engine, since every source's pivot is assembled
+# there) grew it by 2.1 KiB, to 155524 B.
+engine        157100  # 155524 B, 2026-11-10, #329

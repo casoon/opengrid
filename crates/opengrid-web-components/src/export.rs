@@ -93,20 +93,38 @@ pub(crate) fn pivot_options(value: &JsValue) -> Result<CsvOptions, JsError> {
 /// rendered it. It is read back strictly (`pivot_from_json`), because a page's
 /// own provider may have sent it: an answer of the wrong shape is an error with
 /// a sentence, not a trap in the writer.
+///
+/// `calcs` are the calculated measures of the shown pivot, by alias (issue
+/// #329): their columns are headed by what they show, as on the screen.
 #[cfg(feature = "pivot")]
 pub(crate) fn pivot_csv(
     answer: &str,
     texts: &GridTexts,
+    calcs: &[(String, opengrid_pivot::Calc)],
     options: &CsvOptions,
 ) -> Result<String, JsError> {
     let (pivot, _) = opengrid_pivot::pivot_from_json(answer)
         .map_err(|error| JsError::new(&format!("the shown pivot: {error}")))?;
-    Ok(opengrid_export::pivot_csv(&pivot, texts, options))
+    Ok(opengrid_export::pivot_csv(
+        &pivot,
+        &Shown { texts, calcs },
+        options,
+    ))
+}
+
+/// The element's words for the pivot it shows: its texts, and which of its
+/// measures are calculated.
+#[cfg(feature = "pivot")]
+struct Shown<'a> {
+    texts: &'a GridTexts,
+    calcs: &'a [(String, opengrid_pivot::Calc)],
 }
 
 /// The words a pivot's export has no data for, as `host` has them now: the
 /// texts for a NULL and for an empty dimension value, for the grand total and
-/// for a subtotal (with its `{value}`), in that order.
+/// for a subtotal (with its `{value}`), then what a calculated measure is
+/// shown as — a share of the row, the column, the total, a running total
+/// (issue #329) — in that order.
 ///
 /// For `exportPivot` in `loader.js` (issue #331), which hands them to the
 /// server that writes the workbook; in the order of `PIVOT_TEXTS` there. Like
@@ -120,21 +138,29 @@ pub fn pivot_words(host: &web_sys::HtmlElement) -> Vec<String> {
         texts.empty_value.clone(),
         texts.total.clone(),
         texts.subtotal.clone(),
+        texts.share_of_row.clone(),
+        texts.share_of_column.clone(),
+        texts.share_of_total.clone(),
+        texts.running_total.clone(),
     ]
 }
 
 /// The element's words are the export's: the very functions it renders its
 /// row and group headers with.
 #[cfg(feature = "pivot")]
-impl PivotLabels for GridTexts {
+impl PivotLabels for Shown<'_> {
     fn dimension(&self, value: Option<&str>) -> String {
-        GridTexts::dimension(self, value)
+        self.texts.dimension(value)
     }
     fn total(&self) -> String {
-        self.total.clone()
+        self.texts.total.clone()
     }
     fn subtotal(&self, value: &str) -> String {
-        GridTexts::subtotal(self, value)
+        self.texts.subtotal(value)
+    }
+    fn calc(&self, alias: &str) -> Option<String> {
+        let (_, calc) = self.calcs.iter().find(|(measure, _)| measure == alias)?;
+        Some(self.texts.calc(Some(*calc)).to_owned())
     }
 }
 

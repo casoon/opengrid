@@ -28,6 +28,11 @@
 //! A pivot without a column dimension has one header row in the element too,
 //! and its CSV header is that row.
 //!
+//! A calculated measure (issue #329) is named by what it shows, as the
+//! element's header names it: `2025 · total · share of row`. Its cells are
+//! the calculated values — a share a number between 0 and 1, never a
+//! percentage as text.
+//!
 //! # A subtotal row
 //!
 //! Its label goes into the first dimension column, where the element's row
@@ -76,6 +81,13 @@ pub trait PivotLabels {
     /// The row header of the subtotal that closes `value` — which is already
     /// a header, as [`PivotLabels::dimension`] wrote it.
     fn subtotal(&self, value: &str) -> String;
+    /// What the measure `alias` is shown as when it is calculated — "share of
+    /// row", in the element's words — and `None` for a measure shown as it is.
+    /// The answer does not say which measures are calculated; the query does,
+    /// and whoever exports has it.
+    fn calc(&self, _alias: &str) -> Option<String> {
+        None
+    }
 }
 
 /// The whole pivot as CSV: the byte order mark (when asked for), one header
@@ -161,6 +173,7 @@ pub(crate) fn header_names(pivot: &PivotResult, labels: &impl PivotLabels) -> Ve
             .map(|value| labels.dimension(plain(value).as_deref()))
             .collect();
         parts.push(column.measure.as_str().to_owned());
+        parts.extend(labels.calc(column.measure.as_str()));
         parts.join(PATH_SEPARATOR)
     }));
     header
@@ -399,6 +412,68 @@ mod tests {
         let csv = pivot_csv(&pivot(text("a;b"), Value::Int64(7)), &English, &options);
         assert!(csv.starts_with("\u{FEFF}customer;week;2025 · n;"), "{csv}");
         assert_eq!(csv.lines().nth(2), Some("\"Total a;b\";;1;"), "{csv}");
+    }
+
+    /// Issue #329: a calculated measure's header says what it shows, after
+    /// the path and the alias, and its shares are written as numbers.
+    #[test]
+    fn a_calculated_measure_is_named_by_what_it_shows() {
+        struct Shares;
+        impl PivotLabels for Shares {
+            fn dimension(&self, value: Option<&str>) -> String {
+                English.dimension(value)
+            }
+            fn total(&self) -> String {
+                English.total()
+            }
+            fn subtotal(&self, value: &str) -> String {
+                English.subtotal(value)
+            }
+            fn calc(&self, alias: &str) -> Option<String> {
+                (alias == "share").then(|| "share of row".to_owned())
+            }
+        }
+        let column = |year: i64, measure: &str| PivotColumn {
+            path: vec![Value::Int64(year)],
+            measure: FieldName::new(measure).unwrap(),
+        };
+        let pivot = PivotResult {
+            data: QueryResult::new(
+                Schema::new(vec![
+                    field("country", DataType::Utf8),
+                    field("n_0", DataType::Int64),
+                    field("share_1", DataType::Float64),
+                    field("n_2", DataType::Int64),
+                    field("share_3", DataType::Float64),
+                ]),
+                vec![
+                    vec![text("DE"), Value::Null],
+                    vec![Value::Int64(1), Value::Int64(1)],
+                    vec![Value::Float64(0.25), Value::Float64(0.25)],
+                    vec![Value::Int64(3), Value::Int64(3)],
+                    vec![Value::Float64(0.75), Value::Null],
+                ],
+                2,
+            ),
+            row_levels: vec![1, 0],
+            columns: vec![
+                column(2025, "n"),
+                column(2025, "share"),
+                column(2026, "n"),
+                column(2026, "share"),
+            ],
+        };
+        assert_eq!(
+            pivot_csv(&pivot, &Shares, &plain_options()),
+            "country,2025 · n,2025 · share · share of row,2026 · n,2026 · share · share of row\r\n\
+             DE,1,0.25,3,0.75\r\n\
+             Total,1,0.25,3,\r\n"
+        );
+        // Without the query's word for it, a column is its alias, as before.
+        assert!(
+            pivot_csv(&pivot, &English, &plain_options())
+                .starts_with("country,2025 · n,2025 · share,")
+        );
     }
 
     #[test]
