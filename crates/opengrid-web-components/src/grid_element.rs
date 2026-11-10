@@ -7450,7 +7450,7 @@ fn run_tree(
             // Orphans stand at the top (T2): said when there are some, and
             // not again for the same count under the next filter.
             if under.is_none() && orphans > 0 && orphans != tree.orphans() {
-                runtime.state.set_notice(texts(&host).tree_orphans(orphans));
+                runtime.state.add_notice(texts(&host).tree_orphans(orphans));
             }
             tree.set_level(
                 under.as_ref().map(|key| key.to_string()),
