@@ -1,0 +1,117 @@
+---
+title: What sets it apart
+description: How opengrid differs from a data grid written in JavaScript — one query engine in Rust, the same answer in the tab and on the server, and markup built for assistive technology.
+order: 0.5
+---
+
+Most data grids are a JavaScript component that draws rows and also sorts, filters and groups
+them. opengrid starts from the other end: it is a query engine, and the grid, the table and the
+pivot are what shows its answers. That one decision explains most of the differences on this
+page.
+
+## In short
+
+| | A grid with its logic in JavaScript | opengrid |
+|---|---|---|
+| Sorting, filtering, grouping | In the component, on the main thread | In an engine written in Rust, compiled to WebAssembly, in a worker if you like |
+| Data too big for the browser | A server mode: your backend answers, and you write the rules again | The same engine inside `opengrid-server`, or the query split between server and tab |
+| What "the same result" means | Whatever the two implementations happen to do with NULL, text order or decimals | Written down as rules and pinned by case files every path has to pass |
+| What goes over the wire | Often filter expressions or parameters your backend turns into SQL | A query as a JSON document, checked against the fields and rows the token may see |
+| Markup | Usually nested `div`s with ARIA roles for every kind of table | A native `<table>` where the data is read, `role="grid"` only where it is worked with |
+| Framework | A wrapper per framework, or one framework only | Web Components, with thin components for React, Vue and Svelte |
+| Pivot, grouping, export, tree | Often part of a paid edition | In the one package, under MIT or Apache-2.0 |
+
+## One engine instead of two implementations
+
+A grid that sorts in JavaScript works until the data no longer fits in the browser. Then it
+switches to a server mode, and the sorting, filtering and grouping the component used to do
+have to exist a second time in your backend — with the same treatment of NULL, the same text
+order and the same rounding, or the reader sees rows move when the mode changes.
+
+opengrid has one implementation. The element hands a query to a provider, and the same Rust code
+answers it wherever the provider points:
+
+<Diagram name="one-engine" narrow={{ width: 640, height: 600 }} />
+
+Between the two sits a planner: it asks the source what it can answer, sends that part to the
+server and finishes the rest in the tab. Moving a data set from the browser to a server is
+then a change of provider, not a second implementation —
+see [Where queries run](../guides/where-queries-run/).
+
+## "The same answer" is written down
+
+Whether NULL sorts first, whether `0.1 + 0.2` is `0.3`, whether `ä` composed equals `ä`
+decomposed: every engine decides these somewhere, and most grids leave the decision to
+JavaScript's defaults on one side and the database's on the other. opengrid states them as
+numbered rules and pins each with case files — a query and the expected answer, as JSON.
+
+<ConformanceChart />
+
+The same files run against the native engine, the WebAssembly build in a headless browser, the
+hybrid path and PostgreSQL. A path that disagrees fails its test.
+[Query semantics](../guides/query-semantics/) lists the rules.
+
+## Rust, and only one layer that knows a browser
+
+The engine is Rust, not TypeScript, for three reasons that show up in use:
+
+- **It runs outside the browser unchanged.** The crates below the elements pull neither
+  `web-sys` nor `js-sys`, so the code that answers a query in the tab is the code inside the
+  server.
+- **Types the data needs.** 64-bit integers stay integers, decimals are exact, timestamps
+  keep microseconds. In JavaScript all three pass through a float unless every step takes care.
+- **Work off the main thread.** The engine is one WebAssembly module that runs in a worker as
+  it runs on the page; the [live demo](https://og-vanilla.casoon.dev/large-data) queries
+  100,000 rows that way.
+
+<Diagram name="engine-layers" />
+
+The server is a library, not a product: your program builds it, hands it PostgreSQL, SQLite or
+a connector of your own, and stays in charge of authentication
+([Connectors](../guides/connectors/)).
+
+## The browser never sends SQL
+
+A query is a JSON document with a fixed shape, not a string a backend has to parse or
+interpolate. `opengrid-server` checks it before anything reaches the database: a token maps to
+a row filter that is attached to every query and cannot be switched off, and a field outside
+the allowed list does not exist for that client — the answer is the same error as a typo.
+There is nothing to inject into.
+
+## A table where a table is meant
+
+The usual grid is one component for every case, built from `div`s and described to assistive
+technology through ARIA. opengrid has three elements because the cases differ:
+
+- `<opengrid-table>` and `<opengrid-pivot>` are native `<table>` elements: a screen reader's
+  table navigation, the browser's find and ordinary copy and paste work as they do on any page.
+- `<opengrid-grid>` uses `role="grid"` because it takes over the arrow keys for selecting and
+  editing — a promise that would be wrong for a report.
+
+Every feature is operated from the keyboard, state changes go through one live region, and the
+end-to-end suite runs axe-core over the elements in each state it reaches. What that verifies
+and what is still open is listed, without rounding up, in
+[Accessibility](../guides/accessibility/).
+
+The same structure makes the grid readable for programs: roles, names and row counts are in the
+accessibility tree, and schema, query and view are JSON. The
+[MCP adapter](../guides/mcp/) uses nothing but that public surface.
+
+## Everything in one package
+
+Grouping with totals, the pivot, trees, export as CSV, JSON and (from the server) XLSX, editing
+and virtualization
+are in `@casoon/opengrid` and the crates beside it, under MIT or Apache-2.0. There is no
+second edition with the features an application ends up needing.
+
+## What you give up
+
+This design has a price, and it is better read here than found later:
+
+- The engine is a WebAssembly module the page has to load. A table of fifty rows does not need it.
+- There is no expression language: a column is stored or derived from a date part, never
+  calculated in the grid.
+- A pivot has hard limits and answers with an error over them, never with a truncated result.
+- It is pre-1.0. The API is written down and tested, and may still change.
+
+The full list is in the [Introduction](../#what-v1-deliberately-does-not-do).

@@ -63,6 +63,16 @@ const page = `<opengrid-grid label="Orders" datasource="orders"
     </picture>
   </Hero>
 
+  <aside class="apart" aria-labelledby="apart-heading">
+    <h2 id="apart-heading">Not another JavaScript grid</h2>
+    <p>
+      The sorting, filtering and grouping live in one engine written in Rust, not in the
+      component. So the tab and your server give the same answer without a second implementation,
+      and the elements can be plain, native tables.
+    </p>
+    <Button href={url('docs/what-sets-it-apart/')} variant="secondary">What sets it apart</Button>
+  </aside>
+
   <Features
     heading="Who it is for"
     items={[
@@ -143,6 +153,36 @@ const page = `<opengrid-grid label="Orders" datasource="orders"
     height: auto;
     border: 1px solid var(--border);
     border-radius: 12px;
+  }
+  .apart {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px 32px;
+    max-width: calc(var(--max) - 48px);
+    margin: 0 auto 72px;
+    padding: 24px 28px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+  }
+  .apart h2 {
+    grid-column: 1 / -1;
+    margin: 0;
+    font-size: 20px;
+  }
+  .apart p {
+    margin: 0;
+    max-width: 68ch;
+    font-size: 15.5px;
+  }
+  @media (max-width: 760px) {
+    .apart {
+      grid-template-columns: 1fr;
+      margin-inline: 24px;
+    }
+    .apart :global(a) {
+      justify-self: start;
+    }
   }
   .how {
     max-width: var(--max);

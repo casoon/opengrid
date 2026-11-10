@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@casoon/chartlet':
-        specifier: ^0.19.0
-        version: 0.19.0(astro@7.3.3(@emnapi/core@1.11.3)(@emnapi/runtime@1.11.3)(@types/node@24.13.6)(yaml@2.9.1))
+        specifier: ^0.23.0
+        version: 0.23.0(astro@7.3.3(@emnapi/core@1.11.3)(@emnapi/runtime@1.11.3)(@types/node@24.13.6)(yaml@2.9.1))
       '@casoon/pages-theme':
         specifier: ^0.12.6
         version: 0.12.6(@astrojs/markdown-satteri@0.4.1)(@types/node@24.13.6)(astro@7.3.3(@emnapi/core@1.11.3)(@emnapi/runtime@1.11.3)(@types/node@24.13.6)(yaml@2.9.1))
@@ -216,8 +216,8 @@ packages:
     resolution: {integrity: sha512-CuNiSqg7+e1cO/GjffyMOm5Tt2jUF9CWHHnvQ/UkqvtkGfHdgwEC0wpmq7fkN3gxwpRnrAN0WzO3vREKmNolMQ==}
     engines: {node: '>=18'}
 
-  '@casoon/chartlet@0.19.0':
-    resolution: {integrity: sha512-507LZH1lpEuX6+Nq8KWuQxFHkqDHxMFhN1kjo1fRtPc4crUhYNSpxnyQDG0jMKwXDP+Dp/qP6FmCZ0C8QyCylw==}
+  '@casoon/chartlet@0.23.0':
+    resolution: {integrity: sha512-sAbbIDS4boxPFrnDSuZ1ntOGM2JIPKcVc5EuQ8QvoUjoQpvSoaWexjBsR6RJWYbXCqCMzP0/jCW0X4724vSLmg==}
     engines: {node: '>=22.12.0'}
     peerDependencies:
       astro: '>=6.0.0'
@@ -2118,7 +2118,7 @@ snapshots:
     dependencies:
       fontkitten: 1.0.3
 
-  '@casoon/chartlet@0.19.0(astro@7.3.3(@emnapi/core@1.11.3)(@emnapi/runtime@1.11.3)(@types/node@24.13.6)(yaml@2.9.1))':
+  '@casoon/chartlet@0.23.0(astro@7.3.3(@emnapi/core@1.11.3)(@emnapi/runtime@1.11.3)(@types/node@24.13.6)(yaml@2.9.1))':
     optionalDependencies:
       astro: 7.3.3(@emnapi/core@1.11.3)(@emnapi/runtime@1.11.3)(@types/node@24.13.6)(yaml@2.9.1)
 
