@@ -140,6 +140,11 @@ Two things belong in every release entry and are easy to leave out:
 - **Grid:** in a tree with rows whose parent is missing, the sentence about them replaced a notice
   that was waiting for the result — a page's `{ notice }` on `set_view` was never said. Both are
   said now, the page's first ([#344](https://github.com/casoon/opengrid/issues/344)).
+- **Grid:** after `group-by` changed, the focus stayed on the old cell while the grid acted on the
+  first header, so `Enter` and the arrow keys did nothing useful until the focus moved. A cell that
+  had the focus now hands focus and active cell to its column's header; a header keeps both, and
+  a column menu or the *+ Group* button gets the focus back where it was
+  ([#345](https://github.com/casoon/opengrid/issues/345)).
 - **Grid:** a grouped grid, and a tree, put their window six rows short of where a key or the
   scrolling asked for it: `Ctrl`+`End` stopped before the last position and `ArrowDown` at the
   window's edge needed two presses ([#342](https://github.com/casoon/opengrid/issues/342)).
