@@ -94,6 +94,22 @@ test("the filter is in every query the grid sends, the facets' included", async 
   expect(exported.filter).toEqual(DE);
 });
 
+test("a grouped grid asks for its groups, their totals and their rows under it", async ({ page }) => {
+  await open(page);
+  await setFilter(page, DE);
+  await expect.poll(async () => (await status(page)).text).toBe("52 matches");
+  await page.evaluate(() => {
+    window.__queries.length = 0;
+    document.querySelector("opengrid-grid").setAttribute("group-by", "customer");
+  });
+  await expect(page.locator("opengrid-grid tbody tr[aria-expanded]").first()).toBeVisible();
+  const asked = await queries(page);
+  expect(asked.filter((query) => query.group).length).toBeGreaterThan(0);
+  for (const query of asked) {
+    expect(JSON.stringify(query.filter ?? null), JSON.stringify(query)).toContain(JSON.stringify(DE));
+  }
+});
+
 test("the reader filters inside it, and removing all filters leaves it", async ({ page }) => {
   await open(page);
   await setFilter(page, DE);
