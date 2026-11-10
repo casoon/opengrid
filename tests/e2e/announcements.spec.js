@@ -415,3 +415,42 @@ test.describe("selection while grouped (issue #322)", () => {
     expect(said.at(-1)[1]).toBe("ready");
   });
 });
+
+test.describe("a tree's orphans", () => {
+  test("the orphans are said after a view's notice, not in its place (issue #344)", async ({
+    page,
+  }) => {
+    // The conformance tree has one orphan, a US row. Under a filter on EU there
+    // is none, so the view that takes the filter off brings the orphan back —
+    // and with it the sentence that used to replace the page's notice.
+    await open(page, "grid-tree.html");
+    await page.waitForFunction(() => window.__opengridModule);
+    await page.evaluate(() => {
+      window.__opengridModule.set_view(document.querySelector("opengrid-grid"), {
+        filters: [{ column: "region", op: "eq", value: "EU" }],
+      });
+    });
+    await expect.poll(() => announced(page).then((said) => said.at(-1))).toMatch(/^7 /);
+    const alreadySaid = (await announcedStates(page)).length;
+
+    await page.evaluate(() => {
+      window.__opengridModule.set_view(
+        document.querySelector("opengrid-grid"),
+        { filters: [] },
+        { notice: "Back to everything" },
+      );
+    });
+    await expect
+      .poll(() => announced(page).then((said) => said.at(-1)))
+      .toMatch(/Back to everything/);
+    await page.waitForTimeout(250);
+
+    const said = (await announcedStates(page)).slice(alreadySaid);
+    const ready = said.filter(([, state]) => state === "ready");
+    expect(ready, "one result").toHaveLength(1);
+    // Both sentences, the page's first, each once.
+    expect(ready[0][0]).toMatch(/Back to everything · Without a parent, shown at the top: 1$/);
+    expect(said.filter(([text]) => text.includes("Back to everything"))).toHaveLength(1);
+    expect(said.filter(([text]) => text.includes("Without a parent"))).toHaveLength(1);
+  });
+});
