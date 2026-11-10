@@ -243,7 +243,7 @@ server for the pivot the element shows and answers the workbook:
 import { exportPivot } from "@casoon/opengrid";
 
 // The provider the pivot has: createPivotProvider, or a createRestProvider on the same source.
-const blob = await exportPivot(provider, pivot, { format: "xlsx", texts });
+const blob = await exportPivot(provider, pivot, { format: "xlsx" });
 ```
 
 The sheet is the CSV's table: **one header row** with the same names (`2025 · total`), the same
@@ -259,9 +259,9 @@ Three things to know:
   element's view — its `rows`, `columns`, `values`, `sort` and `filter` — asked of the server
   once more, under the same rules and limits as the pivot itself. If the data moved since the
   table was drawn, the file is the newer answer.
-- **The words are handed over.** The server does not know the element's texts. `texts` takes the
-  object the page gave `set_texts`, and the totals and the NULL and empty groups read as in the
-  table; without it the file has the English defaults.
+- **The words are the element's.** The totals and the NULL and empty groups read as in the
+  table: `exportPivot` reads the element's texts — its defaults, or what `set_texts` made of
+  them — and sends them with the request. The page hands over nothing.
 - **Only with a server.** A pivot over the engine in the tab or in a worker has no
   `exportPivot`; asking is a `TypeError` before anything is sent, as XLSX of `exportRows` is
   there. Its CSV is `get_pivot` everywhere.

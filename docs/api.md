@@ -1080,15 +1080,15 @@ the file.
 ```js
 import { exportPivot } from "@casoon/opengrid";
 
-const blob = await exportPivot(provider, pivot, { format: "xlsx", texts }); // a Blob; the file name is the page's
+const blob = await exportPivot(provider, pivot, { format: "xlsx" }); // a Blob; the file name is the page's
 ```
 
 | | |
 |---|---|
-| `provider` | One that exports on the server: `createPivotProvider` or `createRestProvider`, both with `exportPivot(pivotQuery, options)` → `POST /pivot/{source}?format=xlsx`. Any other — the engine in the tab or a worker, the hybrid provider — is a `TypeError` before anything is sent. |
+| `provider` | One that exports on the server: `createPivotProvider` or `createRestProvider`, both with `exportPivot(pivotQuery, options)` → `POST /pivot/{source}?format=xlsx`. Any other — the engine in the tab or a worker, the hybrid provider — is a `TypeError` before anything is sent. The method has a query and no element, so it alone also takes `texts` (`total`, `subtotal`, `noValue`, `emptyValue`); a page that calls it with a query of its own hands them over, or gets the English defaults. |
 | `host` | An `<opengrid-pivot>` in the document, with a `datasource`. Its [view](#opengrid-pivot) is the query: `rows`, `columns`, `values`, `sort`, `filter`. Folded groups are exported, as in the CSV. |
 | `format` | `"xlsx"`, and required; anything else is a `TypeError` — a pivot's CSV is `get_pivot`. |
-| `texts` | The object given to [`set_texts`](#texts), if the page gave one: `total`, `subtotal`, `noValue` and `emptyValue` are sent, the rest is ignored. Without it the file has the English defaults, whatever the table shows. |
+| Labels | The element's own [texts](#texts), as in the table and in the CSV: `Total`, `Total DE`, `(no value)`, `(empty)`, or what `set_texts` made of them. They are read from the element and sent with the request; the page passes nothing, and `texts` is not an option here. |
 | `signal` | Aborts the request: an `AbortError`, no `Blob`. |
 | The sheet | The CSV's table: one header row with its names (`2025 · total`), the same columns and rows in the same order, a total's label in the first dimension column and the columns it spans empty. No merged cells, no outline levels. Named after the source, the header row frozen. |
 | Cells | Typed as in [every workbook](../guides/export/#xlsx): a number, a decimal with its scale, a date, in a measure and in a dimension column alike. A NULL measure is an empty cell; a NULL or empty dimension value is its label, as text. A text is a string, never a formula. |

@@ -104,6 +104,25 @@ pub(crate) fn pivot_csv(
     Ok(opengrid_export::pivot_csv(&pivot, texts, options))
 }
 
+/// The words a pivot's export has no data for, as `host` has them now: the
+/// texts for a NULL and for an empty dimension value, for the grand total and
+/// for a subtotal (with its `{value}`), in that order.
+///
+/// For `exportPivot` in `loader.js` (issue #331), which hands them to the
+/// server that writes the workbook; in the order of `PIVOT_TEXTS` there. Like
+/// [`export_csv`], exported for the loader and not part of the documented API.
+#[cfg(feature = "pivot")]
+#[wasm_bindgen(js_name = pivot_words)]
+pub fn pivot_words(host: &web_sys::HtmlElement) -> Vec<String> {
+    let texts = crate::texts::texts(host);
+    vec![
+        texts.no_value.clone(),
+        texts.empty_value.clone(),
+        texts.total.clone(),
+        texts.subtotal.clone(),
+    ]
+}
+
 /// The element's words are the export's: the very functions it renders its
 /// row and group headers with.
 #[cfg(feature = "pivot")]

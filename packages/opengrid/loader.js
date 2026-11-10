@@ -517,10 +517,10 @@ const PIVOT_TEXTS = ["noValue", "emptyValue", "total", "subtotal"];
  * the token, `allowed_fields`, the mandatory row filter, the pivot's limits —
  * and an export's: `max_xlsx_rows`, and a place among the running exports.
  *
- * `texts` are the element's words for a total and for a NULL or empty group;
- * of the object a page gives `set_texts`, the four of {@link PIVOT_TEXTS} are
- * sent and the rest ignored. Without them the server writes the English
- * defaults.
+ * `texts` are the words for a total and for a NULL or empty group, under the
+ * keys of {@link PIVOT_TEXTS}; any other key is ignored. `exportPivot` reads
+ * them from the element; a page that calls this method with a query of its
+ * own hands them over, or gets the server's English defaults.
  *
  * @param {string} endpoint `/pivot/{source}` of the server.
  * @param {object} headers the provider's, without `Accept`.
@@ -1036,19 +1036,20 @@ function changed(detail) {
  * engine in the tab or in a worker — it is a `TypeError`, as an XLSX of
  * `exportRows` is there.
  *
- * `texts`: the object the page gave `set_texts`, if it gave one, so the
- * totals and the NULL and empty groups read as in the table (`total`,
- * `subtotal`, `noValue`, `emptyValue`; the rest is ignored). Without it the
- * file has the English defaults.
+ * **The words are the element's.** The totals and the NULL and empty groups
+ * read as in the table: the element's texts as they are now — its defaults,
+ * or what `set_texts` made of them — are read from it and sent along. The
+ * page hands over nothing.
  *
  * @param {{exportPivot: Function}} provider the server-backed provider.
  * @param {HTMLElement} host an `<opengrid-pivot>`.
- * @param {object} options `format` (`"xlsx"`), `texts`, `signal`.
+ * @param {object} options `format` (`"xlsx"`), `signal`.
  * @returns {Promise<Blob>} the workbook.
  */
 export async function exportPivot(provider, host, options = {}) {
   for (const key of Object.keys(options)) {
-    if (!PIVOT_EXPORT_OPTIONS.includes(key)) {
+    // `texts` is the provider method's: here they are the element's.
+    if (key === "texts" || !PIVOT_EXPORT_OPTIONS.includes(key)) {
       throw new TypeError(`exportPivot: unknown option "${key}"`);
     }
   }
@@ -1087,7 +1088,10 @@ export async function exportPivot(provider, host, options = {}) {
   if (view.filter) {
     query.filter = view.filter;
   }
-  return provider.exportPivot(query, options);
+  // The element's words, in the order of `PIVOT_TEXTS`.
+  const words = loaded.module.pivot_words(host);
+  const texts = Object.fromEntries(PIVOT_TEXTS.map((key, index) => [key, words[index]]));
+  return provider.exportPivot(query, { ...options, texts });
 }
 
 /** What an aborted export rejects with, whatever reason `abort()` was given. */

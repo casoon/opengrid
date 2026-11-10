@@ -86,9 +86,10 @@ const FUNCTIONS: [&str; 15] = [
 ];
 
 /// `#[wasm_bindgen]` exports that are **not** in the freeze, on purpose: the
-/// loader calls them for `exportRows`, a page is meant to go through that. A
-/// new export is in neither list until somebody decides which it belongs to.
-const INTERNAL_EXPORTS: [&str; 2] = ["export_csv", "export_json"];
+/// loader calls them for `exportRows` and `exportPivot`, a page is meant to go
+/// through those. A new export is in neither list until somebody decides
+/// which it belongs to.
+const INTERNAL_EXPORTS: [&str; 3] = ["export_csv", "export_json", "pivot_words"];
 
 /// Every name a page can rely on, in one string.
 fn surface() -> String {

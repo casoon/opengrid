@@ -324,14 +324,16 @@ export async function page(): Promise<void> {
   const pivots = createPivotProvider({ url: "/", source: "o" });
   const workbook: Blob = await exportPivot(pivots, pivot, {
     format: "xlsx",
-    texts: { total: "Summe", subtotal: "Summe {value}" },
     signal: new AbortController().signal,
   });
   void workbook;
   await exportPivot(rest, pivot, { format: "xlsx" });
+  // @ts-expect-error — the words are the element's, not an option
+  await exportPivot(pivots, pivot, { format: "xlsx", texts: { total: "Summe" } });
+  // The provider's method has a query and no element: there they are handed over.
   await rest.exportPivot(
     { source: "o", rows: ["country"], columns: [], values: [{ fn: "count", as: "n" }] },
-    { format: "xlsx" },
+    { format: "xlsx", texts: { total: "Summe", subtotal: "Summe {value}" } },
   );
   // @ts-expect-error — the engine in the tab writes no workbook
   await exportPivot(local, pivot, { format: "xlsx" });

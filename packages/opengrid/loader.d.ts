@@ -341,7 +341,7 @@ export interface RestProvider extends Provider {
    */
   export(query: ViewQuery, options?: ProviderExportOptions): Promise<Blob>;
   /** `POST /pivot/{source}?format=xlsx`: see {@link PivotProvider.exportPivot}. */
-  exportPivot(pivotQuery: PivotQuery, options: PivotExportOptions): Promise<Blob>;
+  exportPivot(pivotQuery: PivotQuery, options: ProviderPivotExportOptions): Promise<Blob>;
 }
 
 /** What `createPivotProvider` answers. */
@@ -351,9 +351,9 @@ export interface PivotProvider extends Provider {
    * file — one flat sheet, the table a pivot's CSV is, with numbers and dates
    * as cells of their type. The server's rules are `/pivot`'s; its bounds are
    * the pivot's limits and `max_xlsx_rows`. `exportPivot` builds the query
-   * from an element.
+   * from an element, and takes its words from it.
    */
-  exportPivot(pivotQuery: PivotQuery, options: PivotExportOptions): Promise<Blob>;
+  exportPivot(pivotQuery: PivotQuery, options: ProviderPivotExportOptions): Promise<Blob>;
 }
 
 /** The `Planner` of the engine module, as `createHybridProvider` uses it. */
@@ -480,22 +480,31 @@ export interface PivotQuery {
 export interface PivotExportOptions {
   /** `"xlsx"`, the one format the server writes a pivot in; its CSV is `get_pivot`. */
   format: "xlsx";
-  /**
-   * The words of the totals and of a NULL or empty group — the object given
-   * to `set_texts`, of which `total`, `subtotal`, `noValue` and `emptyValue`
-   * are used. Without it the English defaults.
-   */
-  texts?: Texts;
   /** Aborts the request: it rejects with an `AbortError` and gives no `Blob`. */
   signal?: AbortSignal;
+}
+
+/**
+ * What a provider's `exportPivot` takes: {@link PivotExportOptions}, and the
+ * words the server writes where the data has none. The method has a query and
+ * no element, so they are handed to it; the function `exportPivot` reads them
+ * from the element.
+ */
+export interface ProviderPivotExportOptions extends PivotExportOptions {
+  /**
+   * `total`, `subtotal` (with `{value}`), `noValue` and `emptyValue`; any
+   * other key is ignored. Without them the server's English defaults.
+   */
+  texts?: Pick<Texts, "total" | "subtotal" | "noValue" | "emptyValue">;
 }
 
 /**
  * The pivot `host` shows as an XLSX file, written by the server: the
  * element's view asked again through the provider's `exportPivot`, as one flat
  * sheet — the header row and the rows of `get_pivot`'s CSV, numbers and dates
- * typed. A provider without `exportPivot` (the engine in the tab or a worker)
- * is a `TypeError`.
+ * typed, the totals and the NULL and empty groups in the element's own texts.
+ * A provider without `exportPivot` (the engine in the tab or a worker) is a
+ * `TypeError`.
  */
 export function exportPivot(
   provider: Pick<PivotProvider, "exportPivot">,

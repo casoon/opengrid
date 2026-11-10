@@ -367,7 +367,7 @@ const excelDay = (date) => Date.parse(`${date}T00:00:00Z`) / 86_400_000 + 25_569
  * The shown pivot as CSV and as the server's workbook, with the requests the
  * export made.
  */
-async function workbook(page, texts) {
+async function workbook(page) {
   const requests = [];
   const seen = (request) => {
     const url = new URL(request.url());
@@ -376,7 +376,7 @@ async function workbook(page, texts) {
     }
   };
   page.on("request", seen);
-  const answer = await page.evaluate(async (texts) => {
+  const answer = await page.evaluate(async () => {
     const { createPivotProvider, exportPivot } = await import("/packages/opengrid/loader.js");
     const pivot = document.querySelector("opengrid-pivot");
     const provider = createPivotProvider({
@@ -385,17 +385,23 @@ async function workbook(page, texts) {
       token: "e2e-token",
     });
     const csv = window.__opengridModule.get_pivot(pivot, { bom: false });
-    const blob = await exportPivot(provider, pivot, { format: "xlsx", texts });
+    // Nothing but the format: the words are read from the element.
+    const blob = await exportPivot(provider, pivot, { format: "xlsx" });
     const bytes = new Uint8Array(await blob.arrayBuffer());
     let binary = "";
     for (let i = 0; i < bytes.length; i += 0x8000) {
       binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
     }
     return { csv, type: blob.type, base64: btoa(binary) };
-  }, texts);
+  });
   page.off("request", seen);
   expect(answer.type).toBe("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-  return { table: parse(answer.csv), ...sheetOf(answer.base64), requests };
+  // One request, to the pivot's endpoint; `sent` is its parameters.
+  expect(requests).toHaveLength(1);
+  const { pathname, searchParams } = new URL(requests[0], "http://127.0.0.1:8082");
+  expect(pathname).toBe("/pivot/orders");
+  const sent = Object.fromEntries(searchParams);
+  return { table: parse(answer.csv), ...sheetOf(answer.base64), sent };
 }
 
 /**
@@ -456,9 +462,15 @@ test("the workbook of the pivot is its CSV's table, with typed cells", async ({ 
       ?.startsWith("country,ordered_on,"),
   );
 
-  const { table, cells, xml, requests } = await workbook(page);
-  // One request, to the pivot's endpoint, and no texts handed over.
-  expect(requests).toEqual(["/pivot/orders?format=xlsx"]);
+  const { table, cells, xml, sent } = await workbook(page);
+  // The element's words went along: here its English defaults.
+  expect(sent).toEqual({
+    format: "xlsx",
+    noValue: "(no value)",
+    emptyValue: "(empty)",
+    total: "Total",
+    subtotal: "Total {value}",
+  });
 
   // One header row, the CSV's.
   expect(table[0].slice(0, 4)).toEqual(["country", "ordered_on", "2025 · total", "2025 · n"]);
@@ -487,35 +499,52 @@ test("the workbook of the pivot is its CSV's table, with typed cells", async ({ 
   expect(xml).not.toContain("<f>");
 });
 
-test("the workbook reads in the texts the page hands over", async ({ page }) => {
+test("the workbook reads in the element's texts, the German ones included", async ({ page }) => {
   await open(page);
-  const texts = {
-    noValue: "(ohne Wert)",
-    emptyValue: "(leer)",
-    total: "Summe",
-    subtotal: "Summe {value}",
-  };
-  await page.evaluate((texts) => {
+  // The translation the package ships, set the way a page sets it — and
+  // nothing about texts is passed to the export.
+  const german = await page.evaluate(async () => {
+    const { default: de } = await import("/packages/opengrid/texts/de.js");
     const pivot = document.querySelector("opengrid-pivot");
-    window.__opengridModule.set_texts(pivot, texts);
+    window.__opengridModule.set_texts(pivot, de);
     pivot.setAttribute("rows", "country,customer");
-  }, texts);
+    return { noValue: de.noValue, emptyValue: de.emptyValue, total: de.total, subtotal: de.subtotal };
+  });
+  expect(german).toEqual({
+    noValue: "(kein Wert)",
+    emptyValue: "(leer)",
+    total: "Gesamt",
+    subtotal: "Gesamt {value}",
+  });
   await page.waitForFunction(() =>
     [...document.querySelector("opengrid-pivot").shadowRoot.querySelectorAll("tbody th")].some(
-      (th) => th.textContent.endsWith("Summe (ohne Wert)"),
+      (th) => th.textContent.endsWith("Gesamt (kein Wert)"),
     ),
   );
 
-  const { table, cells, requests } = await workbook(page, texts);
-  expect(requests).toHaveLength(1);
-  const sent = new URL(requests[0], "http://127.0.0.1:8082").searchParams;
-  expect(Object.fromEntries(sent)).toEqual({ format: "xlsx", ...texts });
-  // The CSV has the element's words, and the sheet is that table.
+  const { table, cells, sent } = await workbook(page);
+  expect(sent).toEqual({ format: "xlsx", ...german });
+  // The sheet is the CSV's table, and its first column is the row headers
+  // the table on the screen shows: the labels in the file are the ones shown.
   expectSheetIsTable(cells, table, { dimensions: 2 });
-  expect(table[0]).toContain("(ohne Wert) · total");
-  expect(table.map((record) => record[0])).toEqual(
-    expect.arrayContaining(["(leer)", "Summe (ohne Wert)", "Summe"]),
+  const shown = (await exported(page, { bom: false })).table;
+  const labels = table.slice(1).map((record, index) => cells.get(`A${index + 2}`)?.value);
+  expect(labels).toEqual(shown.slice(1).map((row) => row[0]));
+  expect(labels).toEqual(
+    expect.arrayContaining(["(kein Wert)", "(leer)", "Gesamt DE", "Gesamt (kein Wert)", "Gesamt"]),
   );
+  const column = shown[0].indexOf("(kein Wert) · total");
+  expect(column).toBeGreaterThan(1);
+  expect(cells.get(`${letters(column)}1`)).toMatchObject({ value: "(kein Wert) · total" });
+  expect(labels.join()).not.toMatch(/Total|no value|empty/);
+
+  // A text set afterwards is the next file's, without a new answer.
+  await page.evaluate(() =>
+    window.__opengridModule.set_texts(document.querySelector("opengrid-pivot"), { total: "Alles" }),
+  );
+  const next = await workbook(page);
+  expect(next.sent).toEqual({ format: "xlsx", ...german, total: "Alles" });
+  expect(next.cells.get(`A${next.table.length}`)).toMatchObject({ value: "Alles" });
 });
 
 test("a workbook needs a provider that exports on the server", async ({ page }) => {
@@ -545,6 +574,7 @@ test("a workbook needs a provider that exports on the server", async ({ page }) 
       csv: await error(server, pivot, { format: "csv" }),
       none: await error(server, pivot, {}),
       option: await error(server, pivot, { ...xlsx, delimiter: ";" }),
+      texts: await error(server, pivot, { ...xlsx, texts: { total: "Sum" } }),
       grid: await error(server, document.createElement("opengrid-grid"), xlsx),
     };
   });
@@ -554,6 +584,8 @@ test("a workbook needs a provider that exports on the server", async ({ page }) 
   expect(refused.csv).toContain('TypeError: exportPivot: format is "xlsx", not "csv"');
   expect(refused.none).toContain('format is "xlsx", not undefined');
   expect(refused.option).toContain('unknown option "delimiter"');
+  // The words are the element's: handing some over is refused, not ignored.
+  expect(refused.texts).toContain('unknown option "texts"');
   expect(refused.grid).toContain("no pivot to export");
   // Each was refused before anything was sent.
   expect(posts).toEqual([]);
