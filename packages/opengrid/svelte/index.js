@@ -1,5 +1,5 @@
 /**
- * Svelte 5 components for `@casoon/opengrid` (plan point 79, E32).
+ * Svelte 5 components for `@casoon/opengrid`.
  *
  * Shipped as `.svelte` sources, the Svelte convention: the page's bundler
  * compiles them with the page's Svelte. The three components are thin: each

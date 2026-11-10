@@ -1,6 +1,6 @@
 /// <reference lib="dom" />
 /**
- * Types for `@casoon/opengrid` (plan point 75).
+ * Types for `@casoon/opengrid`.
  *
  * Written by hand after `docs/api.md`, which is the source: everything a page
  * can rely on is typed here, and nothing else. The freeze test in

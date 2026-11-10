@@ -1,6 +1,5 @@
 /**
- * opengrid engine worker (plan point 19,
- * plan/spezifikation/04-local-engine.md §Worker).
+ * opengrid engine worker: the local engine in a module worker.
  *
  * A **module worker** that owns exactly one WASM `Engine`. The main thread
  * keeps the DOM, events and rendering; this worker runs ingest, filter, sort,

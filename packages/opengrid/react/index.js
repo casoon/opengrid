@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * React components for `@casoon/opengrid` (plan point 77, E32).
+ * React components for `@casoon/opengrid`.
  *
  * A thin shell around `connect`: the component renders the custom element with
  * its attributes, and hands everything else — provider, texts, formats,

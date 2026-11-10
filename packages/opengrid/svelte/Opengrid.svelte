@@ -1,5 +1,5 @@
 <!--
-  The element and its connection (plan point 79) — internal; the page uses
+  The element and its connection — internal; the page uses
   OpengridGrid, OpengridTable and OpengridPivot.
 
   The element is rendered with its attributes, so they are in the server HTML
