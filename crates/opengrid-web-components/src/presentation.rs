@@ -27,6 +27,7 @@
 //! is the whole test for whether something belongs here: could the grid work it
 //! out from the data? If yes, it is not configuration.
 
+use opengrid_grid::layout::Pin;
 use opengrid_query::AggregateFn;
 use opengrid_types::{DataType, Schema};
 
@@ -138,6 +139,9 @@ pub struct ColumnPresentation {
     /// The page fills this column (`set_values`, issue #153): it never opens
     /// an editor and is announced as read-only.
     pub readonly: bool,
+    /// Where the column starts pinned (issue #316). The reader's choice leads
+    /// after that, like a resize over `width`.
+    pub pin: Option<Pin>,
 }
 
 /// A configuration this grid refuses, in words.
@@ -168,6 +172,23 @@ pub struct RawColumn {
     pub aggregate: Option<String>,
     pub facet: Option<String>,
     pub readonly: Option<bool>,
+    pub pin: Option<String>,
+}
+
+/// Where a configuration pins, read from what the page asked for.
+///
+/// Before the check, and on purpose: a pin decides the **order** of the
+/// columns, so it has to be known when the first query is built — and the
+/// check waits for the schema that query brings. A pin asks nothing of the
+/// type, so there is nothing the schema could refuse about it; a token that is
+/// no pin is none here and a problem in [`validate`].
+pub fn pins_of(raw: &[(String, RawColumn)]) -> Vec<(String, Pin)> {
+    raw.iter()
+        .filter_map(|(name, column)| {
+            let pin = Pin::parse(column.pin.as_deref()?)?;
+            Some((name.clone(), pin))
+        })
+        .collect()
 }
 
 /// Checks a whole configuration against the schema.
@@ -228,6 +249,16 @@ pub fn validate(
             }
         }
 
+        if let Some(token) = &entry.pin {
+            match Pin::parse(token) {
+                Some(pin) => column.pin = Some(pin),
+                None => problems.push(PresentationProblem::new(
+                    name,
+                    format!("{token} is not a pin"),
+                )),
+            }
+        }
+
         if let Some(token) = &entry.aggregate {
             match aggregate_from(token) {
                 Some(aggregate)
@@ -274,8 +305,9 @@ pub fn validate(
 }
 
 /// [`validate`] for `<opengrid-table>` (issue #29): the same checks, and the
-/// grid's own options — `width`, `aggregate`, `facet` — refused. The table has
-/// no resize, no groups and no facets, and an option that silently did nothing
+/// grid's own options — `width`, `aggregate`, `facet`, `pin` — refused. The
+/// table has no resize, no groups, no facets and nothing that scrolls
+/// sideways, and an option that silently did nothing
 /// would hide the mistake the same way an unknown column would.
 pub fn validate_for_table(
     raw: &[(String, RawColumn)],
@@ -289,6 +321,7 @@ pub fn validate_for_table(
             (entry.aggregate.is_some(), "aggregate"),
             (entry.facet.is_some(), "facet"),
             (entry.readonly.is_some(), "readonly"),
+            (entry.pin.is_some(), "pin"),
         ] {
             if given {
                 problems.push(PresentationProblem::new(
@@ -381,6 +414,14 @@ impl ColumnStyles {
 
     pub fn width(&self, name: &str) -> Option<u32> {
         self.get(name).and_then(|column| column.width)
+    }
+
+    /// Where the page pins, by field name (issue #316).
+    pub fn pins(&self) -> Vec<(String, Pin)> {
+        self.by_name
+            .iter()
+            .filter_map(|(name, column)| column.pin.map(|pin| (name.clone(), pin)))
+            .collect()
     }
 }
 
@@ -523,6 +564,36 @@ mod tests {
                 "{column}/{facet}: {problems:?}"
             );
         }
+    }
+
+    /// A pin is `start` or `end` (issue #316): anything else is named, a table
+    /// refuses the option, and the order of the columns reads it before the
+    /// schema is there to check the rest.
+    #[test]
+    fn a_pin_is_an_end_of_the_row() {
+        let pinned = |token: &str| RawColumn {
+            pin: Some(token.to_owned()),
+            ..RawColumn::default()
+        };
+        let checked = validate(&raw(pinned("end")), &schema(), &[]).unwrap();
+        assert_eq!(checked[0].1.pin, Some(Pin::End));
+        let styles = ColumnStyles::new(checked);
+        assert_eq!(styles.pins(), [("amount".to_owned(), Pin::End)]);
+        assert_eq!(
+            pins_of(&raw(pinned("start"))),
+            [("amount".to_owned(), Pin::Start)]
+        );
+
+        let problems = validate(&raw(pinned("left")), &schema(), &[]).expect_err("is refused");
+        assert_eq!(problems[0].reason, "left is not a pin");
+        assert!(pins_of(&raw(pinned("left"))).is_empty());
+
+        let problems =
+            validate_for_table(&raw(pinned("start")), &schema(), &[]).expect_err("is refused");
+        assert_eq!(
+            problems[0].reason,
+            "pin belongs to the grid, not to a table"
+        );
     }
 
     /// A typo in a column name is the mistake this catches most often, and the
@@ -686,7 +757,7 @@ mod tests {
 }
 
 #[cfg(target_arch = "wasm32")]
-pub use host::{raw, set_columns_for, store, styles};
+pub use host::{is_refused, page_pins, raw, refuse, set_columns_for, store, styles};
 
 /// Per-host storage of the column presentation, mirroring the formats seam.
 #[cfg(target_arch = "wasm32")]
@@ -699,7 +770,7 @@ mod host {
     use wasm_bindgen::{JsCast, JsValue};
     use web_sys::HtmlElement;
 
-    use super::{ColumnStyles, RawColumn};
+    use super::{ColumnStyles, Pin, RawColumn};
 
     /// What a page asked for, per column, before it met the schema.
     type Raw = Rc<Vec<(String, RawColumn)>>;
@@ -712,11 +783,43 @@ mod host {
         /// before the real schema exists: the check then runs again when the
         /// schema arrives, rather than being skipped.
         static RAW: RefCell<HashMap<u32, Raw>> = RefCell::new(HashMap::new());
+        /// The hosts whose last configuration was refused against the real
+        /// schema: none of it is applied, its pins included.
+        static REFUSED: RefCell<Vec<u32>> = const { RefCell::new(Vec::new()) };
     }
 
     fn release(id: u32) {
         STYLES.with(|map| map.borrow_mut().remove(&id));
         RAW.with(|map| map.borrow_mut().remove(&id));
+        REFUSED.with(|hosts| hosts.borrow_mut().retain(|host| *host != id));
+    }
+
+    /// Where the page pins (issue #316): what it asked for ([`super::pins_of`]),
+    /// or — once that was refused — what the last accepted configuration says.
+    pub fn page_pins(host: &HtmlElement) -> Vec<(String, Pin)> {
+        if is_refused(host) {
+            styles(host).pins()
+        } else {
+            super::pins_of(&raw(host))
+        }
+    }
+
+    /// Whether the configuration the page asked for was refused.
+    pub fn is_refused(host: &HtmlElement) -> bool {
+        let id = id_of(host);
+        REFUSED.with(|hosts| hosts.borrow().contains(&id))
+    }
+
+    /// Remembers whether the configuration the page asked for was refused.
+    pub fn refuse(host: &HtmlElement, refused: bool) {
+        let id = id_of(host);
+        REFUSED.with(|hosts| {
+            let mut hosts = hosts.borrow_mut();
+            hosts.retain(|host| *host != id);
+            if refused {
+                hosts.push(id);
+            }
+        });
     }
 
     /// The host's id, with this store's release registered.
@@ -796,12 +899,15 @@ mod host {
                         aggregate: text("aggregate"),
                         facet: text("facet"),
                         readonly: flag("readonly"),
+                        pin: text("pin"),
                     },
                 ));
             }
         }
         let id = id_of(host);
         let stored = Rc::new(out);
+        // A new configuration is unchecked, not refused.
+        REFUSED.with(|hosts| hosts.borrow_mut().retain(|host| *host != id));
         RAW.with(|map| map.borrow_mut().insert(id, stored.clone()));
         stored
     }

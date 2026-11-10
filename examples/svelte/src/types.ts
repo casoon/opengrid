@@ -20,7 +20,7 @@ export const grid: GridProps = {
   onviewchange: (view: View) => view.sort,
   onselectionchange: (detail) => detail.count satisfies number,
   oncellchange: (detail) => detail.column satisfies string,
-  presentation: { amount: { aggregate: "sum" } },
+  presentation: { amount: { aggregate: "sum" }, id: { pin: "start" } },
   class: "orders",
   id: "orders",
 };

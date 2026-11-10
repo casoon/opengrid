@@ -21,7 +21,11 @@
 //! An entry that would do nothing is not shown: no aggregate choice on a text
 //! column (only `count` would fit, and "count" in every text header is noise),
 //! no grouping by a decimal, no "hide" on the last visible column.
+//!
+//! Pinning (issue #316) is always there: every column can be kept in place.
+//! Its first door is the header cell's `Alt`+`Shift`+`←`/`→`.
 
+use opengrid_grid::layout::Pin;
 use opengrid_types::DataType;
 
 use crate::presentation::aggregates_for;
@@ -77,6 +81,8 @@ pub struct Column<'a> {
     pub visible: usize,
     /// Whether "set for selected rows" does something now (issue #187).
     pub bulk: bool,
+    /// Where the column is pinned (issue #316).
+    pub pin: Option<Pin>,
 }
 
 /// The entries of one column's menu, in order.
@@ -116,6 +122,19 @@ pub fn entries(column: &Column<'_>, texts: &GridTexts) -> Vec<Entry> {
             entries: group,
         });
     }
+
+    out.push(Entry::Separator);
+    out.push(Entry::Group {
+        label: texts.pin_group.clone(),
+        entries: [
+            ("pin:none", &texts.pin_none, None),
+            ("pin:start", &texts.pin_start, Some(Pin::Start)),
+            ("pin:end", &texts.pin_end, Some(Pin::End)),
+        ]
+        .into_iter()
+        .map(|(action, label, pin)| Entry::radio(action, label, column.pin == pin))
+        .collect(),
+    });
 
     let mut rest = Vec::new();
     if column.bulk {
@@ -191,6 +210,7 @@ mod tests {
             can_group: true,
             visible: 5,
             bulk: false,
+            pin: None,
         }
     }
 
@@ -211,6 +231,9 @@ mod tests {
                 "aggregate:min",
                 "aggregate:max",
                 "aggregate:range",
+                "pin:none",
+                "pin:start",
+                "pin:end",
                 "hide",
             ]
         );
@@ -224,7 +247,16 @@ mod tests {
         let got = actions(&entries(&column("customer", DataType::Utf8, &[]), &texts));
         assert_eq!(
             got,
-            ["sort:asc", "sort:desc", "filter", "group:first", "hide"]
+            [
+                "sort:asc",
+                "sort:desc",
+                "filter",
+                "pin:none",
+                "pin:start",
+                "pin:end",
+                "group:first",
+                "hide"
+            ]
         );
     }
 
@@ -249,7 +281,17 @@ mod tests {
         last.can_group = false;
         let got = actions(&entries(&last, &texts));
         // No grouping while paging, and the last column cannot be hidden.
-        assert_eq!(got, ["sort:asc", "sort:desc", "filter"]);
+        assert_eq!(
+            got,
+            [
+                "sort:asc",
+                "sort:desc",
+                "filter",
+                "pin:none",
+                "pin:start",
+                "pin:end"
+            ]
+        );
     }
 
     #[test]
@@ -276,7 +318,25 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(checked, ["sort:desc", "aggregate:sum"]);
+        assert_eq!(checked, ["sort:desc", "aggregate:sum", "pin:none"]);
+
+        // The pin's own radio says where the column is kept (issue #316).
+        amount.pin = Some(Pin::End);
+        let pinned = entries(&amount, &texts)
+            .into_iter()
+            .find_map(|entry| match entry {
+                Entry::Group { label, entries } if label == texts.pin_group => Some(entries),
+                _ => None,
+            })
+            .expect("the pin group");
+        let state: Vec<Option<bool>> = pinned
+            .iter()
+            .map(|entry| match entry {
+                Entry::Item { checked, .. } => *checked,
+                _ => None,
+            })
+            .collect();
+        assert_eq!(state, [Some(false), Some(false), Some(true)]);
     }
 
     #[test]

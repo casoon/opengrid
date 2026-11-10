@@ -262,6 +262,7 @@ import {
 export class OpengridDirective implements OnChanges, OnDestroy, CellWrites {
   @Input() provider?: ConnectOptions["provider"];
   @Input() texts?: ConnectOptions["texts"];
+  @Input() presentation?: ConnectOptions["presentation"];
   @Input() view?: ConnectOptions["view"];
   @Output() viewChange = new EventEmitter<View>();
   // Editing (the grid only). The answer to a new row is the function's return
@@ -281,6 +282,7 @@ export class OpengridDirective implements OnChanges, OnDestroy, CellWrites {
       this.connection = connect(this.host.nativeElement, {
         provider: this.provider,
         texts: this.texts,
+        presentation: this.presentation,
         view: this.view,
         actions: this.actions,
         validators: this.validators,
@@ -305,6 +307,7 @@ export class OpengridDirective implements OnChanges, OnDestroy, CellWrites {
     const changed: ConnectOptions = {};
     if ("provider" in changes) changed.provider = this.provider;
     if ("texts" in changes) changed.texts = this.texts;
+    if ("presentation" in changes) changed.presentation = this.presentation;
     if ("view" in changes) changed.view = this.view;
     if ("actions" in changes) changed.actions = this.actions;
     if ("validators" in changes) changed.validators = this.validators;
@@ -342,8 +345,7 @@ export class OpengridDirective implements OnChanges, OnDestroy, CellWrites {
 - The view is controlled through `[(view)]`. With `[view]` alone the page sets the view when
   its value changes, and in between the reader's change stays — the directive does not write
   the page's view back.
-- Add inputs for `formats`, `presentation`, `choices` and `defaultView` the same way when a page
-  needs them.
+- Add inputs for `formats`, `choices` and `defaultView` the same way when a page needs them.
 - **Editing:** `rowKey` and `addRow` are inputs that set the attributes — a plain `row-key="id"`
   works too. The new row is answered by `[rowAdd]`, a function whose return value is the row's
   state, since an `@Output` cannot answer. `exportAs: "opengrid"` gives the template the

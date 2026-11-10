@@ -142,7 +142,7 @@ test("sorting from the menu sorts, and the active direction is checked", async (
   expect(await focused(page)).toMatchObject({ tag: "th", col: String(AMOUNT) });
 
   await page.keyboard.press("Alt+ArrowDown");
-  expect((await menu(page)).checked).toEqual(["sort:desc", "aggregate:none"]);
+  expect((await menu(page)).checked).toEqual(["sort:desc", "aggregate:none", "pin:none"]);
 });
 
 test("Filter … goes to the column's field in the filter row", async ({ page }) => {
@@ -235,6 +235,9 @@ test("every entry has a way in without the menu", async ({ page }) => {
     "sort:desc": "Enter on the header",
     filter: "the filter row",
     hide: "the column list",
+    "pin:none": "Alt+Shift+arrow on the header",
+    "pin:start": "Alt+Shift+arrow on the header",
+    "pin:end": "Alt+Shift+arrow on the header",
     "group:first": "group-by / set_view",
     "group:second": "group-by / set_view",
     "group:remove": "group-by / set_view",
