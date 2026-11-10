@@ -173,6 +173,7 @@ export default {
   "pageLast": "Letzte Seite",
   "pageOf": "Seite {page} von {pages}",
   "selectionCleared": "Auswahl aufgehoben",
+  "selectionMissing": "{count} ausgewählte Zeilen gibt es nicht mehr",
   "noValue": "(kein Wert)",
   "emptyValue": "(leer)",
   "total": "Gesamt",

@@ -313,6 +313,13 @@ impl Tree {
                 .all(|entry| self.selected.contains(&entry.id))
     }
 
+    /// Replaces the selection with the nodes of these ids — a view's
+    /// (issue #322), shown or not.
+    pub fn set_selected(&mut self, ids: impl IntoIterator<Item = String>) {
+        self.anchor = None;
+        self.selected = ids.into_iter().collect();
+    }
+
     /// Drops the whole selection, shown or not.
     pub fn clear_selected(&mut self) -> bool {
         self.anchor = None;

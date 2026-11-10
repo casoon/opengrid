@@ -3,9 +3,10 @@
 //! With rows selected, `F2` — or "Set for selected rows" in a column's menu —
 //! opens that column's editor **once**, in a small panel above the rows.
 //! Committing fires one `opengrid-bulk-change` with the keys of the selected
-//! records, the column and the value, and marks the cells unsaved. A selection
-//! names positions, the page names records, so this needs a `row-key`; a
-//! column the page fills (`readonly`) refuses it.
+//! records, the column and the value, and marks the cells unsaved. The page
+//! names records, so this needs a `row-key` — with one the selection is the
+//! records' keys already (issue #322); a column the page fills (`readonly`)
+//! refuses it.
 
 use super::*;
 
@@ -15,7 +16,7 @@ use opengrid_grid::paste::{Notation, parse_cell};
 /// and shows plain rows. `F2` then means "set for the selected rows".
 pub(super) fn applicable(host: &HtmlElement, runtime: &GridRuntime) -> bool {
     has_row_key(host)
-        && !runtime.state.selection().is_empty()
+        && !runtime.picked.is_empty()
         && runtime.grouping.is_none()
         && runtime.tree.is_none()
 }
@@ -42,7 +43,7 @@ pub(super) fn open(host: &HtmlElement, col: usize) {
         let Some(field) = borrowed.state.schema().fields().get(col).cloned() else {
             return;
         };
-        (field, borrowed.state.selection().len() as u64)
+        (field, borrowed.picked.len() as u64)
     };
     if presentation::styles(host).readonly(field.name.as_str()) {
         runtime
@@ -153,11 +154,10 @@ fn cancel(host: &HtmlElement) {
     render(host, true);
 }
 
-/// Reads the editor, finds the keys of the selected records and sets the value.
+/// Reads the editor and sets the value for the selected records.
 pub(super) fn apply(host: &HtmlElement) {
-    let host = host.clone();
-    spawn_local(async move {
-        let (Some(runtime), Some(root)) = (runtime(&host), host.shadow_root()) else {
+    {
+        let (Some(runtime), Some(root)) = (runtime(host), host.shadow_root()) else {
             return;
         };
         let Ok(Some(panel)) = root.query_selector("[part=\"bulk\"]") else {
@@ -175,7 +175,7 @@ pub(super) fn apply(host: &HtmlElement) {
             .flatten()
             .map(|editor| editor_text(&editor))
             .unwrap_or_default();
-        let texts = texts(&host);
+        let texts = texts(host);
         let Some(field) = runtime.borrow().state.schema().fields().get(col).cloned() else {
             return;
         };
@@ -194,13 +194,11 @@ pub(super) fn apply(host: &HtmlElement) {
                 texts.filter_invalid(&name, &typed)
             };
             runtime.borrow_mut().state.set_notice(message);
-            render(&host, false);
+            render(host, false);
             return;
         };
 
-        let Some(keys) = selected_keys(&host, &runtime).await else {
-            return;
-        };
+        let keys = runtime.borrow().picked.keys();
         close(&root);
         // A bulk change is not a step of the history (one event cannot carry a
         // different old value per record): it ends the history instead.
@@ -216,7 +214,7 @@ pub(super) fn apply(host: &HtmlElement) {
         let detail = js_sys::Object::new();
         let list = js_sys::Array::new();
         for key in &keys {
-            list.push(&to_js(&opengrid_json::ToJson::to_json(key)));
+            list.push(&to_js(key));
         }
         for (property, item) in [
             ("keys", list.into()),
@@ -228,87 +226,16 @@ pub(super) fn apply(host: &HtmlElement) {
         ] {
             let _ = js_sys::Reflect::set(&detail, &JsValue::from_str(property), &item);
         }
-        crate::element::dispatch(&host, BULK_EVENT, &detail);
+        crate::element::dispatch(host, BULK_EVENT, &detail);
 
         runtime
             .borrow_mut()
             .state
-            .set_notice(texts.bulk_done(&name, rows.len() as u64));
-        render(&host, true);
+            .set_notice(texts.bulk_done(&name, keys.len() as u64));
+        render(host, true);
         // The focused row is the one the renderer leaves alone.
         for row in rows {
-            redraw_cell(&host, CellRef::new(row, col));
-        }
-    });
-}
-
-/// The `row-key` values of the selected rows: the loaded ones are read, the
-/// rest are asked of the source in pieces of the sorted, filtered result.
-async fn selected_keys(
-    host: &HtmlElement,
-    runtime: &Rc<RefCell<GridRuntime>>,
-) -> Option<Vec<Value>> {
-    const PIECE: u64 = 500;
-    let provider = provider(host)?;
-    let source = host.get_attribute(DATASOURCE_ATTRIBUTE)?;
-    let key_name = row_key_of(host)?;
-    let (selected, schema, sorts, filter) = {
-        let borrowed = runtime.borrow();
-        (
-            borrowed.state.selection().to_vec(),
-            borrowed.state.schema().clone(),
-            borrowed.state.sort_keys(),
-            effective_filter(host, &borrowed, None).ok()?,
-        )
-    };
-    let key_col = schema
-        .fields()
-        .iter()
-        .position(|field| field.name == key_name)?;
-    let mut keys: Vec<Option<Value>> = vec![None; selected.len()];
-    {
-        let borrowed = runtime.borrow();
-        for (slot, row) in keys.iter_mut().zip(&selected) {
-            *slot = borrowed.state.row_key(*row).cloned();
+            redraw_cell(host, CellRef::new(row, col));
         }
     }
-    let columns = columns_of(host);
-    let mode = host.get_attribute(MODE_ATTRIBUTE).unwrap_or_default();
-    let mut index = 0;
-    while index < selected.len() {
-        if keys[index].is_some() {
-            index += 1;
-            continue;
-        }
-        let piece_start = selected[index] / PIECE * PIECE;
-        let query = grid::query_json(
-            &source,
-            &columns,
-            &sorts,
-            filter.as_ref(),
-            piece_start,
-            PIECE,
-        );
-        let result = match ask(host, &provider, runtime, &query, &mode).await {
-            Ok(result) => result,
-            Err(message) => {
-                runtime
-                    .borrow_mut()
-                    .state
-                    .set_notice(texts(host).error(&message));
-                render(host, false);
-                return None;
-            }
-        };
-        let column = result.columns.get(key_col)?;
-        while index < selected.len() && selected[index] < piece_start + PIECE {
-            if keys[index].is_none() {
-                keys[index] = column
-                    .get((selected[index] - piece_start) as usize)
-                    .cloned();
-            }
-            index += 1;
-        }
-    }
-    keys.into_iter().collect()
 }

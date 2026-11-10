@@ -51,7 +51,8 @@
 
       window.__selection = [];
       document.addEventListener("opengrid-selection-change", (event) =>
-        window.__selection.push(event.detail.rows),
+        // The grid has a `row-key`: its selection is by key (issue #322).
+        window.__selection.push(event.detail.keys),
       );
       window.__changes = [];
       document.addEventListener("opengrid-cell-change", (event) => window.__changes.push(event.detail));

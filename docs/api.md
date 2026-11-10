@@ -271,8 +271,14 @@ carry `aria-checked` — and it is tri-state: empty, `mixed`, checked. The
 per-row mark is decoration; the row itself says `aria-selected`, and a second
 voice per row would double every announcement.
 The table carries `aria-multiselectable="true"` (`Shift`+`Space` and `Ctrl`+`A` select
-several); while grouped, where selection is off, neither the table nor a row says anything
-of a selection.
+several). While grouped the data rows say it and the group headers and the total never do — and
+without a `row-key`, where a grouped grid selects nothing, neither the table nor a row says
+anything of a selection.
+
+**What a selection names.** With a `row-key` the selection names **records, by their key**; in a
+[tree](#tree) it names nodes by `tree-key`; without either it names **positions** in the result.
+The keys are the same in all three; what differs — what survives a sort, what the event and the
+view carry — is in [Selecting by key](#selecting-by-key).
 
 **Very long results** (issue #284). A browser caps the height of an element, so the
 scroll area is never more than 10 000 000 px (312 500 rows at 32 px, 238 095 at 42 px;
@@ -556,13 +562,57 @@ which leads) — there is no default, because "sum every number" would sum the i
 | Spoken | The cell shows a glyph (`Σ ⌀ # min max`) and says a word: `Sum: 1,234.00`. The glyph has an empty alternative. |
 | Total | A row at the **end** of the list, not a sticky footer: the arrow keys and a screen reader reach it like any row. It opens nothing and cannot be selected. |
 
-**While grouped, selection is off.** A row number would name display positions —
-headers as well as rows — and would move on every toggle. **Editing stays on when
-`row-key` is set** (issue #190): the data rows of a group edit, and the change
+**While grouped, a row number names nothing**: it would be a display position —
+a header as often as a row — and would move on every toggle. So a grouped grid
+edits and selects **by `row-key`**, and without one it does neither.
+
+**Editing** (issue #190): the data rows of a group edit, and the change
 names its record by `key`; the `row` in the event is a display position and not
-for the page to use. Group headers and the total stay read-only, and without a
-`row-key` nothing edits. A fresh result (a replaced source) brings fresh
-aggregates for every group.
+for the page to use. Group headers and the total stay read-only. A fresh result
+(a replaced source) brings fresh aggregates for every group.
+
+### Selecting by key
+
+A grid whose records have a key selects **by key** (issue #322):
+
+| The grid | The selection names | `opengrid-selection-change` | In the [view](#the-view) |
+|---|---|---|---|
+| `row-key`, a field among the `columns` — grouped or not, with or without `page-size` | records, by their `row-key` value | `{ count, keys }` | `selected` |
+| a [tree](#tree) | nodes, by their `tree-key` value | `{ count, keys }` | `selected` |
+| neither | positions in the result | `{ rows, ranges, count }` | — |
+| `group-by` without `row-key` | nothing: a display position is a header as often as a row | — | — |
+
+What selecting by key does, with `row-key`:
+
+| | |
+|---|---|
+| `Space` on a data row, or its selection cell | Selects or deselects the record. |
+| `Shift`+`Space` | Selects every data row from the last toggled row to this one, keeping what is selected. While grouped these are the rows **in the display list**: group headers in between are passed over, and a closed group has no rows in the list, so none of its rows are taken. When the last toggled row is not in the list — nothing toggled yet, its group closed, or another record in its place after a sort or a filter — it is a plain toggle. |
+| `Ctrl`/`Cmd`+`A`, the selection header | **Every row of the filter** — [the page's](#the-pages-filter) and the reader's together, and while grouped, whether its group is open or not. The header clears the selection when all of them are selected already, and says the count (`selectedAll`). |
+| A group header | Is not selected and selects nothing: `Enter`, `Space` and a click open and close it. The total is not selected either. `aria-selected` is on data rows only. |
+| Opening and closing a group | Never changes what is selected. The rows of a closed group stay selected, and show it when it opens again. |
+| Sort, filter, a scroll, another page, grouping, ungrouping, another `group-by` | The selection stays: a key names a record, not a position. After a filter it can hold records that match no longer; the header then shows `mixed`. |
+| Another `row-key`, a `row-key` added or taken away, a replaced source, another page [`filter`](#the-pages-filter) | The selection is **dropped**, said in the status line (`selectionCleared`) and reported with an `opengrid-selection-change` that holds nothing — keys of another field name nothing, positions and keys do not turn into each other, and whether a record is in a new source, or under another page filter, nobody has asked. |
+| The event | `{ count, keys }`: `keys` are the `row-key` values of the selected records, in no particular order, and `count` counts them. There is **no `rows` and no `ranges`** — a position names no record, and most selected records are not loaded. |
+| The source | A selected record is known by its key alone, so the keys behind a `Shift` range that reaches past the loaded rows and behind "every row" are asked of the source, in the grid's order: one query per group a range touches, the rows of the filter in pieces of 10 000. |
+
+A [tree](#tree) keeps its own rules for what `Shift` and "all" take — the nodes shown — and the
+same event and view.
+
+**The view carries the selection by key** as `selected`, and `set_view` restores it:
+
+| | |
+|---|---|
+| `get_view` | `selected` is the list of selected keys — a snapshot, like the rest of the view. It is left out while nothing is selected, and always for a selection by position. |
+| Selecting | fires `opengrid-selection-change` and **never** `opengrid-view-change`: a page that stores the view on every view change stores the selection as it was then. |
+| `set_view` | replaces the selection with the view's. A view without `selected` selects nothing, the rule of every absent field of a view — the selection there was is dropped and said. In a grid that selects by position `selected` is not used. |
+| Untrusted keys | The keys are checked before anything is selected: `selected` must be a list of strings, numbers and booleans, or the view is refused like one that names an unknown column. Then the **source is asked** which of them name a record — only keys of the key column's type are asked, in pieces of 1 000 — and only those are selected. The check runs under [the page's `filter`](#the-pages-filter), which says which records this grid has: a record it hides names none here. The reader's filter does not count — a selected record may be filtered out of sight. |
+| What is missing | Keys that name no record are dropped, and said once with the result: `17 matches · 3 selected rows no longer exist` (`selectionMissing`). `opengrid-selection-change` fires with what remains. |
+| A failed check | is said as an error with the result, and nothing is selected — not a silently empty selection. |
+| Cost | A view with `selected` costs the check beside its one query: one query per 1 000 keys, and one for the key column's type when no result has told it yet. |
+
+[Setting a value for the selected rows](#setting-a-value-for-the-selected-rows)
+stays off while grouped.
 
 ### Adding rows
 
@@ -673,7 +723,7 @@ that column's editor once, in a small panel above the rows. `Enter` (or the butt
 `row-key` values of the selected records, the column and the value as text. The cells in view show
 it, marked unsaved; the page saves and answers with `set_cell_state` per key. It needs `row-key`,
 and a column the page fills (`readonly` in `set_columns`) refuses it, said in the status line. Off
-while grouped and in a tree. The keys of selected rows that are not loaded are asked of the source.
+while grouped and in a tree. The keys are the [selection's own](#selecting-by-key).
 
 ### Pasting
 
@@ -748,9 +798,10 @@ stays when nodes close over it and when the grid is sorted or filtered — a key
 names a record, not a position. A node is selected by itself, never with its
 children. `Shift` extends over the nodes shown; `Ctrl`/`Cmd`+`A` and the
 selection header select **every node shown**, since a closed level was never
-loaded. `opengrid-selection-change` carries `keys` — the selected nodes, the
-shown ones first — and `count` counts them; `rows` are the display positions of
-those shown. Applying a view drops the selection, as everywhere.
+loaded. `opengrid-selection-change` is `{ count, keys }` — the selected nodes, the
+shown ones first, and their number; it has no `rows` and no `ranges`. The
+[view](#the-view) carries the nodes as `selected`, and `set_view` restores
+them — see [Selecting by key](#selecting-by-key).
 
 **Editing is off in a tree**: an edit would be reported against a display
 position, which moves on every toggle.
@@ -998,7 +1049,7 @@ Sort, filters, column layout and density are one value:
 const view = loader.module.get_view(grid);
 // { sort: [{field, direction}], filters: [{column, op, value}],
 //   columns: { order, hidden, widths }, density,
-//   group: [], expanded: [], facets: {} }
+//   group: [], expanded: [], facets: {}, selected: [4, 9] }
 loader.module.set_view(grid, view);
 ```
 
@@ -1019,12 +1070,17 @@ whenever the reader changes any of it.
 | `aggregates` | The reader's aggregate per column, `{ amount: "sum" }`. Leads over `set_columns`. |
 | `filterRow` | Whether the filter row shows. `true` unless turned off. |
 | `facets` | The facet selections, by column. |
+| `selected` | The keys of the selected records, where the grid [selects by key](#selecting-by-key); left out while there are none. `set_view` restores them after asking the source which of them exist. |
 
-**The selection is deliberately not in a view.** It names positions, the grid
-has no key column, and sorting or filtering drops it precisely because after a
-different sort those positions hold different records. A restored view carrying
-a selection would not be incomplete — it would be wrong. Applying a view drops
-the selection, and says so.
+**A selection by key is in the view; a selection by position is not.** Without a
+`row-key` the grid names a row by its number in the result, and sorting or
+filtering drops such a selection precisely because after a different sort those
+positions hold different records: a restored view carrying positions would not
+be incomplete — it would be wrong. Applying a view drops it, and says so. A key
+names a record under any sort, so `selected` travels with the view — and
+because a saved key can outlive its record, `set_view` asks the source before
+it selects ([Selecting by key](#selecting-by-key)). Selecting is still not a
+view change: it has its own event.
 
 ## Exporting the view
 
@@ -1042,7 +1098,7 @@ const query = loader.module.get_query(grid);
 |---|---|
 | Hidden columns | are not in `select`; moved ones are in their new place. |
 | Grouped | The rows, not the group or total rows, ordered by their groups first (ascending, NULL last) and then by the sort — the order the reader sees. |
-| The selection | is not in it. It names positions under exactly this query's sort, so an export of the selection is this query plus the positions from `opengrid-selection-change`. |
+| The selection | is not in it. It names positions under exactly this query's sort, so an export of the selection is this query plus the positions from `opengrid-selection-change` — or, where the grid [selects by key](#selecting-by-key), plus its `keys`. |
 
 **Without an element** (issue #144). The engine answers the query of a view it is
 handed: `engine.view_query(source, columns, view)` — `columns` is the grid's
@@ -1300,7 +1356,7 @@ exception to the first part: `loader.js` dispatches it on the element, without `
 
 | Event | `detail` |
 |---|---|
-| `opengrid-selection-change` | `{ rows: number[], ranges: { from: number, to: number }[], count: number }` — logical row numbers, ascending, and the same rows as `ranges`: runs of adjacent rows, ascending, both ends inclusive (select-all over 100 000 rows is one range, `{ from: 0, to: 99999 }`). In a [tree](#tree) `ranges` follow `rows`, the nodes shown; also `keys`: the selected nodes by key, and `count` counts them. |
+| `opengrid-selection-change` | One of two shapes, by what the selection names ([Selecting by key](#selecting-by-key)). **By position** (no `row-key`, no tree): `{ rows: number[], ranges: { from: number, to: number }[], count: number }` — logical row numbers, ascending, and the same rows as `ranges`: runs of adjacent rows, ascending, both ends inclusive (select-all over 100 000 rows is one range, `{ from: 0, to: 99999 }`). **By key** (`row-key`, or a [tree](#tree)): `{ count: number, keys: unknown[] }` — the keys of the selected records, and neither `rows` nor `ranges`. `"keys" in detail` tells them apart. |
 | `opengrid-bulk-change` | `{ keys, column, value }` — one value was set for the selected rows; see [Setting a value for the selected rows](#setting-a-value-for-the-selected-rows). |
 | `opengrid-paste` | `{ changes: [{ key?, row, column, value, previous }], added: [{ values, provisionalKey }] }` — a pasted block was applied; see [Pasting](#pasting). |
 | `opengrid-row-add` | `{ values, provisionalKey, undo?, redo? }` — a record was entered in the new row; see [Adding rows](#adding-rows). |
@@ -1360,7 +1416,9 @@ type, nothing happens. A walk-through is in the guide
 
 Sorting and filtering **drop the selection**, and say so. That is not a
 preference: a selection names positions, the grid has no key column, and after a
-different sort those positions hold different records.
+different sort those positions hold different records. Where the selection names
+keys instead — with a `row-key`, and in a [tree](#tree) — it stays
+([Selecting by key](#selecting-by-key)).
 
 ## Styling
 
@@ -1652,6 +1710,7 @@ boolean reads — that is `set_formats`.
 | `pasteDiscarded` / `pasteBlocked` | `Paste discarded` / `Not pasted: {problems}. Discard it and paste again.` | `{problems}` |
 | `newRow` / `rowAdded` | `New row` / `Row added, {count} not saved yet` — the empty row of `add-row`, and what is said once a row is added | `{count}` |
 | `selectionCleared` | `Selection cleared` | |
+| `selectionMissing` | `{count} selected rows no longer exist` | `{count}` |
 | `columnWidth` | `{column} is {width} pixels wide` | `{column}`, `{width}` |
 | `columnMoved` | `{column} moved to position {position} of {count}` | `{column}`, `{position}`, `{count}` |
 | `columnAtEdge` | `{column} is already at the end` | `{column}` |
