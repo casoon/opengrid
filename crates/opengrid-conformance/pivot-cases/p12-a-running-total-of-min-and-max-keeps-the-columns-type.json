@@ -1,0 +1,196 @@
+{
+  "id": "p12-a-running-total-of-min-and-max-keeps-the-columns-type",
+  "rule": "P12",
+  "pivot": {
+    "source": "orders",
+    "rows": [
+      "country"
+    ],
+    "columns": [
+      "ordered_month"
+    ],
+    "values": [
+      {
+        "field": "amount",
+        "fn": "max",
+        "as": "most",
+        "calc": "running_total"
+      },
+      {
+        "field": "qty",
+        "fn": "min",
+        "as": "least",
+        "calc": "running_total"
+      },
+      {
+        "field": "ratio",
+        "fn": "max",
+        "as": "ratio_most",
+        "calc": "running_total"
+      }
+    ],
+    "filter": {
+      "field": "country",
+      "op": "in",
+      "value": [
+        "GB",
+        "US"
+      ]
+    }
+  },
+  "expected": {
+    "columns": [
+      {
+        "path": [
+          3
+        ],
+        "measure": "most"
+      },
+      {
+        "path": [
+          3
+        ],
+        "measure": "least"
+      },
+      {
+        "path": [
+          3
+        ],
+        "measure": "ratio_most"
+      },
+      {
+        "path": [
+          4
+        ],
+        "measure": "most"
+      },
+      {
+        "path": [
+          4
+        ],
+        "measure": "least"
+      },
+      {
+        "path": [
+          4
+        ],
+        "measure": "ratio_most"
+      },
+      {
+        "path": [
+          7
+        ],
+        "measure": "most"
+      },
+      {
+        "path": [
+          7
+        ],
+        "measure": "least"
+      },
+      {
+        "path": [
+          7
+        ],
+        "measure": "ratio_most"
+      },
+      {
+        "path": [
+          8
+        ],
+        "measure": "most"
+      },
+      {
+        "path": [
+          8
+        ],
+        "measure": "least"
+      },
+      {
+        "path": [
+          8
+        ],
+        "measure": "ratio_most"
+      },
+      {
+        "path": [
+          11
+        ],
+        "measure": "most"
+      },
+      {
+        "path": [
+          11
+        ],
+        "measure": "least"
+      },
+      {
+        "path": [
+          11
+        ],
+        "measure": "ratio_most"
+      }
+    ],
+    "rows": [
+      [
+        "GB",
+        null,
+        null,
+        null,
+        "-0.01",
+        8,
+        4.0,
+        "-0.01",
+        8,
+        4.0,
+        "35.99",
+        41,
+        7.5,
+        "35.99",
+        90,
+        12.4
+      ],
+      [
+        "US",
+        "999999999.99",
+        6,
+        3.5,
+        "999999999.99",
+        6,
+        3.5,
+        "1000000031.99",
+        34,
+        6.6,
+        "1000000031.99",
+        34,
+        6.6,
+        "1000000078.99",
+        81,
+        6.6
+      ],
+      [
+        null,
+        "999999999.99",
+        6,
+        3.5,
+        "999999999.98",
+        14,
+        7.5,
+        "1000000031.98",
+        42,
+        10.6,
+        "1000000067.98",
+        75,
+        14.1,
+        "1000000114.98",
+        122,
+        19.0
+      ]
+    ],
+    "levels": [
+      1,
+      1,
+      0
+    ]
+  }
+}

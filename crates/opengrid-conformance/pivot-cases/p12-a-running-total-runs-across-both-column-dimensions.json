@@ -1,0 +1,75 @@
+{
+  "id": "p12-a-running-total-runs-across-both-column-dimensions",
+  "rule": "P12",
+  "pivot": {
+    "source": "orders",
+    "columns": [
+      "ordered_year",
+      "flag"
+    ],
+    "values": [
+      {
+        "field": "qty",
+        "fn": "sum",
+        "as": "running",
+        "calc": "running_total"
+      }
+    ],
+    "filter": {
+      "field": "id",
+      "op": "lte",
+      "value": 6
+    }
+  },
+  "expected": {
+    "columns": [
+      {
+        "path": [
+          2025,
+          true
+        ],
+        "measure": "running"
+      },
+      {
+        "path": [
+          2026,
+          false
+        ],
+        "measure": "running"
+      },
+      {
+        "path": [
+          2026,
+          true
+        ],
+        "measure": "running"
+      },
+      {
+        "path": [
+          2026,
+          null
+        ],
+        "measure": "running"
+      },
+      {
+        "path": [
+          null,
+          false
+        ],
+        "measure": "running"
+      }
+    ],
+    "rows": [
+      [
+        1,
+        3,
+        9,
+        13,
+        18
+      ]
+    ],
+    "levels": [
+      0
+    ]
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "id": "p11-a-share-of-negative-values-leaves-zero-to-one",
+  "rule": "P11",
+  "pivot": {
+    "source": "orders",
+    "rows": [
+      "country"
+    ],
+    "values": [
+      {
+        "field": "amount",
+        "fn": "sum",
+        "as": "revenue"
+      },
+      {
+        "field": "amount",
+        "fn": "sum",
+        "as": "share",
+        "calc": "share_of_column"
+      }
+    ],
+    "filter": {
+      "field": "customer",
+      "op": "eq",
+      "value": "Epsilon"
+    }
+  },
+  "expected": {
+    "columns": [
+      {
+        "path": [],
+        "measure": "revenue"
+      },
+      {
+        "path": [],
+        "measure": "share"
+      }
+    ],
+    "rows": [
+      [
+        "DE",
+        "50.00",
+        -0.004066472180857163
+      ],
+      [
+        null,
+        "-12345.67",
+        1.0040664721808572
+      ],
+      [
+        null,
+        "-12295.67",
+        1.0
+      ]
+    ],
+    "levels": [
+      1,
+      1,
+      0
+    ]
+  }
+}

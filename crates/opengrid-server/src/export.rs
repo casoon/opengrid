@@ -101,7 +101,7 @@ use opengrid_datasource::{DataSourceError, QueryResult};
 use opengrid_export::{
     CsvOptions, CsvWriter, JsonWriter, PivotLabels, XLSX_MAX_ROWS, XLSX_MEDIA_TYPE, XlsxWriter,
 };
-use opengrid_pivot::PivotResult;
+use opengrid_pivot::{Calc, Measure, PivotResult};
 use opengrid_query::{Limits, ValidatedQuery};
 use tokio::sync::{OwnedSemaphorePermit, oneshot};
 
@@ -254,10 +254,37 @@ pub(crate) struct PivotWords {
     total: String,
     /// With `{value}` where the closed group's header goes.
     subtotal: String,
+    /// What a calculated measure is shown as (issue #329), in the order of
+    /// `Calc::ALL`: a share of the row, the column, the total; a running total.
+    calcs: [String; 4],
+    /// The calculated measures of the pivot being written, by alias — the
+    /// query's, set with [`PivotWords::showing`]; the answer does not say.
+    shown: Vec<(String, Calc)>,
 }
 
 /// The parameters that carry [`PivotWords`], in the order of its fields.
-const PIVOT_WORDS: [&str; 4] = ["noValue", "emptyValue", "total", "subtotal"];
+const PIVOT_WORDS: [&str; 8] = [
+    "noValue",
+    "emptyValue",
+    "total",
+    "subtotal",
+    "shareOfRow",
+    "shareOfColumn",
+    "shareOfTotal",
+    "runningTotal",
+];
+
+impl PivotWords {
+    /// These words for a pivot of `values`: its calculated measures are named
+    /// by what they show.
+    pub(crate) fn showing(mut self, values: &[Measure]) -> Self {
+        self.shown = values
+            .iter()
+            .filter_map(|value| Some((value.aggregate.alias.to_string(), value.calc?)))
+            .collect();
+        self
+    }
+}
 
 impl Default for PivotWords {
     fn default() -> Self {
@@ -266,6 +293,14 @@ impl Default for PivotWords {
             empty_value: "(empty)".to_owned(),
             total: "Total".to_owned(),
             subtotal: "Total {value}".to_owned(),
+            calcs: [
+                "share of row",
+                "share of column",
+                "share of total",
+                "running total",
+            ]
+            .map(str::to_owned),
+            shown: Vec::new(),
         }
     }
 }
@@ -285,6 +320,12 @@ impl PivotLabels for PivotWords {
 
     fn subtotal(&self, value: &str) -> String {
         self.subtotal.replace("{value}", value)
+    }
+
+    fn calc(&self, alias: &str) -> Option<String> {
+        let (_, calc) = self.shown.iter().find(|(shown, _)| shown == alias)?;
+        let index = Calc::ALL.iter().position(|known| known == calc)?;
+        Some(self.calcs[index].clone())
     }
 }
 
@@ -308,7 +349,7 @@ pub(crate) fn pivot_words(uri: &Uri) -> Result<Option<PivotWords>, WireError> {
             return Err(malformed(format!("{key:?} is given twice")));
         }
         seen.push(key);
-        let [no_value, empty_value, total, subtotal] = PIVOT_WORDS;
+        let [no_value, empty_value, total, subtotal, calcs @ ..] = PIVOT_WORDS;
         let word = match key.as_str() {
             "format" if value == "xlsx" => continue,
             "format" => {
@@ -321,6 +362,10 @@ pub(crate) fn pivot_words(uri: &Uri) -> Result<Option<PivotWords>, WireError> {
             key if key == empty_value => &mut words.empty_value,
             key if key == total => &mut words.total,
             key if key == subtotal => &mut words.subtotal,
+            key if calcs.contains(&key) => {
+                let index = calcs.iter().position(|calc| *calc == key).unwrap_or(0);
+                &mut words.calcs[index]
+            }
             _ => {
                 return Err(malformed(format!(
                     "{key:?} is not a parameter of a pivot's export (format, {})",
@@ -1013,6 +1058,27 @@ mod tests {
         assert_eq!(german.dimension(None), "(leer)");
         assert_eq!(german.dimension(Some("")), "");
         assert_eq!(german.dimension(Some("DE")), "DE");
+
+        // Issue #329: the words for a calculated measure, and only for the
+        // measures the query calculates.
+        let measures: Vec<Measure> = opengrid_json::from_str(
+            r#"[{"fn":"count","as":"n"},
+                {"fn":"count","as":"share","calc":"share_of_column"},
+                {"fn":"count","as":"running","calc":"running_total"}]"#,
+        )
+        .unwrap();
+        let shown = words("?format=xlsx&shareOfColumn=Anteil%20an%20der%20Spalte")
+            .unwrap()
+            .unwrap()
+            .showing(&measures);
+        assert_eq!(shown.calc("n"), None);
+        assert_eq!(shown.calc("share").as_deref(), Some("Anteil an der Spalte"));
+        assert_eq!(shown.calc("running").as_deref(), Some("running total"));
+        assert_eq!(
+            PivotWords::default().calc("share"),
+            None,
+            "no query, no word"
+        );
 
         let refused = |query: &str| words(query).expect_err(query).message;
         assert!(refused("?format=csv").contains("\"xlsx\" for a pivot, not \"csv\""));
