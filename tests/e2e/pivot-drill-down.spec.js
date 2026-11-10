@@ -244,6 +244,32 @@ test.describe("pivot drill-down", () => {
     expect(await page.evaluate(() => window.__pivotQueries)).toBe(queries);
   });
 
+  test("on a right-to-left page a value's button stays in its cell and leads to its rows", async ({ page }) => {
+    await open(page);
+    await page.evaluate(() => document.documentElement.setAttribute("dir", "rtl"));
+    const [cell] = await cells(page);
+    const boxes = await page.evaluate((cell) => {
+      const root = document.querySelector("opengrid-pivot").shadowRoot;
+      const button = root.querySelector(`button[data-cell="${cell}"]`);
+      const td = button.closest("td");
+      const header = td.closest("tr").querySelector("th");
+      const rect = (node) => {
+        const { left, right } = node.getBoundingClientRect();
+        return { left, right };
+      };
+      return { button: rect(button), td: rect(td), header: rect(header) };
+    }, cell);
+    // The row header is at the right now, the values run to its left …
+    expect(boxes.td.right).toBeLessThanOrEqual(boxes.header.left + 1);
+    // … and the button is inside the cell it belongs to.
+    expect(boxes.button.left).toBeGreaterThanOrEqual(boxes.td.left - 1);
+    expect(boxes.button.right).toBeLessThanOrEqual(boxes.td.right + 1);
+    const { detail, total } = await drill(page, cell);
+    expect(detail.measure).toBe("Count");
+    await expect(page.locator("#behind-title")).toBeFocused();
+    expect(total).toBe(detail.value);
+  });
+
   test("the pivot with its buttons and the rows behind a cell have no axe violations", async ({ page }) => {
     await open(page);
     const [cell] = await cells(page);

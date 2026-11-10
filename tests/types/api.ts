@@ -18,6 +18,7 @@ import {
   type CodedError,
   type Engine,
   type ErrorCode,
+  type OpengridGridAttributes,
   type OpengridPivotAttributes,
   type PivotView,
   type PlannerLike,
@@ -227,6 +228,9 @@ export async function page(): Promise<void> {
   connect(pivot, { onDrillDown: (detail) => detail.column satisfies unknown[] });
   const drilled: OpengridPivotAttributes = { "drill-down": "" };
   void drilled;
+  // … which is what the grid's `filter` attribute takes.
+  const behind: OpengridGridAttributes = { filter: JSON.stringify({ field: "country", op: "is_null" }) };
+  void behind;
 
   // Events: the detail is typed on the element and on the document.
   grid.addEventListener("opengrid-selection-change", (event) => {

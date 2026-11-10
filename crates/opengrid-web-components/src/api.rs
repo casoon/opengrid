@@ -342,7 +342,7 @@ elements
 
 attributes
   opengrid-table: columns datasource label theme
-  opengrid-grid: add-row column-menu columns datasource density facets group-by label mode page-size \
+  opengrid-grid: add-row column-menu columns datasource density facets filter group-by label mode page-size \
 row-key search selection theme toolbar tree tree-key window-size
   opengrid-pivot: collapsed columns datasource drill-down fields filter label measures rows sort theme toolbar values
 

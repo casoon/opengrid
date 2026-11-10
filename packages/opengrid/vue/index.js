@@ -163,6 +163,7 @@ export const OpengridGrid = component(
     tree: "tree",
     treeKey: "tree-key",
     rowKey: "row-key",
+    filter: "filter",
     addRow: "add-row",
     search: "search",
     facets: "facets",

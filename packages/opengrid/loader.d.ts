@@ -1106,6 +1106,11 @@ export interface OpengridGridAttributes {
   "window-size"?: string;
   "page-size"?: string;
   mode?: Mode;
+  /**
+   * The page's filter, as the wire's JSON — `{"field":"country","op":"eq","value":"DE"}` —
+   * and-ed onto every query the grid sends. Not the reader's and not in the view.
+   */
+  filter?: string;
   "group-by"?: string;
   /** The field holding a row's parent key: the rows show as a tree. */
   tree?: string;

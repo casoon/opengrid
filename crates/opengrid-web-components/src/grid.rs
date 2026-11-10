@@ -626,10 +626,16 @@ pub fn input_step(data_type: DataType) -> Option<String> {
 }
 
 /// The host attributes the element reacts to.
+/// The host attribute carrying the page's filter (issue #330): the wire's own
+/// filter JSON, and-ed onto every query the grid sends. Not the reader's — it
+/// is not in the filter row, the chips or the view.
+pub const FILTER_ATTRIBUTE: &str = "filter";
+
 pub const OBSERVED: &[&str] = &[
     LABEL_ATTRIBUTE,
     DATASOURCE_ATTRIBUTE,
     COLUMNS_ATTRIBUTE,
+    FILTER_ATTRIBUTE,
     WINDOW_SIZE_ATTRIBUTE,
     MODE_ATTRIBUTE,
     PAGE_SIZE_ATTRIBUTE,

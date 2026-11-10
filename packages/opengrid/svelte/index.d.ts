@@ -93,6 +93,8 @@ export interface OpengridGridProps extends Options, ElementProps {
   treeKey?: string;
   /** The field that names a record: `key` in the editing events. */
   rowKey?: string;
+  /** The page's filter, as the wire's JSON; and-ed onto every query, not in the view. */
+  filter?: string;
   /** An empty row after the last one to type a new record into (`onrowadd`). */
   addRow?: boolean;
   search?: boolean;

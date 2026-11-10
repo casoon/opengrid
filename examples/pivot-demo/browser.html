@@ -100,23 +100,16 @@
       loader.module.set_provider(pivot, provider);
 
       // Drilling down: the pivot says which rows are behind the cell, the
-      // page shows them (docs/api.md, "Drilling down").
-
-      /** `provider`, with every query restricted to `filter`. */
-      const within = (provider, filter) => ({
-        kind: provider.kind,
-        execute(json, mode, options) {
-          const query = JSON.parse(json);
-          if (filter) query.filter = query.filter ? { and: [filter, query.filter] } : filter;
-          return provider.execute(JSON.stringify(query), mode, options);
-        },
-      });
+      // page shows them in a grid under that filter (docs/api.md, "Drilling
+      // down" and "The page's filter").
 
       const panel = document.querySelector("#behind");
       const heading = document.querySelector("#behind-title");
       const grid = panel.querySelector("opengrid-grid");
       /** The pressed button: where the focus goes back to. */
       let cell = null;
+      /** Whether the grid has its provider: it gets it with the first cell. */
+      let supplied = false;
 
       /** A group's key as the pivot's headers say it. */
       const word = (key) => (key === null ? "(no value)" : key === "" ? "(empty)" : String(key));
@@ -129,7 +122,15 @@
         grid.setAttribute("label", title);
         // Shown first: a grid measures its viewport when it asks.
         panel.hidden = false;
-        loader.module.set_provider(grid, within(provider, detail.query.filter));
+        // The cell's filter is the grid's `filter`; the grand total of a pivot
+        // that filters nothing has none.
+        const { filter } = detail.query;
+        if (filter) grid.setAttribute("filter", JSON.stringify(filter));
+        else grid.removeAttribute("filter");
+        if (!supplied) {
+          supplied = true;
+          loader.module.set_provider(grid, provider);
+        }
         heading.focus();
       });
 

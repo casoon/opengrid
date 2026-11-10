@@ -234,6 +234,7 @@ An interactive `<table role="grid">`: virtualized, keyboard-driven, filterable.
 | `tree` | Shows the rows as a **tree**: the field that holds a row's parent key, `tree="parent_id"`. See [Tree](#tree). |
 | `tree-key` | The field the parent key refers to. `id` when absent. |
 | `row-key` | The field that names a record: `opengrid-cell-change` carries its value as `key`, and `set_cell_state` and `set_values` name rows by it. See [Saving edits](#saving-edits). |
+| `filter` | The **page's filter**, as the wire's JSON: `{"field":"country","op":"eq","value":"DE"}`, `{"and":[…]}`. And-ed onto every query the grid sends; not the reader's and not in the view. See [The page's filter](#the-pages-filter). |
 | `search` | Puts a **search field** above the grid: free text, or a filter written out. See [Search](#search). |
 | `facets` | Shows the **facet sidebar** — the facets a page configured with `set_columns`. See [Facets](#facets). |
 | `toolbar` | Puts a **toolbar** above the grid: the active filters and the grouping as chips, a switch for the filter row, the column list, the density. Opt-in. See [Toolbar](#toolbar). |
@@ -396,6 +397,29 @@ reflow case of WCAG 1.4.10, the toolbar wraps instead.
 
 The chips are a display of the view, not a second truth about the filters: they
 are drawn from it, and redrawn only when what they say changed.
+
+### The page's filter
+
+```html
+<opengrid-grid datasource="orders" columns="id,customer,qty"
+               filter='{"field":"country","op":"eq","value":"DE"}'></opengrid-grid>
+```
+
+`filter` restricts the grid to a part of its source — the orders of one country, the
+rows behind a pivot's cell ([Drilling down](#drilling-down)). It is a filter object as
+the [protocol](../protocol/) writes it, the same notation as the pivot's `filter`: a
+comparison, `is_null`, `and`, `or`, `not`, nested as needed; the empty string is a
+value (`"op":"eq","value":""`) and not NULL.
+
+| | |
+|---|---|
+| Where it holds | In **every** query the grid sends: the rows, the counts, group rows and their aggregates, a tree's levels, the facets' values and counts, the keys behind "select all", and `get_query` — so an export is the same rows. It is and-ed with what the reader filters; the reader works inside it. |
+| Whose it is | The page's. It is not shown in the filter row or as a chip, "clear filters" leaves it, the empty state offers no reset for it, it is not in `get_view`/`set_view`, and changing it fires no `opengrid-view-change`. |
+| Changing it | Asks again, as a filter of the reader's does: the first rows, the selection dropped (and said), the facets' values listed anew. Removing the attribute removes the filter. |
+| What does not hold | Text that is not a filter object is said in the status line and nothing is asked — never a grid that silently shows every row. A filter the source refuses (an unknown field, a value of the wrong type) is the provider's error, in the status line like any refused query. |
+| Not access control | The filter is written by the page and readable and changeable in the browser. What a reader **may** see is decided by the server's row filter; this only chooses what the page shows. |
+
+A framework component takes it as the `filter` prop, a string, as the pivot's.
 
 ### Empty state
 
@@ -929,27 +953,18 @@ together with its listener.
   a `count` without a field is their number. A measure over a field skips that field's
   NULLs, as in every aggregate; the rows include them.
 
-**Showing the rows in a grid.** The filter may hold what a grid's view cannot — an
-`or` from the pivot's filter, an empty string — so it does not go into the view. The
-page hands the grid a provider that and-s it onto everything the grid asks: rows,
-counts, groups. What the reader then sorts and filters stays inside the cell's rows.
+**Showing the rows in a grid.** `query.filter` is what the grid's
+[`filter`](#the-pages-filter) attribute takes: the grid then shows the cell's rows, and
+what the reader sorts and filters stays inside them.
 
 ```js
-/** `provider`, with every query restricted to `filter`. */
-const within = (provider, filter) => ({
-  kind: provider.kind,
-  execute(json, mode, options) {
-    const query = JSON.parse(json);
-    if (filter) query.filter = query.filter ? { and: [filter, query.filter] } : filter;
-    return provider.execute(JSON.stringify(query), mode, options);
-  },
-});
-
 let cell;
 pivot.addEventListener("opengrid-drill-down", ({ detail }) => {
   cell = pivot.shadowRoot.activeElement;           // the pressed button
   panel.hidden = false;                            // first: a grid measures its viewport
-  loader.module.set_provider(grid, within(provider, detail.query.filter));
+  const { filter } = detail.query;
+  if (filter) grid.setAttribute("filter", JSON.stringify(filter));
+  else grid.removeAttribute("filter");             // the grand total, nothing filtered
   heading.focus();                                 // tabindex="-1", names the cell
 });
 back.addEventListener("click", () => {
@@ -958,9 +973,10 @@ back.addEventListener("click", () => {
 });
 ```
 
-The grid carries the `datasource` and its `columns` and has no provider until the first
-event, so it asks nothing before. A pivot on `createPivotProvider` answers pivots only:
-its grid takes a `createRestProvider` of the same source.
+A grid that has its provider from the start asks for every row before the first cell
+is pressed; the demo gives it its provider with the first event. A pivot on
+`createPivotProvider` answers pivots only: its grid takes a `createRestProvider` of the
+same source.
 
 **The focus** is on the pressed button when the event fires — the pivot gives it the
 focus where a browser does not on a click — and the pivot draws nothing, so a page
