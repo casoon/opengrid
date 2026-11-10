@@ -436,14 +436,27 @@ impl Grouping {
         }
     }
 
+    /// Where row `offset` of the innermost group with these keys sits, if it
+    /// is in the display list: every group on its path open (issue #322).
+    pub fn row_position(&self, keys: &[Json], offset: u64) -> Option<u64> {
+        let position = self.position_of(keys)? + 1 + offset;
+        match self.item_at(position)? {
+            Item::Row {
+                keys: found,
+                offset: at,
+                ..
+            } if found == keys && at == offset => Some(position),
+            _ => None,
+        }
+    }
+
     /// Where the header of the group with these keys sits, if it is visible.
     ///
-    /// Test-only: it is how the tests **prove** what the element relies on
-    /// without asking — a group's own position does not move when it opens
-    /// (only what comes after it does), so the focus can simply stay where it
-    /// is; a group below the first level, though, loses its place when a
-    /// group above it closes.
-    #[cfg(test)]
+    /// It is how the tests **prove** what the element relies on without
+    /// asking — a group's own position does not move when it opens (only what
+    /// comes after it does), so the focus can simply stay where it is; a group
+    /// below the first level, though, loses its place when a group above it
+    /// closes.
     pub fn position_of(&self, keys: &[Json]) -> Option<u64> {
         let mut groups: &[Group] = self.groups.as_ref()?;
         let mut at = 0;
@@ -522,6 +535,103 @@ impl Grouping {
             1 => parts.pop(),
             _ => Some(FilterExpr::And(parts)),
         }
+    }
+}
+
+/// The identity of a record in a [`Picked`]: its `row-key` as canonical JSON
+/// text, like a group's in a [`Path`].
+pub fn key_id(key: &Value) -> String {
+    opengrid_json::ToJson::to_json(&key).to_string()
+}
+
+/// The selection of a grouped grid (issue #322): records by their `row-key`.
+///
+/// A display position names a header as often as a row and moves with every
+/// group that opens, so while grouped the selection names records. It is the
+/// element's, not the [`Grouping`]'s: another `group-by` is another grouping
+/// around the same records.
+#[derive(Clone, Debug, Default)]
+pub struct Picked {
+    ids: BTreeSet<String>,
+    /// Where a range starts: the row of the last plain toggle — its record,
+    /// its innermost group and its place in it.
+    anchor: Option<(String, Vec<Json>, u64)>,
+    /// The rows changed under the selection: some of it may match no longer,
+    /// so its size says nothing about "all".
+    unsure: bool,
+}
+
+impl Picked {
+    pub fn is_empty(&self) -> bool {
+        self.ids.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.ids.len()
+    }
+
+    pub fn contains(&self, id: &str) -> bool {
+        self.ids.contains(id)
+    }
+
+    /// Selects or deselects the record, and makes its row the anchor: `keys`
+    /// and `offset` are where it sits ([`Item::Row`]).
+    pub fn toggle(&mut self, id: String, keys: Vec<Json>, offset: u64) {
+        if !self.ids.remove(&id) {
+            self.ids.insert(id.clone());
+        }
+        self.anchor = Some((id, keys, offset));
+        self.settle();
+    }
+
+    /// Selects these records too. Answers whether any was new.
+    pub fn add(&mut self, ids: impl IntoIterator<Item = String>) -> bool {
+        let before = self.ids.len();
+        self.ids.extend(ids);
+        self.ids.len() != before
+    }
+
+    /// Drops the whole selection. Answers whether there was one.
+    pub fn clear(&mut self) -> bool {
+        let had = !self.ids.is_empty();
+        self.ids.clear();
+        self.anchor = None;
+        self.settle();
+        had
+    }
+
+    /// Nothing selected is sure again.
+    fn settle(&mut self) {
+        if self.ids.is_empty() {
+            self.unsure = false;
+        }
+    }
+
+    /// The record a range starts at, with its group and its place in it.
+    pub fn anchor(&self) -> Option<&(String, Vec<Json>, u64)> {
+        self.anchor.as_ref()
+    }
+
+    /// The rows are others now (a filter, a replaced source): what is selected
+    /// stays, but need not be among them.
+    pub fn rows_changed(&mut self) {
+        self.unsure = !self.ids.is_empty();
+    }
+
+    /// Whether every one of `rows` matching rows is selected, as far as the
+    /// selection can tell without asking.
+    pub fn covers(&self, rows: u64) -> bool {
+        !self.unsure && rows > 0 && self.ids.len() as u64 == rows
+    }
+
+    /// The selected records' keys, as JSON, in the order of the keys
+    /// ([`opengrid_grid::grid_view::selected_keys`]).
+    pub fn keys(&self) -> Vec<Json> {
+        opengrid_grid::grid_view::selected_keys(
+            self.ids
+                .iter()
+                .map(|id| opengrid_json::from_str(id).unwrap_or(Json::Null)),
+        )
     }
 }
 
@@ -1261,6 +1371,81 @@ mod tests {
             total["select"],
             opengrid_json::json!([COUNT_ALIAS, "__og_a0", "__og_a1"])
         );
+    }
+
+    /// Issue #322: a selected record is named by its key, so opening and
+    /// closing groups — which moves every row after them — cannot change it.
+    #[test]
+    fn a_selection_by_key_does_not_move_with_the_groups() {
+        let mut grouping = one_level();
+        let mut picked = Picked::default();
+        grouping.toggle(&[key("FR")]);
+        let Some(Item::Row { keys, offset, .. }) = grouping.item_at(2) else {
+            panic!("FR's row");
+        };
+        picked.toggle(key_id(&Value::Int64(7)), keys.clone(), offset);
+        assert_eq!(picked.keys(), [opengrid_json::json!(7)]);
+        assert_eq!(grouping.row_position(&keys, offset), Some(2));
+        // DE opens above it: the row sits three further down, the same record.
+        grouping.toggle(&[key("DE")]);
+        assert_eq!(grouping.row_position(&keys, offset), Some(5));
+        assert_eq!(picked.keys(), [opengrid_json::json!(7)]);
+        // FR closes over it: no place in the list, and still selected.
+        grouping.toggle(&[key("FR")]);
+        assert_eq!(grouping.row_position(&keys, offset), None);
+        assert_eq!(picked.keys(), [opengrid_json::json!(7)]);
+        // Past the end of its group is another group's place, not a row of it.
+        grouping.toggle(&[key("FR")]);
+        assert_eq!(grouping.row_position(&keys, 1), None);
+    }
+
+    /// The anchor of a range is found under three levels too, and only while
+    /// every group on its path is open.
+    #[test]
+    fn a_row_has_a_place_only_while_its_whole_path_is_open() {
+        let mut grouping = three_level();
+        let keys = vec![key("DE"), key("Alpha"), year(2027)];
+        grouping.toggle(&keys);
+        assert_eq!(grouping.row_position(&keys, 0), Some(4));
+        grouping.toggle(&[key("DE"), key("Alpha")]);
+        assert_eq!(grouping.row_position(&keys, 0), None);
+        grouping.toggle(&[key("DE"), key("Alpha")]);
+        grouping.toggle(&[key("DE")]);
+        assert_eq!(grouping.row_position(&keys, 0), None);
+    }
+
+    /// "All" is every matching row. After another filter the selection may
+    /// hold records that match no longer, so its size proves nothing.
+    #[test]
+    fn a_selection_covers_the_rows_only_while_it_is_sure_of_them() {
+        let mut picked = Picked::default();
+        assert!(!picked.covers(0), "nothing selected of nothing is not all");
+        assert!(picked.add(["1".to_owned(), "2".to_owned()]));
+        assert!(!picked.add(["2".to_owned()]), "already selected");
+        assert!(picked.covers(2));
+        assert!(!picked.covers(3));
+        picked.rows_changed();
+        assert!(!picked.covers(2));
+        // Emptied, it is sure again: nothing can be left outside.
+        assert!(picked.clear());
+        assert!(!picked.clear());
+        picked.rows_changed();
+        picked.add(["3".to_owned()]);
+        assert!(picked.covers(1));
+    }
+
+    /// A plain toggle moves the anchor, also when it deselects — `Shift`
+    /// extends from where the reader just was, as in an ungrouped grid.
+    #[test]
+    fn the_anchor_is_the_last_plain_toggle() {
+        let mut picked = Picked::default();
+        picked.toggle("1".to_owned(), vec![key("DE")], 0);
+        picked.toggle("1".to_owned(), vec![key("DE")], 0);
+        assert!(picked.is_empty());
+        assert_eq!(picked.anchor(), Some(&("1".to_owned(), vec![key("DE")], 0)));
+        picked.add(["2".to_owned()]);
+        picked.clear();
+        assert_eq!(picked.anchor(), None);
     }
 
     #[test]

@@ -707,8 +707,9 @@ export type FacetSelection =
  * one value — as `get_view` writes it, every field present. `set_view` reads
  * some fields more leniently (a missing direction is `asc`, a missing operator
  * `eq`); the types ask for the full form on purpose, so a saved view says what
- * it means. A saved view is this value with a name on it. The selection and
- * the free-text search are deliberately not part of it.
+ * it means. A saved view is this value with a name on it. A selection by key
+ * is part of it (`selected`); a selection by position and the free-text
+ * search are deliberately not.
  */
 export interface View {
   sort: SortKey[];
@@ -723,6 +724,13 @@ export interface View {
   /** Whether the filter row shows. */
   filterRow: boolean;
   facets: Record<string, FacetSelection>;
+  /**
+   * The keys of the selected records, where the grid selects by key (`row-key`,
+   * or a tree's `tree-key`). Left out while nothing is selected, and always for
+   * a selection by position. `set_view` asks the source which of them name a
+   * record before it selects; a view without the field selects nothing.
+   */
+  selected?: Array<string | number | boolean>;
 }
 
 /** A pivot measure, as the contract writes it: `{ field: "qty", fn: "sum", as: "total" }`. */
@@ -928,6 +936,7 @@ export type TextKey =
   | "filterInvalid"
   | "cellRequired"
   | "selectionCleared"
+  | "selectionMissing"
   | "columnWidth"
   | "columnMoved"
   | "columnAtEdge"
@@ -992,11 +1001,10 @@ export type Texts = Partial<Record<TextKey, string>> & {
 // ---------------------------------------------------------------------------
 
 /**
- * `opengrid-selection-change`: logical row numbers, ascending. In a tree
- * (`tree` set) `rows` are the display positions of the selected nodes shown,
- * `keys` names every selected node by its key and `count` counts them.
+ * `opengrid-selection-change` of a grid that selects **by position** — no
+ * `row-key`, no tree: logical row numbers, ascending.
  */
-export interface SelectionChangeDetail {
+export interface SelectionByPosition {
   rows: number[];
   /**
    * The same rows as runs of adjacent ones, ascending, both ends inclusive:
@@ -1004,9 +1012,27 @@ export interface SelectionChangeDetail {
    */
   ranges: Array<{ from: number; to: number }>;
   count: number;
-  /** In a tree only: the selected nodes' keys, the shown ones first. */
-  keys?: unknown[];
+  keys?: undefined;
 }
+
+/**
+ * `opengrid-selection-change` of a grid that selects **by key** — with
+ * `row-key` (grouped or not), or a tree: the keys of the selected records, in
+ * no particular order (a tree's: the nodes shown first), and their number.
+ * There are no positions: a key names a record wherever it sits, loaded or not.
+ */
+export interface SelectionByKey {
+  count: number;
+  keys: unknown[];
+  rows?: undefined;
+  ranges?: undefined;
+}
+
+/**
+ * `opengrid-selection-change`: one of the two, by what the grid's selection
+ * names. `detail.keys` (or `"keys" in detail`) narrows it.
+ */
+export type SelectionChangeDetail = SelectionByPosition | SelectionByKey;
 
 /** `opengrid-cell-change`: everything a page needs to persist an edit. */
 export interface CellChangeDetail {
