@@ -98,6 +98,8 @@ export interface OpengridPivotProps extends PivotConnectOptions, ElementProps {
   measures?: string;
   /** The filter on the raw rows, as the wire's JSON; part of the view. */
   filter?: string;
+  /** Makes every value a button that calls `onDrillDown`. */
+  drillDown?: boolean;
   theme?: Theme;
 }
 

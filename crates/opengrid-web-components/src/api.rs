@@ -119,6 +119,7 @@ fn surface() -> String {
         crate::grid_element_events::ROW_ADD_EVENT,
         crate::grid_element_events::PASTE_EVENT,
         crate::grid_element_events::BULK_EVENT,
+        crate::grid_element_events::DRILL_DOWN_EVENT,
         crate::grid_element_events::SOURCE_REPLACED_EVENT,
     ] {
         out.push_str(&format!("  {event}\n"));
@@ -226,7 +227,7 @@ fn parts() -> Vec<String> {
         &table::PlainLook,
     );
     table::build_table(&mut buffer, &mut nodes, Some("x"), Some(&table_model), None);
-    let pivot_model = pivot::parse_result(
+    let mut pivot_model = pivot::parse_result(
         // Two row dimensions, so a group's subtotal carries its fold button.
         r#"{"row_dimensions":["country","customer"],"columns":[{"path":[2025],"measure":"n"}],
             "levels":[2,1,0],"result":{"total_count":3,"row_count":3,"columns":[
@@ -235,6 +236,8 @@ fn parts() -> Vec<String> {
             {"name":"n_0","type":"int64","nullable":true,"values":[1,1,1]}]}}"#,
     )
     .expect("a pivot");
+    // With `drill-down`, so a value carries its button (issue #330).
+    pivot_model.drill_down = true;
     pivot::build_pivot(
         &mut buffer,
         &mut nodes,
@@ -341,7 +344,7 @@ attributes
   opengrid-table: columns datasource label theme
   opengrid-grid: add-row column-menu columns datasource density facets group-by label mode page-size \
 row-key search selection theme toolbar tree tree-key window-size
-  opengrid-pivot: collapsed columns datasource fields filter label measures rows sort theme toolbar values
+  opengrid-pivot: collapsed columns datasource drill-down fields filter label measures rows sort theme toolbar values
 
 events
   opengrid-selection-change
@@ -352,6 +355,7 @@ events
   opengrid-row-add
   opengrid-paste
   opengrid-bulk-change
+  opengrid-drill-down
   opengrid-source-replaced
 
 functions
@@ -405,7 +409,7 @@ custom properties (computed)
 
 parts
   action action-cell action-header add-field add-filter add-grouping body bulk bulk-apply bulk-cancel caption cell cell-error cell-saved cell-saving chip chip-move chip-remove chips chips-clear column-menu \
-column-menu-button column-toggle columns columns-toggle density editor empty empty-reset \
+column-menu-button column-toggle columns columns-toggle density drill-down editor empty empty-reset \
 empty-text facet facet-bounds facet-cost facet-count facet-pill facet-pills facet-value \
 facets facets-head facets-toggle field-group field-menu filter filter-clear filter-dialog filter-operator \
 filter-row-toggle filter-value footer group-mark group-toggle grouping-menu header layout list list-item list-item-remove listbox menu-label operator-menu \
@@ -423,7 +427,7 @@ facetsToggle fieldEarlier fieldLater fieldRemove filterAny filterColumn filterCo
 filterRemoved filterRowToggle filterValueLabel filtersCleared groupByColumn groupChip \
 groupCollapsed groupExpanded groupInvalid groupRow groupSecondLevel \
 groupingFull hideColumn lang listItemAdded listItemRemove listItemRemoved loading matchesOne matchesOther newRow noValue nothingToAdd operatorLabel \
-operators pageFirst pageLast pageNext pageOf pagePrevious pasteApplied pasteApply pasteBadOne pasteBadOther pasteBlocked pasteCutOff pasteDiscard pasteDiscarded pastePreview pasteUnreadable pivotColumns pivotFilterHint pivotFilterLabel pivotFilters pivotMeasures pivotRows pivotToolbar queriesOne queriesOther queryAnd \
+operators pageFirst pageLast pageNext pageOf pagePrevious pasteApplied pasteApply pasteBadOne pasteBadOther pasteBlocked pasteCutOff pasteDiscard pasteDiscarded pastePreview pasteUnreadable pivotColumns pivotDrillDown pivotFilterHint pivotFilterLabel pivotFilters pivotMeasures pivotRows pivotToolbar queriesOne queriesOther queryAnd \
 queryMissingValue queryUnknownColumn queryWrongOperator redoAdded redoCell redoNothing redoPaste rowAdded rowsOne rowsOther searchChip searchHint \
 searchLabel searchPlaceholder searchSuggestions selectAll selectedAll selectionCleared sortAscending \
 sortDescending sortKey sourceHybrid sourceLocal sourceRemote sourceWorker subtotal subtreeCell subtreeOnly toolbarGroup total \

@@ -18,6 +18,7 @@ import {
   type CodedError,
   type Engine,
   type ErrorCode,
+  type OpengridPivotAttributes,
   type PivotView,
   type PlannerLike,
   type Provider,
@@ -211,6 +212,17 @@ export async function page(): Promise<void> {
     view: { rows: ["country"], columns: [], values: [{ field: "qty", fn: "sum", as: "total" }] },
     onViewChange: (next) => next.columns satisfies string[],
   }).update({ view: null });
+
+  // The rows behind a pivot's cell (issue #330).
+  pivot.addEventListener("opengrid-drill-down", (event) => {
+    event.detail.query.source satisfies string;
+    event.detail.query.filter satisfies Record<string, unknown> | undefined;
+    event.detail.row satisfies (string | number | boolean | null)[];
+    event.detail.measure satisfies string;
+  });
+  connect(pivot, { onDrillDown: (detail) => detail.column satisfies unknown[] });
+  const drilled: OpengridPivotAttributes = { "drill-down": "" };
+  void drilled;
 
   // Events: the detail is typed on the element and on the document.
   grid.addEventListener("opengrid-selection-change", (event) => {

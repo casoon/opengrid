@@ -59,6 +59,7 @@ const OPTIONS = [
   "onPaste",
   "onBulkChange",
   "onRowAction",
+  "onDrillDown",
   "onSourceReplaced",
 ];
 
@@ -198,7 +199,8 @@ export const OpengridPivot = component(
     fields: "fields",
     measures: "measures",
     filter: "filter",
+    drillDown: "drill-down",
     theme: "theme",
   },
-  ["toolbar"],
+  ["toolbar", "drillDown"],
 );

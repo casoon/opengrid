@@ -19,6 +19,20 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+### Added
+
+- **Pivot:** the rows behind a cell ([#330](https://github.com/casoon/opengrid/issues/330)). With
+  `drill-down`, every value is a button that fires `opengrid-drill-down` with the cell's filter as a
+  query — NULL and empty-string groups apart, totals by the dimensions they lie in, the pivot's own
+  filter included — and the page shows the rows; `examples/pivot-demo/browser.html` does it with a
+  grid. In `connect` and the framework components it is `onDrillDown`. Details:
+  [Drilling down](https://github.com/casoon/opengrid/blob/main/docs/api.md#drilling-down).
+
+### Changed
+
+- **Contributors:** the element module's size bound is 299400 B (it was 295500 B); the drill-down
+  grew the module from 295262 B to 296388 B.
+
 ## [0.15.0] - 2026-11-09
 
 **Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).

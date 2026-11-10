@@ -51,6 +51,7 @@ const EVENTS = {
   onPaste: "paste",
   onBulkChange: "bulkChange",
   onRowAction: "rowAction",
+  onDrillDown: "drillDown",
   onSourceReplaced: "sourceReplaced",
 };
 
@@ -196,7 +197,8 @@ export const OpengridPivot = component(
     fields: "fields",
     measures: "measures",
     filter: "filter",
+    drillDown: "drill-down",
     theme: "theme",
   },
-  ["toolbar"],
+  ["toolbar", "drillDown"],
 );

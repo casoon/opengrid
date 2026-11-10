@@ -22,6 +22,7 @@ import type {
   OpengridGridElement,
   PasteDetail,
   PivotView,
+  DrillDownDetail,
   RowActionDetail,
   SelectionChangeDetail,
   SourceReplacedDetail,
@@ -36,6 +37,7 @@ type Callbacks =
   | "onPaste"
   | "onBulkChange"
   | "onRowAction"
+  | "onDrillDown"
   | "onSourceReplaced";
 
 /** `connect`'s options, less the callbacks that are events. */
@@ -50,6 +52,8 @@ export type OpengridEmits = {
   paste: (detail: PasteDetail) => void;
   bulkChange: (detail: BulkChangeDetail) => void;
   rowAction: (detail: RowActionDetail) => void;
+  /** The pivot only: a value was pressed, with `drill-down`. */
+  drillDown: (detail: DrillDownDetail) => void;
   sourceReplaced: (detail: SourceReplacedDetail) => void;
 };
 
@@ -125,6 +129,8 @@ export interface OpengridPivotProps
   measures?: string;
   /** The filter on the raw rows, as the wire's JSON; part of the view. */
   filter?: string;
+  /** Makes every value a button that emits `drillDown`. */
+  drillDown?: boolean;
   theme?: Theme;
 }
 

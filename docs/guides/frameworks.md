@@ -80,6 +80,11 @@ not events:
 | Svelte | `onrowadd` | `oncellchange`, `onpaste`, `onbulkchange`, `onrowaction`, `onsourcereplaced` | `bind:this` |
 | Angular | `[rowAdd]` | the element's own: `(opengrid-paste)` and so on | `#grid="opengrid"` |
 
+A pivot's [drill-down](../../api/#drilling-down) is the same two things — the attribute and
+the event: `drillDown` with `onDrillDown` in React, `drill-down` with `@drill-down` in Vue,
+`drillDown` with `ondrilldown` in Svelte, and in Angular the element's own `drill-down` and
+`(opengrid-drill-down)`.
+
 ```jsx
 const ACTIONS = [{ id: "remove", label: "Remove" }];
 

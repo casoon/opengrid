@@ -28,6 +28,7 @@ import type {
   PivotConnectOptions,
   PasteDetail,
   PivotView,
+  DrillDownDetail,
   RowActionDetail,
   SelectionChangeDetail,
   SourceReplacedDetail,
@@ -43,6 +44,7 @@ type Callbacks =
   | "onPaste"
   | "onBulkChange"
   | "onRowAction"
+  | "onDrillDown"
   | "onSourceReplaced";
 
 /** The callbacks every component has, in Svelte's spelling. */
@@ -56,6 +58,8 @@ type SvelteCallbacks = {
   onpaste?: (detail: PasteDetail) => void;
   onbulkchange?: (detail: BulkChangeDetail) => void;
   onrowaction?: (detail: RowActionDetail) => void;
+  /** The pivot only: a value was pressed, with `drillDown`. */
+  ondrilldown?: (detail: DrillDownDetail) => void;
   onsourcereplaced?: (detail: SourceReplacedDetail) => void;
 };
 
@@ -135,6 +139,8 @@ export interface OpengridPivotProps extends PivotOptions, ElementProps {
   measures?: string;
   /** The filter on the raw rows, as the wire's JSON; part of the view. */
   filter?: string;
+  /** Makes every value a button that calls `ondrilldown`. */
+  drillDown?: boolean;
   theme?: Theme;
 }
 

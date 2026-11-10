@@ -1019,6 +1019,7 @@ export function connect(host, options = {}) {
     ["opengrid-paste", (event) => current.onPaste?.(event.detail)],
     ["opengrid-bulk-change", (event) => current.onBulkChange?.(event.detail)],
     ["opengrid-row-action", (event) => current.onRowAction?.(event.detail)],
+    ["opengrid-drill-down", (event) => current.onDrillDown?.(event.detail)],
     ["opengrid-source-replaced", (event) => current.onSourceReplaced?.(event.detail)],
   ];
   for (const [type, listener] of listeners) {

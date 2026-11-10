@@ -64,6 +64,10 @@ pub const FIELDS_ATTRIBUTE: &str = "fields";
 /// The measures a reader may add, as the contract's JSON (issue #112).
 pub const MEASURES_ATTRIBUTE: &str = "measures";
 
+/// The boolean host attribute that makes every value a button to the rows
+/// behind it (issue #330): pressed, the pivot fires `opengrid-drill-down`.
+pub const DRILL_DOWN_ATTRIBUTE: &str = "drill-down";
+
 /// How many column dimensions the toolbar lets a reader choose — the engine's
 /// limit (E20, raised to two by #120).
 pub const MAX_COLUMN_DIMENSIONS: usize = 2;
@@ -85,6 +89,7 @@ pub const OBSERVED: &[&str] = &[
     FIELDS_ATTRIBUTE,
     MEASURES_ATTRIBUTE,
     FILTER_ATTRIBUTE,
+    DRILL_DOWN_ATTRIBUTE,
     // CSS alone: the look is `:host([theme=…])` rules (issue #32).
     crate::theme::THEME_ATTRIBUTE,
 ];
@@ -974,6 +979,8 @@ pub struct PivotModel {
     pub sort: Vec<PivotOrder>,
     /// The folded groups (issue #110): their rows below are not drawn.
     pub collapsed: Vec<Vec<Value>>,
+    /// Whether every value is a button to the rows behind it (issue #330).
+    pub drill_down: bool,
     pub columns: Vec<ColumnHeader>,
     /// Per row: how many row dimensions are set. See
     /// [`opengrid_pivot::PivotResult::row_levels`] — a subtotal is marked by
@@ -1084,6 +1091,7 @@ pub fn parse_result(json: &str) -> Result<PivotModel, String> {
         column_dimensions: Vec::new(),
         sort: Vec::new(),
         collapsed: Vec::new(),
+        drill_down: false,
         columns,
         levels,
         rows,
@@ -1123,6 +1131,53 @@ pub fn group_label(
         (Some(level), Some(value)) => header(look, texts, &model.row_dimensions[level], value),
         _ => texts.total.clone(),
     }
+}
+
+/// What `opengrid-drill-down` says of the cell in row `index` under the
+/// generated column `at` (issue #330), or `None` when there is no such cell.
+///
+/// `query` is the rows behind the cell, as the wire writes a query: the
+/// pivot's `source`, and as `filter` the pivot's `own` filter with one clause
+/// per dimension the cell lies in — the row dimensions down to the row's
+/// level, so a subtotal names fewer and the grand total none, and every column
+/// dimension. A NULL group is `is_null` — `eq null` matches nothing (S1) — and
+/// the empty string is `eq ""`, a different group (S14). Without a clause
+/// there is no `filter`.
+pub fn drill_down(
+    model: &PivotModel,
+    source: &str,
+    own: Option<&Value>,
+    index: usize,
+    at: usize,
+) -> Option<Value> {
+    let column = model.columns.get(at)?;
+    let value = model
+        .rows
+        .get(index)?
+        .get(model.row_dimensions.len() + at)?;
+    let row = model.path(index);
+    let mut parts = clauses(own);
+    for (key, field) in row
+        .iter()
+        .zip(&model.row_dimensions)
+        .chain(column.path.iter().zip(&model.column_dimensions))
+    {
+        parts.push(match key {
+            Value::Null => json!({ "field": field, "op": "is_null" }),
+            key => json!({ "field": field, "op": "eq", "value": key.clone() }),
+        });
+    }
+    let mut query = json!({ "source": source });
+    if let (Some(filter), Value::Object(object)) = (join_clauses(parts), &mut query) {
+        object.insert("filter".to_owned(), filter);
+    }
+    Some(json!({
+        "query": query,
+        "row": Value::Array(row.to_vec()),
+        "column": Value::Array(column.path.clone()),
+        "measure": column.measure.clone(),
+        "value": value.clone(),
+    }))
 }
 
 /// A data cell as text. NULL renders as nothing — there is a value or there
@@ -1452,10 +1507,21 @@ fn build_pivot_table(
                     ids.extend(column_ids[at].iter().cloned());
                     attribute(buffer, td, "headers", &ids.join(" "));
                 }
-                buffer.push(Patch::SetText {
-                    node: td,
-                    text: cell(look, &column.measure, value),
-                });
+                let text = cell(look, &column.measure, value);
+                // A value the page shows the rows of (issue #330) is a button,
+                // named by what it shows and what it does. NULL is no value:
+                // nothing to press, and a button without a name is none.
+                let node = if model.drill_down && !value.is_null() {
+                    let button = element(buffer, nodes, Some(td), "button");
+                    attribute(buffer, button, "part", "drill-down");
+                    attribute(buffer, button, "type", "button");
+                    attribute(buffer, button, "data-cell", &format!("{index}:{at}"));
+                    attribute(buffer, button, "aria-label", &texts.pivot_drill_down(&text));
+                    button
+                } else {
+                    td
+                };
+                buffer.push(Patch::SetText { node, text });
             }
         }
     }
@@ -2120,6 +2186,149 @@ mod tests {
         assert_eq!(join_clauses(Vec::new()), None);
         // A filter that is not an `and` is one clause.
         assert_eq!(clauses(Some(&parts[0])).len(), 1);
+    }
+
+    /// Two row dimensions under one column dimension, with a NULL and an
+    /// empty-string country: rows 0-2 are DE (open, "" and its subtotal),
+    /// 3-4 the NULL country, 5-6 the empty one, 7 the grand total.
+    fn drilled() -> PivotModel {
+        let mut model = parse_result(
+            r#"{"row_dimensions":["country","status"],
+                "columns":[{"path":[2025],"measure":"n"},{"path":[null],"measure":"n"}],
+                "levels":[2,2,1,2,1,2,1,0],"result":{"total_count":8,"row_count":8,"columns":[
+                {"name":"country","type":"utf8","nullable":true,
+                 "values":["DE","DE","DE",null,null,"","",null]},
+                {"name":"status","type":"utf8","nullable":true,
+                 "values":["open","",null,"open",null,null,null,null]},
+                {"name":"n_0","type":"int64","nullable":true,"values":[2,1,3,4,4,5,5,12]},
+                {"name":"n_1","type":"int64","nullable":true,
+                 "values":[null,1,1,null,null,null,null,1]}]}}"#,
+        )
+        .expect("the pivot wire form parses");
+        model.column_dimensions = vec!["year".to_owned()];
+        model.drill_down = true;
+        model
+    }
+
+    /// The rows behind a cell (issue #330): one clause per dimension the
+    /// cell lies in, NULL and the empty string apart, a total naming fewer.
+    #[test]
+    fn a_cell_names_the_rows_behind_it() {
+        let model = drilled();
+        let eq = |field: &str, value: Value| json!({ "field": field, "op": "eq", "value": value });
+        let null = |field: &str| json!({ "field": field, "op": "is_null" });
+        let year = eq("year", json!(2025));
+        let filter = |index, at| {
+            drill_down(&model, "orders", None, index, at).unwrap()["query"]["filter"].clone()
+        };
+
+        // An ordinary cell: every row dimension and the column dimension.
+        let detail = drill_down(&model, "orders", None, 0, 0).unwrap();
+        assert_eq!(
+            detail,
+            json!({
+                "query": { "source": "orders", "filter": { "and": [
+                    eq("country", json!("DE")), eq("status", json!("open")), year.clone(),
+                ] } },
+                "row": ["DE", "open"],
+                "column": [2025],
+                "measure": "n",
+                "value": 2,
+            })
+        );
+        // The empty string is a value of its own, not NULL (S14) ...
+        assert_eq!(
+            filter(1, 0),
+            json!({ "and": [eq("country", json!("DE")), eq("status", json!("")), year.clone()] })
+        );
+        assert_eq!(
+            filter(5, 0),
+            json!({ "and": [eq("country", json!("")), null("status"), year.clone()] })
+        );
+        // ... and NULL is `is_null`: `eq null` matches nothing (S1). On the
+        // column axis too.
+        assert_eq!(
+            filter(3, 0),
+            json!({ "and": [null("country"), eq("status", json!("open")), year.clone()] })
+        );
+        assert_eq!(
+            filter(1, 1),
+            json!({ "and": [eq("country", json!("DE")), eq("status", json!("")), null("year")] })
+        );
+        // A subtotal lies in its group alone: the NULL country's is not the
+        // grand total's, which names no row dimension at all.
+        assert_eq!(
+            filter(2, 0),
+            json!({ "and": [eq("country", json!("DE")), year.clone()] })
+        );
+        assert_eq!(
+            filter(4, 0),
+            json!({ "and": [null("country"), year.clone()] })
+        );
+        assert_eq!(
+            filter(6, 0),
+            json!({ "and": [eq("country", json!("")), year.clone()] })
+        );
+        assert_eq!(filter(7, 0), year);
+        assert_eq!(
+            drill_down(&model, "orders", None, 7, 0).unwrap()["row"],
+            json!([])
+        );
+
+        // The pivot's own filter leads, clause by clause; an `or` is one.
+        let own = eq("qty", json!(3));
+        assert_eq!(
+            drill_down(&model, "orders", Some(&own), 7, 0).unwrap()["query"]["filter"],
+            json!({ "and": [own.clone(), year.clone()] })
+        );
+        let both = json!({ "and": [own.clone(), null("note")] });
+        assert_eq!(
+            drill_down(&model, "orders", Some(&both), 4, 0).unwrap()["query"]["filter"],
+            json!({ "and": [own.clone(), null("note"), null("country"), year.clone()] })
+        );
+        let either = json!({ "or": [own.clone(), null("note")] });
+        assert_eq!(
+            drill_down(&model, "orders", Some(&either), 7, 0).unwrap()["query"]["filter"],
+            json!({ "and": [either.clone(), year] })
+        );
+
+        // The grand total of a pivot without a column dimension and without a
+        // filter is every row: a query with no `filter`.
+        let mut flat = model.clone();
+        flat.column_dimensions.clear();
+        flat.columns = vec![ColumnHeader {
+            path: Vec::new(),
+            measure: "n".to_owned(),
+        }];
+        assert_eq!(
+            drill_down(&flat, "orders", None, 7, 0).unwrap()["query"],
+            json!({ "source": "orders" })
+        );
+        assert_eq!(
+            drill_down(&flat, "orders", Some(&own), 7, 0).unwrap()["query"]["filter"],
+            own
+        );
+
+        // No such cell, no event.
+        assert_eq!(drill_down(&model, "orders", None, 8, 0), None);
+        assert_eq!(drill_down(&model, "orders", None, 0, 2), None);
+    }
+
+    /// With `drill-down` a value is a button named by what it shows and does;
+    /// a cell without a value has none, and neither has a pivot without it.
+    #[test]
+    fn a_value_is_a_button_only_with_drill_down() {
+        let mut model = drilled();
+        let drawn = markup(Some(&model));
+        assert_eq!(drawn.matches(r#"value: "drill-down""#).count(), 11);
+        assert!(drawn.contains(r#"name: "data-cell", value: "7:1""#));
+        assert!(drawn.contains(r#"name: "aria-label", value: "12, show rows""#));
+        // Row 0 has no value under the NULL year.
+        assert!(!drawn.contains(r#"value: "0:1""#));
+
+        model.drill_down = false;
+        let plain = markup(Some(&model));
+        assert!(!plain.contains("drill-down") && !plain.contains("data-cell"));
     }
 
     /// A view that does not hold is refused whole, with every reason.
