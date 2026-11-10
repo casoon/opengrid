@@ -24,7 +24,7 @@ them.
 ## What is exported
 
 **The view, every match of it.** `get_query(grid)` is the query the grid asks its provider,
-without a window: the filter row, the facets and the free-text search and-ed together, the sort,
+without a window: the filter row, the nested filter, the facets and the free-text search and-ed together, the sort,
 the shown columns in their order. Not the rows that happen to be loaded, not the page the reader
 is on — every row that matches. A hidden column is not in it, a moved one is in its new place.
 

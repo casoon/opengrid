@@ -169,11 +169,12 @@ export const OpengridGrid = component(
     facets: "facets",
     toolbar: "toolbar",
     columnMenu: "column-menu",
+    filterBuilder: "filter-builder",
     selection: "selection",
     density: "density",
     theme: "theme",
   },
-  ["search", "facets", "toolbar", "columnMenu", "selection", "addRow"],
+  ["search", "facets", "toolbar", "columnMenu", "filterBuilder", "selection", "addRow"],
 );
 
 export const OpengridTable = component(

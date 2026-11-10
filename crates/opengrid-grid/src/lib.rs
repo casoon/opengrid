@@ -47,6 +47,7 @@
 mod added;
 pub mod facets;
 pub mod filter_row;
+pub mod filter_tree;
 pub mod grid_view;
 mod history;
 pub mod layout;
