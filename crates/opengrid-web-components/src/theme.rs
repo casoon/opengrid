@@ -156,8 +156,18 @@ pub fn host_rules() -> String {
             declarations(look)
         ));
     }
+    css.push_str(PRINT_RULE);
     css
 }
+
+/// On paper every look is black on white (issue #334): a dark look would
+/// print its light ink on the white a printer leaves when it drops the
+/// grounds. `!important`, because the page's own tokens on the host would
+/// otherwise win — and they are a screen's.
+const PRINT_RULE: &str = "@media print { :host { --og-surface: #fff !important; \
+--og-surface-2: #fff !important; --og-ink: #000 !important; --og-ink-muted: #000 !important; \
+--og-line: #666 !important; --og-line-strong: #000 !important; --og-accent: #000 !important; \
+--og-on-accent: #fff !important; color-scheme: light !important; } }\n";
 
 /// The stylesheet of `<opengrid-table>` and `<opengrid-pivot>`: the looks, the
 /// text in the look's ink and font, and what a column's presentation marks on
@@ -186,6 +196,8 @@ pub fn table_css() -> String {
 /// that makes the controls look like controls — the page styles the parts.
 const PIVOT_TOOLBAR_CSS: &str = "\
 [part~=\"toolbar\"] { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; align-items: center; margin-block-end: 0.5rem; }
+/* Paper takes the table, not the controls that arrange it (issue #334). */
+@media print { [part~=\"toolbar\"] { display: none !important; } }
 [part~=\"field-group\"] { display: flex; flex-wrap: wrap; gap: 0.25rem; align-items: center; }
 [part~=\"menu-label\"] { color: var(--og-ink-muted); margin-inline-end: 0.25rem; }
 [part~=\"chip\"] { display: inline-flex; align-items: center; gap: 0.125rem; padding-inline: 0.5rem 0.125rem; border: 1px solid var(--og-line-strong); border-radius: 999px; }

@@ -25,6 +25,10 @@ Two things belong in every release entry and are easy to leave out:
   `<opengrid-pivot>`, taken from `dir` on the element or an ancestor: the columns run from the
   right, and in the grid `←` and `→` follow what is on the screen
   ([#320](https://github.com/casoon/opengrid/issues/320), [Right to left](docs/api.md#right-to-left)).
+- **Export:** a print path for paper and PDF. `prepare_print(grid)` builds a plain table of every
+  match of the view, shown only in `@media print` in place of the grid, and `window.print()` prints
+  it; a table, a pivot and a grid print black on white whatever the look
+  ([#334](https://github.com/casoon/opengrid/issues/334), [Printing the view](docs/api.md#printing-the-view)).
 - **Grid:** `filter`, the page's filter — a wire filter as JSON, and-ed onto every query the grid
   sends. It is not the reader's: no chip, not in the view, and "remove all" leaves it
   ([#330](https://github.com/casoon/opengrid/issues/330), [The page's filter](docs/api.md#the-pages-filter)).
