@@ -67,7 +67,7 @@ const EXPORT_ERROR_CODES: [&str; 3] = ["too_many_rows", "source_changed", "modul
 
 /// The module functions a page calls through `loader.module`, in the order the
 /// freeze lists them.
-const FUNCTIONS: [&str; 15] = [
+const FUNCTIONS: [&str; 16] = [
     "register",
     "set_provider",
     "set_texts",
@@ -78,6 +78,7 @@ const FUNCTIONS: [&str; 15] = [
     "set_columns",
     "get_query",
     "get_pivot",
+    "prepare_print",
     "set_cell_state",
     "set_values",
     "set_actions",
@@ -371,6 +372,7 @@ functions
   set_columns
   get_query
   get_pivot
+  prepare_print
   set_cell_state
   set_values
   set_actions

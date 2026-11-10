@@ -53,6 +53,8 @@ opengrid-export = { path = "../opengrid-export" }
 # (issue #3); already built as a dependency of `opengrid-export`.
 opengrid-pivot = { path = "../opengrid-pivot" }
 web-sys = { version = "0.3", features = [
+    # The print table leaves with `afterprint`, once (issue #334).
+    "AddEventListenerOptions",
     # The look of table and pivot, adopted into their shadow roots (issue #32).
     "ClipboardEvent",
     "CssStyleSheet",

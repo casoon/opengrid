@@ -90,6 +90,7 @@ mod bulk;
 mod combo;
 mod history;
 mod paste;
+mod print;
 mod validate;
 use opengrid_web_core::renderer::{Dom, WebRenderer};
 
@@ -5170,6 +5171,11 @@ pub(crate) fn read_query(host: &HtmlElement) -> JsValue {
         Some(json) => js_sys::JSON::parse(&json).unwrap_or(JsValue::NULL),
         None => JsValue::NULL,
     }
+}
+
+/// [`crate::element::prepare_print`] — the print table of the view.
+pub(crate) fn prepare_print(host: &HtmlElement) -> js_sys::Promise {
+    print::prepare(host)
 }
 
 /// The query of the current view without a window (plan point 82).

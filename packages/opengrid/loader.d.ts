@@ -76,6 +76,15 @@ export interface OpengridModule {
    */
   get_pivot(host: HTMLElement, options?: CsvOptions): string | null;
   /**
+   * Builds the grid's print table (issue #334): every match of the view as a
+   * native table that only `@media print` shows, in place of the grid, until
+   * `afterprint`. Await it, then call `window.print()`. Resolves with the
+   * number of rows; with `null` where `get_query` answers `null`, and for the
+   * table and the pivot, which print as they are. Rejects with the provider's
+   * error, and with the code `too_many_rows` for more than 10 000 matches.
+   */
+  prepare_print(host: HTMLElement): Promise<number | null>;
+  /**
    * What became of an edit the page saves (issue #153). `key` is the record's
    * `row-key` value as `opengrid-cell-change` gave it. `saved` clears the
    * unsaved mark; `error` keeps the value and says `message` in the live
