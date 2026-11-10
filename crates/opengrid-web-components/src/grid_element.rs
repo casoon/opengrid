@@ -5522,7 +5522,7 @@ pub(crate) fn recolumn(host: &HtmlElement) {
 /// The grouping the attributes ask for, or why it cannot be had.
 ///
 /// `Ok(None)`: no `group-by`. `Err`: a sentence for the status line — more than
-/// two levels, a column the grid does not show, or paging, which grouping
+/// three levels, a column the grid does not show, or paging, which grouping
 /// cannot live beside (paging excludes virtualization since point 38, and the
 /// group arithmetic presupposes it).
 fn grouping_of(host: &HtmlElement) -> Result<Option<Grouping>, String> {
@@ -5738,7 +5738,7 @@ fn measured(
 ///
 /// 1. the level-1 groups with their row counts — only when they are not loaded
 ///    yet or the filter changed;
-/// 2. the level-2 groups of every open level-1 group that has none yet;
+/// 2. the groups under every open group that shows and has none yet;
 /// 3. the rows of the window, **one query per group it touches**, each filtered
 ///    on the group key and paged with `offset`/`limit`.
 ///
@@ -5908,28 +5908,27 @@ fn run_grouped(
             }
         }
 
-        // 2. The level-2 groups of open level-1 groups that have none yet.
-        let (missing, second) = {
-            let runtime = grid_runtime.borrow();
-            let Some(grouping) = runtime.grouping.as_ref() else {
-                return;
+        // 2. The groups under open groups that have none yet — a level per
+        //    pass, because what a pass loads can be open itself (a view).
+        for _ in 1..grouping::MAX_LEVELS {
+            let missing = match grid_runtime.borrow().grouping.as_ref() {
+                Some(grouping) => grouping.missing_children(),
+                None => return,
             };
-            (grouping.missing_children(), grouping.by().get(1).cloned())
-        };
-        if let Some(second) = second {
-            for key in missing {
-                let (scoped, aggregates) = {
+            for keys in missing {
+                let (column, scoped, aggregates) = {
                     let runtime = grid_runtime.borrow();
                     let Some(grouping) = runtime.grouping.as_ref() else {
                         return;
                     };
                     (
-                        grouping.filter_for(std::slice::from_ref(&key), filter.as_ref()),
+                        grouping.by()[keys.len()].clone(),
+                        grouping.filter_for(&keys, filter.as_ref()),
                         grouping.aggregates().to_vec(),
                     )
                 };
                 let query =
-                    grouping::group_query_json(&source, &second, scoped.as_ref(), &aggregates);
+                    grouping::group_query_json(&source, &column, scoped.as_ref(), &aggregates);
                 let result = match ask(&host, &provider, &grid_runtime, &query, &mode).await {
                     Ok(result) => result,
                     Err(message) => return fail(message),
@@ -5942,7 +5941,7 @@ fn run_grouped(
                     Err(message) => return fail(message),
                 };
                 if let Some(grouping) = grid_runtime.borrow_mut().grouping.as_mut() {
-                    grouping.set_children(&key, children);
+                    grouping.set_children(&keys, children);
                 }
             }
         }
@@ -8487,7 +8486,7 @@ fn open_group_menu(host: &HtmlElement) {
         .map(|field| field.name.as_str().to_owned())
         .filter(|name| !current.contains(name))
         .collect();
-    if current.len() >= 2 || offered.is_empty() {
+    if current.len() >= grouping::MAX_LEVELS || offered.is_empty() {
         return;
     }
     let texts = texts(host);
@@ -8594,7 +8593,7 @@ fn pick_grouping(host: &HtmlElement, item: &Element) {
         })
         .unwrap_or_default();
     close_quick(host, "grouping-menu", "add-grouping", true);
-    if next.len() >= 2 || next.contains(&column) {
+    if next.len() >= grouping::MAX_LEVELS || next.contains(&column) {
         return;
     }
     next.push(column);
@@ -8832,7 +8831,7 @@ fn sync_quick_buttons(host: &HtmlElement, root: &ShadowRoot) {
             .borrow()
             .grouping
             .as_ref()
-            .is_some_and(|grouping| grouping.by().len() >= 2)
+            .is_some_and(|grouping| grouping.levels() >= grouping::MAX_LEVELS)
     });
     let texts = texts(host);
     let visible = texts.add_grouping.as_str();

@@ -229,7 +229,7 @@ An interactive `<table role="grid">`: virtualized, keyboard-driven, filterable.
 | `window-size` | How many rows are rendered and fetched at once while scrolling. Default 40. |
 | `page-size` | Switches from scrolling to **paging**. Mutually exclusive with virtualization. |
 | `mode` | `local`, `remote`, `hybrid` or `auto`, handed to the provider unchanged. Only a provider with more than one place to run a query reads it. |
-| `group-by` | Groups the rows by up to **two** columns, outermost first: `group-by="country,customer"`. See [Grouping](#grouping). |
+| `group-by` | Groups the rows by up to **three** columns, outermost first: `group-by="country,customer"`. See [Grouping](#grouping). |
 | `tree` | Shows the rows as a **tree**: the field that holds a row's parent key, `tree="parent_id"`. See [Tree](#tree). |
 | `tree-key` | The field the parent key refers to. `id` when absent. |
 | `row-key` | The field that names a record: `opengrid-cell-change` carries its value as `key`, and `set_cell_state` and `set_values` name rows by it. See [Saving edits](#saving-edits). |
@@ -387,7 +387,7 @@ reflow case of WCAG 1.4.10, the toolbar wraps instead.
 | Columns | The column list moves here from the filter row, so it stays reachable when the row is hidden. |
 | Density | Three buttons, the pressed one is the grid's `density`. |
 | + Filter | Opens *Add filter*, a `role="dialog"` with `aria-modal="true"` (`Tab` does not leave it): *Column*, *Condition* (the operators the column's type allows), *Value*, *Cancel*, *Apply*. The focus moves to *Column*; `Tab` cycles inside; *Apply* or `Enter` in *Value* writes the column's entry in the filter row — the one place a filter lives — and closes; `Escape`, *Cancel* or a click outside close without a change. A value the column cannot take is named in the dialog, which stays open, and said in the status line — the one live region. The focus returns to the button. |
-| + Group | Opens a `role="menu"` of the groupable columns not grouped yet, with the column menu's keys (`↓`/`↑`, `Home`/`End`, `Enter`/`Space`, `Escape`, `Tab`). A pick adds the next grouping level, as `group-by` does. With two levels the button is `aria-disabled` and says why. |
+| + Group | Opens a `role="menu"` of the groupable columns not grouped yet, with the column menu's keys (`↓`/`↑`, `Home`/`End`, `Enter`/`Space`, `Escape`, `Tab`). A pick adds the next grouping level, as `group-by` does. With three levels the button is `aria-disabled` and says why. |
 | Chips | One per active filter, in words (`country is DE`), and one for the grouping. Each has a remove button **named for its filter** — `Remove country is DE` — and "Remove all" clears filters and grouping. A removal is said once, with the result that follows; the focus moves to the next chip, never to the document. |
 
 The chips are a display of the view, not a second truth about the filters: they
@@ -500,7 +500,8 @@ no group and carries neither. It stays **virtualized** — the group query answe
 count, and from the counts and the open groups the display list is arithmetic,
 so `aria-rowcount` is still one number and scrolling still adds no DOM rows.
 The rows of a visible window are fetched per group they belong to: one query per
-group the window touches, not one per row.
+group the window touches, not one per row. With two or three levels, a group above
+the innermost one asks once more, when it is first opened: for the groups under it.
 
 | | |
 |---|---|
@@ -509,7 +510,7 @@ group the window touches, not one per row.
 | Label | One sentence per header, `groupRow`: `country: DE (52 rows)`. NULL is `(no value)` and the empty string `(empty)` — two different groups (S10, S14). |
 | Status line | Counts **rows**, not display positions — five headers are not five matches. Opening and closing is said once, with the result that follows. |
 | Groupable | Text, booleans, whole numbers and dates. A decimal, a float or a timestamp repeats too rarely to group by and is refused. |
-| Refused | More than two levels, a column the grid does not show, or `page-size` alongside: the grid says why in the status line and stays ungrouped. |
+| Refused | More than three levels, a column the grid does not show, or `page-size` alongside: the grid says why in the status line and stays ungrouped. |
 | View | `group` and `expanded` (paths of keys; a NULL key is `null`) travel in the [view](#the-view). |
 
 **Aggregates** go into the group rows and into a **grand total**, the last row
@@ -1374,7 +1375,7 @@ loader.module.set_texts(host, { lang: "de", loading: "Wird geladen …" });
 | `addFilter` / `addFilterTitle` | `+ Filter` / `Add filter` — the toolbar's button and the dialog's title | |
 | `filterColumnLabel` / `filterConditionLabel` / `filterValueLabel` | `Column` / `Condition` / `Value` | |
 | `cancel` / `apply` | `Cancel` / `Apply` | |
-| `addGrouping` / `groupingFull` | `+ Group` / `Grouped by two columns already` — the button, and the reason that follows its text in its name when no level can be added (`+ Group. Grouped by two columns already`) | |
+| `addGrouping` / `groupingFull` | `+ Group` / `Grouped by three columns already` — the button, and the reason that follows its text in its name when no level can be added (`+ Group. Grouped by three columns already`) | |
 | `pivotToolbar` / `pivotRows` / `pivotColumns` / `pivotMeasures` | `Pivot fields` / `Rows` / `Columns` / `Measures` — the pivot's field toolbar and its three groups | |
 | `addRow` / `addColumn` / `addMeasure` | `+ Row` / `+ Column` / `+ Measure` | |
 | `columnFull` / `nothingToAdd` | `Two column fields already` / `Nothing left to add` — the reason that follows an add button's text in its name when it cannot add (`+ Row. Nothing left to add`) | |

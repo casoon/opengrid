@@ -329,6 +329,145 @@ test("two levels: a group opens onto its subgroups, and those onto rows", async 
   expect((await drawn(page))[2].level).toBe("3");
 });
 
+/** Groups the fixture by country, customer and flag, and waits for the groups. */
+async function threeLevels(page) {
+  await page.evaluate(() => {
+    const host = document.querySelector("opengrid-grid");
+    host.setAttribute("columns", "id,customer,country,flag,amount");
+    host.setAttribute("group-by", "country,customer,flag");
+  });
+  await expect.poll(() => rowcount(page)).toBe(7);
+  await expect.poll(async () => (await drawn(page))[0]?.text).toBe("country: DE (52 rows)");
+}
+
+const place = (row) => [row.kind, row.level, row.posinset, row.setsize, row.expanded];
+
+test("three levels: every level says its depth and its place, and costs one query to open", async ({
+  page,
+}) => {
+  // Issue #321. DE has nine customers (eight and NULL); DE/Alpha has six rows:
+  // three with flag false, two with true (ids 61 and 197), one without.
+  await threeLevels(page);
+  const asked = async () => {
+    await page.waitForTimeout(200);
+    const queries = await page.evaluate(() => window.__queries.splice(0).map((q) => JSON.parse(q)));
+    // A window without rows asks for the schema alone (`limit: 0`): not rows.
+    return {
+      groups: queries.filter((q) => q.group),
+      rows: queries.filter((q) => !q.group && q.limit !== 0),
+    };
+  };
+  await asked();
+
+  await press(page, 'td[data-row="0"][data-col="0"]', "Enter");
+  await expect.poll(() => rowcount(page)).toBe(7 + 9);
+  // One query for DE's customers, and none for rows: there are none to show.
+  let queries = await asked();
+  expect(queries.groups.map((q) => q.group)).toEqual([["customer"]]);
+  expect(queries.rows).toEqual([]);
+
+  await press(page, 'td[data-row="1"][data-col="0"]', "Enter");
+  await expect.poll(() => rowcount(page)).toBe(7 + 9 + 3);
+  // One query for the flags of DE/Alpha, filtered on both keys above it.
+  queries = await asked();
+  expect(queries.groups.map((q) => q.group)).toEqual([["flag"]]);
+  expect(queries.groups[0].filter).toEqual({
+    and: [
+      { field: "country", op: "eq", value: "DE" },
+      { field: "customer", op: "eq", value: "Alpha" },
+    ],
+  });
+  expect(queries.rows).toEqual([]);
+
+  await press(page, 'td[data-row="3"][data-col="0"]', "Enter");
+  await expect.poll(() => rowcount(page)).toBe(7 + 9 + 3 + 2);
+  // The innermost group opens onto rows: one query for them, no group query.
+  queries = await asked();
+  expect(queries.groups).toEqual([]);
+  expect(queries.rows).toHaveLength(1);
+
+  // DE, Alpha, false, true, its two rows, (no value), Beta: the window's eight.
+  const rows = await drawn(page);
+  expect(rows.map((row) => row.text).slice(0, 4)).toEqual([
+    "country: DE (52 rows)",
+    "customer: Alpha (6 rows)",
+    "flag: false (3 rows)",
+    "flag: true (2 rows)",
+  ]);
+  expect(rows.map(place)).toEqual([
+    ["group", "1", "1", "5", "true"],
+    ["group", "2", "1", "9", "true"],
+    ["group", "3", "1", "3", "false"],
+    ["group", "3", "2", "3", "true"],
+    // The rows sit one level below the innermost group, 1 and 2 of its 2.
+    ["row", "4", "1", "2", null],
+    ["row", "4", "2", "2", null],
+    ["group", "3", "3", "3", "false"],
+    ["group", "2", "2", "9", "false"],
+  ]);
+  expect(rows.map((row) => row.index)).toEqual([2, 3, 4, 5, 6, 7, 8, 9]);
+  expect(rows.slice(4, 6).map((row) => row.text).sort()).toEqual(["197", "61"]);
+  expect(rows[6].text).toBe("flag: (no value) (1 row)");
+
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+
+  // Closing the middle level takes its groups and their rows out together.
+  await press(page, 'td[data-row="1"][data-col="0"]', "Enter");
+  await expect.poll(() => rowcount(page)).toBe(7 + 9);
+  expect((await drawn(page)).slice(0, 3).map(place)).toEqual([
+    ["group", "1", "1", "5", "true"],
+    ["group", "2", "1", "9", "false"],
+    ["group", "2", "2", "9", "false"],
+  ]);
+});
+
+test("three levels and what is open in them travel in the view", async ({ page }) => {
+  await threeLevels(page);
+  await press(page, 'td[data-row="0"][data-col="0"]', "Enter");
+  await expect.poll(() => rowcount(page)).toBe(7 + 9);
+  await press(page, 'td[data-row="1"][data-col="0"]', "Enter");
+  await expect.poll(() => rowcount(page)).toBe(7 + 9 + 3);
+  await press(page, 'td[data-row="3"][data-col="0"]', "Enter");
+  await expect.poll(() => rowcount(page)).toBe(7 + 9 + 3 + 2);
+
+  const view = await page.evaluate(() =>
+    window.__opengridModule.get_view(document.querySelector("opengrid-grid")),
+  );
+  expect(view.group).toEqual(["country", "customer", "flag"]);
+  expect(view.expanded).toEqual([["DE"], ["DE", "Alpha"], ["DE", "Alpha", true]]);
+
+  // Ungrouped, then the view again: every level is open as it was, each
+  // fetched under the one above it.
+  await page.evaluate(() => document.querySelector("opengrid-grid").removeAttribute("group-by"));
+  await expect.poll(() => rowcount(page)).toBe(201);
+  await page.evaluate(
+    (view) => window.__opengridModule.set_view(document.querySelector("opengrid-grid"), view),
+    view,
+  );
+  await expect.poll(() => rowcount(page)).toBe(7 + 9 + 3 + 2);
+  expect((await drawn(page)).slice(0, 5).map(place)).toEqual([
+    ["group", "1", "1", "5", "true"],
+    ["group", "2", "1", "9", "true"],
+    ["group", "3", "1", "3", "false"],
+    ["group", "3", "2", "3", "true"],
+    ["row", "4", "1", "2", null],
+  ]);
+});
+
+test("a fourth level is refused and named", async ({ page }) => {
+  await page.evaluate(() => {
+    const host = document.querySelector("opengrid-grid");
+    host.setAttribute("columns", "id,customer,country,flag,qty");
+    host.setAttribute("group-by", "country,customer,flag,qty");
+  });
+  await expect.poll(() => status(page)).toContain("Cannot group by country,customer,flag,qty");
+  expect(
+    await page.evaluate(() =>
+      document.querySelector("opengrid-grid").shadowRoot.querySelector("table").getAttribute("role"),
+    ),
+  ).toBe("grid");
+});
+
 test("paging and grouping together are refused and named", async ({ page }) => {
   await page.evaluate(() => {
     const host = document.querySelector("opengrid-grid");

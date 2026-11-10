@@ -327,7 +327,7 @@ pub const DENSITY_ATTRIBUTE: &str = "density";
 
 /// The columns a grid groups by, outermost first (point 62).
 ///
-/// At most two. Setting it turns the `grid` into a `treegrid` for as long as it
+/// At most three. Setting it turns the `grid` into a `treegrid` for as long as it
 /// is set (F2, 2026-09-23): an expandable hierarchy is what `treegrid` exists
 /// for, and a `grid` with buttons in it would describe the structure worse.
 pub const GROUP_BY_ATTRIBUTE: &str = "group-by";
@@ -1850,6 +1850,8 @@ pub fn grid_css() -> String {
                    content: \"\\25BE\" / \"\"; }}
                   tr[data-kind=\"group\"][data-level=\"2\"] td[data-col=\"0\"] {{
                    padding-left: calc(var({PAD_PROPERTY}) + 1.25em); }}
+                  tr[data-kind=\"group\"][data-level=\"3\"] td[data-col=\"0\"] {{
+                   padding-left: calc(var({PAD_PROPERTY}) + 2.5em); }}
          /* A tree's node (issue #135): the first column indented by depth,
             a chevron where it opens — drawn from `aria-expanded` with an
             empty alternative, like a group's — and room for one on a leaf so
