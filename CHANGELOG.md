@@ -25,10 +25,12 @@ Two things belong in every release entry and are easy to leave out:
   `<opengrid-pivot>`, taken from `dir` on the element or an ancestor: the columns run from the
   right, and in the grid `←` and `→` follow what is on the screen
   ([#320](https://github.com/casoon/opengrid/issues/320), [Right to left](docs/api.md#right-to-left)).
-- **Grid:** a grouped grid with `row-key` selects rows, by key: opening and closing a group never
-  changes what is selected, and select-all takes every row of the filter, open or not.
-  `opengrid-selection-change` then carries `keys` and `count`, with `rows` and `ranges` empty —
-  see *Selecting while grouped* in `docs/api.md`
+- **Grid:** a grouped grid with `row-key` selects rows: opening and closing a group never changes
+  what is selected, a group header is not selected, and select-all takes every row of the filter,
+  open or not ([#322](https://github.com/casoon/opengrid/issues/322)).
+- **Grid:** the view carries a selection by key as `selected`, and `set_view` restores it after
+  asking the source which of the keys still name a record; those that do not are dropped and said
+  (new text `selectionMissing`). Selecting fires `opengrid-selection-change` only
   ([#322](https://github.com/casoon/opengrid/issues/322)).
 - **Texts:** a German translation ships with the npm package as `@casoon/opengrid/texts/de` — every
   text of the grid, the table and the pivot, with `lang: "de"`, to hand to `set_texts` or to the
@@ -37,10 +39,17 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Changed
 
-- **Grid:** setting or changing `group-by` on a grid with selected rows now says `Selection cleared`
-  and fires `opengrid-selection-change` when it drops a selection; it was dropped silently
+- **Grid:** every grid with `row-key` selects **by key**, grouped or not: the selection stays
+  through a sort, a filter, grouping and ungrouping, and select-all asks the source for the keys.
+  **What breaks:** with `row-key`, and in a tree, `opengrid-selection-change` is `{ count, keys }`
+  and has no `rows` and no `ranges` any more (`SelectionChangeDetail` is a union of
+  `SelectionByPosition` and `SelectionByKey`); a sort or a filter no longer drops such a selection;
+  `get_view` holds `selected` while something is selected, and `set_view` with a view that has no
+  `selected` clears it. Without `row-key` nothing changes
+  ([#322](https://github.com/casoon/opengrid/issues/322), `docs/api.md`: *Selecting by key*).
+- **Grid:** setting `group-by` on a grid that selects by position now says `Selection cleared` and
+  fires `opengrid-selection-change` when it drops a selection; it was dropped silently
   ([#322](https://github.com/casoon/opengrid/issues/322)).
-
 - **Grid:** `group-by`, the view's `group` and the toolbar's *+ Group* take three grouping levels; a
   fourth is refused as the third was. The default wording of `groupingFull` is now
   `Grouped by three columns already` ([#321](https://github.com/casoon/opengrid/issues/321)).
