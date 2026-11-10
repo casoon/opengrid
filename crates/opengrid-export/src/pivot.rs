@@ -101,21 +101,8 @@ pub fn pivot_csv(pivot: &PivotResult, labels: &impl PivotLabels, options: &CsvOp
     if options.bom {
         out.push('\u{FEFF}');
     }
-    let mut header: Vec<String> = fields[..dimensions]
-        .iter()
-        .map(|field| field.name.as_str().to_owned())
-        .collect();
-    header.extend(pivot.columns.iter().map(|column| {
-        let mut parts: Vec<String> = column
-            .path
-            .iter()
-            .map(|value| labels.dimension(plain(value).as_deref()))
-            .collect();
-        parts.push(column.measure.as_str().to_owned());
-        parts.join(PATH_SEPARATOR)
-    }));
     // A header cell holds a label, and a column value in it is data: guarded.
-    let header: Vec<String> = header
+    let header: Vec<String> = header_names(pivot, labels)
         .into_iter()
         .map(|name| text_cell(name, true, options))
         .collect();
@@ -132,12 +119,7 @@ pub fn pivot_csv(pivot: &PivotResult, labels: &impl PivotLabels, options: &CsvOp
         if level < dimensions {
             // A subtotal, or the grand total at level 0: its label, then the
             // dimension columns it spans.
-            let label = if level == 0 {
-                labels.total()
-            } else {
-                let closed = &pivot.data.columns[level - 1][row];
-                labels.subtotal(&labels.dimension(plain(closed).as_deref()))
-            };
+            let label = total_label(pivot, row, level, labels);
             cells.push(text_cell(label, true, options));
             cells.extend((1..dimensions).map(|_| String::new()));
         } else {
@@ -161,6 +143,43 @@ pub fn pivot_csv(pivot: &PivotResult, labels: &impl PivotLabels, options: &CsvOp
         out.push_str("\r\n");
     }
     out
+}
+
+/// The one header line: the row dimensions by their names, then each generated
+/// column by its path and its measure. The workbook (`XlsxWriter::write_pivot`)
+/// heads its sheet with the same names.
+pub(crate) fn header_names(pivot: &PivotResult, labels: &impl PivotLabels) -> Vec<String> {
+    let fields = pivot.data.schema.fields();
+    let mut header: Vec<String> = fields[..fields.len() - pivot.columns.len()]
+        .iter()
+        .map(|field| field.name.as_str().to_owned())
+        .collect();
+    header.extend(pivot.columns.iter().map(|column| {
+        let mut parts: Vec<String> = column
+            .path
+            .iter()
+            .map(|value| labels.dimension(plain(value).as_deref()))
+            .collect();
+        parts.push(column.measure.as_str().to_owned());
+        parts.join(PATH_SEPARATOR)
+    }));
+    header
+}
+
+/// The row header of the total at `row`: the grand total at level 0, else the
+/// subtotal that closes the group at `level`.
+pub(crate) fn total_label(
+    pivot: &PivotResult,
+    row: usize,
+    level: usize,
+    labels: &impl PivotLabels,
+) -> String {
+    if level == 0 {
+        labels.total()
+    } else {
+        let closed = &pivot.data.columns[level - 1][row];
+        labels.subtotal(&labels.dimension(plain(closed).as_deref()))
+    }
 }
 
 /// A dimension value of a data row, as its row header reads it.

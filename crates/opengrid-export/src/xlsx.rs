@@ -23,12 +23,18 @@
 //! **Excel's limits are errors, never a shortened file**: more rows than a
 //! sheet holds, or a text longer than a cell holds.
 //!
+//! A pivot is one flat sheet too ([`XlsxWriter::write_pivot`], issue #331):
+//! the header line and the rows of its CSV, with the cells typed as above.
+//!
 //! The workbook is written as the rows come (`constant_memory`: a finished row
 //! goes to a temporary file), and [`XlsxWriter::finish`] assembles the file.
 
 use opengrid_datasource::QueryResult;
-use opengrid_types::{DataType, Value};
+use opengrid_pivot::PivotResult;
+use opengrid_types::{DataType, Field, Value};
 use rust_xlsxwriter::{ExcelDateTime, Format, Workbook, Worksheet};
+
+use crate::pivot::{PivotLabels, header_names, total_label};
 
 /// The media type of an XLSX file.
 pub const XLSX_MEDIA_TYPE: &str =
@@ -36,6 +42,9 @@ pub const XLSX_MEDIA_TYPE: &str =
 
 /// The rows one sheet holds under its header row.
 pub const XLSX_MAX_ROWS: u64 = 1_048_575;
+
+/// The columns one sheet holds.
+const MAX_COLUMNS: usize = 16_384;
 
 /// The characters one cell holds.
 const MAX_TEXT: usize = 32_767;
@@ -90,35 +99,13 @@ impl XlsxWriter {
         // A flat tree brings its level, path and match columns (T8).
         let result = &*crate::with_tree_columns(result);
         if self.row == 0 {
-            self.decimals = result
-                .schema
-                .fields()
-                .iter()
-                .map(|field| match field.data_type {
-                    DataType::Decimal { scale, .. } => {
-                        Some(Format::new().set_num_format(if scale == 0 {
-                            "0".to_owned()
-                        } else {
-                            format!("0.{}", "0".repeat(usize::from(scale)))
-                        }))
-                    }
-                    _ => None,
-                })
-                .collect();
             let names: Vec<&str> = result
                 .schema
                 .fields()
                 .iter()
                 .map(|field| field.name.as_str())
                 .collect();
-            let header = self.header.clone();
-            let sheet = self.sheet()?;
-            for (column, name) in names.iter().enumerate() {
-                sheet
-                    .write_string_with_format(0, column as u16, *name, &header)
-                    .map_err(|error| error.to_string())?;
-            }
-            self.row = 1;
+            self.head(result.schema.fields(), &names)?;
         }
 
         for index in 0..result.row_count() {
@@ -135,11 +122,98 @@ impl XlsxWriter {
         Ok(())
     }
 
+    /// A whole pivot as the one flat sheet its CSV is ([`crate::pivot_csv`],
+    /// issue #331): the same header line, the same rows in the same order, no
+    /// merged cells and no outline levels — so the sheet sorts and filters.
+    ///
+    /// What differs from the CSV is what a workbook is for: a dimension value
+    /// and a measure are cells of their type (the table above), and a NULL
+    /// measure is an empty cell. A label — a total's, or the word that stands
+    /// for a NULL or empty dimension value — is a string like every text here,
+    /// never a formula; the dimension columns a total spans are empty cells.
+    ///
+    /// **Precondition**: the shape [`crate::pivot_csv`] names.
+    pub fn write_pivot(
+        &mut self,
+        pivot: &PivotResult,
+        labels: &impl PivotLabels,
+    ) -> Result<(), String> {
+        let fields = pivot.data.schema.fields();
+        if fields.len() > MAX_COLUMNS {
+            return Err(format!(
+                "the pivot has {} columns, more than the {MAX_COLUMNS} an Excel sheet holds",
+                fields.len()
+            ));
+        }
+        let dimensions = fields.len() - pivot.columns.len();
+        let names = header_names(pivot, labels);
+        let names: Vec<&str> = names.iter().map(String::as_str).collect();
+        self.head(fields, &names)?;
+
+        for (row, level) in pivot.row_levels.iter().enumerate() {
+            if u64::from(self.row) > XLSX_MAX_ROWS {
+                return Err(format!(
+                    "more than the {XLSX_MAX_ROWS} rows an Excel sheet holds"
+                ));
+            }
+            let level = usize::from(*level);
+            if level < dimensions {
+                // A subtotal, or the grand total: its label where the row
+                // header starts; the columns it spans stay empty.
+                let label = total_label(pivot, row, level, labels);
+                self.text(0, &label, &fields[0].name)?;
+            } else {
+                for (column, field) in fields.iter().enumerate().take(dimensions) {
+                    match &pivot.data.columns[column][row] {
+                        // NULL and the empty string are named, as in the
+                        // table: an empty cell here means "spanned".
+                        Value::Null => self.text(column, &labels.dimension(None), &field.name)?,
+                        Value::Utf8(text) if text.is_empty() => {
+                            self.text(column, &labels.dimension(Some("")), &field.name)?;
+                        }
+                        value => self.cell(column, value, &field.name)?,
+                    }
+                }
+            }
+            for (column, field) in fields.iter().enumerate().skip(dimensions) {
+                self.cell(column, &pivot.data.columns[column][row], &field.name)?;
+            }
+            self.row += 1;
+        }
+        Ok(())
+    }
+
     /// The file.
     pub fn finish(mut self) -> Result<Vec<u8>, String> {
         self.workbook
             .save_to_buffer()
             .map_err(|error| error.to_string())
+    }
+
+    /// The header row, and each decimal column's format from its scale.
+    fn head(&mut self, fields: &[Field], names: &[&str]) -> Result<(), String> {
+        self.decimals = fields
+            .iter()
+            .map(|field| match field.data_type {
+                DataType::Decimal { scale, .. } => {
+                    Some(Format::new().set_num_format(if scale == 0 {
+                        "0".to_owned()
+                    } else {
+                        format!("0.{}", "0".repeat(usize::from(scale)))
+                    }))
+                }
+                _ => None,
+            })
+            .collect();
+        let header = self.header.clone();
+        let sheet = self.sheet()?;
+        for (column, name) in names.iter().enumerate() {
+            sheet
+                .write_string_with_format(0, column as u16, *name, &header)
+                .map_err(|error| error.to_string())?;
+        }
+        self.row = 1;
+        Ok(())
     }
 
     fn sheet(&mut self) -> Result<&mut Worksheet, String> {
