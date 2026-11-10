@@ -309,6 +309,13 @@ jobs:
     # looking is a test that has stopped testing.
     steps:
       - uses: actions/checkout@v7
+      # The same toolchains as `e2e`, nightly first: `just e2e-prepare` builds
+      # the MCP view's elements too (#343).
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-06-02
+          components: rust-src
+          targets: wasm32-unknown-unknown
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
@@ -344,16 +351,13 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
-      - run: just wasm-build-components
-      - run: just wasm-build
-      - run: cargo build -p opengrid-server
-      - run: just package
-      # The framework examples the React, Vue and Svelte specs run against.
-      - run: pnpm --filter "./examples/*" build
+      # What `just e2e` builds, from the one recipe both use: the modules, the
+      # MCP view, the example server and the framework examples.
+      - run: just e2e-prepare
       - name: Regenerate the Linux baselines
         run: pnpm exec playwright test --config tests/e2e/playwright.config.js --update-snapshots
-      # Also after a failed test: this job does not build the MCP view, so its
-      # specs fail here, and without this the baselines were never uploaded.
+      # Also after a failed test: a baseline that was written is worth reading
+      # even when another spec fails.
       - uses: actions/upload-artifact@v7
         if: ${{ !cancelled() }}
         with:
