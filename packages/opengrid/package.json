@@ -44,6 +44,10 @@
       "svelte": "./svelte/index.js",
       "default": "./svelte/index.js"
     },
+    "./texts/de": {
+      "types": "./texts/de.d.ts",
+      "default": "./texts/de.js"
+    },
     "./worker.js": "./worker.js",
     "./pkg/*": "./pkg/*",
     "./engine/*": "./engine/*",
@@ -61,6 +65,7 @@
     "react/",
     "vue/",
     "svelte/",
+    "texts/",
     "pkg/",
     "engine/",
     "LICENSE-MIT",
