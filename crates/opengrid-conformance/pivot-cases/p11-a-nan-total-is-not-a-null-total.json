@@ -1,0 +1,55 @@
+{
+  "id": "p11-a-nan-total-is-not-a-null-total",
+  "rule": "P11",
+  "pivot": {
+    "source": "orders",
+    "rows": [
+      "country"
+    ],
+    "values": [
+      {
+        "field": "ratio",
+        "fn": "sum",
+        "as": "share",
+        "calc": "share_of_column"
+      }
+    ],
+    "filter": {
+      "field": "id",
+      "op": "lte",
+      "value": 6
+    }
+  },
+  "expected": {
+    "columns": [
+      {
+        "path": [],
+        "measure": "share"
+      }
+    ],
+    "rows": [
+      [
+        "DE",
+        "NaN"
+      ],
+      [
+        "FR",
+        "NaN"
+      ],
+      [
+        "US",
+        "NaN"
+      ],
+      [
+        null,
+        "NaN"
+      ]
+    ],
+    "levels": [
+      1,
+      1,
+      1,
+      0
+    ]
+  }
+}

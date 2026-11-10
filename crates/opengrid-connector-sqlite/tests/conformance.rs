@@ -50,6 +50,94 @@ fn sqlite_answers_every_list_case() {
     assert!(report.cases >= 20, "{report}");
 }
 
+/// The pivot cases (rules P1–P12): SQLite answers the grouping sets, and the
+/// pivot — its subtotals, its order, a share or a running total over its
+/// cells — comes out as the engine's does, cell by cell. The engine is held
+/// against the expected answers by `opengrid-pivot`'s own suite.
+#[test]
+fn sqlite_answers_every_pivot_case_like_the_engine() {
+    use opengrid_conformance::{FLOAT_TOLERANCE, suite_dir};
+    use opengrid_connector::{Connector, LocalConnector};
+    use opengrid_pivot::{PivotLimits, PivotQuery};
+    use opengrid_types::Value;
+
+    let sqlite = connector();
+    let engine =
+        LocalConnector::from_csv(&fixture_csv(), &suite_dir().join("data/orders.schema.json"))
+            .expect("the engine");
+    let schema = fixture_schema();
+    let mut paths: Vec<std::path::PathBuf> = std::fs::read_dir(suite_dir().join("pivot-cases"))
+        .expect("the pivot cases")
+        .map(|entry| entry.expect("dir entry").path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
+        .collect();
+    paths.sort();
+
+    let mut differences = Vec::new();
+    let mut calculated = 0;
+    for path in &paths {
+        let text = std::fs::read_to_string(path).expect("read case");
+        let case: opengrid_json::Json = opengrid_json::from_str(&text).expect("JSON");
+        let id = case["id"].as_str().expect("an id");
+        let pivot: PivotQuery = opengrid_json::FromJson::from_json(&case["pivot"])
+            .unwrap_or_else(|error| panic!("{id}: {error}"));
+        if pivot.values.iter().any(|value| value.calc.is_some()) {
+            calculated += 1;
+        }
+        let validated = pivot
+            .validate(
+                &schema,
+                &PivotLimits::default(),
+                &opengrid_query::Limits::default(),
+            )
+            .unwrap_or_else(|error| panic!("{id}: {error}"));
+        let expected = block_on(engine.pivot(&validated)).expect("the engine answers");
+        let actual = block_on(sqlite.pivot(&validated))
+            .unwrap_or_else(|error| panic!("{id}: SQLite: {error}"));
+
+        if actual.columns != expected.columns || actual.row_levels != expected.row_levels {
+            differences.push(format!("{id}: the columns or the levels differ"));
+            continue;
+        }
+        let types = |result: &opengrid_connector::PivotResult| -> Vec<_> {
+            let fields = result.data.schema.fields();
+            fields.iter().map(|field| field.data_type).collect()
+        };
+        if types(&actual) != types(&expected) {
+            differences.push(format!("{id}: the column types differ"));
+        }
+        for (column, (ours, theirs)) in actual
+            .data
+            .columns
+            .iter()
+            .zip(&expected.data.columns)
+            .enumerate()
+        {
+            for (row, (ours, theirs)) in ours.iter().zip(theirs).enumerate() {
+                let same = match (ours, theirs) {
+                    (Value::Float64(a), Value::Float64(b)) => {
+                        (a.is_nan() && b.is_nan())
+                            || (a - b).abs() <= FLOAT_TOLERANCE * b.abs().max(1.0)
+                    }
+                    _ => ours == theirs,
+                };
+                if !same {
+                    differences.push(format!(
+                        "{id}, row {row}, column {column}: engine {theirs:?}, SQLite {ours:?}"
+                    ));
+                }
+            }
+        }
+    }
+    println!(
+        "pivot conformance (SQLite against the engine): {} cases, {calculated} calculated, {} differences",
+        paths.len(),
+        differences.len()
+    );
+    assert!(differences.is_empty(), "{}", differences.join("\n"));
+    assert!(paths.len() >= 20 && calculated >= 10, "the suite shrank");
+}
+
 fn rusqlite_version() -> String {
     Connection::open_in_memory()
         .and_then(|connection| {

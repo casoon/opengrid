@@ -2,16 +2,17 @@
 
 use opengrid_json::{Error, Fields, FromJson, Json, ToJson};
 use opengrid_query::{
-    Aggregate, Collation, FilterExpr, Limits, NullsOrder, Query, QueryError, Sort, SortDirection,
-    ValidatedQuery,
+    Aggregate, AggregateFn, Collation, FilterExpr, Limits, NullsOrder, Query, QueryError, Sort,
+    SortDirection, ValidatedQuery,
 };
 use opengrid_types::{DataSourceId, FieldName, Schema};
 
 /// What to pivot: rows down the side, columns across the top, measures inside.
 ///
 /// Deliberately close to `Query` — the filter is the very same [`FilterExpr`],
-/// and a measure **is** an [`Aggregate`], not a parallel type. A pivot is a way
-/// of arranging a query's answer, not a second query language.
+/// and a measure **is** an [`Aggregate`], with at most a calculation over its
+/// cells ([`Calc`]). A pivot is a way of arranging a query's answer, not a
+/// second query language.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PivotQuery {
     pub source: DataSourceId,
@@ -20,11 +21,106 @@ pub struct PivotQuery {
     /// Dimensions across the top. V1 allows at most two (see [`PivotLimits`]).
     pub columns: Vec<FieldName>,
     /// The measures in each cell, in display order.
-    pub values: Vec<Aggregate>,
+    pub values: Vec<Measure>,
     pub filter: Option<FilterExpr>,
     /// How the rows of a level are ordered among their siblings (rule P9).
     /// A level without an entry is ascending by its own values.
     pub sort: Vec<PivotSort>,
+}
+
+/// One measure of a pivot: an aggregate, shown as it is or as a calculation
+/// over the pivot's cells (rules P10-P12).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Measure {
+    pub aggregate: Aggregate,
+    /// `None` shows the aggregate itself.
+    pub calc: Option<Calc>,
+}
+
+/// What a calculated measure shows in place of its aggregate (issue #329).
+///
+/// Every one is computed from the pivot's own cells, after the aggregation,
+/// in [`crate::assemble`] — the one place every source's pivot goes through.
+/// That needs the aggregate to be additive across columns, so a calculation
+/// is defined for `sum` and `count` and refused for the rest (P10).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Calc {
+    /// The cell as a fraction of its row's total across every column (P11).
+    ShareOfRow,
+    /// The cell as a fraction of its column's cell in the grand total row.
+    ShareOfColumn,
+    /// The cell as a fraction of the grand total across every column.
+    ShareOfTotal,
+    /// The sum of the row's cells up to and including this column (P12).
+    RunningTotal,
+}
+
+impl Calc {
+    pub const ALL: [Calc; 4] = [
+        Calc::ShareOfRow,
+        Calc::ShareOfColumn,
+        Calc::ShareOfTotal,
+        Calc::RunningTotal,
+    ];
+
+    /// The wire name.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Calc::ShareOfRow => "share_of_row",
+            Calc::ShareOfColumn => "share_of_column",
+            Calc::ShareOfTotal => "share_of_total",
+            Calc::RunningTotal => "running_total",
+        }
+    }
+
+    /// The calculation the wire calls `name`.
+    pub fn from_name(name: &str) -> Option<Self> {
+        Calc::ALL.into_iter().find(|calc| calc.as_str() == name)
+    }
+}
+
+impl FromJson for Calc {
+    fn from_json(json: &Json) -> Result<Self, Error> {
+        json.as_str().and_then(Calc::from_name).ok_or_else(|| {
+            Error::new(format!(
+                "calc {json}: one of share_of_row, share_of_column, share_of_total, running_total"
+            ))
+        })
+    }
+}
+
+impl ToJson for Calc {
+    fn to_json(&self) -> Json {
+        Json::from(self.as_str())
+    }
+}
+
+impl FromJson for Measure {
+    /// `{ "field", "fn", "as", "calc" }`: an aggregate as a query writes it,
+    /// and `calc` when it is shown as a calculation.
+    fn from_json(json: &Json) -> Result<Self, Error> {
+        let fields = Fields::of(json, "struct Measure", &["field", "fn", "as", "calc"])?;
+        Ok(Measure {
+            aggregate: Aggregate {
+                field: fields.read_optional("field")?,
+                function: fields.read("fn")?,
+                alias: fields.read("as")?,
+            },
+            calc: fields.read_optional("calc")?,
+        })
+    }
+}
+
+impl ToJson for Measure {
+    /// `calc` only when there is one: a server from before calculated
+    /// measures reads the rest as it always did.
+    fn to_json(&self) -> Json {
+        let mut json = self.aggregate.to_json();
+        if let (Some(calc), Json::Object(object)) = (&self.calc, &mut json) {
+            object.insert("calc".to_owned(), calc.to_json());
+        }
+        json
+    }
 }
 
 /// The order of one level's rows among their siblings (rule P9).
@@ -148,7 +244,7 @@ pub struct ValidatedPivotQuery {
     pub source: DataSourceId,
     pub rows: Vec<FieldName>,
     pub columns: Vec<FieldName>,
-    pub values: Vec<Aggregate>,
+    pub values: Vec<Measure>,
     /// One query per level, **deepest first**: `[r1..rn, c]`, …, `[c]`.
     pub sets: Vec<ValidatedQuery>,
     /// The levels ordered by a measure while there is a column dimension:
@@ -186,6 +282,9 @@ pub enum PivotError {
     /// A sort that names no row dimension, a level twice, or a measure the
     /// pivot does not have.
     Sort { reason: String },
+    /// A calculation its measure cannot be shown as (P10), or one whose
+    /// result does not fit the measure's type.
+    Calc { measure: String, reason: String },
 }
 
 impl std::fmt::Display for PivotError {
@@ -220,6 +319,7 @@ impl std::fmt::Display for PivotError {
                 rows * columns
             ),
             PivotError::Sort { reason } => write!(f, "sort: {reason}"),
+            PivotError::Calc { measure, reason } => write!(f, "measure {measure}: {reason}"),
         }
     }
 }
@@ -255,12 +355,37 @@ impl PivotQuery {
         // name. Both are caught here rather than in a confusing output schema.
         let mut seen: Vec<&FieldName> = Vec::new();
         for field in self.rows.iter().chain(&self.columns) {
-            if seen.contains(&field) || self.values.iter().any(|value| value.alias == *field) {
+            if seen.contains(&field)
+                || self
+                    .values
+                    .iter()
+                    .any(|value| value.aggregate.alias == *field)
+            {
                 return Err(PivotError::DuplicateDimension {
                     field: field.to_string(),
                 });
             }
             seen.push(field);
+        }
+
+        // P10: a calculation adds a row's or a column's cells up, and only a
+        // sum and a count of the parts are the sum and the count of the whole.
+        for value in &self.values {
+            if let Some(calc) = value.calc
+                && !matches!(
+                    value.aggregate.function,
+                    AggregateFn::Sum | AggregateFn::Count
+                )
+            {
+                return Err(PivotError::Calc {
+                    measure: value.aggregate.alias.to_string(),
+                    reason: format!(
+                        "{} is defined for sum and count, not for {}",
+                        calc.as_str(),
+                        value.aggregate.function.as_str()
+                    ),
+                });
+            }
         }
 
         for (index, sort) in self.sort.iter().enumerate() {
@@ -274,7 +399,12 @@ impl PivotQuery {
             } else {
                 sort.by
                     .as_ref()
-                    .filter(|by| !self.values.iter().any(|value| value.alias == **by))
+                    .filter(|by| {
+                        !self
+                            .values
+                            .iter()
+                            .any(|value| value.aggregate.alias == **by)
+                    })
                     .map(|by| format!("{by} is not a measure of this pivot"))
             };
             if let Some(reason) = problem {
@@ -342,7 +472,12 @@ pub fn grouping_sets(
         let select: Vec<FieldName> = group
             .iter()
             .cloned()
-            .chain(pivot.values.iter().map(|value| value.alias.clone()))
+            .chain(
+                pivot
+                    .values
+                    .iter()
+                    .map(|value| value.aggregate.alias.clone()),
+            )
             .collect();
         let level = depth.checked_sub(1).and_then(|last| sort_of(pivot, last));
         let mut sort: Vec<Sort> = Vec::new();
@@ -372,7 +507,7 @@ pub fn grouping_sets(
             select,
             filter: pivot.filter.clone(),
             group,
-            aggregate: pivot.values.clone(),
+            aggregate: aggregates(pivot),
             sort,
             offset: None,
             limit: None,
@@ -381,6 +516,16 @@ pub fn grouping_sets(
         sets.push(query.validate(schema, limits)?);
     }
     Ok(sets)
+}
+
+/// The aggregates the sources are asked for: every measure's, whatever it is
+/// shown as — a calculation happens over their answers.
+fn aggregates(pivot: &PivotQuery) -> Vec<Aggregate> {
+    pivot
+        .values
+        .iter()
+        .map(|value| value.aggregate.clone())
+        .collect()
 }
 
 /// The entry of rule P9 for the level at `index` (0 is the outermost).
@@ -426,11 +571,16 @@ fn order_sets(
             select: group
                 .iter()
                 .cloned()
-                .chain(pivot.values.iter().map(|value| value.alias.clone()))
+                .chain(
+                    pivot
+                        .values
+                        .iter()
+                        .map(|value| value.aggregate.alias.clone()),
+                )
                 .collect(),
             filter: pivot.filter.clone(),
             group: group.clone(),
-            aggregate: pivot.values.clone(),
+            aggregate: aggregates(pivot),
             sort: std::iter::once(key(by, *direction))
                 .chain(group.iter().map(|field| key(field, SortDirection::Asc)))
                 .collect(),

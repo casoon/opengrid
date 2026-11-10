@@ -92,7 +92,16 @@ part as `filtered`, the levels, each path's length, and a one-column table of ev
 keys. A tree without parts is byte for byte what it was before them; a reader from before
 them refuses those bytes rather than drop a part.
 
-The pivot query is `{ source, rows, columns, values: [{ field, fn, as }], filter?, sort? }`.
+The pivot query is `{ source, rows, columns, values: [{ field, fn, as, calc? }], filter?, sort? }`.
+
+`calc` shows a measure as a calculation over the pivot's cells: `share_of_row`,
+`share_of_column`, `share_of_total` or `running_total`. A share's column is `float64`, a
+fraction between 0 and 1, NULL where its total is NULL or zero; a running total keeps the
+measure's type. It is defined for `fn` `sum` and `count` — with any other it is a `validation`
+error — and a name the contract does not have is `malformed`. The source computes it; the answer
+has the same shape, the calculated values in the measure's columns. The rules are
+[P10–P12](../guides/query-semantics/#calculated-measures-in-a-pivot). A measure without `calc`
+is written without the key, so a server from before it reads a pivot as it always did.
 
 `sort` orders the rows of a level among their siblings: `[{ field, by?, direction }]`, where
 `field` names a row dimension — the level — and `direction` is `asc` or `desc`. Without `by`
@@ -163,12 +172,14 @@ breaks the connection off instead of ending a shorter file. The details are in
 **A pivot as a workbook.** `POST /pivot/{source}?format=xlsx` takes the pivot query of `/pivot`
 and answers the pivot as an XLSX file instead of a pivot result: one sheet with one header row —
 the row dimensions by name, each generated column as its path and measure joined by ` · `
-(`2025 · total`) — and every row in the pivot's order, subtotals and the grand total included.
+(`2025 · total`), a calculated measure followed by what it shows (`2025 · total · share of row`)
+— and every row in the pivot's order, subtotals and the grand total included.
 Nothing is merged and there are no outline levels. A value is a cell of its type; a total's label
 stands in the first column and the dimension columns it spans are empty; a NULL measure is an
 empty cell. The words come as parameters, each optional: `total` (`Total`), `subtotal` with
 `{value}` for the closed group (`Total {value}`), `noValue` for a NULL dimension value
-(`(no value)`) and `emptyValue` for the empty string (`(empty)`). Any other parameter beside
+(`(no value)`), `emptyValue` for the empty string (`(empty)`), and what a calculated measure is
+shown as: `shareOfRow` (`share of row`), `shareOfColumn`, `shareOfTotal`, `runningTotal`. Any other parameter beside
 `format`, and any other `format`, is a `400`; without `format` the query string is ignored and the
 answer is the pivot result. The headers are an export's, `X-Total-Count` being the pivot's rows.
 The rules and bounds are the pivot's, and it counts as an export: `max_xlsx_rows` bounds it, and

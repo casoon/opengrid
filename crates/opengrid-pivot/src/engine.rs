@@ -3,10 +3,10 @@
 use std::collections::HashMap;
 
 use opengrid_datasource::{DataSource, DataSourceError, QueryResult};
-use opengrid_query::{Aggregate, AggregateFn};
-use opengrid_types::{Field, FieldName, Schema, Value};
+use opengrid_query::AggregateFn;
+use opengrid_types::{DataType, Decimal, Field, FieldName, Schema, Value};
 
-use crate::query::{PivotError, ValidatedPivotQuery};
+use crate::query::{Calc, Measure, PivotError, ValidatedPivotQuery};
 use crate::result::{PivotColumn, PivotResult};
 use crate::{Key, same_key};
 
@@ -44,7 +44,10 @@ impl From<PivotError> for DataSourceError {
         match error {
             PivotError::TooManyColumns { .. }
             | PivotError::TooManyRows { .. }
-            | PivotError::TooManyCells { .. } => DataSourceError::LimitExceeded { message },
+            | PivotError::TooManyCells { .. }
+            // At run time a calculation fails only where a total outgrows
+            // its type, and a narrower filter is what helps.
+            | PivotError::Calc { .. } => DataSourceError::LimitExceeded { message },
             _ => DataSourceError::Backend { message },
         }
     }
@@ -120,7 +123,7 @@ impl<'a> Level<'a> {
     ///
     /// Rule P4 applied through S11: a cell nobody's rows fall into is an empty
     /// set, and `count` of an empty set is 0 while the others are NULL.
-    fn measures(&self, row: &Key, column: &Key, values: &[Aggregate]) -> Vec<Value> {
+    fn measures(&self, row: &Key, column: &Key, values: &[Measure]) -> Vec<Value> {
         // The measures are the last columns of every grouping set: the select is
         // group keys first, aliases after.
         let first = self.result.schema.len() - values.len();
@@ -157,8 +160,8 @@ fn place(
 /// `count` of an empty set is 0; `sum`, `avg`, `min` and `max` of an empty set
 /// are NULL. The distinction is not decoration — a pivot that wrote NULL into
 /// every empty count cell would show gaps where the answer is "none".
-fn empty_cell(value: &Aggregate) -> Value {
-    match value.function {
+fn empty_cell(value: &Measure) -> Value {
+    match value.aggregate.function {
         AggregateFn::Count => Value::Int64(0),
         _ => Value::Null,
     }
@@ -216,7 +219,7 @@ pub fn assemble(
         for value in &pivot.values {
             columns.push(PivotColumn {
                 path: path.clone(),
-                measure: value.alias.clone(),
+                measure: value.aggregate.alias.clone(),
             });
         }
     }
@@ -308,10 +311,16 @@ pub fn assemble(
     for (index, column) in columns.iter().enumerate() {
         let measure = index % measures.max(1);
         let source = &detail.schema.fields()[depth + across + measure];
+        // P11: a share is a fraction, whatever its measure's type; a running
+        // total (P12) keeps the type.
+        let data_type = match pivot.values[measure].calc {
+            None | Some(Calc::RunningTotal) => source.data_type,
+            Some(_) => DataType::Float64,
+        };
         fields.push(Field {
             name: FieldName::new(format!("{}_{index}", column.measure))
                 .expect("a measure alias plus an index is an identifier"),
-            data_type: source.data_type,
+            data_type,
             nullable: true,
             from: None,
         });
@@ -339,10 +348,124 @@ pub fn assemble(
         }
     }
 
+    calculate(pivot, &mut cells, depth, column_keys.len())?;
+
     let total = paths.len() as u64;
     Ok(PivotResult {
         data: QueryResult::new(Schema::new(fields), cells, total),
         row_levels,
         columns,
     })
+}
+
+/// Turns the cells of every calculated measure into what it shows (P10-P12).
+///
+/// Here, over the assembled matrix, because every source's pivot comes
+/// through [`assemble`]: the engine, SQLite and PostgreSQL agree on a share
+/// or a running total by construction, given that they agree on the
+/// aggregates. `cells` is one vector per output column — the `depth` row
+/// dimensions, then per column value one cell per measure; the grand total is
+/// the last row.
+fn calculate(
+    pivot: &ValidatedPivotQuery,
+    cells: &mut [Vec<Value>],
+    depth: usize,
+    groups: usize,
+) -> Result<(), PivotError> {
+    let measures = pivot.values.len();
+    for (offset, value) in pivot.values.iter().enumerate() {
+        let Some(calc) = value.calc else {
+            continue;
+        };
+        let too_big = || PivotError::Calc {
+            measure: value.aggregate.alias.to_string(),
+            reason: format!(
+                "the total behind {} does not fit the measure's type — narrow the filter",
+                calc.as_str()
+            ),
+        };
+        let columns: Vec<usize> = (0..groups)
+            .map(|group| depth + group * measures + offset)
+            .collect();
+        let rows = cells.first().map_or(0, Vec::len);
+
+        if calc == Calc::RunningTotal {
+            // P12: along the columns in their order, anew in every row — one
+            // running sum per row, carried from column to column. NULL adds
+            // nothing; before the first value the cell stays NULL.
+            let mut running = vec![Value::Null; rows];
+            for &column in &columns {
+                for (cell, running) in cells[column].iter_mut().zip(&mut running) {
+                    *running = add(running, cell).ok_or_else(too_big)?;
+                    *cell = running.clone();
+                }
+            }
+            continue;
+        }
+
+        // P11. The totals are read before any cell changes. A row's total is
+        // the sum of its cells: the measure is a sum or a count (P10), so
+        // that is the aggregate over the row's raw rows (P5).
+        let mut row_totals = vec![Value::Null; rows];
+        for &column in &columns {
+            for (cell, total) in cells[column].iter().zip(&mut row_totals) {
+                *total = add(total, cell).ok_or_else(too_big)?;
+            }
+        }
+        // The grand total row is the last one (P6).
+        let grand_total = row_totals.last().cloned().unwrap_or(Value::Null);
+        for &column in &columns {
+            let column_total = cells[column].last().cloned().unwrap_or(Value::Null);
+            for (cell, row_total) in cells[column].iter_mut().zip(&row_totals) {
+                let whole = match calc {
+                    Calc::ShareOfRow => row_total,
+                    Calc::ShareOfColumn => &column_total,
+                    _ => &grand_total,
+                };
+                *cell = share(cell, whole);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// `total + value`, NULL adding nothing (S11); `None` when the sum does not
+/// fit its type. Both are cells of one measure, so they have one type.
+fn add(total: &Value, value: &Value) -> Option<Value> {
+    Some(match (total, value) {
+        (total, Value::Null) => total.clone(),
+        (Value::Null, value) => value.clone(),
+        (Value::Int64(total), Value::Int64(value)) => Value::Int64(total.checked_add(*value)?),
+        (Value::Decimal(total), Value::Decimal(value)) => {
+            let sum = total.value().checked_add(value.value())?;
+            // S12: a decimal sum has 38 digits and no more.
+            if sum.unsigned_abs() >= 10u128.pow(38) {
+                return None;
+            }
+            Value::Decimal(Decimal::new(sum, total.scale()))
+        }
+        (Value::Float64(total), Value::Float64(value)) => Value::Float64(total + value),
+        _ => return None,
+    })
+}
+
+/// `part / whole` as a fraction (P11): NULL when either is NULL or the whole
+/// is zero. NaN is a value (S7) and stays one.
+fn share(part: &Value, whole: &Value) -> Value {
+    match (number(part), number(whole)) {
+        (Some(part), Some(whole)) if whole != 0.0 => Value::Float64(part / whole),
+        _ => Value::Null,
+    }
+}
+
+/// A sum or a count as a float; `None` for NULL.
+fn number(value: &Value) -> Option<f64> {
+    match value {
+        Value::Int64(number) => Some(*number as f64),
+        Value::Float64(number) => Some(*number),
+        Value::Decimal(number) => {
+            Some(number.value() as f64 / 10f64.powi(i32::from(number.scale())))
+        }
+        _ => None,
+    }
 }

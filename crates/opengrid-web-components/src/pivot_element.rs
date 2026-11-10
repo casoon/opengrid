@@ -194,6 +194,7 @@ pub(crate) fn run(host: &HtmlElement) {
                     Ok(mut model) => {
                         model.column_dimensions = columns;
                         model.sort = sort;
+                        model.calcs = pivot::calcs(&view_of(&host).values);
                         // Measured like the grid's queries (issue #70); a
                         // pivot's rows are all it answers, subtotals included.
                         let (bytes, form) = answer_size(&value);
@@ -383,11 +384,12 @@ fn layout_of(
 
 /// The attributes a pivot's controls are known by, in the order they are
 /// tried: every redraw makes them anew, and these say which one is which.
-const CONTROL_KEYS: [&str; 10] = [
+const CONTROL_KEYS: [&str; 11] = [
     "data-sort-field",
     "data-sort-by",
     "data-path",
     "data-add",
+    "data-calc",
     "data-move",
     "data-remove",
     "data-filter-remove",
@@ -828,9 +830,9 @@ fn on_group_toggle(host: &HtmlElement, button: &Element) {
 /// Routes a click inside the toolbar or its menu; `true` when it was one.
 fn on_toolbar_click(host: &HtmlElement, target: &Element) -> bool {
     let closest = |selector: &str| target.closest(selector).ok().flatten();
-    if let Some(item) = closest(r#"[part="field-menu"] [role="menuitem"]"#) {
+    if let Some(item) = closest(r#"[part="field-menu"] [role^="menuitem"]"#) {
         pick_field(host, &item);
-    } else if let Some(button) = closest("button[data-add]") {
+    } else if let Some(button) = closest("button[data-add], button[data-calc]") {
         if button.get_attribute("aria-disabled").as_deref() != Some("true") {
             open_field_menu(host, &button);
         }
@@ -890,16 +892,21 @@ fn act(host: &HtmlElement, action: FieldAction, focus: Vec<(String, String)>) {
     apply_view(host, &next);
 }
 
-/// Opens the add menu under `button`: what is offered and not in use.
+/// Opens the menu under `button`. An add button's: what is offered and not
+/// in use. A measure's "show as" button's (issue #329): the aggregate itself
+/// and the four calculations, the one in use checked.
 fn open_field_menu(host: &HtmlElement, button: &Element) {
     let Some(root) = host.shadow_root() else {
         return;
     };
     close_field_menu(host, false);
-    let Some(axis) = button
-        .get_attribute("data-add")
-        .and_then(|token| Axis::from_token(&token))
-    else {
+    let shown = button.get_attribute("data-calc");
+    let Some(axis) = (match &shown {
+        Some(_) => Some(Axis::Values),
+        None => button
+            .get_attribute("data-add")
+            .and_then(|token| Axis::from_token(&token)),
+    }) else {
         return;
     };
     let Ok(offer) = offer(host) else {
@@ -920,24 +927,48 @@ fn open_field_menu(host: &HtmlElement, button: &Element) {
     let _ = menu.set_attribute("role", "menu");
     let _ = menu.set_attribute("popover", "auto");
     let _ = menu.set_attribute("data-axis", axis.token());
-    let _ = menu.set_attribute(
-        "aria-label",
-        button
+    let label = match &shown {
+        // The button's own name: of which measure, and what it shows now.
+        Some(_) => button.get_attribute("aria-label").unwrap_or_default(),
+        None => button
             .text_content()
             .unwrap_or_default()
             .trim_start_matches('+')
-            .trim(),
-    );
+            .trim()
+            .to_owned(),
+    };
+    let _ = menu.set_attribute("aria-label", &label);
     if !texts.lang.is_empty() {
         let _ = menu.set_attribute("lang", &texts.lang);
     }
-    for name in offer.open(&view_of(host), axis) {
-        if let Ok(item) = document.create_element("div") {
-            let _ = item.set_attribute("role", "menuitem");
-            let _ = item.set_attribute("tabindex", "-1");
-            let _ = item.set_attribute("data-field", &name);
-            item.set_text_content(Some(&look.title(&name)));
-            let _ = menu.append_child(&item);
+    let view = view_of(host);
+    if let Some(alias) = &shown {
+        let _ = menu.set_attribute("data-calc-of", alias);
+        let current = view
+            .values
+            .iter()
+            .find(|value| value["as"].as_str() == Some(alias))
+            .and_then(pivot::calc_of);
+        for calc in std::iter::once(None).chain(opengrid_pivot::Calc::ALL.map(Some)) {
+            if let Ok(item) = document.create_element("div") {
+                let _ = item.set_attribute("role", "menuitemradio");
+                let _ = item.set_attribute("aria-checked", &(calc == current).to_string());
+                let _ = item.set_attribute("tabindex", "-1");
+                let _ =
+                    item.set_attribute("data-calc-value", calc.map_or("", |calc| calc.as_str()));
+                item.set_text_content(Some(texts.calc(calc)));
+                let _ = menu.append_child(&item);
+            }
+        }
+    } else {
+        for name in offer.open(&view, axis) {
+            if let Ok(item) = document.create_element("div") {
+                let _ = item.set_attribute("role", "menuitem");
+                let _ = item.set_attribute("tabindex", "-1");
+                let _ = item.set_attribute("data-field", &name);
+                item.set_text_content(Some(&look.title(&name)));
+                let _ = menu.append_child(&item);
+            }
         }
     }
     let Ok(menu) = menu.dyn_into::<HtmlElement>() else {
@@ -961,10 +992,23 @@ fn open_field_menu(host: &HtmlElement, button: &Element) {
     })
     .into_js_value();
     let _ = menu.add_event_listener_with_callback("toggle", toggle.unchecked_ref());
-    if let Ok(Some(first)) = menu.query_selector(r#"[role="menuitem"]"#)
+    // The choice in use where there is one, else the first item.
+    if let Ok(Some(first)) = menu.query_selector(r#"[aria-checked="true"], [role="menuitem"]"#)
         && let Ok(first) = first.dyn_into::<HtmlElement>()
     {
         let _ = first.focus();
+    }
+}
+
+/// The button a menu was opened from, as a selector: a measure's "show as"
+/// button, or the add button of the menu's axis.
+fn opener(menu: &Element) -> String {
+    match menu.get_attribute("data-calc-of") {
+        Some(alias) => format!(r#"button[data-calc="{}"]"#, alias.replace('"', "\\\"")),
+        None => format!(
+            r#"button[data-add="{}"]"#,
+            menu.get_attribute("data-axis").unwrap_or_default()
+        ),
     }
 }
 
@@ -976,12 +1020,12 @@ fn close_field_menu(host: &HtmlElement, refocus: bool) {
     let Ok(Some(menu)) = root.query_selector(r#"[part="field-menu"]"#) else {
         return;
     };
-    let axis = menu.get_attribute("data-axis").unwrap_or_default();
+    let opener = opener(&menu);
     if let Ok(menu) = menu.clone().dyn_into::<HtmlElement>() {
         let _ = menu.hide_popover();
     }
     menu.remove();
-    if let Ok(Some(button)) = root.query_selector(&format!(r#"button[data-add="{axis}"]"#)) {
+    if let Ok(Some(button)) = root.query_selector(&opener) {
         let _ = button.set_attribute("aria-expanded", "false");
         if refocus && let Ok(button) = button.dyn_into::<HtmlElement>() {
             let _ = button.focus();
@@ -989,8 +1033,26 @@ fn close_field_menu(host: &HtmlElement, refocus: bool) {
     }
 }
 
-/// A menu item: its field goes on the menu's axis.
+/// A menu item: its field goes on the menu's axis, or — in a measure's "show
+/// as" menu — its calculation onto the measure.
 fn pick_field(host: &HtmlElement, item: &Element) {
+    if let Some(calc) = item.get_attribute("data-calc-value") {
+        let Some(alias) = item
+            .closest(r#"[part="field-menu"]"#)
+            .ok()
+            .flatten()
+            .and_then(|menu| menu.get_attribute("data-calc-of"))
+        else {
+            return;
+        };
+        close_field_menu(host, true);
+        act(
+            host,
+            FieldAction::ShowAs(alias.clone(), opengrid_pivot::Calc::from_name(&calc)),
+            vec![("data-calc".to_owned(), alias)],
+        );
+        return;
+    }
     let Some(name) = item.get_attribute("data-field") else {
         return;
     };
@@ -1052,7 +1114,7 @@ fn on_menu_key(event: Event) {
         return;
     };
     let items: Vec<HtmlElement> = menu
-        .query_selector_all(r#"[role="menuitem"]"#)
+        .query_selector_all(r#"[role^="menuitem"]"#)
         .map(|list| {
             (0..list.length())
                 .filter_map(|index| list.item(index))
@@ -1355,11 +1417,15 @@ fn remember(host: &HtmlElement, shown: Option<(&PivotModel, &str, &str, &str)>) 
 /// pivot is shown yet.
 pub(crate) fn read_pivot(host: &HtmlElement, options: &JsValue) -> Result<JsValue, JsError> {
     let options = crate::export::pivot_options(options)?;
-    let Some(answer) = existing_id(host)
-        .and_then(|id| SHOWN.with(|map| map.borrow().get(&id).map(|shown| shown.answer.clone())))
-    else {
+    let Some((answer, calcs)) = existing_id(host).and_then(|id| {
+        SHOWN.with(|map| {
+            map.borrow()
+                .get(&id)
+                .map(|shown| (shown.answer.clone(), shown.model.calcs.clone()))
+        })
+    }) else {
         return Ok(JsValue::NULL);
     };
-    let csv = crate::export::pivot_csv(&answer, &texts::texts(host), &options)?;
+    let csv = crate::export::pivot_csv(&answer, &texts::texts(host), &calcs, &options)?;
     Ok(JsValue::from_str(&csv))
 }

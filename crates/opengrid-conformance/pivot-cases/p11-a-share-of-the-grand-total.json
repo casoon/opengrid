@@ -1,0 +1,75 @@
+{
+  "id": "p11-a-share-of-the-grand-total",
+  "rule": "P11",
+  "pivot": {
+    "source": "orders",
+    "rows": [
+      "country"
+    ],
+    "columns": [
+      "ordered_year"
+    ],
+    "values": [
+      {
+        "field": "amount",
+        "fn": "sum",
+        "as": "share",
+        "calc": "share_of_total"
+      }
+    ],
+    "filter": {
+      "field": "id",
+      "op": "gte",
+      "value": 10
+    }
+  },
+  "expected": {
+    "columns": [
+      {
+        "path": [
+          2026
+        ],
+        "measure": "share"
+      }
+    ],
+    "rows": [
+      [
+        "",
+        0.09331947184453303
+      ],
+      [
+        "DE",
+        0.24239323515688313
+      ],
+      [
+        "FR",
+        0.17681584138964154
+      ],
+      [
+        "GB",
+        0.1129656764433821
+      ],
+      [
+        "US",
+        0.16126259608221938
+      ],
+      [
+        null,
+        0.21324317908334084
+      ],
+      [
+        null,
+        1.0
+      ]
+    ],
+    "levels": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      0
+    ]
+  }
+}

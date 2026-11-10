@@ -420,6 +420,70 @@ async fn the_row_filter_reaches_the_grand_total() {
     );
 }
 
+/// Issue #329: a calculated measure is the server's to compute, and the total
+/// it divides by is the caller's — the tenant's rows, never the table's (P8).
+#[tokio::test]
+async fn a_calculated_measure_is_computed_over_the_callers_rows() {
+    let shares = r#"{"source":"orders","rows":["country"],"columns":["ordered_year"],
+        "values":[{"field":"qty","fn":"sum","as":"share","calc":"share_of_column"}]}"#;
+    let cells = |answer: &str| -> Vec<(opengrid_json::Json, opengrid_json::Json)> {
+        let answer: opengrid_json::Json = opengrid_json::from_str(answer).expect("JSON");
+        let columns = &answer["result"]["columns"];
+        // Every generated column is a fraction.
+        assert_eq!(columns[1]["type"], "float64", "{answer}");
+        assert_eq!(columns[2]["type"], "float64", "{answer}");
+        let countries = columns[0]["values"].as_array().expect("countries");
+        let year_2026 = columns[2]["values"].as_array().expect("2026");
+        countries
+            .iter()
+            .cloned()
+            .zip(year_2026.iter().cloned())
+            .collect()
+    };
+
+    // The whole table: DE is 258 of the 1218 of 2026.
+    let (status, all) = post_pivot(app(false).await, "orders", Some(TOKEN), shares).await;
+    assert_eq!(status, StatusCode::OK, "{all}");
+    let all = cells(&all);
+    let de = all.iter().find(|(country, _)| country == "DE").expect("DE");
+    assert!(
+        (de.1.as_f64().unwrap() - 258.0 / 1218.0).abs() < 1e-12,
+        "{de:?}"
+    );
+
+    // The tenant sees its own rows, and its share of what it sees is all of it.
+    let (status, own) = post_pivot(app(true).await, "orders", Some(TOKEN), shares).await;
+    assert_eq!(status, StatusCode::OK, "{own}");
+    let own = cells(&own);
+    assert_eq!(own.len(), 2, "DE and the total: {own:?}");
+    assert!(
+        own.iter()
+            .all(|(_, share)| share == &opengrid_json::json!(1.0)),
+        "{own:?}"
+    );
+
+    // P10: not for an average — a validation error that names the measure.
+    let averaged = shares.replace("\"fn\":\"sum\"", "\"fn\":\"avg\"");
+    let (status, answer) = post_pivot(app(false).await, "orders", Some(TOKEN), &averaged).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{answer}");
+    let error = error_of(&answer);
+    assert_eq!(error.code, ErrorCode::Validation);
+    assert!(
+        error.message.contains("measure share") && error.message.contains("sum and count"),
+        "{}",
+        error.message
+    );
+
+    // A calculation the contract does not have is not a pivot query.
+    let unknown = shares.replace("share_of_column", "share_of_parent");
+    let (status, answer) = post_pivot(app(false).await, "orders", Some(TOKEN), &unknown).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{answer}");
+    assert!(
+        error_of(&answer).message.contains("share_of_parent"),
+        "{answer}"
+    );
+}
+
 /// A pivot over a column the caller may not see reads like a typo, as
 /// everywhere else (`allowed_fields`).
 #[tokio::test]
