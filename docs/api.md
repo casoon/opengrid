@@ -1336,6 +1336,23 @@ name is ours and the column names inside stay the page's.
 loader.module.set_texts(host, { lang: "de", loading: "Wird geladen …" });
 ```
 
+**Translations.** The package ships German as a module of its own,
+`@casoon/opengrid/texts/de` — every key below with `lang: "de"`, for all three
+elements. A page that does not import it does not load it.
+
+```js
+import de from "@casoon/opengrid/texts/de";
+
+loader.module.set_texts(host, de);
+// With the page's own words on top — here an example that names its columns:
+loader.module.set_texts(host, { ...de, searchPlaceholder: "Suchen oder filtern: kunde = Krause" });
+```
+
+The same object is the `texts` of [`connect`](#connecting) and of the framework
+components. What a translation does not reach is what is not the component's:
+column names and cell values are the page's, and so is how a number, a date or a
+boolean reads — that is `set_formats`.
+
 | Key | Default | Placeholders |
 |---|---|---|
 | `lang` | — | |

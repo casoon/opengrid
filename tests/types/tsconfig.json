@@ -12,7 +12,8 @@
     "types": [],
     "skipLibCheck": false,
     "paths": {
-      "@casoon/opengrid": ["../../packages/opengrid/loader.d.ts"]
+      "@casoon/opengrid": ["../../packages/opengrid/loader.d.ts"],
+      "@casoon/opengrid/texts/de": ["../../packages/opengrid/texts/de.d.ts"]
     }
   },
   "files": ["api.ts"]
