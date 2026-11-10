@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>opengrid column bands fixture</title>
+    <style>
+      /* Issue #319: a header above several columns.
+         `#banded` and `#rtl` are the same grid in both directions: the band
+         `Customer` over `customer` and `country`, the band `Order` over
+         `amount` and `qty`; `id` and `ordered_on` stand alone, beside the
+         selection column. The widths are fixed, not the window's, so both
+         projects lay it out the same way: 1206 px of columns and 44 px of
+         selection column in 920 px, so the grid scrolls sideways, and the
+         band `Customer` pinned at the start — 330 px with the selection
+         column, less than half of the grid — holds. */
+      opengrid-grid {
+        display: block;
+        height: 300px;
+        width: 920px;
+        margin-block-end: 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid column bands fixture</h1>
+      <opengrid-grid
+        id="banded"
+        label="Orders"
+        datasource="orders"
+        columns="id,customer,country,amount,qty,ordered_on"
+        row-key="id"
+        selection
+        column-menu
+        window-size="12"
+      ></opengrid-grid>
+      <div dir="rtl">
+        <opengrid-grid
+          id="rtl"
+          label="Orders, right to left"
+          datasource="orders"
+          columns="id,customer,country,amount,qty,ordered_on"
+          row-key="id"
+          selection
+          column-menu
+          window-size="12"
+        ></opengrid-grid>
+      </div>
+    </main>
+    <script type="module">
+      import { loadOpengrid } from "/packages/opengrid/loader.js";
+      import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+
+      // The view changes the grids report, by grid: a move and a pin are one.
+      window.__views = [];
+      document.addEventListener("opengrid-view-change", (event) =>
+        window.__views.push({ id: event.target.id, columns: event.detail.view.columns }),
+      );
+      // Every query a grid sends, by grid.
+      window.__queries = [];
+
+      // What the page configures; a spec changes it and calls `set_columns`.
+      window.__columns = {
+        id: { width: 130 },
+        customer: { width: 136, band: "Customer" },
+        country: { width: 150, band: "Customer" },
+        amount: { width: 130, band: "Order", aggregate: "sum" },
+        qty: { width: 330, band: "Order" },
+        ordered_on: { width: 330 },
+      };
+
+      async function start() {
+        const loader = await loadOpengrid();
+        await init();
+        const engine = new Engine();
+        engine.load_csv(
+          "orders",
+          new Uint8Array(await (await fetch("/tests/e2e/fixtures/grid-virtual.csv")).arrayBuffer()),
+          await (await fetch("/crates/opengrid-conformance/data/orders.schema.json")).text(),
+        );
+        for (const host of document.querySelectorAll("opengrid-grid")) {
+          loader.module.set_columns(host, window.__columns);
+          loader.module.set_provider(host, {
+            kind: "local",
+            execute: (queryJson) => {
+              window.__queries.push({ id: host.id, select: JSON.parse(queryJson).select });
+              return engine.execute(queryJson);
+            },
+          });
+        }
+        window.__opengridModule = loader.module;
+        return { fallback: loader.fallback };
+      }
+
+      window.__opengridReady = start();
+    </script>
+  </body>
+</html>

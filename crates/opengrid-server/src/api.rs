@@ -630,7 +630,10 @@ async fn pivot(
     // A workbook is an export: its parameters and its place among the running
     // exports are settled before the source is asked anything.
     let workbook = match crate::export::pivot_words(&uri)? {
-        Some(words) => Some((words, crate::export::place(&state)?)),
+        Some(words) => Some((
+            words.showing(&prepared.values),
+            crate::export::place(&state)?,
+        )),
         None => None,
     };
 

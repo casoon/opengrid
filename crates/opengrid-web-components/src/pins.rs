@@ -32,7 +32,7 @@
 
 use opengrid_grid::layout::{Pin, pins_hold};
 
-use crate::grid::{ACCENT_PROPERTY, LINE_STRONG_PROPERTY};
+use crate::grid::{ACCENT_PROPERTY, LINE_PROPERTY, LINE_STRONG_PROPERTY};
 
 /// The selector of the selection column's cells, the header's and the rows'.
 const SELECT: &str = "[data-select]";
@@ -52,12 +52,55 @@ pub struct PinGeometry {
     /// Whether the label column of a group or a total (`data-col="0"`) is
     /// pinned.
     pub label: bool,
+    /// The header cells of the pinned bands (issue #319).
+    pub bands: Vec<PinnedBand>,
+}
+
+/// The header cell of a pinned band (issue #319): it stays above its columns,
+/// in one piece.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PinnedBand {
+    pub selector: String,
+    /// Pinned at the end; at the start otherwise.
+    pub end: bool,
+    /// Its distance from that edge: the one of the column it has there.
+    pub offset: f64,
+    /// Whether the pinned columns end with this band, so it carries the line.
+    pub edge: bool,
 }
 
 impl PinGeometry {
     /// Whether anything is pinned.
     pub fn is_empty(&self) -> bool {
         self.start.is_empty() && self.end.is_empty()
+    }
+
+    /// Adds the cells of the bands whose columns are pinned. `bands` are the
+    /// bands of the shown columns as `(first column, how many)`; a band is
+    /// pinned as a whole, so its first column says whether it is.
+    pub fn with_bands(mut self, bands: &[(usize, usize)]) -> Self {
+        let column = |col: usize| format!("[data-col=\"{col}\"]");
+        for (first, count) in bands {
+            let last = first + count - 1;
+            // At the start the band stands where its first column does and
+            // the pinned columns end with its last; at the end it is the
+            // other way round, the cells being counted from the end.
+            for (cells, end, near, far) in [
+                (&self.start, false, *first, last),
+                (&self.end, true, last, *first),
+            ] {
+                let Some((_, offset)) = cells.iter().find(|(cell, _)| *cell == column(near)) else {
+                    continue;
+                };
+                self.bands.push(PinnedBand {
+                    selector: format!("[data-band~=\"{first}\"]"),
+                    end,
+                    offset: *offset,
+                    edge: cells.last().is_some_and(|(cell, _)| *cell == column(far)),
+                });
+            }
+        }
+        self
     }
 }
 
@@ -166,7 +209,13 @@ pub fn pins_css(geometry: &PinGeometry) -> String {
             .collect::<Vec<_>>()
             .join(", ")
     };
-    let all = [list(&geometry.start), list(&geometry.end)]
+    let bands = geometry
+        .bands
+        .iter()
+        .map(|band| band.selector.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let all = [list(&geometry.start), list(&geometry.end), bands]
         .into_iter()
         .filter(|list| !list.is_empty())
         .collect::<Vec<_>>()
@@ -225,6 +274,29 @@ pub fn pins_css(geometry: &PinGeometry) -> String {
             line(""),
             line("-"),
         ));
+    }
+    // A pinned band's cell (issue #319): in place like its columns, and with
+    // the line where the pinned columns end with it.
+    for band in &geometry.bands {
+        let (side, sign, mirror) = if band.end {
+            ("end", "", "-")
+        } else {
+            ("start", "-", "")
+        };
+        let selector = format!("th{}", band.selector);
+        css.push_str(&format!(
+            "{selector} {{ inset-inline-{side}: {:.2}px; }}\n",
+            band.offset
+        ));
+        // The line under the band is a shadow too, and is kept.
+        if band.edge {
+            let under = format!("inset 0 -1px 0 var({LINE_PROPERTY})");
+            css.push_str(&mirrored(
+                &selector,
+                format!("{}, {under}", line(sign)),
+                format!("{}, {under}", line(mirror)),
+            ));
+        }
     }
     if geometry.label {
         css.push_str(
@@ -369,6 +441,64 @@ mod tests {
         let css = pins_css(&held(pins(&columns, None, 0, 1000.0)));
         assert!(!css.contains("[data-scrolled]"), "{css}");
         assert!(!css.contains("data-selected"), "{css}");
+    }
+
+    /// A pinned band's cell stays above its columns (issue #319): at the start
+    /// where its first column stands, at the end where its last one does, and
+    /// with the line where the pinned columns end with it.
+    #[test]
+    fn a_pinned_band_stays_above_its_columns() {
+        let columns = [
+            (0, 80.0, START),
+            (1, 100.0, START),
+            (2, 120.0, START),
+            (3, 300.0, None),
+            (4, 300.0, None),
+            (5, 90.0, END),
+            (6, 60.0, END),
+        ];
+        // `1..=2` at the start, `3..=4` not pinned, `5..=6` at the end.
+        let geometry = held(pins(&columns, None, 0, 2000.0)).with_bands(&[(1, 2), (3, 2), (5, 2)]);
+        assert_eq!(
+            geometry.bands,
+            [
+                PinnedBand {
+                    selector: "[data-band~=\"1\"]".to_owned(),
+                    end: false,
+                    offset: 80.0,
+                    edge: true,
+                },
+                PinnedBand {
+                    selector: "[data-band~=\"5\"]".to_owned(),
+                    end: true,
+                    offset: 0.0,
+                    edge: true,
+                },
+            ]
+        );
+        let css = pins_css(&geometry);
+        for rule in [
+            "[data-col=\"5\"], [data-band~=\"1\"], [data-band~=\"5\"]) { position: sticky; }",
+            "th[data-band~=\"1\"] { inset-inline-start: 80.00px; }",
+            "th[data-band~=\"5\"] { inset-inline-end: 0.00px; }",
+            "th[data-band~=\"1\"] { box-shadow: inset -1px 0 0 var(--og-line-strong), \
+             inset 0 -1px 0 var(--og-line); }",
+            "th[data-band~=\"1\"]:dir(rtl) { box-shadow: inset 1px 0 0 var(--og-line-strong), \
+             inset 0 -1px 0 var(--og-line); }",
+            "th[data-band~=\"5\"] { box-shadow: inset 1px 0 0 var(--og-line-strong), \
+             inset 0 -1px 0 var(--og-line); }",
+        ] {
+            assert!(css.contains(rule), "{rule} is missing from {css}");
+        }
+
+        // A band that is not the last of the pinned columns carries no line;
+        // at the end the last is the one furthest from the edge.
+        let geometry = held(pins(&columns, None, 0, 2000.0)).with_bands(&[(0, 2), (5, 1)]);
+        assert!(!geometry.bands[0].edge && geometry.bands[1].edge);
+        let css = pins_css(&geometry);
+        assert!(css.contains("th[data-band~=\"0\"] { inset-inline-start: 0.00px; }"));
+        assert!(css.contains("th[data-band~=\"5\"] { inset-inline-end: 60.00px; }"));
+        assert!(!css.contains("th[data-band~=\"0\"] { box-shadow"), "{css}");
     }
 
     /// The line at the edge of the pinned columns and the bar of a selected

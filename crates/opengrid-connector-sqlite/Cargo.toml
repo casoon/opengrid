@@ -27,5 +27,7 @@ rusqlite = { version = "0.41", features = ["bundled"] }
 [dev-dependencies]
 opengrid-conformance = { path = "../opengrid-conformance" }
 opengrid-engine = { path = "../opengrid-engine" }
+# The pivot cases run through the connector's `pivot`.
+opengrid-pivot = { path = "../opengrid-pivot" }
 # The timeout test drives a future with a deadline, as the server does.
 tokio = { version = "1", features = ["rt", "time", "macros"] }

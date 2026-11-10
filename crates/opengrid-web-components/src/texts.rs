@@ -190,6 +190,17 @@ pub struct GridTexts {
     /// The name of a value that opens the rows behind it (issue #330):
     /// `{value}` is the cell's visible text, so the name contains it.
     pub pivot_drill_down: String,
+    /// A calculated measure (issue #329): the name of a measure chip's
+    /// button, `{field}` its title and `{calc}` what it is shown as — the
+    /// button's visible text, so the name contains it; the word for a measure
+    /// shown as it is; and the four calculations, which a header and an
+    /// export name a calculated measure by.
+    pub pivot_show_as: String,
+    pub calc_value: String,
+    pub share_of_row: String,
+    pub share_of_column: String,
+    pub share_of_total: String,
+    pub running_total: String,
     /// The tree mode of the grid (issue #135): how a context row (T5) is
     /// described, the orphans (T2), a level too large to load, and why a
     /// tree is not shown beside `page-size` or grouped.
@@ -473,6 +484,12 @@ pub(crate) const KEYS: &[&str] = &[
     "pivotFilterLabel",
     "pivotFilterHint",
     "pivotDrillDown",
+    "pivotShowAs",
+    "calcValue",
+    "shareOfRow",
+    "shareOfColumn",
+    "shareOfTotal",
+    "runningTotal",
     "treeContext",
     "subtreeCell",
     "subtreeOnly",
@@ -686,6 +703,12 @@ impl Default for GridTexts {
             pivot_filter_label: "Add a filter".to_owned(),
             pivot_filter_hint: "field = value \u{00B7} Enter".to_owned(),
             pivot_drill_down: "{value}, show rows".to_owned(),
+            pivot_show_as: "Show {field} as: {calc}".to_owned(),
+            calc_value: "value".to_owned(),
+            share_of_row: "share of row".to_owned(),
+            share_of_column: "share of column".to_owned(),
+            share_of_total: "share of total".to_owned(),
+            running_total: "running total".to_owned(),
             tree_context: "context".to_owned(),
             subtree_cell: "{shown}, {aggregate} of the subtree".to_owned(),
             subtree_only: "{shown}, {aggregate} of the subtree".to_owned(),
@@ -1230,9 +1253,15 @@ impl GridTexts {
 
     /// A column that reached its new place.
     pub fn column_moved(&self, column: &str, position: u64, count: u64) -> String {
+        self.band_moved(self.column(column), position, count)
+    }
+
+    /// A band that reached its new place (issue #319): the sentence of a
+    /// column, with the band's own name and the place of its first column.
+    pub fn band_moved(&self, band: &str, position: u64, count: u64) -> String {
         fill(
             &fill(
-                &fill(&self.column_moved, "column", self.column(column)),
+                &fill(&self.column_moved, "column", band),
                 "position",
                 &position.to_string(),
             ),
@@ -1248,18 +1277,29 @@ impl GridTexts {
 
     /// A column that cannot move any further.
     pub fn column_at_edge(&self, column: &str) -> String {
-        fill(&self.column_at_edge, "column", self.column(column))
+        self.band_at_edge(self.column(column))
+    }
+
+    /// A band that cannot move any further (issue #319).
+    pub fn band_at_edge(&self, band: &str) -> String {
+        fill(&self.column_at_edge, "column", band)
     }
 
     /// Where a column is pinned now (issue #316).
     pub fn column_pinned(&self, column: &str, pin: Option<opengrid_grid::layout::Pin>) -> String {
+        self.band_pinned(self.column(column), pin)
+    }
+
+    /// Where a band is pinned now (issue #319): the sentence of a column, with
+    /// the band's own name.
+    pub fn band_pinned(&self, band: &str, pin: Option<opengrid_grid::layout::Pin>) -> String {
         use opengrid_grid::layout::Pin;
         let template = match pin {
             Some(Pin::Start) => &self.column_pinned_start,
             Some(Pin::End) => &self.column_pinned_end,
             None => &self.column_unpinned,
         };
-        fill(template, "column", self.column(column))
+        fill(template, "column", band)
     }
 
     /// A column that was hidden or shown again.
@@ -1319,6 +1359,30 @@ impl GridTexts {
     /// The name of a pivot value's drill-down button (issue #330).
     pub fn pivot_drill_down(&self, value: &str) -> String {
         fill(&self.pivot_drill_down, "value", value)
+    }
+
+    /// What a measure is shown as (issue #329): the calculation's word, or
+    /// the word for the aggregate itself.
+    #[cfg(feature = "pivot")]
+    pub fn calc(&self, calc: Option<opengrid_pivot::Calc>) -> &str {
+        use opengrid_pivot::Calc;
+        match calc {
+            None => &self.calc_value,
+            Some(Calc::ShareOfRow) => &self.share_of_row,
+            Some(Calc::ShareOfColumn) => &self.share_of_column,
+            Some(Calc::ShareOfTotal) => &self.share_of_total,
+            Some(Calc::RunningTotal) => &self.running_total,
+        }
+    }
+
+    /// The name of a measure chip's "show as" button.
+    #[cfg(feature = "pivot")]
+    pub fn pivot_show_as(&self, field: &str, calc: Option<opengrid_pivot::Calc>) -> String {
+        fill(
+            &fill(&self.pivot_show_as, "field", field),
+            "calc",
+            self.calc(calc),
+        )
     }
 
     /// The readable name of the operator at `index`, falling back to the wire
@@ -1501,6 +1565,12 @@ mod host {
         overwrite(&mut texts.pivot_filter_label, string("pivotFilterLabel"));
         overwrite(&mut texts.pivot_filter_hint, string("pivotFilterHint"));
         overwrite(&mut texts.pivot_drill_down, string("pivotDrillDown"));
+        overwrite(&mut texts.pivot_show_as, string("pivotShowAs"));
+        overwrite(&mut texts.calc_value, string("calcValue"));
+        overwrite(&mut texts.share_of_row, string("shareOfRow"));
+        overwrite(&mut texts.share_of_column, string("shareOfColumn"));
+        overwrite(&mut texts.share_of_total, string("shareOfTotal"));
+        overwrite(&mut texts.running_total, string("runningTotal"));
         overwrite(&mut texts.tree_context, string("treeContext"));
         overwrite(&mut texts.subtree_cell, string("subtreeCell"));
         overwrite(&mut texts.subtree_only, string("subtreeOnly"));

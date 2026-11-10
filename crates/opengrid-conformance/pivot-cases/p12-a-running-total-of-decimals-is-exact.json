@@ -1,0 +1,55 @@
+{
+  "id": "p12-a-running-total-of-decimals-is-exact",
+  "rule": "P12",
+  "pivot": {
+    "source": "orders",
+    "columns": [
+      "ordered_month"
+    ],
+    "values": [
+      {
+        "field": "amount",
+        "fn": "sum",
+        "as": "running",
+        "calc": "running_total"
+      }
+    ],
+    "filter": {
+      "field": "country",
+      "op": "eq",
+      "value": "US"
+    }
+  },
+  "expected": {
+    "columns": [
+      {
+        "path": [
+          3
+        ],
+        "measure": "running"
+      },
+      {
+        "path": [
+          7
+        ],
+        "measure": "running"
+      },
+      {
+        "path": [
+          11
+        ],
+        "measure": "running"
+      }
+    ],
+    "rows": [
+      [
+        "999999999.99",
+        "1000000149.99",
+        "1000000196.99"
+      ]
+    ],
+    "levels": [
+      0
+    ]
+  }
+}

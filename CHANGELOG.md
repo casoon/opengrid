@@ -42,6 +42,13 @@ Two things belong in every release entry and are easy to leave out:
   texts `pinGroup`, `pinNone`, `pinStart`, `pinEnd`, `columnPinnedStart`, `columnPinnedEnd`,
   `columnUnpinned` and `pinsReleased`
   ([#316](https://github.com/casoon/opengrid/issues/316), [Pinned columns](docs/api.md#pinned-columns)).
+- **Grid:** column bands, a header above several columns. A column names its band in
+  `set_columns` (`band: "Address"`), and the columns that name the same one share a header cell in
+  a row above their own; one level. A band is always in one piece: a column moves inside its band,
+  `Ctrl`/`Cmd`+`←`/`→` on the band's cell moves the band with its columns, hiding its last shown
+  column hides it, and pinning one of its columns pins the band. The arrow keys cross the two
+  header rows, and a data cell names its band and its column as its headers. New part `band`
+  ([#319](https://github.com/casoon/opengrid/issues/319), [Column bands](docs/api.md#column-bands)).
 - **Grid:** lookup columns. `lookup: { key: label }` in `set_columns` gives a `utf8` or `int64`
   column that stores keys the labels a reader reads: the cell and a group's header show the label,
   the editor is the combobox over the labels, the filter row and the "+ Filter" dialog offer a
@@ -64,6 +71,12 @@ Two things belong in every release entry and are easy to leave out:
   asking the source which of the keys still name a record; those that do not are dropped and said
   (new text `selectionMissing`). Selecting fires `opengrid-selection-change` only
   ([#322](https://github.com/casoon/opengrid/issues/322)).
+- **Pivot:** calculated measures. A measure with `calc` is shown as its share of the row, the
+  column or the grand total (`sum`, `count`), or as a running total along the columns (also `avg`,
+  `min`, `max`) — computed by the source,
+  chosen from a measure's chip in the toolbar, named in the headers and the exports
+  ([#329](https://github.com/casoon/opengrid/issues/329),
+  [Calculated measures](docs/api.md#calculated-measures)).
 - **Texts:** a German translation ships with the npm package as `@casoon/opengrid/texts/de` — every
   text of the grid, the table and the pivot, with `lang: "de"`, to hand to `set_texts` or to the
   `texts` of `connect`; a page that does not import it does not load it
@@ -84,9 +97,19 @@ Two things belong in every release entry and are easy to leave out:
   `columns.pinned` (`{}` for none; `ViewInput`, which `set_view` takes, does not); in the
   `opengrid-grid` crate `ColumnLayout::effective` and `ColumnLayout::move_column` take the pins of
   the page as a further argument ([#316](https://github.com/casoon/opengrid/issues/316)).
+- **Grid:** in the `opengrid-grid` crate the page's part of the column arrangement is one value,
+  `layout::PageColumns` (its pins and its bands). **What breaks:** `ColumnLayout::effective`,
+  `pin`, `set_pin` and `move_column` take `&PageColumns` where they took the page's pins as a
+  slice. The elements and the npm package are not affected
+  ([#319](https://github.com/casoon/opengrid/issues/319)).
 - **Grid:** setting `group-by` on a grid that selects by position now says `Selection cleared` and
   fires `opengrid-selection-change` when it drops a selection; it was dropped silently
   ([#322](https://github.com/casoon/opengrid/issues/322)).
+- **Pivot (Rust):** a pivot's measure is `opengrid_pivot::Measure` — an `Aggregate` and its
+  optional `Calc`. **What breaks:** `PivotQuery::values` and `ValidatedPivotQuery::values` are
+  `Vec<Measure>` (they were `Vec<Aggregate>`; the aggregate is `measure.aggregate`), and
+  `PivotError` gained `Calc`, so an exhaustive `match` must handle it. The wire form is unchanged
+  for a pivot without `calc` ([#329](https://github.com/casoon/opengrid/issues/329)).
 - **Grid:** `group-by`, the view's `group` and the toolbar's *+ Group* take three grouping levels; a
   fourth is refused as the third was. The default wording of `groupingFull` is now
   `Grouped by three columns already` ([#321](https://github.com/casoon/opengrid/issues/321)).

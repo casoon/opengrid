@@ -258,8 +258,11 @@ An interactive `<table role="grid">`: virtualized, keyboard-driven, filterable.
 | `Enter` / `Space` | selection header | select **every matching row**, or clear it |
 | `Ctrl`/`Cmd`+`A` | anywhere | select every matching row, not only the loaded page |
 | `Ctrl`/`Cmd`+`←`/`→` | header cell | move the column |
+| `Ctrl`/`Cmd`+`←`/`→` | band cell | move the band with all its columns ([Column bands](#column-bands)) |
 | `Ctrl`/`Cmd`+`Shift`+`←`/`→` | header cell | resize the column |
 | `Alt`+`Shift`+`←`/`→` | header cell | pin the column one step towards that side: let go of a pin at the other end, or pin it at this one ([Pinned columns](#pinned-columns)) |
+| `Alt`+`Shift`+`←`/`→` | band cell, or the header cell of a column in a band | pin the **band** one step towards that side |
+| `↑` / `↓` | header cell of a column in a band / band cell | go to the band / back to the column ([Column bands](#column-bands)) |
 | `Alt`+`↓`, `Shift`+`F10`, context-menu key | header cell | open the column menu (with `column-menu`) |
 
 On a right-to-left page `←` and `→` change places, and nothing else does:
@@ -364,6 +367,7 @@ loader.module.set_columns(host, {
 | `title` | What the column is **called** where a reader reads it: the header, the column list, the filter row's labels, the column menu, the "+ Filter" dialog and "+ Group" menu, group rows, chips, facet headings, search suggestions and every announcement. The page's words, in the page's language. The field name stays the identifier — the query, the view, the search expressions (`country = DE`), exports and events. An empty title is reported. |
 | `width` | The column's **starting** width in pixels. A reader's resize leads after that. |
 | `pin` | `start` or `end`: where the column **starts** pinned while the others scroll sideways. A reader's own pin leads after that. See [Pinned columns](#pinned-columns). The grid only; a table refuses it. |
+| `band` | The **band** the column stands under: a header above it that it shares with the other columns naming the same band, `band: "Address"`. The page's words, like `title`. See [Column bands](#column-bands). The grid only; a table refuses it. |
 | `align` | `start`, `end` or `center`. Numbers default to `end`, everything else to `start`. |
 | `mono` | Draw the values monospaced, so they line up character by character. |
 | `emphasis` / `muted` | Bold, or the muted ink. |
@@ -555,6 +559,65 @@ loader.module.set_columns(grid, {
 | `get_query`, exports | The columns in the order shown, the pinned ones at their end of the row. |
 
 Not here: pinned rows, and a total row that stays in place.
+
+### Column bands
+
+A band is a header above several columns — *Address* above street, city and postcode. A column
+names its band in `set_columns`, and the columns that name the same one share its header:
+
+```js
+loader.module.set_columns(host, {
+  street:   { band: "Address" },
+  city:     { band: "Address" },
+  postcode: { band: "Address", width: 96 },
+});
+```
+
+There is one level of bands. A band is **always in one piece**: its columns stand side by side.
+
+| | |
+|---|---|
+| The page | `band` is the band's name as the reader reads it, in the page's language. It asks nothing of the column's type. An empty name is reported like every other mistake in the call, and so are two columns of one band that `pin` at different ends. |
+| The header | Two rows as soon as one shown column has a band. The band's cell stands in the first row, across its columns; the header cells of its columns are in the second. The header cell of a column without a band spans both rows. Without a band the header is the one row it always is. |
+| The order | The columns of a band stand together where the **first** of them stands, in the order they have — also when `columns` or a view's `columns.order` names them apart. |
+| Moving | `Ctrl`/`Cmd`+`←`/`→` on the header cell of a column in a band moves the column **inside** its band and stops at the band's edge (`city is already at the end`). On the band's cell the same keys move the **band** with all its columns, past the column or the band beside it. A column without a band steps over a band as over one column; it never lands inside. A moved band is said like a moved column, with the place of its first column: `Address moved to position 2 of 6`. |
+| Hiding | A hidden column leaves its band; the band's cell spans the columns that are left. Hiding the last shown column of a band hides the band, and showing one again brings it back. |
+| Pinning | A band is [pinned](#pinned-columns) as a whole. `pin` on one of its columns in `set_columns`, `Alt`+`Shift`+`←`/`→` on the band's cell or on the header cell of one of its columns, and the column menu's *Pin* group all pin the band: its cell stays in place above its columns, in one piece. The status line names the band (`Address pinned at the start`), and the view holds the choice for each of its columns, `columns.pinned: { street: "start", city: "start", postcode: "start" }`. |
+| Widths, sorting, the menu | These belong to the columns: a band has no width of its own and sorts nothing. `Enter`, `Space` and the resize keys do nothing on a band's cell, and the column menu opens from the columns' header cells. |
+| The view | Nothing new: a band is the page's configuration, not the reader's choice. A view saved without bands is arranged under them when it is restored. |
+| The filter row, groups, totals | One field and one cell per column, as without bands. |
+| On paper, exports, `get_query` | The columns in the order shown, under one header row: the bands are not printed or exported. |
+| Looks | The band's cell is the part `band`; a line at either side shows which columns it spans. |
+
+**Keys in the header.** With bands the header is two rows, and its cells span: a band's cell
+several columns, the header cell of a column without a band both rows. The arrow keys move
+through it by what is on the screen.
+
+| Keys | On | Goes to |
+|---|---|---|
+| `↑` | header cell of a column in a band | the band's cell |
+| `↑` | band cell, or the header cell of a column without a band | nowhere: it is the first row |
+| `↓` | band cell | the header cell of the column the reader came up from — the band's first column when the cell was reached sideways or with the pointer |
+| `↓` | header cell | the first data row, same column |
+| `←` / `→` | band cell | the cell beside it in the first row: the next band's cell, or the header cell of a column without a band |
+| `←` / `→` | header cell | the header cell of the column beside it, in a band or not |
+| `Home` / `End` | band cell | the first / last cell of the first row |
+| `Home` / `End` | header cell | the first / last header cell of the columns |
+| `Ctrl`+`Home` | anywhere | the first cell of the first row |
+| `↑` | a cell of the first data row | the header cell of its column |
+
+`←` and `→` change places on a right-to-left page, as everywhere ([Right to left](#right-to-left)).
+Exactly one cell of the grid is in the tab sequence, a band's cell included.
+
+**What a screen reader is given.** The band's cell is a column header for its group of columns
+(`<th scope="colgroup">`, spanning them), and each data cell under a band names both its headers,
+the band first (`headers`): a cell is announced with its band and its column — *Address, City*.
+The header rows are counted: with bands `aria-rowcount` is the number of rows plus two and the
+first data row is `aria-rowindex="3"`. Every header cell says its `aria-colindex`, since the cells
+of the two header rows are not the columns in DOM order.
+
+Not here: more than one level of bands, and bands in `<opengrid-pivot>`, which has its own
+two-level header.
 
 ### Grouping
 
@@ -927,7 +990,7 @@ and the row and column limits are what make rendering the whole thing safe.
 | `label`, `datasource`, `theme` | As in the grid. |
 | `rows` | Comma-separated row dimensions, outermost first. |
 | `columns` | Comma-separated column dimensions, outermost first. V1 allows **two**. |
-| `values` | The measures, as the contract's own JSON — not an invented shorthand. |
+| `values` | The measures, as the contract's own JSON — not an invented shorthand. A measure with `calc` is [calculated](#calculated-measures). |
 | `sort` | How each level is ordered, as the wire's JSON: `[{"field":"country","by":"total","direction":"desc"}]`. The reader's sort buttons write it. |
 | `collapsed` | The folded groups, a JSON list of group paths: `[["DE"],["FR","Beta"]]`, NULL as `null`. The reader's fold buttons write it. |
 | `toolbar` | Shows the field toolbar — see below. Presence is what counts. |
@@ -999,6 +1062,53 @@ says it with the grid's texts `groupCollapsed` / `groupExpanded`. The focus stay
 on the button. The folded groups are the `collapsed` attribute and part of the
 view; a path that matches no group folds nothing. The export stays the whole
 pivot, as the grid's export ignores its open groups.
+
+#### Calculated measures
+
+A measure is an aggregate; with `calc` it is shown as a share or as a running total instead:
+
+```html
+<opengrid-pivot datasource="orders" rows="country" columns="ordered_year"
+  values='[{"field":"qty","fn":"sum","as":"total"},
+           {"field":"qty","fn":"sum","as":"share","calc":"share_of_row"}]'></opengrid-pivot>
+```
+
+| `calc` | The cell shows |
+|---|---|
+| `share_of_row` | its part of the row's total across every column |
+| `share_of_column` | its part of the column's total — the column's cell in the grand total row |
+| `share_of_total` | its part of the grand total |
+| `running_total` | the sum of the row's cells up to and including its column; it starts again in every row |
+
+The source computes it — the engine in the tab as a server does, by the same rules
+([P10–P12](../guides/query-semantics/#calculated-measures-in-a-pivot)) — so a calculated value
+is a value like any other: in the table, in `get_pivot`'s CSV and in the XLSX. A share goes with
+`fn` `sum` and `count`; a running total also with `avg`, `min` and `max` over a number, where it
+adds up what the cells show. Anything else the source refuses, and the pivot's status line says
+so. Subtotals and the total row follow the same rule as the rows above them, over their own
+cells.
+
+- **A share is a fraction**, `0.25`, and NULL — an empty cell — where its total is NULL or zero.
+  Percent and digits are the page's: `set_formats(pivot, { share: { kind: "number", style:
+  "percent", maximumFractionDigits: 1 } })`, by the measure's alias. A running total keeps its
+  measure's type and takes the format the measure would.
+- **The header says it.** A calculated measure's column header is its title followed by what it
+  shows, in the element's [texts](#texts): `Quantity · share of row`. The CSV and the XLSX head
+  the column the same way after its path and alias, `2025 · share · share of row`.
+- **Sorting** by a calculated measure orders the rows by its aggregate, as for any measure.
+- **Drilling down** from a calculated cell names the cell's own rows, as from any cell — for a
+  running total the rows of its column, the last part added, not the columns before it — and
+  `value` is the calculated value.
+
+With `toolbar`, a measure's chip has a button that names what the measure is shown as — `value`
+at first; its name is "Show Quantity as: value". It opens a menu of the choices its function
+has, the one in use checked (`menuitemradio`), with the keys of the add menu: the value and the
+four calculations for `sum` and `count`, the value and the running total for `avg`, `min` and
+`max`. The pivot does not know the source's schema, so it offers the running total of a `min`
+or `max` over text as well; the source refuses it, in the status line.
+Choosing writes `calc` into `values`, so it is one query and one `opengrid-view-change`, and the
+focus comes back to the button, which now names the new choice. A page that formats shares as
+percentages listens to that event and sets the format of a measure whose `calc` changed.
 
 **Choosing the fields.** With `toolbar`, the reader chooses the rows, the
 column and the measures — without dragging, from the keyboard. Per axis a
@@ -1077,7 +1187,7 @@ together with its listener.
 | `query` | The rows behind the cell, as the wire writes a query: `{ source, filter }`. `source` is the pivot's `datasource`. |
 | `query.filter` | The pivot's own `filter`, clause by clause, and-ed with one clause per dimension the cell lies in: the row dimensions down to the row's level, then every column dimension — `{"and":[{"field":"country","op":"eq","value":"DE"},{"field":"ordered_year","op":"eq","value":2025}]}`. One clause alone is that clause; none — the grand total of a pivot without a column dimension and without a filter — and `query` has no `filter`. |
 | `row`, `column` | The cell's row and column group, as paths of keys like `collapsed` has them, NULL as `null`. A subtotal's `row` is shorter than `rows`, the grand total's is `[]`. |
-| `measure`, `value` | The measure's alias and the cell's value as the answer carried it. |
+| `measure`, `value` | The measure's alias and the cell's value as the answer carried it — of a [calculated measure](#calculated-measures), the calculated value. |
 
 - **NULL and the empty string stay two groups.** A NULL key is
   `{"field":"country","op":"is_null"}` — `eq null` would match nothing (S1) — and the
@@ -1288,7 +1398,7 @@ const blob = csv && new Blob([csv], { type: "text/csv;charset=utf-8" }); // the 
 | | |
 |---|---|
 | Columns | The row dimensions, then one column per generated column, in the table's order. |
-| Header | **One line.** A generated column is named by its value and its measure, `2025 · total`; without a column dimension, by its measure. |
+| Header | **One line.** A generated column is named by its value and its measure, `2025 · total`; without a column dimension, by its measure. A [calculated measure](#calculated-measures) is followed by what it shows, in the element's texts: `2025 · share · share of row`. |
 | Rows | Every row the table shows, in its order: data rows, subtotals, the grand total. |
 | Subtotals | Their label — `Total DE`, `Total` — in the first dimension column; the dimension columns it spans are empty fields. There is no level column, as the table has none: a subtotal is known by its label alone, so a group literally named `Total` looks like the grand total. |
 | Labels | The element's own [texts](#texts): NULL is `(no value)`, the empty string `(empty)`, as in the table, and a page's `set_texts` changes both. With non-empty texts a data row's dimension cell is never empty, so an empty one means "spanned by the total"; a text set to `""` gives that up. |
@@ -1324,7 +1434,7 @@ const blob = await exportPivot(provider, pivot, { format: "xlsx" }); // a Blob; 
 
 | | |
 |---|---|
-| `provider` | One that exports on the server: `createPivotProvider` or `createRestProvider`, both with `exportPivot(pivotQuery, options)` → `POST /pivot/{source}?format=xlsx`. Any other — the engine in the tab or a worker, the hybrid provider — is a `TypeError` before anything is sent. The method has a query and no element, so it alone also takes `texts` (`total`, `subtotal`, `noValue`, `emptyValue`); a page that calls it with a query of its own hands them over, or gets the English defaults. |
+| `provider` | One that exports on the server: `createPivotProvider` or `createRestProvider`, both with `exportPivot(pivotQuery, options)` → `POST /pivot/{source}?format=xlsx`. Any other — the engine in the tab or a worker, the hybrid provider — is a `TypeError` before anything is sent. The method has a query and no element, so it alone also takes `texts` (`total`, `subtotal`, `noValue`, `emptyValue`, and for calculated measures `shareOfRow`, `shareOfColumn`, `shareOfTotal`, `runningTotal`); a page that calls it with a query of its own hands them over, or gets the English defaults. |
 | `host` | An `<opengrid-pivot>` in the document, with a `datasource`. Its [view](#opengrid-pivot) is the query: `rows`, `columns`, `values`, `sort`, `filter`. Folded groups are exported, as in the CSV. |
 | `format` | `"xlsx"`, and required; anything else is a `TypeError` — a pivot's CSV is `get_pivot`. |
 | Labels | The element's own [texts](#texts), as in the table and in the CSV: `Total`, `Total DE`, `(no value)`, `(empty)`, or what `set_texts` made of them. They are read from the element and sent with the request; the page passes nothing, and `texts` is not an option here. |
@@ -1590,7 +1700,7 @@ would make it invisible), a **selected row** carries an inset accent bar as well
 as the tint (colour alone would be 1.4.1), and `prefers-reduced-motion` beats a
 theme that animates a part.
 
-**Parts:** `action`, `action-cell`, `action-header`, `add-field`, `add-filter`, `add-grouping`, `body`, `bulk`, `bulk-apply`, `bulk-cancel`, `caption`, `cell`, `cell-error`, `cell-saved`, `cell-saving`, `chip`, `chip-move`, `chip-remove`, `chips`,
+**Parts:** `action`, `action-cell`, `action-header`, `add-field`, `add-filter`, `add-grouping`, `band`, `body`, `bulk`, `bulk-apply`, `bulk-cancel`, `caption`, `cell`, `cell-error`, `cell-saved`, `cell-saving`, `chip`, `chip-calc`, `chip-move`, `chip-remove`, `chips`,
 `chips-clear`, `column-menu`, `column-menu-button`, `column-toggle`, `columns`, `columns-toggle`, `density`, `drill-down`,
 `editor`, `empty`, `empty-reset`, `empty-text`, `facet`, `facet-bounds`, `facet-cost`, `facet-count`,
 `facet-pill`, `facet-pills`, `facet-value`, `facets`, `facets-head`, `facets-toggle`, `filter`,
@@ -1613,6 +1723,7 @@ rest of their look is the page's, through their parts (issue #29):
 | `group-toggle`, `group-mark` | — | a group's fold button in its subtotal's row header, and its mark |
 | `toolbar`, `field-group`, `menu-label` | — | the field toolbar, one axis's group, its visible name |
 | `chip`, `chip-move`, `chip-remove` | — | a chosen field, its move buttons, its remove button |
+| `chip-calc` | — | a measure chip's button for what the measure is shown as |
 | `add-field`, `field-menu` | — | an axis's add button, and its menu |
 | `row`, `total-row` | a body row | a body row; `total-row` a subtotal or the grand total |
 | `cell` | a value | a value |
@@ -1662,6 +1773,8 @@ directions.
 | `Ctrl`/`Cmd`+`Shift`+`→` | header cell | widen the column | narrow the column |
 | `Alt`+`Shift`+`←` | header cell | pin one step towards the start | one step towards the end |
 | `Alt`+`Shift`+`→` | header cell | pin one step towards the end | one step towards the start |
+| `←` / `→` | band cell | the cell before / the next cell of the first header row ([Column bands](#column-bands)) | the next cell / the cell before |
+| `Ctrl`/`Cmd`+`←` / `→` | band cell | move the band one place towards the start / the end | towards the end / the start |
 | `←` | a group's or node's first cell | close; on a closed node or a leaf, go to the parent | open; on an open node, go to its first child |
 | `→` | a group's or node's first cell | open; on an open node, go to its first child | close; on a closed node or a leaf, go to the parent |
 | `Home` / `End` | cell | the first / last cell of the row | the same: the first cell is the one on the right |
@@ -1759,6 +1872,9 @@ boolean reads — that is `set_formats`.
 | `fieldRemove` / `fieldEarlier` / `fieldLater` | `Remove {field}` / `Move {field} earlier` / `Move {field} later` | `{field}` |
 | `pivotFilters` / `pivotFilterLabel` / `pivotFilterHint` | `Filters` / `Add a filter` / `field = value · Enter` — the pivot's filter group, its field's name and hint | |
 | `pivotDrillDown` | `{value}, show rows` — the name of a value's button in a pivot with `drill-down`: "12, show rows". `{value}` is the cell's visible text, so the name contains it (WCAG 2.5.3) | `{value}` |
+| `pivotShowAs` | `Show {field} as: {calc}` — the name of a measure chip's button in the pivot's toolbar, and of its menu: "Show Quantity as: share of row". `{calc}` is the button's visible text, so the name contains it (WCAG 2.5.3) | `{field}`, `{calc}` |
+| `calcValue` | `value` — a measure shown as it is, in that button and its menu | |
+| `shareOfRow` / `shareOfColumn` / `shareOfTotal` / `runningTotal` | `share of row` / `share of column` / `share of total` / `running total` — what a [calculated measure](#calculated-measures) is shown as: in the button and its menu, after the measure's title in its column header, and in the headers of the CSV and the XLSX | |
 | `treeContext` | `context` — a tree's row shown only because a match is below it | |
 | `subtreeCell` | `{shown}, {aggregate} of the subtree` — what a node's cell says when it also shows its subtree's summary: "120 · Σ 1,450, Sum of the subtree". `{shown}` is the cell's visible text, so the name contains it (WCAG 2.5.3); German: `{shown}, {aggregate} im Teilbaum`. A text you set **without** `{shown}` is used exactly as written, and its name then does not contain the visible text — your decision. | `{shown}`, `{value}`, `{aggregate}`, `{total}` |
 | `subtreeOnly` | `{shown}, {aggregate} of the subtree` — the same for a node without a value of its own: "Σ 1,450, Sum of the subtree" | `{shown}`, `{aggregate}`, `{total}` |

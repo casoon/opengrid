@@ -503,10 +503,22 @@ export interface PivotExportOptions {
  */
 export interface ProviderPivotExportOptions extends PivotExportOptions {
   /**
-   * `total`, `subtotal` (with `{value}`), `noValue` and `emptyValue`; any
-   * other key is ignored. Without them the server's English defaults.
+   * `total`, `subtotal` (with `{value}`), `noValue` and `emptyValue`, and what
+   * a calculated measure is shown as — `shareOfRow`, `shareOfColumn`,
+   * `shareOfTotal`, `runningTotal`; any other key is ignored. Without them
+   * the server's English defaults.
    */
-  texts?: Pick<Texts, "total" | "subtotal" | "noValue" | "emptyValue">;
+  texts?: Pick<
+    Texts,
+    | "total"
+    | "subtotal"
+    | "noValue"
+    | "emptyValue"
+    | "shareOfRow"
+    | "shareOfColumn"
+    | "shareOfTotal"
+    | "runningTotal"
+  >;
 }
 
 /**
@@ -642,6 +654,13 @@ export interface ColumnConfig {
    * (`Alt`+`Shift`+`←`/`→` on the header, the column menu). The grid only.
    */
   pin?: Pin;
+  /**
+   * The band the column stands under: a header it shares with the other
+   * columns that name the same one. A band is always in one piece — its
+   * columns stand together, move inside it, and are pinned with it. The grid
+   * only.
+   */
+  band?: string;
   align?: "start" | "end" | "center";
   mono?: boolean;
   emphasis?: boolean;
@@ -761,12 +780,26 @@ export interface View {
   selected?: Array<string | number | boolean>;
 }
 
+/**
+ * What a calculated measure shows in place of its aggregate: the cell as a
+ * fraction of its row's total, of its column's total or of the grand total —
+ * a number between 0 and 1, NULL where that total is NULL or zero — or the
+ * running total along the columns, which starts again in every row.
+ */
+export type PivotCalc = "share_of_row" | "share_of_column" | "share_of_total" | "running_total";
+
 /** A pivot measure, as the contract writes it: `{ field: "qty", fn: "sum", as: "total" }`. */
 export interface PivotMeasure {
   /** Absent for `count`. */
   field?: string;
   fn: string;
   as: string;
+  /**
+   * Shows the measure as a calculation over the pivot's cells. A share is for
+   * `sum` and `count`; a running total also for `avg`, `min` and `max` over a
+   * number. The source refuses anything else.
+   */
+  calc?: PivotCalc;
 }
 
 /**
@@ -931,6 +964,12 @@ export type TextKey =
   | "pivotFilterLabel"
   | "pivotFilterHint"
   | "pivotDrillDown"
+  | "pivotShowAs"
+  | "calcValue"
+  | "shareOfRow"
+  | "shareOfColumn"
+  | "shareOfTotal"
+  | "runningTotal"
   | "treeContext"
   | "subtreeCell"
   | "subtreeOnly"

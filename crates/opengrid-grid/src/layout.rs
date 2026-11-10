@@ -66,6 +66,49 @@ pub fn pins_hold(pinned: f64, width: f64) -> bool {
     pinned * 100.0 <= width * f64::from(PINNED_SHARE)
 }
 
+/// What the page's `set_columns` says about where the columns stand: where it
+/// pins (issue #316) and which columns share a band (issue #319).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct PageColumns {
+    /// The columns the page pins, each with its end of the row.
+    pub pins: Vec<(String, Pin)>,
+    /// The columns the page puts under a band, each with the band's name.
+    pub bands: Vec<(String, String)>,
+}
+
+impl PageColumns {
+    /// The band a column stands under, if any.
+    pub fn band(&self, name: &str) -> Option<&str> {
+        self.bands
+            .iter()
+            .find(|(column, _)| column == name)
+            .map(|(_, band)| band.as_str())
+    }
+
+    /// Whether two columns stand and are pinned together: the same column, or
+    /// two of one band.
+    fn together(&self, one: &str, other: &str) -> bool {
+        one == other || (self.band(one).is_some() && self.band(one) == self.band(other))
+    }
+
+    /// The bands above `shown`, the columns as [`ColumnLayout::effective`]
+    /// arranged them: each with the index of its first column and how many
+    /// columns it spans.
+    pub fn band_spans(&self, shown: &[String]) -> Vec<(String, usize, usize)> {
+        let mut spans: Vec<(String, usize, usize)> = Vec::new();
+        for (col, name) in shown.iter().enumerate() {
+            let Some(band) = self.band(name) else {
+                continue;
+            };
+            match spans.last_mut() {
+                Some((last, first, count)) if last == band && *first + *count == col => *count += 1,
+                _ => spans.push((band.to_owned(), col, 1)),
+            }
+        }
+        spans
+    }
+}
+
 /// The reader's column layout, on top of the `columns` attribute.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ColumnLayout {
@@ -85,11 +128,15 @@ impl ColumnLayout {
     /// The columns to select and render: the attribute's, reordered and
     /// filtered, the ones pinned at the start first and the ones pinned at the
     /// end last (issue #316) — each of the three runs in the order the columns
-    /// had. `page` is where `set_columns` pins.
+    /// had. `page` is where `set_columns` pins, and its bands.
+    ///
+    /// A band is always in one piece (issue #319): its columns stand together
+    /// where the first of them stands, in the order they had — whatever the
+    /// attribute or a view's order says.
     ///
     /// A name in `order` that the attribute does not have is ignored — the
     /// attribute is the source of truth about which columns exist at all.
-    pub fn effective(&self, declared: &[String], page: &[(String, Pin)]) -> Vec<String> {
+    pub fn effective(&self, declared: &[String], page: &PageColumns) -> Vec<String> {
         let mut ordered: Vec<String> = self
             .order
             .iter()
@@ -102,6 +149,20 @@ impl ColumnLayout {
             }
         }
         ordered.retain(|name| !self.hidden.contains(name));
+        if !page.bands.is_empty() {
+            let mut gathered: Vec<String> = Vec::with_capacity(ordered.len());
+            for name in &ordered {
+                if !gathered.contains(name) {
+                    gathered.extend(
+                        ordered
+                            .iter()
+                            .filter(|column| page.together(name, column))
+                            .cloned(),
+                    );
+                }
+            }
+            ordered = gathered;
+        }
         // One pass per run, so each keeps the order its columns had.
         let mut arranged = Vec::with_capacity(ordered.len());
         for run in [Some(Pin::Start), None, Some(Pin::End)] {
@@ -116,12 +177,21 @@ impl ColumnLayout {
     }
 
     /// Where a column is pinned: the reader's choice, or else the page's.
-    pub fn pin(&self, name: &str, page: &[(String, Pin)]) -> Option<Pin> {
-        match self.pins.iter().find(|(column, _)| column == name) {
+    ///
+    /// A band is pinned as a whole (issue #319), so a column of one is pinned
+    /// where any column of its band is: the reader's choice for one of them,
+    /// or else the first pin `set_columns` gives one of them.
+    pub fn pin(&self, name: &str, page: &PageColumns) -> Option<Pin> {
+        match self
+            .pins
+            .iter()
+            .find(|(column, _)| page.together(name, column))
+        {
             Some((_, choice)) => *choice,
             None => page
+                .pins
                 .iter()
-                .find(|(column, _)| column == name)
+                .find(|(column, _)| page.together(name, column))
                 .map(|(_, pin)| *pin),
         }
     }
@@ -129,13 +199,21 @@ impl ColumnLayout {
     /// Pins a column, or lets it go, as the reader asked. A choice that is the
     /// page's own is not kept: the layout holds what the reader changed.
     /// Answers whether the column is pinned differently now.
-    pub fn set_pin(&mut self, name: &str, pin: Option<Pin>, page: &[(String, Pin)]) -> bool {
+    ///
+    /// A column of a band takes its band along (issue #319): the choice is
+    /// kept for every column of the band, so a view says it of each.
+    pub fn set_pin(&mut self, name: &str, pin: Option<Pin>, page: &PageColumns) -> bool {
         if self.pin(name, page) == pin {
             return false;
         }
-        self.pins.retain(|(column, _)| column != name);
+        self.pins.retain(|(column, _)| !page.together(name, column));
         if self.pin(name, page) != pin {
             self.restore_pin(name, pin);
+            for (column, _) in &page.bands {
+                if column != name && page.together(name, column) {
+                    self.restore_pin(column, pin);
+                }
+            }
         }
         true
     }
@@ -240,20 +318,85 @@ impl ColumnLayout {
     /// ones. Answers the new order, or `None` when it would fall off an end —
     /// of the row, or of its run: a pinned column moves among the columns
     /// pinned at the same end, and one that is not pinned among the others.
+    ///
+    /// A column of a band moves inside its band and stops at the band's edge
+    /// (issue #319). A column without one steps over a band as over one
+    /// column: it never lands inside.
     pub fn move_column(
         &mut self,
         declared: &[String],
-        page: &[(String, Pin)],
+        page: &PageColumns,
         name: &str,
         by: i32,
     ) -> Option<Vec<String>> {
         let mut visible = self.effective(declared, page);
         let from = visible.iter().position(|column| column == name)?;
-        let to = from.checked_add_signed(by as isize)?;
-        if to >= visible.len() || self.pin(&visible[to], page) != self.pin(name, page) {
+        if page.band(name).is_some() {
+            let to = from.checked_add_signed(by as isize)?;
+            if to >= visible.len() || !page.together(name, &visible[to]) {
+                return None;
+            }
+            visible.swap(from, to);
+        } else {
+            self.move_run(&mut visible, page, from, 1, by)?;
+        }
+        Some(self.arranged(declared, visible))
+    }
+
+    /// Moves a whole band one place left (`-1`) or right (`1`): past the
+    /// column or the band beside it (issue #319). Answers the new order, or
+    /// `None` at an end of the row or of the band's run of pinned columns —
+    /// or when no column of `band` is shown.
+    pub fn move_band(
+        &mut self,
+        declared: &[String],
+        page: &PageColumns,
+        band: &str,
+        by: i32,
+    ) -> Option<Vec<String>> {
+        let mut visible = self.effective(declared, page);
+        let (_, first, count) = page
+            .band_spans(&visible)
+            .into_iter()
+            .find(|(name, _, _)| name == band)?;
+        self.move_run(&mut visible, page, first, count, by)?;
+        Some(self.arranged(declared, visible))
+    }
+
+    /// Moves the `count` columns from `first` past what stands beside them —
+    /// a column, or a band as a whole — when that is pinned like them.
+    fn move_run(
+        &self,
+        visible: &mut [String],
+        page: &PageColumns,
+        first: usize,
+        count: usize,
+        by: i32,
+    ) -> Option<()> {
+        let beside = if by < 0 {
+            first.checked_sub(1)?
+        } else {
+            first + count
+        };
+        let neighbour = visible.get(beside)?;
+        if self.pin(neighbour, page) != self.pin(&visible[first], page) {
             return None;
         }
-        visible.swap(from, to);
+        // How many columns stand beside: one, or the neighbour's whole band.
+        let width = visible
+            .iter()
+            .filter(|column| page.together(neighbour, column))
+            .count();
+        if by < 0 {
+            visible[first - width..first + count].rotate_left(width);
+        } else {
+            visible[first..first + count + width].rotate_left(count);
+        }
+        Some(())
+    }
+
+    /// Keeps `visible` as the reader's order and answers it.
+    fn arranged(&mut self, declared: &[String], visible: Vec<String>) -> Vec<String> {
         // Hidden columns keep their relative place at the end, so unhiding one
         // does not scramble what the reader just arranged.
         let mut order = visible.clone();
@@ -263,7 +406,7 @@ impl ColumnLayout {
             }
         }
         self.order = order;
-        Some(visible)
+        visible
     }
 }
 
@@ -282,7 +425,7 @@ mod tests {
     #[test]
     fn an_untouched_layout_is_the_attribute() {
         assert_eq!(
-            ColumnLayout::default().effective(&declared(), &[]),
+            ColumnLayout::default().effective(&declared(), &PageColumns::default()),
             declared()
         );
     }
@@ -293,12 +436,15 @@ mod tests {
         let mut layout = ColumnLayout::default();
         assert!(layout.set_hidden("customer", true));
         assert_eq!(
-            layout.effective(&declared(), &[]),
+            layout.effective(&declared(), &PageColumns::default()),
             ["id".to_owned(), "amount".to_owned(), "qty".to_owned()]
         );
         assert!(!layout.set_hidden("customer", true), "already hidden");
         assert!(layout.set_hidden("customer", false));
-        assert_eq!(layout.effective(&declared(), &[]), declared());
+        assert_eq!(
+            layout.effective(&declared(), &PageColumns::default()),
+            declared()
+        );
     }
 
     /// Moving is among the **visible** columns: a hidden one is not a place a
@@ -308,7 +454,7 @@ mod tests {
         let mut layout = ColumnLayout::default();
         layout.set_hidden("customer", true);
         let moved = layout
-            .move_column(&declared(), &[], "id", 1)
+            .move_column(&declared(), &PageColumns::default(), "id", 1)
             .expect("moved");
         assert_eq!(
             moved,
@@ -318,7 +464,7 @@ mod tests {
         // Unhiding puts the column back without scrambling the arrangement.
         layout.set_hidden("customer", false);
         assert_eq!(
-            layout.effective(&declared(), &[]),
+            layout.effective(&declared(), &PageColumns::default()),
             [
                 "amount".to_owned(),
                 "id".to_owned(),
@@ -334,9 +480,20 @@ mod tests {
     #[test]
     fn a_move_off_the_end_is_refused() {
         let mut layout = ColumnLayout::default();
-        assert!(layout.move_column(&declared(), &[], "id", -1).is_none());
-        assert!(layout.move_column(&declared(), &[], "qty", 1).is_none());
-        assert_eq!(layout.effective(&declared(), &[]), declared());
+        assert!(
+            layout
+                .move_column(&declared(), &PageColumns::default(), "id", -1)
+                .is_none()
+        );
+        assert!(
+            layout
+                .move_column(&declared(), &PageColumns::default(), "qty", 1)
+                .is_none()
+        );
+        assert_eq!(
+            layout.effective(&declared(), &PageColumns::default()),
+            declared()
+        );
     }
 
     /// A width is clamped: not into nothing, not off the screen.
@@ -357,12 +514,34 @@ mod tests {
         columns.iter().map(|name| (*name).to_owned()).collect()
     }
 
+    fn pins(pins: &[(&str, Pin)]) -> PageColumns {
+        PageColumns {
+            pins: pins
+                .iter()
+                .map(|(name, pin)| ((*name).to_owned(), *pin))
+                .collect(),
+            bands: Vec::new(),
+        }
+    }
+
+    /// `id`, then the band `Address` over `street` and `city`, then `amount`.
+    fn banded() -> (Vec<String>, PageColumns) {
+        let page = PageColumns {
+            pins: Vec::new(),
+            bands: vec![
+                ("street".to_owned(), "Address".to_owned()),
+                ("city".to_owned(), "Address".to_owned()),
+            ],
+        };
+        (names(&["id", "street", "city", "amount"]), page)
+    }
+
     /// Pinned at the start comes first and pinned at the end last, each run in
     /// the order the columns had (issue #316).
     #[test]
     fn pinned_columns_stand_at_their_end_of_the_row() {
         let mut layout = ColumnLayout::default();
-        let page = [("qty".to_owned(), Pin::Start)];
+        let page = pins(&[("qty", Pin::Start)]);
         assert_eq!(
             layout.effective(&declared(), &page),
             names(&["qty", "id", "customer", "amount"])
@@ -386,7 +565,7 @@ mod tests {
     #[test]
     fn the_reader_leads_and_only_a_change_is_kept() {
         let mut layout = ColumnLayout::default();
-        let page = [("id".to_owned(), Pin::Start)];
+        let page = pins(&[("id", Pin::Start)]);
         assert_eq!(layout.pin("id", &page), Some(Pin::Start));
         assert!(!layout.set_pin("id", Some(Pin::Start), &page), "as it is");
         assert!(layout.pins().is_empty());
@@ -421,10 +600,7 @@ mod tests {
     #[test]
     fn a_column_moves_among_the_columns_pinned_like_it() {
         let mut layout = ColumnLayout::default();
-        let page = [
-            ("id".to_owned(), Pin::Start),
-            ("customer".to_owned(), Pin::Start),
-        ];
+        let page = pins(&[("id", Pin::Start), ("customer", Pin::Start)]);
         // id, customer | amount, qty
         assert!(
             layout
@@ -441,6 +617,139 @@ mod tests {
             .expect("inside the run");
         assert_eq!(moved, names(&["customer", "id", "amount", "qty"]));
         assert_eq!(layout.effective(&declared(), &page), moved);
+    }
+
+    /// A band is in one piece (issue #319): its columns stand where the first
+    /// of them stands, whatever the attribute or a view's order says, and the
+    /// spans name each band once.
+    #[test]
+    fn a_band_is_always_in_one_piece() {
+        let (_, page) = banded();
+        let apart = names(&["street", "id", "city", "amount"]);
+        let layout = ColumnLayout::default();
+        let shown = layout.effective(&apart, &page);
+        assert_eq!(shown, names(&["street", "city", "id", "amount"]));
+        assert_eq!(page.band_spans(&shown), [("Address".to_owned(), 0, 2)]);
+
+        let mut layout = ColumnLayout::default();
+        layout.set_order(names(&["city", "amount", "street", "id"]));
+        assert_eq!(
+            layout.effective(&apart, &page),
+            names(&["city", "street", "amount", "id"])
+        );
+
+        // The last shown column of a band takes the band along.
+        layout.set_hidden("city", true);
+        let shown = layout.effective(&apart, &page);
+        assert_eq!(shown, names(&["amount", "street", "id"]));
+        assert_eq!(page.band_spans(&shown), [("Address".to_owned(), 1, 1)]);
+        layout.set_hidden("street", true);
+        let shown = layout.effective(&apart, &page);
+        assert_eq!(shown, names(&["amount", "id"]));
+        assert!(page.band_spans(&shown).is_empty());
+    }
+
+    /// A column of a band moves inside the band and stops at its edge; a
+    /// column without one steps over the band as over one column.
+    #[test]
+    fn a_column_moves_inside_its_band_and_others_step_over_it() {
+        let (declared, page) = banded();
+        let mut layout = ColumnLayout::default();
+        assert!(layout.move_column(&declared, &page, "street", -1).is_none());
+        assert!(layout.move_column(&declared, &page, "city", 1).is_none());
+        assert_eq!(
+            layout.move_column(&declared, &page, "street", 1),
+            Some(names(&["id", "city", "street", "amount"]))
+        );
+
+        assert_eq!(
+            layout.move_column(&declared, &page, "id", 1),
+            Some(names(&["city", "street", "id", "amount"]))
+        );
+        assert_eq!(
+            layout.move_column(&declared, &page, "amount", -1),
+            Some(names(&["city", "street", "amount", "id"]))
+        );
+        assert_eq!(
+            layout.move_column(&declared, &page, "amount", -1),
+            Some(names(&["amount", "city", "street", "id"]))
+        );
+        assert!(layout.move_column(&declared, &page, "amount", -1).is_none());
+        assert_eq!(layout.effective(&declared, &page), layout.order());
+    }
+
+    /// A band moves as a whole, past a column or past another band, and stops
+    /// at the end of the row and at the edge of the pinned columns.
+    #[test]
+    fn a_band_moves_as_a_whole() {
+        let (declared, mut page) = banded();
+        let mut layout = ColumnLayout::default();
+        assert_eq!(
+            layout.move_band(&declared, &page, "Address", 1),
+            Some(names(&["id", "amount", "street", "city"]))
+        );
+        assert!(layout.move_band(&declared, &page, "Address", 1).is_none());
+        assert_eq!(
+            layout.move_band(&declared, &page, "Address", -1),
+            Some(names(&["id", "street", "city", "amount"]))
+        );
+        assert!(layout.move_band(&declared, &page, "Nope", 1).is_none());
+
+        // Past another band: the two change places, each in its own order.
+        page.bands.push(("id".to_owned(), "Key".to_owned()));
+        page.bands.push(("amount".to_owned(), "Key".to_owned()));
+        let mut layout = ColumnLayout::default();
+        assert_eq!(
+            layout.effective(&declared, &page),
+            names(&["id", "amount", "street", "city"])
+        );
+        assert_eq!(
+            layout.move_band(&declared, &page, "Address", -1),
+            Some(names(&["street", "city", "id", "amount"]))
+        );
+
+        // Not past the edge of the pinned columns.
+        let (declared, mut page) = banded();
+        page.pins.push(("id".to_owned(), Pin::Start));
+        let mut layout = ColumnLayout::default();
+        assert!(layout.move_band(&declared, &page, "Address", -1).is_none());
+        assert!(layout.move_column(&declared, &page, "id", 1).is_none());
+    }
+
+    /// A band is pinned as a whole: by the page's pin of one of its columns,
+    /// and by the reader's — which is kept for each column of the band.
+    #[test]
+    fn a_pin_takes_the_whole_band() {
+        let (declared, mut page) = banded();
+        page.pins.push(("city".to_owned(), Pin::End));
+        let mut layout = ColumnLayout::default();
+        assert_eq!(layout.pin("street", &page), Some(Pin::End));
+        assert_eq!(
+            layout.effective(&declared, &page),
+            names(&["id", "amount", "street", "city"])
+        );
+
+        assert!(layout.set_pin("street", Some(Pin::Start), &page));
+        assert_eq!(
+            layout.pins(),
+            [
+                ("city".to_owned(), Some(Pin::Start)),
+                ("street".to_owned(), Some(Pin::Start))
+            ]
+        );
+        assert_eq!(layout.pin("city", &page), Some(Pin::Start));
+        assert_eq!(
+            layout.effective(&declared, &page),
+            names(&["street", "city", "id", "amount"])
+        );
+        assert!(!layout.set_pin("city", Some(Pin::Start), &page), "as it is");
+
+        // Back to the page's pin: nothing of the reader's is left.
+        assert!(layout.set_pin("city", Some(Pin::End), &page));
+        assert!(layout.pins().is_empty());
+        // A column outside the band is pinned alone.
+        assert!(layout.set_pin("id", Some(Pin::Start), &page));
+        assert_eq!(layout.pins(), [("id".to_owned(), Some(Pin::Start))]);
     }
 
     /// Half the width holds; a pixel more lets go.

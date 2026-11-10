@@ -1,0 +1,137 @@
+{
+  "id": "p11-a-share-of-a-null-or-zero-total-is-null",
+  "rule": "P11",
+  "pivot": {
+    "source": "orders",
+    "rows": [
+      "country"
+    ],
+    "columns": [
+      "ordered_year"
+    ],
+    "values": [
+      {
+        "field": "amount",
+        "fn": "sum",
+        "as": "of_row",
+        "calc": "share_of_row"
+      },
+      {
+        "field": "amount",
+        "fn": "sum",
+        "as": "of_column",
+        "calc": "share_of_column"
+      },
+      {
+        "field": "amount",
+        "fn": "count",
+        "as": "counted",
+        "calc": "share_of_row"
+      }
+    ],
+    "filter": {
+      "field": "id",
+      "op": "in",
+      "value": [
+        3,
+        5,
+        6,
+        49
+      ]
+    }
+  },
+  "expected": {
+    "columns": [
+      {
+        "path": [
+          2026
+        ],
+        "measure": "of_row"
+      },
+      {
+        "path": [
+          2026
+        ],
+        "measure": "of_column"
+      },
+      {
+        "path": [
+          2026
+        ],
+        "measure": "counted"
+      },
+      {
+        "path": [
+          null
+        ],
+        "measure": "of_row"
+      },
+      {
+        "path": [
+          null
+        ],
+        "measure": "of_column"
+      },
+      {
+        "path": [
+          null
+        ],
+        "measure": "counted"
+      }
+    ],
+    "rows": [
+      [
+        "DE",
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      [
+        "FR",
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      [
+        "GB",
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      [
+        "US",
+        null,
+        null,
+        1.0,
+        null,
+        null,
+        0.0
+      ],
+      [
+        null,
+        null,
+        null,
+        1.0,
+        null,
+        null,
+        0.0
+      ]
+    ],
+    "levels": [
+      1,
+      1,
+      1,
+      1,
+      0
+    ]
+  }
+}

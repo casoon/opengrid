@@ -1,0 +1,97 @@
+{
+  "id": "p11-without-a-column-dimension-a-row-is-its-own-total",
+  "rule": "P11",
+  "pivot": {
+    "source": "orders",
+    "rows": [
+      "country"
+    ],
+    "values": [
+      {
+        "field": "qty",
+        "fn": "sum",
+        "as": "of_row",
+        "calc": "share_of_row"
+      },
+      {
+        "field": "qty",
+        "fn": "sum",
+        "as": "of_column",
+        "calc": "share_of_column"
+      },
+      {
+        "field": "qty",
+        "fn": "sum",
+        "as": "of_total",
+        "calc": "share_of_total"
+      },
+      {
+        "field": "qty",
+        "fn": "sum",
+        "as": "running",
+        "calc": "running_total"
+      }
+    ],
+    "filter": {
+      "field": "id",
+      "op": "lte",
+      "value": 6
+    }
+  },
+  "expected": {
+    "columns": [
+      {
+        "path": [],
+        "measure": "of_row"
+      },
+      {
+        "path": [],
+        "measure": "of_column"
+      },
+      {
+        "path": [],
+        "measure": "of_total"
+      },
+      {
+        "path": [],
+        "measure": "running"
+      }
+    ],
+    "rows": [
+      [
+        "DE",
+        1.0,
+        0.16666666666666666,
+        0.16666666666666666,
+        3
+      ],
+      [
+        "FR",
+        1.0,
+        0.5,
+        0.5,
+        9
+      ],
+      [
+        "US",
+        1.0,
+        0.3333333333333333,
+        0.3333333333333333,
+        6
+      ],
+      [
+        null,
+        1.0,
+        1.0,
+        1.0,
+        18
+      ]
+    ],
+    "levels": [
+      1,
+      1,
+      1,
+      0
+    ]
+  }
+}

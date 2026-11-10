@@ -213,6 +213,10 @@ export async function page(): Promise<void> {
   module.set_view(grid, { columns: { pinned: { id: "none", customer: "start" } } });
   // @ts-expect-error — `none`, `start` or `end`
   module.set_view(grid, { columns: { pinned: { id: true } } });
+  // Column bands (issue #319): a column names the band it stands under.
+  module.set_columns(grid, { street: { band: "Address" }, city: { band: "Address", pin: "start" } });
+  // @ts-expect-error — a band is its name, one level
+  module.set_columns(grid, { street: { band: ["Contact", "Address"] } });
 
   // A grid's view flows into a place that takes a view, unwidened: the
   // pivot's overload must not turn it into `View | PivotView` (0.8.0 did).
@@ -232,6 +236,11 @@ export async function page(): Promise<void> {
   module.set_view(pivot, { values: [{ fn: "count" }] });
   // @ts-expect-error — the rows are a list, not the attribute's text
   module.set_view(pivot, { rows: "country" });
+  // A calculated measure (issue #329): one of the four calculations.
+  module.set_view(pivot, { values: [{ field: "qty", fn: "sum", as: "share", calc: "share_of_row" }] });
+  pivotView?.values[0]?.calc satisfies "share_of_row" | "share_of_column" | "share_of_total" | "running_total" | undefined;
+  // @ts-expect-error — there is no share of the parent group
+  module.set_view(pivot, { values: [{ fn: "count", as: "n", calc: "share_of_parent" }] });
   connect(pivot, {
     view: { rows: ["country"], columns: [], values: [{ field: "qty", fn: "sum", as: "total" }] },
     onViewChange: (next) => next.columns satisfies string[],

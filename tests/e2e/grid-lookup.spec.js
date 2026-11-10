@@ -446,3 +446,46 @@ test("right to left: labels, the choice and the combobox work, with no axe viola
   await page.keyboard.press("Enter");
   await expect.poll(() => page.evaluate(() => window.__changes.at(-1))).toMatchObject({ column: "customer_id", value: "3" });
 });
+
+test("a lookup column under a band, pinned, still shows, filters and edits by label", async ({ page }) => {
+  await open(page);
+  await page.evaluate(() =>
+    window.__module.set_columns(window.__host, {
+      customer_id: { ...window.__columns.customer_id, band: "Buyer", pin: "start" },
+      country: { ...window.__columns.country, band: "Buyer" },
+    }),
+  );
+  // The band is pinned as a whole and leads the row; the columns are found by their titles.
+  const layout = () =>
+    shadow(page, (root) => {
+      const headers = [...root.querySelectorAll("thead th[data-col]")].filter((th) => th.getAttribute("part") !== "band");
+      const col = (title) => headers.find((th) => th.querySelector("span")?.textContent === title)?.dataset.col;
+      return {
+        bands: [...root.querySelectorAll('thead th[part="band"]')].map((th) => th.textContent),
+        customer: col("Customer"),
+        country: col("Country"),
+        // In the order of the row. (Whether they stand still depends on the room: a narrow grid lets its pins go.)
+        order: [...headers].sort((a, b) => a.dataset.col - b.dataset.col).map((th) => th.querySelector("span").textContent),
+      };
+    });
+  await expect.poll(async () => (await layout()).bands).toEqual(["Buyer"]);
+  const { customer, country, order } = await layout();
+  expect(order.slice(0, 2)).toEqual(["Customer", "Country"]);
+  await expect.poll(() => column(page, customer)).toEqual(["Mid Ltd", "Zeta GmbH", "Alpha AG", "9", "", "Zeta GmbH"]);
+  expect(await column(page, country)).toEqual(["Germany", "France", "Germany", "US", "", "France"]);
+  expect((await filterValue(page, customer)).options).toEqual([["", "any"], ["1", "Zeta GmbH"], ["2", "Alpha AG"], ["3", "Mid Ltd"]]);
+  expect(await axe(page)).toEqual([]);
+
+  await choose(page, customer, "1");
+  // A narrow grid adds that its pins let go.
+  await expect.poll(() => status(page)).toContain("2 matches");
+  expect(await chips(page)).toEqual(["Customer is Zeta GmbH"]);
+
+  await startEdit(page, 0, customer);
+  await page.keyboard.type("mid");
+  await expect.poll(() => combobox(page)).toMatchObject({ expanded: "true", options: ["Mid Ltd"] });
+  expect(await axe(page)).toEqual([]);
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  await expect.poll(() => page.evaluate(() => window.__changes.at(-1))).toMatchObject({ key: 2, column: "customer_id", value: "3" });
+});

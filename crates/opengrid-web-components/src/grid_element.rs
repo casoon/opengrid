@@ -1069,6 +1069,7 @@ fn ensure_skeleton(host: &HtmlElement) {
             facets: host.has_attribute(grid::FACETS_ATTRIBUTE),
             search: host.has_attribute(grid::SEARCH_ATTRIBUTE),
             actions: &actions_of(host),
+            bands: &bands_of(host),
         },
     );
     let root_node: Node = root.clone().unchecked_into();
@@ -1869,7 +1870,7 @@ fn focus_from(root: &ShadowRoot, viewport: Option<&Element>, from: ActiveCell, t
 /// so moving to it scrolls the viewport back to the first row.
 fn focus_cell(root: &ShadowRoot, viewport: Option<&Element>, to: ActiveCell) {
     set_tabindex(root, to, "0");
-    if let (ActiveCell::Header { .. }, Some(viewport)) = (to, viewport) {
+    if let (ActiveCell::Header { .. } | ActiveCell::Band { .. }, Some(viewport)) = (to, viewport) {
         viewport.set_scroll_top(0);
     }
     let Ok(Some(target)) = root.query_selector(&selector(to)) else {
@@ -1943,6 +1944,8 @@ fn selector(active: ActiveCell) -> String {
             format!("tr:has(td[data-row=\"{row}\"]) > td[data-select=\"row\"]")
         }
         ActiveCell::Header { col } => format!("th[data-col=\"{col}\"]"),
+        // A band's cell lists the columns it spans, and is found by any.
+        ActiveCell::Band { col } => format!("th[{}~=\"{col}\"]", grid::BAND_ATTRIBUTE),
         ActiveCell::Data(cell) => {
             format!("td[data-row=\"{}\"][data-col=\"{}\"]", cell.row, cell.col)
         }
@@ -1975,6 +1978,11 @@ fn active_from_element(element: &Element) -> Option<ActiveCell> {
                 .map(|row| ActiveCell::Select { row }),
             _ => None,
         };
+    }
+    // A band's cell (issue #319): the first of the columns it spans.
+    if let Some(spanned) = element.get_attribute(grid::BAND_ATTRIBUTE) {
+        let col = spanned.split(' ').next()?.parse().ok()?;
+        return Some(ActiveCell::Band { col });
     }
     let col: usize = element.get_attribute("data-col")?.parse().ok()?;
     match element.tag_name().to_ascii_lowercase().as_str() {
@@ -2301,13 +2309,26 @@ fn on_key_down(event: KeyboardEvent) {
         }
         return;
     }
+    // A band's cell (issue #319) moves the band as a whole. A band has no
+    // width of its own — its columns have — so the resize key does nothing.
+    if (event.ctrl_key() || event.meta_key())
+        && sideways
+        && let ActiveCell::Band { col } = active
+    {
+        event.prevent_default();
+        if !event.shift_key() {
+            move_band(&host, col, if key == "ArrowLeft" { -1 } else { 1 });
+        }
+        return;
+    }
     // Pinning lives on the header cell as well (issue #316): one press takes
     // the column one step towards that side — from the other end to not
-    // pinned, from not pinned to this end.
+    // pinned, from not pinned to this end. On a band's cell, and on the header
+    // of a column in a band, it is the band that is pinned.
     if event.alt_key()
         && event.shift_key()
         && sideways
-        && let ActiveCell::Header { col } = active
+        && let ActiveCell::Header { col } | ActiveCell::Band { col } = active
     {
         event.prevent_default();
         step_pin(&host, col, key == "ArrowRight");
@@ -2426,7 +2447,7 @@ fn on_key_down(event: KeyboardEvent) {
         let picks = keyed
             && match active {
                 ActiveCell::SelectAll => true,
-                ActiveCell::Header { .. } => false,
+                ActiveCell::Header { .. } | ActiveCell::Band { .. } => false,
                 _ => active
                     .row()
                     .is_some_and(|row| record_at(&borrowed, row).is_some()),
@@ -2511,6 +2532,8 @@ fn on_key_down(event: KeyboardEvent) {
                 ActiveCell::SelectAll => toggle_all(&host, &runtime),
                 ActiveCell::Select { row } => toggle_row(&host, &runtime, row, false),
                 ActiveCell::Header { .. } => activate_header(&host, &runtime, event.shift_key()),
+                // A band sorts nothing: its columns do, each on its own.
+                ActiveCell::Band { .. } => {}
                 ActiveCell::Data(cell) => begin_edit(&host, cell, None),
             }
         }
@@ -2539,6 +2562,7 @@ fn on_key_down(event: KeyboardEvent) {
                 ActiveCell::Header { .. } => {
                     activate_header(&host, &runtime, event.shift_key());
                 }
+                ActiveCell::Band { .. } => {}
                 ActiveCell::Data(cell) => {
                     toggle_row(&host, &runtime, cell.row, event.shift_key());
                 }
@@ -2650,13 +2674,20 @@ fn move_with_key(
     key: GridKey,
 ) {
     event.prevent_default();
-    let (active, ncols, total_count, window, pool) = {
+    let (active, ncols, total_count, window, pool, bands) = {
         let runtime = runtime.borrow();
         let pool = runtime
             .view
             .as_ref()
             .map(|view| view.pool() as u64)
             .unwrap_or_else(|| pool_of(host));
+        // The bands the header shows (issue #319); none is the one-row header.
+        let bands: Vec<(usize, usize)> = runtime.view.as_ref().map_or_else(Vec::new, |view| {
+            view.bands
+                .iter()
+                .map(|band| (band.first, band.count))
+                .collect()
+        });
         (
             runtime.active,
             // The action columns are places on the row like any other.
@@ -2664,15 +2695,17 @@ fn move_with_key(
             runtime.state.row_count(),
             runtime.state.window(),
             pool,
+            bands,
         )
     };
-    let next = grid::move_active(
+    let next = grid::move_banded(
         active,
         key,
         ncols,
         total_count,
         viewport_rows,
         shows_selection(host),
+        &bands,
     );
     let reload = grid::requested_window(key, next, window, total_count, pool);
 
@@ -2761,7 +2794,7 @@ fn resize_column(host: &HtmlElement, col: usize, step: i32) {
 fn pin_of(host: &HtmlElement, name: &str) -> Option<Pin> {
     columns::layout(host)
         .borrow()
-        .pin(name, &presentation::page_pins(host))
+        .pin(name, &presentation::page_columns(host))
 }
 
 /// `Alt`+`Shift`+`←`/`→` on a header cell (issue #316): one step towards
@@ -2789,9 +2822,15 @@ fn pin_column(host: &HtmlElement, name: &str, pin: Option<Pin>) {
     let Some(runtime) = runtime(host) else {
         return;
     };
-    let said = texts(host).column_pinned(name, pin);
+    let page = presentation::page_columns(host);
+    // A column of a band takes the band along (issue #319), and it is the
+    // band that is said.
+    let said = match page.band(name) {
+        Some(band) => texts(host).band_pinned(band, pin),
+        None => texts(host).column_pinned(name, pin),
+    };
+    let on_band = matches!(runtime.borrow().active, ActiveCell::Band { .. });
     let before = arrangement(host);
-    let page = presentation::page_pins(host);
     if !columns::update(host, |layout| layout.set_pin(name, pin, &page)) {
         // As it is: said, so the key is not a dead one.
         announce(host, &said);
@@ -2799,7 +2838,11 @@ fn pin_column(host: &HtmlElement, name: &str, pin: Option<Pin>) {
     }
     if before.is_some_and(|before| rearrange(host, &runtime, before, Some(said.clone()))) {
         if let Some(col) = columns_of(host).iter().position(|column| column == name) {
-            runtime.borrow_mut().set_active(ActiveCell::Header { col });
+            runtime.borrow_mut().set_active(if on_band {
+                ActiveCell::Band { col }
+            } else {
+                ActiveCell::Header { col }
+            });
         }
         dispatch_view(host);
         return;
@@ -2811,17 +2854,19 @@ fn pin_column(host: &HtmlElement, name: &str, pin: Option<Pin>) {
     dispatch_view(host);
 }
 
-/// The shown columns and the view, read together **before** something changes
-/// the order of the columns: the filter row is read by position, so the view
-/// has to be gathered while the columns still stand as the DOM has them.
-type Arrangement = (Vec<String>, GridView);
+/// The shown columns, the bands above them and the view, read together
+/// **before** something changes the order of the columns: the filter row is
+/// read by position, so the view has to be gathered while the columns still
+/// stand as the DOM has them.
+type Arrangement = (Vec<String>, Vec<(String, usize, usize)>, GridView);
 
 fn arrangement(host: &HtmlElement) -> Option<Arrangement> {
-    Some((columns_of(host), current_view(host)?))
+    Some((columns_of(host), bands_of(host), current_view(host)?))
 }
 
 /// Builds the grid again around the view it had, when the columns stand in
-/// another order than `before` — a pin set or taken away (issue #316). One
+/// another order than `before` — a pin set or taken away (issue #316) — or
+/// under other bands (issue #319). One
 /// query; sort, filters, grouping, the open groups and the search stay.
 /// Answers whether the order changed. It fires no `opengrid-view-change`: the
 /// page's own `set_columns` comes through here too, and that is not the
@@ -2832,8 +2877,8 @@ fn rearrange(
     before: Arrangement,
     notice: Option<String>,
 ) -> bool {
-    let (columns, mut view) = before;
-    if columns_of(host) == columns {
+    let (columns, bands, mut view) = before;
+    if columns_of(host) == columns && bands_of(host) == bands {
         return false;
     }
     view.columns = columns::layout(host).borrow().clone();
@@ -2871,7 +2916,7 @@ fn move_column(host: &HtmlElement, col: usize, by: i32) {
     };
     let moved = columns::layout(host).borrow_mut().move_column(
         &declared,
-        &presentation::page_pins(host),
+        &presentation::page_columns(host),
         &name,
         by,
     );
@@ -2895,6 +2940,47 @@ fn move_column(host: &HtmlElement, col: usize, by: i32) {
     announce(
         host,
         &texts(host).column_moved(&name, position as u64 + 1, order.len() as u64),
+    );
+    dispatch_view(host);
+}
+
+/// Moves the band above column `col` one place as a whole (issue #319) and
+/// re-runs the query, as [`move_column`] does for one column. The focus stays
+/// on the band's cell.
+fn move_band(host: &HtmlElement, col: usize, by: i32) {
+    let declared = grid::parse_columns(host.get_attribute(COLUMNS_ATTRIBUTE).as_deref());
+    let page = presentation::page_columns(host);
+    let columns = columns_of(host);
+    let Some(name) = columns.get(col) else {
+        return;
+    };
+    let Some(band) = page.band(name) else {
+        return;
+    };
+    let moved = columns::layout(host)
+        .borrow_mut()
+        .move_band(&declared, &page, band, by);
+    let Some(order) = moved else {
+        announce(host, &texts(host).band_at_edge(band));
+        return;
+    };
+    let position = order.iter().position(|column| column == name).unwrap_or(0);
+    // Where the band starts now: the place of its first column.
+    let first = page
+        .band_spans(&order)
+        .into_iter()
+        .find(|(_, first, count)| (*first..first + count).contains(&position))
+        .map_or(position, |(_, first, _)| first);
+    // Rebuild **first**, as for a column: it replaces the runtime.
+    rebuild(host, true);
+    if let Some(runtime) = runtime(host) {
+        runtime
+            .borrow_mut()
+            .set_active(ActiveCell::Band { col: position });
+    }
+    announce(
+        host,
+        &texts(host).band_moved(band, first as u64 + 1, order.len() as u64),
     );
     dispatch_view(host);
 }
@@ -3084,9 +3170,8 @@ fn align_filter(host: &HtmlElement) {
     let rtl = crate::element::is_rtl(&filter);
     let table_box = table.get_bounding_client_rect();
     let table_left = table_box.left();
-    let mut first = None;
     let mut groups = Vec::new();
-    let mut cells = Vec::new();
+    let mut measured = Vec::new();
     for index in 0..headers.length() {
         let Some(header) = headers
             .item(index)
@@ -3098,8 +3183,11 @@ fn align_filter(host: &HtmlElement) {
             continue;
         };
         let rect = header.get_bounding_client_rect();
-        first.get_or_insert(if rtl { rect.right() } else { rect.left() } - table_left);
-        cells.push((col.parse::<usize>().unwrap_or(usize::MAX), rect.width()));
+        measured.push((
+            col.parse::<usize>().unwrap_or(usize::MAX),
+            if rtl { rect.right() } else { rect.left() } - table_left,
+            rect.width(),
+        ));
         if let Ok(Some(operator)) =
             root.query_selector(&format!("[part=\"filter-operator\"][data-col=\"{col}\"]"))
             && let Some(group) = operator.parent_element()
@@ -3108,9 +3196,16 @@ fn align_filter(host: &HtmlElement) {
             groups.push((group, format!("[data-col=\"{col}\"]"), rect.width()));
         }
     }
-    let Some(mut first) = first else {
+    // By column: under bands (issue #319) the header cells of the two rows are
+    // not the columns in DOM order.
+    measured.sort_by_key(|(col, _, _)| *col);
+    let Some(mut first) = measured.first().map(|(_, start, _)| *start) else {
         return;
     };
+    let cells: Vec<(usize, f64)> = measured
+        .iter()
+        .map(|(col, _, width)| (*col, *width))
+        .collect();
     let viewport = root.query_selector("[part~=\"viewport\"]").ok().flatten();
     // The pinned cells, from the widths just read. A viewport without a width
     // is not laid out: nothing is known, and nothing is written.
@@ -3119,7 +3214,7 @@ fn align_filter(host: &HtmlElement) {
         .map_or(0.0, |viewport| f64::from(viewport.client_width()));
     let pins = (room > 0.0).then(|| {
         let names = columns_of(host);
-        let page = presentation::page_pins(host);
+        let page = presentation::page_columns(host);
         let layout = columns::layout(host);
         let layout = layout.borrow();
         let columns: Vec<(usize, f64, Option<Pin>)> = cells
@@ -3138,7 +3233,14 @@ fn align_filter(host: &HtmlElement) {
         crate::pins::pins(&columns, select, actions, room)
     });
     let geometry = match &pins {
-        Some(crate::pins::Pins::Held(geometry)) => geometry.clone(),
+        Some(crate::pins::Pins::Held(geometry)) => {
+            // A pinned band's cell stays above its columns (issue #319).
+            let bands: Vec<(usize, usize)> = bands_of(host)
+                .into_iter()
+                .map(|(_, first, count)| (first, count))
+                .collect();
+            geometry.clone().with_bands(&bands)
+        }
         _ => crate::pins::PinGeometry::default(),
     };
     let offset = |cells: &[(String, f64)], selector: &str| {
@@ -3402,7 +3504,11 @@ fn apply_widths(host: &HtmlElement) {
             .map(|width| width.max(narrowest));
         least += width.unwrap_or(narrowest);
         if let Some(width) = width {
-            rules.push_str(&format!("td[data-col=\"{col}\"] {{ width: {width}px; }}\n"));
+            // The `<col>` is there in a header with bands (issue #319), whose
+            // first row no longer says how wide a column under a band is.
+            rules.push_str(&format!(
+                "td[data-col=\"{col}\"], col[data-width-col=\"{col}\"] {{ width: {width}px; }}\n"
+            ));
         }
         let Ok(Some(cell)) = root.query_selector(&format!("th[data-col=\"{col}\"]")) else {
             continue;
@@ -3480,7 +3586,14 @@ fn columns_of(host: &HtmlElement) -> Vec<String> {
     let declared = grid::parse_columns(host.get_attribute(COLUMNS_ATTRIBUTE).as_deref());
     columns::layout(host)
         .borrow()
-        .effective(&declared, &presentation::page_pins(host))
+        .effective(&declared, &presentation::page_columns(host))
+}
+
+/// The column bands above the shown columns (issue #319), each with its first
+/// column and how many it spans — read where the order of the columns is, so
+/// the header and the order cannot disagree.
+fn bands_of(host: &HtmlElement) -> Vec<(String, usize, usize)> {
+    presentation::page_columns(host).band_spans(&columns_of(host))
 }
 
 /// How many DOM row slots the grid keeps.
@@ -5727,7 +5840,11 @@ fn on_focus_in(event: Event) {
         let runtime = runtime.borrow();
         (runtime.active, runtime.viewport.clone())
     };
-    if from == active {
+    // A band's cell that has the focus already keeps the column the reader
+    // came up from (issue #319): `↓` goes back to it.
+    let same_band =
+        matches!(from, ActiveCell::Band { .. }) && target.matches(&selector(from)).unwrap_or(false);
+    if from == active || same_band {
         return;
     }
     runtime.borrow_mut().set_active(active);
