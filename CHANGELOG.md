@@ -21,6 +21,10 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Added
 
+- **Elements:** right-to-left layout for `<opengrid-grid>`, `<opengrid-table>` and
+  `<opengrid-pivot>`, taken from `dir` on the element or an ancestor: the columns run from the
+  right, and in the grid `←` and `→` follow what is on the screen
+  ([#320](https://github.com/casoon/opengrid/issues/320), [Right to left](docs/api.md#right-to-left)).
 - **Grid:** a grouped grid with `row-key` selects rows, by key: opening and closing a group never
   changes what is selected, and select-all takes every row of the filter, open or not.
   `opengrid-selection-change` then carries `keys` and `count`, with `rows` and `ranges` empty —

@@ -1609,7 +1609,7 @@ pub fn grid_css() -> String {
                              flex: 1 1 0; min-width: 0; }}
          [part=\"filter\"] > span[data-filter-field] {{ position: relative; }}
          [part=\"filter\"] > span > [part=\"filter-operator\"] {{ position: absolute;
-                             left: 4px; top: 50%; transform: translateY(-50%); z-index: 1;
+                             inset-inline-start: 4px; top: 50%; transform: translateY(-50%); z-index: 1;
                              min-width: {MIN_TARGET_SIZE}px; min-height: {MIN_TARGET_SIZE}px;
                              padding: 0 4px; border: 0; background: transparent;
                              color: var({INK_MUTED_PROPERTY}); font-weight: 600; line-height: 1;
@@ -1618,7 +1618,7 @@ pub fn grid_css() -> String {
                              background: var({HOVER_PROPERTY}); color: var({INK_PROPERTY}); }}
          [part=\"filter\"] > span > [part=\"filter-operator\"][hidden] {{ display: none; }}
          [part=\"filter\"] > span > [part=\"filter-operator\"]:not([hidden]) + input {{
-                             padding-left: calc({MIN_TARGET_SIZE}px + 10px); }}
+                             padding-inline-start: calc({MIN_TARGET_SIZE}px + 10px); }}
          /* The operator menu (issue #96): a popover like the grouping menu. */
          [part=\"operator-menu\"] {{ position: fixed; inset: auto; margin: 0; padding: 6px;
                              min-width: 11rem; box-sizing: border-box;
@@ -1675,7 +1675,7 @@ pub fn grid_css() -> String {
          [part=\"paste-preview\"] td[aria-invalid=\"true\"] {{ text-decoration: underline wavy;
                              text-underline-offset: 3px; }}
          [data-reason] {{ color: var({INK_MUTED_PROPERTY}); }}
-         [part=\"paste-preview\"] button {{ font: inherit; min-height: {MIN_TARGET_SIZE}px; margin: 6px 6px 0 0;
+         [part=\"paste-preview\"] button {{ font: inherit; min-height: {MIN_TARGET_SIZE}px; margin: 6px 0 0; margin-inline-end: 6px;
                              padding: 0 12px; color: var({INK_PROPERTY}); background: var({SURFACE_PROPERTY});
                              border: 1px solid var({LINE_STRONG_PROPERTY});
                              border-radius: min(var({RADIUS_PROPERTY}), 7px); }}
@@ -1716,11 +1716,14 @@ pub fn grid_css() -> String {
             select as asked, so they keep it. */
          @supports (font: -apple-system-body) {{
            [part=\"filter\"] select, select[part=\"editor\"] {{ appearance: none;
-                             padding: 0 1.5em 0 0.3em; background-repeat: no-repeat;
+                             padding: 0; padding-inline: 0.3em 1.5em; background-repeat: no-repeat;
                              background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
                                                linear-gradient(135deg, currentColor 50%, transparent 50%);
                              background-position: calc(100% - 0.9em) 55%, calc(100% - 0.55em) 55%;
                              background-size: 0.35em 0.35em; }}
+           /* Right to left the arrow stands at the other end (issue #320). */
+           [part=\"filter\"] select:dir(rtl), select[part=\"editor\"]:dir(rtl) {{
+                             background-position: 0.55em 55%, 0.9em 55%; }}
          }}
          /* The column list: a panel under its button (issue #101), like the
             filter dialog. */
@@ -1774,11 +1777,11 @@ pub fn grid_css() -> String {
          [part=\"source\"]:empty {{ display: none; }}
          [part=\"status\"][data-state=\"error\"] {{ font-weight: bold; color: var({INK_PROPERTY}); }}
          [part=\"viewport\"] {{ flex: 1 1 0; min-height: 0; overflow-y: auto; position: relative; display: block; }}
-         [part=\"sort-direction\"], [part=\"sort-index\"] {{ margin-left: 0.25rem; font-size: 0.75em;
+         [part=\"sort-direction\"], [part=\"sort-index\"] {{ margin-inline-start: 0.25rem; font-size: 0.75em;
                              color: var({ACCENT_INK_PROPERTY}); }}
          /* An empty mark must not reserve space: an unsorted header would
             otherwise truncate its name earlier than the cells below it. */
-         [part=\"sort-direction\"]:empty, [part=\"sort-index\"]:empty {{ margin-left: 0; }}
+         [part=\"sort-direction\"]:empty, [part=\"sort-index\"]:empty {{ margin-inline-start: 0; }}
          /* The marks are last in the header, so a name wider than its column
             would push them out of the clipped box — and the direction would be
             invisible exactly where it is needed (point 49). Letting the *name*
@@ -1800,7 +1803,7 @@ pub fn grid_css() -> String {
          table {{ width: 100%; table-layout: fixed; border-collapse: collapse; }}
          thead {{ position: sticky; top: 0; z-index: 2;
                   background: var({SURFACE_2_PROPERTY}); color: var({INK_PROPERTY}); }}
-         tbody tr {{ position: absolute; left: 0; width: 100%; display: table; table-layout: fixed;
+         tbody tr {{ position: absolute; inset-inline-start: 0; width: 100%; display: table; table-layout: fixed;
                      background: var({SURFACE_PROPERTY}); }}
          tbody tr:hover {{ background: var({HOVER_PROPERTY}); }}
          /* Until now a selected row was announced and invisible. The tint alone
@@ -1808,6 +1811,9 @@ pub fn grid_css() -> String {
             helps it. Selected beats hovered, hence the order. */
          tbody tr[data-selected=\"true\"] {{ background: var({SELECTED_PROPERTY});
                      box-shadow: inset 3px 0 0 var({ACCENT_PROPERTY}); }}
+         /* The bar stands where the row starts (issue #320). */
+         tbody tr[data-selected=\"true\"]:dir(rtl) {{
+                     box-shadow: inset -3px 0 0 var({ACCENT_PROPERTY}); }}
          tbody tr:has(:focus) {{ z-index: 1; }}
          tbody td:focus {{ white-space: normal; overflow-wrap: anywhere; }}
          tbody td {{ scroll-margin-top: var({HEADER_HEIGHT_PROPERTY}); }}
@@ -1843,35 +1849,39 @@ pub fn grid_css() -> String {
          /* Left-aligned whatever the column is: the label is a sentence, and in
             a right-aligned number column it would overflow to the left, out of
             the row. */
-         tr[data-kind=\"group\"] td[data-col=\"0\"] {{ overflow: visible; text-align: left; }}
+         tr[data-kind=\"group\"] td[data-col=\"0\"] {{ overflow: visible; text-align: start; }}
          tr[data-kind=\"group\"] td[data-col=\"0\"]::before {{ content: \"\\25B8\" / \"\";
                    display: inline-block; width: 1.25em; color: var({INK_MUTED_PROPERTY}); }}
          tr[data-kind=\"group\"][aria-expanded=\"true\"] td[data-col=\"0\"]::before {{
                    content: \"\\25BE\" / \"\"; }}
                   tr[data-kind=\"group\"][data-level=\"2\"] td[data-col=\"0\"] {{
-                   padding-left: calc(var({PAD_PROPERTY}) + 1.25em); }}
+                   padding-inline-start: calc(var({PAD_PROPERTY}) + 1.25em); }}
                   tr[data-kind=\"group\"][data-level=\"3\"] td[data-col=\"0\"] {{
-                   padding-left: calc(var({PAD_PROPERTY}) + 2.5em); }}
+                   padding-inline-start: calc(var({PAD_PROPERTY}) + 2.5em); }}
          /* A tree's node (issue #135): the first column indented by depth,
             a chevron where it opens — drawn from `aria-expanded` with an
             empty alternative, like a group's — and room for one on a leaf so
             the names line up. Context rows (T5) are muted. */
          tr[data-tree] td[data-col=\"0\"] {{
-                   padding-left: calc(var({PAD_PROPERTY}) + (var(--og-depth, 1) - 1) * 1.25em); }}
+                   padding-inline-start: calc(var({PAD_PROPERTY}) + (var(--og-depth, 1) - 1) * 1.25em); }}
          tr[data-tree] td[data-col=\"0\"]::before {{ content: \"\" / \"\";
                    display: inline-block; width: 1.25em; color: var({INK_MUTED_PROPERTY}); }}
          tr[data-tree][aria-expanded=\"false\"] td[data-col=\"0\"]::before {{ content: \"\\25B8\" / \"\"; }}
          tr[data-tree][aria-expanded=\"true\"] td[data-col=\"0\"]::before {{ content: \"\\25BE\" / \"\"; }}
+         /* A closed group or node points the way the row reads (issue #320);
+            the open one's mark is the same both ways. */
+         tr:is([data-kind=\"group\"], [data-tree]) td[data-col=\"0\"]:dir(rtl)::before {{
+                   transform: scaleX(-1); text-align: left; }}
          tr[data-tree][data-context] td {{ color: var({INK_MUTED_PROPERTY}); }}
          /* Aggregates (point 63): the glyph is drawn, with an empty
             alternative — the cell's `aria-label` says the word. */
          tr[data-kind=\"total\"] {{ background: var({SURFACE_2_PROPERTY}); font-weight: 600;
                    border-top: 1px solid var({LINE_STRONG_PROPERTY}); }}
-         tr[data-kind=\"total\"] td[data-col=\"0\"] {{ overflow: visible; text-align: left; }}
+         tr[data-kind=\"total\"] td[data-col=\"0\"] {{ overflow: visible; text-align: start; }}
          td[data-aggregate]::before, th[data-aggregate]::after {{
                    color: var({ACCENT_INK_PROPERTY}); font-weight: 500; }}
-         td[data-aggregate]::before {{ margin-right: 0.35em; }}
-         th[data-aggregate]::after {{ margin-left: 0.35em; }}
+         td[data-aggregate]::before {{ margin-inline-end: 0.35em; }}
+         th[data-aggregate]::after {{ margin-inline-start: 0.35em; }}
          [data-aggregate=\"sum\"]::before, th[data-aggregate=\"sum\"]::after {{ content: \"\\03A3\" / \"\"; }}
          [data-aggregate=\"avg\"]::before, th[data-aggregate=\"avg\"]::after {{ content: \"\\2300\" / \"\"; }}
          [data-aggregate=\"count\"]::before, th[data-aggregate=\"count\"]::after {{ content: \"#\" / \"\"; }}
@@ -1885,7 +1895,7 @@ pub fn grid_css() -> String {
             sits at the end of the header; the name gives way to it. */
          [part=\"column-menu-button\"] {{ display: inline-flex; align-items: center;
                    justify-content: center; width: {MIN_TARGET_SIZE}px; height: {MIN_TARGET_SIZE}px;
-                   margin-left: 0.25rem; vertical-align: middle; cursor: pointer;
+                   margin-inline-start: 0.25rem; vertical-align: middle; cursor: pointer;
                    border-radius: min(var({RADIUS_PROPERTY}), 5px); color: var({INK_MUTED_PROPERTY}); }}
          [part=\"column-menu-button\"]:hover {{ background: var({HOVER_PROPERTY}); }}
          [part=\"column-menu\"] {{ position: fixed; inset: auto; margin: 0; padding: 6px;
@@ -1919,7 +1929,7 @@ pub fn grid_css() -> String {
          [part=\"toolbar\"] {{ display: flex; flex-wrap: wrap; align-items: center;
                    gap: 8px; padding: 12px 14px; }}
          [part=\"toolbar\"] > [part=\"search\"] {{ flex: 1 1 17.5rem; max-width: 28.75rem;
-                   padding: 0; margin-right: auto; }}
+                   padding: 0; margin-inline-end: auto; }}
          /* The buttons' row is no box on a wide grid (issue #77). On a narrow
             one it is a row of its own that scrolls sideways, under a search
             field as wide as the grid, where wrapping took four rows from the
@@ -1930,7 +1940,7 @@ pub fn grid_css() -> String {
          [data-toolbar-row] {{ display: contents; }}
          @media (min-width: 321px) {{ @container (max-width: {NARROW_TOOLBAR}px) {{
            [part=\"toolbar\"] > [part=\"search\"] {{ flex: 1 1 100%; max-width: none;
-                   margin-right: 0; }}
+                   margin-inline-end: 0; }}
            [data-toolbar-row] {{ display: flex; flex: 1 1 100%; align-items: center; gap: 8px;
                    min-width: 0; overflow-x: auto; scrollbar-width: thin;
                    padding: 4px; margin: -4px; }}
@@ -1959,7 +1969,7 @@ pub fn grid_css() -> String {
                    padding: 0 14px 12px; }}
          [part=\"chips\"][hidden], [part=\"filter\"][hidden] {{ display: none; }}
          [part=\"chip\"] {{ display: inline-flex; align-items: center; gap: 6px;
-                   min-height: 30px; box-sizing: border-box; padding: 0 3px 0 11px;
+                   min-height: 30px; box-sizing: border-box; padding: 0; padding-inline: 11px 3px;
                    border-radius: 999px; font-size: 0.8125rem; font-weight: 500;
                    background: var({ACCENT_SOFT_PROPERTY}); color: var({ACCENT_INK_PROPERTY}); }}
          /* The grouping is not a filter, and looks it: ink on surface. */
@@ -2019,7 +2029,7 @@ pub fn grid_css() -> String {
          [part=\"facets\"] {{ flex: 0 0 15.5rem; overflow-y: auto; box-sizing: border-box;
                    padding: 0.75rem var({PAD_PROPERTY}); display: flex; flex-direction: column;
                    gap: 1rem; background: var({SURFACE_2_PROPERTY});
-                   border-right: 1px solid var({LINE_PROPERTY}); }}
+                   border-inline-end: 1px solid var({LINE_PROPERTY}); }}
          [part=\"facets-head\"] {{ display: flex; justify-content: space-between;
                    align-items: center; gap: 0.5rem; }}
          [part=\"facets-head\"] {{ font-weight: 600; }}
@@ -2039,7 +2049,7 @@ pub fn grid_css() -> String {
          [part=\"facet-value\"] input {{ min-width: {MIN_TARGET_SIZE}px;
                    min-height: {MIN_TARGET_SIZE}px; margin: 0; accent-color: var({ACCENT_PROPERTY}); }}
          [part=\"facet-value\"] [part=\"facet-count\"], [part=\"facet-pill\"] [part=\"facet-count\"] {{
-                   margin-left: auto; font-family: var({FONT_MONO_PROPERTY}); font-size: 0.85em;
+                   margin-inline-start: auto; font-family: var({FONT_MONO_PROPERTY}); font-size: 0.85em;
                    color: var({INK_MUTED_PROPERTY}); }}
          [part=\"facet-pills\"] {{ display: flex; flex-wrap: wrap; gap: 0.375rem; }}
          [part=\"facet-pill\"] {{ display: inline-flex; gap: 0.375rem; align-items: center;
@@ -2060,11 +2070,11 @@ pub fn grid_css() -> String {
          [part=\"toolbar\"] > [part=\"search\"] > [part=\"search-input\"] {{ max-width: none; }}
          /* The magnifier is drawn, and not read: the field has its label. */
          [part=\"search\"]::before {{ content: \"\\2315\" / \"\"; position: absolute;
-                   left: calc(var({PAD_PROPERTY}) + 0.75rem); pointer-events: none;
+                   inset-inline-start: calc(var({PAD_PROPERTY}) + 0.75rem); pointer-events: none;
                    color: var({INK_MUTED_PROPERTY}); }}
-         [part=\"toolbar\"] > [part=\"search\"]::before {{ left: 0.75rem; }}
+         [part=\"toolbar\"] > [part=\"search\"]::before {{ inset-inline-start: 0.75rem; }}
          [part=\"search-input\"] {{ flex: 1 1 18rem; max-width: 32rem; font: inherit;
-                   min-height: 36px; box-sizing: border-box; padding: 0 0.75rem 0 2rem;
+                   min-height: 36px; box-sizing: border-box; padding: 0; padding-inline: 2rem 0.75rem;
                    color: var({INK_PROPERTY}); background: var({SURFACE_2_PROPERTY});
                    border: 1px solid var({LINE_STRONG_PROPERTY});
                    border-radius: min(var({RADIUS_PROPERTY}), 9px); }}
@@ -2072,7 +2082,7 @@ pub fn grid_css() -> String {
          [part=\"search-hint\"] {{ font-size: 0.75em; padding: 0.2em 0.5em; border-radius: 5px;
                    background: var({ACCENT_SOFT_PROPERTY}); color: var({ACCENT_INK_PROPERTY}); }}
          [part=\"search-hint\"][hidden], [part=\"search-list\"][hidden] {{ display: none; }}
-         [part=\"search-list\"] {{ position: absolute; top: 100%; left: var({PAD_PROPERTY}); z-index: 5;
+         [part=\"search-list\"] {{ position: absolute; top: 100%; inset-inline-start: var({PAD_PROPERTY}); z-index: 5;
                    margin: 0; padding: 6px; list-style: none; min-width: 16rem;
                    background: var({SURFACE_PROPERTY}); border: 1px solid var({LINE_STRONG_PROPERTY});
                    border-radius: min(var({RADIUS_PROPERTY}), 10px);
@@ -2097,6 +2107,11 @@ pub fn grid_css() -> String {
          [data-align=\"end\"] {{ text-align: right; }}
          [data-align=\"center\"] {{ text-align: center; }}
          [data-align=\"start\"] {{ text-align: left; }}
+         /* Right to left, start and end change sides (issue #320). The two
+            rules above keep their computed `left` and `right` for a page
+            that reads them. */
+         [data-align=\"end\"]:dir(rtl) {{ text-align: left; }}
+         [data-align=\"start\"]:dir(rtl) {{ text-align: right; }}
          /* Tabular figures on every number, not only on the mono columns:
             digits of the same magnitude have to stand under each other or the
             column cannot be read down. */
@@ -2107,7 +2122,7 @@ pub fn grid_css() -> String {
          tr:not([data-kind]) td[data-emphasis] {{ font-weight: 600; }}
          tr:not([data-kind]) td[data-muted] {{ color: var({INK_MUTED_PROPERTY}); }}
          th {{ height: var({HEADER_HEIGHT_PROPERTY}); background: var({SURFACE_2_PROPERTY});
-               color: var({INK_MUTED_PROPERTY}); text-align: left;
+               color: var({INK_MUTED_PROPERTY}); text-align: start;
                font-size: 0.75rem; font-weight: 500; text-transform: uppercase;
                letter-spacing: 0.04em; }}
          [part=\"sort-direction\"], [part=\"sort-index\"] {{ text-transform: none; }}

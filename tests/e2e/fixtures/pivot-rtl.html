@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>opengrid right-to-left pivot fixture</title>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid right-to-left pivot fixture</h1>
+      <!-- Issue #320: the pivot takes the direction from `dir` on the document.
+           Two row dimensions, so there is a group to fold and a field to move. -->
+      <opengrid-pivot
+        label="Rooms by zone and kind"
+        datasource="rooms"
+        rows="zone,kind"
+        fields="zone,kind"
+        toolbar
+        values='[{"fn":"count","as":"n"}]'
+      ></opengrid-pivot>
+    </main>
+    <script type="module">
+      import { loadOpengrid, createLocalProvider } from "/packages/opengrid/loader.js";
+      import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+
+      await init();
+      const schema = JSON.stringify({
+        fields: [
+          { name: "id", type: "int64", nullable: false },
+          { name: "zone", type: "utf8", nullable: false },
+          { name: "kind", type: "utf8", nullable: false },
+        ],
+      });
+      const provider = createLocalProvider(new Engine());
+      await provider.loadRows(
+        "rooms",
+        [
+          { id: 1, zone: "north", kind: "lab" },
+          { id: 2, zone: "south", kind: "office" },
+          { id: 3, zone: "north", kind: "office" },
+          { id: 4, zone: "north", kind: "office" },
+        ],
+        schema,
+      );
+      const loader = await loadOpengrid();
+      loader.module.set_provider(document.querySelector("opengrid-pivot"), provider);
+      window.__ready = true;
+    </script>
+  </body>
+</html>
