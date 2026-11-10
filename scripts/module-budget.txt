@@ -58,7 +58,11 @@
 # platform, `←` and `→` by what is on the screen, the filter row and the popups
 # measured from the right, the sheets' logical sides and mirrored marks) grew
 # it by 0.2 KiB, to 295650 B.
-grid+pivot    298600  # 295650 B, 2026-11-10, #320
+# Raised the same day from 298600: the rows behind a pivot's cell (#330: a
+# value as a button, the cell's filter as a query, the event, its text) and
+# the grid's `filter` attribute (the wire filter read from JSON, and-ed onto
+# every query) grew it by 3.0 KiB, to 298764 B.
+grid+pivot    301800  # 298764 B, 2026-11-10, #330
 # Raised 2026-09-30 from 108000: the bound was not raised with 0.7.0, which
 # shipped the engine at 115.2 KiB already (CHANGELOG); rule P9's sorted
 # grouping sets and order sets (#108) added the rest, to 121610 B.

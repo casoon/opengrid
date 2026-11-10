@@ -166,6 +166,8 @@ export interface ConnectOptions {
   onPaste?: (detail: PasteDetail) => void;
   onBulkChange?: (detail: BulkChangeDetail) => void;
   onRowAction?: (detail: RowActionDetail) => void;
+  /** A value of a pivot with `drill-down` was pressed. The pivot only. */
+  onDrillDown?: (detail: DrillDownDetail) => void;
   /** The provider loaded the grid's source again (`loadRows`); the grid asks anew. */
   onSourceReplaced?: (detail: SourceReplacedDetail) => void;
 }
@@ -819,6 +821,7 @@ export type TextKey =
   | "pivotFilters"
   | "pivotFilterLabel"
   | "pivotFilterHint"
+  | "pivotDrillDown"
   | "treeContext"
   | "subtreeCell"
   | "subtreeOnly"
@@ -977,6 +980,28 @@ export interface RowActionDetail {
   key?: WireValue;
 }
 
+/**
+ * `opengrid-drill-down`: a value of an `<opengrid-pivot>` with `drill-down`
+ * was pressed (issue #330). The page shows the rows.
+ */
+export interface DrillDownDetail {
+  /**
+   * The rows behind the cell, as the wire writes a query. `filter` is the
+   * pivot's own filter and-ed with one clause per dimension the cell lies in
+   * — a NULL group as `is_null`, the empty string as `eq ""` — and absent
+   * when nothing restricts the rows.
+   */
+  query: { source: string; filter?: Record<string, unknown> };
+  /** The row group's keys, down to the row's level; `[]` for the grand total. */
+  row: WireValue[];
+  /** The column group's keys, one per column dimension. */
+  column: WireValue[];
+  /** The measure's alias. */
+  measure: string;
+  /** The cell's value, as the answer carried it. */
+  value: WireValue;
+}
+
 /** `opengrid-row-add`: a record was typed into the new row (issue #183). */
 export interface RowAddDetail {
   /** The values by field name, in the wire notation of a result. */
@@ -1058,6 +1083,8 @@ export interface OpengridEventMap {
   "opengrid-row-add": CustomEvent<RowAddDetail>;
   "opengrid-paste": CustomEvent<PasteDetail>;
   "opengrid-bulk-change": CustomEvent<BulkChangeDetail>;
+  /** On `<opengrid-pivot>` with `drill-down`. */
+  "opengrid-drill-down": CustomEvent<DrillDownDetail>;
   /** Dispatched by `loader.js` on the grid; it does not bubble. */
   "opengrid-source-replaced": CustomEvent<SourceReplacedDetail>;
 }
@@ -1079,6 +1106,11 @@ export interface OpengridGridAttributes {
   "window-size"?: string;
   "page-size"?: string;
   mode?: Mode;
+  /**
+   * The page's filter, as the wire's JSON — `{"field":"country","op":"eq","value":"DE"}` —
+   * and-ed onto every query the grid sends. Not the reader's and not in the view.
+   */
+  filter?: string;
   "group-by"?: string;
   /** The field holding a row's parent key: the rows show as a tree. */
   tree?: string;
@@ -1126,6 +1158,8 @@ export interface OpengridPivotAttributes {
   measures?: string;
   /** The filter on the raw rows, as the wire's JSON: `{"field":"country","op":"eq","value":"DE"}`. */
   filter?: string;
+  /** Makes every value a button that fires `opengrid-drill-down`; presence is what counts. */
+  "drill-down"?: string;
   theme?: Theme;
 }
 

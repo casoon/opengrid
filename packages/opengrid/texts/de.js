@@ -90,6 +90,7 @@ export default {
   "pivotFilters": "Filter",
   "pivotFilterLabel": "Filter hinzufügen",
   "pivotFilterHint": "Feld = Wert · Enter",
+  "pivotDrillDown": "{value}, Zeilen anzeigen",
   "treeContext": "Kontext",
   "subtreeCell": "{shown}, {aggregate} im Teilbaum",
   "subtreeOnly": "{shown}, {aggregate} im Teilbaum",
