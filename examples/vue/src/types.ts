@@ -26,6 +26,8 @@ export const nodes = [
   }),
   h(OpengridTable, { label: "Orders", datasource: "orders", columns: "id", defaultView: { density: "compact" } }),
   h(OpengridPivot, { datasource: "orders", rows: "country", columns: "ordered_year", values: "[]" }),
+  h(OpengridGrid, { filter: '{"field":"country","op":"eq","value":"DE"}' }),
+  h(OpengridPivot, { drillDown: true, onDrillDown: (detail) => detail.query.source satisfies string }),
   h(OpengridPivot, {
     view: { rows: ["country"], values: [{ fn: "count", as: "n" }] },
     "onUpdate:view": (next: PivotView) => next.rows,

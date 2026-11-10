@@ -47,9 +47,10 @@ use crate::layout::ColumnLayout;
 /// `DENSITIES` carry the same names with their measures).
 pub const DENSITY_NAMES: [&str; 3] = ["compact", "normal", "comfortable"];
 
-/// The most levels a grid groups by. The prototype has two, and a third would
-/// need a tree in the UI that nobody has designed (point 62 §Nicht Teil).
-pub const MAX_GROUP_LEVELS: usize = 2;
+/// The most levels a grid groups by (issue #321; two until then). Every open
+/// group above the innermost level costs one query for the groups under it,
+/// so the number is bounded.
+pub const MAX_GROUP_LEVELS: usize = 3;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GridView {
@@ -533,17 +534,23 @@ mod tests {
         }
     }
 
-    /// Grouping by a column the grid does not have, or by three, is refused.
+    /// Grouping by a column the grid does not have, or by four, is refused —
+    /// by three it is not.
     #[test]
     fn a_grouping_the_grid_cannot_have_is_refused() {
+        let mut declared = declared();
+        declared.push("country".to_owned());
         for group in [
             opengrid_json::json!(["nope"]),
-            opengrid_json::json!(["id", "customer", "amount"]),
+            opengrid_json::json!(["id", "customer", "amount", "country"]),
         ] {
             let json = opengrid_json::json!({ "group": group });
-            let problems = GridView::from_json(&json, &declared()).expect_err("is refused");
+            let problems = GridView::from_json(&json, &declared).expect_err("is refused");
             assert_eq!(problems[0].field, "group");
         }
+        let json = opengrid_json::json!({ "group": ["id", "customer", "amount"] });
+        let view = GridView::from_json(&json, &declared).expect("three levels are a view");
+        assert_eq!(view.group, ["id", "customer", "amount"]);
     }
 
     /// Nothing is dropped silently: a view against a different data source is

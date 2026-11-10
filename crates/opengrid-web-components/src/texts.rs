@@ -182,6 +182,9 @@ pub struct GridTexts {
     pub pivot_filters: String,
     pub pivot_filter_label: String,
     pub pivot_filter_hint: String,
+    /// The name of a value that opens the rows behind it (issue #330):
+    /// `{value}` is the cell's visible text, so the name contains it.
+    pub pivot_drill_down: String,
     /// The tree mode of the grid (issue #135): how a context row (T5) is
     /// described, the orphans (T2), a level too large to load, and why a
     /// tree is not shown beside `page-size` or grouped.
@@ -449,6 +452,7 @@ pub(crate) const KEYS: &[&str] = &[
     "pivotFilters",
     "pivotFilterLabel",
     "pivotFilterHint",
+    "pivotDrillDown",
     "treeContext",
     "subtreeCell",
     "subtreeOnly",
@@ -636,7 +640,7 @@ impl Default for GridTexts {
             cancel: "Cancel".to_owned(),
             apply: "Apply".to_owned(),
             add_grouping: "+ Group".to_owned(),
-            grouping_full: "Grouped by two columns already".to_owned(),
+            grouping_full: "Grouped by three columns already".to_owned(),
             pivot_toolbar: "Pivot fields".to_owned(),
             pivot_rows: "Rows".to_owned(),
             pivot_columns: "Columns".to_owned(),
@@ -652,6 +656,7 @@ impl Default for GridTexts {
             pivot_filters: "Filters".to_owned(),
             pivot_filter_label: "Add a filter".to_owned(),
             pivot_filter_hint: "field = value \u{00B7} Enter".to_owned(),
+            pivot_drill_down: "{value}, show rows".to_owned(),
             tree_context: "context".to_owned(),
             subtree_cell: "{shown}, {aggregate} of the subtree".to_owned(),
             subtree_only: "{shown}, {aggregate} of the subtree".to_owned(),
@@ -1260,6 +1265,11 @@ impl GridTexts {
         fill(&self.subtotal, "value", value)
     }
 
+    /// The name of a pivot value's drill-down button (issue #330).
+    pub fn pivot_drill_down(&self, value: &str) -> String {
+        fill(&self.pivot_drill_down, "value", value)
+    }
+
     /// The readable name of the operator at `index`, falling back to the wire
     /// token when there is none.
     ///
@@ -1435,6 +1445,7 @@ mod host {
         overwrite(&mut texts.pivot_filters, string("pivotFilters"));
         overwrite(&mut texts.pivot_filter_label, string("pivotFilterLabel"));
         overwrite(&mut texts.pivot_filter_hint, string("pivotFilterHint"));
+        overwrite(&mut texts.pivot_drill_down, string("pivotDrillDown"));
         overwrite(&mut texts.tree_context, string("treeContext"));
         overwrite(&mut texts.subtree_cell, string("subtreeCell"));
         overwrite(&mut texts.subtree_only, string("subtreeOnly"));
@@ -1567,7 +1578,7 @@ mod tests {
     fn a_disabled_button_is_named_by_its_text_first() {
         let texts = GridTexts::default();
         let name = reasoned(&texts.add_grouping, &texts.grouping_full);
-        assert_eq!(name, "+ Group. Grouped by two columns already");
+        assert_eq!(name, "+ Group. Grouped by three columns already");
         assert!(name.starts_with(&texts.add_grouping));
     }
 

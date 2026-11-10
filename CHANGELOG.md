@@ -30,10 +30,24 @@ Two things belong in every release entry and are easy to leave out:
   `<opengrid-pivot>`, taken from `dir` on the element or an ancestor: the columns run from the
   right, and in the grid `←` and `→` follow what is on the screen
   ([#320](https://github.com/casoon/opengrid/issues/320), [Right to left](docs/api.md#right-to-left)).
+- **Grid:** `filter`, the page's filter — a wire filter as JSON, and-ed onto every query the grid
+  sends. It is not the reader's: no chip, not in the view, and "remove all" leaves it
+  ([#330](https://github.com/casoon/opengrid/issues/330), [The page's filter](docs/api.md#the-pages-filter)).
+- **Pivot:** the rows behind a cell. With `drill-down`, every value is a button that fires
+  `opengrid-drill-down` with the cell's filter — NULL and empty-string groups apart, totals by the
+  dimensions they lie in, the pivot's own filter included — and the page shows the rows, in a grid
+  through its `filter`; `onDrillDown` in `connect` and the framework components
+  ([#330](https://github.com/casoon/opengrid/issues/330), [Drilling down](docs/api.md#drilling-down)).
 - **Texts:** a German translation ships with the npm package as `@casoon/opengrid/texts/de` — every
   text of the grid, the table and the pivot, with `lang: "de"`, to hand to `set_texts` or to the
   `texts` of `connect`; a page that does not import it does not load it
   ([#333](https://github.com/casoon/opengrid/issues/333), [Texts](docs/api.md#texts)).
+
+### Changed
+
+- **Grid:** `group-by`, the view's `group` and the toolbar's *+ Group* take three grouping levels; a
+  fourth is refused as the third was. The default wording of `groupingFull` is now
+  `Grouped by three columns already` ([#321](https://github.com/casoon/opengrid/issues/321)).
 
 ## [0.15.0] - 2026-11-09
 

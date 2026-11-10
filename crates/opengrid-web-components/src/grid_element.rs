@@ -879,6 +879,29 @@ fn on_attribute_changed(
             run_query(&host, QueryKind::Data, false);
             dispatch_view(&host);
         }
+        // The page's filter (issue #330): other rows exist, as after a filter
+        // of the reader's — the first window, no selection, the facets' values
+        // listed anew. It is not the reader's, so the view has not changed.
+        grid::FILTER_ATTRIBUTE => {
+            let Some(runtime) = runtime(&host) else {
+                return;
+            };
+            let pool = pool_of(&host);
+            let selection_dropped;
+            {
+                let mut runtime = runtime.borrow_mut();
+                runtime.page = 0;
+                runtime.state.set_window(Window::new(0, pool));
+                // A selection names positions, and other records sit in them now.
+                selection_dropped = !runtime.state.invalidate_selection().is_empty();
+                runtime.facet_domain.clear();
+                runtime.facet_counts.clear();
+            }
+            if selection_dropped {
+                announce_if_cleared(&host, &runtime);
+            }
+            run_query(&host, QueryKind::Data, false);
+        }
         // `write_view` sets it on its way and owns the single query after.
         grid::GROUP_BY_ATTRIBUTE if applying_view() => {}
         grid::GROUP_BY_ATTRIBUTE => regroup(&host),
@@ -5541,7 +5564,7 @@ pub(crate) fn recolumn(host: &HtmlElement) {
 /// The grouping the attributes ask for, or why it cannot be had.
 ///
 /// `Ok(None)`: no `group-by`. `Err`: a sentence for the status line — more than
-/// two levels, a column the grid does not show, or paging, which grouping
+/// three levels, a column the grid does not show, or paging, which grouping
 /// cannot live beside (paging excludes virtualization since point 38, and the
 /// group arithmetic presupposes it).
 fn grouping_of(host: &HtmlElement) -> Result<Option<Grouping>, String> {
@@ -5757,7 +5780,7 @@ fn measured(
 ///
 /// 1. the level-1 groups with their row counts — only when they are not loaded
 ///    yet or the filter changed;
-/// 2. the level-2 groups of every open level-1 group that has none yet;
+/// 2. the groups under every open group that shows and has none yet;
 /// 3. the rows of the window, **one query per group it touches**, each filtered
 ///    on the group key and paged with `offset`/`limit`.
 ///
@@ -5927,28 +5950,27 @@ fn run_grouped(
             }
         }
 
-        // 2. The level-2 groups of open level-1 groups that have none yet.
-        let (missing, second) = {
-            let runtime = grid_runtime.borrow();
-            let Some(grouping) = runtime.grouping.as_ref() else {
-                return;
+        // 2. The groups under open groups that have none yet — a level per
+        //    pass, because what a pass loads can be open itself (a view).
+        for _ in 1..grouping::MAX_LEVELS {
+            let missing = match grid_runtime.borrow().grouping.as_ref() {
+                Some(grouping) => grouping.missing_children(),
+                None => return,
             };
-            (grouping.missing_children(), grouping.by().get(1).cloned())
-        };
-        if let Some(second) = second {
-            for key in missing {
-                let (scoped, aggregates) = {
+            for keys in missing {
+                let (column, scoped, aggregates) = {
                     let runtime = grid_runtime.borrow();
                     let Some(grouping) = runtime.grouping.as_ref() else {
                         return;
                     };
                     (
-                        grouping.filter_for(std::slice::from_ref(&key), filter.as_ref()),
+                        grouping.by()[keys.len()].clone(),
+                        grouping.filter_for(&keys, filter.as_ref()),
                         grouping.aggregates().to_vec(),
                     )
                 };
                 let query =
-                    grouping::group_query_json(&source, &second, scoped.as_ref(), &aggregates);
+                    grouping::group_query_json(&source, &column, scoped.as_ref(), &aggregates);
                 let result = match ask(&host, &provider, &grid_runtime, &query, &mode).await {
                     Ok(result) => result,
                     Err(message) => return fail(message),
@@ -5961,7 +5983,7 @@ fn run_grouped(
                     Err(message) => return fail(message),
                 };
                 if let Some(grouping) = grid_runtime.borrow_mut().grouping.as_mut() {
-                    grouping.set_children(&key, children);
+                    grouping.set_children(&keys, children);
                 }
             }
         }
@@ -7171,11 +7193,41 @@ fn clear_chips(host: &HtmlElement) {
 // Facets (point 66)
 // ---------------------------------------------------------------------------
 
-/// The filter a query runs under: the filter row's **and** every facet's —
+/// The filter a query runs under: the page's `filter` attribute **and** what
+/// the reader chose ([`reader_filter`]). Every query of the grid takes its
+/// filter from here, so the page's filter holds for all of them (issue #330).
+fn effective_filter(
+    host: &HtmlElement,
+    runtime: &GridRuntime,
+    except: Option<&str>,
+) -> Result<Option<FilterExpr>, String> {
+    let reader = reader_filter(host, runtime, except)?;
+    Ok(match (page_filter(host)?, reader) {
+        (Some(page), Some(reader)) => Some(FilterExpr::And(vec![page, reader])),
+        (page, reader) => page.or(reader),
+    })
+}
+
+/// The page's `filter` attribute as an expression: absent or empty is none,
+/// and what is not a filter is a sentence for the status line — never a grid
+/// that silently shows every row.
+fn page_filter(host: &HtmlElement) -> Result<Option<FilterExpr>, String> {
+    let raw = host
+        .get_attribute(grid::FILTER_ATTRIBUTE)
+        .unwrap_or_default();
+    if raw.trim().is_empty() {
+        return Ok(None);
+    }
+    opengrid_json::from_str::<FilterExpr>(&raw)
+        .map(Some)
+        .map_err(|error| format!("the filter attribute is not a filter: {error}"))
+}
+
+/// What the reader filters by: the filter row's **and** every facet's —
 /// except `except`, which is how a facet is counted without its own
 /// restriction. A bound that is not a value of its column is a sentence for the
 /// status line, not a silently dropped half of a range.
-fn effective_filter(
+fn reader_filter(
     host: &HtmlElement,
     runtime: &GridRuntime,
     except: Option<&str>,
@@ -7297,12 +7349,14 @@ fn refresh_facets(host: &HtmlElement) {
         (runtime.facet_generation, plan)
     };
 
+    // A facet lists the values of the rows the page shows, not of the source.
+    let domain = page_filter(host).ok().flatten();
     let host = host.clone();
     spawn_local(async move {
         let mut queries = 0usize;
         for (column, needs_domain, filter) in plan {
             if needs_domain {
-                let query = grouping::group_query_json(&source, &column, None, &[]);
+                let query = grouping::group_query_json(&source, &column, domain.as_ref(), &[]);
                 queries += 1;
                 let Ok(result) = ask_uncounted(&host, &provider, &query, &mode).await else {
                     continue;
@@ -8076,7 +8130,8 @@ fn draw_empty(host: &HtmlElement, root: &ShadowRoot, runtime: &Rc<RefCell<GridRu
         // Rows the reader added are rows: the empty state would cover them.
         let empty = matches!(borrowed.state.status(), GridStatus::Empty)
             && borrowed.state.added().is_empty();
-        let filtered = effective_filter(host, &borrowed, None).is_ok_and(|filter| filter.is_some());
+        // The reader's filters alone: the reset takes back nothing of the page's.
+        let filtered = reader_filter(host, &borrowed, None).is_ok_and(|filter| filter.is_some());
         (empty, filtered)
     };
     if !empty {
@@ -8491,7 +8546,7 @@ fn open_group_menu(host: &HtmlElement) {
         .map(|field| field.name.as_str().to_owned())
         .filter(|name| !current.contains(name))
         .collect();
-    if current.len() >= 2 || offered.is_empty() {
+    if current.len() >= grouping::MAX_LEVELS || offered.is_empty() {
         return;
     }
     let texts = texts(host);
@@ -8598,7 +8653,7 @@ fn pick_grouping(host: &HtmlElement, item: &Element) {
         })
         .unwrap_or_default();
     close_quick(host, "grouping-menu", "add-grouping", true);
-    if next.len() >= 2 || next.contains(&column) {
+    if next.len() >= grouping::MAX_LEVELS || next.contains(&column) {
         return;
     }
     next.push(column);
@@ -8836,7 +8891,7 @@ fn sync_quick_buttons(host: &HtmlElement, root: &ShadowRoot) {
             .borrow()
             .grouping
             .as_ref()
-            .is_some_and(|grouping| grouping.by().len() >= 2)
+            .is_some_and(|grouping| grouping.levels() >= grouping::MAX_LEVELS)
     });
     let texts = texts(host);
     let visible = texts.add_grouping.as_str();

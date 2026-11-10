@@ -22,6 +22,7 @@ import type {
   OpengridGridElement,
   PasteDetail,
   PivotView,
+  DrillDownDetail,
   RowActionDetail,
   SelectionChangeDetail,
   SourceReplacedDetail,
@@ -36,6 +37,7 @@ type Callbacks =
   | "onPaste"
   | "onBulkChange"
   | "onRowAction"
+  | "onDrillDown"
   | "onSourceReplaced";
 
 /** `connect`'s options, less the callbacks that are events. */
@@ -50,6 +52,8 @@ export type OpengridEmits = {
   paste: (detail: PasteDetail) => void;
   bulkChange: (detail: BulkChangeDetail) => void;
   rowAction: (detail: RowActionDetail) => void;
+  /** The pivot only: a value was pressed, with `drill-down`. */
+  drillDown: (detail: DrillDownDetail) => void;
   sourceReplaced: (detail: SourceReplacedDetail) => void;
 };
 
@@ -71,7 +75,7 @@ export interface OpengridGridProps extends Options {
   /** Switches from scrolling to paging. */
   pageSize?: number;
   mode?: Mode;
-  /** Up to two columns, outermost first: `"country,customer"`. */
+  /** Up to three columns, outermost first: `"country,customer"`. */
   groupBy?: string;
   /** The field holding a row's parent key: the rows show as a tree. */
   tree?: string;
@@ -79,6 +83,8 @@ export interface OpengridGridProps extends Options {
   treeKey?: string;
   /** The field that names a record: `key` in the editing events. */
   rowKey?: string;
+  /** The page's filter, as the wire's JSON; and-ed onto every query, not in the view. */
+  filter?: string;
   /** An empty row after the last one to type a new record into (`@row-add`). */
   addRow?: boolean;
   search?: boolean;
@@ -125,6 +131,8 @@ export interface OpengridPivotProps
   measures?: string;
   /** The filter on the raw rows, as the wire's JSON; part of the view. */
   filter?: string;
+  /** Makes every value a button that emits `drillDown`. */
+  drillDown?: boolean;
   theme?: Theme;
 }
 

@@ -28,6 +28,7 @@ import type {
   PivotConnectOptions,
   PasteDetail,
   PivotView,
+  DrillDownDetail,
   RowActionDetail,
   SelectionChangeDetail,
   SourceReplacedDetail,
@@ -43,6 +44,7 @@ type Callbacks =
   | "onPaste"
   | "onBulkChange"
   | "onRowAction"
+  | "onDrillDown"
   | "onSourceReplaced";
 
 /** The callbacks every component has, in Svelte's spelling. */
@@ -56,6 +58,8 @@ type SvelteCallbacks = {
   onpaste?: (detail: PasteDetail) => void;
   onbulkchange?: (detail: BulkChangeDetail) => void;
   onrowaction?: (detail: RowActionDetail) => void;
+  /** The pivot only: a value was pressed, with `drillDown`. */
+  ondrilldown?: (detail: DrillDownDetail) => void;
   onsourcereplaced?: (detail: SourceReplacedDetail) => void;
 };
 
@@ -81,7 +85,7 @@ export interface OpengridGridProps extends Options, ElementProps {
   /** Switches from scrolling to paging. */
   pageSize?: number;
   mode?: Mode;
-  /** Up to two columns, outermost first: `"country,customer"`. */
+  /** Up to three columns, outermost first: `"country,customer"`. */
   groupBy?: string;
   /** The field holding a row's parent key: the rows show as a tree. */
   tree?: string;
@@ -89,6 +93,8 @@ export interface OpengridGridProps extends Options, ElementProps {
   treeKey?: string;
   /** The field that names a record: `key` in the editing events. */
   rowKey?: string;
+  /** The page's filter, as the wire's JSON; and-ed onto every query, not in the view. */
+  filter?: string;
   /** An empty row after the last one to type a new record into (`onrowadd`). */
   addRow?: boolean;
   search?: boolean;
@@ -135,6 +141,8 @@ export interface OpengridPivotProps extends PivotOptions, ElementProps {
   measures?: string;
   /** The filter on the raw rows, as the wire's JSON; part of the view. */
   filter?: string;
+  /** Makes every value a button that calls `ondrilldown`. */
+  drillDown?: boolean;
   theme?: Theme;
 }
 

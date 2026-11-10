@@ -33,12 +33,12 @@ use opengrid_web_core::provider::provider;
 use crate::element::{
     answer_size, apply_into, describe, dispatch, dispatch_query, is_latest, next_request, now,
 };
-use crate::grid_element_events::VIEW_EVENT;
+use crate::grid_element_events::{DRILL_DOWN_EVENT, VIEW_EVENT};
 use crate::pivot::{
-    self, Axis, COLLAPSED_ATTRIBUTE, COLUMNS_ATTRIBUTE, DATASOURCE_ATTRIBUTE, FIELDS_ATTRIBUTE,
-    FILTER_ATTRIBUTE, FieldAction, MEASURES_ATTRIBUTE, Offer, PIVOT_TAG, PivotLook, PivotModel,
-    PivotView, PlainLook, ROWS_ATTRIBUTE, SORT_ATTRIBUTE, SortTarget, TOOLBAR_ATTRIBUTE,
-    VALUES_ATTRIBUTE, VIEW_ATTRIBUTES,
+    self, Axis, COLLAPSED_ATTRIBUTE, COLUMNS_ATTRIBUTE, DATASOURCE_ATTRIBUTE, DRILL_DOWN_ATTRIBUTE,
+    FIELDS_ATTRIBUTE, FILTER_ATTRIBUTE, FieldAction, MEASURES_ATTRIBUTE, Offer, PIVOT_TAG,
+    PivotLook, PivotModel, PivotView, PlainLook, ROWS_ATTRIBUTE, SORT_ATTRIBUTE, SortTarget,
+    TOOLBAR_ATTRIBUTE, VALUES_ATTRIBUTE, VIEW_ATTRIBUTES,
 };
 use crate::texts;
 
@@ -109,6 +109,8 @@ fn on_attribute_changed(
             redraw(&host);
             report_view(&host, true);
         }
+        // Display only, and not part of the view: the values as buttons.
+        DRILL_DOWN_ATTRIBUTE => redraw(&host),
         ROWS_ATTRIBUTE | COLUMNS_ATTRIBUTE | VALUES_ATTRIBUTE | SORT_ATTRIBUTE
         | FILTER_ATTRIBUTE => {
             // `write_view` sets all three and owns the one query after.
@@ -300,6 +302,7 @@ fn render(
     let folded = shown.map(|(model, _)| PivotModel {
         collapsed: pivot::parse_collapsed(host.get_attribute(COLLAPSED_ATTRIBUTE).as_deref())
             .unwrap_or_default(),
+        drill_down: host.has_attribute(DRILL_DOWN_ATTRIBUTE),
         ..model.clone()
     });
     let model = folded.as_ref();
@@ -380,7 +383,7 @@ fn layout_of(
 
 /// The attributes a pivot's controls are known by, in the order they are
 /// tried: every redraw makes them anew, and these say which one is which.
-const CONTROL_KEYS: [&str; 9] = [
+const CONTROL_KEYS: [&str; 10] = [
     "data-sort-field",
     "data-sort-by",
     "data-path",
@@ -390,6 +393,7 @@ const CONTROL_KEYS: [&str; 9] = [
     "data-filter-remove",
     "data-filter-clear",
     "data-filter-input",
+    "data-cell",
 ];
 
 /// The control that has the focus, as a selector to find it again — and the
@@ -645,6 +649,13 @@ fn on_header_click(event: Event) {
         on_group_toggle(&host, &toggle);
         return;
     }
+    if let Some(button) = target
+        .as_ref()
+        .and_then(|target| target.closest("button[data-cell]").ok().flatten())
+    {
+        on_drill_down(&host, &button);
+        return;
+    }
     let Some(button) = target.and_then(|target| {
         target
             .closest(r#"button[part="sort-button"]"#)
@@ -682,6 +693,37 @@ fn on_header_click(event: Event) {
     } else {
         host.set_attribute(SORT_ATTRIBUTE, &sort)
     };
+}
+
+// ---------------------------------------------------------------------------
+// Drilling down (issue #330)
+// ---------------------------------------------------------------------------
+
+/// A value's button: the pivot says which rows are behind the cell and the
+/// page shows them. Nothing is drawn and the focus stays on the button.
+fn on_drill_down(host: &HtmlElement, button: &Element) {
+    let cell = button.get_attribute("data-cell").unwrap_or_default();
+    let Some((index, at)) = cell
+        .split_once(':')
+        .and_then(|(index, at)| Some((index.parse().ok()?, at.parse().ok()?)))
+    else {
+        return;
+    };
+    let (Some(shown), Some(source)) = (shown(host), host.get_attribute(DATASOURCE_ATTRIBUTE))
+    else {
+        return;
+    };
+    let own = pivot::parse_filter(host.get_attribute(FILTER_ATTRIBUTE).as_deref())
+        .ok()
+        .flatten();
+    if let Some(detail) = pivot::drill_down(&shown.model, &source, own.as_ref(), index, at) {
+        // A browser that does not focus a clicked button would leave the page
+        // without the place to come back to.
+        if let Some(button) = button.dyn_ref::<HtmlElement>() {
+            let _ = button.focus();
+        }
+        dispatch(host, DRILL_DOWN_EVENT, &to_js(&detail));
+    }
 }
 
 // ---------------------------------------------------------------------------

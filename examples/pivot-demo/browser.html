@@ -28,6 +28,27 @@
         text-align: end;
         font-variant-numeric: tabular-nums;
       }
+      /* A value is a button to its rows: it reads as the number it is, and
+         shows that it can be pressed. */
+      opengrid-pivot::part(drill-down) {
+        min-inline-size: 24px;
+        min-block-size: 24px;
+        border: 0;
+        background: none;
+        color: #1d4ed8;
+        font: inherit;
+        font-variant-numeric: tabular-nums;
+        text-decoration: underline;
+        cursor: pointer;
+      }
+      opengrid-pivot::part(drill-down):focus-visible {
+        outline: 2px solid #1d4ed8;
+        outline-offset: 2px;
+      }
+      #behind opengrid-grid {
+        display: block;
+        height: 20rem;
+      }
     </style>
   </head>
   <body>
@@ -39,15 +60,30 @@
       the server gives (<a href="index.html">index.html</a>), which the
       conformance suite checks.
     </p>
+    <p>
+      Every number is a button to the rows it is made of: the pivot fires
+      <code>opengrid-drill-down</code> with the cell's filter, and this page
+      shows the rows in a grid below. The button over the grid leads back to
+      the cell.
+    </p>
     <p>Serve the page with <code>just serve-demo</code>.</p>
 
     <opengrid-pivot
+      drill-down
       label="Orders by country and year"
       datasource="orders"
       rows="country"
       columns="ordered_year"
       values='[{"field":"qty","fn":"sum","as":"Quantity"},{"fn":"count","as":"Count"}]'
     ></opengrid-pivot>
+
+    <!-- The rows behind a cell. The grid has its source and columns but no
+         provider until a cell is pressed, so it asks nothing before. -->
+    <section id="behind" aria-labelledby="behind-title" hidden>
+      <h2 id="behind-title" tabindex="-1"></h2>
+      <p><button type="button" id="back">Back to the pivot</button></p>
+      <opengrid-grid datasource="orders" columns="id,customer,country,qty,ordered_on"></opengrid-grid>
+    </section>
 
     <script type="module">
       import { loadOpengrid, createWorkerProvider } from "/packages/opengrid/loader.js";
@@ -60,7 +96,50 @@
       await provider.load("orders", csv, schema);
 
       const loader = await loadOpengrid();
-      loader.module.set_provider(document.querySelector("opengrid-pivot"), provider);
+      const pivot = document.querySelector("opengrid-pivot");
+      loader.module.set_provider(pivot, provider);
+
+      // Drilling down: the pivot says which rows are behind the cell, the
+      // page shows them in a grid under that filter (docs/api.md, "Drilling
+      // down" and "The page's filter").
+
+      const panel = document.querySelector("#behind");
+      const heading = document.querySelector("#behind-title");
+      const grid = panel.querySelector("opengrid-grid");
+      /** The pressed button: where the focus goes back to. */
+      let cell = null;
+      /** Whether the grid has its provider: it gets it with the first cell. */
+      let supplied = false;
+
+      /** A group's key as the pivot's headers say it. */
+      const word = (key) => (key === null ? "(no value)" : key === "" ? "(empty)" : String(key));
+
+      pivot.addEventListener("opengrid-drill-down", ({ detail }) => {
+        cell = pivot.shadowRoot.activeElement;
+        const group = [...detail.row, ...detail.column].map(word).join(", ") || "all orders";
+        const title = `Rows behind ${detail.measure} of ${group}`;
+        heading.textContent = title;
+        grid.setAttribute("label", title);
+        // Shown first: a grid measures its viewport when it asks.
+        panel.hidden = false;
+        // The cell's filter is the grid's `filter`; the grand total of a pivot
+        // that filters nothing has none.
+        const { filter } = detail.query;
+        if (filter) grid.setAttribute("filter", JSON.stringify(filter));
+        else grid.removeAttribute("filter");
+        if (!supplied) {
+          supplied = true;
+          loader.module.set_provider(grid, provider);
+        }
+        heading.focus();
+      });
+
+      document.querySelector("#back").addEventListener("click", () => {
+        panel.hidden = true;
+        // A new answer makes the pivot's buttons anew: then its first one.
+        const target = cell?.isConnected ? cell : pivot.shadowRoot.querySelector('[part="drill-down"]');
+        target?.focus();
+      });
     </script>
   </body>
 </html>
