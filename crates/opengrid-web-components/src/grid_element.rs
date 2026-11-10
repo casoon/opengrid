@@ -86,6 +86,7 @@ use crate::grid_element_events::{
     VIEW_EVENT,
 };
 
+mod builder;
 mod bulk;
 mod combo;
 mod history;
@@ -205,6 +206,11 @@ struct GridRuntime {
     facet_generation: u64,
     /// The free text the search field applied (point 67), or empty.
     search_text: String,
+    /// The nested filter (issue #324): the one tree of conditions joined by
+    /// `and` and `or`, in the wire form — written by the search expression
+    /// and by the builder, and-ed onto the filter row's. A rebuild keeps it,
+    /// like the facets.
+    nested: Option<FilterExpr>,
     /// The pinned columns take more than their share of the width and scroll
     /// with the others (issue #316) — and whether that still has to be said.
     pins_released: bool,
@@ -340,6 +346,7 @@ fn fresh_runtime(
         queries: 0,
         facet_generation: 0,
         search_text: String::new(),
+        nested: None,
         pins_released: false,
         release_unsaid: false,
         scroll_left: 0,
@@ -976,6 +983,7 @@ fn on_attribute_changed(
         // it means a new skeleton — the same as changing the columns.
         grid::SELECTION_ATTRIBUTE
         | grid::COLUMN_MENU_ATTRIBUTE
+        | grid::FILTER_BUILDER_ATTRIBUTE
         | grid::TOOLBAR_ATTRIBUTE
         | grid::FACETS_ATTRIBUTE
         | grid::SEARCH_ATTRIBUTE
@@ -1066,6 +1074,7 @@ fn ensure_skeleton(host: &HtmlElement) {
             selection: shows_selection(host),
             column_menu: host.has_attribute(grid::COLUMN_MENU_ATTRIBUTE),
             toolbar: host.has_attribute(grid::TOOLBAR_ATTRIBUTE),
+            filter_builder: host.has_attribute(grid::FILTER_BUILDER_ATTRIBUTE),
             facets: host.has_attribute(grid::FACETS_ATTRIBUTE),
             search: host.has_attribute(grid::SEARCH_ATTRIBUTE),
             actions: &actions_of(host),
@@ -5384,6 +5393,19 @@ fn on_filter_clear(event: Event) {
             open_filter_dialog(&host);
             return;
         }
+        // The builder of the nested filter (issue #324), from the toolbar
+        // and from the filter's chip.
+        let chip = target.closest("[data-chip-edit]").ok().flatten().is_some();
+        if chip
+            || target
+                .closest("[data-toolbar=\"filter-builder\"]")
+                .ok()
+                .flatten()
+                .is_some()
+        {
+            builder::open(&host, chip);
+            return;
+        }
         if let Ok(Some(button)) = target.closest("[data-toolbar=\"add-grouping\"]") {
             if button.get_attribute("aria-disabled").as_deref() != Some("true") {
                 open_group_menu(&host);
@@ -5941,6 +5963,11 @@ pub(crate) fn current_view(host: &HtmlElement) -> Option<GridView> {
         }
     };
     let selected = opengrid_grid::grid_view::selected_keys(selected);
+    let nested = runtime
+        .borrow()
+        .nested
+        .as_ref()
+        .map(opengrid_json::ToJson::to_json);
 
     Some(GridView {
         sort,
@@ -5953,6 +5980,7 @@ pub(crate) fn current_view(host: &HtmlElement) -> Option<GridView> {
         filter_row,
         facets,
         selected,
+        nested,
     })
 }
 
@@ -6205,6 +6233,10 @@ fn apply_view(
         if !keep_search {
             borrowed.search_text.clear();
         }
+        borrowed.nested = view
+            .nested
+            .as_ref()
+            .and_then(|tree| opengrid_json::FromJson::from_json(tree).ok());
         borrowed.facets = view
             .facets
             .as_object()
@@ -8019,28 +8051,23 @@ fn chips_of(host: &HtmlElement) -> Vec<Chip> {
         }
     }
     for entry in &view.filters {
-        let token = entry.op.as_str();
-        let index = crate::shared::FILTER_OPERATORS
-            .iter()
-            .position(|op| *op == token)
-            .unwrap_or(0);
-        let operator = texts.operator(index, token);
-        let text = if grid::takes_value(token) {
-            format!(
-                "{} {operator} {}",
-                texts.column(&entry.column),
-                entry.value.trim()
-            )
-        } else {
-            format!("{} {operator}", texts.column(&entry.column))
-        };
         out.push(Chip {
-            text,
+            text: builder::condition_words(&texts, entry),
             removes: format!("column:{}", entry.column),
+        });
+    }
+    // The nested filter is one chip, in words, removed as a whole (issue #324).
+    if let Some(nested) = runtime(host).and_then(|runtime| runtime.borrow().nested.clone()) {
+        out.push(Chip {
+            text: builder::words(host, &nested),
+            removes: NESTED_CHIP.to_owned(),
         });
     }
     out
 }
+
+/// What the nested filter's chip removes.
+const NESTED_CHIP: &str = "where";
 
 /// Draws the chips, but only when they say something different from before.
 fn draw_chips(host: &HtmlElement, root: &ShadowRoot) {
@@ -8080,8 +8107,17 @@ fn draw_chips(host: &HtmlElement, root: &ShadowRoot) {
         // The chip's words are the page's column name and value mixed with our
         // operator word — no `lang` fits both halves (the open question from
         // phase E (k), for point 71).
-        if let Ok(text) = document.create_element("span") {
+        // The nested filter's words are a button that opens its builder.
+        let edits = chip.removes == NESTED_CHIP;
+        if let Ok(text) = document.create_element(if edits { "button" } else { "span" }) {
             text.set_text_content(Some(&chip.text));
+            if edits {
+                let _ = text.set_attribute("type", "button");
+                let _ = text.set_attribute("part", "chip-edit");
+                let _ = text.set_attribute("data-chip-edit", "");
+                let _ = text.set_attribute("aria-haspopup", "dialog");
+                let _ = text.set_attribute("aria-label", &texts.filter_builder_edit(&chip.text));
+            }
             let _ = span.append_child(&text);
         }
         if let Ok(button) = document.create_element("button") {
@@ -8176,6 +8212,11 @@ fn remove_chip(host: &HtmlElement, button: &Element) {
     // frame the query draws — said twice (phase E (j)).
     if removes == "group" {
         let _ = host.remove_attribute(grid::GROUP_BY_ATTRIBUTE);
+    } else if removes == NESTED_CHIP {
+        if let Some(runtime) = runtime(host) {
+            runtime.borrow_mut().nested = None;
+        }
+        apply_facets(host);
     } else if removes == "search" {
         if let Some(runtime) = runtime(host) {
             runtime.borrow_mut().search_text.clear();
@@ -8243,6 +8284,7 @@ fn clear_chips(host: &HtmlElement) {
             *selection = clear_selection(selection);
         }
         borrowed.search_text.clear();
+        borrowed.nested = None;
     }
     apply_filters(host);
     // After the query, so the sentence rides with its result only (phase E (j)).
@@ -8306,9 +8348,18 @@ fn reader_filter(
     // The free text of the search field is one more filter under the facets
     // (point 67) — part of the base, so the facet counts see it too.
     let text = crate::search::free_text(&runtime.search_text, runtime.state.schema());
-    let base = match (runtime.state.filter().cloned(), text) {
-        (Some(row), Some(text)) => Some(FilterExpr::And(vec![row, text])),
-        (row, text) => row.or(text),
+    // The filter row, the free text and the nested filter (issue #324), and-ed.
+    let mut parts: Vec<FilterExpr> = runtime
+        .state
+        .filter()
+        .cloned()
+        .into_iter()
+        .chain(text)
+        .chain(runtime.nested.clone())
+        .collect();
+    let base = match parts.len() {
+        0 | 1 => parts.pop(),
+        _ => Some(FilterExpr::And(parts)),
     };
     crate::facets::effective(
         base.as_ref(),
@@ -8966,7 +9017,7 @@ fn update_search(host: &HtmlElement, root: &ShadowRoot) {
 
     list.set_inner_html("");
     let _ = input.remove_attribute("aria-activedescendant");
-    let offered = crate::search::suggestions(&value, &texts.query_and, &columns);
+    let offered = crate::search::suggestions(&value, &texts.query_and, &texts.query_or, &columns);
     let Some(document) = web_sys::window().and_then(|window| window.document()) else {
         return;
     };
@@ -9118,14 +9169,15 @@ fn take_suggestion(host: &HtmlElement, option: &Element) {
     input.set_value(&crate::search::complete(
         &input.value(),
         &texts.query_and,
+        &texts.query_or,
         &column,
     ));
     update_search(host, &root);
     let _ = input.focus();
 }
 
-/// Applies the field: an expression becomes filter-row entries, anything else
-/// a free-text search.
+/// Applies the field: an expression becomes filter-row entries — or, with an
+/// `or`, the nested filter — anything else a free-text search.
 ///
 /// An expression that does not parse is **said**, and the field keeps it so
 /// it can be corrected — falling back to free text would look like it worked
@@ -9148,8 +9200,15 @@ fn apply_search(host: &HtmlElement) {
 
     if crate::search::looks_like_query(&value) {
         let schema = runtime.borrow().state.schema().clone();
-        match crate::search::parse(&value, &texts.query_and, &schema) {
-            Ok(entries) => {
+        match crate::search::parse(&value, &texts.query_and, Some(&texts.query_or), &schema) {
+            // With an `or` it is the nested filter (issue #324): the one
+            // place such a filter lives, and it replaces the one there was.
+            Ok(crate::search::Parsed::Tree(tree)) => {
+                input.set_value("");
+                update_search(host, &root);
+                builder::set(host, Some(tree));
+            }
+            Ok(crate::search::Parsed::Row(entries)) => {
                 // Written into the filter row's own fields and applied by its
                 // own code: one place a filter lives (F5).
                 for entry in &entries {

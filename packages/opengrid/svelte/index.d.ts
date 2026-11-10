@@ -101,6 +101,8 @@ export interface OpengridGridProps extends Options, ElementProps {
   facets?: boolean;
   toolbar?: boolean;
   columnMenu?: boolean;
+  /** *Advanced filter* in the toolbar: the builder of the nested filter. */
+  filterBuilder?: boolean;
   selection?: boolean;
   density?: Density;
   /** One of the built-in looks; Base when absent. */

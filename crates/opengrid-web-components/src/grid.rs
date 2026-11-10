@@ -399,6 +399,14 @@ pub const FACETS_ATTRIBUTE: &str = "facets";
 /// with has no use for a menu in every header.
 pub const COLUMN_MENU_ATTRIBUTE: &str = "column-menu";
 
+/// The boolean attribute that puts *Advanced filter* into the toolbar: the
+/// button that opens the builder of the nested filter (issue #324).
+///
+/// Opt-in, like the column menu. Without it the nested filter is still there
+/// — the search expression writes it, the view carries it — and its chip
+/// still opens the builder: what a reader can see, a reader can edit.
+pub const FILTER_BUILDER_ATTRIBUTE: &str = "filter-builder";
+
 /// The boolean attribute that shows the selection column (point 61).
 ///
 /// **Opt-in, like every other piece of chrome in this phase** (`filter-row`,
@@ -652,6 +660,7 @@ pub const OBSERVED: &[&str] = &[
     TREE_KEY_ATTRIBUTE,
     ROW_KEY_ATTRIBUTE,
     COLUMN_MENU_ATTRIBUTE,
+    FILTER_BUILDER_ATTRIBUTE,
     TOOLBAR_ATTRIBUTE,
     FACETS_ATTRIBUTE,
     SEARCH_ATTRIBUTE,
@@ -1659,6 +1668,8 @@ pub struct GridSkeleton<'a> {
     pub column_menu: bool,
     /// Whether the toolbar is built (point 65).
     pub toolbar: bool,
+    /// Whether the toolbar has the button of the filter builder (issue #324).
+    pub filter_builder: bool,
     /// Whether the facet sidebar is built (point 66).
     pub facets: bool,
     /// Whether the search field is built (point 67).
@@ -2115,41 +2126,78 @@ pub fn grid_css() -> String {
          [part=\"chips\"] [part=\"chip-remove\"] {{ min-width: {MIN_TARGET_SIZE}px;
                    min-height: {MIN_TARGET_SIZE}px; padding: 0; border-radius: 999px;
                    color: inherit; background: transparent; font-size: 0.875rem; }}
+         [part=\"chips\"] [part=\"chip-edit\"] {{ min-height: {MIN_TARGET_SIZE}px; padding: 0;
+                   color: inherit; text-align: start; text-decoration: underline dotted;
+                   text-underline-offset: 3px; }}
          [part=\"chips\"] [part=\"chip-remove\"]:hover {{
                    background: color-mix(in oklab, currentColor 18%, transparent); }}
          [part=\"chips\"] [part=\"chips-clear\"] {{ font-weight: 400;
                    color: var({INK_MUTED_PROPERTY}); }}
          /* The quick doors of the prototype (issue #34): dashed pills that open
             a dialog and a menu, both popovers like the column menu. */
-         [part=\"toolbar\"] [part=\"add-filter\"], [part=\"toolbar\"] [part=\"add-grouping\"] {{
+         [part=\"toolbar\"] [part=\"add-filter\"], [part=\"toolbar\"] [part=\"add-grouping\"],
+         [part=\"toolbar\"] [part=\"filter-builder\"] {{
                    border: 1px dashed var({LINE_STRONG_PROPERTY}); border-radius: 999px;
                    padding: 0 12px; }}
          [part=\"toolbar\"] button[aria-disabled=\"true\"] {{ opacity: 0.55; cursor: not-allowed; }}
-         [part=\"filter-dialog\"], [part=\"grouping-menu\"] {{ position: fixed; inset: auto; margin: 0;
+         [part=\"filter-builder-dialog\"] {{ width: min(44rem, 100vw - 2rem); max-height: calc(100vh - 2rem);
+                   overflow: auto; padding: 16px; }}
+         [part=\"filter-builder-dialog\"]::backdrop {{ background: rgb(0 0 0 / 0.32); }}
+         [part=\"filter-builder-dialog\"] form, [part=\"filter-builder-dialog\"] [data-group],
+         [part=\"filter-builder-dialog\"] [data-members] {{ display: flex; flex-direction: column;
+                   gap: 10px; margin: 0; min-width: 0; }}
+         [part=\"filter-builder-dialog\"] h2 {{ margin: 0; font-size: 0.9375rem; font-weight: 600; }}
+         [part=\"filter-builder-dialog\"] fieldset {{ padding: 10px;
+                   border: 1px solid var({LINE_STRONG_PROPERTY});
+                   border-radius: min(var({RADIUS_PROPERTY}), 8px); }}
+         [part=\"filter-builder-dialog\"] legend {{ padding: 0 4px; font-weight: 600; }}
+         [part=\"filter-builder-dialog\"] [data-cond], [part=\"filter-builder-dialog\"] [data-join],
+         [part=\"filter-builder-dialog\"] [data-group-actions] {{ display: flex; flex-wrap: wrap;
+                   align-items: end; gap: 8px; }}
+         [part=\"filter-builder-dialog\"] [data-join] {{ align-items: center; }}
+         [part=\"filter-builder-dialog\"] [data-cond] label {{ display: flex; flex-direction: column;
+                   gap: 2px; flex: 1 1 9rem; min-width: 0; color: var({INK_MUTED_PROPERTY}); }}
+         [part=\"filter-builder-dialog\"] [data-cond] label[hidden] {{ display: none; }}
+         [part=\"filter-builder-dialog\"] input[type=\"checkbox\"] {{ align-self: start;
+                   inline-size: 20px; min-height: 32px; margin: 0; }}
+         [part=\"filter-builder-dialog\"] [aria-invalid=\"true\"] {{ border-width: 2px;
+                   border-color: var({INK_PROPERTY}); }}
+         [part=\"filter-builder-dialog\"] :disabled {{ opacity: 0.6; }}
+         [part=\"filter-builder-dialog\"] [data-group-actions] button,
+         [part=\"filter-builder-dialog\"] [data-cond] button {{
+                   border: 1px solid var({LINE_STRONG_PROPERTY}); }}
+         [part=\"filter-builder-dialog\"] :focus-visible {{
+                   outline: var({FOCUS_WIDTH_PROPERTY}) solid Highlight; outline-offset: 1px; }}
+         [part=\"filter-dialog\"], [part=\"grouping-menu\"], [part=\"filter-builder-dialog\"] {{
                    box-sizing: border-box; background: var({SURFACE_PROPERTY}); color: var({INK_PROPERTY});
                    border: 1px solid var({LINE_STRONG_PROPERTY});
                    border-radius: min(var({RADIUS_PROPERTY}), 12px);
                    box-shadow: 0 12px 32px rgb(0 0 0 / 0.16);
                    font-family: var({FONT_PROPERTY}); font-size: 0.8125rem; }}
+         [part=\"filter-dialog\"], [part=\"grouping-menu\"] {{ position: fixed; inset: auto; margin: 0; }}
          [part=\"filter-dialog\"] {{ width: 19.5rem; padding: 14px; }}
          [part=\"filter-dialog\"]:popover-open {{ display: flex; flex-direction: column; gap: 10px; }}
          [part=\"filter-dialog\"] [data-dialog-title] {{ font-weight: 600; font-size: 0.875rem; }}
          [part=\"filter-dialog\"] label {{ display: grid; grid-template-columns: 5rem 1fr;
                    align-items: center; gap: 8px; color: var({INK_MUTED_PROPERTY}); }}
          [part=\"filter-dialog\"] label[hidden] {{ display: none; }}
-         [part=\"filter-dialog\"] select, [part=\"filter-dialog\"] input {{ font: inherit;
+         :is([part=\"filter-dialog\"], [part=\"filter-builder-dialog\"]) :is(select, input) {{ font: inherit;
                    min-height: 32px; box-sizing: border-box; padding: 0 8px; min-width: 0;
                    color: var({INK_PROPERTY}); background: var({SURFACE_PROPERTY});
                    border: 1px solid var({LINE_STRONG_PROPERTY});
                    border-radius: min(var({RADIUS_PROPERTY}), 7px); }}
-         [part=\"filter-dialog\"] [data-dialog-problem] {{ margin: 0; font-weight: 600; }}
-         [part=\"filter-dialog\"] [data-dialog-problem][hidden] {{ display: none; }}
-         [part=\"filter-dialog\"] [data-dialog-actions] {{ display: flex; justify-content: flex-end; gap: 8px; }}
-         [part=\"filter-dialog\"] button {{ font: inherit; font-weight: 500; min-height: 30px;
+         :is([part=\"filter-dialog\"], [part=\"filter-builder-dialog\"]) [data-dialog-problem] {{
+                   margin: 0; font-weight: 600; }}
+         :is([part=\"filter-dialog\"], [part=\"filter-builder-dialog\"]) [data-dialog-problem][hidden] {{
+                   display: none; }}
+         :is([part=\"filter-dialog\"], [part=\"filter-builder-dialog\"]) [data-dialog-actions] {{
+                   display: flex; justify-content: flex-end; gap: 8px; }}
+         :is([part=\"filter-dialog\"], [part=\"filter-builder-dialog\"]) button {{ font: inherit; font-weight: 500; min-height: 30px;
                    min-width: {MIN_TARGET_SIZE}px; padding: 0 12px; border: 0; cursor: pointer;
                    color: var({INK_PROPERTY}); background: transparent;
                    border-radius: min(var({RADIUS_PROPERTY}), 7px); }}
-         [part=\"filter-dialog\"] [data-dialog-action=\"apply\"] {{ background: var({ACCENT_PROPERTY});
+         [part=\"filter-dialog\"] [data-dialog-action=\"apply\"],
+         [part=\"filter-builder-dialog\"] [type=\"submit\"] {{ background: var({ACCENT_PROPERTY});
                    color: var({ON_ACCENT_PROPERTY}); }}
          [part=\"grouping-menu\"] {{ min-width: 15rem; padding: 6px; }}
          [part=\"grouping-menu\"] [role=\"menuitem\"] {{ display: flex; align-items: center;
@@ -2311,6 +2359,7 @@ pub fn build_grid(
         selection,
         column_menu,
         toolbar,
+        filter_builder,
         facets,
         search,
         actions,
@@ -2335,6 +2384,7 @@ pub fn build_grid(
             layout,
             texts,
             search,
+            filter_builder,
             !presentation.facets().is_empty(),
             facets,
         )
@@ -3017,12 +3067,14 @@ fn build_search(
 /// controls, and a promise not kept is worse than the plainer role. The chips
 /// are filled by the element from the view, because the filters live in the
 /// filter row's fields rather than in the grid state.
+#[allow(clippy::too_many_arguments)]
 fn build_toolbar(
     buffer: &mut PatchBuffer,
     nodes: &mut NodeAllocator,
     parent: NodeId,
     texts: &GridTexts,
     search: bool,
+    filter_builder: bool,
     has_facets: bool,
     facets_shown: bool,
 ) -> (NodeId, NodeId) {
@@ -3078,6 +3130,22 @@ fn build_toolbar(
             text: text.clone(),
         });
         set_lang(buffer, button, texts);
+    }
+
+    // The builder of the nested filter (issue #324), with `filter-builder`.
+    // A modal dialog, so the button has nothing to say about an expanded
+    // state — while the dialog is open, nobody reaches the button.
+    if filter_builder {
+        let builder = element(buffer, nodes, Some(row), "button");
+        attribute(buffer, builder, "type", "button");
+        attribute(buffer, builder, "part", "filter-builder");
+        attribute(buffer, builder, "data-toolbar", "filter-builder");
+        attribute(buffer, builder, "aria-haspopup", "dialog");
+        buffer.push(Patch::SetText {
+            node: builder,
+            text: texts.filter_builder.clone(),
+        });
+        set_lang(buffer, builder, texts);
     }
 
     let toggle = element(buffer, nodes, Some(row), "button");
@@ -5559,6 +5627,7 @@ mod tests {
                 selection: false,
                 column_menu: false,
                 toolbar: false,
+                filter_builder: false,
                 facets: false,
                 search: false,
                 actions: &[],
@@ -5658,6 +5727,7 @@ mod tests {
                 selection: false,
                 column_menu: false,
                 toolbar: false,
+                filter_builder: false,
                 facets: false,
                 search: false,
                 actions: &[],
@@ -5732,6 +5802,7 @@ mod tests {
                 selection: false,
                 column_menu: false,
                 toolbar: false,
+                filter_builder: false,
                 facets: false,
                 search: false,
                 actions: &[],
@@ -5790,6 +5861,7 @@ mod tests {
                 selection: false,
                 column_menu: false,
                 toolbar: false,
+                filter_builder: false,
                 facets: false,
                 search: false,
                 actions: &[],
@@ -5868,6 +5940,7 @@ mod tests {
                 selection: false,
                 column_menu: false,
                 toolbar: false,
+                filter_builder: false,
                 facets: false,
                 search: false,
                 actions: &[],
@@ -5959,6 +6032,7 @@ mod tests {
                 selection: false,
                 column_menu: false,
                 toolbar: false,
+                filter_builder: false,
                 facets: false,
                 search: false,
                 actions: &[],
@@ -5993,6 +6067,7 @@ mod tests {
                 selection: false,
                 column_menu: false,
                 toolbar: false,
+                filter_builder: false,
                 facets: false,
                 search: false,
                 actions: &[],
@@ -6072,6 +6147,7 @@ mod tests {
                 selection: false,
                 column_menu: false,
                 toolbar: false,
+                filter_builder: false,
                 facets: false,
                 search: false,
                 actions: &[],
@@ -6164,6 +6240,7 @@ mod tests {
                 selection: false,
                 column_menu: false,
                 toolbar: false,
+                filter_builder: false,
                 facets: true,
                 search: false,
                 actions: &[],
@@ -6218,6 +6295,7 @@ mod tests {
                 selection: true,
                 column_menu: true,
                 toolbar: true,
+                filter_builder: false,
                 facets: true,
                 search: true,
                 actions: &[],
@@ -6358,6 +6436,7 @@ mod tests {
                 selection: false,
                 column_menu: false,
                 toolbar: false,
+                filter_builder: false,
                 facets: false,
                 search: false,
                 actions: &[],
@@ -6416,6 +6495,7 @@ mod tests {
                 selection: false,
                 column_menu: false,
                 toolbar: false,
+                filter_builder: false,
                 facets: false,
                 search: false,
                 actions: &[],
@@ -6470,6 +6550,7 @@ mod tests {
                 selection: false,
                 column_menu: false,
                 toolbar: false,
+                filter_builder: false,
                 facets: false,
                 search: false,
                 actions: &[],
@@ -6560,6 +6641,7 @@ mod tests {
                 selection: false,
                 column_menu: false,
                 toolbar: false,
+                filter_builder: false,
                 facets: false,
                 search: false,
                 actions: &[],
@@ -6620,6 +6702,7 @@ mod tests {
                 selection: false,
                 column_menu: false,
                 toolbar: false,
+                filter_builder: false,
                 facets: false,
                 search: false,
                 actions: &[],
@@ -7087,6 +7170,7 @@ mod tests {
                     selection,
                     column_menu: false,
                     toolbar: false,
+                    filter_builder: false,
                     facets: false,
                     search: false,
                     actions: &[],
@@ -7154,6 +7238,7 @@ mod tests {
                     selection,
                     column_menu: false,
                     toolbar: false,
+                    filter_builder: false,
                     facets: false,
                     search: false,
                     actions: &[],
@@ -7277,6 +7362,7 @@ mod tests {
                 selection: true,
                 column_menu: false,
                 toolbar: false,
+                filter_builder: false,
                 facets: false,
                 search: false,
                 actions: &[Action {

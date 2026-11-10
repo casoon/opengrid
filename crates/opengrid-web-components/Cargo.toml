@@ -70,6 +70,8 @@ web-sys = { version = "0.3", features = [
     "Element",
     "Event",
     "EventTarget",
+    # The builder of the nested filter is a native modal dialog (issue #324).
+    "HtmlDialogElement",
     "HtmlElement",
     "HtmlInputElement",
     "HtmlSelectElement",

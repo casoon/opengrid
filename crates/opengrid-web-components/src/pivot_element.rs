@@ -1300,23 +1300,27 @@ fn submit_filter(host: &HtmlElement, text: String) {
                 return;
             }
         };
-        let entries = match crate::search::parse(&text, &texts.query_and, &schema) {
-            Ok(entries) => entries,
+        // `and` alone: an `or` is the grid's (issue #324), not the pivot's.
+        let added = match crate::search::parse(&text, &texts.query_and, None, &schema) {
+            Ok(crate::search::Parsed::Row(entries)) => {
+                match crate::grid::filter_expr(&entries, &schema) {
+                    Ok(Some(expr)) => opengrid_json::ToJson::to_json(&expr),
+                    Ok(None) => return,
+                    Err(problems) => {
+                        if let Some(problem) = problems.first() {
+                            say(
+                                &host,
+                                &texts.filter_invalid(&problem.column, &problem.value),
+                            );
+                        }
+                        return;
+                    }
+                }
+            }
+            // Two conditions on one field: both, and-ed, typed already.
+            Ok(crate::search::Parsed::Tree(tree)) => opengrid_json::ToJson::to_json(&tree),
             Err(problem) => {
                 say(&host, &texts.query_problem(&problem));
-                return;
-            }
-        };
-        let added = match crate::grid::filter_expr(&entries, &schema) {
-            Ok(Some(expr)) => opengrid_json::ToJson::to_json(&expr),
-            Ok(None) => return,
-            Err(problems) => {
-                if let Some(problem) = problems.first() {
-                    say(
-                        &host,
-                        &texts.filter_invalid(&problem.column, &problem.value),
-                    );
-                }
                 return;
             }
         };

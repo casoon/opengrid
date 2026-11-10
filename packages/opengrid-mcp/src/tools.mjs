@@ -59,6 +59,13 @@ const View = z
         ]),
       )
       .optional(),
+    // The nested filter: the wire's filter with `and`, `or` and conditions.
+    // An object here, and no more: the engine's own refusal names what it
+    // does not take (`not`, `in`, an unknown column), and a recursive schema
+    // is more than some hosts read.
+    where: z.record(z.string(), z.unknown()).optional().describe(
+      'A filter with "or" across columns, and-ed onto `filters`: {"or":[{"field":"country","op":"eq","value":"DE"},{"field":"amount","op":"gte","value":1000}]}. Values are typed as the column is.',
+    ),
   })
   .describe("A grid view, the JSON of opengrid's get_view. Fields left out keep their defaults.");
 
