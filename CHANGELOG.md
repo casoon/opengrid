@@ -135,6 +135,12 @@ Two things belong in every release entry and are easy to leave out:
   fourth is refused as the third was. The default wording of `groupingFull` is now
   `Grouped by three columns already` ([#321](https://github.com/casoon/opengrid/issues/321)).
 
+### Fixed
+
+- **Grid:** a grouped grid, and a tree, put their window six rows short of where a key or the
+  scrolling asked for it: `Ctrl`+`End` stopped before the last position and `ArrowDown` at the
+  window's edge needed two presses ([#342](https://github.com/casoon/opengrid/issues/342)).
+
 ## [0.15.0] - 2026-11-09
 
 **Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).

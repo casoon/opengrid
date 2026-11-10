@@ -1293,6 +1293,21 @@ pub(crate) enum QueryKind {
     Window,
 }
 
+/// What a display list's result is settled as (issue #342).
+///
+/// A group or a node that opens or closes is asked for as a window, to keep
+/// the status line quiet, yet it puts other rows at the positions: that is a
+/// new result. A scroll or a key leaves the list as long as it was, and then
+/// the result is the same rows moved — the focused row keeps its slot, as in
+/// an ungrouped grid.
+fn settled_kind(asked: QueryKind, shown: u64, total: u64) -> QueryKind {
+    if asked == QueryKind::Window && shown == total {
+        QueryKind::Window
+    } else {
+        QueryKind::Data
+    }
+}
+
 /// Builds the query from the runtime and the host attributes and runs it.
 ///
 /// Returns without doing anything if there is no provider, no shadow root or no
@@ -7088,18 +7103,19 @@ fn run_grouped(
         }
 
         // 3. The rows of the window, one query per group it touches.
-        let (fetches, total, offset) = {
+        let (fetches, total, offset, settled_as) = {
             let mut runtime = grid_runtime.borrow_mut();
             let Some(grouping) = runtime.grouping.as_ref() else {
                 return;
             };
             let total = grouping.len();
+            let settled_as = settled_kind(kind, runtime.state.total_count(), total);
             // A toggle can shorten the list under the window; keep the window
             // inside it, the way the scroll math clamps an ordinary one.
-            let offset = grid::window_offset_for_row(offset.min(total), total, pool);
+            let offset = grid::clamp_window_offset(offset, total, pool);
             let fetches = grouping.fetches(offset, pool);
             runtime.state.set_window(Window::new(offset, pool));
-            (fetches, total, offset)
+            (fetches, total, offset, settled_as)
         };
 
         let mut schema: Option<opengrid_types::Schema> = None;
@@ -7159,7 +7175,7 @@ fn run_grouped(
             }
         }
         let result = opengrid_datasource::QueryResult::new(schema, page, total);
-        settle(&host, generation, Ok(result), focus, QueryKind::Data);
+        settle(&host, generation, Ok(result), focus, settled_as);
     });
 }
 
@@ -7445,24 +7461,28 @@ fn run_tree(
         }
 
         // The window, cut from the loaded levels.
-        let result = {
+        let (result, settled_as) = {
             let mut runtime = grid_runtime.borrow_mut();
             let schema = schema.unwrap_or_else(|| runtime.state.schema().clone());
             let Some(tree) = runtime.tree.as_ref() else {
                 return;
             };
             let total = tree.len();
+            let settled_as = settled_kind(kind, runtime.state.total_count(), total);
             // A node closed under the window shortens the list; the window
             // stays inside it, as with a group.
-            let offset = grid::window_offset_for_row(offset.min(total), total, pool);
+            let offset = grid::clamp_window_offset(offset, total, pool);
             let page = tree.page(offset, pool, width);
             // The selection by key, at the positions its nodes sit at now.
             let selected = tree.selected_positions();
             runtime.state.set_window(Window::new(offset, pool));
             runtime.state.set_selection(selected);
-            opengrid_datasource::QueryResult::new(schema, page, total)
+            (
+                opengrid_datasource::QueryResult::new(schema, page, total),
+                settled_as,
+            )
         };
-        settle(&host, generation, Ok(result), focus, QueryKind::Data);
+        settle(&host, generation, Ok(result), focus, settled_as);
     });
 }
 
