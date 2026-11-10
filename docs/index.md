@@ -10,6 +10,7 @@ it an accessible **data grid**, **table** and **pivot** delivered as Web Compone
 The product is the engine, not a JavaScript grid. The same query model, the same semantics and
 the same results run in WebAssembly in a browser, natively on a server, and against PostgreSQL.
 A conformance suite of JSON cases pins what "the same" means.
+[What sets it apart](what-sets-it-apart/) compares that with a grid written in JavaScript.
 
 ## Status
 

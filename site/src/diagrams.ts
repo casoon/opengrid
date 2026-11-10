@@ -26,6 +26,11 @@ export interface DiagramOptions {
 export function diagram(name: string, options: DiagramOptions = {}): string {
   const spec = specs[`../diagrams/${name}.json`];
   if (!spec) throw new Error(`unknown diagram: ${name}`);
+  return renderSpec(spec, name, options);
+}
+
+/** A chartlet specification built by the caller, such as a chart of figures counted at build time. */
+export function renderSpec(spec: Spec, name: string, options: DiagramOptions = {}): string {
   const { format = 'html', narrow } = options;
   const variants = (layout: Spec, id: string) =>
     (['light', 'dark'] as const)

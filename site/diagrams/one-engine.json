@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "type": "flow",
+  "title": "Two implementations of a query, or one",
+  "description": "Where a grid's sorting, filtering and grouping are written in JavaScript, a data set that outgrows the browser needs the same rules written a second time in the backend, and the two have to be kept in agreement by hand. In opengrid the element hands a query as JSON to one engine written in Rust. That engine is compiled to WebAssembly for the tab and natively into opengrid-server, where it can also hand parts of the query to PostgreSQL. Shared conformance cases check every path.",
+  "source": "crates/opengrid-engine, crates/opengrid-wasm, crates/opengrid-server, crates/opengrid-conformance",
+  "width": 1100,
+  "height": 460,
+  "flow": {
+    "lanes": [
+      { "id": "common", "label": "Query logic in JavaScript" },
+      { "id": "opengrid", "label": "opengrid" }
+    ],
+    "nodes": [
+      { "id": "c-grid", "label": "Grid component", "sublabel": "sorts, filters, groups in JS", "kind": "start", "lane": "common" },
+      { "id": "c-server", "label": "Server mode", "sublabel": "for data too big for the tab", "lane": "common" },
+      { "id": "c-backend", "label": "Your backend", "sublabel": "the same rules, written again", "lane": "common" },
+      { "id": "c-db", "label": "Database", "kind": "store", "lane": "common" },
+      { "id": "o-el", "label": "Grid, table or pivot", "sublabel": "hands over a query as JSON", "kind": "start", "lane": "opengrid" },
+      { "id": "o-engine", "label": "One engine in Rust", "sublabel": "one set of rules", "lane": "opengrid" },
+      { "id": "o-wasm", "label": "WebAssembly", "sublabel": "in the tab or a worker", "lane": "opengrid" },
+      { "id": "o-server", "label": "opengrid-server", "sublabel": "native, on your server", "lane": "opengrid" },
+      { "id": "o-db", "label": "PostgreSQL", "sublabel": "or another connector", "kind": "store", "lane": "opengrid" }
+    ],
+    "edges": [
+      { "from": "c-grid", "to": "c-server" },
+      { "from": "c-server", "to": "c-backend" },
+      { "from": "c-backend", "to": "c-db" },
+      { "from": "o-el", "to": "o-engine" },
+      { "from": "o-engine", "to": "o-wasm", "label": "compiled to" },
+      { "from": "o-engine", "to": "o-server", "label": "compiled into" },
+      { "from": "o-server", "to": "o-db" }
+    ],
+    "orientation": "landscape"
+  }
+}
