@@ -130,7 +130,7 @@ export function Orders() {
       provider={provider}
       view={view}
       onViewChange={setView}
-      onSelectionChange={(detail) => console.log(detail.rows)}
+      onSelectionChange={(detail) => console.log(detail.count)}
     />
   );
 }
@@ -166,7 +166,7 @@ const view = ref(null);
     columns="id,customer,amount"
     selection
     :provider="provider"
-    @selection-change="(detail) => console.log(detail.rows)"
+    @selection-change="(detail) => console.log(detail.count)"
   />
 </template>
 ```
@@ -205,7 +205,7 @@ const view = ref(null);
   {provider}
   bind:view
   bind:element={grid}
-  onselectionchange={(detail) => console.log(detail.rows)}
+  onselectionchange={(detail) => console.log(detail.count)}
 />
 ```
 

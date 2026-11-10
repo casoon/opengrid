@@ -342,6 +342,9 @@ pub struct GridTexts {
     /// A selection that vanishes without a word is a trap: the next action
     /// would apply to nothing, or to something else.
     pub selection_cleared: String,
+    /// A view's selection named records the source does not have (issue
+    /// #322): `{count}` of them.
+    pub selection_missing: String,
     /// The header of a pivot group whose dimension value is NULL.
     ///
     /// A header cell must not be empty: a sighted reader sees a blank and
@@ -531,6 +534,7 @@ pub(crate) const KEYS: &[&str] = &[
     "pageLast",
     "pageOf",
     "selectionCleared",
+    "selectionMissing",
     "noValue",
     "emptyValue",
     "total",
@@ -736,6 +740,7 @@ impl Default for GridTexts {
             page_last: "Last page".to_owned(),
             page_of: "Page {page} of {pages}".to_owned(),
             selection_cleared: "Selection cleared".to_owned(),
+            selection_missing: "{count} selected rows no longer exist".to_owned(),
             no_value: "(no value)".to_owned(),
             empty_value: "(empty)".to_owned(),
             total: "Total".to_owned(),
@@ -1175,6 +1180,11 @@ impl GridTexts {
         fill(&self.selected_all, "count", &count.to_string())
     }
 
+    /// What a restored view says of the keys that name no record.
+    pub fn selection_missing(&self, count: u64) -> String {
+        fill(&self.selection_missing, "count", &count.to_string())
+    }
+
     pub fn column_width(&self, column: &str, width: u32) -> String {
         fill(
             &fill(&self.column_width, "column", self.column(column)),
@@ -1523,6 +1533,7 @@ mod host {
         overwrite(&mut texts.page_last, string("pageLast"));
         overwrite(&mut texts.page_of, string("pageOf"));
         overwrite(&mut texts.selection_cleared, string("selectionCleared"));
+        overwrite(&mut texts.selection_missing, string("selectionMissing"));
         overwrite(&mut texts.no_value, string("noValue"));
         overwrite(&mut texts.empty_value, string("emptyValue"));
         overwrite(&mut texts.total, string("total"));

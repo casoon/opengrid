@@ -47,8 +47,8 @@ never broken by it.
 ## The selection names nodes
 
 In a tree the selection is by key: it stays when nodes close over it and when the grid is sorted
-or filtered. `opengrid-selection-change` carries `keys` beside the positions, and `count` counts
-every selected node. A node is selected by itself, never with its subtree.
+or filtered. `opengrid-selection-change` is `{ count, keys }` — the keys of the selected nodes and
+their number, without positions — and the view carries them as `selected`. A node is selected by itself, never with its subtree.
 
 ## Summaries over subtrees
 

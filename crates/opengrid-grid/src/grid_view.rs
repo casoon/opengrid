@@ -23,10 +23,12 @@
 //! because later points should add content to one structure rather than
 //! structure of their own.
 //!
-//! **Out: the selection.** It names positions; the grid has no key column; and
-//! sorting or filtering drops it precisely because after a different sort those
-//! positions hold different records (`docs/api.md`). A restored view carrying a
-//! selection would not be incomplete, it would be *wrong*.
+//! **The selection is in it where it names records** (issue #322): `selected`
+//! holds the keys of the selected records — of a grid with a `row-key`, or of
+//! a tree's nodes. **A selection by position is out**: without a key the grid
+//! names a row by its number in the result, and after a different sort those
+//! positions hold different records (`docs/api.md`). A restored view carrying
+//! positions would not be incomplete, it would be *wrong*.
 //!
 //! # Where the state actually lives
 //!
@@ -74,6 +76,29 @@ pub struct GridView {
     pub filter_row: bool,
     /// The facet selections, `{ column: selection }` (point 66).
     pub facets: Value,
+    /// The keys of the selected records (issue #322), in the one order
+    /// [`selected_keys`] gives them — empty where the grid selects by
+    /// position, and then not written.
+    pub selected: Vec<Value>,
+}
+
+/// A selection's keys as a view and an event hold them: each once, in the
+/// order of the keys — numbers ascending (`2` before `10`, which their text is
+/// not), everything else by its JSON text. So the same selection is the same
+/// list, whatever order it was made or handed in.
+pub fn selected_keys(keys: impl IntoIterator<Item = Value>) -> Vec<Value> {
+    let mut keyed: Vec<(String, Value)> = keys
+        .into_iter()
+        .map(|key| (key.to_string(), key))
+        .collect();
+    keyed.sort_by(|a, b| match (a.1.as_f64(), b.1.as_f64()) {
+        (Some(x), Some(y)) => x.total_cmp(&y).then_with(|| a.0.cmp(&b.0)),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => a.0.cmp(&b.0),
+    });
+    keyed.dedup_by(|a, b| a.0 == b.0);
+    keyed.into_iter().map(|(_, key)| key).collect()
 }
 
 impl Default for GridView {
@@ -88,6 +113,7 @@ impl Default for GridView {
             aggregates: Vec::new(),
             filter_row: true,
             facets: Value::Object(Map::new()),
+            selected: Vec::new(),
         }
     }
 }
@@ -191,6 +217,11 @@ impl GridView {
         out.insert("aggregates".to_owned(), Value::Object(aggregates));
         out.insert("filterRow".to_owned(), Value::Bool(self.filter_row));
         out.insert("facets".to_owned(), self.facets.clone());
+        // Only a selection by key, and only when there is one: a grid that
+        // selects by position has nothing to write here.
+        if !self.selected.is_empty() {
+            out.insert("selected".to_owned(), Value::Array(self.selected.clone()));
+        }
 
         Value::Object(out)
     }
@@ -437,6 +468,23 @@ impl GridView {
             }
         }
 
+        // Keys name records, not columns: whether one exists only the source
+        // knows, and the element asks it. Here only the shape is checked — a
+        // key is a string, a number or a boolean.
+        let mut selected = Vec::new();
+        if let Some(keys) = object.get("selected") {
+            match keys.as_array() {
+                Some(keys)
+                    if keys
+                        .iter()
+                        .all(|key| key.is_string() || key.is_number() || key.is_boolean()) =>
+                {
+                    selected = selected_keys(keys.iter().cloned());
+                }
+                _ => problems.push(ViewProblem::new("selected", "selected is not a list of keys")),
+            }
+        }
+
         if problems.is_empty() {
             Ok(Self {
                 sort,
@@ -448,6 +496,7 @@ impl GridView {
                 aggregates,
                 filter_row,
                 facets: Value::Object(facets),
+                selected,
             })
         } else {
             Err(problems)
@@ -595,12 +644,29 @@ mod tests {
         assert_eq!(view.density, "normal");
     }
 
-    /// A selection is deliberately not part of a view, and a view that carries
-    /// one does not smuggle it back in.
+    /// A selection by key is part of a view (issue #322); one by position is
+    /// not, and a view that carries one does not smuggle it back in.
     #[test]
-    fn a_view_has_no_selection() {
-        let json = filled().to_json();
-        assert!(json.get("selection").is_none());
+    fn a_view_holds_a_selection_by_key_and_none_by_position() {
+        // Nothing selected by key: the field is not written at all.
+        assert!(filled().to_json().get("selected").is_none());
+        assert!(filled().to_json().get("selection").is_none());
+
+        // The keys round-trip, each once and in one order.
+        let json = opengrid_json::json!({ "density": "normal", "selected": [7, "b", 3, 7, "a"] });
+        let view = GridView::from_json(&json, &declared()).expect("reads");
+        assert_eq!(
+            view.selected,
+            opengrid_json::json!([3, 7, "a", "b"]).as_array().unwrap().clone()
+        );
+        assert_eq!(view.to_json()["selected"], opengrid_json::json!([3, 7, "a", "b"]));
+        // Numbers by value, not by text.
+        let numbers = selected_keys(opengrid_json::json!([10, 9, 100]).as_array().unwrap().clone());
+        assert_eq!(Value::Array(numbers), opengrid_json::json!([9, 10, 100]));
+        let again = GridView::from_json(&view.to_json(), &declared()).expect("reads");
+        assert_eq!(again, view);
+
+        // Positions under the old name are not read.
         let smuggled = opengrid_json::json!({ "density": "normal", "selection": [1, 2, 3] });
         let view = GridView::from_json(&smuggled, &declared()).expect("reads");
         assert_eq!(
@@ -610,5 +676,20 @@ mod tests {
                 ..GridView::default()
             }
         );
+    }
+
+    /// Keys are untrusted input: anything but a list of scalars is named, and
+    /// the view is not applied.
+    #[test]
+    fn a_selection_that_is_not_a_list_of_keys_is_a_problem() {
+        for bad in [
+            opengrid_json::json!({ "selected": 7 }),
+            opengrid_json::json!({ "selected": [[1]] }),
+            opengrid_json::json!({ "selected": [null] }),
+            opengrid_json::json!({ "selected": [{ "id": 1 }] }),
+        ] {
+            let problems = GridView::from_json(&bad, &declared()).expect_err("refused");
+            assert_eq!(problems[0].field, "selected", "{bad}");
+        }
     }
 }

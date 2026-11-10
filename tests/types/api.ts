@@ -219,7 +219,17 @@ export async function page(): Promise<void> {
   // Events: the detail is typed on the element and on the document.
   grid.addEventListener("opengrid-selection-change", (event) => {
     event.detail satisfies SelectionChangeDetail;
-    event.detail.ranges[0]?.from satisfies number | undefined;
+    event.detail.count satisfies number;
+    // The two shapes narrow on `keys`: by key there are no positions.
+    if (event.detail.keys) {
+      event.detail.keys satisfies unknown[];
+      event.detail.rows satisfies undefined;
+      // @ts-expect-error a selection by key has no ranges
+      event.detail.ranges[0];
+    } else {
+      event.detail.rows satisfies number[];
+      event.detail.ranges[0]?.from satisfies number | undefined;
+    }
   });
   grid.addEventListener("opengrid-cell-change", (event) => {
     event.detail satisfies CellChangeDetail;
@@ -326,7 +336,7 @@ export async function page(): Promise<void> {
     presentation: { amount: { aggregate: "sum" } },
     view: { sort: [{ field: "amount", direction: "desc" }] },
     onViewChange: (next) => connection.update({ view: next }),
-    onSelectionChange: (detail) => detail.rows satisfies number[],
+    onSelectionChange: (detail) => detail.rows satisfies number[] | undefined,
     onCellChange: (detail) => detail.column satisfies string,
   });
   (await connection.ready).fallback satisfies boolean;

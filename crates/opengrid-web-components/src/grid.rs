@@ -3362,13 +3362,20 @@ pub fn patch_grid(
 
     // The select-all header, in its three states (point 61).
     if let Some(mark) = nodes.select_all_mark {
-        let all = match (grouping, picked) {
+        let all = match picked {
             // By key the selection counts records, and "all" is every row
-            // of the filter — open or not.
-            (Some(grouping), Some(picked)) if picked.covers(grouping.row_count()) => CheckState::On,
-            (Some(_), Some(picked)) if !picked.is_empty() => CheckState::Mixed,
-            (Some(_), Some(_)) => CheckState::Off,
-            _ => select_all_state(state.selection().len(), total_count),
+            // of the filter — grouped, open or not.
+            Some(picked) => {
+                let rows = grouping.map_or(state.total_count(), |grouping| grouping.row_count());
+                if picked.covers(rows) {
+                    CheckState::On
+                } else if picked.is_empty() {
+                    CheckState::Off
+                } else {
+                    CheckState::Mixed
+                }
+            }
+            None => select_all_state(state.selection().len(), total_count),
         };
         buffer.push(Patch::SetAttribute {
             node: mark,

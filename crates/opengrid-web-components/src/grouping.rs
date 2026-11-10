@@ -624,12 +624,14 @@ impl Picked {
         !self.unsure && rows > 0 && self.ids.len() as u64 == rows
     }
 
-    /// The selected records' keys, as JSON.
+    /// The selected records' keys, as JSON, in the order of the keys
+    /// ([`opengrid_grid::grid_view::selected_keys`]).
     pub fn keys(&self) -> Vec<Json> {
-        self.ids
-            .iter()
-            .map(|id| opengrid_json::from_str(id).unwrap_or(Json::Null))
-            .collect()
+        opengrid_grid::grid_view::selected_keys(
+            self.ids
+                .iter()
+                .map(|id| opengrid_json::from_str(id).unwrap_or(Json::Null)),
+        )
     }
 }
 

@@ -425,7 +425,7 @@ groupCollapsed groupExpanded groupInvalid groupRow groupSecondLevel \
 groupingFull hideColumn lang listItemAdded listItemRemove listItemRemoved loading matchesOne matchesOther newRow noValue nothingToAdd operatorLabel \
 operators pageFirst pageLast pageNext pageOf pagePrevious pasteApplied pasteApply pasteBadOne pasteBadOther pasteBlocked pasteCutOff pasteDiscard pasteDiscarded pastePreview pasteUnreadable pivotColumns pivotFilterHint pivotFilterLabel pivotFilters pivotMeasures pivotRows pivotToolbar queriesOne queriesOther queryAnd \
 queryMissingValue queryUnknownColumn queryWrongOperator redoAdded redoCell redoNothing redoPaste rowAdded rowsOne rowsOther searchChip searchHint \
-searchLabel searchPlaceholder searchSuggestions selectAll selectedAll selectionCleared sortAscending \
+searchLabel searchPlaceholder searchSuggestions selectAll selectedAll selectionCleared selectionMissing sortAscending \
 sortDescending sortKey sourceHybrid sourceLocal sourceRemote sourceWorker subtotal subtreeCell subtreeOnly toolbarGroup total \
 totalRow treeContext treeGroupIgnored treeLevelTooLarge treeOrphans treeRefused typeBool typeDate typeInteger typeList typeNumber typeText typeTime undoAdded undoCell undoNothing undoPaste ungroupColumn validationError validationWarning valueLabel
 ";
