@@ -6744,12 +6744,27 @@ fn regroup(host: &HtmlElement) {
     };
     let pool = pool_of(host);
     let grouping = grouping_of(host);
+    // The focus goes with the active cell, but only if it was in the table:
+    // from a toolbar button or a closing menu it stays where it is (#345).
+    let in_table = host.shadow_root().is_some_and(|root| {
+        root.active_element()
+            .is_some_and(|focused| focused.closest("td, th").ok().flatten().is_some())
+    });
     let dropped = {
         let mut borrowed = runtime.borrow_mut();
         borrowed.grouping = grouping.clone().ok().flatten();
         borrowed.groups_filter = None;
         borrowed.state.set_window(Window::new(0, pool));
-        borrowed.set_active(ActiveCell::Header { col: 0 });
+        // A row means something else once the list is grouped differently:
+        // the cell goes to its column's header. A header or a band is still
+        // there, and stays the active cell — the one a column menu came from.
+        let active = match borrowed.active {
+            ActiveCell::Data(cell) => ActiveCell::Header { col: cell.col },
+            ActiveCell::Select { .. } => ActiveCell::Header { col: 0 },
+            kept
+            @ (ActiveCell::Header { .. } | ActiveCell::Band { .. } | ActiveCell::SelectAll) => kept,
+        };
+        borrowed.set_active(active);
         // A selection by key names records and stays from one grouping to the
         // next (issue #322); the result shows it where they sit then — or
         // drops it, when the grid is ungrouped now ([`settle`]). A selection
@@ -6773,7 +6788,7 @@ fn regroup(host: &HtmlElement) {
     if let Some(viewport) = viewport {
         viewport.set_scroll_top(0);
     }
-    run_query(host, QueryKind::Data, false);
+    run_query(host, QueryKind::Data, in_table);
     dispatch_view(host);
 }
 
