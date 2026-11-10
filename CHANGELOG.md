@@ -21,11 +21,10 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Added
 
-- **Grid:** a grouped grid with `row-key` selects rows — by key: `Space`, `Shift`+`Space` over the
-  data rows of the display list, `Ctrl`/`Cmd`+`A` and the selection header for every row of the
-  filter, open or not. Opening and closing a group never changes what is selected, and a group
-  header is not selected. `opengrid-selection-change` then carries `keys` and `count`, with `rows`
-  and `ranges` empty; details in `docs/api.md`, *Selecting while grouped*
+- **Grid:** a grouped grid with `row-key` selects rows, by key: opening and closing a group never
+  changes what is selected, and select-all takes every row of the filter, open or not.
+  `opengrid-selection-change` then carries `keys` and `count`, with `rows` and `ranges` empty —
+  see *Selecting while grouped* in `docs/api.md`
   ([#322](https://github.com/casoon/opengrid/issues/322)).
 
 ### Changed
