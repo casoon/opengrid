@@ -1,9 +1,11 @@
 # Prototype host page
 
 The design prototype as a running page: an orders grid with search, toolbar,
-facets, column menu and a selection column, German throughout, plus the two
-things around it that are **the page's, not the element's** — saved views as
-tabs, and a studio for the look.
+facets, column menu and a selection column, German throughout — the grid's own
+words are the translation the package ships (`texts/de.js`), with the page's
+example for the search field on top — plus the two things around it that are
+**the page's, not the element's**: saved views as tabs, and a studio for the
+look.
 
 ## Running it
 

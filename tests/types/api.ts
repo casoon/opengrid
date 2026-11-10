@@ -26,6 +26,7 @@ import {
   type View,
   type ViewInput,
 } from "@casoon/opengrid";
+import de from "@casoon/opengrid/texts/de";
 
 declare const engine: Engine;
 declare const planner: PlannerLike;
@@ -78,6 +79,9 @@ export async function page(): Promise<void> {
 
   // Texts: any subset, `lang`, and the operators by wire token.
   module.set_texts(grid, { lang: "de", loading: "Wird geladen …", operators: { gte: "größer gleich" } });
+  // A shipped translation is texts like any other, whole or with the page's own on top.
+  module.set_texts(grid, de);
+  module.set_texts(grid, { ...de, searchPlaceholder: "Suchen oder filtern: kunde = Krause" });
   // @ts-expect-error — not a text key
   module.set_texts(grid, { loadnig: "typo" });
   // @ts-expect-error — not an operator

@@ -21,17 +21,20 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Added
 
+- **Elements:** right-to-left layout for `<opengrid-grid>`, `<opengrid-table>` and
+  `<opengrid-pivot>`, taken from `dir` on the element or an ancestor: the columns run from the
+  right, and in the grid `←` and `→` follow what is on the screen
+  ([#320](https://github.com/casoon/opengrid/issues/320), [Right to left](docs/api.md#right-to-left)).
 - **Pivot:** the rows behind a cell ([#330](https://github.com/casoon/opengrid/issues/330)). With
   `drill-down`, every value is a button that fires `opengrid-drill-down` with the cell's filter as a
   query — NULL and empty-string groups apart, totals by the dimensions they lie in, the pivot's own
   filter included — and the page shows the rows; `examples/pivot-demo/browser.html` does it with a
   grid. In `connect` and the framework components it is `onDrillDown`. Details:
   [Drilling down](https://github.com/casoon/opengrid/blob/main/docs/api.md#drilling-down).
-
-### Changed
-
-- **Contributors:** the element module's size bound is 299400 B (it was 295500 B); the drill-down
-  grew the module from 295262 B to 296388 B.
+- **Texts:** a German translation ships with the npm package as `@casoon/opengrid/texts/de` — every
+  text of the grid, the table and the pivot, with `lang: "de"`, to hand to `set_texts` or to the
+  `texts` of `connect`; a page that does not import it does not load it
+  ([#333](https://github.com/casoon/opengrid/issues/333), [Texts](docs/api.md#texts)).
 
 ## [0.15.0] - 2026-11-09
 
