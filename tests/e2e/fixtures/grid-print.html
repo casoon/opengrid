@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>opengrid print fixture</title>
+    <style>
+      /* Issue #334: 200 rows behind a window of 8, in the dark look, with every
+         piece of chrome a grid can have — what `prepare_print` has to turn into
+         one plain table on paper. The host has a fixed height, as a scroller
+         needs; the paragraph after it shows whether the print table pushes
+         what follows it down or runs over it. */
+      opengrid-grid {
+        display: block;
+        height: 320px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid print fixture</h1>
+      <opengrid-grid
+        label="Orders"
+        theme="dark"
+        datasource="orders"
+        columns="id,customer,country,amount,qty"
+        window-size="8"
+        selection
+        toolbar
+        search
+        column-menu
+      ></opengrid-grid>
+      <p id="after">After the grid.</p>
+    </main>
+    <script type="module">
+      import { loadOpengrid } from "/packages/opengrid/loader.js";
+      import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+
+      async function start() {
+        const loader = await loadOpengrid();
+
+        await init();
+        const engine = new Engine();
+        const schema = await (
+          await fetch("/crates/opengrid-conformance/data/orders.schema.json")
+        ).text();
+        const csv = await (
+          await fetch("/tests/e2e/fixtures/grid-virtual.csv")
+        ).arrayBuffer();
+        engine.load_csv("orders", new Uint8Array(csv), schema);
+
+        window.__queries = [];
+        // What the provider answers instead of the engine, when a test sets it:
+        // a function of the engine's answer, a JSON text.
+        window.__answer = null;
+        const host = document.querySelector("opengrid-grid");
+        loader.module.set_columns(host, { amount: { title: "Amount (EUR)" } });
+        loader.module.set_formats(host, { qty: (text) => `${text} pcs` });
+        loader.module.set_actions(host, [{ id: "open", label: "Open" }]);
+        loader.module.set_provider(host, {
+          execute: (queryJson) => {
+            window.__queries.push(queryJson);
+            const answer = engine.execute(queryJson);
+            return window.__answer ? window.__answer(answer) : answer;
+          },
+        });
+        window.__opengridModule = loader.module;
+        return { fallback: loader.fallback };
+      }
+
+      window.__opengridReady = start();
+    </script>
+  </body>
+</html>

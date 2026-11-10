@@ -251,6 +251,9 @@ export async function page(): Promise<void> {
 
   module.register();
 
+  // The print table of the view (issue #334): its row count, or null.
+  (await module.prepare_print(grid)) satisfies number | null;
+
   // The query of the view, for an export.
   const query = module.get_query(grid);
   if (query) {
