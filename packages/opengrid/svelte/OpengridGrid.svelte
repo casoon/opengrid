@@ -1,4 +1,4 @@
-<!-- `<opengrid-grid>` for Svelte 5 (plan point 79). See Opengrid.svelte. -->
+<!-- `<opengrid-grid>` for Svelte 5. See Opengrid.svelte. -->
 <script>
   import Opengrid from "./Opengrid.svelte";
 

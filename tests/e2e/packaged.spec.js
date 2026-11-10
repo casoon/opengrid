@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 // The packed npm package, not the repository (plan point 40).
 //
 // Everything the page imports comes from `target/npm-package/package`, which
-// `bash xtask/pack-npm.sh` produced with `npm pack` and unpacked again. That
+// `bash scripts/pack-npm.sh` produced with `npm pack` and unpacked again. That
 // makes `package.json#files` a tested promise rather than a hopeful list: a
 // forgotten file cannot load, and the elements never register.
 
