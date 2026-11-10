@@ -1,0 +1,70 @@
+name: Set up the build
+description: >-
+  The Rust toolchains, the pinned WebAssembly tools and node that every job
+  building the WASM modules needs. One place for the versions, so a tool is
+  changed once and the jobs cannot drift apart (#359).
+
+inputs:
+  binaryen-version:
+    description: The wasm-opt the justfile's `wasm-opt -Oz` is written against (E4).
+    default: "132"
+
+runs:
+  using: composite
+  steps:
+    # The MCP view's elements (#140, E40): wasm2js needs a module without
+    # reference-types, which only a std built for it has — nightly with
+    # rust-src, pinned like the justfile's NIGHTLY. Installed before stable,
+    # because the action makes the toolchain it installs the default.
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: nightly-2026-06-02
+        components: rust-src
+        targets: wasm32-unknown-unknown
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: wasm32-unknown-unknown
+    - uses: Swatinem/rust-cache@v2
+    - uses: taiki-e/install-action@v2
+      with:
+        tool: just
+    # wasm-bindgen CLI and wasm-opt are what `just wasm-build-components` needs
+    # (plan/spezifikation/14-entscheidungen.md E4); both are pinned to the
+    # versions the local toolchain uses so the module matches.
+    - uses: taiki-e/install-action@v2
+      with:
+        tool: wasm-bindgen@0.2.126
+    # binaryen pinned to the version the justfile's `wasm-opt -Oz` expects
+    # (E4: the WASM toolchain is pinned, not "whatever is installed"). The
+    # apt package was what stood here, and it is old enough that it cannot
+    # parse what a current rustc emits — "invalid code after misc prefix",
+    # which is a WASM feature the tool predates, not a broken module.
+    # The release download answers 5xx for minutes at a time now and then, so the
+    # unpacked tool is cached; the download is the fallback.
+    - uses: actions/cache@v6
+      id: binaryen
+      with:
+        path: binaryen-version_${{ inputs.binaryen-version }}
+        key: binaryen-${{ inputs.binaryen-version }}-x86_64-linux
+    - name: Install binaryen ${{ inputs.binaryen-version }}
+      if: steps.binaryen.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        BINARYEN_VERSION: ${{ inputs.binaryen-version }}
+      run: |
+        curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 -o binaryen.tar.gz "https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}/binaryen-version_${BINARYEN_VERSION}-x86_64-linux.tar.gz"
+        tar -xzf binaryen.tar.gz
+    - name: Put binaryen on the path
+      shell: bash
+      env:
+        BINARYEN_VERSION: ${{ inputs.binaryen-version }}
+      run: echo "$PWD/binaryen-version_${BINARYEN_VERSION}/bin" >> "$GITHUB_PATH"
+    - uses: pnpm/action-setup@v6
+      with:
+        version: 10.26.0
+    - uses: actions/setup-node@v7
+      with:
+        # The Angular example's CLI asks for 22.22.3 or later (plan point
+        # 81); a pinned minor is that, reproducibly, whatever the runner has.
+        node-version: "22.23"
+        cache: pnpm
