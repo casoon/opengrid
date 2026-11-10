@@ -31,7 +31,8 @@ use opengrid_web_core::patch::{NodeAllocator, PatchBuffer};
 use opengrid_web_core::provider::provider;
 
 use crate::element::{
-    answer_size, apply_into, describe, dispatch, dispatch_query, is_latest, next_request, now,
+    MenuAct, answer_size, apply_into, describe, dispatch, dispatch_query, is_latest, menu_items,
+    menu_key, next_request, now,
 };
 use crate::grid_element_events::{DRILL_DOWN_EVENT, VIEW_EVENT};
 use crate::pivot::{
@@ -1114,38 +1115,17 @@ fn on_menu_key(event: Event) {
     let Some(menu) = item.closest(r#"[part="field-menu"]"#).ok().flatten() else {
         return;
     };
-    let items: Vec<HtmlElement> = menu
-        .query_selector_all(r#"[role^="menuitem"]"#)
-        .map(|list| {
-            (0..list.length())
-                .filter_map(|index| list.item(index))
-                .filter_map(|node| node.dyn_into::<HtmlElement>().ok())
-                .collect()
-        })
-        .unwrap_or_default();
-    let at = items
-        .iter()
-        .position(|other| other.is_same_node(Some(&item)))
-        .unwrap_or(0);
-    let go = |index: usize| {
-        if let Some(target) = items.get(index) {
-            let _ = target.focus();
-        }
-    };
-    match event.key().as_str() {
-        "ArrowDown" => go((at + 1) % items.len().max(1)),
-        "ArrowUp" => go((at + items.len().max(1) - 1) % items.len().max(1)),
-        "Home" => go(0),
-        "End" => go(items.len().saturating_sub(1)),
-        "Enter" | " " => pick_field(&host, &item),
-        "Escape" => close_field_menu(&host, true),
-        "Tab" => {
-            close_field_menu(&host, false);
-            return;
-        }
-        _ => return,
+    let items = menu_items(&menu, r#"[role^="menuitem"]"#);
+    match menu_key(&event, &items, &item) {
+        // The element with the focus itself, not the item at its place in the
+        // list: a field inside the menu is no item, and a space typed into it
+        // must not pick the first one.
+        Some(MenuAct::Pick(_)) => pick_field(&host, &item),
+        Some(MenuAct::Escape) => close_field_menu(&host, true),
+        // The focus is left where `Tab` moves it.
+        Some(MenuAct::Tab) => close_field_menu(&host, false),
+        None => {}
     }
-    event.prevent_default();
 }
 
 /// One attribute of `view`, as [`PivotView::attributes`] writes it.
