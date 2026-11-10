@@ -4,7 +4,7 @@
 // edit told through the template ref.
 import { ref } from "vue";
 import { OpengridGrid } from "@casoon/opengrid/vue";
-import { ROOM_ACTIONS, ROOM_VALIDATORS } from "./provider.js";
+import { ROOM_ACTIONS, ROOM_COLUMNS, ROOM_VALIDATORS } from "./provider.js";
 
 defineProps({ provider: { type: Object, required: true } });
 
@@ -35,6 +35,7 @@ function onCellChange(detail) {
     row-key="id"
     add-row
     :provider="provider"
+    :presentation="ROOM_COLUMNS"
     :actions="ROOM_ACTIONS"
     :validators="ROOM_VALIDATORS"
     @row-add="onRowAdd"

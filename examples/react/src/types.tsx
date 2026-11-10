@@ -46,7 +46,7 @@ export function Page() {
         view={view}
         onViewChange={setView}
         onSelectionChange={(detail) => detail.count}
-        presentation={{ amount: { aggregate: "sum" } }}
+        presentation={{ amount: { aggregate: "sum" }, id: { pin: "start" } }}
         className="orders"
         id="orders"
         aria-describedby="help"
@@ -55,6 +55,9 @@ export function Page() {
       <Rooms />
       <OpengridPivot datasource="orders" rows="country" columns="ordered_year" values="[]" />
       <OpengridGrid filter='{"field":"country","op":"eq","value":"DE"}' />
+      <OpengridGrid defaultView={{ columns: { pinned: { id: "none", amount: "end" } } }} />
+      {/* @ts-expect-error — a pin names an end of the row: `start` or `end` */}
+      <OpengridGrid presentation={{ id: { pin: "left" } }} />
       {/* @ts-expect-error — the filter is the wire's JSON as text, like the pivot's */}
       <OpengridGrid filter={{ field: "country", op: "eq", value: "DE" }} />
       <OpengridPivot drillDown onDrillDown={(detail) => detail.query.source satisfies string} />

@@ -115,8 +115,8 @@ fn discard(host: &HtmlElement) {
     };
     if let Ok(Some(holder)) = root.query_selector(&format!("[{HOLDER}]")) {
         holder.remove();
-        // The look and the widths, as `adopt_sheets` put them.
-        root.set_adopted_style_sheets(&root.adopted_style_sheets().slice(0, 2));
+        // The look, the widths and the pins, as `adopt_sheets` put them.
+        root.set_adopted_style_sheets(&root.adopted_style_sheets().slice(0, 3));
     }
 }
 

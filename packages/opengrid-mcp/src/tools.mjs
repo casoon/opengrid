@@ -41,6 +41,7 @@ const View = z
         order: z.array(z.string()).optional(),
         hidden: z.array(z.string()).optional(),
         widths: z.record(z.string(), z.number()).optional(),
+        pinned: z.record(z.string(), z.enum(["start", "end", "none"])).optional(),
       })
       .optional(),
     density: z.enum(["compact", "normal", "comfortable"]).optional(),

@@ -1,7 +1,7 @@
 //! The column layout of a grid element (plan point 36): the layout itself is
 //! portable (`opengrid_grid::layout`, issue #144); here it is kept per host.
 
-pub use opengrid_grid::layout::{ColumnLayout, WIDTH_STEP};
+pub use opengrid_grid::layout::{ColumnLayout, Pin, WIDTH_STEP};
 
 #[cfg(target_arch = "wasm32")]
 pub use host::{layout, update};

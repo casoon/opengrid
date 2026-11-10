@@ -9,7 +9,7 @@
 import React, { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { loadOpengrid } from "@casoon/opengrid";
-import { MODULE_URL, ROOM_ACTIONS, ROOM_VALIDATORS, ordersProvider, roomsProvider } from "./provider.js";
+import { MODULE_URL, ROOM_ACTIONS, ROOM_COLUMNS, ROOM_VALIDATORS, ordersProvider, roomsProvider } from "./provider.js";
 import { OpengridGrid } from "@casoon/opengrid/react";
 
 const SAVED = { sort: [{ field: "customer", direction: "asc" }] };
@@ -31,6 +31,7 @@ function Rooms({ provider }) {
       rowKey="id"
       addRow
       provider={provider}
+      presentation={ROOM_COLUMNS}
       actions={ROOM_ACTIONS}
       validators={ROOM_VALIDATORS}
       onRowAdd={async (detail) => {

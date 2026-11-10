@@ -34,6 +34,14 @@ Two things belong in every release entry and are easy to leave out:
   match of the view, shown only in `@media print` in place of the grid, and `window.print()` prints
   it; a table, a pivot and a grid print black on white whatever the look
   ([#334](https://github.com/casoon/opengrid/issues/334), [Printing the view](docs/api.md#printing-the-view)).
+- **Grid:** pinned columns. `pin: "start"` or `pin: "end"` in `set_columns` keeps a column in
+  place while the others scroll sideways; the reader changes it on the header cell with
+  `Alt`+`Shift`+`←`/`→` or from the column menu's *Pin* group, and the view holds that choice as
+  `columns.pinned`. A focused cell is scrolled clear of the pinned columns, and when they would take
+  more than half of the grid's width they scroll with the others until there is room again. New
+  texts `pinGroup`, `pinNone`, `pinStart`, `pinEnd`, `columnPinnedStart`, `columnPinnedEnd`,
+  `columnUnpinned` and `pinsReleased`
+  ([#316](https://github.com/casoon/opengrid/issues/316), [Pinned columns](docs/api.md#pinned-columns)).
 - **Grid:** `filter`, the page's filter — a wire filter as JSON, and-ed onto every query the grid
   sends. It is not the reader's: no chip, not in the view, and "remove all" leaves it
   ([#330](https://github.com/casoon/opengrid/issues/330), [The page's filter](docs/api.md#the-pages-filter)).
@@ -64,6 +72,11 @@ Two things belong in every release entry and are easy to leave out:
   `get_view` holds `selected` while something is selected, and `set_view` with a view that has no
   `selected` clears it. Without `row-key` nothing changes
   ([#322](https://github.com/casoon/opengrid/issues/322), `docs/api.md`: *Selecting by key*).
+- **Grid:** the view's `columns` has a fourth field, `pinned`, and every column menu has the three
+  entries of the *Pin* group. **What breaks:** a TypeScript `View` written out in full needs
+  `columns.pinned` (`{}` for none; `ViewInput`, which `set_view` takes, does not); in the
+  `opengrid-grid` crate `ColumnLayout::effective` and `ColumnLayout::move_column` take the pins of
+  the page as a further argument ([#316](https://github.com/casoon/opengrid/issues/316)).
 - **Grid:** setting `group-by` on a grid that selects by position now says `Selection cleared` and
   fires `opengrid-selection-change` when it drops a selection; it was dropped silently
   ([#322](https://github.com/casoon/opengrid/issues/322)).

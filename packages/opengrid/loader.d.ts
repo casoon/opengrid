@@ -621,6 +621,12 @@ export type FacetKind = "list" | "pills" | "range" | "period";
 /** A value as the wire format writes it: decimals and dates are strings. */
 export type WireValue = string | number | boolean | null;
 
+/**
+ * Where a column is kept in place while the others scroll sideways: at the
+ * start of the row or at its end, by reading direction.
+ */
+export type Pin = "start" | "end";
+
 /** Per-column presentation for `set_columns` — `presentation` in `connect`. */
 export interface ColumnConfig {
   /**
@@ -631,6 +637,11 @@ export interface ColumnConfig {
   title?: string;
   /** The starting width in pixels; a reader's resize leads after that. */
   width?: number;
+  /**
+   * Where the column starts pinned; the reader's own pin leads after that
+   * (`Alt`+`Shift`+`←`/`→` on the header, the column menu). The grid only.
+   */
+  pin?: Pin;
   align?: "start" | "end" | "center";
   mono?: boolean;
   emphasis?: boolean;
@@ -714,7 +725,16 @@ export type FacetSelection =
 export interface View {
   sort: SortKey[];
   filters: FilterEntry[];
-  columns: { order: string[]; hidden: string[]; widths: Record<string, number> };
+  columns: {
+    order: string[];
+    hidden: string[];
+    widths: Record<string, number>;
+    /**
+     * The pins the reader changed: `none` is a pin of `set_columns` taken
+     * away. Leads over `set_columns`.
+     */
+    pinned: Record<string, Pin | "none">;
+  };
   density: Density;
   group: string[];
   /** The open groups, each as its path of keys. */
@@ -855,6 +875,10 @@ export type TextKey =
   | "groupSecondLevel"
   | "ungroupColumn"
   | "hideColumn"
+  | "pinGroup"
+  | "pinNone"
+  | "pinStart"
+  | "pinEnd"
   | "toolbarGroup"
   | "filterRowToggle"
   | "densityGroup"
@@ -940,6 +964,10 @@ export type TextKey =
   | "columnWidth"
   | "columnMoved"
   | "columnAtEdge"
+  | "columnPinnedStart"
+  | "columnPinnedEnd"
+  | "columnUnpinned"
+  | "pinsReleased"
   | "columnHidden"
   | "columnShown"
   | "columnsGroup"

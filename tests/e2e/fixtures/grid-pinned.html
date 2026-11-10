@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>opengrid pinned columns fixture</title>
+    <style>
+      /* Issue #316: grids narrower than their columns, so they scroll
+         sideways, with columns pinned at either end.
+         `#pinned` and `#rtl` are the same grid in both directions: the page
+         pins `id` at the start and `amount` at the end, beside the selection
+         column. The widths are fixed, not the window's, so the pins hold the
+         same way in both projects: 44 + 130 + 130 px pinned of 920, with room
+         for `customer` or `ordered_on` as a third, and 1236 px of columns.
+         `#actions` has its action column pinned along at the end; `#grouped`
+         shows a group's label beside a pinned first column. */
+      opengrid-grid {
+        display: block;
+        height: 300px;
+        width: 920px;
+        margin-block-end: 16px;
+      }
+      #actions {
+        width: 480px;
+      }
+      #grouped {
+        width: 640px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid pinned columns fixture</h1>
+      <opengrid-grid
+        id="pinned"
+        label="Orders"
+        datasource="orders"
+        columns="id,customer,country,amount,qty,ordered_on"
+        row-key="id"
+        selection
+        column-menu
+        window-size="12"
+      ></opengrid-grid>
+      <div dir="rtl">
+        <opengrid-grid
+          id="rtl"
+          label="Orders, right to left"
+          datasource="orders"
+          columns="id,customer,country,amount,qty,ordered_on"
+          row-key="id"
+          selection
+          column-menu
+          window-size="12"
+        ></opengrid-grid>
+      </div>
+      <opengrid-grid
+        id="actions"
+        label="Orders with actions"
+        datasource="orders"
+        columns="id,customer,country,amount,qty,ordered_on"
+        row-key="id"
+        window-size="12"
+      ></opengrid-grid>
+      <opengrid-grid
+        id="grouped"
+        label="Orders by country"
+        datasource="orders"
+        columns="id,customer,country,amount,qty,ordered_on"
+        group-by="country"
+        window-size="12"
+      ></opengrid-grid>
+    </main>
+    <script type="module">
+      import { loadOpengrid } from "/packages/opengrid/loader.js";
+      import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+
+      // The view changes the grids report, by grid: a pin is one.
+      window.__views = [];
+      document.addEventListener("opengrid-view-change", (event) =>
+        window.__views.push({ id: event.target.id, pinned: event.detail.view.columns.pinned }),
+      );
+      // Every query a grid sends, by grid: pinning costs one.
+      window.__queries = [];
+
+      async function start() {
+        const loader = await loadOpengrid();
+        await init();
+        const engine = new Engine();
+        engine.load_csv(
+          "orders",
+          new Uint8Array(await (await fetch("/tests/e2e/fixtures/grid-virtual.csv")).arrayBuffer()),
+          await (await fetch("/crates/opengrid-conformance/data/orders.schema.json")).text(),
+        );
+        const widths = { customer: 136, country: 330, qty: 330, ordered_on: 136 };
+        const wide = Object.fromEntries(Object.entries(widths).map(([name, width]) => [name, { width }]));
+        for (const id of ["pinned", "rtl"]) {
+          loader.module.set_columns(document.getElementById(id), {
+            ...wide,
+            id: { width: 130, pin: "start" },
+            amount: { width: 130, pin: "end", aggregate: "sum" },
+          });
+        }
+        // No widths: every column, the action column too, takes its share of
+        // the table's least width, which is wider than the grid.
+        loader.module.set_columns(document.getElementById("actions"), { ordered_on: { pin: "end" } });
+        loader.module.set_actions(document.getElementById("actions"), [{ id: "open", label: "Open" }]);
+        loader.module.set_columns(document.getElementById("grouped"), {
+          ...wide,
+          id: { width: 130, pin: "start" },
+          amount: { width: 150, aggregate: "sum" },
+        });
+        for (const host of document.querySelectorAll("opengrid-grid")) {
+          loader.module.set_provider(host, {
+            kind: "local",
+            execute: (queryJson) => {
+              window.__queries.push({ id: host.id, select: JSON.parse(queryJson).select });
+              return engine.execute(queryJson);
+            },
+          });
+        }
+        window.__opengridModule = loader.module;
+        return { fallback: loader.fallback };
+      }
+
+      window.__opengridReady = start();
+    </script>
+  </body>
+</html>
