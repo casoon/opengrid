@@ -176,6 +176,7 @@
     <script type="module">
       import { loadOpengrid, exportRows } from "/packages/opengrid/loader.js";
       import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+      import de from "/packages/opengrid/texts/de.js";
 
       // ---- The five looks of the prototype ------------------------------------
       // Only what the grid itself reads goes into `theme.css`: `--og-canvas` is
@@ -461,53 +462,12 @@
         const csv = await (await fetch("/examples/prototype/orders.csv")).arrayBuffer();
         engine.load_csv("orders", new Uint8Array(csv), schema);
 
-        // German, like the prototype — every word the element writes, set
-        // before the provider so the first paint already speaks it.
+        // German, like the prototype — the translation the package ships, set
+        // before the provider so the first paint already speaks it. The example
+        // in the search field is the page's: it names this page's columns.
         loader.module.set_texts(grid, {
-          lang: "de", loading: "Wird geladen …", matchesOne: "{count} Treffer", matchesOther: "{count} Treffer",
-          sourceLocal: "lokal · wasm", sourceWorker: "Worker · wasm", sourceRemote: "Server", sourceHybrid: "hybrid",
-          queriesOne: "{count} Abfrage", queriesOther: "{count} Abfragen",
-          addFilter: "+ Filter", addFilterTitle: "Filter hinzufügen", filterColumnLabel: "Spalte",
-          filterConditionLabel: "Bedingung", filterValueLabel: "Wert", cancel: "Abbrechen", apply: "Anwenden",
-          addGrouping: "+ Gruppieren", groupingFull: "Schon nach zwei Spalten gruppiert",
-          filterAny: "beliebig", booleanTrue: "ja", booleanFalse: "nein",
-          empty: "Keine Treffer", error: "Die Daten konnten nicht geladen werden: {cause}",
-          errorUnknown: "Die Daten konnten nicht geladen werden.",
-          filterGroup: "Filter", operatorLabel: "{column} Bedingung", valueLabel: "{column} Wert", clear: "Leeren",
-          operators: { contains: "enthält", starts_with: "beginnt mit", eq: "ist", ne: "ist nicht",
-            gt: "größer als", gte: "größer oder gleich", lt: "kleiner als", lte: "kleiner oder gleich",
-            is_null: "hat keinen Wert", is_not_null: "hat einen Wert" },
-          selectAll: "Alle Treffer auswählen", selectedAll: "{count} Zeilen ausgewählt",
-          groupRow: "{column}: {value} ({rows})", rowsOne: "1 Zeile", rowsOther: "{count} Zeilen",
-          groupExpanded: "{group} aufgeklappt, {rows}", groupCollapsed: "{group} zugeklappt",
-          groupInvalid: "Gruppieren nach {column} ist nicht möglich", totalRow: "Gesamt ({rows})",
-          aggregateCell: "{aggregate}: {value}", aggregateSum: "Summe", aggregateAvg: "Durchschnitt",
-          aggregateCount: "Anzahl", aggregateMin: "Minimum", aggregateMax: "Maximum", aggregateRange: "Spanne",
-          columnMenu: "Spaltenmenü {column}", sortAscending: "Aufsteigend sortieren", sortDescending: "Absteigend sortieren",
-          filterColumn: "Filtern …", aggregateGroup: "Aggregat in Gruppen", aggregateNone: "Kein Aggregat",
-          groupByColumn: "Nach dieser Spalte gruppieren", groupSecondLevel: "Als 2. Ebene gruppieren",
-          ungroupColumn: "Gruppierung aufheben", hideColumn: "Spalte ausblenden",
-          toolbarGroup: "Werkzeuge", filterRowToggle: "Filterzeile", densityGroup: "Dichte",
-          densityCompact: "Kompakt", densityNormal: "Normal", densityComfortable: "Luftig",
-          chipsGroup: "Aktive Filter", chipRemove: "{filter} entfernen", chipsClear: "Alle entfernen",
-          filterRemoved: "{filter} entfernt", filtersCleared: "Alle Filter entfernt", groupChip: "Gruppiert nach {columns}",
-          facetsGroup: "Facetten", facetsToggle: "Facetten", facetsReset: "Zurücksetzen", facetFrom: "Von", facetTo: "Bis",
-          facetQueries: "Gezählt mit {count} Abfragen", facetChipValues: "{column} ist eines von {values}",
-          searchLabel: "Suchen oder filtern", searchPlaceholder: "Suchen oder filtern: country = DE und amount ≥ 10",
-          queryAnd: "und", searchHint: "Abfrage · Enter", searchSuggestions: "Spalten",
-          typeText: "Text", typeBool: "ja/nein", typeInteger: "Ganzzahl", typeNumber: "Zahl",
-          typeDate: "Datum", typeTime: "Zeitpunkt", searchChip: "Text enthält „{text}“",
-          queryUnknownColumn: "{column} ist keine Spalte dieses Grids", queryMissingValue: "{column}: der Wert fehlt",
-          queryWrongOperator: "{column} kennt {operator} nicht",
-          emptyFiltered: "Für diese Filter gibt es keine Zeilen.", emptySource: "Es gibt keine Zeilen.", emptyReset: "Filter zurücksetzen",
-          filterInvalid: "{column}: {value} ist kein Wert dieser Spalte", selectionCleared: "Auswahl aufgehoben",
-          cellRequired: "{column} braucht einen Wert", columnWidth: "{column} ist {width} Pixel breit",
-          columnMoved: "{column} an Position {position} von {count} verschoben", columnAtEdge: "{column} ist schon am Rand",
-          columnsGroup: "Spalten", columnHidden: "{column} ausgeblendet, {visible} von {count} Spalten sichtbar",
-          columnShown: "{column} eingeblendet, {visible} von {count} Spalten sichtbar",
-          pageFirst: "Erste Seite", pagePrevious: "Vorige Seite", pageNext: "Nächste Seite", pageLast: "Letzte Seite",
-          pageOf: "Seite {page} von {pages}", noValue: "(kein Wert)", emptyValue: "(leer)", total: "Gesamt",
-          subtotal: "Gesamt {value}",
+          ...de,
+          searchPlaceholder: "Suchen oder filtern: country = DE und amount ≥ 10",
         });
         loader.module.set_formats(grid, {
           amount: euro,

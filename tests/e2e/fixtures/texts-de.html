@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>opengrid: deutsche Texte</title>
+    <style>
+      opengrid-grid {
+        display: block;
+        height: 420px;
+      }
+      #seiten {
+        height: 220px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid: deutsche Texte</h1>
+      <opengrid-grid
+        id="bestellungen"
+        label="Bestellungen"
+        datasource="bestellungen"
+        columns="nr,kunde,land,betrag,menge,bezahlt"
+        toolbar
+        search
+        facets
+        column-menu
+        selection
+        window-size="12"
+      ></opengrid-grid>
+      <opengrid-grid
+        id="seiten"
+        label="Bestellungen in Seiten"
+        datasource="bestellungen"
+        columns="nr,kunde,betrag"
+        page-size="2"
+      ></opengrid-grid>
+      <opengrid-table
+        label="Bestellungen als Tabelle"
+        datasource="bestellungen"
+        columns="nr,kunde,land"
+      ></opengrid-table>
+      <opengrid-pivot
+        label="Menge nach Land"
+        datasource="bestellungen"
+        rows="land"
+        values='[{"field":"menge","fn":"sum","as":"Menge"}]'
+        fields="land,kunde"
+        measures='[{"field":"betrag","fn":"sum","as":"Umsatz"}]'
+        toolbar
+      ></opengrid-pivot>
+    </main>
+    <script type="module">
+      // Issue #333: a German page — the shipped translation on all three
+      // elements, over data that is German too, so that every English word
+      // left on the page is one the component wrote. `?texts=none` leaves the
+      // texts out: texts-de.spec.js reads the same page once in English to
+      // know which words are the component's.
+      import { loadOpengrid, createLocalProvider } from "/packages/opengrid/loader.js";
+      import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+      import de from "/packages/opengrid/texts/de.js";
+
+      const rows = [
+        { nr: 1, kunde: "Bäckerei Krause", land: "Deutschland", betrag: 30.5, menge: 3, bezahlt: true },
+        { nr: 2, kunde: "Weingut Sommer", land: "Österreich", betrag: 20, menge: 2, bezahlt: false },
+        { nr: 3, kunde: "Bäckerei Krause", land: "Deutschland", betrag: 10, menge: 1, bezahlt: true },
+        { nr: 4, kunde: "Tischlerei Vogt", land: "Schweiz", betrag: 40, menge: 4, bezahlt: true },
+        { nr: 5, kunde: "Weingut Sommer", land: "Österreich", betrag: 5, menge: 5, bezahlt: false },
+      ];
+      const schema = JSON.stringify({
+        fields: [
+          { name: "nr", type: "int64", nullable: false },
+          { name: "kunde", type: "utf8", nullable: false },
+          { name: "land", type: "utf8", nullable: false },
+          { name: "betrag", type: "float64", nullable: false },
+          { name: "menge", type: "int64", nullable: false },
+          { name: "bezahlt", type: "bool", nullable: false },
+        ],
+      });
+
+      async function start() {
+        const loader = await loadOpengrid();
+        await init();
+        const provider = createLocalProvider(new Engine());
+        await provider.loadRows("bestellungen", rows, schema);
+
+        const german = new URLSearchParams(location.search).get("texts") !== "none";
+        for (const host of document.querySelectorAll("opengrid-grid, opengrid-table, opengrid-pivot")) {
+          // The documented order: texts first, then the provider.
+          if (german) loader.module.set_texts(host, de);
+          if (host.id === "bestellungen") {
+            loader.module.set_columns(host, {
+              kunde: { facet: "list" },
+              land: { facet: "pills" },
+              betrag: { facet: "range", aggregate: "sum" },
+            });
+          }
+          // A boolean cell shows its value as it is, `true`; the page says
+          // how it reads, like any other format.
+          if (host.localName === "opengrid-grid") {
+            loader.module.set_formats(host, { bezahlt: (text) => (text === "true" ? "bezahlt" : "offen") });
+          }
+          loader.module.set_provider(host, provider);
+        }
+        // The words that are the page's: its data, its column names, its labels.
+        window.__pageWords = [
+          ...rows.flatMap((row) => [...Object.keys(row), row.kunde, row.land]),
+          "bezahlt",
+          "offen",
+          "Menge",
+          "Umsatz",
+          ...[...document.querySelectorAll("[label]")].map((host) => host.getAttribute("label")),
+        ];
+        return { fallback: loader.fallback };
+      }
+
+      window.__opengridReady = start();
+    </script>
+  </body>
+</html>

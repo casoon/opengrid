@@ -26,6 +26,14 @@ Two things belong in every release entry and are easy to leave out:
   header row and the rows of its CSV, numbers and dates as typed cells. Over `createPivotProvider`
   and `createRestProvider`, from `POST /pivot/{source}?format=xlsx`
   ([export guide](docs/guides/export.md#a-pivot-as-a-workbook)).
+- **Elements:** right-to-left layout for `<opengrid-grid>`, `<opengrid-table>` and
+  `<opengrid-pivot>`, taken from `dir` on the element or an ancestor: the columns run from the
+  right, and in the grid `←` and `→` follow what is on the screen
+  ([#320](https://github.com/casoon/opengrid/issues/320), [Right to left](docs/api.md#right-to-left)).
+- **Texts:** a German translation ships with the npm package as `@casoon/opengrid/texts/de` — every
+  text of the grid, the table and the pivot, with `lang: "de"`, to hand to `set_texts` or to the
+  `texts` of `connect`; a page that does not import it does not load it
+  ([#333](https://github.com/casoon/opengrid/issues/333), [Texts](docs/api.md#texts)).
 
 ## [0.15.0] - 2026-11-09
 
