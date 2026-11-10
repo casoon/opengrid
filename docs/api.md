@@ -240,6 +240,7 @@ An interactive `<table role="grid">`: virtualized, keyboard-driven, filterable.
 | `facets` | Shows the **facet sidebar** — the facets a page configured with `set_columns`. See [Facets](#facets). |
 | `toolbar` | Puts a **toolbar** above the grid: the active filters and the grouping as chips, a switch for the filter row, the column list, the density. Opt-in. See [Toolbar](#toolbar). |
 | `add-row` | An empty **new row** after the last one: type a record into it. See [Adding rows](#adding-rows). Off while grouped, in a tree and with `page-size`. |
+| `filter-builder` | Puts **Advanced filter** into the toolbar: the button that opens the builder of the [nested filter](#nested-filter). Opt-in, and only with `toolbar`. Without it a nested filter still works — the search expression writes it, the view carries it — and its chip still opens the builder. |
 | `column-menu` | Gives every header a **column menu**: sort, filter, aggregate, group, hide. Opt-in. See [Column menu](#column-menu). |
 | `selection` | Shows the **selection column**: a checkbox per row and one in the header. Opt-in — selecting rows works from the keyboard either way; what this adds is the column that shows it and the pointer path to it. |
 | `density` | `compact`, `normal` or `comfortable` — row height, cell padding and font size in one step. `normal` is the default, and a grid without the attribute *is* a normal one; an unknown value is normal too. |
@@ -406,8 +407,9 @@ reflow case of WCAG 1.4.10, the toolbar wraps instead.
 | Columns | The column list moves here from the filter row, so it stays reachable when the row is hidden. |
 | Density | Three buttons, the pressed one is the grid's `density`. |
 | + Filter | Opens *Add filter*, a `role="dialog"` with `aria-modal="true"` (`Tab` does not leave it): *Column*, *Condition* (the operators the column's type allows), *Value*, *Cancel*, *Apply*. The focus moves to *Column*; `Tab` cycles inside; *Apply* or `Enter` in *Value* writes the column's entry in the filter row — the one place a filter lives — and closes; `Escape`, *Cancel* or a click outside close without a change. A value the column cannot take is named in the dialog, which stays open, and said in the status line — the one live region. The focus returns to the button. |
+| Advanced filter | With `filter-builder`. Opens the builder of the [nested filter](#nested-filter): conditions joined by *all* or *any*, in groups. A native modal `<dialog>`. |
 | + Group | Opens a `role="menu"` of the groupable columns not grouped yet, with the column menu's keys (`↓`/`↑`, `Home`/`End`, `Enter`/`Space`, `Escape`, `Tab`). A pick adds the next grouping level, as `group-by` does. With three levels the button is `aria-disabled` and says why. |
-| Chips | One per active filter, in words (`country is DE`), and one for the grouping. Each has a remove button **named for its filter** — `Remove country is DE` — and "Remove all" clears filters and grouping. A removal is said once, with the result that follows; the focus moves to the next chip, never to the document. |
+| Chips | One per active filter, in words (`country is DE`), one for the [nested filter](#nested-filter) as a whole, and one for the grouping. Each has a remove button **named for its filter** — `Remove country is DE` — and "Remove all" clears filters and grouping. A removal is said once, with the result that follows; the focus moves to the next chip, never to the document. |
 
 The chips are a display of the view, not a second truth about the filters: they
 are drawn from it, and redrawn only when what they say changed.
@@ -452,15 +454,35 @@ how they start:
 | Typed | Enter does |
 |---|---|
 | `country = DE and amount ≥ 10` | Writes **the filter row's own entries** — the same fields, the same view, the same chips — and empties the field. One place a filter lives. |
+| `country = DE or amount ≥ 1000`, `amount > 1 and amount < 5` | Sets the grid's [nested filter](#nested-filter) — the one place a filter lives that the row cannot hold — and empties the field. |
 | `Alpha` | A free-text search: `contains` on every shown text column, or-ed. |
 
 Input that starts with a word and an operator is read as a filter even when the
 word is not a column: `colour = red` says "colour is not a column of this grid"
 rather than searching for the words and finding nothing.
 
-Operators: `=` `≠` (`!=`) `>` `≥` (`>=`) `<` `≤` (`<=`) `~` (contains) `^`
-(starts with). Clauses are joined by the `queryAnd` word — `and` by default —
-and `and` always works as well.
+The expression, written down:
+
+```
+expression = term   { OR  term }
+term       = factor { AND factor }
+factor     = "(" expression ")" | condition
+condition  = column operator value
+column     = a field name: letters, digits and "_"
+operator   = "="  "≠" "!="  ">"  "≥" ">="  "<"  "≤" "<="  "~" (contains)  "^" (starts with)
+value      = text, or "text" in double quotes
+AND        = "and", or the queryAnd word
+OR         = "or",  or the queryOr word
+```
+
+| | |
+|---|---|
+| Precedence | `and` binds tighter than `or`, as everywhere: `a = 1 or b = 2 and c = 3` is `a = 1 or (b = 2 and c = 3)`. Parentheses say otherwise: `(a = 1 or b = 2) and c = 3`. They nest. |
+| The joining words | Stand between whitespace and are read in any case: `AND`, `Or`. The English words always work beside the page's (`queryAnd`, `queryOr`), so an English habit holds on a German page. |
+| A value | Runs to the next joining word, to the parenthesis that closes its group, or to the end. Parentheses that pair up inside it are its own: `customer = Acme (EU)`. In double quotes it is taken whole — `customer = "Rock and Roll"`, `note ~ ":)"` — up to the next `"`; there is no escape for a quote inside. |
+| Only `and`, no column twice | The conditions become the filter row's entries, one per column, as before — parentheses that group nothing are dropped. |
+| With `or`, or a column twice | What the filter row cannot hold becomes the [nested filter](#nested-filter), whole, and replaces the one there was: an expression with an `or`, and one with two conditions on one column — `amount > 1 and amount < 5` keeps both. |
+| What is wrong | Is said in the status line and stays in the field: an unknown column, a missing value, an operator the type does not take, a value that is not the column's — and `A parenthesis is not closed`, `A closing parenthesis has no opening one`, `A condition is missing` (`()`), `“and” or “or” is missing before “…”` (`(a = 1) b = 2`). |
 
 - **Enter searches**, not every keystroke: a query and an announcement per
   letter would be a barrage for a screen-reader user and a round trip per
@@ -478,6 +500,39 @@ and `and` always works as well.
   field and the search.
 - A free-text search shows as a chip. It is not part of the view, and restoring
   a view empties it.
+
+### Nested filter
+
+A filter with `or` across columns — `country is DE or amount ≥ 1000` — cannot
+live in the filter row, which holds one condition per column and joins them
+with `and`; neither can two conditions on one column. The grid holds **one** such filter beside the row: a tree of
+conditions joined by `and` and `or`. It has two editors — the
+[search expression](#search) and the builder dialog — and both write the same
+tree.
+
+| | |
+|---|---|
+| The chip | One chip says it in words: `country is DE or amount greater or equal 1000`; a group inside a group stands in parentheses, `country is DE and (amount greater or equal 1000 or qty less than 5)`. Its text is a button named `Edit …` that opens the builder; its remove button takes the whole filter, and so does "Remove all". |
+| With the rest | Everything is **and-ed**: [the page's `filter`](#the-pages-filter), the filter row, the facets, the free-text search and the nested filter. A row shows when it passes all of them. The facets count under it, like under the filter row; select-all, `get_query`, the exports and the [print table](#printing-the-view) run under it, and the print table's caption says it. |
+| The view | [`where`](#the-view) holds the tree, in the wire form of a query's `filter`. |
+| Setting it | Is said once, with the result: `66 matches · Filter set: country is DE or amount greater or equal 1000`. The selection is treated as under any filter: one by position goes, one by key stays. `opengrid-view-change` fires. |
+
+**The builder** opens from the chip, and — on a grid with `filter-builder` — from
+**Advanced filter** in the toolbar. The button is opt-in; the chip's is not: a
+filter a reader can see, a reader can edit.
+It is a native modal `<dialog>`: the page behind it is inert, `Tab` stays inside,
+`Escape` and *Cancel* close it without a change.
+
+| | |
+|---|---|
+| A group | *Rows match* **all conditions** or **any condition** — a `<select>` — then its members, then **+ Condition** and **+ Group**. The dialog is the outermost group; a group inside is a `<fieldset>` named `Group 1`, with its own choice, members and buttons, and a `Remove Group 1` button. Groups nest as deep as the expression wrote them. |
+| A condition | A group named `Condition 1` with three labelled fields — *Column*, *Condition* (the operators the column's type allows), *Value* (typed by the column: a number, a date, a checkbox) — and a `Remove Condition 1` button. Numbers follow the order on the screen and are given anew when a member goes. |
+| Opening | With no nested filter: one empty condition. From the chip: the tree as it stands. The focus is on the first field. |
+| Adding and removing | **+ Condition** puts the focus on the new condition's *Column*. A removal puts it on the group's **+ Condition** — never on the document. |
+| *Apply* | Also `Enter` in a value. Reads the tree: a group with one member is that member, a group inside a group of the same kind joins it, an empty group is left out. No condition left removes the nested filter. Then the dialog closes and the result says the filter. |
+| What is wrong | A missing value, or one the column cannot take, keeps the dialog open: the sentence stands above the buttons, the field is `aria-invalid`, described by the sentence, and takes the focus — so it is read once, with the field. |
+| A hidden column | A condition on a column the grid does not show is kept as it is: its fields are disabled, it can be removed. Show the column to edit it. |
+| The focus afterwards | On the chip's button when the builder was opened from it and it is still there, else on **Advanced filter** — and without that button on the toolbar's *Filter row* switch, where the focus goes when the last chip is removed. |
 
 ### Facets
 
@@ -801,9 +856,9 @@ labels.
 | Grouping | key | The groups are the keys, in the keys' order; a group's header names it by its label, `Customer: Alpha GmbH (12 rows)`. |
 | Aggregate | key | `count` only: a key is not an amount, and the smallest key is not the first label. Any other aggregate is refused for the column — in `set_columns`, and from a view — and the column menu offers none. |
 | Editor | label | The ARIA **combobox** of [Lists](#lists) over the map's labels, in the map's order: typing filters them, `Enter` picks, and a text that is none of the labels is refused under the editor. What is committed is the key, and `opengrid-cell-change` carries the key as its `value`. Where the page also gave the column `set_choices`, those choices are what the editor offers, named by the map's labels where they have none of their own. |
-| Filter row | label | The column's value is **a choice among the map's labels**, with *is* and *is not* (and the null checks where the column may be null). The filter it writes compares the key, and the view's `filters` hold the key. The "+ Filter" dialog offers the same choice, and a filter's chip names the label. A filter on a key the map does not name — a view saved under other labels — stays, named by the key. |
+| Filter row | label | The column's value is **a choice among the map's labels**, with *is* and *is not* (and the null checks where the column may be null). The filter it writes compares the key, and the view's `filters` hold the key. The "+ Filter" dialog and the filter builder offer the same choice, and a filter's chip — the nested filter's too — names the label. A filter on a key the map does not name — a view saved under other labels — stays, named by the key. |
 | Facets | label | `list` and `pills` fit a lookup column of either type, and list the keys **the rows hold**, by label, in the keys' order. The selection in the view is the keys. `range` is refused: a span of keys is not a span of labels. |
-| Search | key | An expression compares the stored value — `customer_id = 2`, with `=` and `≠` only — and the free-text search reads values, as everywhere ([Search](#search)): a label is not found by it. |
+| Search | key | An expression compares the stored value — `customer_id = 2`, with `=` and `≠` only, joined by `and` or `or` like any other — and the free-text search reads values, as everywhere ([Search](#search)): a label is not found by it. |
 | `get_query`, export | key | [`get_query`](#exporting-the-view) and `exportRows` hand out the stored values, as for every column: what a file is read back from. |
 | Print | label | [`prepare_print`](#printing-the-view) writes the values as the grid shows them, the caption as the chips say it. |
 | Paste, `set_values`, validators | key | What the page or the clipboard writes into the column is the stored value. |
@@ -1242,7 +1297,9 @@ Sort, filters, column layout and density are one value:
 const view = loader.module.get_view(grid);
 // { sort: [{field, direction}], filters: [{column, op, value}],
 //   columns: { order, hidden, widths, pinned }, density,
-//   group: [], expanded: [], facets: {}, selected: [4, 9] }
+//   group: [], expanded: [], facets: {}, selected: [4, 9],
+//   where: { or: [{ field: "country", op: "eq", value: "DE" },
+//                 { field: "amount", op: "gte", value: 1000 }] } }
 loader.module.set_view(grid, view);
 ```
 
@@ -1265,6 +1322,26 @@ whenever the reader changes any of it.
 | `filterRow` | Whether the filter row shows. `true` unless turned off. |
 | `facets` | The facet selections, by column. |
 | `selected` | The keys of the selected records, where the grid [selects by key](#selecting-by-key); left out while there are none. `set_view` restores them after asking the source which of them exist. |
+| `where` | The [nested filter](#nested-filter); left out while there is none, and a view without it has none. |
+
+**`where` is a query's `filter`, as [the wire](protocol.md) writes it** — the form
+of the page's [`filter`](#the-pages-filter), so values are typed: a number is a
+JSON number, a decimal and a date are strings.
+
+```
+where     = { "and": [where, …] } | { "or": [where, …] } | condition
+condition = { "field", "op", "value" }      op: eq ne gt gte lt lte contains starts_with has
+          | { "field", "op": "has_all", "value": [ … ] }
+          | { "field", "op" }               op: is_null is_not_null is_empty
+```
+
+| | |
+|---|---|
+| What it takes | What its two editors can write: `and` and `or` with at least one member, and conditions. `not` and the operator `in` are refused — a page that needs them has the `filter` attribute. |
+| Columns | Every `field` is one of the grid's `columns`, or the view is refused like any view naming an unknown column, and nothing of it is applied. |
+| Values and operators | Are checked by the source, as the `filter` attribute's are: a value of the wrong type or an operator the column does not take is the provider's error, in the status line. |
+| As written | `set_view` keeps the tree as the page wrote it — it does not flatten or reorder — so `get_view` gives it back. The builder tidies what it applies. |
+| Next to `filters` | Both hold: `filters` is the filter row, `where` the nested filter, and-ed. |
 
 **A selection by key is in the view; a selection by position is not.** Without a
 `row-key` the grid names a row by its number in the result, and sorting or
@@ -1700,11 +1777,11 @@ would make it invisible), a **selected row** carries an inset accent bar as well
 as the tint (colour alone would be 1.4.1), and `prefers-reduced-motion` beats a
 theme that animates a part.
 
-**Parts:** `action`, `action-cell`, `action-header`, `add-field`, `add-filter`, `add-grouping`, `band`, `body`, `bulk`, `bulk-apply`, `bulk-cancel`, `caption`, `cell`, `cell-error`, `cell-saved`, `cell-saving`, `chip`, `chip-calc`, `chip-move`, `chip-remove`, `chips`,
+**Parts:** `action`, `action-cell`, `action-header`, `add-field`, `add-filter`, `add-grouping`, `band`, `body`, `bulk`, `bulk-apply`, `bulk-cancel`, `caption`, `cell`, `cell-error`, `cell-saved`, `cell-saving`, `chip`, `chip-calc`, `chip-edit`, `chip-move`, `chip-remove`, `chips`,
 `chips-clear`, `column-menu`, `column-menu-button`, `column-toggle`, `columns`, `columns-toggle`, `density`, `drill-down`,
 `editor`, `empty`, `empty-reset`, `empty-text`, `facet`, `facet-bounds`, `facet-cost`, `facet-count`,
 `facet-pill`, `facet-pills`, `facet-value`, `facets`, `facets-head`, `facets-toggle`, `filter`,
-`filter-clear`, `filter-dialog`, `filter-operator`, `filter-row-toggle`, `filter-value`, `footer`,
+`filter-builder`, `filter-builder-dialog`, `filter-clear`, `filter-dialog`, `filter-operator`, `filter-row-toggle`, `filter-value`, `footer`,
 `field-group`, `field-menu`, `group-mark`, `group-toggle`, `grouping-menu`, `header`, `layout`, `list`, `list-item`, `list-item-remove`, `listbox`, `menu-label`, `operator-menu`, `page-first`, `page-label`, `page-last`, `page-next`,
 `page-previous`, `pager`, `paste-apply`, `paste-discard`, `paste-preview`, `paste-summary`, `row`, `row-header`, `search`, `search-hint`, `search-input`, `search-list`,
 `select`, `select-all`, `select-mark`, `sort-button`, `sort-direction`, `sort-index`, `source`, `status`,
@@ -1885,12 +1962,21 @@ boolean reads — that is `set_formats`.
 | `sourceLocal` / `sourceWorker` / `sourceRemote` / `sourceHybrid` | `local · wasm` / `worker · wasm` / `server` / `hybrid` — the footer's source, by the provider's `kind` | |
 | `queriesOne` / `queriesOther` | `{count} query` / `{count} queries` — the footer's count | `{count}` |
 | `searchLabel` / `searchPlaceholder` | `Search or filter` / `Search, or filter: country = DE and amount ≥ 10` | |
-| `queryAnd` | `and` | |
+| `queryAnd` / `queryOr` | `and` / `or` — the joining words of the search expression and of the nested filter's chip | |
 | `searchHint` / `searchSuggestions` | `Query · Enter` / `Columns` | |
 | `typeText` / `typeBool` / `typeInteger` / `typeNumber` / `typeDate` / `typeTime` | `text` / `yes/no` / `integer` / `number` / `date` / `time` — the type beside a suggested column | |
 | `searchChip` | `Text contains “{text}”` | `{text}` |
 | `queryUnknownColumn` / `queryMissingValue` | `{column} is not a column of this grid` / `{column}: the value is missing` | `{column}` |
 | `queryWrongOperator` | `{column} does not take {operator}` | `{column}`, `{operator}` |
+| `queryUnclosed` / `queryUnopened` | `A parenthesis is not closed` / `A closing parenthesis has no opening one` | |
+| `queryMissingCondition` | `A condition is missing` | |
+| `queryMissingJoin` | `“{and}” or “{or}” is missing before “{text}”` | `{and}`, `{or}`, `{text}` |
+| `filterBuilder` | `Advanced filter` — the toolbar's button and the builder's title | |
+| `filterBuilderJoin` / `filterBuilderAll` / `filterBuilderAny` | `Rows match` / `all conditions` / `any condition` — a group's choice and its two options | |
+| `filterBuilderCondition` / `filterBuilderGroup` | `Condition {number}` / `Group {number}` — the name of a condition and of a group inside a group; with `chipRemove`, the name of its remove button | `{number}` |
+| `filterBuilderAddCondition` / `filterBuilderAddGroup` | `+ Condition` / `+ Group` | |
+| `filterBuilderEdit` | `Edit {filter}` — the name of the nested filter's chip button | `{filter}` |
+| `filterApplied` | `Filter set: {filter}` — said with the result when the nested filter was set | `{filter}` |
 | `emptyFiltered` / `emptySource` | `No row matches these filters.` / `There are no rows.` | |
 | `emptyReset` | `Reset filters` | |
 | `operators` | the thirteen filter operators, keyed by wire token (`has`, `has_all` and `is_empty` are the list's) | |

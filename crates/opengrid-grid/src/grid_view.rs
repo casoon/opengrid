@@ -81,6 +81,11 @@ pub struct GridView {
     /// [`selected_keys`] gives them — empty where the grid selects by
     /// position, and then not written.
     pub selected: Vec<Value>,
+    /// The nested filter (issue #324) — `where` in the JSON — in the wire
+    /// form of a query's filter, as [`crate::filter_tree`] restricts it. The
+    /// filter row cannot hold an `or` across columns; this can. `None` is no
+    /// such filter, and then not written.
+    pub nested: Option<Value>,
 }
 
 /// A selection's keys as a view and an event hold them: each once, in the
@@ -113,6 +118,7 @@ impl Default for GridView {
             filter_row: true,
             facets: Value::Object(Map::new()),
             selected: Vec::new(),
+            nested: None,
         }
     }
 }
@@ -228,6 +234,9 @@ impl GridView {
         // selects by position has nothing to write here.
         if !self.selected.is_empty() {
             out.insert("selected".to_owned(), Value::Array(self.selected.clone()));
+        }
+        if let Some(nested) = &self.nested {
+            out.insert("where".to_owned(), nested.clone());
         }
 
         Value::Object(out)
@@ -515,6 +524,20 @@ impl GridView {
             }
         }
 
+        // The nested filter is a query's filter, kept as written — in the one
+        // form the codec writes it, so the same tree is the same view.
+        let mut nested = None;
+        if let Some(tree) = object.get("where").filter(|tree| !tree.is_null()) {
+            use opengrid_json::{FromJson, ToJson};
+            match opengrid_query::FilterExpr::from_json(tree)
+                .map_err(|error| error.to_string())
+                .and_then(|filter| crate::filter_tree::check(&filter, &known).map(|()| filter))
+            {
+                Ok(filter) => nested = Some(filter.to_json()),
+                Err(reason) => problems.push(ViewProblem::new("where", reason)),
+            }
+        }
+
         if problems.is_empty() {
             Ok(Self {
                 sort,
@@ -527,6 +550,7 @@ impl GridView {
                 filter_row,
                 facets: Value::Object(facets),
                 selected,
+                nested,
             })
         } else {
             Err(problems)
@@ -567,6 +591,13 @@ mod tests {
             filter_row: false,
             facets: opengrid_json::json!({ "customer": { "values": [null, "Alpha"] } }),
             selected: Vec::new(),
+            nested: Some(opengrid_json::json!({ "or": [
+                { "field": "customer", "op": "eq", "value": "Alpha" },
+                { "and": [
+                    { "field": "amount", "op": "gte", "value": 1000 },
+                    { "field": "id", "op": "is_null" },
+                ] },
+            ] })),
         }
     }
 
@@ -747,6 +778,50 @@ mod tests {
                 ..GridView::default()
             }
         );
+    }
+
+    /// The nested filter survives the round trip as the tree it was written
+    /// as, and is not written when there is none (issue #324).
+    #[test]
+    fn the_nested_filter_is_where_in_the_json() {
+        let json = filled().to_json();
+        assert_eq!(
+            json["where"]["or"][1]["and"][0]["value"],
+            opengrid_json::json!(1000)
+        );
+        let back = GridView::from_json(&json, &declared()).expect("reads back");
+        assert_eq!(back.nested, filled().nested);
+        assert!(GridView::default().to_json().get("where").is_none());
+        // `null` is none, as an absent field is.
+        let none = GridView::from_json(&opengrid_json::json!({ "where": null }), &declared());
+        assert_eq!(none.expect("reads").nested, None);
+    }
+
+    /// What is not a tree the editors can show is named, and the view is not
+    /// applied: an unknown column, `not`, `in`, an empty group, no filter at all.
+    #[test]
+    fn a_nested_filter_the_grid_cannot_hold_is_a_problem() {
+        for (bad, says) in [
+            (
+                opengrid_json::json!({ "or": [{ "field": "nope", "op": "eq", "value": 1 }] }),
+                "nope is not a column of this grid",
+            ),
+            (
+                opengrid_json::json!({ "not": { "field": "id", "op": "eq", "value": 1 } }),
+                "not is not part",
+            ),
+            (
+                opengrid_json::json!({ "field": "id", "op": "in", "value": [1] }),
+                "in is not part",
+            ),
+            (opengrid_json::json!({ "and": [] }), "no member"),
+            (opengrid_json::json!("id = 1"), "invalid type"),
+        ] {
+            let view = opengrid_json::json!({ "where": bad });
+            let problems = GridView::from_json(&view, &declared()).expect_err("refused");
+            assert_eq!(problems[0].field, "where", "{view}");
+            assert!(problems[0].reason.contains(says), "{}", problems[0].reason);
+        }
     }
 
     /// Keys are untrusted input: anything but a list of scalars is named, and

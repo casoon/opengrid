@@ -32,7 +32,7 @@ const presets = [
 
     <Demo
       title="<opengrid-grid> — search, facets, column menu"
-      lead="Type a filter into the search field — country = DE and amount ≥ 10 — or plain text, then Enter. The facets count without their own restriction, so a ticked value never zeroes its neighbours. Alt+↓ on a header opens its column menu; the toolbar switches the filter row, the columns and the density, and every active filter is a chip. Colours come from this page's theme through the --og-* custom properties."
+      lead="Type a filter into the search field — country = DE and amount ≥ 10 — or plain text, then Enter. With an or — country = DE or (qty ≥ 900 and customer = Alpha) — it becomes one nested filter, a chip in words; Advanced filter builds the same in a dialog, and the chip opens it again. The facets count without their own restriction, so a ticked value never zeroes its neighbours. Alt+↓ on a header opens its column menu; the toolbar switches the filter row, the columns and the density, and every active filter is a chip. Colours come from this page's theme through the --og-* custom properties."
     >
       <div class="og-demo og-demo--site">
         <opengrid-grid
@@ -41,6 +41,7 @@ const presets = [
           columns="id,customer,country,amount,qty,ordered_on"
           window-size="30"
           toolbar
+          filter-builder
           search
           facets
           column-menu

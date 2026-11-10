@@ -90,12 +90,17 @@
 # keys across it, the pinned band's cell in the pins' sheet) grew the module
 # by 5.8 KiB, to 322828 B. The engine grew by 0.1 KiB to 155674 B, inside its
 # bound.
-# Raised the same day from 326000: lookup columns (#326: the map of a column's
+# Raised the same day from 326000: filters joined by `or` (#324) grew it by
+# 9.0 KiB, to 332048 B. 4.4 KiB of that is the builder dialog (measured with
+# the dialog stubbed out); the rest is the expression's parser with
+# parentheses and quotes, the nested filter in the view, its chip and words,
+# the dialog's sheet and fifteen texts.
+# Raised the same day from 335400: lookup columns (#326: the map of a column's
 # labels read and checked in `set_columns`, the label in the cell's text, the
-# filter row's choice among the labels and the dialog's, the editor's choices
-# from the map, the chips' labels, the operators and the aggregates of a
-# column of keys) grew it by 2.9 KiB, to 325748 B.
-grid+pivot    329000  # 325748 B, 2026-11-10, #326
+# filter row's choice among the labels, the dialog's and the builder's, the
+# editor's choices from the map, the chips' labels, the operators and the
+# aggregates of a column of keys) grew it by 3.4 KiB, to 335539 B.
+grid+pivot    338900  # 335539 B, 2026-11-10, #326
 # Raised 2026-09-30 from 108000: the bound was not raised with 0.7.0, which
 # shipped the engine at 115.2 KiB already (CHANGELOG); rule P9's sorted
 # grouping sets and order sets (#108) added the rest, to 121610 B.
@@ -124,4 +129,8 @@ grid+pivot    329000  # 325748 B, 2026-11-10, #326
 # with its `calc`, its validation, and the shares and running totals over the
 # assembled cells — in the engine, since every source's pivot is assembled
 # there) grew it by 2.1 KiB, to 155524 B.
-engine        157100  # 155524 B, 2026-11-10, #329
+# Raised the same day from 157100: the engine stood at 155674 B with column
+# bands (#319). The nested filter (#324: the tree a view may hold, checked,
+# and and-ed into a view's query) grew it by 1.0 KiB, to 156737 B — inside
+# the bound, with less room than two builds can differ by on two machines.
+engine        158300  # 156737 B, 2026-11-10, #324

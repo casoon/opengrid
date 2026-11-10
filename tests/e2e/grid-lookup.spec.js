@@ -20,7 +20,7 @@ const shadow = (page, fn, arg) =>
   );
 
 const status = (page) => shadow(page, (root) => root.querySelector('[part="status"]').textContent.trim());
-const chips = (page) => shadow(page, (root) => [...root.querySelectorAll('[part="chip"]')].map((chip) => chip.querySelector("span").textContent));
+const chips = (page) => shadow(page, (root) => [...root.querySelectorAll('[part="chip"]')].map((chip) => chip.firstElementChild.textContent));
 /** The texts of a column's cells, in the order of the rows. */
 const column = (page, col) =>
   shadow(page, (root, col) =>
@@ -488,4 +488,54 @@ test("a lookup column under a band, pinned, still shows, filters and edits by la
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("Enter");
   await expect.poll(() => page.evaluate(() => window.__changes.at(-1))).toMatchObject({ key: 2, column: "customer_id", value: "3" });
+});
+
+test("a nested filter names a lookup column by its label, and the builder offers the labels and stores the key", async ({ page }) => {
+  await open(page);
+  await page.evaluate(() => window.__host.setAttribute("filter-builder", ""));
+  const grid = page.locator("opengrid-grid");
+  const dialog = grid.locator('[part="filter-builder-dialog"]');
+  const value = (number) => dialog.getByRole("group", { name: `Condition ${number}`, exact: true }).locator('[data-dialog="value"]');
+
+  // The expression compares the keys; the chip says the labels.
+  const input = grid.locator('[part="search-input"]');
+  await input.fill("customer_id = 2 or country = FR");
+  await input.press("Enter");
+  await expect.poll(() => status(page)).toContain("3 matches");
+  expect(await chips(page)).toEqual(["Customer is Alpha AG or Country is France"]);
+  expect(await status(page)).toContain("Customer is Alpha AG or Country is France");
+  const tree = (customer) => ({ or: [{ field: "customer_id", op: "eq", value: customer }, { field: "country", op: "eq", value: "FR" }] });
+  expect((await view(page)).where).toEqual(tree(2));
+
+  // The builder: each lookup condition is a choice among the labels, on the key it holds.
+  await grid.locator("[data-chip-edit]").click();
+  await expect(dialog).toBeVisible();
+  const choice = (number) =>
+    value(number).evaluate((control) => ({
+      tag: control.localName,
+      value: control.value,
+      options: [...control.options].map((option) => [option.value, option.textContent]),
+    }));
+  expect(await choice(1)).toEqual({ tag: "select", value: "2", options: [["1", "Zeta GmbH"], ["2", "Alpha AG"], ["3", "Mid Ltd"]] });
+  expect(await choice(2)).toEqual({ tag: "select", value: "FR", options: [["DE", "Germany"], ["FR", "France"]] });
+  expect(
+    await dialog.getByRole("group", { name: "Condition 1", exact: true }).locator('[data-dialog="op"]').evaluate((op) => [...op.options].map((option) => option.value)),
+  ).toEqual(["eq", "ne", "is_null", "is_not_null"]);
+  expect(await axe(page)).toEqual([]);
+
+  // Another label chosen: the filter holds its key.
+  await value(1).selectOption({ label: "Mid Ltd" });
+  await dialog.getByRole("button", { name: "Apply" }).click();
+  await expect.poll(() => chips(page)).toEqual(["Customer is Mid Ltd or Country is France"]);
+  expect((await view(page)).where).toEqual(tree(3));
+  expect((await lastQuery(page)).filter).toEqual(tree(3));
+  expect(await column(page, 1)).toEqual(["Mid Ltd", "Zeta GmbH", "Zeta GmbH"]);
+
+  // A key the map does not name is kept in the builder, named by itself.
+  await page.evaluate((where) => window.__module.set_view(window.__host, { where }), tree(9));
+  await expect.poll(() => chips(page)).toEqual(["Customer is 9 or Country is France"]);
+  await grid.locator("[data-chip-edit]").click();
+  expect(await choice(1)).toMatchObject({ value: "9" });
+  await dialog.getByRole("button", { name: "Apply" }).click();
+  expect((await view(page)).where).toEqual(tree(9));
 });
