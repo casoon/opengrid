@@ -1672,6 +1672,127 @@ mod tests {
         assert_eq!(sparse.operator(5, "gte"), "gte");
     }
 
+    /// The `{name}` placeholders of a template. Only lowercase names count, so
+    /// the `\u{00B7}` of this file's own source is not one.
+    fn placeholders(template: &str) -> std::collections::BTreeSet<&str> {
+        template
+            .split('{')
+            .skip(1)
+            .filter_map(|rest| rest.split_once('}'))
+            .map(|(name, _)| name)
+            .filter(|name| !name.is_empty() && name.chars().all(|c| c.is_ascii_lowercase()))
+            .collect()
+    }
+
+    /// The placeholders of the English default of `key`, read from the
+    /// `Default` above: the field is the key in snake_case.
+    fn default_placeholders(key: &str) -> std::collections::BTreeSet<&'static str> {
+        let defaults = include_str!("texts.rs")
+            .split("impl Default for GridTexts {")
+            .nth(1)
+            .and_then(|rest| rest.split("\n}\n").next())
+            .expect("texts.rs has the defaults");
+        let mut field = String::new();
+        for c in key.chars() {
+            if c.is_ascii_uppercase() {
+                field.push('_');
+            }
+            field.push(c.to_ascii_lowercase());
+        }
+        let text = defaults
+            .split(&format!("\n            {field}:"))
+            .nth(1)
+            .and_then(|rest| rest.split(".to_owned()").next())
+            .unwrap_or_else(|| panic!("a default for {key}"));
+        placeholders(text)
+    }
+
+    /// A translation the package ships (`@casoon/opengrid/texts/<lang>`, issue
+    /// #333) is complete: every key `set_texts` takes and no other, every
+    /// operator, and in each text the placeholders of its English default — a
+    /// key added to the elements fails here until every language has it.
+    #[test]
+    fn every_shipped_language_has_every_key() {
+        use std::collections::BTreeSet;
+
+        let package = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packages/opengrid");
+        let manifest = include_str!("../../../packages/opengrid/package.json");
+        let mut languages = Vec::new();
+        for entry in std::fs::read_dir(format!("{package}/texts")).expect("the texts directory") {
+            let path = entry.expect("a directory entry").path();
+            if path.extension().is_none_or(|extension| extension != "js") {
+                continue;
+            }
+            let lang = path.file_stem().unwrap().to_str().unwrap().to_owned();
+            let source = std::fs::read_to_string(&path).expect("a readable language file");
+            // The object after `export default` is written as JSON.
+            let object = source
+                .split_once("export default ")
+                .and_then(|(_, rest)| rest.trim_end().strip_suffix(';'))
+                .unwrap_or_else(|| panic!("{lang}.js is `export default {{ … }};`"));
+            let json = opengrid_json::Json::parse(object).unwrap_or_else(|error| {
+                panic!("{lang}.js is not JSON after `export default`: {error:?}")
+            });
+            let texts = json.as_object().expect("an object of texts");
+
+            let known: BTreeSet<&str> = KEYS.iter().copied().collect();
+            let given: BTreeSet<&str> = texts.iter().map(|(key, _)| key.as_str()).collect();
+            let missing: Vec<&&str> = known.difference(&given).collect();
+            let unknown: Vec<&&str> = given.difference(&known).collect();
+            assert!(missing.is_empty(), "{lang}.js lacks {missing:?}");
+            assert!(unknown.is_empty(), "{lang}.js has unknown keys {unknown:?}");
+
+            assert_eq!(
+                texts.get("lang").and_then(|value| value.as_str()),
+                Some(lang.as_str()),
+                "{lang}.js names its language"
+            );
+            for (key, value) in texts.iter() {
+                if key == "lang" || key == "operators" {
+                    continue;
+                }
+                let text = value
+                    .as_str()
+                    .filter(|text| !text.trim().is_empty())
+                    .unwrap_or_else(|| panic!("{lang}.js: {key} is a text"));
+                assert_eq!(
+                    placeholders(text),
+                    default_placeholders(key),
+                    "{lang}.js: the placeholders of {key}"
+                );
+            }
+
+            let operators = texts
+                .get("operators")
+                .and_then(|value| value.as_object())
+                .unwrap_or_else(|| panic!("{lang}.js: operators is an object"));
+            let tokens: BTreeSet<&str> = crate::shared::FILTER_OPERATORS.iter().copied().collect();
+            let named: BTreeSet<&str> = operators
+                .iter()
+                .filter(|(_, name)| name.as_str().is_some_and(|name| !name.trim().is_empty()))
+                .map(|(token, _)| token.as_str())
+                .collect();
+            assert_eq!(named, tokens, "{lang}.js: the operators");
+
+            // A file nobody can import is not shipped: the subpath and its types.
+            assert!(
+                manifest.contains(&format!(
+                    "\"./texts/{lang}\": {{\n      \"types\": \"./texts/{lang}.d.ts\",\n      \"default\": \"./texts/{lang}.js\"\n    }}"
+                )),
+                "package.json exports ./texts/{lang}"
+            );
+            assert!(
+                std::path::Path::new(&format!("{package}/texts/{lang}.d.ts")).exists(),
+                "{lang}.d.ts is beside {lang}.js"
+            );
+            languages.push(lang);
+        }
+        assert!(
+            languages.contains(&"de".to_owned()),
+            "German is shipped: {languages:?}"
+        );
+    }
+
     /// A template without the placeholder is left alone rather than mangled.
     #[test]
     fn a_template_without_a_placeholder_is_kept() {
