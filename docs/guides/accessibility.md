@@ -15,7 +15,8 @@ Calling something accessible is easy and usually wrong, so here is the split.
   matrix is in [The public API](../../api/).
 - Every state change goes through one polite live region.
 - The component's own words are English and overridable with `set_texts`. A `lang` given with
-  them goes onto the elements that carry **those texts**, never onto the data.
+  them goes onto the elements that carry **those texts**, never onto the data. German ships with
+  the package as `@casoon/opengrid/texts/de` ([Texts](../../api/#texts)).
 - A pivot group whose value is NULL is named `(no value)`, one whose value is the empty string
   `(empty)`: an empty header cell is silence to a screen reader.
 
