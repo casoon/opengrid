@@ -17,23 +17,6 @@ use crate::compiler::CompiledQuery;
 use crate::lease::Lease;
 use crate::source::{backend, compile, data, text_params, texts, value_from_text};
 
-/// A key as a sentence names it — the engine's words, so an error reads the
-/// same whichever way the level was answered.
-fn named(value: &Value) -> String {
-    match value {
-        Value::Utf8(text) => format!("{text:?}"),
-        Value::Int64(number) => number.to_string(),
-        Value::Float64(number) if number.is_nan() => "\"NaN\"".to_owned(),
-        Value::Float64(number) => number.to_string(),
-        Value::Bool(flag) => flag.to_string(),
-        Value::Decimal(decimal) => format!("{:?}", decimal.to_string()),
-        Value::Date(date) => format!("{:?}", date.to_string()),
-        Value::Timestamp(timestamp) => format!("{:?}", timestamp.to_string()),
-        Value::Null => "null".to_owned(),
-        Value::List(_) => opengrid_json::ToJson::to_json(value).to_string(),
-    }
-}
-
 impl PostgresDataSource {
     /// Answers one level of a tree in PostgreSQL.
     pub(crate) async fn execute_tree(
@@ -108,20 +91,14 @@ impl PostgresDataSource {
         let rows = run(compiler.tree_duplicate_key(tree).map_err(compile)?, 1).await?;
         if let Some(text) = rows.first().and_then(|row| row[0].clone()) {
             let key = value_from_text(Some(&text), key_type, tree.key.as_str())?;
-            return Err(data(format!(
-                "tree: the key {} appears more than once (rule T1)",
-                named(&key)
-            )));
+            return Err(data(opengrid_datasource::tree_duplicate_key(&key)));
         }
 
         // T3: every node reached from a root.
         let rows = run(compiler.tree_cycle(tree).map_err(compile)?, 1).await?;
         if let Some(text) = rows.first().and_then(|row| row[0].clone()) {
             let key = value_from_text(Some(&text), key_type, tree.key.as_str())?;
-            return Err(data(format!(
-                "tree: the parents of {} lead back to it — a cycle (rule T3)",
-                named(&key)
-            )));
+            return Err(data(opengrid_datasource::tree_cycle(&key)));
         }
 
         // T2, T5 and whether `under` exists (T4).

@@ -108,24 +108,6 @@ fn is_root() -> String {
     )
 }
 
-/// A key as a sentence names it — the engine's words, so an error reads the
-/// same whichever way the level was answered.
-fn named(value: &Value) -> String {
-    match value {
-        Value::Utf8(text) => format!("{text:?}"),
-        Value::Int64(number) => number.to_string(),
-        Value::Float64(number) if number.is_nan() => "\"NaN\"".to_owned(),
-        Value::Float64(number) => number.to_string(),
-        Value::Bool(flag) => flag.to_string(),
-        Value::Decimal(decimal) => format!("{:?}", decimal.to_string()),
-        Value::Date(date) => format!("{:?}", date.to_string()),
-        Value::Timestamp(timestamp) => format!("{:?}", timestamp.to_string()),
-        Value::Null => "null".to_owned(),
-        // A list is never a tree key.
-        Value::List(_) => opengrid_json::ToJson::to_json(value).to_string(),
-    }
-}
-
 /// One count, from a statement that answers one integer.
 fn count(connection: &Connection, sql: &Builder) -> Result<u64, DataSourceError> {
     let total: i64 = connection
@@ -187,10 +169,7 @@ fn answer(
          HAVING count(*) > 1 ORDER BY {KEY} LIMIT 1"
     ));
     if let Some(key) = first_key(connection, &sql, key_type)? {
-        return Err(data(format!(
-            "tree: the key {} appears more than once (rule T1)",
-            named(&key)
-        )));
+        return Err(data(opengrid_datasource::tree_duplicate_key(&key)));
     }
 
     // T3: every node is reached from a root; one that is not lies on a cycle
@@ -211,10 +190,7 @@ fn answer(
         root = is_root()
     ));
     if let Some(key) = first_key(connection, &sql, key_type)? {
-        return Err(data(format!(
-            "tree: the parents of {} lead back to it — a cycle (rule T3)",
-            named(&key)
-        )));
+        return Err(data(opengrid_datasource::tree_cycle(&key)));
     }
 
     // T2 and T5: the orphans and the matches, over the whole tree.
