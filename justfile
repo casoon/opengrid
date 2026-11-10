@@ -124,17 +124,23 @@ measure-modules:
 measure-engine:
     bash scripts/measure-engine.sh
 
-# End-to-End- und A11y-Tests (Playwright + axe-core, plan/spezifikation/12-qualitaet.md §CI).
-# Baut das Element-Modul und das Engine-Modul (die Fixture fährt die echte Engine),
-# packt das npm-Paket (packaged.spec.js prüft das gepackte, nicht das Repository),
-# installiert die gepinnte JS-Toolchain und fährt tests/e2e/.
-e2e: wasm-build-components wasm-build package mcp-elements mcp-test
+# Alles, was die Playwright-Suite braucht, ohne sie zu starten: die Module, die
+# MCP-Elemente, der Beispiel-Server und die Beispiele. `e2e`, `e2e-browsers` und
+# der Baselines-Job der CI bauen darüber dasselbe — jeder für sich gepflegt, sind
+# sie auseinandergelaufen (#343).
+e2e-prepare: wasm-build-components wasm-build package mcp-elements
     # Die Hybrid-Specs (Punkt 28) fahren gegen einen echten opengrid-server, den
     # Playwright startet. Hier gebaut, damit dort nur noch gestartet wird — ein
     # Kaltbau innerhalb des webServer-Timeouts wäre ein Glücksspiel.
     cargo build -p opengrid-example-server
     pnpm install --frozen-lockfile
     pnpm --filter "./examples/*" build
+
+# End-to-End- und A11y-Tests (Playwright + axe-core, plan/spezifikation/12-qualitaet.md §CI).
+# Baut das Element-Modul und das Engine-Modul (die Fixture fährt die echte Engine),
+# packt das npm-Paket (packaged.spec.js prüft das gepackte, nicht das Repository),
+# installiert die gepinnte JS-Toolchain und fährt tests/e2e/.
+e2e: e2e-prepare mcp-test
     just types
     pnpm exec playwright test --config tests/e2e/playwright.config.js
 
@@ -153,10 +159,7 @@ measure-grid: wasm-build wasm-build-components
 # Opt-in: `just e2e` und CI bleiben bei Chromium. Ohne Screenshot-Baselines —
 # die gehören Chromium. Die Browser einmal holen:
 # `pnpm exec playwright install firefox webkit`.
-e2e-browsers: wasm-build-components wasm-build package mcp-elements
-    cargo build -p opengrid-example-server
-    pnpm install --frozen-lockfile
-    pnpm --filter "./examples/*" build
+e2e-browsers: e2e-prepare
     OPENGRID_E2E_BROWSERS=1 pnpm exec playwright test --config tests/e2e/playwright.config.js --project firefox --project webkit
 
 # Setzt die Release-Version an allen drei Stellen, die eine drucken: Cargo-
