@@ -81,7 +81,13 @@
 # grid arranged anew around its view, the texts) grew it by 5.8 KiB, to
 # 315064 B. The engine, which holds the layout of a view, grew by 0.6 KiB to
 # 153366 B, inside its bound.
-grid+pivot    318200  # 315064 B, 2026-11-10, #316
+# Raised the same day from 318200: column bands (#319: the bands in the page's
+# part of the layout, kept in one piece and moved and pinned as a whole, the
+# second header row with its spans and what a cell names as its headers, the
+# keys across it, the pinned band's cell in the pins' sheet) grew the module
+# by 6.2 KiB, to 321423 B. The engine grew by 0.2 KiB to 153572 B, inside its
+# bound.
+grid+pivot    324600  # 321423 B, 2026-11-10, #319
 # Raised 2026-09-30 from 108000: the bound was not raised with 0.7.0, which
 # shipped the engine at 115.2 KiB already (CHANGELOG); rule P9's sorted
 # grouping sets and order sets (#108) added the rest, to 121610 B.

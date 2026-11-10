@@ -63,6 +63,12 @@
 //! 1-based including the header: the header row is 1, the first data row is 2,
 //! so logical row `r` is `r + 2`.
 //!
+//! With column bands (issue #319) the header has **two** rows — the bands
+//! above, the columns below — and everything counts one more: the first data
+//! row is 3 ([`GridNodes::header_rows`]). A header cell then says its
+//! `aria-colindex`, since the cells of the two rows are not the columns in
+//! DOM order.
+//!
 //! # Focus
 //!
 //! Exactly one cell carries `tabindex="0"`, every other cell `tabindex="-1"`
@@ -747,6 +753,13 @@ pub enum ActiveCell {
         /// Column index into the schema.
         col: usize,
     },
+    /// The `<th>` of a column band (issue #319), in the row above the
+    /// columns' own headers.
+    Band {
+        /// A column of the band: the one the reader came up from, so `↓` goes
+        /// back to it. Every column of a band names the same cell.
+        col: usize,
+    },
     /// A `<td>` of a data row.
     Data(CellRef),
 }
@@ -755,7 +768,7 @@ impl ActiveCell {
     /// The logical data cell, or `None` for a header or selection cell.
     pub const fn data(self) -> Option<CellRef> {
         match self {
-            Self::SelectAll | Self::Select { .. } | Self::Header { .. } => None,
+            Self::SelectAll | Self::Select { .. } | Self::Header { .. } | Self::Band { .. } => None,
             Self::Data(cell) => Some(cell),
         }
     }
@@ -763,7 +776,7 @@ impl ActiveCell {
     /// The logical row this cell belongs to, header rows excluded.
     pub const fn row(self) -> Option<u64> {
         match self {
-            Self::SelectAll | Self::Header { .. } => None,
+            Self::SelectAll | Self::Header { .. } | Self::Band { .. } => None,
             Self::Select { row } => Some(row),
             Self::Data(cell) => Some(cell.row),
         }
@@ -829,6 +842,9 @@ pub struct GridNodes {
     pub select_all_mark: Option<NodeId>,
     /// The header cells, one per column.
     pub header_cells: Vec<GridHeaderNodes>,
+    /// The band cells of the row above them (issue #319); empty in a grid
+    /// without bands, whose header is one row.
+    pub bands: Vec<BandNodes>,
     /// The `<th>` of each action column, after the data columns (issue #189).
     pub action_headers: Vec<NodeId>,
     /// The recycled pool: one entry per slot.
@@ -869,6 +885,17 @@ pub struct PagerNodes {
     pub last: NodeId,
     /// „Page 3 of 12" — where the reader is, in words.
     pub label: NodeId,
+}
+
+/// The header cell of one column band (issue #319).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BandNodes {
+    /// The `<th scope="colgroup">`.
+    pub cell: NodeId,
+    /// The first column under it, as an index into the schema.
+    pub first: usize,
+    /// How many columns it spans.
+    pub count: usize,
 }
 
 /// The nodes of one header cell: the `<th>` and its visible multi-sort index.
@@ -930,6 +957,12 @@ impl GridNodes {
     /// The pool size (number of recycled row slots).
     pub fn pool(&self) -> usize {
         self.rows.len()
+    }
+
+    /// How many rows the header has: two with column bands (issue #319), one
+    /// without. `aria-rowcount` and every `aria-rowindex` count them.
+    pub fn header_rows(&self) -> u64 {
+        if self.bands.is_empty() { 1 } else { 2 }
     }
 }
 
@@ -1393,7 +1426,9 @@ pub fn move_active(
     let column_of = |cell: ActiveCell| -> isize {
         match cell {
             ActiveCell::SelectAll | ActiveCell::Select { .. } => SELECT,
-            ActiveCell::Header { col } => col as isize,
+            // A band counts as the header of its column here; its own moves are
+            // [`move_banded`]'s.
+            ActiveCell::Header { col } | ActiveCell::Band { col } => col as isize,
             ActiveCell::Data(reference) => reference.col as isize,
         }
     };
@@ -1407,7 +1442,10 @@ pub fn move_active(
         },
         col => ActiveCell::Data(CellRef::new(row.min(last_row), col as usize)),
     };
-    let is_header = matches!(active, ActiveCell::SelectAll | ActiveCell::Header { .. });
+    let is_header = matches!(
+        active,
+        ActiveCell::SelectAll | ActiveCell::Header { .. } | ActiveCell::Band { .. }
+    );
     let row = active.row().unwrap_or(0);
     let col = column_of(active);
 
@@ -1491,6 +1529,82 @@ pub fn move_active(
     }
 }
 
+/// [`move_active`] in a grid with column bands (issue #319), whose header has
+/// two rows: the bands above, the columns below. `bands` are the bands as
+/// `(first column, how many)`.
+///
+/// A band's cell spans its columns, and the header of a column without a band
+/// spans both rows. The moves that differ from the one-row header:
+///
+/// * `↑` on the header of a column in a band goes to the band; `↓` on a band
+///   goes back to the column the reader came from — to the band's first
+///   column when it was reached sideways. `↑` on a band stays.
+/// * `←`/`→` on a band go to what stands beside it in the upper row — the next
+///   band, or the header of a column without one — and `Home`/`End` to that
+///   row's ends.
+/// * `Ctrl`+`Home` is the first cell of the upper row.
+///
+/// Everything else is [`move_active`]: `←`/`→`/`Home`/`End` on a column's
+/// header walk the columns' headers, a band's or not, and `↑` from the first
+/// data row reaches the column's own header.
+pub fn move_banded(
+    active: ActiveCell,
+    key: GridKey,
+    ncols: usize,
+    total_count: u64,
+    viewport_rows: u64,
+    selection: bool,
+    bands: &[(usize, usize)],
+) -> ActiveCell {
+    let band_of = |col: usize| {
+        bands
+            .iter()
+            .copied()
+            .find(|(first, count)| (*first..first + count).contains(&col))
+    };
+    // The cell of the upper row above a column. A band reached sideways
+    // leads down to its first column.
+    let upper = |col: usize| match band_of(col) {
+        Some((first, _)) => ActiveCell::Band { col: first },
+        None => ActiveCell::Header { col },
+    };
+    let first = if selection {
+        ActiveCell::SelectAll
+    } else {
+        upper(0)
+    };
+    let plain =
+        |from: ActiveCell| move_active(from, key, ncols, total_count, viewport_rows, selection);
+    if ncols == 0 {
+        return active;
+    }
+    match (active, key) {
+        (_, GridKey::CtrlHome) => first,
+        (ActiveCell::Header { col }, GridKey::ArrowUp) if band_of(col).is_some() => {
+            ActiveCell::Band { col }
+        }
+        (ActiveCell::Band { col }, _) => {
+            let Some((start, count)) = band_of(col) else {
+                return plain(ActiveCell::Header { col });
+            };
+            match key {
+                GridKey::ArrowUp | GridKey::PageUp => active,
+                GridKey::ArrowDown => ActiveCell::Header { col },
+                GridKey::ArrowLeft if start == 0 => first,
+                GridKey::ArrowLeft => upper(start - 1),
+                GridKey::ArrowRight if start + count >= ncols => active,
+                GridKey::ArrowRight => upper(start + count),
+                GridKey::Home => first,
+                GridKey::End => upper(ncols - 1),
+                // The last cell of the grid, and a viewport down from the
+                // column the reader came from.
+                _ => plain(ActiveCell::Header { col }),
+            }
+        }
+        _ => plain(active),
+    }
+}
+
 /// The window offset a key asks for, given the cell it moved to.
 ///
 /// A move that lands inside the current window needs no reload (`None`).
@@ -1551,6 +1665,9 @@ pub struct GridSkeleton<'a> {
     pub search: bool,
     /// The page's actions, one trailing column each (issue #189).
     pub actions: &'a [Action],
+    /// The column bands above the schema's columns (issue #319), each with
+    /// its first column and how many it spans; empty for a one-row header.
+    pub bands: &'a [(String, usize, usize)],
 }
 
 /// An action a page offers on every row (issue #189): the label is the accessible
@@ -1823,6 +1940,20 @@ pub fn grid_css() -> String {
          tbody tr:has(:focus) {{ z-index: 1; }}
          tbody td:focus {{ white-space: normal; overflow-wrap: anywhere; }}
          tbody td {{ scroll-margin-top: var({HEADER_HEIGHT_PROPERTY}); }}
+         /* Column bands (issue #319): the header is two rows tall, and a cell
+            scrolled to stays clear of both. */
+         table[{BANDS_ATTRIBUTE}] tbody td {{
+                     scroll-margin-top: calc(2 * var({HEADER_HEIGHT_PROPERTY})); }}
+         /* A line at either side of a band says which columns it spans, and
+            the line under it is drawn the same way — shadows, not borders. A
+            collapsed border belongs to the table: it stays behind when the
+            band is pinned, and the strip it leaves between the band and its
+            columns shows what scrolls under them. A forced palette drops
+            shadows, so there the border stays. */
+         [part=\"band\"] {{ box-shadow: inset 1px 0 0 var({LINE_PROPERTY}),
+                                       inset -1px 0 0 var({LINE_PROPERTY}),
+                                       inset 0 -1px 0 var({LINE_PROPERTY}); }}
+         @media (forced-colors: none) {{ [part=\"band\"] {{ border-bottom: 0; }} }}
          th, td {{ box-sizing: border-box; padding: 0 var({PAD_PROPERTY});
                    border-bottom: 1px solid var({LINE_PROPERTY});
                    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
@@ -2183,6 +2314,7 @@ pub fn build_grid(
         facets,
         search,
         actions,
+        bands,
     } = *skeleton;
     let fields = schema.fields();
     let ncols = fields.len();
@@ -2326,6 +2458,40 @@ pub fn build_grid(
         value: (ncols + usize::from(selection) + actions.len()).to_string(),
     });
 
+    // Column bands (issue #319): a second header row. The bands stand in the
+    // first one, each across its columns; the header of a column without a
+    // band spans both rows, and the columns of a band have theirs in the
+    // second. A grid without a band keeps the one row it always had.
+    let banded = !bands.is_empty();
+    let band_at = |col: usize| {
+        bands
+            .iter()
+            .find(|(_, first, count)| (*first..first + count).contains(&col))
+    };
+    // A header cell says its column where the rows are not the columns in DOM
+    // order; the selection column is the first when it is there.
+    let leading = usize::from(selection);
+    if banded {
+        buffer.push(Patch::SetAttribute {
+            node: table,
+            name: BANDS_ATTRIBUTE.to_owned(),
+            value: String::new(),
+        });
+        // In a fixed table layout the first row sizes the columns, and that
+        // row now holds the bands: the widths go on a `<col>` per column
+        // (`apply_widths` writes them by `data-width-col`).
+        let colgroup = element(buffer, nodes, Some(table), "colgroup");
+        for index in 0..leading + ncols + actions.len() {
+            let col = element(buffer, nodes, Some(colgroup), "col");
+            if (leading..leading + ncols).contains(&index) {
+                buffer.push(Patch::SetAttribute {
+                    node: col,
+                    name: "data-width-col".to_owned(),
+                    value: (index - leading).to_string(),
+                });
+            }
+        }
+    }
     let thead = element(buffer, nodes, Some(table), "thead");
     let header_row = element(buffer, nodes, Some(thead), "tr");
     buffer.push(Patch::SetAttribute {
@@ -2333,6 +2499,30 @@ pub fn build_grid(
         name: "aria-rowindex".to_owned(),
         value: "1".to_owned(),
     });
+    let column_row = banded.then(|| {
+        let row = element(buffer, nodes, Some(thead), "tr");
+        buffer.push(Patch::SetAttribute {
+            node: row,
+            name: "aria-rowindex".to_owned(),
+            value: "2".to_owned(),
+        });
+        row
+    });
+    // A header cell that is not under a band spans both header rows.
+    let tall = |buffer: &mut PatchBuffer, th: NodeId, position: usize| {
+        if banded {
+            for (name, value) in [
+                ("rowspan", "2".to_owned()),
+                ("aria-colindex", (position + 1).to_string()),
+            ] {
+                buffer.push(Patch::SetAttribute {
+                    node: th,
+                    name: name.to_owned(),
+                    value,
+                });
+            }
+        }
+    };
     let (select_all, select_all_mark) = if selection {
         // The selection column's header (point 61). A `<th>` like any other, so
         // the arrow keys reach it and a screen reader counts it; `Enter`/`Space` on
@@ -2382,14 +2572,79 @@ pub fn build_grid(
         // `<th>`, whose siblings hold the page's column names (point 39, and the
         // lesson of phase E (k)).
         set_lang(buffer, select_all_mark, texts);
+        tall(buffer, select_all, 0);
         (Some(select_all), Some(select_all_mark))
     } else {
         (None, None)
     };
 
     let mut header_cells = Vec::with_capacity(ncols);
+    let mut band_cells = Vec::with_capacity(bands.len());
     for (col, field) in fields.iter().enumerate() {
-        let th = element(buffer, nodes, Some(header_row), "th");
+        let band = band_at(col);
+        // The band's cell, before the first of its columns. It is a header of
+        // the group of columns under it (`scope="colgroup"`), so a data cell
+        // has two headers: its band and its column.
+        if let Some((name, first, count)) = band
+            && *first == col
+        {
+            let th = element(buffer, nodes, Some(header_row), "th");
+            // The columns it spans, each a word of its own: the cell is found
+            // by any of them (`[data-band~="2"]`).
+            let spanned = (*first..first + count)
+                .map(|col| col.to_string())
+                .collect::<Vec<_>>()
+                .join(" ");
+            for (attribute, value) in [
+                ("part", "band".to_owned()),
+                ("scope", "colgroup".to_owned()),
+                ("colspan", count.to_string()),
+                ("id", format!("{BAND_ID_PREFIX}{first}")),
+                (BAND_ATTRIBUTE, spanned),
+                ("aria-colindex", (leading + first + 1).to_string()),
+                ("tabindex", "-1".to_owned()),
+            ] {
+                buffer.push(Patch::SetAttribute {
+                    node: th,
+                    name: attribute.to_owned(),
+                    value,
+                });
+            }
+            let label = element(buffer, nodes, Some(th), "span");
+            buffer.push(Patch::SetText {
+                node: label,
+                text: name.clone(),
+            });
+            band_cells.push(BandNodes {
+                cell: th,
+                first: *first,
+                count: *count,
+            });
+        }
+        let th = element(
+            buffer,
+            nodes,
+            Some(match (band, column_row) {
+                (Some(_), Some(row)) => row,
+                _ => header_row,
+            }),
+            "th",
+        );
+        match band {
+            Some(_) => {
+                for (attribute, value) in [
+                    ("id", format!("{COLUMN_ID_PREFIX}{col}")),
+                    ("aria-colindex", (leading + col + 1).to_string()),
+                ] {
+                    buffer.push(Patch::SetAttribute {
+                        node: th,
+                        name: attribute.to_owned(),
+                        value,
+                    });
+                }
+            }
+            None => tall(buffer, th, leading + col),
+        }
         buffer.push(Patch::SetAttribute {
             node: th,
             name: "part".to_owned(),
@@ -2489,6 +2744,7 @@ pub fn build_grid(
             node: name,
             text: action.label.clone(),
         });
+        tall(buffer, th, leading + ncols + index);
         action_headers.push(th);
     }
 
@@ -2557,6 +2813,16 @@ pub fn build_grid(
                     node: td,
                     name: marker.to_owned(),
                     value,
+                });
+            }
+            // Under a band a cell names both its headers, the band first —
+            // "Address, City" — instead of leaving it to each browser to find
+            // the cell that spans its column (issue #319).
+            if let Some((_, first, _)) = band_at(col) {
+                buffer.push(Patch::SetAttribute {
+                    node: td,
+                    name: "headers".to_owned(),
+                    value: format!("{BAND_ID_PREFIX}{first} {COLUMN_ID_PREFIX}{col}"),
                 });
             }
             buffer.push(Patch::SetAttribute {
@@ -2658,6 +2924,7 @@ pub fn build_grid(
         select_all,
         select_all_mark,
         header_cells,
+        bands: band_cells,
         action_headers,
         rows,
         pager,
@@ -3344,7 +3611,7 @@ pub fn patch_grid(
     buffer.push(Patch::SetAttribute {
         node: nodes.table,
         name: "aria-rowcount".to_owned(),
-        value: (paging.rows + 1).to_string(),
+        value: (paging.rows + nodes.header_rows()).to_string(),
     });
     // Rows can be selected, several at once (`Shift`+`Space`, `Ctrl`+`A`) —
     // except while grouped without a `row-key`, where a selection would name
@@ -3476,6 +3743,17 @@ pub fn patch_grid(
         }
     }
 
+    for band in &nodes.bands {
+        let is_active = matches!(
+            active,
+            ActiveCell::Band { col } if (band.first..band.first + band.count).contains(&col)
+        );
+        buffer.push(Patch::SetAttribute {
+            node: band.cell,
+            name: "tabindex".to_owned(),
+            value: tabindex_for(is_active).to_owned(),
+        });
+    }
     for (index, th) in nodes.action_headers.iter().enumerate() {
         buffer.push(Patch::SetAttribute {
             node: *th,
@@ -3628,7 +3906,7 @@ pub fn patch_grid(
                 buffer.push(Patch::SetAttribute {
                     node: row_nodes.row,
                     name: "aria-rowindex".to_owned(),
-                    value: (local + 2).to_string(),
+                    value: (local + 1 + nodes.header_rows()).to_string(),
                 });
                 // Under grouping a position is a group header or a data row, and
                 // the same pooled `<tr>` draws either — so scrolling still adds
@@ -4605,6 +4883,22 @@ pub const TREE_CONTEXT_ID: &str = "og-tree-context";
 /// sort keys; the 1-based position follows.
 pub const SORT_KEY_ID_PREFIX: &str = "og-sort-key-";
 
+/// The id prefix of a band's header cell (issue #319); the index of its first
+/// column follows. With [`COLUMN_ID_PREFIX`] it is what a data cell under a
+/// band names in `headers`.
+pub const BAND_ID_PREFIX: &str = "og-band-";
+
+/// The id prefix of the header cell of a column under a band; the column's
+/// index follows.
+pub const COLUMN_ID_PREFIX: &str = "og-col-";
+
+/// On a band's header cell: the indexes of the columns it spans, separated by
+/// spaces, so the cell is found by any of them (`[data-band~="2"]`).
+pub const BAND_ATTRIBUTE: &str = "data-band";
+
+/// On the `<table>` of a grid with column bands: its header has two rows.
+pub const BANDS_ATTRIBUTE: &str = "data-bands";
+
 /// The id prefix of the hidden nodes that hold a cell's validation sentence.
 pub const FINDING_ID_PREFIX: &str = "og-finding-";
 
@@ -5268,6 +5562,7 @@ mod tests {
                 facets: false,
                 search: false,
                 actions: &[],
+                bands: &[],
             },
         );
 
@@ -5366,6 +5661,7 @@ mod tests {
                 facets: false,
                 search: false,
                 actions: &[],
+                bands: &[],
             },
         );
         let state = state_with(&["Gamma", "Alpha"], 5, 0, 4);
@@ -5439,6 +5735,7 @@ mod tests {
                 facets: false,
                 search: false,
                 actions: &[],
+                bands: &[],
             },
         );
         let state = state_with(&["Gamma"], 1, 0, 1);
@@ -5496,6 +5793,7 @@ mod tests {
                 facets: false,
                 search: false,
                 actions: &[],
+                bands: &[],
             },
         );
         let state = state_with(&["Gamma"], 1, 0, 1);
@@ -5573,6 +5871,7 @@ mod tests {
                 facets: false,
                 search: false,
                 actions: &[],
+                bands: &[],
             },
         );
 
@@ -5663,6 +5962,7 @@ mod tests {
                 facets: false,
                 search: false,
                 actions: &[],
+                bands: &[],
             },
         );
         assert!(
@@ -5696,6 +5996,7 @@ mod tests {
                 facets: false,
                 search: false,
                 actions: &[],
+                bands: &[],
             },
         );
         let state = state_with(&["Gamma"], 1, 0, 1);
@@ -5774,6 +6075,7 @@ mod tests {
                 facets: false,
                 search: false,
                 actions: &[],
+                bands: &[],
             },
         );
 
@@ -5865,6 +6167,7 @@ mod tests {
                 facets: true,
                 search: false,
                 actions: &[],
+                bands: &[],
             },
         );
         let attribute = |node: NodeId, wanted: &str| {
@@ -5918,6 +6221,7 @@ mod tests {
                 facets: true,
                 search: true,
                 actions: &[],
+                bands: &[],
             },
         );
         assert!(!buffer.patches().iter().any(|patch| matches!(
@@ -6057,6 +6361,7 @@ mod tests {
                 facets: false,
                 search: false,
                 actions: &[],
+                bands: &[],
             },
         );
         let state = state_with(&["Gamma"], 1, 0, 1);
@@ -6114,6 +6419,7 @@ mod tests {
                 facets: false,
                 search: false,
                 actions: &[],
+                bands: &[],
             },
         );
         let state = state_with(&["Gamma", "Alpha"], 5, 0, 2);
@@ -6167,6 +6473,7 @@ mod tests {
                 facets: false,
                 search: false,
                 actions: &[],
+                bands: &[],
             },
         );
         let total = 3_000_000;
@@ -6256,6 +6563,7 @@ mod tests {
                 facets: false,
                 search: false,
                 actions: &[],
+                bands: &[],
             },
         );
         let state = state_with(&["Gamma", "Alpha"], 5, 0, 3);
@@ -6315,6 +6623,7 @@ mod tests {
                 facets: false,
                 search: false,
                 actions: &[],
+                bands: &[],
             },
         );
         // Slot 3 holds the focused row 6; the window scrolled to rows 20..24.
@@ -6781,6 +7090,7 @@ mod tests {
                     facets: false,
                     search: false,
                     actions: &[],
+                    bands: &[],
                 },
             );
 
@@ -6847,6 +7157,7 @@ mod tests {
                     facets: false,
                     search: false,
                     actions: &[],
+                    bands: &[],
                 },
             );
             buffer
@@ -6945,5 +7256,376 @@ mod tests {
         let old = [Some(0), Some(1), Some(2), Some(3)];
         let slots = assign_pool(&old, None, &[10, 11, 12, 13], 4, 100);
         assert_eq!(slots, [Some(10), Some(11), Some(12), Some(13)]);
+    }
+
+    /// `id`, the band `Address` over `street` and `city`, `amount` — with the
+    /// selection column and one action column, or bare.
+    fn banded_skeleton(bands: &[(String, usize, usize)]) -> (GridNodes, PatchBuffer) {
+        let schema = initial_schema(&["id", "street", "city", "amount"].map(str::to_owned));
+        let mut nodes = NodeAllocator::new();
+        let mut buffer = PatchBuffer::new();
+        let view = build_grid(
+            &mut buffer,
+            &mut nodes,
+            &GridSkeleton {
+                label: None,
+                schema: &schema,
+                pool: 2,
+                texts: &GridTexts::default(),
+                declared: &[],
+                presentation: &Default::default(),
+                selection: true,
+                column_menu: false,
+                toolbar: false,
+                facets: false,
+                search: false,
+                actions: &[Action {
+                    id: "open".to_owned(),
+                    label: "Open".to_owned(),
+                }],
+                bands,
+            },
+        );
+        (view, buffer)
+    }
+
+    fn attribute_of(buffer: &PatchBuffer, node: NodeId, wanted: &str) -> Option<String> {
+        buffer.patches().iter().rev().find_map(|patch| match patch {
+            Patch::SetAttribute {
+                node: at,
+                name,
+                value,
+            } if *at == node && name == wanted => Some(value.clone()),
+            _ => None,
+        })
+    }
+
+    fn children_of(buffer: &PatchBuffer, node: NodeId) -> Vec<NodeId> {
+        buffer
+            .patches()
+            .iter()
+            .filter_map(|patch| match patch {
+                Patch::AppendChild { parent, child } if *parent == node => Some(*child),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Column bands (issue #319): the bands in a first header row, each across
+    /// its columns as the header of that group; the columns of a band in the
+    /// second row, every other header across both. Each header cell says its
+    /// column, and a data cell under a band names its band and its column.
+    #[test]
+    fn a_banded_header_has_two_rows() {
+        let (view, buffer) = banded_skeleton(&[("Address".to_owned(), 1, 2)]);
+        let attribute = |node: NodeId, wanted: &str| attribute_of(&buffer, node, wanted);
+        let tags = |wanted: &str| {
+            buffer
+                .patches()
+                .iter()
+                .filter(|patch| matches!(patch, Patch::CreateElement { tag, .. } if tag == wanted))
+                .count()
+        };
+
+        assert_eq!(attribute(view.table, "data-bands").as_deref(), Some(""));
+        // One `<col>` per column of the table: selection, four, one action.
+        assert_eq!((tags("colgroup"), tags("col")), (1, 6));
+        assert_eq!(attribute(view.table, "aria-colcount").as_deref(), Some("6"));
+
+        assert_eq!(view.bands.len(), 1);
+        let band = &view.bands[0];
+        assert_eq!((band.first, band.count), (1, 2));
+        for (name, value) in [
+            ("part", "band"),
+            ("scope", "colgroup"),
+            ("colspan", "2"),
+            ("id", "og-band-1"),
+            ("data-band", "1 2"),
+            ("aria-colindex", "3"),
+            ("tabindex", "-1"),
+        ] {
+            assert_eq!(attribute(band.cell, name).as_deref(), Some(value), "{name}");
+        }
+        assert_eq!(attribute(band.cell, "data-col"), None);
+
+        // The two rows, in the order they are read.
+        let header = |col: usize| view.header_cells[col].cell;
+        let select_all = view.select_all.expect("the selection header");
+        let upper = children_parent(&buffer, select_all).expect("the upper row");
+        let lower = children_parent(&buffer, header(1)).expect("the lower row");
+        assert_eq!(attribute(upper, "aria-rowindex").as_deref(), Some("1"));
+        assert_eq!(attribute(lower, "aria-rowindex").as_deref(), Some("2"));
+        assert_eq!(
+            children_of(&buffer, upper),
+            [
+                select_all,
+                header(0),
+                band.cell,
+                header(3),
+                view.action_headers[0]
+            ]
+        );
+        assert_eq!(children_of(&buffer, lower), [header(1), header(2)]);
+
+        // A header that is not under a band spans both rows.
+        for (cell, colindex) in [
+            (select_all, "1"),
+            (header(0), "2"),
+            (header(3), "5"),
+            (view.action_headers[0], "6"),
+        ] {
+            assert_eq!(attribute(cell, "rowspan").as_deref(), Some("2"));
+            assert_eq!(attribute(cell, "aria-colindex").as_deref(), Some(colindex));
+        }
+        for (col, id, colindex) in [(1, "og-col-1", "3"), (2, "og-col-2", "4")] {
+            assert_eq!(attribute(header(col), "rowspan"), None);
+            assert_eq!(attribute(header(col), "scope").as_deref(), Some("col"));
+            assert_eq!(attribute(header(col), "id").as_deref(), Some(id));
+            assert_eq!(
+                attribute(header(col), "aria-colindex").as_deref(),
+                Some(colindex)
+            );
+        }
+
+        // The band is part of what a cell's header says.
+        for row in &view.rows {
+            assert_eq!(attribute(row.cells[0], "headers"), None);
+            assert_eq!(
+                attribute(row.cells[1], "headers").as_deref(),
+                Some("og-band-1 og-col-1")
+            );
+            assert_eq!(
+                attribute(row.cells[2], "headers").as_deref(),
+                Some("og-band-1 og-col-2")
+            );
+            assert_eq!(attribute(row.cells[3], "headers"), None);
+        }
+    }
+
+    /// The row a header cell was put into.
+    fn children_parent(buffer: &PatchBuffer, node: NodeId) -> Option<NodeId> {
+        buffer.patches().iter().find_map(|patch| match patch {
+            Patch::AppendChild { parent, child } if *child == node => Some(*parent),
+            _ => None,
+        })
+    }
+
+    /// Without a band the header is the one row it always was: no `<col>`, no
+    /// span, no `aria-colindex`, no `headers`.
+    #[test]
+    fn a_header_without_bands_is_one_row() {
+        let (view, buffer) = banded_skeleton(&[]);
+        assert!(view.bands.is_empty());
+        assert_eq!(view.header_rows(), 1);
+        for patch in buffer.patches() {
+            match patch {
+                Patch::CreateElement { tag, .. } => {
+                    assert!(tag != "col" && tag != "colgroup", "{tag}");
+                }
+                Patch::SetAttribute { name, .. } => assert!(
+                    ![
+                        "rowspan",
+                        "colspan",
+                        "aria-colindex",
+                        "headers",
+                        "data-bands",
+                        "data-band"
+                    ]
+                    .contains(&name.as_str()),
+                    "{name}"
+                ),
+                _ => {}
+            }
+        }
+    }
+
+    /// Two header rows count: `aria-rowcount` and every `aria-rowindex` are
+    /// one more than under a one-row header, and the band's cell takes the
+    /// roving tabindex from any of its columns.
+    #[test]
+    fn the_rows_count_both_header_rows() {
+        let state = {
+            let schema = initial_schema(&["id", "street", "city", "amount"].map(str::to_owned));
+            let mut state = GridState::new(schema.clone());
+            state.set_window(Window::new(0, 2));
+            state.apply_result(QueryResult::new(
+                schema,
+                vec![
+                    vec![Value::Utf8("1".to_owned())],
+                    vec![Value::Utf8("Main St".to_owned())],
+                    vec![Value::Utf8("Bonn".to_owned())],
+                    vec![Value::Utf8("5".to_owned())],
+                ],
+                1,
+            ));
+            state
+        };
+        let frame = |bands: &[(String, usize, usize)], active: ActiveCell| {
+            let (view, _) = banded_skeleton(bands);
+            let slots = assign_pool(&[None, None], None, &window_rows(0, 1, 2), 2, 1);
+            let mut buffer = PatchBuffer::new();
+            patch_grid(
+                &mut buffer,
+                &view,
+                &state,
+                &slots,
+                active,
+                &[],
+                None,
+                DEFAULT_ROW_HEIGHT,
+                &GridTexts::default(),
+                &crate::formats::Plain,
+                Paging::whole(state.total_count()),
+                None,
+                None,
+                None,
+            );
+            (view, buffer)
+        };
+        let banded = [("Address".to_owned(), 1, 2)];
+
+        let (view, buffer) = frame(&banded, ActiveCell::Band { col: 2 });
+        assert_eq!(view.header_rows(), 2);
+        assert_eq!(
+            attribute_of(&buffer, view.table, "aria-rowcount").as_deref(),
+            Some("3")
+        );
+        assert_eq!(
+            attribute_of(&buffer, view.rows[0].row, "aria-rowindex").as_deref(),
+            Some("3")
+        );
+        assert_eq!(
+            attribute_of(&buffer, view.bands[0].cell, "tabindex").as_deref(),
+            Some("0")
+        );
+        for header in &view.header_cells {
+            assert_eq!(
+                attribute_of(&buffer, header.cell, "tabindex").as_deref(),
+                Some("-1")
+            );
+        }
+
+        let (view, buffer) = frame(&banded, ActiveCell::Header { col: 2 });
+        assert_eq!(
+            attribute_of(&buffer, view.bands[0].cell, "tabindex").as_deref(),
+            Some("-1")
+        );
+        assert_eq!(
+            attribute_of(&buffer, view.header_cells[2].cell, "tabindex").as_deref(),
+            Some("0")
+        );
+
+        let (view, buffer) = frame(&[], ActiveCell::Header { col: 0 });
+        assert_eq!(
+            attribute_of(&buffer, view.table, "aria-rowcount").as_deref(),
+            Some("2")
+        );
+        assert_eq!(
+            attribute_of(&buffer, view.rows[0].row, "aria-rowindex").as_deref(),
+            Some("2")
+        );
+    }
+
+    /// The keyboard matrix of a banded header (issue #319). Five columns:
+    /// `0` alone, the band A over `1` and `2`, the band B over `3`, `4` alone.
+    ///
+    /// ```text
+    /// | 0 |   A   | B | 4 |
+    /// |   | 1 | 2 | 3 |   |
+    /// ```
+    #[test]
+    fn the_keys_cross_a_banded_header() {
+        const BANDS: &[(usize, usize)] = &[(1, 2), (3, 1)];
+        let go = |from: ActiveCell, key: GridKey, selection: bool| {
+            move_banded(from, key, 5, 9, 4, selection, BANDS)
+        };
+        let header = |col: usize| ActiveCell::Header { col };
+        let band = |col: usize| ActiveCell::Band { col };
+        let data = |row: u64, col: usize| ActiveCell::Data(CellRef::new(row, col));
+
+        // Up and down: a data cell, its column's header, the band — and back
+        // to the column the reader came from.
+        assert_eq!(go(data(0, 2), GridKey::ArrowUp, false), header(2));
+        assert_eq!(go(header(2), GridKey::ArrowUp, false), band(2));
+        assert_eq!(go(band(2), GridKey::ArrowUp, false), band(2));
+        assert_eq!(go(band(2), GridKey::ArrowDown, false), header(2));
+        assert_eq!(go(header(2), GridKey::ArrowDown, false), data(0, 2));
+        // A header across both rows has nothing above it.
+        assert_eq!(go(header(0), GridKey::ArrowUp, false), header(0));
+        assert_eq!(go(header(0), GridKey::ArrowDown, false), data(0, 0));
+
+        // Sideways in the upper row: band to band, and to the tall headers.
+        assert_eq!(go(band(2), GridKey::ArrowRight, false), band(3));
+        assert_eq!(go(band(1), GridKey::ArrowRight, false), band(3));
+        assert_eq!(go(band(3), GridKey::ArrowRight, false), header(4));
+        // Reached sideways, a band leads down to its first column.
+        assert_eq!(go(band(3), GridKey::ArrowLeft, false), band(1));
+        assert_eq!(go(band(1), GridKey::ArrowDown, false), header(1));
+        assert_eq!(go(band(2), GridKey::ArrowLeft, false), header(0));
+        assert_eq!(go(band(1), GridKey::Home, false), header(0));
+        assert_eq!(go(band(1), GridKey::End, false), header(4));
+        assert_eq!(go(band(1), GridKey::Home, true), ActiveCell::SelectAll);
+
+        // Sideways in the lower row: the columns' headers, one by one.
+        assert_eq!(go(header(0), GridKey::ArrowRight, false), header(1));
+        assert_eq!(go(header(1), GridKey::ArrowRight, false), header(2));
+        assert_eq!(go(header(2), GridKey::ArrowRight, false), header(3));
+        assert_eq!(go(header(3), GridKey::ArrowRight, false), header(4));
+        assert_eq!(go(header(4), GridKey::ArrowRight, false), header(4));
+        assert_eq!(go(header(3), GridKey::ArrowLeft, false), header(2));
+        assert_eq!(go(header(2), GridKey::Home, false), header(0));
+        assert_eq!(go(header(2), GridKey::End, false), header(4));
+
+        // The first cell of the grid is the first of the upper row.
+        assert_eq!(go(data(3, 2), GridKey::CtrlHome, false), header(0));
+        assert_eq!(
+            go(data(3, 2), GridKey::CtrlHome, true),
+            ActiveCell::SelectAll
+        );
+        assert_eq!(
+            move_banded(data(3, 2), GridKey::CtrlHome, 5, 9, 4, false, &[(0, 2)]),
+            band(0)
+        );
+        // A band at either end of the row.
+        assert_eq!(
+            move_banded(band(4), GridKey::ArrowRight, 5, 9, 4, false, &[(3, 2)]),
+            band(4)
+        );
+        assert_eq!(
+            move_banded(band(1), GridKey::ArrowLeft, 5, 9, 4, false, &[(0, 2)]),
+            band(0)
+        );
+        assert_eq!(
+            move_banded(band(1), GridKey::ArrowLeft, 5, 9, 4, true, &[(0, 2)]),
+            ActiveCell::SelectAll
+        );
+
+        // The rest is the one-row header's: the last cell, and a viewport down
+        // from the column the reader came from.
+        assert_eq!(go(band(2), GridKey::CtrlEnd, false), data(8, 4));
+        assert_eq!(go(band(2), GridKey::PageDown, false), data(3, 2));
+        assert_eq!(go(band(2), GridKey::PageUp, false), band(2));
+
+        // Without a band it is `move_active`, key by key.
+        for key in [
+            GridKey::ArrowUp,
+            GridKey::ArrowDown,
+            GridKey::ArrowLeft,
+            GridKey::ArrowRight,
+            GridKey::Home,
+            GridKey::End,
+            GridKey::CtrlHome,
+            GridKey::CtrlEnd,
+            GridKey::PageUp,
+            GridKey::PageDown,
+        ] {
+            for from in [header(0), header(2), data(0, 1), ActiveCell::SelectAll] {
+                assert_eq!(
+                    move_banded(from, key, 5, 9, 4, true, &[]),
+                    move_active(from, key, 5, 9, 4, true),
+                    "{from:?} {key:?}"
+                );
+            }
+        }
     }
 }

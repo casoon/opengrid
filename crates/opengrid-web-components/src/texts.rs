@@ -1230,9 +1230,15 @@ impl GridTexts {
 
     /// A column that reached its new place.
     pub fn column_moved(&self, column: &str, position: u64, count: u64) -> String {
+        self.band_moved(self.column(column), position, count)
+    }
+
+    /// A band that reached its new place (issue #319): the sentence of a
+    /// column, with the band's own name and the place of its first column.
+    pub fn band_moved(&self, band: &str, position: u64, count: u64) -> String {
         fill(
             &fill(
-                &fill(&self.column_moved, "column", self.column(column)),
+                &fill(&self.column_moved, "column", band),
                 "position",
                 &position.to_string(),
             ),
@@ -1248,18 +1254,29 @@ impl GridTexts {
 
     /// A column that cannot move any further.
     pub fn column_at_edge(&self, column: &str) -> String {
-        fill(&self.column_at_edge, "column", self.column(column))
+        self.band_at_edge(self.column(column))
+    }
+
+    /// A band that cannot move any further (issue #319).
+    pub fn band_at_edge(&self, band: &str) -> String {
+        fill(&self.column_at_edge, "column", band)
     }
 
     /// Where a column is pinned now (issue #316).
     pub fn column_pinned(&self, column: &str, pin: Option<opengrid_grid::layout::Pin>) -> String {
+        self.band_pinned(self.column(column), pin)
+    }
+
+    /// Where a band is pinned now (issue #319): the sentence of a column, with
+    /// the band's own name.
+    pub fn band_pinned(&self, band: &str, pin: Option<opengrid_grid::layout::Pin>) -> String {
         use opengrid_grid::layout::Pin;
         let template = match pin {
             Some(Pin::Start) => &self.column_pinned_start,
             Some(Pin::End) => &self.column_pinned_end,
             None => &self.column_unpinned,
         };
-        fill(template, "column", self.column(column))
+        fill(template, "column", band)
     }
 
     /// A column that was hidden or shown again.
