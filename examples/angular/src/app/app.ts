@@ -76,6 +76,7 @@ import { ORDERS, ROOMS } from "./provider";
         rowKey="id"
         [addRow]="true"
         [provider]="roomsProvider"
+        [presentation]="roomColumns"
         [actions]="roomActions"
         [validators]="roomValidators"
         [rowAdd]="answerRowAdd"
@@ -91,6 +92,8 @@ export class App {
   protected readonly provider = inject(ORDERS);
   protected readonly roomsProvider = inject(ROOMS);
   protected readonly roomActions: RowAction[] = [{ id: "remove", label: "Remove" }];
+  /** `id` says which room a row is: it stays in place when the grid scrolls sideways (issue #316). */
+  protected readonly roomColumns: ConnectOptions["presentation"] = { id: { pin: "start" } };
   protected readonly roomValidators: ConnectOptions["validators"] = {
     seats: (value) => (Number(value) < 0 ? { level: "error", message: "Seats cannot be negative." } : null),
   };

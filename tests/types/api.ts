@@ -171,6 +171,7 @@ export async function page(): Promise<void> {
     // @ts-expect-error — where NULLs land is a query's word, not a view's
     void view.sort[0]?.nulls;
     view.columns.widths["amount"] satisfies number | undefined;
+    view.columns.pinned["amount"] satisfies "start" | "end" | "none" | undefined;
     view.filterRow satisfies boolean;
     module.set_view(grid, view);
   }
@@ -192,9 +193,17 @@ export async function page(): Promise<void> {
   module.set_view(grid, { density: "tight" });
   const wrongShape: Partial<View> = {
     // @ts-expect-error — the widths are a map, not a list
-    columns: { order: [], hidden: [], widths: [120] },
+    columns: { order: [], hidden: [], widths: [120], pinned: {} },
   };
   void wrongShape;
+  // Pinned columns (issue #316): the page pins in `set_columns`, the view
+  // holds what the reader changed.
+  module.set_columns(grid, { id: { pin: "start" }, amount: { pin: "end", width: 120 } });
+  // @ts-expect-error — a pin names an end of the row, not a side
+  module.set_columns(grid, { id: { pin: "left" } });
+  module.set_view(grid, { columns: { pinned: { id: "none", customer: "start" } } });
+  // @ts-expect-error — `none`, `start` or `end`
+  module.set_view(grid, { columns: { pinned: { id: true } } });
 
   // A grid's view flows into a place that takes a view, unwidened: the
   // pivot's overload must not turn it into `View | PivotView` (0.8.0 did).

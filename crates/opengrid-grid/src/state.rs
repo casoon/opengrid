@@ -588,6 +588,21 @@ impl GridState {
         vec![Patch::Status(self.status.clone())]
     }
 
+    /// Says this too — now, and with the result that follows — after the
+    /// sentence the line carries or is waiting to carry (issue #316: a pin
+    /// that lets go right after a column was pinned must not take that
+    /// column's announcement out of the line, whether its result has come
+    /// yet or not). A sentence that is there already is not said twice.
+    pub fn add_notice(&mut self, text: String) -> Vec<Patch> {
+        let said = self.pending_notice.take().or_else(|| self.notice.take());
+        let text = match said {
+            Some(said) if said.ends_with(&text) => said,
+            Some(said) => format!("{said} · {text}"),
+            None => text,
+        };
+        self.set_notice(text)
+    }
+
     /// Says this too with the result just applied, after what that result
     /// already carries — and not again with the next one (issue #322: what a
     /// restored view's selection lost belongs to the view's result).
@@ -1361,6 +1376,37 @@ mod tests {
 
     /// A fresh grid has not been answered yet, and the first result flips the
     /// status to `Ready` — once, not on every later result.
+    /// A second sentence joins the one that waits for the next result, and
+    /// the same sentence does not join itself.
+    #[test]
+    fn a_notice_is_added_to_the_one_that_waits() {
+        let mut state = GridState::new(schema());
+        state.add_notice("alone".to_owned());
+        assert_eq!(state.notice(), Some("alone"));
+
+        let mut state = GridState::new(schema());
+        state.notice_with_result("pinned".to_owned());
+        assert_eq!(state.notice(), None, "with the result, not before");
+        state.add_notice("let go".to_owned());
+        assert_eq!(state.notice(), Some("pinned · let go"));
+        state.add_notice("let go".to_owned());
+        assert_eq!(state.notice(), Some("pinned · let go"));
+
+        // The result came first and put the sentence into the line: it stays
+        // there when the second one is added, and both wait for the next
+        // result as an announcement does.
+        let mut state = GridState::new(schema());
+        state.notice_with_result("pinned".to_owned());
+        state.apply_result(result(&[], 0));
+        assert_eq!(state.notice(), Some("pinned"));
+        state.add_notice("let go".to_owned());
+        assert_eq!(state.notice(), Some("pinned · let go"));
+        state.apply_result(result(&[], 0));
+        assert_eq!(state.notice(), Some("pinned · let go"));
+        state.apply_result(result(&[], 0));
+        assert_eq!(state.notice(), None);
+    }
+
     #[test]
     fn the_first_result_reports_ready_once() {
         let mut state = GridState::new(schema());

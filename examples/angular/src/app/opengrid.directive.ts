@@ -22,6 +22,7 @@ import {
 export class OpengridDirective implements OnChanges, OnDestroy, CellWrites {
   @Input() provider?: ConnectOptions["provider"];
   @Input() texts?: ConnectOptions["texts"];
+  @Input() presentation?: ConnectOptions["presentation"];
   @Input() view?: ConnectOptions["view"];
   @Output() viewChange = new EventEmitter<View>();
   // Editing (the grid only). The answer to a new row is the function's return
@@ -41,6 +42,7 @@ export class OpengridDirective implements OnChanges, OnDestroy, CellWrites {
       this.connection = connect(this.host.nativeElement, {
         provider: this.provider,
         texts: this.texts,
+        presentation: this.presentation,
         view: this.view,
         actions: this.actions,
         validators: this.validators,
@@ -65,6 +67,7 @@ export class OpengridDirective implements OnChanges, OnDestroy, CellWrites {
     const changed: ConnectOptions = {};
     if ("provider" in changes) changed.provider = this.provider;
     if ("texts" in changes) changed.texts = this.texts;
+    if ("presentation" in changes) changed.presentation = this.presentation;
     if ("view" in changes) changed.view = this.view;
     if ("actions" in changes) changed.actions = this.actions;
     if ("validators" in changes) changed.validators = this.validators;

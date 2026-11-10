@@ -66,6 +66,24 @@ for (const example of EXAMPLES) {
       expect(await shadow(page, (root) => root.querySelector('tr[aria-rowindex="2"] button[part="action"]')?.textContent)).toBe("Remove");
     });
 
+    test("a pinned column arrives through the adapter, and the reader lets it go", async ({ page }) => {
+      // Issue #316: `presentation` pins `id` at the start; `Alt`+`Shift`+`→`
+      // on its header takes the pin away.
+      const pinned = () =>
+        shadow(page, (root) =>
+          [...root.querySelectorAll("thead th[data-col]")]
+            .filter((th) => getComputedStyle(th).position === "sticky")
+            .map((th) => th.querySelector("span").textContent),
+        );
+      expect(await pinned()).toEqual(["id"]);
+      await shadow(page, (root) => root.querySelector('th[data-col="0"]').focus());
+      await page.keyboard.press("Alt+Shift+ArrowRight");
+      await expect
+        .poll(() => shadow(page, (root) => root.querySelector('[part="status"]').textContent))
+        .toContain("id no longer pinned");
+      await expect.poll(pinned).toEqual([]);
+    });
+
     test("a row is added and the callback's answer saves it", async ({ page }) => {
       await shadow(page, (root) => root.querySelector('tr[data-new-row] td[data-col="0"]').focus());
       for (const text of ["4", "D4", "40"]) {
