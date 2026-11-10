@@ -19,6 +19,14 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+### Added
+
+- **Pivot:** XLSX export, written by the server ([#331](https://github.com/casoon/opengrid/issues/331)).
+  `exportPivot(provider, pivot, { format: "xlsx" })` answers the shown pivot as one flat sheet: the
+  header row and the rows of its CSV, numbers and dates as typed cells. Over `createPivotProvider`
+  and `createRestProvider`, from `POST /pivot/{source}?format=xlsx`
+  ([export guide](docs/guides/export.md#a-pivot-as-a-workbook)).
+
 ## [0.15.0] - 2026-11-09
 
 **Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).

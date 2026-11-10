@@ -166,7 +166,7 @@ const blob = await exportRows(provider, query, { format: "csv" });
 
 CSV per RFC 4180 with a guard against formula injection, or JSON; through
 `createRestProvider` also XLSX, written by the server (`format: "xlsx"`). A pivot exports as
-shown with `get_pivot`. See [Export](https://github.com/casoon/opengrid/blob/main/docs/guides/export.md).
+shown with `get_pivot`, and as XLSX from a server with `exportPivot`. See [Export](https://github.com/casoon/opengrid/blob/main/docs/guides/export.md).
 
 ## Documentation
 

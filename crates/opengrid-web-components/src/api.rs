@@ -15,7 +15,7 @@
 use crate::{grid, pivot, table};
 
 /// What `packages/opengrid/loader.js` exports.
-const LOADER_EXPORTS: [&str; 8] = [
+const LOADER_EXPORTS: [&str; 9] = [
     "loadOpengrid",
     "connect",
     "createLocalProvider",
@@ -24,11 +24,12 @@ const LOADER_EXPORTS: [&str; 8] = [
     "createPivotProvider",
     "createHybridProvider",
     "exportRows",
+    "exportPivot",
 ];
 
 /// The methods of the provider `createRestProvider` answers — `export` is
 /// the server's export (issue #2), which `exportRows` uses when it is there.
-const REST_PROVIDER_METHODS: [&str; 3] = ["describe", "execute", "export"];
+const REST_PROVIDER_METHODS: [&str; 4] = ["describe", "execute", "export", "exportPivot"];
 
 /// The methods of the two engine providers — `stats` is what the engine holds
 /// (issue #70). The same list for both: a page swaps one for the other.
@@ -380,9 +381,10 @@ loader exports
   createPivotProvider
   createHybridProvider
   exportRows
+  exportPivot
 
 provider methods
-  createRestProvider: describe execute export
+  createRestProvider: describe execute export exportPivot
   createWorkerProvider: execute load loadRows pivot stats terminate watch
   createLocalProvider: execute load loadRows pivot stats terminate watch
 

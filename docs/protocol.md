@@ -20,6 +20,7 @@ Every request carries `Authorization: Bearer <token>`. Bodies are JSON
 | `POST /pivot/{source}` | a pivot query | a pivot result |
 | `GET /source/{source}` | — | `{ name, schema, capabilities, pivot_limits }` — `pivot_limits` is `{ max_column_dimensions, max_columns, max_rows, max_cells }` |
 | `POST /export/{source}` | a query | every row as a file, streamed |
+| `POST /pivot/{source}?format=xlsx` | a pivot query | the pivot as an XLSX file ([Export](#export)) |
 
 The body's `source` must equal the path's; a mismatch is a `422` at `source`.
 
@@ -158,6 +159,21 @@ The headers carry `Content-Disposition: attachment` and `X-Total-Count`, the row
 Everything that can still be a status is decided before the first byte; a failure after it
 breaks the connection off instead of ending a shorter file. The details are in
 [Where queries run](../guides/where-queries-run/#exporting-from-a-server).
+
+**A pivot as a workbook.** `POST /pivot/{source}?format=xlsx` takes the pivot query of `/pivot`
+and answers the pivot as an XLSX file instead of a pivot result: one sheet with one header row —
+the row dimensions by name, each generated column as its path and measure joined by ` · `
+(`2025 · total`) — and every row in the pivot's order, subtotals and the grand total included.
+Nothing is merged and there are no outline levels. A value is a cell of its type; a total's label
+stands in the first column and the dimension columns it spans are empty; a NULL measure is an
+empty cell. The words come as parameters, each optional: `total` (`Total`), `subtotal` with
+`{value}` for the closed group (`Total {value}`), `noValue` for a NULL dimension value
+(`(no value)`) and `emptyValue` for the empty string (`(empty)`). Any other parameter beside
+`format`, and any other `format`, is a `400`; without `format` the query string is ignored and the
+answer is the pivot result. The headers are an export's, `X-Total-Count` being the pivot's rows.
+The rules and bounds are the pivot's, and it counts as an export: `max_xlsx_rows` bounds it, and
+too many exports at once are `busy`. A server may leave this out; a client that gets a pivot
+result back treats it as "not offered".
 
 ## The duties of a server
 

@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { inflateRawSync } from "node:zlib";
 
 // A pivot exported as it is shown (issue #3): `get_pivot` against a real
 // `opengrid-server` over the conformance data set.
@@ -286,4 +287,314 @@ test("an answer of the wrong shape is an error with a sentence, not a trap", asy
   });
   expect(message).toContain("the shown pivot");
   expect(message).toContain("need 3");
+});
+
+// The pivot as a workbook (issue #331): `exportPivot` against the real server.
+//
+// The claim is that the sheet **is** the CSV's table — one header row, the
+// same rows and columns in the same order — with the cells typed. So the file
+// is opened here, not only received: the archive is read with `node:zlib`, the
+// sheet's cells are taken from its XML, and each is held against the field at
+// the same place in `get_pivot`'s CSV.
+
+/** The files of a ZIP archive by name, read from its central directory. */
+function unzip(file) {
+  const end = file.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+  expect(end, "a ZIP archive ends in its directory").toBeGreaterThan(-1);
+  const files = new Map();
+  let at = file.readUInt32LE(end + 16);
+  for (let entry = file.readUInt16LE(end + 10); entry > 0; entry--) {
+    const method = file.readUInt16LE(at + 10);
+    const size = file.readUInt32LE(at + 20);
+    const nameLength = file.readUInt16LE(at + 28);
+    const local = file.readUInt32LE(at + 42);
+    const name = file.toString("utf8", at + 46, at + 46 + nameLength);
+    const start = local + 30 + file.readUInt16LE(local + 26) + file.readUInt16LE(local + 28);
+    const data = file.subarray(start, start + size);
+    files.set(name, method === 0 ? data : inflateRawSync(data));
+    at += 46 + nameLength + file.readUInt16LE(at + 30) + file.readUInt16LE(at + 32);
+  }
+  return files;
+}
+
+const unescape = (text) =>
+  text
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">")
+    .replaceAll("&quot;", '"')
+    .replaceAll("&apos;", "'")
+    .replaceAll("&amp;", "&");
+
+/**
+ * The first sheet of a workbook: its XML, and its cells by reference (`A1`)
+ * as `{ type, styled, value }` — `type` is the cell's `t` attribute, absent
+ * for a number or a date.
+ */
+function sheetOf(base64) {
+  const files = unzip(Buffer.from(base64, "base64"));
+  const xml = files.get("xl/worksheets/sheet1.xml")?.toString("utf8");
+  expect(xml, "the workbook has a first sheet").toBeTruthy();
+  const cells = new Map();
+  for (const [, attributes, body] of xml.matchAll(/<c ([^>]*?)(?:\/>|>(.*?)<\/c>)/gs)) {
+    const attribute = (name) => attributes.match(new RegExp(`(?:^| )${name}="([^"]*)"`))?.[1];
+    const type = attribute("t");
+    // This writer puts a text into its cell; a shared string would be an
+    // index, and reading it as the text would compare nothing.
+    expect(type === undefined || type === "inlineStr" || type === "b", `cell type ${type}`).toBe(true);
+    const content = body?.match(type === "inlineStr" ? /<t[^>]*>(.*?)<\/t>/s : /<v>(.*?)<\/v>/s)?.[1];
+    cells.set(attribute("r"), {
+      type,
+      styled: attribute("s") !== undefined,
+      value: unescape(content ?? ""),
+    });
+  }
+  return { xml, cells };
+}
+
+/** `A`, `B`, … `Z`, `AA`: the letters of the column at `index`. */
+function letters(index) {
+  let name = "";
+  for (let n = index + 1; n > 0; n = Math.floor((n - 1) / 26)) {
+    name = String.fromCharCode(65 + ((n - 1) % 26)) + name;
+  }
+  return name;
+}
+
+/** The day of `YYYY-MM-DD` as Excel counts them. */
+const excelDay = (date) => Date.parse(`${date}T00:00:00Z`) / 86_400_000 + 25_569;
+
+/**
+ * The shown pivot as CSV and as the server's workbook, with the requests the
+ * export made.
+ */
+async function workbook(page, texts) {
+  const requests = [];
+  const seen = (request) => {
+    const url = new URL(request.url());
+    if (url.port === "8082" && request.method() === "POST") {
+      requests.push(url.pathname + url.search);
+    }
+  };
+  page.on("request", seen);
+  const answer = await page.evaluate(async (texts) => {
+    const { createPivotProvider, exportPivot } = await import("/packages/opengrid/loader.js");
+    const pivot = document.querySelector("opengrid-pivot");
+    const provider = createPivotProvider({
+      url: "http://127.0.0.1:8082",
+      source: "orders",
+      token: "e2e-token",
+    });
+    const csv = window.__opengridModule.get_pivot(pivot, { bom: false });
+    const blob = await exportPivot(provider, pivot, { format: "xlsx", texts });
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    let binary = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    }
+    return { csv, type: blob.type, base64: btoa(binary) };
+  }, texts);
+  page.off("request", seen);
+  expect(answer.type).toBe("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  return { table: parse(answer.csv), ...sheetOf(answer.base64), requests };
+}
+
+/**
+ * Holds every cell of the sheet against the CSV's field at its place.
+ * `dimensions` row-dimension columns come first; `dates` names those of them
+ * that hold dates. Answers how many cells of each kind it saw.
+ */
+function expectSheetIsTable(cells, table, { dimensions, dates = [] }) {
+  const seen = { text: 0, number: 0, date: 0, empty: 0 };
+  for (const [row, record] of table.entries()) {
+    for (const [column, field] of record.entries()) {
+      const reference = `${letters(column)}${row + 1}`;
+      const cell = cells.get(reference);
+      if (field === "") {
+        // Spanned by a total, or a NULL measure: no cell at all.
+        expect(cell, `${reference} is empty in the CSV`).toBeUndefined();
+        seen.empty++;
+      } else if (row > 0 && column >= dimensions) {
+        // A measure: a number, the CSV's number.
+        expect(cell, reference).toMatchObject({ type: undefined });
+        expect(cell.value, reference).not.toBe("");
+        expect(Number(cell.value), reference).toBe(Number(field));
+        seen.number++;
+      } else if (row > 0 && dates.includes(column) && /^\d{4}-\d{2}-\d{2}$/.test(field)) {
+        // A date in a dimension column: Excel's day number, with a format.
+        expect(cell, reference).toEqual({ type: undefined, styled: true, value: String(excelDay(field)) });
+        seen.date++;
+      } else {
+        // The header, a text dimension, a label.
+        expect(cell, reference).toMatchObject({ type: "inlineStr", value: field });
+        seen.text++;
+      }
+    }
+  }
+  const filled = table.flat().filter((field) => field !== "").length;
+  expect(cells.size, "no cell beside the table").toBe(filled);
+  return seen;
+}
+
+test("the workbook of the pivot is its CSV's table, with typed cells", async ({ page }) => {
+  await open(page);
+  // A text and a date as row dimensions, a decimal sum and a count as
+  // measures, a year across: every kind of cell a pivot has.
+  await page.evaluate(() => {
+    const pivot = document.querySelector("opengrid-pivot");
+    window.__opengridModule.set_view(pivot, {
+      rows: ["country", "ordered_on"],
+      columns: ["ordered_year"],
+      values: [
+        { field: "amount", fn: "sum", as: "total" },
+        { fn: "count", as: "n" },
+      ],
+    });
+  });
+  await page.waitForFunction(() =>
+    window.__opengridModule
+      .get_pivot(document.querySelector("opengrid-pivot"), { bom: false })
+      ?.startsWith("country,ordered_on,"),
+  );
+
+  const { table, cells, xml, requests } = await workbook(page);
+  // One request, to the pivot's endpoint, and no texts handed over.
+  expect(requests).toEqual(["/pivot/orders?format=xlsx"]);
+
+  // One header row, the CSV's.
+  expect(table[0].slice(0, 4)).toEqual(["country", "ordered_on", "2025 · total", "2025 · n"]);
+  const seen = expectSheetIsTable(cells, table, { dimensions: 2, dates: [1] });
+  // The comparison met every kind: dates, numbers, labels, spanned cells.
+  expect(seen.date).toBeGreaterThan(5);
+  expect(seen.number).toBeGreaterThan(20);
+  expect(seen.empty).toBeGreaterThan(5);
+
+  // Spelled out once: a subtotal row, and the grand total last.
+  const row = table.findIndex((record) => record[0] === "Total DE") + 1;
+  expect(row).toBeGreaterThan(1);
+  expect(cells.get(`A${row}`)).toMatchObject({ type: "inlineStr", value: "Total DE" });
+  expect(cells.has(`B${row}`)).toBe(false);
+  expect(cells.get(`A${table.length}`)).toMatchObject({ type: "inlineStr", value: "Total" });
+  const labels = table.map((record) => record[0]);
+  expect(labels).toContain("(no value)");
+  expect(labels).toContain("(empty)");
+  // A decimal sum is a number with its scale as the format.
+  expect(table[0][2]).toBe("2025 · total");
+  expect(cells.get(`C${table.length}`)).toMatchObject({ type: undefined, styled: true });
+
+  // A flat sheet: nothing merged, no outline, no formula.
+  expect(xml).not.toContain("<mergeCell");
+  expect(xml).not.toContain("outlineLevel");
+  expect(xml).not.toContain("<f>");
+});
+
+test("the workbook reads in the texts the page hands over", async ({ page }) => {
+  await open(page);
+  const texts = {
+    noValue: "(ohne Wert)",
+    emptyValue: "(leer)",
+    total: "Summe",
+    subtotal: "Summe {value}",
+  };
+  await page.evaluate((texts) => {
+    const pivot = document.querySelector("opengrid-pivot");
+    window.__opengridModule.set_texts(pivot, texts);
+    pivot.setAttribute("rows", "country,customer");
+  }, texts);
+  await page.waitForFunction(() =>
+    [...document.querySelector("opengrid-pivot").shadowRoot.querySelectorAll("tbody th")].some(
+      (th) => th.textContent.endsWith("Summe (ohne Wert)"),
+    ),
+  );
+
+  const { table, cells, requests } = await workbook(page, texts);
+  expect(requests).toHaveLength(1);
+  const sent = new URL(requests[0], "http://127.0.0.1:8082").searchParams;
+  expect(Object.fromEntries(sent)).toEqual({ format: "xlsx", ...texts });
+  // The CSV has the element's words, and the sheet is that table.
+  expectSheetIsTable(cells, table, { dimensions: 2 });
+  expect(table[0]).toContain("(ohne Wert) · total");
+  expect(table.map((record) => record[0])).toEqual(
+    expect.arrayContaining(["(leer)", "Summe (ohne Wert)", "Summe"]),
+  );
+});
+
+test("a workbook needs a provider that exports on the server", async ({ page }) => {
+  await open(page);
+  const posts = [];
+  page.on("request", (request) => request.method() === "POST" && posts.push(request.url()));
+  const refused = await page.evaluate(async () => {
+    const loader = await import("/packages/opengrid/loader.js");
+    const pivot = document.querySelector("opengrid-pivot");
+    const server = loader.createPivotProvider({
+      url: "http://127.0.0.1:8082",
+      source: "orders",
+      token: "e2e-token",
+    });
+    const error = async (provider, host, options) => {
+      try {
+        await loader.exportPivot(provider, host, options);
+        return "no error";
+      } catch (e) {
+        return `${e.name}: ${e.message}`;
+      }
+    };
+    const xlsx = { format: "xlsx" };
+    return {
+      local: await error(loader.createLocalProvider({}), pivot, xlsx),
+      worker: await error(loader.createWorkerProvider(), pivot, xlsx),
+      csv: await error(server, pivot, { format: "csv" }),
+      none: await error(server, pivot, {}),
+      option: await error(server, pivot, { ...xlsx, delimiter: ";" }),
+      grid: await error(server, document.createElement("opengrid-grid"), xlsx),
+    };
+  });
+  const needsServer = "TypeError: exportPivot: an XLSX export needs a provider that exports on the server";
+  expect(refused.local).toContain(needsServer);
+  expect(refused.worker).toContain(needsServer);
+  expect(refused.csv).toContain('TypeError: exportPivot: format is "xlsx", not "csv"');
+  expect(refused.none).toContain('format is "xlsx", not undefined');
+  expect(refused.option).toContain('unknown option "delimiter"');
+  expect(refused.grid).toContain("no pivot to export");
+  // Each was refused before anything was sent.
+  expect(posts).toEqual([]);
+});
+
+test("the server's refusal of a pivot's workbook reaches the page", async ({ page }) => {
+  await open(page);
+  const refused = await page.evaluate(async () => {
+    const loader = await import("/packages/opengrid/loader.js");
+    const provider = loader.createRestProvider({
+      url: "http://127.0.0.1:8082",
+      source: "orders",
+      token: "e2e-token",
+    });
+    const query = { source: "orders", rows: ["nowhere"], columns: [], values: [{ fn: "count", as: "n" }] };
+    try {
+      await provider.exportPivot(query, { format: "xlsx" });
+      return "no error";
+    } catch (e) {
+      return { status: e.status, code: e.code, message: e.message };
+    }
+  });
+  expect(refused).toMatchObject({ status: 422, code: "validation" });
+  expect(refused.message).toContain("nowhere");
+
+  // A server from before this export answers the pivot itself: an error, not
+  // a JSON file under a workbook's name.
+  const old = await page.evaluate(async () => {
+    const loader = await import("/packages/opengrid/loader.js");
+    const provider = loader.createRestProvider({ url: "http://127.0.0.1:8082", source: "orders" });
+    const fetchBefore = window.fetch;
+    window.fetch = async () =>
+      new Response('{"row_dimensions":[]}', { headers: { "Content-Type": "application/json" } });
+    try {
+      await provider.exportPivot({ source: "orders" }, { format: "xlsx" });
+      return "no error";
+    } catch (e) {
+      return e.message;
+    } finally {
+      window.fetch = fetchBefore;
+    }
+  });
+  expect(old).toContain("does not write a pivot as XLSX");
 });

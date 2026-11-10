@@ -76,6 +76,14 @@
 //! That holds end to end only over HTTP/1.1 chunked or HTTP/2: a proxy that
 //! speaks HTTP/1.0 to the client turns the break into an ordinary end of file
 //! (for nginx: `proxy_http_version 1.1`).
+//!
+//! # A pivot as a workbook
+//!
+//! `POST /pivot/{source}?format=xlsx` (issue #331) answers the pivot as the one
+//! flat sheet its CSV is, instead of the wire form: [`pivot_words`] reads the
+//! parameters, [`pivot_workbook`] writes the file. A pivot is bounded and
+//! answered whole, so nothing is streamed; it takes a place among
+//! `max_concurrent_exports` all the same, and `max_xlsx_rows` bounds it.
 
 use std::fmt;
 use std::sync::Arc;
@@ -91,8 +99,9 @@ use opengrid_connector::Cancel;
 use opengrid_datasource::wire::{ErrorCode, WireError};
 use opengrid_datasource::{DataSourceError, QueryResult};
 use opengrid_export::{
-    CsvOptions, CsvWriter, JsonWriter, XLSX_MAX_ROWS, XLSX_MEDIA_TYPE, XlsxWriter,
+    CsvOptions, CsvWriter, JsonWriter, PivotLabels, XLSX_MAX_ROWS, XLSX_MEDIA_TYPE, XlsxWriter,
 };
+use opengrid_pivot::PivotResult;
 use opengrid_query::{Limits, ValidatedQuery};
 use tokio::sync::{OwnedSemaphorePermit, oneshot};
 
@@ -167,18 +176,7 @@ pub(crate) async fn export(
     crate::api::within_tree_bound(&state, &source, &query).await?;
 
     // Before any database work: an export over the bound costs nothing.
-    let Ok(permit) = Arc::clone(&state.exports).try_acquire_owned() else {
-        // `busy`, a `503`: the same export may pass in a moment.
-        return Err(WireError::new(
-            ErrorCode::Busy,
-            format!(
-                "{} exports are running, the most this server runs at once \
-                 (max_concurrent_exports); try again later",
-                state.max_concurrent_exports
-            ),
-        )
-        .into());
-    };
+    let permit = place(&state)?;
 
     let (ready, started) = oneshot::channel();
     let (sender, channel) = Channel::<Bytes, Broken>::new(BUFFERED_PIECES);
@@ -227,6 +225,162 @@ pub(crate) async fn export(
     headers.insert(
         header::CONTENT_DISPOSITION,
         content_disposition(&source.name, format.extension()),
+    );
+    headers.insert(ROWS_HEADER, HeaderValue::from(rows));
+    Ok(response)
+}
+
+/// A place among `max_concurrent_exports`, or `busy` — a `503`: the same
+/// export may pass in a moment.
+pub(crate) fn place(state: &AppState) -> Result<OwnedSemaphorePermit, WireError> {
+    Arc::clone(&state.exports).try_acquire_owned().map_err(|_| {
+        WireError::new(
+            ErrorCode::Busy,
+            format!(
+                "{} exports are running, the most this server runs at once \
+                     (max_concurrent_exports); try again later",
+                state.max_concurrent_exports
+            ),
+        )
+    })
+}
+
+/// The words of a pivot's workbook where the data has none — the element's
+/// texts, under the names `set_texts` gives them, and its English defaults.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct PivotWords {
+    no_value: String,
+    empty_value: String,
+    total: String,
+    /// With `{value}` where the closed group's header goes.
+    subtotal: String,
+}
+
+/// The parameters that carry [`PivotWords`], in the order of its fields.
+const PIVOT_WORDS: [&str; 4] = ["noValue", "emptyValue", "total", "subtotal"];
+
+impl Default for PivotWords {
+    fn default() -> Self {
+        Self {
+            no_value: "(no value)".to_owned(),
+            empty_value: "(empty)".to_owned(),
+            total: "Total".to_owned(),
+            subtotal: "Total {value}".to_owned(),
+        }
+    }
+}
+
+impl PivotLabels for PivotWords {
+    fn dimension(&self, value: Option<&str>) -> String {
+        match value {
+            None => self.no_value.clone(),
+            Some("") => self.empty_value.clone(),
+            Some(text) => text.to_owned(),
+        }
+    }
+
+    fn total(&self) -> String {
+        self.total.clone()
+    }
+
+    fn subtotal(&self, value: &str) -> String {
+        self.subtotal.replace("{value}", value)
+    }
+}
+
+/// Whether `POST /pivot` is asked for a workbook, and in which words: `None`
+/// without `format` — the wire form, as before, whatever else the query string
+/// holds. With it, the parameters are checked as an export's are: `format` is
+/// `xlsx`, and nothing but the words may come with it.
+pub(crate) fn pivot_words(uri: &Uri) -> Result<Option<PivotWords>, WireError> {
+    let malformed = |message: String| WireError::new(ErrorCode::Malformed, message);
+
+    let Parameters(pairs) = Parameters::<Vec<(String, String)>>::try_from_uri(uri)
+        .map_err(|error| malformed(format!("the query string: {error}")))?;
+    if !pairs.iter().any(|(key, _)| key == "format") {
+        return Ok(None);
+    }
+
+    let mut words = PivotWords::default();
+    let mut seen: Vec<&str> = Vec::new();
+    for (key, value) in &pairs {
+        if seen.contains(&key.as_str()) {
+            return Err(malformed(format!("{key:?} is given twice")));
+        }
+        seen.push(key);
+        let [no_value, empty_value, total, subtotal] = PIVOT_WORDS;
+        let word = match key.as_str() {
+            "format" if value == "xlsx" => continue,
+            "format" => {
+                return Err(malformed(format!(
+                    "format is \"xlsx\" for a pivot, not {value:?}; without it the answer is \
+                     the pivot itself"
+                )));
+            }
+            key if key == no_value => &mut words.no_value,
+            key if key == empty_value => &mut words.empty_value,
+            key if key == total => &mut words.total,
+            key if key == subtotal => &mut words.subtotal,
+            _ => {
+                return Err(malformed(format!(
+                    "{key:?} is not a parameter of a pivot's export (format, {})",
+                    PIVOT_WORDS.join(", ")
+                )));
+            }
+        };
+        value.clone_into(word);
+    }
+    Ok(Some(words))
+}
+
+/// A pivot as an XLSX file: one flat sheet, as `XlsxWriter::write_pivot` lays
+/// it out. `_permit` is its place among `max_concurrent_exports`, held until
+/// the file is assembled — off the async threads, as every workbook is.
+pub(crate) async fn pivot_workbook(
+    state: &AppState,
+    source: &str,
+    pivot: PivotResult,
+    words: PivotWords,
+    _permit: OwnedSemaphorePermit,
+) -> Result<Response, Failure> {
+    let rows = pivot.row_count() as u64;
+    let bound = XLSX_MAX_ROWS.min(state.max_xlsx_rows);
+    if rows > bound {
+        return Err(WireError::new(
+            ErrorCode::LimitExceeded,
+            format!(
+                "the pivot has {rows} rows, more than the {bound} an Excel export may have \
+                 (max_xlsx_rows, at most the {XLSX_MAX_ROWS} a sheet holds)"
+            ),
+        )
+        .into());
+    }
+
+    let sheet = source.to_owned();
+    let written = tokio::task::spawn_blocking(move || {
+        // `Err(Ok(_))` is Excel's limit, `Err(Err(_))` the writer's failure.
+        let mut writer = XlsxWriter::new(&sheet).map_err(Err)?;
+        writer.write_pivot(&pivot, &words).map_err(Ok)?;
+        writer.finish().map_err(Err)
+    })
+    .await
+    .unwrap_or_else(|_| Err(Err("the XLSX file could not be assembled".to_owned())));
+    let file = match written {
+        Ok(file) => file,
+        // A value past what Excel holds: the caller's to narrow.
+        Err(Ok(message)) => return Err(WireError::new(ErrorCode::LimitExceeded, message).into()),
+        Err(Err(message)) => return Err(state.reporter.backend(message).into()),
+    };
+
+    let mut response = Response::new(Body::from(file));
+    let headers = response.headers_mut();
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static(XLSX_MEDIA_TYPE),
+    );
+    headers.insert(
+        header::CONTENT_DISPOSITION,
+        content_disposition(source, "xlsx"),
     );
     headers.insert(ROWS_HEADER, HeaderValue::from(rows));
     Ok(response)
@@ -835,6 +989,36 @@ mod tests {
                 .contains("this export is XLSX"),
             "a CSV option on an XLSX export is refused"
         );
+    }
+
+    /// Issue #331: `format=xlsx` on `/pivot` and the element's words; without
+    /// `format` the query string is not this module's business.
+    #[test]
+    fn a_pivots_workbook_is_asked_for_by_format_and_takes_only_its_words() {
+        let words = |query: &str| {
+            let uri: Uri = format!("/pivot/orders{query}").parse().unwrap();
+            pivot_words(&uri)
+        };
+        assert_eq!(words(""), Ok(None));
+        assert_eq!(words("?total=Summe"), Ok(None), "the wire form, as before");
+        assert_eq!(words("?format=xlsx"), Ok(Some(PivotWords::default())));
+
+        let german = words(
+            "?format=xlsx&total=Summe&subtotal=Summe%20%7Bvalue%7D&noValue=(leer)&emptyValue=",
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(german.total(), "Summe");
+        assert_eq!(german.subtotal("DE"), "Summe DE");
+        assert_eq!(german.dimension(None), "(leer)");
+        assert_eq!(german.dimension(Some("")), "");
+        assert_eq!(german.dimension(Some("DE")), "DE");
+
+        let refused = |query: &str| words(query).expect_err(query).message;
+        assert!(refused("?format=csv").contains("\"xlsx\" for a pivot, not \"csv\""));
+        assert!(refused("?format=xlsx&delimiter=%3B").contains("not a parameter"));
+        assert!(refused("?format=xlsx&total=a&total=b").contains("twice"));
+        assert!(refused("?format=xlsx&format=xlsx").contains("twice"));
     }
 
     #[test]

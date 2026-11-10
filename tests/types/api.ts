@@ -12,6 +12,7 @@ import {
   createPivotProvider,
   createRestProvider,
   createWorkerProvider,
+  exportPivot,
   exportRows,
   loadOpengrid,
   type CellChangeDetail,
@@ -314,6 +315,26 @@ export async function page(): Promise<void> {
   module.get_pivot(pivot, { delimeter: ";" });
   // @ts-expect-error — `bom` is a boolean, not the text of one
   module.get_pivot(pivot, { bom: "false" });
+
+  // The pivot as a workbook, from the server (issue #331).
+  const pivots = createPivotProvider({ url: "/", source: "o" });
+  const workbook: Blob = await exportPivot(pivots, pivot, {
+    format: "xlsx",
+    texts: { total: "Summe", subtotal: "Summe {value}" },
+    signal: new AbortController().signal,
+  });
+  void workbook;
+  await exportPivot(rest, pivot, { format: "xlsx" });
+  await rest.exportPivot(
+    { source: "o", rows: ["country"], columns: [], values: [{ fn: "count", as: "n" }] },
+    { format: "xlsx" },
+  );
+  // @ts-expect-error — the engine in the tab writes no workbook
+  await exportPivot(local, pivot, { format: "xlsx" });
+  // @ts-expect-error — a pivot's CSV is `get_pivot`
+  await exportPivot(pivots, pivot, { format: "csv" });
+  // @ts-expect-error — the format is not optional
+  await exportPivot(pivots, pivot, {});
 
   // `connect`: the same shapes, from one object.
   const connection = connect(grid, {

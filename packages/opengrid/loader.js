@@ -382,7 +382,7 @@ export function createLocalProvider(engine) {
  * @param {string} options.url base URL of the server, e.g. `http://127.0.0.1:8081`.
  * @param {string} options.source the configured data source name.
  * @param {string} [options.token] bearer token; the server refuses without one.
- * @returns {{execute: Function, describe: Function, export: Function}}
+ * @returns {{execute: Function, describe: Function, export: Function, exportPivot: Function}}
  */
 export function createRestProvider({ url, source, token } = {}) {
   const base = String(url).replace(/\/$/, "");
@@ -493,7 +493,77 @@ export function createRestProvider({ url, source, token } = {}) {
       // The type `exportRows` gives its Blob, whatever the header's spelling.
       return new Blob([blob], { type: EXPORT_TYPES[format] ?? EXPORT_TYPES.csv });
     },
+
+    /** `POST /pivot/{source}?format=xlsx`: see {@link pivotWorkbook}. */
+    exportPivot(pivotQuery, options) {
+      return pivotWorkbook(`${base}/pivot/${encodeURIComponent(source)}`, exportHeaders, pivotQuery, options);
+    },
   };
+}
+
+/**
+ * The texts a pivot's workbook is written in: the keys `set_texts` gives
+ * them, and the parameters `POST /pivot/{source}?format=xlsx` reads.
+ */
+const PIVOT_TEXTS = ["noValue", "emptyValue", "total", "subtotal"];
+
+/**
+ * `POST /pivot/{source}?format=xlsx`: a pivot as an XLSX file, a `Blob`
+ * (issue #331) — what `exportPivot` of the REST and the pivot provider does.
+ *
+ * The server answers the pivot of `pivotQuery` as one flat sheet, the table a
+ * pivot's CSV is: one header row, every row with its subtotals and the grand
+ * total, numbers and dates as cells of their type. Its rules are `/pivot`'s —
+ * the token, `allowed_fields`, the mandatory row filter, the pivot's limits —
+ * and an export's: `max_xlsx_rows`, and a place among the running exports.
+ *
+ * `texts` are the element's words for a total and for a NULL or empty group;
+ * of the object a page gives `set_texts`, the four of {@link PIVOT_TEXTS} are
+ * sent and the rest ignored. Without them the server writes the English
+ * defaults.
+ *
+ * @param {string} endpoint `/pivot/{source}` of the server.
+ * @param {object} headers the provider's, without `Accept`.
+ * @param {object} pivotQuery the pivot query, as an object.
+ * @param {object} [options] `format` (`"xlsx"`), `texts`, `signal`.
+ * @returns {Promise<Blob>} the workbook.
+ */
+async function pivotWorkbook(endpoint, headers, pivotQuery, options = {}) {
+  for (const key of Object.keys(options)) {
+    if (!PIVOT_EXPORT_OPTIONS.includes(key)) {
+      throw new TypeError(`exportPivot: unknown option "${key}"`);
+    }
+  }
+  const { format, texts, signal } = options;
+  if (format !== "xlsx") {
+    throw new TypeError(
+      `exportPivot: format is "xlsx", not ${JSON.stringify(format)} — a pivot's CSV is get_pivot(host)`,
+    );
+  }
+  const parameters = new URLSearchParams({ format });
+  for (const key of PIVOT_TEXTS) {
+    if (typeof texts?.[key] === "string") {
+      parameters.set(key, texts[key]);
+    }
+  }
+  const response = await fetch(`${endpoint}?${parameters}`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(pivotQuery),
+    signal,
+    redirect: "error",
+  });
+  if (!response.ok) {
+    throw refusal(await response.text(), response.status);
+  }
+  // A server from before this export ignores the parameter and answers the
+  // pivot itself: that is not a file to hand out under a workbook's name.
+  const type = (response.headers.get("Content-Type") ?? "").split(";")[0].trim().toLowerCase();
+  if (type !== EXPORT_TYPES.xlsx) {
+    await response.body?.cancel();
+    throw new Error("exportPivot: the server answered the pivot, not a workbook — it does not write a pivot as XLSX");
+  }
+  return new Blob([await response.blob()], { type: EXPORT_TYPES.xlsx });
 }
 
 /**
@@ -573,7 +643,7 @@ function coded(code, message) {
  * @param {string} options.url base URL of the server.
  * @param {string} options.source the configured data source name.
  * @param {string} [options.token] bearer token.
- * @returns {{execute: Function}}
+ * @returns {{execute: Function, pivot: Function, exportPivot: Function}}
  */
 export function createPivotProvider({ url, source, token } = {}) {
   const endpoint = `${String(url).replace(/\/$/, "")}/pivot/${encodeURIComponent(source)}`;
@@ -593,6 +663,9 @@ export function createPivotProvider({ url, source, token } = {}) {
     return answerOf(response);
   }
 
+  // The export answers a file, whatever a pivot would.
+  const { Accept: _answer, ...exportHeaders } = headers;
+
   return {
     /** Where the queries run; the grid names it in its footer (issue #33). */
     kind: "remote",
@@ -600,6 +673,10 @@ export function createPivotProvider({ url, source, token } = {}) {
     // a page that called it before.
     execute: pivot,
     pivot,
+    /** `POST /pivot/{source}?format=xlsx`: see {@link pivotWorkbook}. */
+    exportPivot(pivotQuery, options) {
+      return pivotWorkbook(endpoint, exportHeaders, pivotQuery, options);
+    },
   };
 }
 
@@ -664,6 +741,8 @@ const EXPORT_TYPES = {
   xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 };
 
+/** The options of `exportPivot`, the function and the providers' method. */
+const PIVOT_EXPORT_OPTIONS = ["format", "texts", "signal"];
 /** The options of `exportRows` that are its own. */
 const EXPORT_OPTIONS = ["format", "chunkSize", "maxRows", "onProgress", "signal"];
 /**
@@ -938,6 +1017,77 @@ function changed(detail) {
     "source_changed",
     `exportRows: the source changed during the export (${detail}); export again`,
   );
+}
+
+/**
+ * The pivot `host` shows, as an XLSX file from the server (issue #331).
+ *
+ * `get_pivot` writes a pivot's CSV in the element, from the answer it holds.
+ * A workbook is written by `opengrid-server`, so this asks the server for the
+ * pivot again — the element's view as a pivot query, through the provider's
+ * `exportPivot` — and gets the same table as one flat sheet: one header row,
+ * every row with its subtotals and the grand total in the table's order,
+ * numbers and dates as cells of their type. Folded groups are exported, as
+ * in the CSV. If the data moved since the table was drawn, the file is the
+ * newer answer.
+ *
+ * **Only a provider that exports on the server**: `createPivotProvider` and
+ * `createRestProvider` have `exportPivot`. With any other provider — the
+ * engine in the tab or in a worker — it is a `TypeError`, as an XLSX of
+ * `exportRows` is there.
+ *
+ * `texts`: the object the page gave `set_texts`, if it gave one, so the
+ * totals and the NULL and empty groups read as in the table (`total`,
+ * `subtotal`, `noValue`, `emptyValue`; the rest is ignored). Without it the
+ * file has the English defaults.
+ *
+ * @param {{exportPivot: Function}} provider the server-backed provider.
+ * @param {HTMLElement} host an `<opengrid-pivot>`.
+ * @param {object} options `format` (`"xlsx"`), `texts`, `signal`.
+ * @returns {Promise<Blob>} the workbook.
+ */
+export async function exportPivot(provider, host, options = {}) {
+  for (const key of Object.keys(options)) {
+    if (!PIVOT_EXPORT_OPTIONS.includes(key)) {
+      throw new TypeError(`exportPivot: unknown option "${key}"`);
+    }
+  }
+  if (options.format !== "xlsx") {
+    throw new TypeError(
+      `exportPivot: format is "xlsx", not ${JSON.stringify(options.format)} — a pivot's CSV is get_pivot(host)`,
+    );
+  }
+  if (typeof provider?.exportPivot !== "function") {
+    // An XLSX file is written on the server; the pivot the element holds
+    // cannot become one here.
+    throw new TypeError(
+      "exportPivot: an XLSX export needs a provider that exports on the server (createPivotProvider, createRestProvider)",
+    );
+  }
+  if (options.signal?.aborted) {
+    throw aborted();
+  }
+  const loaded = await loadOpengrid();
+  if (loaded.fallback) {
+    throw coded(
+      "module_not_loaded",
+      "exportPivot: the WebAssembly module did not load, and the pivot's view is read through it",
+    );
+  }
+  const source = host?.getAttribute?.("datasource");
+  const view = host?.localName === "opengrid-pivot" ? loaded.module.get_view(host) : null;
+  if (!view || !source) {
+    throw new TypeError("exportPivot: no pivot to export — an <opengrid-pivot> in the document, with a datasource");
+  }
+  // The request the element sends: `sort` and `filter` only when there is one.
+  const query = { source, rows: view.rows, columns: view.columns, values: view.values };
+  if (view.sort.length > 0) {
+    query.sort = view.sort;
+  }
+  if (view.filter) {
+    query.filter = view.filter;
+  }
+  return provider.exportPivot(query, options);
 }
 
 /** What an aborted export rejects with, whatever reason `abort()` was given. */

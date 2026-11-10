@@ -340,6 +340,20 @@ export interface RestProvider extends Provider {
    * `onProgress` hears the end, `signal` aborts the download too.
    */
   export(query: ViewQuery, options?: ProviderExportOptions): Promise<Blob>;
+  /** `POST /pivot/{source}?format=xlsx`: see {@link PivotProvider.exportPivot}. */
+  exportPivot(pivotQuery: PivotQuery, options: PivotExportOptions): Promise<Blob>;
+}
+
+/** What `createPivotProvider` answers. */
+export interface PivotProvider extends Provider {
+  /**
+   * `POST /pivot/{source}?format=xlsx`: the pivot of `pivotQuery` as an XLSX
+   * file — one flat sheet, the table a pivot's CSV is, with numbers and dates
+   * as cells of their type. The server's rules are `/pivot`'s; its bounds are
+   * the pivot's limits and `max_xlsx_rows`. `exportPivot` builds the query
+   * from an element.
+   */
+  exportPivot(pivotQuery: PivotQuery, options: PivotExportOptions): Promise<Blob>;
 }
 
 /** The `Planner` of the engine module, as `createHybridProvider` uses it. */
@@ -391,7 +405,7 @@ export function createWorkerProvider(options?: {
 export function createRestProvider(options: ServerOptions): RestProvider;
 
 /** `POST /pivot/{source}` — a whole pivot in one request. */
-export function createPivotProvider(options: ServerOptions): Provider;
+export function createPivotProvider(options: ServerOptions): PivotProvider;
 
 /** Splits each query between a remote source and the engine in the tab. */
 export function createHybridProvider(options: {
@@ -451,6 +465,43 @@ export type ProviderExportOptions = Omit<ExportOptions, "chunkSize">;
  * provider with an `export` method gets the same query in one request instead.
  */
 export function exportRows(provider: Provider, query: ViewQuery, options?: ExportOptions): Promise<Blob>;
+
+/** A pivot query, as `POST /pivot/{source}` takes it. */
+export interface PivotQuery {
+  source: string;
+  rows: string[];
+  columns: string[];
+  values: PivotMeasure[];
+  sort?: PivotSort[];
+  filter?: Record<string, unknown>;
+}
+
+/** How a pivot is exported as a workbook. Any other key is an error. */
+export interface PivotExportOptions {
+  /** `"xlsx"`, the one format the server writes a pivot in; its CSV is `get_pivot`. */
+  format: "xlsx";
+  /**
+   * The words of the totals and of a NULL or empty group — the object given
+   * to `set_texts`, of which `total`, `subtotal`, `noValue` and `emptyValue`
+   * are used. Without it the English defaults.
+   */
+  texts?: Texts;
+  /** Aborts the request: it rejects with an `AbortError` and gives no `Blob`. */
+  signal?: AbortSignal;
+}
+
+/**
+ * The pivot `host` shows as an XLSX file, written by the server: the
+ * element's view asked again through the provider's `exportPivot`, as one flat
+ * sheet — the header row and the rows of `get_pivot`'s CSV, numbers and dates
+ * typed. A provider without `exportPivot` (the engine in the tab or a worker)
+ * is a `TypeError`.
+ */
+export function exportPivot(
+  provider: Pick<PivotProvider, "exportPivot">,
+  host: HTMLElement,
+  options: PivotExportOptions,
+): Promise<Blob>;
 
 // ---------------------------------------------------------------------------
 // Errors
