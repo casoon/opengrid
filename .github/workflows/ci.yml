@@ -163,6 +163,11 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
+      # The conformance cases and the element's own tests in a real browser
+      # (`just wasm-test`): the runner's Chrome and its chromedriver, which match.
+      # Without this step the WASM path of the cases ran only when someone
+      # remembered the recipe (#358).
+      - run: just wasm-test
       - run: just e2e
 
   e2e-browsers:
