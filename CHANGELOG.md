@@ -19,6 +19,13 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+### Added
+
+- **Elements:** right-to-left layout for `<opengrid-grid>`, `<opengrid-table>` and
+  `<opengrid-pivot>`, taken from `dir` on the element or an ancestor: the columns run from the
+  right, and in the grid `←` and `→` follow what is on the screen
+  ([#320](https://github.com/casoon/opengrid/issues/320), [Right to left](docs/api.md#right-to-left)).
+
 ## [0.15.0] - 2026-11-09
 
 **Screen-reader pairings tested: none yet** ([issue #5](https://github.com/casoon/opengrid/issues/5)).

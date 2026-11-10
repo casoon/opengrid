@@ -53,7 +53,12 @@
 # rows, the forced-colours selection, the pivot's persistent status node and
 # the Intl formats following `lang` (#229-#232), and the frame crosses into the
 # DOM once and writes only what differs (#235).
-grid+pivot    295500  # 292573 B, 2026-11-09, #223-#235
+# Raised 2026-11-10 from 295500: the module stood at 295417 B, 83 B under its
+# bound, after 0.15.0. Right-to-left layout (#320: the direction read from the
+# platform, `←` and `→` by what is on the screen, the filter row and the popups
+# measured from the right, the sheets' logical sides and mirrored marks) grew
+# it by 0.2 KiB, to 295650 B.
+grid+pivot    298600  # 295650 B, 2026-11-10, #320
 # Raised 2026-09-30 from 108000: the bound was not raised with 0.7.0, which
 # shipped the engine at 115.2 KiB already (CHANGELOG); rule P9's sorted
 # grouping sets and order sets (#108) added the rest, to 121610 B.

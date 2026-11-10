@@ -169,6 +169,8 @@ pub fn table_css() -> String {
          [data-align=\"end\"] {{ text-align: right; }}\n\
          [data-align=\"center\"] {{ text-align: center; }}\n\
          [data-align=\"start\"] {{ text-align: left; }}\n\
+         [data-align=\"end\"]:dir(rtl) {{ text-align: left; }}\n\
+         [data-align=\"start\"]:dir(rtl) {{ text-align: right; }}\n\
          td[data-align=\"end\"] {{ font-variant-numeric: tabular-nums; }}\n\
          td[data-mono] {{ font-family: var(--og-font-mono); }}\n\
          td[data-emphasis] {{ font-weight: 600; }}\n\
@@ -191,6 +193,8 @@ const PIVOT_TOOLBAR_CSS: &str = "\
 [part~=\"add-field\"] { min-block-size: 24px; padding-inline: 0.625rem; border: 1px dashed var(--og-line-strong); border-radius: 999px; background: none; color: inherit; font: inherit; cursor: pointer; }
 [part~=\"add-field\"][aria-disabled=\"true\"] { color: var(--og-ink-muted); cursor: not-allowed; }
 :is([part~=\"chip-move\"], [part~=\"chip-remove\"], [part~=\"add-field\"]):focus-visible { outline: 2px solid var(--og-accent); outline-offset: 2px; }
+/* A closed group and the two move buttons point the way the line reads (issue #320). */
+:is([part~=\"chip-move\"], [part~=\"group-mark\"]):dir(rtl) { display: inline-block; direction: ltr; transform: scaleX(-1); }
 [part~=\"field-menu\"] { position: fixed; inset: auto; margin: 0; padding: 0.25rem; min-inline-size: 10rem; border: 1px solid var(--og-line-strong); border-radius: var(--og-radius); background: var(--og-surface); color: var(--og-ink); box-shadow: 0 8px 24px rgb(0 0 0 / 0.12); }
 [part~=\"field-menu\"] [role=\"menuitem\"] { padding: 0.375rem 0.625rem; border-radius: 4px; cursor: pointer; }
 [part~=\"field-menu\"] [role=\"menuitem\"]:is(:hover, :focus) { background: var(--og-surface-2); outline: 2px solid var(--og-accent); outline-offset: -2px; }

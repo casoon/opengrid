@@ -931,19 +931,45 @@ fn linear_memory() -> usize {
     core::arch::wasm32::memory_size(0) * 65_536
 }
 
-/// Places a popup under its button, right-aligned when it would run off.
-pub(crate) fn place_under(popup: &HtmlElement, button: &HtmlElement) {
-    let anchor = button.get_bounding_client_rect();
-    let own = popup.get_bounding_client_rect();
+/// Whether `element` is laid out right to left (issue #320): its computed
+/// `direction`, which the page sets with `dir` on the element or an ancestor.
+/// Read when it is needed and never kept, so a `dir` that changes is followed.
+pub(crate) fn is_rtl(element: &Element) -> bool {
+    web_sys::window()
+        .and_then(|window| window.get_computed_style(element).ok().flatten())
+        .and_then(|style| style.get_property_value("direction").ok())
+        .is_some_and(|direction| direction == "rtl")
+}
+
+/// Where a popup starts sideways: at its anchor's left edge, at the anchor's
+/// right edge when it would run off the window — and in a right-to-left
+/// layout the other way round (issue #320).
+pub(crate) fn popup_left(anchor: &web_sys::DomRect, own: &web_sys::DomRect, rtl: bool) -> f64 {
     let width = web_sys::window()
         .and_then(|window| window.inner_width().ok())
         .and_then(|value| value.as_f64())
         .unwrap_or(1024.0);
     const GAP: f64 = 4.0;
-    let mut left = anchor.left();
-    if left + own.width() > width - GAP {
-        left = (anchor.right() - own.width()).max(GAP);
+    let from_right = anchor.right() - own.width();
+    if rtl {
+        if from_right < GAP {
+            anchor.left()
+        } else {
+            from_right
+        }
+    } else if anchor.left() + own.width() > width - GAP {
+        from_right.max(GAP)
+    } else {
+        anchor.left()
     }
+}
+
+/// Places a popup under its button, right-aligned when it would run off.
+pub(crate) fn place_under(popup: &HtmlElement, button: &HtmlElement) {
+    let anchor = button.get_bounding_client_rect();
+    let own = popup.get_bounding_client_rect();
+    const GAP: f64 = 4.0;
+    let left = popup_left(&anchor, &own, is_rtl(button));
     let _ = popup.style().set_property("left", &format!("{left}px"));
     let _ = popup
         .style()
