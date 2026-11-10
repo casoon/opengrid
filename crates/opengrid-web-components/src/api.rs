@@ -211,6 +211,7 @@ fn parts() -> Vec<String> {
             selection: true,
             column_menu: true,
             toolbar: true,
+            filter_builder: true,
             facets: true,
             search: true,
             actions: &[grid::Action {
@@ -349,7 +350,7 @@ elements
 
 attributes
   opengrid-table: columns datasource label theme
-  opengrid-grid: add-row column-menu columns datasource density facets filter group-by label mode page-size \
+  opengrid-grid: add-row column-menu columns datasource density facets filter filter-builder group-by label mode page-size \
 row-key search selection theme toolbar tree tree-key window-size
   opengrid-pivot: collapsed columns datasource drill-down fields filter label measures rows sort theme toolbar values
 
@@ -429,14 +430,14 @@ sort-index source status table toolbar total-row validation viewport
 text keys
   addColumn addFilter addFilterTitle addGrouping addMeasure addRow aggregateAvg aggregateCell aggregateCount aggregateGroup aggregateMax aggregateMin \
 aggregateNone aggregateRange aggregateSum apply booleanFalse booleanTrue bulkApply bulkCaption bulkDone bulkMenu bulkReadonly cancel cellRequired chipRemove chipsClear chipsGroup choiceRefused choicesOne choicesOther clear columnAtEdge \
-columnFull columnHidden columnMenu columnMoved columnShown columnWidth columnsGroup densityComfortable \
+columnFull columnHidden columnMenu columnMoved columnPinnedEnd columnPinnedStart columnShown columnUnpinned columnWidth columnsGroup densityComfortable \
 densityCompact densityGroup densityNormal empty emptyFiltered emptyReset emptySource emptyValue \
 error errorUnknown facetChipValues facetFrom facetQueries facetTo facetsGroup facetsReset \
 facetsToggle fieldEarlier fieldLater fieldRemove filterAny filterApplied filterBuilder filterBuilderAddCondition filterBuilderAddGroup filterBuilderAll filterBuilderAny filterBuilderCondition filterBuilderEdit filterBuilderGroup filterBuilderJoin filterColumn filterColumnLabel filterConditionLabel filterGroup filterInvalid \
 filterRemoved filterRowToggle filterValueLabel filtersCleared groupByColumn groupChip \
 groupCollapsed groupExpanded groupInvalid groupRow groupSecondLevel \
 groupingFull hideColumn lang listItemAdded listItemRemove listItemRemoved loading matchesOne matchesOther newRow noValue nothingToAdd operatorLabel \
-operators pageFirst pageLast pageNext pageOf pagePrevious pasteApplied pasteApply pasteBadOne pasteBadOther pasteBlocked pasteCutOff pasteDiscard pasteDiscarded pastePreview pasteUnreadable pivotColumns pivotDrillDown pivotFilterHint pivotFilterLabel pivotFilters pivotMeasures pivotRows pivotToolbar queriesOne queriesOther queryAnd \
+operators pageFirst pageLast pageNext pageOf pagePrevious pasteApplied pasteApply pasteBadOne pasteBadOther pasteBlocked pasteCutOff pasteDiscard pasteDiscarded pastePreview pasteUnreadable pinEnd pinGroup pinNone pinStart pinsReleased pivotColumns pivotDrillDown pivotFilterHint pivotFilterLabel pivotFilters pivotMeasures pivotRows pivotToolbar queriesOne queriesOther queryAnd \
 queryMissingCondition queryMissingJoin queryMissingValue queryOr queryUnclosed queryUnknownColumn queryUnopened queryWrongOperator redoAdded redoCell redoNothing redoPaste rowAdded rowsOne rowsOther searchChip searchHint \
 searchLabel searchPlaceholder searchSuggestions selectAll selectedAll selectionCleared selectionMissing sortAscending \
 sortDescending sortKey sourceHybrid sourceLocal sourceRemote sourceWorker subtotal subtreeCell subtreeOnly toolbarGroup total \

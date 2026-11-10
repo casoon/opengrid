@@ -183,14 +183,20 @@ pub fn set_row_state(host: &HtmlElement, provisional_key: &str, state: &str, det
 #[cfg(any(feature = "grid", feature = "pivot"))]
 #[wasm_bindgen(js_name = set_columns)]
 pub fn set_columns(host: &HtmlElement, columns: JsValue) {
+    let tag = host.tag_name().to_ascii_lowercase();
+    // A connected grid reads the configuration itself: where it pins decides
+    // the order of the columns (issue #316).
+    #[cfg(feature = "grid")]
+    if tag == "opengrid-grid" && host.shadow_root().is_some() {
+        crate::grid_element::set_columns(host, &columns);
+        return;
+    }
     crate::presentation::set_columns_for(host, &columns);
     if host.shadow_root().is_none() {
         // Not connected yet — the check runs when the schema arrives.
         return;
     }
-    match host.tag_name().to_ascii_lowercase().as_str() {
-        #[cfg(feature = "grid")]
-        "opengrid-grid" => crate::grid_element::recolumn(host),
+    match tag.as_str() {
         // The table checks it against the next answer (issue #29).
         TABLE_TAG => run_query(host, None, None),
         // The pivot reads its titles with the next answer (issue #104).

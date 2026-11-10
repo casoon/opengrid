@@ -18,7 +18,8 @@
 //! # What is in a view, and what is not
 //!
 //! In: everything the reader chose about *what is shown and how* — sort,
-//! filters, column order, hidden columns, column widths, density. The fields
+//! filters, column order, hidden columns, column widths, pinned columns,
+//! density. The fields
 //! nothing fills yet (`group`, `expanded`, `facets`) are declared here anyway,
 //! because later points should add content to one structure rather than
 //! structure of their own.
@@ -42,7 +43,7 @@
 use opengrid_json::{Json as Value, Object as Map};
 
 use crate::filter_row::{FilterEntry, FilterOp};
-use crate::layout::ColumnLayout;
+use crate::layout::{ColumnLayout, Pin};
 
 /// The whole view state, as one value.
 /// The densities a view may name; anything else is `normal` (the element's
@@ -61,7 +62,7 @@ pub struct GridView {
     /// One entry per column that carries a filter. Columns without one are
     /// left out rather than written as empty: a view is what the reader chose.
     pub filters: Vec<FilterEntry>,
-    /// The reader's column layout: order, hidden, widths.
+    /// The reader's column layout: order, hidden, widths, pins.
     pub columns: ColumnLayout,
     /// `compact`, `normal` or `comfortable`.
     pub density: String,
@@ -202,6 +203,14 @@ impl GridView {
             widths.insert(name, Value::Number(width.into()));
         }
         columns.insert("widths".to_owned(), Value::Object(widths));
+        // The reader's pins (issue #316); `none` is a pin of the page's the
+        // reader took away.
+        let mut pinned = Map::new();
+        for (name, pin) in self.columns.pins() {
+            let pin = pin.map_or("none", Pin::as_str);
+            pinned.insert(name.clone(), Value::String(pin.to_owned()));
+        }
+        columns.insert("pinned".to_owned(), Value::Object(pinned));
         out.insert("columns".to_owned(), Value::Object(columns));
 
         out.insert("density".to_owned(), Value::String(self.density.clone()));
@@ -357,6 +366,23 @@ impl GridView {
                         (true, None) => problems.push(ViewProblem::new(
                             "columns",
                             format!("{name}: the width is not a number"),
+                        )),
+                    }
+                }
+            }
+            if let Some(pinned) = layout.get("pinned").and_then(Value::as_object) {
+                for (name, pin) in pinned {
+                    let pin = pin.as_str().unwrap_or("");
+                    match (known(name), Pin::parse(pin)) {
+                        (true, Some(pin)) => columns.restore_pin(name, Some(pin)),
+                        (true, None) if pin == "none" => columns.restore_pin(name, None),
+                        (false, _) => problems.push(ViewProblem::new(
+                            "columns",
+                            format!("{name} is not a column of this grid"),
+                        )),
+                        (true, None) => problems.push(ViewProblem::new(
+                            "columns",
+                            format!("{name}: {pin} is not a pin"),
                         )),
                     }
                 }
@@ -548,6 +574,8 @@ mod tests {
         columns.set_order(vec!["amount".to_owned(), "id".to_owned()]);
         columns.set_hidden("customer", true);
         columns.set_width("amount", 180);
+        columns.restore_pin("id", Some(Pin::Start));
+        columns.restore_pin("amount", None);
         GridView {
             sort: vec![("amount".to_owned(), "desc".to_owned())],
             filters: vec![FilterEntry {
@@ -658,6 +686,31 @@ mod tests {
                 problem.reason.contains("nope"),
                 "{problem:?} does not say which column"
             );
+        }
+    }
+
+    /// The pins are in the view under `columns.pinned` (issue #316), and one
+    /// that is neither an end nor `none` is named.
+    #[test]
+    fn a_view_holds_the_pins() {
+        let json = filled().to_json();
+        assert_eq!(
+            json["columns"]["pinned"],
+            opengrid_json::json!({ "amount": "none", "id": "start" })
+        );
+        let view = GridView::from_json(&json, &declared()).expect("reads back");
+        assert_eq!(
+            view.columns.effective(&declared(), &[]),
+            ["id".to_owned(), "amount".to_owned()]
+        );
+
+        for pinned in [
+            opengrid_json::json!({ "id": "left" }),
+            opengrid_json::json!({ "nope": "start" }),
+        ] {
+            let json = opengrid_json::json!({ "columns": { "pinned": pinned } });
+            let problems = GridView::from_json(&json, &declared()).expect_err("is refused");
+            assert_eq!(problems[0].field, "columns", "{problems:?}");
         }
     }
 

@@ -108,7 +108,9 @@ pub fn tree_query_json(
 /// (issue #144): what the element's `get_query()` answers once the view is
 /// applied — the shown columns in layout order, the filter row and the facets
 /// typed against `schema`, the grouping, and the sort, which falls back to the
-/// first shown column (S6) as the element's does.
+/// first shown column (S6) as the element's does. The columns the view pins
+/// stand at their end of the row; a pin of the page's `set_columns` is not
+/// part of a view, and not known here.
 ///
 /// A filter or facet value that is not a value of its column is an error, one
 /// sentence per value: the element would say the same in its status line.
@@ -118,7 +120,7 @@ pub fn view_query(
     view: &crate::grid_view::GridView,
     schema: &opengrid_types::Schema,
 ) -> Result<String, Vec<String>> {
-    let columns = view.columns.effective(declared);
+    let columns = view.columns.effective(declared, &[]);
     let Some(first) = columns.first() else {
         return Err(vec!["the view shows no column".to_owned()]);
     };

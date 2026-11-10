@@ -91,7 +91,6 @@ test("Tab reaches every button of the row, and each comes into view", async ({ p
   expect(seen.map((focus) => focus.name)).toEqual([
     "add-filter",
     "add-grouping",
-    "filter-builder",
     "filter-row-toggle",
     "columns-toggle",
     "compact",

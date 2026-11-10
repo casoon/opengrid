@@ -601,10 +601,14 @@ fn closed(host: &HtmlElement, dialog: &HtmlDialogElement) {
     let Some(root) = host.shadow_root() else {
         return;
     };
+    // The chip it came from; else its button in the toolbar; and on a grid
+    // without `filter-builder`, whose chip is gone, the toolbar's switch —
+    // where the focus goes when the last chip is removed.
     let chip = root.query_selector("[data-chip-edit]").ok().flatten();
     let back = chip
         .filter(|_| from_chip)
-        .or_else(|| quick_button(&root, "filter-builder").map(Element::from));
+        .or_else(|| quick_button(&root, "filter-builder").map(Element::from))
+        .or_else(|| quick_button(&root, "filter-row").map(Element::from));
     if let Some(back) = back.and_then(|node| node.dyn_into::<HtmlElement>().ok()) {
         let _ = back.focus();
     }

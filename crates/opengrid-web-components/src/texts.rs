@@ -118,6 +118,11 @@ pub struct GridTexts {
     pub group_second_level: String,
     pub ungroup_column: String,
     pub hide_column: String,
+    /// The menu's group of pin choices and its three entries (issue #316).
+    pub pin_group: String,
+    pub pin_none: String,
+    pub pin_start: String,
+    pub pin_end: String,
     /// The toolbar above the grid (point 65).
     pub toolbar_group: String,
     pub filter_row_toggle: String,
@@ -349,6 +354,14 @@ pub struct GridTexts {
     pub column_moved: String,
     /// A column is already at the first or last place. May use `{column}`.
     pub column_at_edge: String,
+    /// A column is pinned at the start, at the end, or no longer (issue #316).
+    /// Each may use `{column}`.
+    pub column_pinned_start: String,
+    pub column_pinned_end: String,
+    pub column_unpinned: String,
+    /// The pinned columns take too much of the grid's width and scroll with
+    /// the others.
+    pub pins_released: String,
     /// A column was hidden. May use `{column}`, `{visible}` and `{count}`.
     pub column_hidden: String,
     /// A column was shown again. Same placeholders.
@@ -435,6 +448,10 @@ pub(crate) const KEYS: &[&str] = &[
     "groupSecondLevel",
     "ungroupColumn",
     "hideColumn",
+    "pinGroup",
+    "pinNone",
+    "pinStart",
+    "pinEnd",
     "toolbarGroup",
     "filterRowToggle",
     "densityGroup",
@@ -567,6 +584,10 @@ pub(crate) const KEYS: &[&str] = &[
     "columnWidth",
     "columnMoved",
     "columnAtEdge",
+    "columnPinnedStart",
+    "columnPinnedEnd",
+    "columnUnpinned",
+    "pinsReleased",
     "columnHidden",
     "columnShown",
     "columnsGroup",
@@ -655,6 +676,10 @@ impl Default for GridTexts {
             group_second_level: "Group as second level".to_owned(),
             ungroup_column: "Remove this grouping".to_owned(),
             hide_column: "Hide column".to_owned(),
+            pin_group: "Pin".to_owned(),
+            pin_none: "Not pinned".to_owned(),
+            pin_start: "At the start".to_owned(),
+            pin_end: "At the end".to_owned(),
             toolbar_group: "Grid tools".to_owned(),
             filter_row_toggle: "Filter row".to_owned(),
             density_group: "Density".to_owned(),
@@ -789,6 +814,11 @@ impl Default for GridTexts {
             column_width: "{column} is {width} pixels wide".to_owned(),
             column_moved: "{column} moved to position {position} of {count}".to_owned(),
             column_at_edge: "{column} is already at the end".to_owned(),
+            column_pinned_start: "{column} pinned at the start".to_owned(),
+            column_pinned_end: "{column} pinned at the end".to_owned(),
+            column_unpinned: "{column} no longer pinned".to_owned(),
+            pins_released: "Too narrow for the pinned columns: they scroll with the others"
+                .to_owned(),
             column_hidden: "{column} hidden, {visible} of {count} columns shown".to_owned(),
             column_shown: "{column} shown, {visible} of {count} columns shown".to_owned(),
             columns_group: "Columns".to_owned(),
@@ -1310,6 +1340,17 @@ impl GridTexts {
         fill(&self.column_at_edge, "column", self.column(column))
     }
 
+    /// Where a column is pinned now (issue #316).
+    pub fn column_pinned(&self, column: &str, pin: Option<opengrid_grid::layout::Pin>) -> String {
+        use opengrid_grid::layout::Pin;
+        let template = match pin {
+            Some(Pin::Start) => &self.column_pinned_start,
+            Some(Pin::End) => &self.column_pinned_end,
+            None => &self.column_unpinned,
+        };
+        fill(template, "column", self.column(column))
+    }
+
     /// A column that was hidden or shown again.
     pub fn column_visibility(
         &self,
@@ -1498,6 +1539,10 @@ mod host {
         overwrite(&mut texts.group_second_level, string("groupSecondLevel"));
         overwrite(&mut texts.ungroup_column, string("ungroupColumn"));
         overwrite(&mut texts.hide_column, string("hideColumn"));
+        overwrite(&mut texts.pin_group, string("pinGroup"));
+        overwrite(&mut texts.pin_none, string("pinNone"));
+        overwrite(&mut texts.pin_start, string("pinStart"));
+        overwrite(&mut texts.pin_end, string("pinEnd"));
         overwrite(&mut texts.toolbar_group, string("toolbarGroup"));
         overwrite(&mut texts.filter_row_toggle, string("filterRowToggle"));
         overwrite(&mut texts.density_group, string("densityGroup"));
@@ -1654,6 +1699,10 @@ mod host {
         overwrite(&mut texts.column_width, string("columnWidth"));
         overwrite(&mut texts.column_moved, string("columnMoved"));
         overwrite(&mut texts.column_at_edge, string("columnAtEdge"));
+        overwrite(&mut texts.column_pinned_start, string("columnPinnedStart"));
+        overwrite(&mut texts.column_pinned_end, string("columnPinnedEnd"));
+        overwrite(&mut texts.column_unpinned, string("columnUnpinned"));
+        overwrite(&mut texts.pins_released, string("pinsReleased"));
         overwrite(&mut texts.column_hidden, string("columnHidden"));
         overwrite(&mut texts.column_shown, string("columnShown"));
         overwrite(&mut texts.columns_group, string("columnsGroup"));

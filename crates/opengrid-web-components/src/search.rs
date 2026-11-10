@@ -17,11 +17,12 @@
 //! condition  = column operator value
 //! ```
 //!
-//! `and` binds tighter than `or`. An expression with an `or` cannot live in
-//! the filter row — one condition per column, and-ed — so it becomes the
+//! `and` binds tighter than `or`. The filter row holds one condition per
+//! column, and-ed. An expression it cannot hold — one with an `or`, or one
+//! that names a column twice (`amount > 1 and amount < 5`) — becomes the
 //! grid's nested filter, a tree in the wire form
-//! ([`opengrid_grid::filter_tree`]). One with `and` alone still goes to the
-//! row, exactly as before: [`Parsed`] says which.
+//! ([`opengrid_grid::filter_tree`]). Every other one goes to the row, exactly
+//! as before: [`Parsed`] says which. Nothing a reader wrote is dropped.
 //!
 //! A value runs to the next joining word, to the parenthesis that closes its
 //! group, or to the end; parentheses that pair up inside it are its own, and
@@ -93,9 +94,9 @@ pub enum Problem {
 /// What an expression became.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Parsed {
-    /// `and` alone: the filter row's entries, one per column.
+    /// `and` alone and no column twice: the filter row's entries.
     Row(Vec<FilterEntry>),
-    /// With an `or`: the nested filter.
+    /// With an `or`, or with two conditions on one column: the nested filter.
     Tree(FilterExpr),
 }
 
@@ -171,15 +172,10 @@ impl Node {
 
     /// The conditions in the order written — what an expression without `or`
     /// comes down to.
-    fn entries(self, out: &mut Vec<FilterEntry>) {
+    fn entries(&self, out: &mut Vec<FilterEntry>) {
         match self {
-            Node::Leaf(entry, _) => {
-                // One entry per column, like the filter row: the last clause
-                // on a column is the one that stands.
-                out.retain(|other| other.column != entry.column);
-                out.push(entry);
-            }
-            Node::Group(_, members) => members.into_iter().for_each(|member| member.entries(out)),
+            Node::Leaf(entry, _) => out.push(entry.clone()),
+            Node::Group(_, members) => members.iter().for_each(|member| member.entries(out)),
         }
     }
 
@@ -362,8 +358,8 @@ pub fn looks_like_query(input: &str) -> bool {
 }
 
 /// Parses an expression, checked against the schema: the filter row's entries
-/// when it joins with `and` alone, the nested filter when an `or` is in it —
-/// which, without an `or_word`, it never is.
+/// when it joins with `and` alone and names no column twice, the nested
+/// filter otherwise. Without an `or_word` nothing joins with `or`.
 pub fn parse(
     input: &str,
     and_word: &str,
@@ -383,15 +379,22 @@ pub fn parse(
         Some(')') => return Err(Problem::Unopened),
         Some(_) => return Err(Problem::MissingJoin(input[parser.at..].to_owned())),
     }
-    if node.has_or() {
-        // Every leaf is a condition, so a tree with an `or` has members.
+    let mut entries = Vec::new();
+    node.entries(&mut entries);
+    // The filter row holds one condition per column: two on one column are a
+    // tree, like an `or`, so that neither is dropped.
+    let twice = entries.iter().enumerate().any(|(at, entry)| {
+        entries[..at]
+            .iter()
+            .any(|other| other.column == entry.column)
+    });
+    if node.has_or() || twice {
+        // Every leaf is a condition, so the tree has members.
         return node
             .tree()
             .map(Parsed::Tree)
             .ok_or(Problem::MissingCondition);
     }
-    let mut entries = Vec::new();
-    node.entries(&mut entries);
     Ok(Parsed::Row(entries))
 }
 
@@ -634,11 +637,30 @@ mod tests {
         );
     }
 
+    /// The filter row holds one condition per column. Two on one column
+    /// are kept both, as a tree — the row would have to drop one.
     #[test]
-    fn the_last_clause_on_a_column_stands() {
+    fn two_conditions_on_one_column_are_both_kept() {
+        let both = json!({ "and": [is("amount", "gt", 1), is("amount", "lt", 5)] });
+        assert_eq!(tree("amount > 1 and amount < 5"), both);
+        assert_eq!(tree("(amount > 1) and (amount < 5)"), both);
+        // The whole expression goes, not only the column named twice.
         assert_eq!(
-            row("amount > 1 and amount < 5"),
-            Ok(vec![entry("amount", "lt", "5")])
+            tree("country = DE and amount > 1 and amount < 5"),
+            json!({ "and": [is("country", "eq", "DE"), is("amount", "gt", 1), is("amount", "lt", 5)] })
+        );
+        // One condition per column is the row's, however many columns.
+        assert_eq!(
+            row("country = DE and amount > 1 and customer ~ Al").map(|entries| entries.len()),
+            Ok(3)
+        );
+        // In the pivot's field too, which knows no `or`.
+        assert_eq!(
+            parse("amount > 1 and amount < 5", "and", None, &schema()).map(|parsed| match parsed {
+                Parsed::Tree(tree) => tree.to_json(),
+                Parsed::Row(_) => Json::Null,
+            }),
+            Ok(both)
         );
     }
 

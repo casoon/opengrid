@@ -60,7 +60,6 @@ test("Tab reaches every part once, in reading order, and leaves the grid at the 
     // The toolbar.
     "add-filter",
     "add-grouping",
-    "filter-builder",
     "filter-row-toggle",
     "columns-toggle",
     "density-compact",

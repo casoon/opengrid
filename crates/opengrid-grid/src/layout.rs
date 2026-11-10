@@ -27,6 +27,45 @@ const MAX_COLUMN_WIDTH: u32 = 800;
 /// How much one resize key press changes the width.
 pub const WIDTH_STEP: u32 = 24;
 
+/// The share of the grid's width the pinned columns may take together, in
+/// percent (issue #316). Above it the pin lets go and they scroll with the
+/// rest, so the columns that scroll keep at least the other half — a grid
+/// 320 px wide (WCAG 1.4.10) would otherwise show pinned columns and nothing
+/// else. The setting stays, and holds again when there is room.
+pub const PINNED_SHARE: u32 = 50;
+
+/// Where a column is kept in place while the others scroll sideways
+/// (issue #316): at the start of the row or at its end, by reading direction.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Pin {
+    Start,
+    End,
+}
+
+impl Pin {
+    /// The name in `set_columns` and in a view.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Pin::Start => "start",
+            Pin::End => "end",
+        }
+    }
+
+    pub fn parse(token: &str) -> Option<Self> {
+        match token {
+            "start" => Some(Pin::Start),
+            "end" => Some(Pin::End),
+            _ => None,
+        }
+    }
+}
+
+/// Whether the pinned columns, `pinned` pixels wide together, hold in a grid
+/// `width` pixels wide ([`PINNED_SHARE`]).
+pub fn pins_hold(pinned: f64, width: f64) -> bool {
+    pinned * 100.0 <= width * f64::from(PINNED_SHARE)
+}
+
 /// The reader's column layout, on top of the `columns` attribute.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ColumnLayout {
@@ -35,15 +74,22 @@ pub struct ColumnLayout {
     order: Vec<String>,
     hidden: HashSet<String>,
     widths: HashMap<String, u32>,
+    /// Where the reader pinned a column, or took a pin of the page's away
+    /// (`None`). Names not in here are pinned as `set_columns` says. Kept
+    /// sorted by column, so the same pins are the same layout and a view
+    /// always writes them the same way.
+    pins: Vec<(String, Option<Pin>)>,
 }
 
 impl ColumnLayout {
     /// The columns to select and render: the attribute's, reordered and
-    /// filtered.
+    /// filtered, the ones pinned at the start first and the ones pinned at the
+    /// end last (issue #316) — each of the three runs in the order the columns
+    /// had. `page` is where `set_columns` pins.
     ///
     /// A name in `order` that the attribute does not have is ignored — the
     /// attribute is the source of truth about which columns exist at all.
-    pub fn effective(&self, declared: &[String]) -> Vec<String> {
+    pub fn effective(&self, declared: &[String], page: &[(String, Pin)]) -> Vec<String> {
         let mut ordered: Vec<String> = self
             .order
             .iter()
@@ -56,7 +102,59 @@ impl ColumnLayout {
             }
         }
         ordered.retain(|name| !self.hidden.contains(name));
-        ordered
+        // One pass per run, so each keeps the order its columns had.
+        let mut arranged = Vec::with_capacity(ordered.len());
+        for run in [Some(Pin::Start), None, Some(Pin::End)] {
+            arranged.extend(
+                ordered
+                    .iter()
+                    .filter(|name| self.pin(name, page) == run)
+                    .cloned(),
+            );
+        }
+        arranged
+    }
+
+    /// Where a column is pinned: the reader's choice, or else the page's.
+    pub fn pin(&self, name: &str, page: &[(String, Pin)]) -> Option<Pin> {
+        match self.pins.iter().find(|(column, _)| column == name) {
+            Some((_, choice)) => *choice,
+            None => page
+                .iter()
+                .find(|(column, _)| column == name)
+                .map(|(_, pin)| *pin),
+        }
+    }
+
+    /// Pins a column, or lets it go, as the reader asked. A choice that is the
+    /// page's own is not kept: the layout holds what the reader changed.
+    /// Answers whether the column is pinned differently now.
+    pub fn set_pin(&mut self, name: &str, pin: Option<Pin>, page: &[(String, Pin)]) -> bool {
+        if self.pin(name, page) == pin {
+            return false;
+        }
+        self.pins.retain(|(column, _)| column != name);
+        if self.pin(name, page) != pin {
+            self.restore_pin(name, pin);
+        }
+        true
+    }
+
+    /// The reader's pins, sorted by column like the widths; `None` is a pin of
+    /// the page's the reader took away.
+    pub fn pins(&self) -> &[(String, Option<Pin>)] {
+        &self.pins
+    }
+
+    /// Sets a pin as a view holds it (restoring a view).
+    pub fn restore_pin(&mut self, name: &str, pin: Option<Pin>) {
+        self.pins.retain(|(column, _)| column != name);
+        let at = self
+            .pins
+            .iter()
+            .position(|(column, _)| column.as_str() > name)
+            .unwrap_or(self.pins.len());
+        self.pins.insert(at, (name.to_owned(), pin));
     }
 
     /// Whether a column is hidden.
@@ -139,12 +237,20 @@ impl ColumnLayout {
     }
 
     /// Moves a column one place left (`-1`) or right (`1`) among the visible
-    /// ones. Answers the new order, or `None` when it would fall off an end.
-    pub fn move_column(&mut self, declared: &[String], name: &str, by: i32) -> Option<Vec<String>> {
-        let mut visible = self.effective(declared);
+    /// ones. Answers the new order, or `None` when it would fall off an end —
+    /// of the row, or of its run: a pinned column moves among the columns
+    /// pinned at the same end, and one that is not pinned among the others.
+    pub fn move_column(
+        &mut self,
+        declared: &[String],
+        page: &[(String, Pin)],
+        name: &str,
+        by: i32,
+    ) -> Option<Vec<String>> {
+        let mut visible = self.effective(declared, page);
         let from = visible.iter().position(|column| column == name)?;
         let to = from.checked_add_signed(by as isize)?;
-        if to >= visible.len() {
+        if to >= visible.len() || self.pin(&visible[to], page) != self.pin(name, page) {
             return None;
         }
         visible.swap(from, to);
@@ -175,7 +281,10 @@ mod tests {
     /// Without any change the attribute decides, in its own order.
     #[test]
     fn an_untouched_layout_is_the_attribute() {
-        assert_eq!(ColumnLayout::default().effective(&declared()), declared());
+        assert_eq!(
+            ColumnLayout::default().effective(&declared(), &[]),
+            declared()
+        );
     }
 
     /// A hidden column is not selected at all — the query does not ask for it.
@@ -184,12 +293,12 @@ mod tests {
         let mut layout = ColumnLayout::default();
         assert!(layout.set_hidden("customer", true));
         assert_eq!(
-            layout.effective(&declared()),
+            layout.effective(&declared(), &[]),
             ["id".to_owned(), "amount".to_owned(), "qty".to_owned()]
         );
         assert!(!layout.set_hidden("customer", true), "already hidden");
         assert!(layout.set_hidden("customer", false));
-        assert_eq!(layout.effective(&declared()), declared());
+        assert_eq!(layout.effective(&declared(), &[]), declared());
     }
 
     /// Moving is among the **visible** columns: a hidden one is not a place a
@@ -198,7 +307,9 @@ mod tests {
     fn a_column_moves_among_the_visible_ones() {
         let mut layout = ColumnLayout::default();
         layout.set_hidden("customer", true);
-        let moved = layout.move_column(&declared(), "id", 1).expect("moved");
+        let moved = layout
+            .move_column(&declared(), &[], "id", 1)
+            .expect("moved");
         assert_eq!(
             moved,
             ["amount".to_owned(), "id".to_owned(), "qty".to_owned()]
@@ -207,7 +318,7 @@ mod tests {
         // Unhiding puts the column back without scrambling the arrangement.
         layout.set_hidden("customer", false);
         assert_eq!(
-            layout.effective(&declared()),
+            layout.effective(&declared(), &[]),
             [
                 "amount".to_owned(),
                 "id".to_owned(),
@@ -223,9 +334,9 @@ mod tests {
     #[test]
     fn a_move_off_the_end_is_refused() {
         let mut layout = ColumnLayout::default();
-        assert!(layout.move_column(&declared(), "id", -1).is_none());
-        assert!(layout.move_column(&declared(), "qty", 1).is_none());
-        assert_eq!(layout.effective(&declared()), declared());
+        assert!(layout.move_column(&declared(), &[], "id", -1).is_none());
+        assert!(layout.move_column(&declared(), &[], "qty", 1).is_none());
+        assert_eq!(layout.effective(&declared(), &[]), declared());
     }
 
     /// A width is clamped: not into nothing, not off the screen.
@@ -240,5 +351,102 @@ mod tests {
             layout.resize("id", WIDTH_STEP as i32, 120);
         }
         assert_eq!(layout.width("id"), Some(MAX_COLUMN_WIDTH));
+    }
+
+    fn names(columns: &[&str]) -> Vec<String> {
+        columns.iter().map(|name| (*name).to_owned()).collect()
+    }
+
+    /// Pinned at the start comes first and pinned at the end last, each run in
+    /// the order the columns had (issue #316).
+    #[test]
+    fn pinned_columns_stand_at_their_end_of_the_row() {
+        let mut layout = ColumnLayout::default();
+        let page = [("qty".to_owned(), Pin::Start)];
+        assert_eq!(
+            layout.effective(&declared(), &page),
+            names(&["qty", "id", "customer", "amount"])
+        );
+        assert!(layout.set_pin("id", Some(Pin::End), &page));
+        assert!(layout.set_pin("amount", Some(Pin::Start), &page));
+        assert_eq!(
+            layout.effective(&declared(), &page),
+            names(&["amount", "qty", "customer", "id"])
+        );
+        // A hidden column is not in the row, pinned or not.
+        layout.set_hidden("qty", true);
+        assert_eq!(
+            layout.effective(&declared(), &page),
+            names(&["amount", "customer", "id"])
+        );
+    }
+
+    /// The reader's choice leads over the page's, and only what the reader
+    /// changed is kept — a view holds a choice, not the page's configuration.
+    #[test]
+    fn the_reader_leads_and_only_a_change_is_kept() {
+        let mut layout = ColumnLayout::default();
+        let page = [("id".to_owned(), Pin::Start)];
+        assert_eq!(layout.pin("id", &page), Some(Pin::Start));
+        assert!(!layout.set_pin("id", Some(Pin::Start), &page), "as it is");
+        assert!(layout.pins().is_empty());
+
+        assert!(layout.set_pin("id", None, &page));
+        assert_eq!(layout.pin("id", &page), None);
+        assert_eq!(layout.pins(), [("id".to_owned(), None)]);
+
+        // Back to what the page says: nothing of the reader's is left.
+        assert!(layout.set_pin("id", Some(Pin::Start), &page));
+        assert!(layout.pins().is_empty());
+
+        assert!(layout.set_pin("qty", Some(Pin::End), &page));
+        assert_eq!(layout.pins(), [("qty".to_owned(), Some(Pin::End))]);
+        assert!(layout.set_pin("qty", None, &page));
+        assert!(layout.pins().is_empty());
+
+        // By column, in whatever order they were pinned: the same pins are the
+        // same layout, and a view writes them the same way.
+        let mut other = ColumnLayout::default();
+        for name in ["qty", "amount"] {
+            layout.set_pin(name, Some(Pin::End), &page);
+        }
+        for name in ["amount", "qty"] {
+            other.set_pin(name, Some(Pin::End), &page);
+        }
+        assert_eq!(layout, other);
+        assert_eq!(layout.pins()[0].0, "amount");
+    }
+
+    /// A column moves inside its run and stops at the run's end.
+    #[test]
+    fn a_column_moves_among_the_columns_pinned_like_it() {
+        let mut layout = ColumnLayout::default();
+        let page = [
+            ("id".to_owned(), Pin::Start),
+            ("customer".to_owned(), Pin::Start),
+        ];
+        // id, customer | amount, qty
+        assert!(
+            layout
+                .move_column(&declared(), &page, "customer", 1)
+                .is_none()
+        );
+        assert!(
+            layout
+                .move_column(&declared(), &page, "amount", -1)
+                .is_none()
+        );
+        let moved = layout
+            .move_column(&declared(), &page, "customer", -1)
+            .expect("inside the run");
+        assert_eq!(moved, names(&["customer", "id", "amount", "qty"]));
+        assert_eq!(layout.effective(&declared(), &page), moved);
+    }
+
+    /// Half the width holds; a pixel more lets go.
+    #[test]
+    fn the_pins_hold_up_to_their_share() {
+        assert!(pins_hold(160.0, 320.0));
+        assert!(!pins_hold(161.0, 320.0));
     }
 }

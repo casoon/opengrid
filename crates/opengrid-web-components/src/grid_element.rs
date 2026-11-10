@@ -79,7 +79,7 @@ use opengrid_web_core::host;
 use opengrid_web_core::patch::{NodeAllocator, PatchBuffer};
 use opengrid_web_core::provider::provider;
 
-use crate::columns::{self, WIDTH_STEP};
+use crate::columns::{self, Pin, WIDTH_STEP};
 use crate::formats::{CellFormat, Formatter, formats};
 use crate::grid_element_events::{
     BULK_EVENT, CELL_EVENT, PASTE_EVENT, ROW_ACTION_EVENT, ROW_ADD_EVENT, SELECTION_EVENT,
@@ -211,6 +211,14 @@ struct GridRuntime {
     /// and by the builder, and-ed onto the filter row's. A rebuild keeps it,
     /// like the facets.
     nested: Option<FilterExpr>,
+    /// The pinned columns take more than their share of the width and scroll
+    /// with the others (issue #316) — and whether that still has to be said.
+    pins_released: bool,
+    release_unsaid: bool,
+    /// How far the viewport is scrolled sideways, as of its last scroll event:
+    /// where it stood before a browser scrolled to a pinned cell's place in
+    /// the row ([`focus_cell`]).
+    scroll_left: i32,
     /// Every column a result has typed, by name (plan point 88). Kept across
     /// rebuilds — a view, a shown column — so a filter meets its real type;
     /// forgotten when the `datasource` changes.
@@ -339,6 +347,9 @@ fn fresh_runtime(
         facet_generation: 0,
         search_text: String::new(),
         nested: None,
+        pins_released: false,
+        release_unsaid: false,
+        scroll_left: 0,
         known: known.clone(),
         retype_filter: false,
         scroll_top: 0,
@@ -417,6 +428,7 @@ fn reset_runtime(host: &HtmlElement) {
         runtime.pending_offset = None;
         runtime.raf_pending = false;
         runtime.scroll_top = 0;
+        runtime.scroll_left = 0;
         runtime.shift = 0;
         // The preview went with the DOM (`clear_root`); what it would apply
         // names cells of a layout that is gone.
@@ -971,6 +983,7 @@ fn on_attribute_changed(
         // it means a new skeleton — the same as changing the columns.
         grid::SELECTION_ATTRIBUTE
         | grid::COLUMN_MENU_ATTRIBUTE
+        | grid::FILTER_BUILDER_ATTRIBUTE
         | grid::TOOLBAR_ATTRIBUTE
         | grid::FACETS_ATTRIBUTE
         | grid::SEARCH_ATTRIBUTE
@@ -1061,6 +1074,7 @@ fn ensure_skeleton(host: &HtmlElement) {
             selection: shows_selection(host),
             column_menu: host.has_attribute(grid::COLUMN_MENU_ATTRIBUTE),
             toolbar: host.has_attribute(grid::TOOLBAR_ATTRIBUTE),
+            filter_builder: host.has_attribute(grid::FILTER_BUILDER_ATTRIBUTE),
             facets: host.has_attribute(grid::FACETS_ATTRIBUTE),
             search: host.has_attribute(grid::SEARCH_ATTRIBUTE),
             actions: &actions_of(host),
@@ -1873,6 +1887,16 @@ fn focus_cell(root: &ShadowRoot, viewport: Option<&Element>, to: ActiveCell) {
     let Ok(target) = target.dyn_into::<HtmlElement>() else {
         return;
     };
+    // Where the viewport stands sideways before anything scrolls. A cell that
+    // has the focus already took it from a click, and the browser has scrolled
+    // for it: then the last scroll event knows.
+    let sideways = viewport.map(|viewport| {
+        if root.active_element().as_ref() == Some(target.as_ref()) {
+            scrolled_sideways(root).unwrap_or_else(|| viewport.scroll_left())
+        } else {
+            viewport.scroll_left()
+        }
+    });
     let _ = target.focus();
     let options = ScrollIntoViewOptions::new();
     // `nearest` scrolls the minimum. For a cell that unfolded past the height of
@@ -1883,6 +1907,28 @@ fn focus_cell(root: &ShadowRoot, viewport: Option<&Element>, to: ActiveCell) {
     // header, with it they start right below it.
     options.set_block(ScrollLogicalPosition::Nearest);
     target.scroll_into_view_with_scroll_into_view_options(&options);
+    // A pinned cell is in sight wherever the grid is scrolled to, and a
+    // browser scrolls to the place it has in the row all the same (issue
+    // #316): the grid would jump sideways under the reader.
+    if let (Some(viewport), Some(sideways)) = (viewport, sideways)
+        && is_pinned(&target)
+    {
+        viewport.set_scroll_left(sideways);
+    }
+}
+
+/// Whether an element is kept in place by the pinned columns' sheet.
+fn is_pinned(element: &Element) -> bool {
+    web_sys::window()
+        .and_then(|window| window.get_computed_style(element).ok().flatten())
+        .and_then(|style| style.get_property_value("position").ok())
+        .is_some_and(|position| position == "sticky")
+}
+
+/// How far the grid of `root` was scrolled sideways at its last scroll event.
+fn scrolled_sideways(root: &ShadowRoot) -> Option<i32> {
+    let host = root.host().dyn_into::<HtmlElement>().ok()?;
+    Some(runtime(&host)?.borrow().scroll_left)
 }
 
 /// Sets the `tabindex` attribute of the DOM node of `active`.
@@ -2262,6 +2308,18 @@ fn on_key_down(event: KeyboardEvent) {
         } else {
             move_column(&host, col, by);
         }
+        return;
+    }
+    // Pinning lives on the header cell as well (issue #316): one press takes
+    // the column one step towards that side — from the other end to not
+    // pinned, from not pinned to this end.
+    if event.alt_key()
+        && event.shift_key()
+        && sideways
+        && let ActiveCell::Header { col } = active
+    {
+        event.prevent_default();
+        step_pin(&host, col, key == "ArrowRight");
         return;
     }
 
@@ -2703,7 +2761,110 @@ fn resize_column(host: &HtmlElement, col: usize, step: i32) {
         .resize(&name, step, current);
     apply_widths(host);
     announce(host, &texts(host).column_width(&name, width));
+    // A pinned column made wider may be one too wide to keep in place.
+    say_release(host);
     dispatch_view(host);
+}
+
+/// Where a shown column is pinned: the reader's choice, or else the page's.
+fn pin_of(host: &HtmlElement, name: &str) -> Option<Pin> {
+    columns::layout(host)
+        .borrow()
+        .pin(name, &presentation::page_pins(host))
+}
+
+/// `Alt`+`Shift`+`←`/`→` on a header cell (issue #316): one step towards
+/// that side — a column pinned at the other end is let go, one that is not
+/// pinned is pinned here.
+fn step_pin(host: &HtmlElement, col: usize, towards_end: bool) {
+    let Some(name) = columns_of(host).get(col).cloned() else {
+        return;
+    };
+    let pin = match (pin_of(host, &name), towards_end) {
+        (Some(Pin::Start), true) | (Some(Pin::End), false) => None,
+        (_, true) => Some(Pin::End),
+        (_, false) => Some(Pin::Start),
+    };
+    pin_column(host, &name, pin);
+}
+
+/// Pins a column, or lets it go, and says so.
+///
+/// A pinned column stands with the others pinned at its end of the row, so
+/// this usually moves it — a new query, around the view the reader has
+/// ([`rearrange`]). The announcement rides with that query's result; the focus
+/// follows the column.
+fn pin_column(host: &HtmlElement, name: &str, pin: Option<Pin>) {
+    let Some(runtime) = runtime(host) else {
+        return;
+    };
+    let said = texts(host).column_pinned(name, pin);
+    let before = arrangement(host);
+    let page = presentation::page_pins(host);
+    if !columns::update(host, |layout| layout.set_pin(name, pin, &page)) {
+        // As it is: said, so the key is not a dead one.
+        announce(host, &said);
+        return;
+    }
+    if before.is_some_and(|before| rearrange(host, &runtime, before, Some(said.clone()))) {
+        if let Some(col) = columns_of(host).iter().position(|column| column == name) {
+            runtime.borrow_mut().set_active(ActiveCell::Header { col });
+        }
+        dispatch_view(host);
+        return;
+    }
+    // The column stands where it stood: only what keeps it there changes.
+    apply_widths(host);
+    announce(host, &said);
+    say_release(host);
+    dispatch_view(host);
+}
+
+/// The shown columns and the view, read together **before** something changes
+/// the order of the columns: the filter row is read by position, so the view
+/// has to be gathered while the columns still stand as the DOM has them.
+type Arrangement = (Vec<String>, GridView);
+
+fn arrangement(host: &HtmlElement) -> Option<Arrangement> {
+    Some((columns_of(host), current_view(host)?))
+}
+
+/// Builds the grid again around the view it had, when the columns stand in
+/// another order than `before` — a pin set or taken away (issue #316). One
+/// query; sort, filters, grouping, the open groups and the search stay.
+/// Answers whether the order changed. It fires no `opengrid-view-change`: the
+/// page's own `set_columns` comes through here too, and that is not the
+/// reader's change.
+fn rearrange(
+    host: &HtmlElement,
+    runtime: &Rc<RefCell<GridRuntime>>,
+    before: Arrangement,
+    notice: Option<String>,
+) -> bool {
+    let (columns, mut view) = before;
+    if columns_of(host) == columns {
+        return false;
+    }
+    view.columns = columns::layout(host).borrow().clone();
+    apply_view(host, runtime, &view, notice, true);
+    true
+}
+
+/// Says once that the pinned columns scroll with the others (issue #316) —
+/// after [`align_filter`] found that they no longer fit, and not again until
+/// they held in between.
+fn say_release(host: &HtmlElement) {
+    let Some(runtime) = runtime(host) else {
+        return;
+    };
+    if !std::mem::take(&mut runtime.borrow_mut().release_unsaid) {
+        return;
+    }
+    runtime
+        .borrow_mut()
+        .state
+        .add_notice(texts(host).pins_released.clone());
+    render(host, false);
 }
 
 /// Moves a column one place and re-runs the query.
@@ -2717,9 +2878,12 @@ fn move_column(host: &HtmlElement, col: usize, by: i32) {
     let Some(name) = columns.get(col).cloned() else {
         return;
     };
-    let moved = columns::layout(host)
-        .borrow_mut()
-        .move_column(&declared, &name, by);
+    let moved = columns::layout(host).borrow_mut().move_column(
+        &declared,
+        &presentation::page_pins(host),
+        &name,
+        by,
+    );
     let Some(order) = moved else {
         // At the end: nothing happens, and the reader is told why instead of
         // pressing the key again.
@@ -2905,6 +3069,10 @@ fn announce(host: &HtmlElement, message: &str) {
 /// as wide as its header cell, the first starting where the first column
 /// starts — after the selection column. The row scrolls with the viewport
 /// (`on_scroll`), so a field stays under its column.
+///
+/// The same measurements say where the pinned columns stand (issue #316), so
+/// their sheet is written here too ([`crate::pins`]), and a pinned column's
+/// field is kept above it.
 fn align_filter(host: &HtmlElement) {
     let Some(root) = host.shadow_root() else {
         return;
@@ -2923,9 +3091,11 @@ fn align_filter(host: &HtmlElement) {
     // Right to left (issue #320) the same distances are measured from the right
     // edges: the row's inside, and the first column's start.
     let rtl = crate::element::is_rtl(&filter);
-    let table_left = table.get_bounding_client_rect().left();
+    let table_box = table.get_bounding_client_rect();
+    let table_left = table_box.left();
     let mut first = None;
     let mut groups = Vec::new();
+    let mut cells = Vec::new();
     for index in 0..headers.length() {
         let Some(header) = headers
             .item(index)
@@ -2938,44 +3108,162 @@ fn align_filter(host: &HtmlElement) {
         };
         let rect = header.get_bounding_client_rect();
         first.get_or_insert(if rtl { rect.right() } else { rect.left() } - table_left);
+        cells.push((col.parse::<usize>().unwrap_or(usize::MAX), rect.width()));
         if let Ok(Some(operator)) =
             root.query_selector(&format!("[part=\"filter-operator\"][data-col=\"{col}\"]"))
             && let Some(group) = operator.parent_element()
             && let Ok(group) = group.dyn_into::<HtmlElement>()
         {
-            groups.push((group, rect.width()));
+            groups.push((group, format!("[data-col=\"{col}\"]"), rect.width()));
         }
     }
-    let Some(first) = first else {
+    let Some(mut first) = first else {
         return;
     };
+    let viewport = root.query_selector("[part~=\"viewport\"]").ok().flatten();
+    // The pinned cells, from the widths just read. A viewport without a width
+    // is not laid out: nothing is known, and nothing is written.
+    let room = viewport
+        .as_ref()
+        .map_or(0.0, |viewport| f64::from(viewport.client_width()));
+    let pins = (room > 0.0).then(|| {
+        let names = columns_of(host);
+        let page = presentation::page_pins(host);
+        let layout = columns::layout(host);
+        let layout = layout.borrow();
+        let columns: Vec<(usize, f64, Option<Pin>)> = cells
+            .iter()
+            .map(|(col, width)| {
+                let pin = names.get(*col).and_then(|name| layout.pin(name, &page));
+                (*col, *width, pin)
+            })
+            .collect();
+        let select = root
+            .query_selector("th[data-select]")
+            .ok()
+            .flatten()
+            .map(|cell| cell.get_bounding_client_rect().width());
+        let actions = columns.len().saturating_sub(names.len());
+        crate::pins::pins(&columns, select, actions, room)
+    });
+    let geometry = match &pins {
+        Some(crate::pins::Pins::Held(geometry)) => geometry.clone(),
+        _ => crate::pins::PinGeometry::default(),
+    };
+    let offset = |cells: &[(String, f64)], selector: &str| {
+        cells
+            .iter()
+            .find(|(cell, _)| cell == selector)
+            .map(|(_, offset)| *offset)
+    };
+    // A pinned header is measured where it stands now, not where its column
+    // starts: scrolled sideways those differ, and the offset is the start —
+    // from the table's start edge, where `first` counts from its left one.
+    let lead = offset(&geometry.start, "[data-col=\"0\"]");
+    if let Some(lead) = lead {
+        first = if rtl { table_box.width() - lead } else { lead };
+    }
+    // How far the viewport's end edge is from the end of the row's content
+    // (its inside without the padding), for a field pinned at the end.
+    let filter_box = filter.get_bounding_client_rect();
+    let (end_gap, end_padding) = match (&viewport, geometry.end.is_empty()) {
+        (Some(viewport), false) => {
+            let inside =
+                viewport.get_bounding_client_rect().left() + f64::from(viewport.client_left());
+            let row = filter_box.left() + f64::from(filter.client_left());
+            let padding = web_sys::window()
+                .and_then(|window| window.get_computed_style(&filter).ok().flatten())
+                .and_then(|style| style.get_property_value("padding-inline-end").ok())
+                .and_then(|value| value.strip_suffix("px")?.parse::<f64>().ok())
+                .unwrap_or(0.0);
+            let gap = if rtl {
+                inside - row
+            } else {
+                row + f64::from(filter.client_width()) - inside - room
+            };
+            (gap - padding, padding)
+        }
+        _ => (0.0, 0.0),
+    };
     // Where the table starts, unscrolled, measured from the row's own inside.
-    let scrolled = root
-        .query_selector("[part~=\"viewport\"]")
-        .ok()
-        .flatten()
+    let scrolled = viewport
+        .as_ref()
         .map_or(0, |viewport| viewport.scroll_left());
     // A viewport scrolled right to left has a negative `scrollLeft`; the sum
     // is where the column stands unscrolled in both directions.
     let column = table_left + f64::from(scrolled) + first;
-    let inside = filter.get_bounding_client_rect().left() + f64::from(filter.client_left());
+    let inside = filter_box.left() + f64::from(filter.client_left());
     let indent = if rtl {
         inside + f64::from(filter.client_width()) - column
     } else {
         column - inside
     };
-    for (group, width) in groups {
+    if pins.is_some()
+        && let Some(sheet) = pins_sheet(&root)
+    {
+        sheet
+            .replace_sync(&crate::pins::pins_css(&geometry))
+            .unwrap_or_default();
+    }
+    if let (Some(pins), Some(runtime)) = (&pins, runtime(host)) {
+        let mut runtime = runtime.borrow_mut();
+        let released = *pins == crate::pins::Pins::Released;
+        // Said once when the pins let go ([`say_release`]), not while they
+        // stay that way; holding again takes an unsaid one back.
+        runtime.release_unsaid = released && (runtime.release_unsaid || !runtime.pins_released);
+        runtime.pins_released = released;
+    }
+    for (group, selector, width) in groups {
+        // A pinned column's field stays above it: sticky in the row as the
+        // cells are in the viewport, on the row's ground so the fields that
+        // scroll pass under it — and under the room before the first one,
+        // where the selection column stands.
+        // A sticky offset counts from the row's content edge, so the row's
+        // own padding — at the start the indent written below — is taken off.
+        let pinned = if let Some(start) = offset(&geometry.start, &selector) {
+            let cover = indent.max(0.0) * if rtl { 1.0 } else { -1.0 };
+            format!(
+                " position: sticky; z-index: 1; inset-inline-start: {:.2}px; \
+                 background: var({ground}); box-shadow: {cover:.2}px 0 0 var({ground});",
+                start - lead.unwrap_or(0.0),
+                ground = grid::SURFACE_2_PROPERTY
+            )
+        } else if let Some(end) = offset(&geometry.end, &selector) {
+            format!(
+                " position: sticky; z-index: 1; inset-inline-end: {:.2}px; background: var({});",
+                end_gap + end,
+                grid::SURFACE_2_PROPERTY
+            )
+        } else {
+            String::new()
+        };
         // Through the CSSOM, like every style the grid writes: a page
         // whose `style-src` lacks 'unsafe-inline' refuses the attribute.
         group.style().set_css_text(&format!(
             "display: inline-flex; align-items: center; gap: 0.25rem; flex: none; \
-             box-sizing: border-box; padding-inline-end: 0.25rem; width: {width:.2}px;"
+             box-sizing: border-box; padding-inline-end: 0.25rem; width: {width:.2}px;{pinned}"
         ));
     }
     if let Ok(filter) = filter.dyn_into::<HtmlElement>() {
         let _ = filter
             .style()
             .set_property("padding-inline-start", &format!("{:.2}px", indent.max(0.0)));
+        // The row scrolls a field into view as the viewport does a cell: clear
+        // of the pinned fields (WCAG 2.4.11), which stand this far in.
+        if geometry.is_empty() {
+            let _ = filter.style().remove_property("scroll-padding-inline");
+        } else {
+            let start = lead.map_or(0.0, |lead| indent - lead + geometry.start_width);
+            let end = if geometry.end.is_empty() {
+                0.0
+            } else {
+                end_gap + end_padding + geometry.end_width
+            };
+            let _ = filter.style().set_property(
+                "scroll-padding-inline",
+                &format!("{:.2}px {:.2}px", start.max(0.0), end.max(0.0)),
+            );
+        }
         keep_focus_in_sight(&root, &filter);
     }
 }
@@ -3023,12 +3311,18 @@ fn observe_columns(root: &ShadowRoot) {
             .and_then(|root| root.host().dyn_into::<HtmlElement>().ok());
         if let Some(host) = host {
             align_filter(&host);
+            say_release(&host);
             follow_row_height(&host);
         }
     })
     .into_js_value();
     if let Ok(observer) = web_sys::ResizeObserver::new(callback.unchecked_ref()) {
         observer.observe(&table);
+        // A table wider than the grid keeps its size when the grid gets
+        // narrower, and the pinned columns' share is of the grid (issue #316).
+        if let Ok(Some(viewport)) = root.query_selector("[part~=\"viewport\"]") {
+            observer.observe(&viewport);
+        }
         // A custom property cannot be observed, but the rows it sizes can: the
         // first pool row changes its box when `--og-row-height` changes, even
         // where the header has a height of its own.
@@ -3154,8 +3448,9 @@ thread_local! {
         .inspect(|sheet| sheet.replace_sync(&grid::grid_css()).unwrap_or_default());
 }
 
-/// Adopts the grid's sheets into a fresh shadow root: the shared look, then a
-/// sheet of this grid's own for its column widths ([`apply_widths`]).
+/// Adopts the grid's sheets into a fresh shadow root: the shared look, then
+/// two sheets of this grid's own — for its column widths ([`apply_widths`])
+/// and for its pinned columns ([`align_filter`]).
 ///
 /// Adopted rather than `<style>` children: a page whose `style-src` lacks
 /// 'unsafe-inline' — no nonce, hashes only — refuses a `<style>` element
@@ -3164,8 +3459,12 @@ thread_local! {
 /// They also outlive [`clear_root`], so a rebuild keeps them.
 fn adopt_sheets(root: &ShadowRoot) {
     GRID_SHEET.with(|look| {
-        if let (Some(look), Ok(widths)) = (look, web_sys::CssStyleSheet::new()) {
-            let sheets = js_sys::Array::of2(look, &widths);
+        if let (Some(look), Ok(widths), Ok(pins)) = (
+            look,
+            web_sys::CssStyleSheet::new(),
+            web_sys::CssStyleSheet::new(),
+        ) {
+            let sheets = js_sys::Array::of3(look, &widths, &pins);
             root.set_adopted_style_sheets(&JsValue::from(sheets));
         }
     });
@@ -3176,6 +3475,11 @@ fn widths_sheet(root: &ShadowRoot) -> Option<web_sys::CssStyleSheet> {
     root.adopted_style_sheets().get(1).dyn_into().ok()
 }
 
+/// The sheet [`adopt_sheets`] gave this grid for its pinned columns.
+fn pins_sheet(root: &ShadowRoot) -> Option<web_sys::CssStyleSheet> {
+    root.adopted_style_sheets().get(2).dyn_into().ok()
+}
+
 /// The columns the grid actually shows, in the order it shows them.
 ///
 /// The `columns` attribute says which columns exist; the reader's layout
@@ -3183,7 +3487,9 @@ fn widths_sheet(root: &ShadowRoot) -> Option<web_sys::CssStyleSheet> {
 /// so the query, the skeleton and the render can never disagree.
 fn columns_of(host: &HtmlElement) -> Vec<String> {
     let declared = grid::parse_columns(host.get_attribute(COLUMNS_ATTRIBUTE).as_deref());
-    columns::layout(host).borrow().effective(&declared)
+    columns::layout(host)
+        .borrow()
+        .effective(&declared, &presentation::page_pins(host))
 }
 
 /// How many DOM row slots the grid keeps.
@@ -5194,6 +5500,13 @@ fn on_scroll(event: Event) {
         if let Some(other) = other {
             let echo = runtime.borrow_mut().scroll_echo.take();
             let is_echo = echo == Some((from_viewport, target.scroll_left()));
+            // Scrolled sideways, a group's label keeps to its pinned column
+            // (issue #316, `pins::pins_css`). Written when it changes.
+            if from_viewport && target.has_attribute("data-scrolled") != (target.scroll_left() != 0)
+            {
+                let _ = target.toggle_attribute("data-scrolled");
+            }
+            runtime.borrow_mut().scroll_left = target.scroll_left();
             if !is_echo && other.scroll_left() != target.scroll_left() {
                 let before = other.scroll_left();
                 other.set_scroll_left(target.scroll_left());
@@ -5389,6 +5702,17 @@ fn on_focus_in(event: Event) {
         } else {
             target.clone()
         };
+        // A pinned column's field is in sight already; the row stays where
+        // it was instead of scrolling to the field's place in it.
+        if let Ok(Some(field)) = target.closest("[part=\"filter\"] > span")
+            && is_pinned(&field)
+        {
+            if let (Some(row), Some(sideways)) = (field.parent_element(), scrolled_sideways(&root))
+            {
+                row.set_scroll_left(sideways);
+            }
+            return;
+        }
         into.scroll_into_view_with_scroll_into_view_options(&options);
         return;
     }
@@ -5682,6 +6006,26 @@ pub(crate) fn write_view(host: &HtmlElement, value: &JsValue, notice: Option<Str
         // query or an announcement.
         return;
     }
+    apply_view(host, &runtime, &view, notice, false);
+    dispatch_view(host);
+}
+
+/// Builds the grid around `view`, in one query. With `keep_search` the search
+/// stays as it is: the view is the grid's own, arranged anew ([`rearrange`]),
+/// not one a page handed in. The caller says whether the view changed
+/// ([`dispatch_view`]).
+fn apply_view(
+    host: &HtmlElement,
+    runtime: &Rc<RefCell<GridRuntime>>,
+    view: &GridView,
+    notice: Option<String>,
+    keep_search: bool,
+) {
+    let search = host
+        .shadow_root()
+        .and_then(|root| search_input(&root))
+        .filter(|_| keep_search)
+        .map(|input| input.value());
 
     APPLYING_VIEW.with(|flag| flag.set(true));
 
@@ -5769,7 +6113,9 @@ pub(crate) fn write_view(host: &HtmlElement, value: &JsValue, notice: Option<Str
         // The search is not part of a view — the prototype's views leave it out
         // too — and a restored view with an old search still applied would show
         // rows the view never named.
-        borrowed.search_text.clear();
+        if !keep_search {
+            borrowed.search_text.clear();
+        }
         borrowed.nested = view
             .nested
             .as_ref()
@@ -5800,6 +6146,9 @@ pub(crate) fn write_view(host: &HtmlElement, value: &JsValue, notice: Option<Str
     // state, then render and ask once.
     let visible = columns_of(host);
     if let Some(root) = host.shadow_root() {
+        if let (Some(input), Some(search)) = (search_input(&root), &search) {
+            input.set_value(search);
+        }
         let entries: Vec<FilterEntry> = visible
             .iter()
             .map(|column| {
@@ -5893,7 +6242,6 @@ pub(crate) fn write_view(host: &HtmlElement, value: &JsValue, notice: Option<Str
         }
     }
     run_query(host, QueryKind::Data, had_focus);
-    dispatch_view(host);
 }
 
 /// A view's selection, waiting to be checked against the source.
@@ -6084,26 +6432,58 @@ pub(crate) fn dispatch_view(host: &HtmlElement) {
 /// as `set_texts` documents — would otherwise be checked against the display
 /// schema of point 23, where every column is `Utf8` and `sum` on a number would
 /// be refused for being a sum on text.
-pub(crate) fn recolumn(host: &HtmlElement) {
+fn recolumn(host: &HtmlElement) {
+    recolumn_from(host, None);
+}
+
+/// [`crate::element::set_columns`] for a grid: takes the configuration and
+/// checks it. Where it pins is read at once (issue #316), so the columns may
+/// stand in another order afterwards — the grid is then built again around the
+/// view it had.
+pub(crate) fn set_columns(host: &HtmlElement, value: &JsValue) {
+    let before = arrangement(host);
+    presentation::set_columns_for(host, value);
+    recolumn_from(host, before);
+}
+
+/// [`recolumn`], with the columns and the view as they were `before` the
+/// configuration changed.
+fn recolumn_from(host: &HtmlElement, mut before: Option<Arrangement>) {
     let Some(runtime) = runtime(host) else {
         return;
     };
     let raw = presentation::raw(host);
     if raw.is_empty() {
+        // Nothing to check; a configuration taken away takes its pins along.
+        if let Some(before) = before {
+            rearrange(host, &runtime, before, None);
+        }
         return;
     }
     let schema = runtime.borrow().state.schema().clone();
-    match presentation::validate(
+    let checked = presentation::validate(
         &raw,
         &schema,
         &grid::parse_columns(host.get_attribute(COLUMNS_ATTRIBUTE).as_deref()),
-    ) {
+    );
+    // A configuration refused against the real schema is applied not at all,
+    // its pins included. Before a result has typed a column the refusal may be
+    // the display schema's (see above), and the pins stay as asked for.
+    let refused = checked.is_err() && !runtime.borrow().known.is_empty();
+    if presentation::is_refused(host) != refused {
+        before = before.or_else(|| arrangement(host));
+        presentation::refuse(host, refused);
+    }
+    match checked {
         Ok(checked) => {
             let styles = presentation::ColumnStyles::new(checked);
-            if *presentation::styles(host) == styles {
+            let same = *presentation::styles(host) == styles;
+            if !same {
+                presentation::store(host, styles);
+            }
+            if before.is_some_and(|before| rearrange(host, &runtime, before, None)) || same {
                 return;
             }
-            presentation::store(host, styles);
             // The markers live in the one-time skeleton (a pool cell always
             // shows the same column), so a new presentation is a new skeleton
             // — around the same state: the columns are the same, and a view
@@ -6121,6 +6501,9 @@ pub(crate) fn recolumn(host: &HtmlElement) {
             run_query(host, QueryKind::Data, had_focus);
         }
         Err(problems) => {
+            if let Some(before) = before {
+                rearrange(host, &runtime, before, None);
+            }
             let message = problems
                 .iter()
                 .map(|problem| format!("{}: {}", problem.column, problem.reason))
@@ -7107,6 +7490,7 @@ fn open_column_menu(host: &HtmlElement, col: usize) {
             can_group: !is_paging(host),
             visible: borrowed.state.schema().fields().len(),
             bulk: bulk::available(host, &borrowed, col),
+            pin: pin_of(host, &name),
         };
         (crate::column_menu::entries(&column, &texts), name)
     };
@@ -7392,6 +7776,9 @@ fn activate_menu_item(host: &HtmlElement, item: &Element) {
             }
         }
         "hide" => set_column_hidden(host, &name, true),
+        "pin:none" => pin_column(host, &name, None),
+        "pin:start" => pin_column(host, &name, Some(Pin::Start)),
+        "pin:end" => pin_column(host, &name, Some(Pin::End)),
         "bulk" => bulk::open(host, col),
         grouping if grouping.starts_with("group:") => {
             let current = runtime

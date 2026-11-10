@@ -23,13 +23,15 @@ Two things belong in every release entry and are easy to leave out:
 
 - **Grid:** filters joined by `or`. The search expression takes `or` and parentheses —
   `country = DE or (qty ≥ 900 and customer = Alpha)`, `and` binding tighter — and a value in double
-  quotes. An expression with an `or` becomes the grid's one **nested filter**: one chip in words,
-  and-ed onto the filter row, the facets, the search and the page's `filter`, in every query the
-  grid sends; `and` alone still writes the filter row ([#324](https://github.com/casoon/opengrid/issues/324), [Search](docs/api.md#search),
+  quotes. An expression the filter row cannot hold — one with an `or`, or with two conditions on
+  one column — becomes the grid's one **nested filter**: one chip in words, and-ed onto the filter
+  row, the facets, the search and the page's `filter`, in every query the grid sends; every other
+  expression still writes the filter row ([#324](https://github.com/casoon/opengrid/issues/324), [Search](docs/api.md#search),
   [Nested filter](docs/api.md#nested-filter)).
-- **Grid:** *Advanced filter* in the toolbar opens a builder for the nested filter — a native modal
-  `<dialog>` with conditions in groups that match *all* or *any* — and the filter's chip opens it
-  again. New parts `filter-builder`, `filter-builder-dialog` and `chip-edit` ([#324](https://github.com/casoon/opengrid/issues/324)).
+- **Grid:** a builder for the nested filter — a native modal `<dialog>` with conditions in groups
+  that match *all* or *any*. The filter's chip opens it; the new attribute `filter-builder` puts
+  *Advanced filter* into the toolbar to start one (`filterBuilder` in the framework components).
+  New parts `filter-builder`, `filter-builder-dialog` and `chip-edit` ([#324](https://github.com/casoon/opengrid/issues/324)).
 - **Grid:** the view carries the nested filter as `where`, in the wire form of a query's filter
   (type `ViewFilter`); `set_view` restores it and refuses one that names an unknown column, `not`
   or `in` ([#324](https://github.com/casoon/opengrid/issues/324), [The view](docs/api.md#the-view)).
@@ -50,6 +52,14 @@ Two things belong in every release entry and are easy to leave out:
   match of the view, shown only in `@media print` in place of the grid, and `window.print()` prints
   it; a table, a pivot and a grid print black on white whatever the look
   ([#334](https://github.com/casoon/opengrid/issues/334), [Printing the view](docs/api.md#printing-the-view)).
+- **Grid:** pinned columns. `pin: "start"` or `pin: "end"` in `set_columns` keeps a column in
+  place while the others scroll sideways; the reader changes it on the header cell with
+  `Alt`+`Shift`+`←`/`→` or from the column menu's *Pin* group, and the view holds that choice as
+  `columns.pinned`. A focused cell is scrolled clear of the pinned columns, and when they would take
+  more than half of the grid's width they scroll with the others until there is room again. New
+  texts `pinGroup`, `pinNone`, `pinStart`, `pinEnd`, `columnPinnedStart`, `columnPinnedEnd`,
+  `columnUnpinned` and `pinsReleased`
+  ([#316](https://github.com/casoon/opengrid/issues/316), [Pinned columns](docs/api.md#pinned-columns)).
 - **Grid:** `filter`, the page's filter — a wire filter as JSON, and-ed onto every query the grid
   sends. It is not the reader's: no chip, not in the view, and "remove all" leaves it
   ([#330](https://github.com/casoon/opengrid/issues/330), [The page's filter](docs/api.md#the-pages-filter)).
@@ -78,8 +88,10 @@ Two things belong in every release entry and are easy to leave out:
   values in double quotes: `customer = "this or that"`. Input that starts with `(` and a condition
   is a filter, no longer a text search. The pivot's filter field joins with `and` alone, as before
   ([#324](https://github.com/casoon/opengrid/issues/324)).
-- **Grid:** the toolbar has one more button, *Advanced filter*, after *+ Group* — a page that
-  counts or styles the toolbar's buttons sees it ([#324](https://github.com/casoon/opengrid/issues/324)).
+- **Grid:** two conditions on one column are both kept. `amount > 1 and amount < 5` in the search
+  field left only the last one in the filter row; now the whole expression becomes the nested
+  filter. The same in the pivot's filter field, where both are and-ed. Expressions with one
+  condition per column go to the filter row as before ([#324](https://github.com/casoon/opengrid/issues/324)).
 - **Grid:** every grid with `row-key` selects **by key**, grouped or not: the selection stays
   through a sort, a filter, grouping and ungrouping, and select-all asks the source for the keys.
   **What breaks:** with `row-key`, and in a tree, `opengrid-selection-change` is `{ count, keys }`
@@ -88,6 +100,11 @@ Two things belong in every release entry and are easy to leave out:
   `get_view` holds `selected` while something is selected, and `set_view` with a view that has no
   `selected` clears it. Without `row-key` nothing changes
   ([#322](https://github.com/casoon/opengrid/issues/322), `docs/api.md`: *Selecting by key*).
+- **Grid:** the view's `columns` has a fourth field, `pinned`, and every column menu has the three
+  entries of the *Pin* group. **What breaks:** a TypeScript `View` written out in full needs
+  `columns.pinned` (`{}` for none; `ViewInput`, which `set_view` takes, does not); in the
+  `opengrid-grid` crate `ColumnLayout::effective` and `ColumnLayout::move_column` take the pins of
+  the page as a further argument ([#316](https://github.com/casoon/opengrid/issues/316)).
 - **Grid:** setting `group-by` on a grid that selects by position now says `Selection cleared` and
   fires `opengrid-selection-change` when it drops a selection; it was dropped silently
   ([#322](https://github.com/casoon/opengrid/issues/322)).

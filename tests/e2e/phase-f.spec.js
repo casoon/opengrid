@@ -32,7 +32,7 @@ const OURS = new Set([
   // The footer's source (issue #33): where the queries ran, in our words.
   "source",
   // The quick doors (issue #34).
-  "add-filter", "add-grouping", "filter-builder",
+  "add-filter", "add-grouping",
 ]);
 const PAGE = new Set([
   // Column names and values.

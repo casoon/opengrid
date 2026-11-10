@@ -393,6 +393,14 @@ pub const FACETS_ATTRIBUTE: &str = "facets";
 /// with has no use for a menu in every header.
 pub const COLUMN_MENU_ATTRIBUTE: &str = "column-menu";
 
+/// The boolean attribute that puts *Advanced filter* into the toolbar: the
+/// button that opens the builder of the nested filter (issue #324).
+///
+/// Opt-in, like the column menu. Without it the nested filter is still there
+/// — the search expression writes it, the view carries it — and its chip
+/// still opens the builder: what a reader can see, a reader can edit.
+pub const FILTER_BUILDER_ATTRIBUTE: &str = "filter-builder";
+
 /// The boolean attribute that shows the selection column (point 61).
 ///
 /// **Opt-in, like every other piece of chrome in this phase** (`filter-row`,
@@ -646,6 +654,7 @@ pub const OBSERVED: &[&str] = &[
     TREE_KEY_ATTRIBUTE,
     ROW_KEY_ATTRIBUTE,
     COLUMN_MENU_ATTRIBUTE,
+    FILTER_BUILDER_ATTRIBUTE,
     TOOLBAR_ATTRIBUTE,
     FACETS_ATTRIBUTE,
     SEARCH_ATTRIBUTE,
@@ -1545,6 +1554,8 @@ pub struct GridSkeleton<'a> {
     pub column_menu: bool,
     /// Whether the toolbar is built (point 65).
     pub toolbar: bool,
+    /// Whether the toolbar has the button of the filter builder (issue #324).
+    pub filter_builder: bool,
     /// Whether the facet sidebar is built (point 66).
     pub facets: bool,
     /// Whether the search field is built (point 67).
@@ -2217,6 +2228,7 @@ pub fn build_grid(
         selection,
         column_menu,
         toolbar,
+        filter_builder,
         facets,
         search,
         actions,
@@ -2240,6 +2252,7 @@ pub fn build_grid(
             layout,
             texts,
             search,
+            filter_builder,
             !presentation.facets().is_empty(),
             facets,
         )
@@ -2787,12 +2800,14 @@ fn build_search(
 /// controls, and a promise not kept is worse than the plainer role. The chips
 /// are filled by the element from the view, because the filters live in the
 /// filter row's fields rather than in the grid state.
+#[allow(clippy::too_many_arguments)]
 fn build_toolbar(
     buffer: &mut PatchBuffer,
     nodes: &mut NodeAllocator,
     parent: NodeId,
     texts: &GridTexts,
     search: bool,
+    filter_builder: bool,
     has_facets: bool,
     facets_shown: bool,
 ) -> (NodeId, NodeId) {
@@ -2850,19 +2865,21 @@ fn build_toolbar(
         set_lang(buffer, button, texts);
     }
 
-    // The builder of the nested filter (issue #324): a modal dialog, so the
-    // button has nothing to say about an expanded state — while the dialog
-    // is open, nobody reaches the button.
-    let builder = element(buffer, nodes, Some(row), "button");
-    attribute(buffer, builder, "type", "button");
-    attribute(buffer, builder, "part", "filter-builder");
-    attribute(buffer, builder, "data-toolbar", "filter-builder");
-    attribute(buffer, builder, "aria-haspopup", "dialog");
-    buffer.push(Patch::SetText {
-        node: builder,
-        text: texts.filter_builder.clone(),
-    });
-    set_lang(buffer, builder, texts);
+    // The builder of the nested filter (issue #324), with `filter-builder`.
+    // A modal dialog, so the button has nothing to say about an expanded
+    // state — while the dialog is open, nobody reaches the button.
+    if filter_builder {
+        let builder = element(buffer, nodes, Some(row), "button");
+        attribute(buffer, builder, "type", "button");
+        attribute(buffer, builder, "part", "filter-builder");
+        attribute(buffer, builder, "data-toolbar", "filter-builder");
+        attribute(buffer, builder, "aria-haspopup", "dialog");
+        buffer.push(Patch::SetText {
+            node: builder,
+            text: texts.filter_builder.clone(),
+        });
+        set_lang(buffer, builder, texts);
+    }
 
     let toggle = element(buffer, nodes, Some(row), "button");
     attribute(buffer, toggle, "type", "button");
@@ -5316,6 +5333,7 @@ mod tests {
                 selection: false,
                 column_menu: false,
                 toolbar: false,
+                filter_builder: false,
                 facets: false,
                 search: false,
                 actions: &[],
@@ -5414,6 +5432,7 @@ mod tests {
                 selection: false,
                 column_menu: false,
                 toolbar: false,
+                filter_builder: false,
                 facets: false,
                 search: false,
                 actions: &[],
@@ -5487,6 +5506,7 @@ mod tests {
                 selection: false,
                 column_menu: false,
                 toolbar: false,
+                filter_builder: false,
                 facets: false,
                 search: false,
                 actions: &[],
@@ -5544,6 +5564,7 @@ mod tests {
                 selection: false,
                 column_menu: false,
                 toolbar: false,
+                filter_builder: false,
                 facets: false,
                 search: false,
                 actions: &[],
@@ -5621,6 +5642,7 @@ mod tests {
                 selection: false,
                 column_menu: false,
                 toolbar: false,
+                filter_builder: false,
                 facets: false,
                 search: false,
                 actions: &[],
@@ -5711,6 +5733,7 @@ mod tests {
                 selection: false,
                 column_menu: false,
                 toolbar: false,
+                filter_builder: false,
                 facets: false,
                 search: false,
                 actions: &[],
@@ -5744,6 +5767,7 @@ mod tests {
                 selection: false,
                 column_menu: false,
                 toolbar: false,
+                filter_builder: false,
                 facets: false,
                 search: false,
                 actions: &[],
@@ -5822,6 +5846,7 @@ mod tests {
                 selection: false,
                 column_menu: false,
                 toolbar: false,
+                filter_builder: false,
                 facets: false,
                 search: false,
                 actions: &[],
@@ -5913,6 +5938,7 @@ mod tests {
                 selection: false,
                 column_menu: false,
                 toolbar: false,
+                filter_builder: false,
                 facets: true,
                 search: false,
                 actions: &[],
@@ -5966,6 +5992,7 @@ mod tests {
                 selection: true,
                 column_menu: true,
                 toolbar: true,
+                filter_builder: false,
                 facets: true,
                 search: true,
                 actions: &[],
@@ -6105,6 +6132,7 @@ mod tests {
                 selection: false,
                 column_menu: false,
                 toolbar: false,
+                filter_builder: false,
                 facets: false,
                 search: false,
                 actions: &[],
@@ -6162,6 +6190,7 @@ mod tests {
                 selection: false,
                 column_menu: false,
                 toolbar: false,
+                filter_builder: false,
                 facets: false,
                 search: false,
                 actions: &[],
@@ -6215,6 +6244,7 @@ mod tests {
                 selection: false,
                 column_menu: false,
                 toolbar: false,
+                filter_builder: false,
                 facets: false,
                 search: false,
                 actions: &[],
@@ -6304,6 +6334,7 @@ mod tests {
                 selection: false,
                 column_menu: false,
                 toolbar: false,
+                filter_builder: false,
                 facets: false,
                 search: false,
                 actions: &[],
@@ -6363,6 +6394,7 @@ mod tests {
                 selection: false,
                 column_menu: false,
                 toolbar: false,
+                filter_builder: false,
                 facets: false,
                 search: false,
                 actions: &[],
@@ -6829,6 +6861,7 @@ mod tests {
                     selection,
                     column_menu: false,
                     toolbar: false,
+                    filter_builder: false,
                     facets: false,
                     search: false,
                     actions: &[],
@@ -6895,6 +6928,7 @@ mod tests {
                     selection,
                     column_menu: false,
                     toolbar: false,
+                    filter_builder: false,
                     facets: false,
                     search: false,
                     actions: &[],

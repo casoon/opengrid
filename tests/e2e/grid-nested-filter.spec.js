@@ -158,6 +158,42 @@ test.describe("the search expression", () => {
     expect((await chips(page)).map((chip) => chip.edit)).toEqual([null, null]);
   });
 
+  test("two conditions on one column are both kept: the row holds one, so the tree takes the expression", async ({ page }) => {
+    await forget(page);
+    await search(page, "country = DE and qty >= 100 and qty < 200");
+    const words = "country is DE and qty greater or equal 100 and qty less than 200";
+    const tree = { and: [DE, { field: "qty", op: "gte", value: 100 }, { field: "qty", op: "lt", value: 200 }] };
+    const expected = await page.evaluate(
+      (filter) =>
+        JSON.parse(window.__engine.execute(JSON.stringify({ source: "orders", select: ["id"], filter, limit: 1 })))
+          .total_count,
+      tree,
+    );
+    expect(expected).toBeGreaterThan(0);
+    await expect.poll(() => status(page)).toBe(`${expected} matches · Filter set: ${words}`);
+    const now = await view(page);
+    expect(now.where).toEqual(tree);
+    // Nothing of it in the filter row: not the last clause, not the other column.
+    expect(now.filters).toEqual([]);
+    expect((await lastRows(page)).filter).toEqual(tree);
+    expect(await chips(page)).toEqual([{ text: words, edit: `Edit ${words}`, remove: `Remove ${words}` }]);
+    // Fewer rows than either bound alone would leave.
+    const upper = await page.evaluate(
+      () =>
+        JSON.parse(
+          window.__engine.execute(
+            JSON.stringify({
+              source: "orders",
+              select: ["id"],
+              filter: { and: [{ field: "country", op: "eq", value: "DE" }, { field: "qty", op: "lt", value: 200 }] },
+              limit: 1,
+            }),
+          ),
+        ).total_count,
+    );
+    expect(expected).toBeLessThan(upper);
+  });
+
   for (const [expression, sentence] of [
     ["(country = DE or qty >= 900", "A parenthesis is not closed"],
     ["country = DE or qty >= 900)", "A closing parenthesis has no opening one"],
@@ -351,7 +387,64 @@ test.describe("with the other filters", () => {
   });
 });
 
+test.describe("the toolbar's button", () => {
+  const button = (page) => grid(page).locator('[part="filter-builder"]');
+
+  test("is there only with filter-builder, and follows the attribute", async ({ page }) => {
+    await expect(button(page)).toHaveCount(0);
+    await search(page, "country = DE or qty >= 900");
+    await expect.poll(() => status(page)).toMatch(/^66 matches/);
+
+    await page.evaluate(() => document.querySelector("opengrid-grid").setAttribute("filter-builder", ""));
+    await expect(button(page)).toHaveText("Advanced filter");
+    await expect(button(page)).toHaveAttribute("aria-haspopup", "dialog");
+    // After + Group, before the switches; the nested filter is still there.
+    expect(
+      await page.evaluate(() =>
+        [...document.querySelector("opengrid-grid").shadowRoot.querySelectorAll("[data-toolbar]")]
+          .map((node) => node.dataset.toolbar)
+          .slice(0, 4),
+      ),
+    ).toEqual(["add-filter", "add-grouping", "filter-builder", "filter-row"]);
+    await expect.poll(() => status(page)).toMatch(/^66 matches/);
+    expect((await view(page)).where).toEqual({ or: [DE, QTY] });
+
+    await page.evaluate(() => document.querySelector("opengrid-grid").removeAttribute("filter-builder"));
+    await expect(button(page)).toHaveCount(0);
+    expect((await chips(page)).map((chip) => chip.text)).toEqual([DE_OR_QTY]);
+  });
+
+  test("without it the chip still opens the builder, and the focus has a place to go back to", async ({ page }) => {
+    await search(page, "country = DE or qty >= 900");
+    await expect.poll(() => status(page)).toMatch(/^66 matches/);
+    await grid(page).locator("[data-chip-edit]").press("Enter");
+    await expect(dialog(page)).toBeVisible();
+    await value(page, 1).fill("FR");
+    await value(page, 1).press("Enter");
+    await expect(dialog(page)).toHaveCount(0);
+    await expect.poll(() => status(page)).toContain("Filter set: country is FR or qty greater or equal 900");
+    expect(await focused(page)).toBe("chip-edit");
+
+    // Emptied, the chip is gone and there is no button: the toolbar's switch takes the focus.
+    await grid(page).locator("[data-chip-edit]").click();
+    await condition(page, 1).getByRole("button").click();
+    await condition(page, 1).getByRole("button").click();
+    await dialog(page).getByRole("button", { name: "Apply" }).click();
+    await expect(dialog(page)).toHaveCount(0);
+    await expect.poll(() => status(page)).toMatch(/^200 matches/);
+    expect(await focused(page)).toBe("filter-row-toggle");
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  });
+});
+
 test.describe("the builder", () => {
+  // *Advanced filter* is opt-in: these tests work with the button.
+  test.beforeEach(async ({ page }) => {
+    await page.evaluate(() => document.querySelector("opengrid-grid").setAttribute("filter-builder", ""));
+    await expect(grid(page).locator('[part="filter-builder"]')).toBeVisible();
+    await expect.poll(() => status(page)).toBe("200 matches");
+  });
+
   const openBuilder = async (page) => {
     await grid(page).locator('[part="filter-builder"]').press("Enter");
     await expect(dialog(page)).toBeVisible();
