@@ -21,6 +21,22 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Added
 
+- **Grid:** filters joined by `or`. The search expression takes `or` and parentheses —
+  `country = DE or (qty ≥ 900 and customer = Alpha)`, `and` binding tighter — and a value in double
+  quotes. An expression with an `or` becomes the grid's one **nested filter**: one chip in words,
+  and-ed onto the filter row, the facets, the search and the page's `filter`, in every query the
+  grid sends; `and` alone still writes the filter row ([#324](https://github.com/casoon/opengrid/issues/324), [Search](docs/api.md#search),
+  [Nested filter](docs/api.md#nested-filter)).
+- **Grid:** *Advanced filter* in the toolbar opens a builder for the nested filter — a native modal
+  `<dialog>` with conditions in groups that match *all* or *any* — and the filter's chip opens it
+  again. New parts `filter-builder`, `filter-builder-dialog` and `chip-edit` ([#324](https://github.com/casoon/opengrid/issues/324)).
+- **Grid:** the view carries the nested filter as `where`, in the wire form of a query's filter
+  (type `ViewFilter`); `set_view` restores it and refuses one that names an unknown column, `not`
+  or `in` ([#324](https://github.com/casoon/opengrid/issues/324), [The view](docs/api.md#the-view)).
+- **Texts:** `queryOr`, `queryUnclosed`, `queryUnopened`, `queryMissingCondition`,
+  `queryMissingJoin`, `filterApplied`, `filterBuilder`, `filterBuilderJoin`, `filterBuilderAll`,
+  `filterBuilderAny`, `filterBuilderCondition`, `filterBuilderGroup`, `filterBuilderAddCondition`,
+  `filterBuilderAddGroup` and `filterBuilderEdit`, with their German ([#324](https://github.com/casoon/opengrid/issues/324)).
 - **Pivot:** XLSX export, written by the server ([#331](https://github.com/casoon/opengrid/issues/331)).
   `exportPivot(provider, pivot, { format: "xlsx" })` answers the shown pivot as one flat sheet: the
   header row and the rows of its CSV, numbers and dates as typed cells. Over `createPivotProvider`
@@ -56,6 +72,14 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Changed
 
+- **Grid:** the search expression reads `or` and parentheses. **What breaks:** ` or ` (and the
+  `queryOr` word) inside a value now ends it, a `)` without its `(` inside a value is refused,
+  and a value that starts with `"` and has a closing `"` is the text between them — write such
+  values in double quotes: `customer = "this or that"`. Input that starts with `(` and a condition
+  is a filter, no longer a text search. The pivot's filter field joins with `and` alone, as before
+  ([#324](https://github.com/casoon/opengrid/issues/324)).
+- **Grid:** the toolbar has one more button, *Advanced filter*, after *+ Group* — a page that
+  counts or styles the toolbar's buttons sees it ([#324](https://github.com/casoon/opengrid/issues/324)).
 - **Grid:** every grid with `row-key` selects **by key**, grouped or not: the selection stays
   through a sort, a filter, grouping and ungrouping, and select-all asks the source for the keys.
   **What breaks:** with `row-key`, and in a tree, `opengrid-selection-change` is `{ count, keys }`

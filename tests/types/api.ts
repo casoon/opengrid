@@ -183,7 +183,20 @@ export async function page(): Promise<void> {
     expanded: [["DE"], [null]],
     aggregates: { amount: "sum" },
     facets: { customer: { values: ["Alpha", null] }, amount: { min: "5", max: "" } },
+    where: {
+      or: [
+        { field: "country", op: "eq", value: "DE" },
+        { and: [{ field: "amount", op: "gte", value: 1000 }, { field: "note", op: "is_null" }] },
+        { field: "tags", op: "has_all", value: ["a", "b"] },
+      ],
+    },
   });
+  // @ts-expect-error — a view's filter has no `not`: that is the `filter` attribute's
+  module.set_view(grid, { where: { not: { field: "country", op: "eq", value: "DE" } } });
+  // @ts-expect-error — a null test takes no value
+  module.set_view(grid, { where: { field: "country", op: "is_null", value: "" } });
+  // @ts-expect-error — a condition names its field, not its column: this is the wire's form
+  module.set_view(grid, { where: { column: "country", op: "eq", value: "DE" } });
   // @ts-expect-error — a direction is `asc` or `desc`
   module.set_view(grid, { sort: [{ field: "amount", direction: "down" }] });
   // @ts-expect-error — a filter names its column, not its field

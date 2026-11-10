@@ -74,7 +74,12 @@
 # own queries for keys on the way. The bound holds some 200 B beyond the usual
 # 1 % for the pivot's XLSX export (#339), merged at the same time without a
 # bound of its own.
-grid+pivot    312100  # 308747 B, 2026-11-10, #322
+# Raised the same day from 312100: filters joined by `or` (#324) grew it by
+# 9.7 KiB over main (309074 B, with #339), to 318987 B. 4.4 KiB of that is the
+# builder dialog (measured with the dialog stubbed out: 314551 B); the rest is
+# the expression's parser with parentheses and quotes, the nested filter in
+# the view, its chip and words, the dialog's sheet and fifteen texts.
+grid+pivot    322200  # 318987 B, 2026-11-10, #324
 # Raised 2026-09-30 from 108000: the bound was not raised with 0.7.0, which
 # shipped the engine at 115.2 KiB already (CHANGELOG); rule P9's sorted
 # grouping sets and order sets (#108) added the rest, to 121610 B.

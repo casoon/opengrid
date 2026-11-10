@@ -1237,8 +1237,10 @@ fn submit_filter(host: &HtmlElement, text: String) {
                 return;
             }
         };
-        let entries = match crate::search::parse(&text, &texts.query_and, &schema) {
-            Ok(entries) => entries,
+        // `and` alone: an `or` is the grid's (issue #324), not the pivot's.
+        let entries = match crate::search::parse(&text, &texts.query_and, None, &schema) {
+            Ok(crate::search::Parsed::Row(entries)) => entries,
+            Ok(crate::search::Parsed::Tree(_)) => return,
             Err(problem) => {
                 say(&host, &texts.query_problem(&problem));
                 return;

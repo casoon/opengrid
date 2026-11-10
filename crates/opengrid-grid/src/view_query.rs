@@ -143,8 +143,20 @@ pub fn view_query(
                 .collect()
         })
         .unwrap_or_default();
+    // The nested filter is a filter already (issue #324): and-ed as it is.
+    let nested = match &view.nested {
+        Some(tree) => Some(
+            <opengrid_query::FilterExpr as opengrid_json::FromJson>::from_json(tree)
+                .map_err(|error| vec![format!("where: {error}")])?,
+        ),
+        None => None,
+    };
+    let base = match (row, nested) {
+        (Some(row), Some(nested)) => Some(FilterExpr::And(vec![row, nested])),
+        (row, nested) => row.or(nested),
+    };
     let filter =
-        crate::facets::effective(row.as_ref(), &selections, None, schema).map_err(|problems| {
+        crate::facets::effective(base.as_ref(), &selections, None, schema).map_err(|problems| {
             problems
                 .iter()
                 .map(|problem| not_a_value(&problem.column, &problem.value))
@@ -226,6 +238,24 @@ mod tests {
             query["sort"],
             opengrid_json::json!([{ "field": "id", "direction": "asc" }])
         );
+    }
+
+    /// The nested filter is and-ed onto the filter row's, as written.
+    #[test]
+    fn the_nested_filter_is_part_of_the_query() {
+        let tree = r#"{"or":[{"field":"country","op":"eq","value":"DE"},{"field":"qty","op":"gte","value":1000}]}"#;
+        // Alone, it is the filter.
+        let alone = query(&format!(r#"{{"where":{tree}}}"#)).unwrap();
+        assert_eq!(alone["filter"], Json::parse(tree).unwrap());
+        let both = query(&format!(
+            r#"{{"filters":[{{"column":"qty","op":"lt","value":"5"}}],"where":{tree}}}"#
+        ))
+        .unwrap();
+        assert_eq!(
+            both["filter"]["and"][0]["and"][0]["op"],
+            opengrid_json::json!("lt")
+        );
+        assert_eq!(both["filter"]["and"][1], Json::parse(tree).unwrap());
     }
 
     #[test]

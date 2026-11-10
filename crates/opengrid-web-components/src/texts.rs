@@ -240,6 +240,29 @@ pub struct GridTexts {
     pub query_unknown_column: String,
     pub query_missing_value: String,
     pub query_wrong_operator: String,
+    /// The word that joins two clauses with `or` (issue #324), and what a
+    /// parenthesis can be wrong about. `query_missing_join` may use `{and}`,
+    /// `{or}` and `{text}`.
+    pub query_or: String,
+    pub query_unclosed: String,
+    pub query_unopened: String,
+    pub query_missing_condition: String,
+    pub query_missing_join: String,
+    /// The builder of the nested filter (issue #324): the toolbar's button
+    /// and the dialog's title, a group's choice with its two options, the
+    /// names of a condition and of an inner group (`{number}`), the two add
+    /// buttons, the chip's button (`{filter}`), and what is said when the
+    /// filter was set (`{filter}`).
+    pub filter_builder: String,
+    pub filter_builder_join: String,
+    pub filter_builder_all: String,
+    pub filter_builder_any: String,
+    pub filter_builder_condition: String,
+    pub filter_builder_group: String,
+    pub filter_builder_add_condition: String,
+    pub filter_builder_add_group: String,
+    pub filter_builder_edit: String,
+    pub filter_applied: String,
     /// The empty state (point 68): no rows because of the filters …
     pub empty_filtered: String,
     /// … and no rows at all.
@@ -487,6 +510,21 @@ pub(crate) const KEYS: &[&str] = &[
     "queryUnknownColumn",
     "queryMissingValue",
     "queryWrongOperator",
+    "queryOr",
+    "queryUnclosed",
+    "queryUnopened",
+    "queryMissingCondition",
+    "queryMissingJoin",
+    "filterBuilder",
+    "filterBuilderJoin",
+    "filterBuilderAll",
+    "filterBuilderAny",
+    "filterBuilderCondition",
+    "filterBuilderGroup",
+    "filterBuilderAddCondition",
+    "filterBuilderAddGroup",
+    "filterBuilderEdit",
+    "filterApplied",
     "emptyFiltered",
     "emptySource",
     "emptyReset",
@@ -694,6 +732,21 @@ impl Default for GridTexts {
             query_unknown_column: "{column} is not a column of this grid".to_owned(),
             query_missing_value: "{column}: the value is missing".to_owned(),
             query_wrong_operator: "{column} does not take {operator}".to_owned(),
+            query_or: "or".to_owned(),
+            query_unclosed: "A parenthesis is not closed".to_owned(),
+            query_unopened: "A closing parenthesis has no opening one".to_owned(),
+            query_missing_condition: "A condition is missing".to_owned(),
+            query_missing_join: "\u{201C}{and}\u{201D} or \u{201C}{or}\u{201D} is missing before \u{201C}{text}\u{201D}".to_owned(),
+            filter_builder: "Advanced filter".to_owned(),
+            filter_builder_join: "Rows match".to_owned(),
+            filter_builder_all: "all conditions".to_owned(),
+            filter_builder_any: "any condition".to_owned(),
+            filter_builder_condition: "Condition {number}".to_owned(),
+            filter_builder_group: "Group {number}".to_owned(),
+            filter_builder_add_condition: "+ Condition".to_owned(),
+            filter_builder_add_group: "+ Group".to_owned(),
+            filter_builder_edit: "Edit {filter}".to_owned(),
+            filter_applied: "Filter set: {filter}".to_owned(),
             empty_filtered: "No row matches these filters.".to_owned(),
             empty_source: "There are no rows.".to_owned(),
             empty_reset: "Reset filters".to_owned(),
@@ -1036,7 +1089,43 @@ impl GridTexts {
                 operator,
             ),
             Problem::WrongValue { column, value } => self.filter_invalid(column, value),
+            Problem::Unclosed => self.query_unclosed.clone(),
+            Problem::Unopened => self.query_unopened.clone(),
+            Problem::MissingCondition => self.query_missing_condition.clone(),
+            Problem::MissingJoin(text) => fill(
+                &fill(
+                    &fill(&self.query_missing_join, "and", &self.query_and),
+                    "or",
+                    &self.query_or,
+                ),
+                "text",
+                text,
+            ),
         }
+    }
+
+    /// The name of the builder's `number`-th condition (issue #324).
+    pub fn filter_builder_condition(&self, number: usize) -> String {
+        fill(
+            &self.filter_builder_condition,
+            "number",
+            &number.to_string(),
+        )
+    }
+
+    /// The name of the builder's `number`-th inner group.
+    pub fn filter_builder_group(&self, number: usize) -> String {
+        fill(&self.filter_builder_group, "number", &number.to_string())
+    }
+
+    /// The name of the nested filter's chip button.
+    pub fn filter_builder_edit(&self, filter: &str) -> String {
+        fill(&self.filter_builder_edit, "filter", filter)
+    }
+
+    /// What is said when the nested filter was set.
+    pub fn filter_applied(&self, filter: &str) -> String {
+        fill(&self.filter_applied, "filter", filter)
     }
 
     /// The free-text chip (point 67).
@@ -1493,6 +1582,36 @@ mod host {
             &mut texts.query_wrong_operator,
             string("queryWrongOperator"),
         );
+        overwrite(&mut texts.query_or, string("queryOr"));
+        overwrite(&mut texts.query_unclosed, string("queryUnclosed"));
+        overwrite(&mut texts.query_unopened, string("queryUnopened"));
+        overwrite(
+            &mut texts.query_missing_condition,
+            string("queryMissingCondition"),
+        );
+        overwrite(&mut texts.query_missing_join, string("queryMissingJoin"));
+        overwrite(&mut texts.filter_builder, string("filterBuilder"));
+        overwrite(&mut texts.filter_builder_join, string("filterBuilderJoin"));
+        overwrite(&mut texts.filter_builder_all, string("filterBuilderAll"));
+        overwrite(&mut texts.filter_builder_any, string("filterBuilderAny"));
+        overwrite(
+            &mut texts.filter_builder_condition,
+            string("filterBuilderCondition"),
+        );
+        overwrite(
+            &mut texts.filter_builder_group,
+            string("filterBuilderGroup"),
+        );
+        overwrite(
+            &mut texts.filter_builder_add_condition,
+            string("filterBuilderAddCondition"),
+        );
+        overwrite(
+            &mut texts.filter_builder_add_group,
+            string("filterBuilderAddGroup"),
+        );
+        overwrite(&mut texts.filter_builder_edit, string("filterBuilderEdit"));
+        overwrite(&mut texts.filter_applied, string("filterApplied"));
         overwrite(&mut texts.empty_filtered, string("emptyFiltered"));
         overwrite(&mut texts.empty_source, string("emptySource"));
         overwrite(&mut texts.empty_reset, string("emptyReset"));

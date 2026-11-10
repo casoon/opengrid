@@ -504,10 +504,10 @@ tree.
 
 | | |
 |---|---|
-| The chip | One chip says it in words: `country is DE or amount ≥ 1000`; a group inside a group stands in parentheses, `country is DE and (amount ≥ 1000 or qty < 5)`. Its text is a button named `Edit …` that opens the builder; its remove button takes the whole filter, and so does "Remove all". |
+| The chip | One chip says it in words: `country is DE or amount greater or equal 1000`; a group inside a group stands in parentheses, `country is DE and (amount greater or equal 1000 or qty less than 5)`. Its text is a button named `Edit …` that opens the builder; its remove button takes the whole filter, and so does "Remove all". |
 | With the rest | Everything is **and-ed**: [the page's `filter`](#the-pages-filter), the filter row, the facets, the free-text search and the nested filter. A row shows when it passes all of them. The facets count under it, like under the filter row; select-all, `get_query`, the exports and the [print table](#printing-the-view) run under it, and the print table's caption says it. |
 | The view | [`where`](#the-view) holds the tree, in the wire form of a query's `filter`. |
-| Setting it | Is said once, with the result: `2 matches · Filter set: country is DE or amount ≥ 1000`. The selection goes, as with every filter. `opengrid-view-change` fires. |
+| Setting it | Is said once, with the result: `66 matches · Filter set: country is DE or amount greater or equal 1000`. The selection is treated as under any filter: one by position goes, one by key stays. `opengrid-view-change` fires. |
 
 **The builder** opens from **Advanced filter** in the toolbar, and from the chip.
 It is a native modal `<dialog>`: the page behind it is inert, `Tab` stays inside,
@@ -1580,11 +1580,11 @@ would make it invisible), a **selected row** carries an inset accent bar as well
 as the tint (colour alone would be 1.4.1), and `prefers-reduced-motion` beats a
 theme that animates a part.
 
-**Parts:** `action`, `action-cell`, `action-header`, `add-field`, `add-filter`, `add-grouping`, `body`, `bulk`, `bulk-apply`, `bulk-cancel`, `caption`, `cell`, `cell-error`, `cell-saved`, `cell-saving`, `chip`, `chip-move`, `chip-remove`, `chips`,
+**Parts:** `action`, `action-cell`, `action-header`, `add-field`, `add-filter`, `add-grouping`, `body`, `bulk`, `bulk-apply`, `bulk-cancel`, `caption`, `cell`, `cell-error`, `cell-saved`, `cell-saving`, `chip`, `chip-edit`, `chip-move`, `chip-remove`, `chips`,
 `chips-clear`, `column-menu`, `column-menu-button`, `column-toggle`, `columns`, `columns-toggle`, `density`, `drill-down`,
 `editor`, `empty`, `empty-reset`, `empty-text`, `facet`, `facet-bounds`, `facet-cost`, `facet-count`,
 `facet-pill`, `facet-pills`, `facet-value`, `facets`, `facets-head`, `facets-toggle`, `filter`,
-`filter-clear`, `filter-dialog`, `filter-operator`, `filter-row-toggle`, `filter-value`, `footer`,
+`filter-builder`, `filter-builder-dialog`, `filter-clear`, `filter-dialog`, `filter-operator`, `filter-row-toggle`, `filter-value`, `footer`,
 `field-group`, `field-menu`, `group-mark`, `group-toggle`, `grouping-menu`, `header`, `layout`, `list`, `list-item`, `list-item-remove`, `listbox`, `menu-label`, `operator-menu`, `page-first`, `page-label`, `page-last`, `page-next`,
 `page-previous`, `pager`, `paste-apply`, `paste-discard`, `paste-preview`, `paste-summary`, `row`, `row-header`, `search`, `search-hint`, `search-input`, `search-list`,
 `select`, `select-all`, `select-mark`, `sort-button`, `sort-direction`, `sort-index`, `source`, `status`,

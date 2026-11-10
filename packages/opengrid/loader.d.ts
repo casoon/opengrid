@@ -696,6 +696,23 @@ export interface FilterEntry {
   value: string;
 }
 
+/**
+ * The nested filter of a view (`where`): conditions joined by `and` and `or`,
+ * in the wire form of a query's `filter` — values typed, so a number is a
+ * number and a decimal or a date a string. What the search expression and the
+ * builder dialog can write; `not` and the operator `in` are not part of it.
+ */
+export type ViewFilter =
+  | { and: ViewFilter[] }
+  | { or: ViewFilter[] }
+  | {
+      field: string;
+      op: Exclude<FilterOperator, "is_null" | "is_not_null" | "is_empty" | "has_all">;
+      value: string | number | boolean;
+    }
+  | { field: string; op: "has_all"; value: Array<string | number> }
+  | { field: string; op: "is_null" | "is_not_null" | "is_empty" };
+
 /** A facet selection: values for `list`/`pills`, bounds for `range`/`period`. */
 export type FacetSelection =
   | { values: WireValue[] }
@@ -703,8 +720,8 @@ export type FacetSelection =
   | { from: string; to: string };
 
 /**
- * Sort, filters, column layout, density, grouping, aggregates and facets as
- * one value — as `get_view` writes it, every field present. `set_view` reads
+ * Sort, filters, the nested filter, column layout, density, grouping,
+ * aggregates and facets as one value — as `get_view` writes it, every field present. `set_view` reads
  * some fields more leniently (a missing direction is `asc`, a missing operator
  * `eq`); the types ask for the full form on purpose, so a saved view says what
  * it means. A saved view is this value with a name on it. A selection by key
@@ -731,6 +748,12 @@ export interface View {
    * record before it selects; a view without the field selects nothing.
    */
   selected?: Array<string | number | boolean>;
+  /**
+   * The nested filter: the one filter with `or` across columns, and-ed onto
+   * the filter row's (`filters`), the facets' and the page's. Left out while
+   * there is none; a view without the field has none.
+   */
+  where?: ViewFilter;
 }
 
 /** A pivot measure, as the contract writes it: `{ field: "qty", fn: "sum", as: "total" }`. */
@@ -930,6 +953,21 @@ export type TextKey =
   | "queryUnknownColumn"
   | "queryMissingValue"
   | "queryWrongOperator"
+  | "queryOr"
+  | "queryUnclosed"
+  | "queryUnopened"
+  | "queryMissingCondition"
+  | "queryMissingJoin"
+  | "filterBuilder"
+  | "filterBuilderJoin"
+  | "filterBuilderAll"
+  | "filterBuilderAny"
+  | "filterBuilderCondition"
+  | "filterBuilderGroup"
+  | "filterBuilderAddCondition"
+  | "filterBuilderAddGroup"
+  | "filterBuilderEdit"
+  | "filterApplied"
   | "emptyFiltered"
   | "emptySource"
   | "emptyReset"

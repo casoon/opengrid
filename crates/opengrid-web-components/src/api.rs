@@ -300,6 +300,10 @@ fn parts() -> Vec<String> {
     parts.push("chip".to_owned());
     parts.push("chip-remove".to_owned());
     parts.push("chips-clear".to_owned());
+    // The nested filter's chip is a button, and its builder a dialog built
+    // when it opens (issue #324).
+    parts.push("chip-edit".to_owned());
+    parts.push("filter-builder-dialog".to_owned());
     // The quick doors of issue #34 open popups built when they open.
     parts.push("filter-dialog".to_owned());
     parts.push("grouping-menu".to_owned());
@@ -413,10 +417,10 @@ custom properties (computed)
   --og-accent-soft --og-accent-ink --og-selected --og-hover
 
 parts
-  action action-cell action-header add-field add-filter add-grouping body bulk bulk-apply bulk-cancel caption cell cell-error cell-saved cell-saving chip chip-move chip-remove chips chips-clear column-menu \
+  action action-cell action-header add-field add-filter add-grouping body bulk bulk-apply bulk-cancel caption cell cell-error cell-saved cell-saving chip chip-edit chip-move chip-remove chips chips-clear column-menu \
 column-menu-button column-toggle columns columns-toggle density drill-down editor empty empty-reset \
 empty-text facet facet-bounds facet-cost facet-count facet-pill facet-pills facet-value \
-facets facets-head facets-toggle field-group field-menu filter filter-clear filter-dialog filter-operator \
+facets facets-head facets-toggle field-group field-menu filter filter-builder filter-builder-dialog filter-clear filter-dialog filter-operator \
 filter-row-toggle filter-value footer group-mark group-toggle grouping-menu header layout list list-item list-item-remove listbox menu-label operator-menu \
 page-first page-label page-last page-next page-previous pager paste-apply paste-discard paste-preview paste-summary row row-header search search-hint \
 search-input search-list select select-all select-mark sort-button sort-direction \
@@ -428,12 +432,12 @@ aggregateNone aggregateRange aggregateSum apply booleanFalse booleanTrue bulkApp
 columnFull columnHidden columnMenu columnMoved columnShown columnWidth columnsGroup densityComfortable \
 densityCompact densityGroup densityNormal empty emptyFiltered emptyReset emptySource emptyValue \
 error errorUnknown facetChipValues facetFrom facetQueries facetTo facetsGroup facetsReset \
-facetsToggle fieldEarlier fieldLater fieldRemove filterAny filterColumn filterColumnLabel filterConditionLabel filterGroup filterInvalid \
+facetsToggle fieldEarlier fieldLater fieldRemove filterAny filterApplied filterBuilder filterBuilderAddCondition filterBuilderAddGroup filterBuilderAll filterBuilderAny filterBuilderCondition filterBuilderEdit filterBuilderGroup filterBuilderJoin filterColumn filterColumnLabel filterConditionLabel filterGroup filterInvalid \
 filterRemoved filterRowToggle filterValueLabel filtersCleared groupByColumn groupChip \
 groupCollapsed groupExpanded groupInvalid groupRow groupSecondLevel \
 groupingFull hideColumn lang listItemAdded listItemRemove listItemRemoved loading matchesOne matchesOther newRow noValue nothingToAdd operatorLabel \
 operators pageFirst pageLast pageNext pageOf pagePrevious pasteApplied pasteApply pasteBadOne pasteBadOther pasteBlocked pasteCutOff pasteDiscard pasteDiscarded pastePreview pasteUnreadable pivotColumns pivotDrillDown pivotFilterHint pivotFilterLabel pivotFilters pivotMeasures pivotRows pivotToolbar queriesOne queriesOther queryAnd \
-queryMissingValue queryUnknownColumn queryWrongOperator redoAdded redoCell redoNothing redoPaste rowAdded rowsOne rowsOther searchChip searchHint \
+queryMissingCondition queryMissingJoin queryMissingValue queryOr queryUnclosed queryUnknownColumn queryUnopened queryWrongOperator redoAdded redoCell redoNothing redoPaste rowAdded rowsOne rowsOther searchChip searchHint \
 searchLabel searchPlaceholder searchSuggestions selectAll selectedAll selectionCleared selectionMissing sortAscending \
 sortDescending sortKey sourceHybrid sourceLocal sourceRemote sourceWorker subtotal subtreeCell subtreeOnly toolbarGroup total \
 totalRow treeContext treeGroupIgnored treeLevelTooLarge treeOrphans treeRefused typeBool typeDate typeInteger typeList typeNumber typeText typeTime undoAdded undoCell undoNothing undoPaste ungroupColumn validationError validationWarning valueLabel
