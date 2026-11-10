@@ -654,6 +654,13 @@ export interface ColumnConfig {
    * (`Alt`+`Shift`+`←`/`→` on the header, the column menu). The grid only.
    */
   pin?: Pin;
+  /**
+   * The band the column stands under: a header it shares with the other
+   * columns that name the same one. A band is always in one piece — its
+   * columns stand together, move inside it, and are pinned with it. The grid
+   * only.
+   */
+  band?: string;
   align?: "start" | "end" | "center";
   mono?: boolean;
   emphasis?: boolean;

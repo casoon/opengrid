@@ -218,6 +218,8 @@ fn parts() -> Vec<String> {
                 id: "a".to_owned(),
                 label: "A".to_owned(),
             }],
+            // And with a band (issue #319), whose header cell is a part.
+            bands: &[("Order".to_owned(), 0, 2)],
         },
     );
     // The table and the pivot **with** data (issue #29): their header, row
@@ -418,7 +420,7 @@ custom properties (computed)
   --og-accent-soft --og-accent-ink --og-selected --og-hover
 
 parts
-  action action-cell action-header add-field add-filter add-grouping body bulk bulk-apply bulk-cancel caption cell cell-error cell-saved cell-saving chip chip-calc chip-edit chip-move chip-remove chips chips-clear column-menu \
+  action action-cell action-header add-field add-filter add-grouping band body bulk bulk-apply bulk-cancel caption cell cell-error cell-saved cell-saving chip chip-calc chip-edit chip-move chip-remove chips chips-clear column-menu \
 column-menu-button column-toggle columns columns-toggle density drill-down editor empty empty-reset \
 empty-text facet facet-bounds facet-cost facet-count facet-pill facet-pills facet-value \
 facets facets-head facets-toggle field-group field-menu filter filter-builder filter-builder-dialog filter-clear filter-dialog filter-operator \

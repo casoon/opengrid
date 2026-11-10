@@ -65,6 +65,21 @@ const presets = [
     </Demo>
 
     <Demo
+      title="Column bands — a header above several columns"
+      lead="Customer and country stand under the band Customer; amount, quantity and order date under Order. ↑ on a column's header goes to its band, ↓ comes back. Ctrl+← and Ctrl+→ move a column inside its band, and on the band's own cell they move the band with all its columns; Alt+Shift+← pins the whole band at the start. Each cell under a band names the band and the column as its headers."
+    >
+      <div class="og-demo og-demo--site">
+        <opengrid-grid
+          id="og-bands-grid"
+          label="Orders, in bands"
+          datasource="orders"
+          columns="id,customer,country,amount,qty,ordered_on"
+          window-size="30"
+          column-menu></opengrid-grid>
+      </div>
+    </Demo>
+
+    <Demo
       title="Views are values"
       lead="The grid hands out its whole view — sort, filters, columns, density, grouping, facets — as one value, and takes one back in a single query. A saved view is that value with a name on it; the tabs below are page code, not part of the element. Change something in the grid and the view below follows."
     >
@@ -151,6 +166,19 @@ const presets = [
           ordered_on: { facet: 'period', aggregate: 'range' },
         };
         for (const host of document.querySelectorAll('opengrid-grid')) og.set_columns(host, columns);
+        // Bands: a column names the band it stands under, and the columns that name the
+        // same one share its header.
+        const band = (name, band) => [name, { ...columns[name], band }];
+        og.set_columns(document.getElementById('og-bands-grid'), {
+          ...columns,
+          ...Object.fromEntries([
+            band('customer', 'Customer'),
+            band('country', 'Customer'),
+            band('amount', 'Order'),
+            band('qty', 'Order'),
+            band('ordered_on', 'Order'),
+          ]),
+        });
         for (const host of document.querySelectorAll('opengrid-grid, opengrid-table')) {
           og.set_provider(host, createLocalProvider(engine));
         }

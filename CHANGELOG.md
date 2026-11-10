@@ -60,6 +60,13 @@ Two things belong in every release entry and are easy to leave out:
   texts `pinGroup`, `pinNone`, `pinStart`, `pinEnd`, `columnPinnedStart`, `columnPinnedEnd`,
   `columnUnpinned` and `pinsReleased`
   ([#316](https://github.com/casoon/opengrid/issues/316), [Pinned columns](docs/api.md#pinned-columns)).
+- **Grid:** column bands, a header above several columns. A column names its band in
+  `set_columns` (`band: "Address"`), and the columns that name the same one share a header cell in
+  a row above their own; one level. A band is always in one piece: a column moves inside its band,
+  `Ctrl`/`Cmd`+`←`/`→` on the band's cell moves the band with its columns, hiding its last shown
+  column hides it, and pinning one of its columns pins the band. The arrow keys cross the two
+  header rows, and a data cell names its band and its column as its headers. New part `band`
+  ([#319](https://github.com/casoon/opengrid/issues/319), [Column bands](docs/api.md#column-bands)).
 - **Grid:** `filter`, the page's filter — a wire filter as JSON, and-ed onto every query the grid
   sends. It is not the reader's: no chip, not in the view, and "remove all" leaves it
   ([#330](https://github.com/casoon/opengrid/issues/330), [The page's filter](docs/api.md#the-pages-filter)).
@@ -111,6 +118,11 @@ Two things belong in every release entry and are easy to leave out:
   `columns.pinned` (`{}` for none; `ViewInput`, which `set_view` takes, does not); in the
   `opengrid-grid` crate `ColumnLayout::effective` and `ColumnLayout::move_column` take the pins of
   the page as a further argument ([#316](https://github.com/casoon/opengrid/issues/316)).
+- **Grid:** in the `opengrid-grid` crate the page's part of the column arrangement is one value,
+  `layout::PageColumns` (its pins and its bands). **What breaks:** `ColumnLayout::effective`,
+  `pin`, `set_pin` and `move_column` take `&PageColumns` where they took the page's pins as a
+  slice. The elements and the npm package are not affected
+  ([#319](https://github.com/casoon/opengrid/issues/319)).
 - **Grid:** setting `group-by` on a grid that selects by position now says `Selection cleared` and
   fires `opengrid-selection-change` when it drops a selection; it was dropped silently
   ([#322](https://github.com/casoon/opengrid/issues/322)).
