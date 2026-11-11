@@ -85,6 +85,7 @@
 //! answered whole, so nothing is streamed; it takes a place among
 //! `max_concurrent_exports` all the same, and `max_xlsx_rows` bounds it.
 
+use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
@@ -172,6 +173,7 @@ pub(crate) async fn export(
     };
     let (source, query) = admit(&state, &source_name, &headers, &body, &limits, None)?;
     let format = format_of(&uri, headers.get(header::ACCEPT))?;
+    let header_texts = header_texts_of(&uri, &format)?;
     // A tree export builds the whole tree before it counts (issue #218).
     crate::api::within_tree_bound(&state, &source, &query).await?;
 
@@ -184,6 +186,7 @@ pub(crate) async fn export(
         Arc::clone(&source),
         query,
         format.clone(),
+        header_texts,
         state.max_export_rows,
         state.max_xlsx_rows,
         state.timeout,
@@ -439,6 +442,7 @@ async fn stream(
     source: Arc<Source>,
     query: ValidatedQuery,
     format: Format,
+    header_texts: BTreeMap<String, String>,
     max_rows: u64,
     max_xlsx_rows: u64,
     timeout: Duration,
@@ -521,7 +525,7 @@ async fn stream(
         Some(Ok(first)) => first,
     };
 
-    let mut writer = match Writer::new(format, &source.name) {
+    let mut writer = match Writer::new(format, &source.name, header_texts) {
         Ok(writer) => writer,
         Err(message) => {
             let _ = ready.send(Err(reporter.backend(message).into()));
@@ -700,11 +704,15 @@ enum Writer {
 }
 
 impl Writer {
-    fn new(format: Format, source: &str) -> Result<Self, String> {
+    fn new(
+        format: Format,
+        source: &str,
+        headers: BTreeMap<String, String>,
+    ) -> Result<Self, String> {
         Ok(match format {
-            Format::Csv(options) => Writer::Csv(CsvWriter::new(options)),
+            Format::Csv(options) => Writer::Csv(CsvWriter::new(options).with_headers(headers)),
             Format::Json => Writer::Json(JsonWriter::new()),
-            Format::Xlsx => Writer::Xlsx(Box::new(XlsxWriter::new(source)?)),
+            Format::Xlsx => Writer::Xlsx(Box::new(XlsxWriter::new(source)?.with_headers(headers))),
         })
     }
 
@@ -737,6 +745,39 @@ impl Writer {
     }
 }
 
+/// The prefix of a header text parameter: `header.city=Address · City` names
+/// the column `city` as the file's header says (issue #353).
+const HEADER_PREFIX: &str = "header.";
+
+/// The header texts of a CSV or XLSX export, by field name. A JSON export has
+/// no header row, and a text that would do nothing is refused, not ignored.
+fn header_texts_of(uri: &Uri, format: &Format) -> Result<BTreeMap<String, String>, WireError> {
+    let Parameters(pairs) =
+        Parameters::<Vec<(String, String)>>::try_from_uri(uri).map_err(|error| {
+            WireError::new(ErrorCode::Malformed, format!("the query string: {error}"))
+        })?;
+    let mut texts = BTreeMap::new();
+    for (key, value) in pairs {
+        let Some(column) = key.strip_prefix(HEADER_PREFIX) else {
+            continue;
+        };
+        if *format == Format::Json {
+            return Err(WireError::new(
+                ErrorCode::Malformed,
+                format!("{key:?} names a header, and a JSON export has none"),
+            ));
+        }
+        if column.is_empty() {
+            return Err(WireError::new(
+                ErrorCode::Malformed,
+                format!("{key:?}: the column is missing after {HEADER_PREFIX}"),
+            ));
+        }
+        texts.insert(column.to_owned(), value);
+    }
+    Ok(texts)
+}
+
 /// The format and its options, from the request's query string and `Accept`.
 fn format_of(uri: &Uri, accept: Option<&HeaderValue>) -> Result<Format, WireError> {
     let malformed = |message: String| WireError::new(ErrorCode::Malformed, message);
@@ -746,9 +787,12 @@ fn format_of(uri: &Uri, accept: Option<&HeaderValue>) -> Result<Format, WireErro
 
     let mut seen: Vec<&str> = Vec::new();
     for (key, _) in &pairs {
-        if key != "format" && !CSV_PARAMETERS.contains(&key.as_str()) {
+        if key != "format"
+            && !CSV_PARAMETERS.contains(&key.as_str())
+            && !key.starts_with(HEADER_PREFIX)
+        {
             return Err(malformed(format!(
-                "{key:?} is not a parameter of an export (format, {})",
+                "{key:?} is not a parameter of an export (format, {}, {HEADER_PREFIX}<column>)",
                 CSV_PARAMETERS.join(", ")
             )));
         }

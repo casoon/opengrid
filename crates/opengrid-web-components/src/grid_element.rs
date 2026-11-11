@@ -3461,6 +3461,11 @@ pub(crate) fn set_cell_templates(host: &HtmlElement, templates: &JsValue) {
     template::store(host, templates);
 }
 
+/// [`crate::element::get_export_headers`] (issue #353).
+pub(crate) fn export_headers(host: &HtmlElement) -> std::collections::BTreeMap<String, String> {
+    print::export_headers(host)
+}
+
 /// [`crate::element::refresh`] (issue #328).
 pub(crate) fn refresh(host: &HtmlElement) {
     live::refresh(host);

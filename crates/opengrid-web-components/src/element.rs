@@ -286,6 +286,24 @@ pub fn prepare_print(host: &HtmlElement) -> js_sys::Promise {
     crate::grid_element::prepare_print(host)
 }
 
+/// The header texts of the banded columns shown, `{ column: "Band · Title" }`
+/// (issue #353): pass it to `exportRows` as `headers` and a file names the band
+/// of a banded column. Columns without a band are not in it and keep their
+/// field name.
+#[cfg(feature = "grid")]
+#[wasm_bindgen(js_name = get_export_headers)]
+pub fn get_export_headers(host: &HtmlElement) -> JsValue {
+    let object = js_sys::Object::new();
+    for (name, text) in crate::grid_element::export_headers(host) {
+        let _ = js_sys::Reflect::set(
+            &object,
+            &JsValue::from_str(&name),
+            &JsValue::from_str(&text),
+        );
+    }
+    object.into()
+}
+
 /// The pivot as it is shown, as CSV (issue #3).
 ///
 /// **The element exports what it shows, rather than handing out a query to

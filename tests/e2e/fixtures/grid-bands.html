@@ -90,6 +90,8 @@
           });
         }
         window.__opengridModule = loader.module;
+        // A provider of its own for `exportRows` (issue #353).
+        window.__provider = { kind: "local", execute: (queryJson) => engine.execute(queryJson) };
         return { fallback: loader.fallback };
       }
 
