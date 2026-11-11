@@ -1400,7 +1400,7 @@ import { exportRows } from "@casoon/opengrid";
 
 const controller = new AbortController();
 const blob = await exportRows(provider, loader.module.get_query(grid), {
-  format: "csv",                       // or "json"; "xlsx" through a server
+  format: "csv",                       // or "json", or "xlsx" — by the server, or in the tab
   signal: controller.signal,
   onProgress: ({ rows, total }) => { /* rows written so far, of total */ },
 });
@@ -1416,9 +1416,9 @@ setTimeout(() => URL.revokeObjectURL(link.href), 0);
 
 | Option | |
 |---|---|
-| `format` | `"csv"` (default) or `"json"`. |
+| `format` | `"csv"` (default), `"json"` or `"xlsx"`. A workbook is written by the server where the provider exports there, and in the tab otherwise, by a module of its own that is loaded the first time ([XLSX](../guides/export/#xlsx)); it needs the rows to fit `maxRows` and an Excel sheet (1 048 575), and holds them in memory. |
 | `chunkSize` | Rows per request; 10 000 by default — the server's `max_limit`. Not used when the provider exports by itself. |
-| `maxRows` | 1 000 000 by default. More matches than that is an error with a sentence and the code `too_many_rows` ([Errors](#errors)), before anything else is fetched — never a truncated file. |
+| `maxRows` | 1 000 000 by default — 250 000 for an XLSX written in the tab, which holds the workbook in memory. More matches than that is an error with a sentence and the code `too_many_rows` ([Errors](#errors)), before anything else is fetched — never a truncated file. |
 | `onProgress` | Called after each piece with `{ rows, total }`. |
 | `signal` | An `AbortSignal`. An abort rejects with an `AbortError` at once, hands the signal to the provider so an HTTP request stops, and gives no `Blob`. |
 | `delimiter`, `bom`, `protectFormulas`, `null` | **The CSV options**, each optional, for a CSV only — `get_pivot` takes the same: `delimiter`, one character, `,` by default (`;` for a German Excel); `bom`, a UTF-8 byte order mark, on; `protectFormulas`, the guard against formula injection, on; `null`, how NULL is written, empty (`\N` reads back into opengrid) — under the guard not starting with `=`, `+`, `-`, `@` or a tab, since it is written into every empty cell unguarded. |

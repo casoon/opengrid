@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { inflateRawSync } from "node:zlib";
+import { unzip } from "./helpers.js";
 
 // A pivot exported as it is shown (issue #3): `get_pivot` against a real
 // `opengrid-server` over the conformance data set.
@@ -296,26 +296,6 @@ test("an answer of the wrong shape is an error with a sentence, not a trap", asy
 // is opened here, not only received: the archive is read with `node:zlib`, the
 // sheet's cells are taken from its XML, and each is held against the field at
 // the same place in `get_pivot`'s CSV.
-
-/** The files of a ZIP archive by name, read from its central directory. */
-function unzip(file) {
-  const end = file.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
-  expect(end, "a ZIP archive ends in its directory").toBeGreaterThan(-1);
-  const files = new Map();
-  let at = file.readUInt32LE(end + 16);
-  for (let entry = file.readUInt16LE(end + 10); entry > 0; entry--) {
-    const method = file.readUInt16LE(at + 10);
-    const size = file.readUInt32LE(at + 20);
-    const nameLength = file.readUInt16LE(at + 28);
-    const local = file.readUInt32LE(at + 42);
-    const name = file.toString("utf8", at + 46, at + 46 + nameLength);
-    const start = local + 30 + file.readUInt16LE(local + 26) + file.readUInt16LE(local + 28);
-    const data = file.subarray(start, start + size);
-    files.set(name, method === 0 ? data : inflateRawSync(data));
-    at += 46 + nameLength + file.readUInt16LE(at + 30) + file.readUInt16LE(at + 32);
-  }
-  return files;
-}
 
 const unescape = (text) =>
   text

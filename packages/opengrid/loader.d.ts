@@ -445,14 +445,21 @@ export interface ExportProgress {
  */
 export interface ExportOptions extends CsvOptions {
   /**
-   * `"csv"` (the default), `"json"` — an array of row objects — or `"xlsx"`,
-   * which only a provider that exports on the server (`createRestProvider`)
-   * writes; with any other provider it is a `TypeError`.
+   * `"csv"` (the default), `"json"` — an array of row objects — or `"xlsx"`, a
+   * workbook: written by the server where the provider exports there
+   * (`createRestProvider`), and in the tab for any other provider by a module
+   * of its own that `exportRows` loads the first time (`@casoon/opengrid/xlsx/`,
+   * about 250 KB brotli). The tab holds the whole workbook in memory, so
+   * `maxRows` bounds it — 250 000 by default there — and more rows than an Excel
+   * sheet holds (1 048 575) is an error.
    */
   format?: "csv" | "json" | "xlsx";
   /** Rows per request; 10 000 by default, the server's `max_limit`. */
   chunkSize?: number;
-  /** More matches than this is an error, never a truncated file; 1 000 000 by default. */
+  /**
+   * More matches than this is an error, never a truncated file; 1 000 000 by
+   * default, and 250 000 for an XLSX written in the tab.
+   */
   maxRows?: number;
   /** Called after each piece. */
   onProgress?: (progress: ExportProgress) => void;

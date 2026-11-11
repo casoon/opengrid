@@ -134,3 +134,11 @@ grid+pivot    338900  # 335539 B, 2026-11-10, #326
 # and and-ed into a view's query) grew it by 1.0 KiB, to 156737 B — inside
 # the bound, with less room than two builds can differ by on two machines.
 engine        158300  # 156737 B, 2026-11-10, #324
+
+# The XLSX writer of the tab (#332), a module of its own that `exportRows`
+# loads when a page asks for a workbook, so the element and the engine do not
+# carry it. 245 537 B brotli: `rust_xlsxwriter` and its XML templates, `zip` with
+# `zlib-rs`, and the answer readers. The first estimate in the issue, about
+# 20-30 KB, came from a test crate whose writer LLVM had mostly dropped; this is
+# the real module.
+xlsx          248000  # 245537 B, 2026-11-11, #332
