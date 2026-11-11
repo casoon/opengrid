@@ -104,7 +104,11 @@
 # built from the schema, each field's editor, the check of every field before
 # anything is saved, one cell edit per changed field as one history step, the
 # dialog's sheet and six texts) grew it by 4.2 KiB, to 340662 B.
-grid+pivot    342300  # 340662 B, 2026-11-11, #325
+# Raised 2026-11-11 from 338900: a block of cells marked and copied (#327: the
+# range with its keys, clicks and drag, its marks, the copy as values with the
+# formula guard, the guard taken off in a paste, three texts) grew it by
+# 4.1 KiB, to 340595 B.
+grid+pivot    346500  # 344125 B, 2026-11-11, #325 and #327 together
 # Raised 2026-09-30 from 108000: the bound was not raised with 0.7.0, which
 # shipped the engine at 115.2 KiB already (CHANGELOG); rule P9's sorted
 # grouping sets and order sets (#108) added the rest, to 121610 B.
