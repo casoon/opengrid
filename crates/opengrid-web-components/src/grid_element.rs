@@ -6899,6 +6899,79 @@ fn measured(
     Ok(result)
 }
 
+/// What a grouped or a tree run starts from.
+struct RunStart {
+    provider: Rc<dyn opengrid_web_core::provider::DataProvider>,
+    source: String,
+    columns: Vec<String>,
+    pool: u64,
+    mode: String,
+    filter: Option<FilterExpr>,
+    /// The number of this run: it supersedes every run that began before it.
+    generation: u64,
+}
+
+/// The start the grouped and the tree runs share (#355): the provider and the
+/// source, the columns, the filter, and the new generation.
+///
+/// `None` when there is nothing to ask — no provider, no source — or when a
+/// bound is not a value of its column, which is the same sentence for the
+/// status line as ungrouped ([`run_query`]).
+fn begin_run(host: &HtmlElement, grid_runtime: &Rc<RefCell<GridRuntime>>) -> Option<RunStart> {
+    let provider = provider(host)?;
+    let source = host.get_attribute(DATASOURCE_ATTRIBUTE)?;
+    let columns = columns_of(host);
+    let pool = pool_of(host);
+    let mode = host.get_attribute(MODE_ATTRIBUTE).unwrap_or_default();
+
+    // The filter row *and* the facets (point 66): a facet change makes the
+    // group counts stale exactly like a filter change does. This fell back to
+    // the filter row alone once — silently dropping the facets and the search,
+    // and showing rows that `get_query` (which answers `null` here) would not
+    // export.
+    let effective = effective_filter(host, &grid_runtime.borrow(), None);
+    let filter = match effective {
+        Ok(filter) => filter,
+        Err(message) => {
+            grid_runtime
+                .borrow_mut()
+                .state
+                .set_status(GridStatus::Error(message));
+            render(host, false);
+            return None;
+        }
+    };
+    let generation = {
+        let mut runtime = grid_runtime.borrow_mut();
+        runtime.generation += 1;
+        runtime.generation
+    };
+    Some(RunStart {
+        provider,
+        source,
+        columns,
+        pool,
+        mode,
+        filter,
+        generation,
+    })
+}
+
+/// The lines before a run that asks again: "loading" in the status line — not
+/// when only the window moves — and the count of the queries it asks, from here
+/// (issue #33).
+fn announce_loading(host: &HtmlElement, grid_runtime: &Rc<RefCell<GridRuntime>>, kind: QueryKind) {
+    if kind == QueryKind::Data {
+        grid_runtime
+            .borrow_mut()
+            .state
+            .set_status(GridStatus::Loading);
+        render(host, false);
+        refresh_facets(host);
+    }
+    grid_runtime.borrow_mut().queries = 0;
+}
+
 /// The grouped counterpart of [`run_query`]: several queries, one result.
 ///
 /// 1. the level-1 groups with their row counts — only when they are not loaded
@@ -6917,39 +6990,21 @@ fn run_grouped(
     kind: QueryKind,
     focus: bool,
 ) {
-    let Some(provider) = provider(host) else {
+    let Some(RunStart {
+        provider,
+        source,
+        columns,
+        pool,
+        mode,
+        filter,
+        generation,
+    }) = begin_run(host, grid_runtime)
+    else {
         return;
     };
-    let Some(source) = host.get_attribute(DATASOURCE_ATTRIBUTE) else {
-        return;
-    };
-    let columns = columns_of(host);
-    let pool = pool_of(host);
-    let mode = host.get_attribute(MODE_ATTRIBUTE).unwrap_or_default();
 
-    // The filter row *and* the facets (point 66): a facet change makes the
-    // group counts stale exactly like a filter change does. A bound that is
-    // not a value of its column is the same sentence for the status line as
-    // ungrouped (`run_query`). This fell back to the filter row alone once —
-    // silently dropping the facets and the search, and showing rows that
-    // `get_query` (which answers `null` here) would not export.
-    let effective = effective_filter(host, &grid_runtime.borrow(), None);
-    let filter = match effective {
-        Ok(filter) => filter,
-        Err(message) => {
-            grid_runtime
-                .borrow_mut()
-                .state
-                .set_status(GridStatus::Error(message));
-            render(host, false);
-            return;
-        }
-    };
-
-    let (mut sorts, offset, generation, need_groups, choice) = {
+    let (mut sorts, offset, need_groups, choice) = {
         let mut runtime = grid_runtime.borrow_mut();
-        let generation = runtime.generation + 1;
-        runtime.generation = generation;
         // Another filter: what is selected by key stays (issue #322), but
         // need not be among the rows any more.
         if runtime
@@ -6964,7 +7019,6 @@ fn run_grouped(
         (
             runtime.state.sort_keys(),
             runtime.state.window().offset,
-            generation,
             need_groups,
             runtime.aggregate_choice.clone(),
         )
@@ -6976,16 +7030,7 @@ fn run_grouped(
     {
         sorts.push((first.clone(), "asc"));
     }
-    if kind == QueryKind::Data {
-        grid_runtime
-            .borrow_mut()
-            .state
-            .set_status(GridStatus::Loading);
-        render(host, false);
-        refresh_facets(host);
-    }
-    // The grouped path counts each query it asks, from here (issue #33).
-    grid_runtime.borrow_mut().queries = 0;
+    announce_loading(host, grid_runtime, kind);
 
     let host = host.clone();
     let grid_runtime = grid_runtime.clone();
@@ -7197,6 +7242,36 @@ fn run_grouped(
     });
 }
 
+/// The sentence that says a group or a node opened or closed: its value as the
+/// grid shows it, how many rows or children it holds, and which way it went.
+fn toggled_message(
+    host: &HtmlElement,
+    schema: &opengrid_types::Schema,
+    value: &Value,
+    column: &str,
+    count: u64,
+    open: bool,
+) -> String {
+    let texts = texts(host);
+    let label = grid::group_value_text(
+        value,
+        column,
+        schema.fields(),
+        &texts,
+        &Formatter::new(&formats(host), schema),
+    );
+    texts.group_toggled(&label, count, open)
+}
+
+/// Says a toggle once, riding with the result that follows, and asks for the
+/// window again — as a window, so the status line stays quiet — with the focus
+/// kept.
+fn announce_toggle(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>, message: String) {
+    runtime.borrow_mut().state.set_notice(message);
+    run_query(host, QueryKind::Window, true);
+    dispatch_view(host);
+}
+
 /// Opens or closes the group whose header is at `position`.
 ///
 /// The focus stays where it is: a group's own position does not move when it
@@ -7225,19 +7300,9 @@ fn toggle_group(host: &HtmlElement, position: u64) {
         };
         let open = grouping.toggle(&keys);
         let column = grouping.by()[level - 1].clone();
-        let texts = texts(host);
-        let label = grid::group_value_text(
-            &value,
-            &column,
-            schema.fields(),
-            &texts,
-            &Formatter::new(&formats(host), &schema),
-        );
-        texts.group_toggled(&label, count, open)
+        toggled_message(host, &schema, &value, &column, count, open)
     };
-    runtime.borrow_mut().state.set_notice(message);
-    run_query(host, QueryKind::Window, true);
-    dispatch_view(host);
+    announce_toggle(host, &runtime, message);
 }
 
 /// The display position of the group header the active cell stands on, if any.
@@ -7270,32 +7335,20 @@ fn run_tree(
     kind: QueryKind,
     focus: bool,
 ) {
-    let Some(provider) = provider(host) else {
+    let Some(RunStart {
+        provider,
+        source,
+        columns,
+        pool,
+        mode,
+        filter,
+        generation,
+    }) = begin_run(host, grid_runtime)
+    else {
         return;
     };
-    let Some(source) = host.get_attribute(DATASOURCE_ATTRIBUTE) else {
-        return;
-    };
-    let columns = columns_of(host);
-    let pool = pool_of(host);
-    let mode = host.get_attribute(MODE_ATTRIBUTE).unwrap_or_default();
-
-    let effective = effective_filter(host, &grid_runtime.borrow(), None);
-    let filter = match effective {
-        Ok(filter) => filter,
-        Err(message) => {
-            grid_runtime
-                .borrow_mut()
-                .state
-                .set_status(GridStatus::Error(message));
-            render(host, false);
-            return;
-        }
-    };
-    let (sorts, offset, generation, key, parent, choice) = {
+    let (sorts, offset, key, parent, choice) = {
         let mut runtime = grid_runtime.borrow_mut();
-        let generation = runtime.generation + 1;
-        runtime.generation = generation;
         let sorts = runtime.state.sort_keys();
         // The levels hold the rows of one filter in one order; under another
         // they are asked again, and what is open stays open.
@@ -7319,7 +7372,6 @@ fn run_tree(
         (
             sorts,
             runtime.state.window().offset,
-            generation,
             key,
             parent,
             runtime.aggregate_choice.clone(),
@@ -7344,15 +7396,7 @@ fn run_tree(
             .all(|column| runtime.known.contains_key(column))
             .then(|| grid::known_schema(&columns, &runtime.known))
     };
-    if kind == QueryKind::Data {
-        grid_runtime
-            .borrow_mut()
-            .state
-            .set_status(GridStatus::Loading);
-        render(host, false);
-        refresh_facets(host);
-    }
-    grid_runtime.borrow_mut().queries = 0;
+    announce_loading(host, grid_runtime, kind);
 
     // The key rides along when the grid does not show it: a node is named by
     // it, and its children are asked with it.
@@ -7530,19 +7574,9 @@ fn toggle_tree(host: &HtmlElement, position: u64) {
             .and_then(|values| values.into_iter().next())
             .unwrap_or(Value::Null);
         let column = columns_of(host).first().cloned().unwrap_or_default();
-        let texts = texts(host);
-        let label = grid::group_value_text(
-            &value,
-            &column,
-            schema.fields(),
-            &texts,
-            &Formatter::new(&formats(host), &schema),
-        );
-        texts.group_toggled(&label, count, open)
+        toggled_message(host, &schema, &value, &column, count, open)
     };
-    runtime.borrow_mut().state.set_notice(message);
-    run_query(host, QueryKind::Window, true);
-    dispatch_view(host);
+    announce_toggle(host, &runtime, message);
 }
 
 /// The display position of the tree's node the active cell stands on, and
