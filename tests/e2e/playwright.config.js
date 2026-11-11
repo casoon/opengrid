@@ -25,10 +25,12 @@ const CHROMIUM_LAUNCH = { args: ["--js-flags=--expose-gc"] };
 
 export default defineConfig({
   testDir: ".",
-  // One worker: the fixture server is `python3 -m http.server`, which answers
-  // one connection at a time; parallel workers fetching the WASM modules at once
-  // intermittently get `ERR_CONNECTION_RESET`.
-  workers: 1,
+  // Two workers. The fixture server is `python3 -m http.server`, which has been
+  // a threading server since Python 3.7: the old reason for one worker — that it
+  // answers one connection at a time, so workers fetching the WASM modules at
+  // once got `ERR_CONNECTION_RESET` — no longer holds. Two full runs and the
+  // CI's had none (#361); if one comes back, this is the line to look at.
+  workers: 2,
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,

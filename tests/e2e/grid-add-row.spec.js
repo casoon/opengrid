@@ -1,18 +1,10 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { shadow, status } from "./helpers.js";
 
 // Adding a record from the keyboard (issue #183): the new row after the last
 // one, the add on Enter in the last column, the required fields, the page's
 // answers.
-
-const shadow = (page, fn, arg) =>
-  page.evaluate(
-    ({ fn, arg }) => new Function("root", "arg", `return (${fn})(root, arg)`)(
-      document.querySelector("opengrid-grid").shadowRoot,
-      arg,
-    ),
-    { fn: fn.toString(), arg },
-  );
 
 const rows = (page) =>
   shadow(page, (root) =>
@@ -23,8 +15,6 @@ const rows = (page) =>
         added: tr.getAttribute("data-added"),
         draft: tr.hasAttribute("data-new-row"),
       })));
-
-const status = (page) => shadow(page, (root) => root.querySelector('[part="status"]').textContent);
 
 async function open(page) {
   await page.goto("/tests/e2e/fixtures/grid-add-row.html");

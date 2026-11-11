@@ -8,6 +8,7 @@ import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { status } from "./helpers.js";
 
 const CSV = readFileSync(fileURLToPath(new URL("./fixtures/grid-virtual.csv", import.meta.url)), "utf8")
   .trim()
@@ -24,7 +25,6 @@ const shadow = (page, fn, arg) =>
     },
     [fn.toString(), arg],
   );
-const status = (page) => shadow(page, (root) => root.querySelector('[part="status"]').textContent);
 const chips = (page) => shadow(page, (root) => [...root.querySelectorAll('[part~="chip"]')].map((chip) => chip.textContent));
 
 /** Chooses `value` in the flag column's choice and applies it with Enter. */

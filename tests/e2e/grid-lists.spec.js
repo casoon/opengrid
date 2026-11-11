@@ -1,19 +1,10 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { shadow, status } from "./helpers.js";
 
 // List columns (issue #185): chips in the cell, the ARIA combobox over the page's
 // choices, a text that is no choice refused, the filter operators.
 
-const shadow = (page, fn, arg) =>
-  page.evaluate(
-    ({ fn, arg }) => new Function("root", "arg", `return (${fn})(root, arg)`)(
-      document.querySelector("opengrid-grid").shadowRoot,
-      arg,
-    ),
-    { fn: fn.toString(), arg },
-  );
-
-const status = (page) => shadow(page, (root) => root.querySelector('[part="status"]').textContent);
 const chips = (page, row, col) =>
   shadow(page, (root, { row, col }) =>
     [...root.querySelectorAll(`td[data-row="${row}"][data-col="${col}"] [part~="list-item"]`)].map((chip) => chip.textContent),
