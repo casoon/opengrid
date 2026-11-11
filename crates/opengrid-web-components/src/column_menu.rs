@@ -28,7 +28,7 @@
 use opengrid_grid::layout::Pin;
 use opengrid_types::DataType;
 
-use crate::presentation::aggregates_for;
+use crate::presentation::aggregates_of;
 use crate::texts::GridTexts;
 
 /// One entry of the menu.
@@ -83,6 +83,9 @@ pub struct Column<'a> {
     pub bulk: bool,
     /// Where the column is pinned (issue #316).
     pub pin: Option<Pin>,
+    /// Whether the column stores keys with labels (issue #326): it is counted
+    /// and nothing else.
+    pub lookup: bool,
 }
 
 /// The entries of one column's menu, in order.
@@ -102,7 +105,7 @@ pub fn entries(column: &Column<'_>, texts: &GridTexts) -> Vec<Entry> {
         Entry::item("filter", &texts.filter_column),
     ];
 
-    let allowed = aggregates_for(column.data_type);
+    let allowed = aggregates_of(column.data_type, column.lookup);
     if allowed.len() > 1 {
         let mut group = vec![Entry::radio(
             "aggregate:none",
@@ -211,6 +214,7 @@ mod tests {
             visible: 5,
             bulk: false,
             pin: None,
+            lookup: false,
         }
     }
 

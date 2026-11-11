@@ -195,6 +195,7 @@ struct Parser<'a> {
     depth: usize,
     joins: Vec<(String, bool)>,
     schema: &'a Schema,
+    lookups: &'a [String],
 }
 
 impl<'a> Parser<'a> {
@@ -277,8 +278,10 @@ impl<'a> Parser<'a> {
             .iter()
             .find(|(candidate, _)| *candidate == symbol)
             .map_or("eq", |(_, token)| *token);
-        let op = FilterOp::parse(token)
-            .filter(|_| crate::grid::operators_for(field.data_type, true).contains(&token));
+        let op = FilterOp::parse(token).filter(|_| {
+            let lookup = self.lookups.iter().any(|name| name == column);
+            crate::grid::operators_of(field.data_type, true, lookup).contains(&token)
+        });
         let Some(op) = op else {
             return Err(Problem::WrongOperator {
                 column: column.to_owned(),
@@ -366,12 +369,26 @@ pub fn parse(
     or_word: Option<&str>,
     schema: &Schema,
 ) -> Result<Parsed, Problem> {
+    parse_for(input, and_word, or_word, schema, &[])
+}
+
+/// [`parse`] for a grid with lookup columns (issue #326), named by `lookups`:
+/// an expression compares the stored key, and such a column takes `=` and `≠`
+/// only, as its field in the filter row does.
+pub fn parse_for(
+    input: &str,
+    and_word: &str,
+    or_word: Option<&str>,
+    schema: &Schema,
+    lookups: &[String],
+) -> Result<Parsed, Problem> {
     let mut parser = Parser {
         input,
         at: 0,
         depth: 0,
         joins: joins(and_word, or_word),
         schema,
+        lookups,
     };
     let node = parser.joined(true)?;
     match parser.peek() {
@@ -512,6 +529,31 @@ mod tests {
 
     fn is(column: &str, op: &str, value: impl Into<Json>) -> Json {
         json!({ "field": column, "op": op, "value": value.into() })
+    }
+
+    /// A lookup column is compared by its key, with `=` and `≠` only
+    /// (issue #326): `~` on it is the wrong operator, as in its filter field —
+    /// in a nested expression too.
+    #[test]
+    fn a_lookup_column_takes_is_and_is_not() {
+        let lookups = ["customer".to_owned()];
+        let parse = |input: &str| parse_for(input, "and", Some("or"), &schema(), &lookups);
+        assert_eq!(
+            parse("customer != A1"),
+            Ok(Parsed::Row(vec![entry("customer", "ne", "A1")]))
+        );
+        let wrong = Err(Problem::WrongOperator {
+            column: "customer".to_owned(),
+            operator: "~".to_owned(),
+        });
+        assert_eq!(parse("customer ~ lph"), wrong);
+        assert_eq!(parse("country = DE or (customer ~ lph)"), wrong);
+        assert!(matches!(
+            parse("customer = A1 or customer = B2"),
+            Ok(Parsed::Tree(_))
+        ));
+        // The other columns are what they were.
+        assert!(parse("country ~ D").is_ok());
     }
 
     #[test]

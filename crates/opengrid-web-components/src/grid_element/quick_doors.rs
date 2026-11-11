@@ -196,7 +196,9 @@ pub(super) fn fill_conditions(host: &HtmlElement, dialog: &HtmlElement, column: 
     };
     select.set_inner_html("");
     let document = select.owner_document();
-    for op in grid::operators_for(field.data_type, field.nullable) {
+    let styles = presentation::styles(host);
+    let lookup = styles.lookup(column);
+    for op in grid::operators_of(field.data_type, field.nullable, lookup.is_some()) {
         let index = crate::shared::FILTER_OPERATORS
             .iter()
             .position(|token| *token == op)
@@ -209,6 +211,31 @@ pub(super) fn fill_conditions(host: &HtmlElement, dialog: &HtmlElement, column: 
             option.set_text_content(Some(&texts.operator(index, op)));
             let _ = select.append_child(&option);
         }
+    }
+    // The value is typed into a field — or, for a lookup column, chosen among
+    // its labels as in the filter row (issue #326): the control is made anew
+    // for the column, inside the label that names it.
+    if let Ok(Some(old)) = dialog.query_selector("[data-dialog=\"value\"]")
+        && let Some(control) = document.as_ref().and_then(|document| {
+            document
+                .create_element(if lookup.is_some() { "select" } else { "input" })
+                .ok()
+        })
+    {
+        let _ = control.set_attribute("data-dialog", "value");
+        for (key, label) in lookup.iter().flat_map(|lookup| lookup.entries()) {
+            if let Some(option) = document
+                .as_ref()
+                .and_then(|document| document.create_element("option").ok())
+            {
+                let _ = option.set_attribute("value", key);
+                option.set_text_content(Some(label));
+                // The label is the page's word, not ours.
+                let _ = option.set_attribute("lang", "");
+                let _ = control.append_child(&option);
+            }
+        }
+        let _ = old.replace_with_with_node_1(&control);
     }
     if let Ok(Some(input)) = dialog.query_selector("[data-dialog=\"value\"]")
         && let Ok(input) = input.dyn_into::<HtmlInputElement>()

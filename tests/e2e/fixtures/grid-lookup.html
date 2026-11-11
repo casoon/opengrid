@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>opengrid lookup columns fixture</title>
+    <style>
+      opengrid-grid {
+        display: block;
+        height: 420px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid lookup columns fixture</h1>
+      <opengrid-grid
+        label="Orders"
+        datasource="orders"
+        columns="id,customer_id,country,amount"
+        window-size="12"
+        row-key="id"
+        toolbar
+        search
+        facets
+        column-menu
+      ></opengrid-grid>
+    </main>
+    <script type="module">
+      // Issue #326: lookup columns. `customer_id` is an int64 key and `country`
+      // a utf8 one; the page gives each its labels. The labels of the customers
+      // run against their keys (1 is Zeta, 2 is Alpha), so a sort by the key is
+      // told apart from a sort by the label. Key 9 and `US` have no label, and
+      // one row holds neither key. `?dir=rtl` turns the page right to left.
+      import { loadOpengrid, createLocalProvider } from "/packages/opengrid/loader.js";
+      import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+
+      const dir = new URLSearchParams(location.search).get("dir");
+      if (dir) document.documentElement.dir = dir;
+
+      window.__changes = [];
+      document.addEventListener("opengrid-cell-change", (event) => window.__changes.push(event.detail));
+      window.__queries = [];
+
+      await init();
+      const schema = JSON.stringify({
+        fields: [
+          { name: "id", type: "int64", nullable: false },
+          { name: "customer_id", type: "int64", nullable: true },
+          { name: "country", type: "utf8", nullable: true },
+          { name: "amount", type: "int64", nullable: false },
+        ],
+      });
+      const rows = [
+        { id: 1, customer_id: 3, country: "DE", amount: 10 },
+        { id: 2, customer_id: 1, country: "FR", amount: 20 },
+        { id: 3, customer_id: 2, country: "DE", amount: 30 },
+        { id: 4, customer_id: 9, country: "US", amount: 40 },
+        { id: 5, customer_id: null, country: null, amount: 50 },
+        { id: 6, customer_id: 1, country: "FR", amount: 60 },
+      ];
+      const engine = createLocalProvider(new Engine());
+      await engine.loadRows("orders", rows, schema);
+      const provider = {
+        kind: "local",
+        execute: (queryJson) => {
+          window.__queries.push(JSON.parse(queryJson));
+          return engine.execute(queryJson);
+        },
+      };
+      const loader = await loadOpengrid();
+      const host = document.querySelector("opengrid-grid");
+      window.__columns = {
+        customer_id: {
+          title: "Customer",
+          lookup: { 1: "Zeta GmbH", 2: "Alpha AG", 3: "Mid Ltd" },
+          facet: "list",
+        },
+        country: { title: "Country", lookup: { DE: "Germany", FR: "France" }, facet: "pills" },
+      };
+      loader.module.set_columns(host, window.__columns);
+      window.__module = loader.module;
+      window.__host = host;
+      loader.module.set_provider(host, provider);
+      window.__ready = true;
+    </script>
+  </body>
+</html>

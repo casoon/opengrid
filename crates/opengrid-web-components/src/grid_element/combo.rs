@@ -25,12 +25,44 @@ pub(super) struct Choice {
 
 const LISTBOX_ID: &str = "og-listbox";
 
-/// The choices the page gave column `col`: strings, numbers or
-/// `{ value, label }` pairs.
+/// The choices of column `col`: what the page gave `set_choices`, or — for a
+/// lookup column without any — the keys of its map under their labels
+/// (issue #326). A choice of a lookup column that has no label of its own is
+/// named by the map's.
 pub(super) fn choices_of(host: &HtmlElement, col: usize) -> Option<Vec<Choice>> {
     let name = columns_of(host).get(col)?.clone();
+    let styles = presentation::styles(host);
+    let lookup = styles.lookup(&name);
+    match (page_choices(host, &name), lookup) {
+        (Some(mut choices), Some(lookup)) => {
+            for choice in &mut choices {
+                if choice.label == choice.value
+                    && let Some(label) = lookup.label(&choice.value)
+                {
+                    choice.label = label.to_owned();
+                }
+            }
+            Some(choices)
+        }
+        (None, Some(lookup)) if !lookup.entries().is_empty() => Some(
+            lookup
+                .entries()
+                .iter()
+                .map(|(key, label)| Choice {
+                    value: key.clone(),
+                    label: label.clone(),
+                })
+                .collect(),
+        ),
+        (choices, _) => choices,
+    }
+}
+
+/// The choices the page gave column `name` with `set_choices`: strings,
+/// numbers or `{ value, label }` pairs.
+fn page_choices(host: &HtmlElement, name: &str) -> Option<Vec<Choice>> {
     let all = js_sys::Reflect::get(host.as_ref(), &JsValue::from_str(CHOICES_KEY)).ok()?;
-    let list = js_sys::Reflect::get(&all, &JsValue::from_str(&name)).ok()?;
+    let list = js_sys::Reflect::get(&all, &JsValue::from_str(name)).ok()?;
     let array = list.dyn_into::<js_sys::Array>().ok()?;
     let text = |item: &JsValue| {
         item.as_string()
@@ -122,11 +154,18 @@ pub(super) fn build(
         let _ = group.set_attribute("data-numbers", "");
     }
 
+    // What the cell holds may be none of the choices — a page that offers only
+    // some of a lookup's keys (issue #326): it is still named as the cell
+    // names it.
+    let styles = presentation::styles(host);
     let label_of = |value: &str| {
         choices
             .iter()
             .find(|choice| choice.value == value)
-            .map_or_else(|| value.to_owned(), |choice| choice.label.clone())
+            .map(|choice| choice.label.as_str())
+            .or_else(|| styles.lookup(name).and_then(|lookup| lookup.label(value)))
+            .unwrap_or(value)
+            .to_owned()
     };
 
     let input = make("input")?;

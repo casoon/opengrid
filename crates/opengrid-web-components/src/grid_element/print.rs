@@ -134,7 +134,7 @@ fn build(host: &HtmlElement, result: &opengrid_datasource::QueryResult, groups: 
     };
     let texts = texts(host);
     let fields = result.schema.fields();
-    let format = Formatter::new(&formats(host), &result.schema);
+    let format = formatter(host, &result.schema);
     let styles = presentation::styles(host);
     let aligns: Vec<Option<String>> = fields
         .iter()
