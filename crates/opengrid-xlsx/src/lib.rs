@@ -177,14 +177,15 @@ mod tests {
         assert_eq!(xml.matches("<row ").count(), 4, "{xml}");
     }
 
-    fn shared_strings(file: &[u8]) -> String {
+    /// Where the text cells are: shared strings in memory, inline in the sheet
+    /// when the server's constant-memory writer is built in (a workspace test
+    /// builds both ways, so read both).
+    fn strings(file: &[u8]) -> String {
         let mut archive = zip::ZipArchive::new(std::io::Cursor::new(file)).expect("a zip");
-        let mut xml = String::new();
-        archive
-            .by_name("xl/sharedStrings.xml")
-            .expect("shared strings")
-            .read_to_string(&mut xml)
-            .unwrap();
+        let mut xml = sheet(file);
+        if let Ok(mut shared) = archive.by_name("xl/sharedStrings.xml") {
+            shared.read_to_string(&mut xml).unwrap();
+        }
         xml
     }
 
@@ -199,7 +200,7 @@ mod tests {
                 .collect(),
         );
         book.add_json(FIRST).unwrap();
-        let strings = shared_strings(&book.finish().unwrap());
+        let strings = strings(&book.finish().unwrap());
         assert!(strings.contains("Who \u{b7} name"), "{strings}");
         assert!(strings.contains(">id<"), "{strings}");
         assert!(!strings.contains(">name<"), "{strings}");
