@@ -29,6 +29,14 @@ Two things belong in every release entry and are easy to leave out:
   workbook is held in memory, so a workbook in the tab is bounded by `maxRows` (250 000 by
   default; about 120 MB at 100 000 rows) and by Excel's 1 048 575 rows
   ([export guide](docs/guides/export.md#xlsx)).
+- **Grid:** a whole record as a form. `Shift`+`F2` on a data cell opens the record in a native modal
+  dialog built from the schema — one labelled field per column, the editor its cell would open, a
+  column the page fills shown and not editable. Saving checks every field first (the schema, a required
+  column, a blocking validator) and keeps the form open with the reason under the field and the focus on
+  the first one; otherwise it fires one `opengrid-cell-change` per changed field and the record is **one**
+  undo step. A cancelable `opengrid-record-open` lets a page open its own form instead. Needs `row-key`;
+  off while grouped and in a tree ([#325](https://github.com/casoon/opengrid/issues/325),
+  [Editing a whole record](docs/api.md#editing-a-whole-record)).
 - **Grid:** filters joined by `or`. The search expression takes `or` and parentheses —
   `country = DE or (qty ≥ 900 and customer = Alpha)`, `and` binding tighter — and a value in double
   quotes. An expression the filter row cannot hold — one with an `or`, or with two conditions on
