@@ -170,8 +170,12 @@ for (const [selector, sign] of [
     // a click on the one and the focus on the other scroll nothing — a browser
     // left alone goes to the place they have in the row.
     await scrollTo(page, selector, sign * 200);
-    const cell = page.locator(`${selector} td[data-row="1"][data-col="0"]`);
-    await cell.click();
+    // A click at the cell's place on the screen, as a reader makes it:
+    // `locator.click()` first scrolls the element into view, and WebKit takes
+    // the place a `sticky` cell has in its row for that — a scroll no reader
+    // causes.
+    const box = await page.locator(`${selector} td[data-row="1"][data-col="0"]`).boundingBox();
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
     expect(await inside(page, selector, (root) => root.activeElement.dataset.col)).toBe("0");
     await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
     expect((await layout(page, selector)).scroll).toBe(sign * 200);
@@ -211,6 +215,9 @@ for (const [selector, sign] of [
     // of the pinned columns' fields.
     const fieldClear = async (col, offset) => {
         await scrollTo(page, selector, sign * offset);
+        await inside(page, selector, (root, col) => root.querySelector(`input[data-col="${col}"]`).focus(), col);
+        // WebKit scrolls to a focused field in the next frame, Chromium at once.
+        await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
         const field = await inside(
           page,
           selector,
@@ -219,10 +226,8 @@ for (const [selector, sign] of [
               const box = root.querySelector(`[part="filter-operator"][data-col="${col}"]`).parentElement.getBoundingClientRect();
               return [box.left, box.right];
             };
-            const input = root.querySelector(`input[data-col="${col}"]`);
-            input.focus();
             // The control itself: its group ends in a gap of its own.
-            const own = input.getBoundingClientRect();
+            const own = root.querySelector(`input[data-col="${col}"]`).getBoundingClientRect();
             return { own: [own.left, own.right], id: edges(0), amount: edges(5) };
           },
           col,
