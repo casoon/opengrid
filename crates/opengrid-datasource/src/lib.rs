@@ -32,20 +32,3 @@ pub use error::{DataSourceError, tree_cycle, tree_duplicate_key};
 pub use opengrid_query::FLAT_COLUMNS;
 pub use result::{FlatTree, QueryResult, TreeLevel};
 pub use source::{DataSource, SendDataSource};
-
-/// Where a query is executed.
-///
-/// Only `Local` is produced in MVP A; `Auto` is resolved by the planner from the
-/// estimated rows and bytes, the browser's memory, the query's complexity and the
-/// server's capabilities (plan/spezifikation/03-datasource.md, point 28).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ExecutionMode {
-    /// In the client, over the in-memory engine (`LocalDataSource`).
-    Local,
-    /// On the server, over a remote data source.
-    Remote,
-    /// Split between both.
-    Hybrid,
-    /// Decided per query by the planner.
-    Auto,
-}

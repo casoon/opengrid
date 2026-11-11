@@ -135,6 +135,16 @@ Two things belong in every release entry and are easy to leave out:
   fourth is refused as the third was. The default wording of `groupingFull` is now
   `Grouped by three columns already` ([#321](https://github.com/casoon/opengrid/issues/321)).
 
+- **Rust:** three public items that nothing was meant to use are closed
+  ([#357](https://github.com/casoon/opengrid/issues/357)). **What breaks:**
+  `opengrid_datasource::ExecutionMode` is gone — the engine takes
+  `opengrid_planner::ExecutionMode`; the fields of `opengrid_server::AppState` are private, read
+  `registry()` and `max_concurrent_exports()` instead, so a new setting no longer breaks a caller
+  that builds one; the modules `opengrid_server::api` and `opengrid_server::registry` are private,
+  with what they offered still at the crate root (`AppState`, `ErrorReport`, `router`, `Registry`,
+  `RegistryError`, `RowFilter`, `SourcePolicy`); `opengrid_datasource_postgres::pg_type` is
+  not public any more.
+
 ### Fixed
 
 - **Grid:** in a tree with rows whose parent is missing, the sentence about them replaced a notice

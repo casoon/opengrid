@@ -18,9 +18,9 @@
 //!   from that context. It is enforced here, before a connector is asked, and no
 //!   request can switch it off.
 
-pub mod api;
+mod api;
 mod export;
-pub mod registry;
+mod registry;
 mod server;
 
 pub use api::{AppState, ErrorReport, router};
