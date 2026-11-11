@@ -8,8 +8,27 @@
 
 use opengrid_conformance::block_on;
 use opengrid_datasource::{QueryResult, SendDataSource};
-use opengrid_datasource_postgres::pg_type;
 use opengrid_types::{DataType, Schema, Value};
+
+/// The column type the fixture table creates for an opengrid type.
+///
+/// Written out here and not borrowed from the compiler on purpose: the compiler
+/// casts every parameter to its own spelling of the type, so a column made from
+/// the same function could never disagree with it. Two spellings that have to
+/// meet in the database are a check.
+fn pg_type(data_type: DataType) -> String {
+    match data_type {
+        DataType::Bool => "boolean".to_owned(),
+        DataType::Int64 => "bigint".to_owned(),
+        DataType::Float64 => "double precision".to_owned(),
+        DataType::Decimal { precision, scale } => format!("numeric({precision},{scale})"),
+        DataType::Utf8 => "text".to_owned(),
+        DataType::Date => "date".to_owned(),
+        DataType::Timestamp => "timestamptz".to_owned(),
+        DataType::ListUtf8 => "text[]".to_owned(),
+        DataType::ListInt64 => "bigint[]".to_owned(),
+    }
+}
 
 /// The connection string, or `None` when this machine has no database.
 pub fn connection() -> Option<String> {

@@ -45,7 +45,7 @@ async fn main() -> Result<(), Error> {
     println!(
         "opengrid-example-server {preset} on http://{} — sources: {}",
         listener.local_addr()?,
-        server.state().registry.names().join(", ")
+        server.state().registry().names().join(", ")
     );
     axum::serve(listener, server.router()).await?;
     Ok(())
