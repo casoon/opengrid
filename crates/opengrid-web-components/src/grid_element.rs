@@ -1953,7 +1953,17 @@ fn focus_cell(root: &ShadowRoot, viewport: Option<&Element>, to: ActiveCell) {
             viewport.scroll_left()
         }
     });
-    let _ = target.focus();
+    // A pinned cell is in sight wherever the grid is scrolled to, and WebKit
+    // scrolls to the place it has in the row — in the next frame, after anything
+    // this function can put right. So the focus does not scroll at all; the
+    // scroll below, which is made at once, takes care of the row (#379).
+    if is_pinned(&target) {
+        let focus = web_sys::FocusOptions::new();
+        focus.set_prevent_scroll(true);
+        let _ = target.focus_with_options(&focus);
+    } else {
+        let _ = target.focus();
+    }
     let options = ScrollIntoViewOptions::new();
     // `nearest` scrolls the minimum. For a cell that unfolded past the height of
     // the viewport (point 47) that still aligns its **top**, and the cells'
