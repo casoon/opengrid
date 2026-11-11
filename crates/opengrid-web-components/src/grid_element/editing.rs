@@ -182,7 +182,7 @@ pub(crate) const CHOICES_KEY: &str = "__opengridChoices";
 
 /// How this grid's cells become text: the page's formats, and the label of a
 /// key where the column has a lookup (issue #326).
-fn formatter(host: &HtmlElement, schema: &opengrid_types::Schema) -> Formatter {
+pub(super) fn formatter(host: &HtmlElement, schema: &opengrid_types::Schema) -> Formatter {
     Formatter::new(&formats(host), schema).with_lookups(&presentation::styles(host), schema)
 }
 

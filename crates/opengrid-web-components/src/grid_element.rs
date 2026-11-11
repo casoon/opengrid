@@ -125,7 +125,7 @@ use column_menu::{activate_menu_item, on_menu_key, open_column_menu};
 pub(crate) use editing::{CHOICES_KEY, write_row_state};
 use editing::{
     add_record, after_new_row_enter, begin_edit, build_editor, dispatch_row_add, editor_text,
-    end_edit, focus_editor,
+    end_edit, focus_editor, formatter,
 };
 use facets::{
     apply_facets, clear_selection, draw_facets, effective_filter, facet_chip_text, on_facet_change,
