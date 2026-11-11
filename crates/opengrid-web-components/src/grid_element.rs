@@ -82,8 +82,8 @@ use opengrid_web_core::provider::provider;
 use crate::columns::{self, Pin, WIDTH_STEP};
 use crate::formats::{CellFormat, Formatter, formats};
 use crate::grid_element_events::{
-    BULK_EVENT, CELL_EVENT, PASTE_EVENT, ROW_ACTION_EVENT, ROW_ADD_EVENT, SELECTION_EVENT,
-    VIEW_EVENT,
+    BULK_EVENT, CELL_EVENT, PASTE_EVENT, RECORD_OPEN_EVENT, ROW_ACTION_EVENT, ROW_ADD_EVENT,
+    SELECTION_EVENT, VIEW_EVENT,
 };
 
 mod builder;
@@ -101,6 +101,7 @@ mod paste;
 mod presentation_columns;
 mod print;
 mod quick_doors;
+mod record;
 mod search;
 mod tree_path;
 mod validate;
@@ -2297,6 +2298,16 @@ fn on_key_down(event: KeyboardEvent) {
     {
         return;
     }
+    // The record form (issue #325) is a modal dialog: its keys are the
+    // platform's — `Enter` submits, `Escape` closes — and the grid's matrix
+    // stays out of it.
+    if let Some(target) = event
+        .target()
+        .and_then(|node| node.dyn_into::<Element>().ok())
+        && record::in_dialog(&target)
+    {
+        return;
+    }
     // The bulk panel (issue #187) answers `Enter` and `Escape`.
     if let Some(target) = event
         .target()
@@ -2562,6 +2573,16 @@ fn on_key_down(event: KeyboardEvent) {
     // reported against a display position: `Enter` on a leaf opens no editor.
     if is_tree(&host) && event.key() == "Enter" && matches!(active, ActiveCell::Data(_)) {
         event.prevent_default();
+        return;
+    }
+    // `Shift`+`F2` opens the record as a form (issue #325).
+    if event.key() == "F2"
+        && event.shift_key()
+        && let ActiveCell::Data(cell) = active
+        && record::applicable(&host, &runtime.borrow(), cell)
+    {
+        event.prevent_default();
+        record::open(&host, cell);
         return;
     }
     // `F2` with rows selected sets one value for all of them (issue #187).

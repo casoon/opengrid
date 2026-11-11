@@ -1103,6 +1103,12 @@ export type TextKey =
   | "undoAdded"
   | "redoAdded"
   | "undoPaste"
+  | "undoRecord"
+  | "redoRecord"
+  | "recordTitle"
+  | "recordSave"
+  | "recordDone"
+  | "recordNothing"
   | "redoPaste"
   | "undoNothing"
   | "redoNothing";
@@ -1244,6 +1250,13 @@ export interface BulkChangeDetail {
   value: string;
 }
 
+/** `opengrid-record-open`: the reader asked for a record as a form (issue #325). Cancelable. */
+export interface RecordOpenDetail {
+  /** The record's `row-key` value. */
+  key: WireValue;
+  row: number;
+}
+
 /** `opengrid-paste`: a pasted block was applied (issue #184). */
 export interface PasteDetail {
   /** One per cell of an existing row. */
@@ -1298,6 +1311,8 @@ export interface OpengridEventMap {
   "opengrid-row-add": CustomEvent<RowAddDetail>;
   "opengrid-paste": CustomEvent<PasteDetail>;
   "opengrid-bulk-change": CustomEvent<BulkChangeDetail>;
+  /** Cancelable: `preventDefault()` keeps the grid from opening its record form. */
+  "opengrid-record-open": CustomEvent<RecordOpenDetail>;
   /** On `<opengrid-pivot>` with `drill-down`. */
   "opengrid-drill-down": CustomEvent<DrillDownDetail>;
   /** Dispatched by `loader.js` on the grid; it does not bubble. */

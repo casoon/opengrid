@@ -2213,7 +2213,31 @@ pub fn grid_css() -> String {
                    border: 1px solid var({LINE_STRONG_PROPERTY}); }}
          [part=\"filter-builder-dialog\"] :focus-visible {{
                    outline: var({FOCUS_WIDTH_PROPERTY}) solid Highlight; outline-offset: 1px; }}
-         [part=\"filter-dialog\"], [part=\"grouping-menu\"], [part=\"filter-builder-dialog\"] {{
+         [part=\"record-dialog\"] {{ width: min(34rem, 100vw - 2rem); max-height: calc(100vh - 2rem);
+                   overflow: auto; padding: 16px; }}
+         [part=\"record-dialog\"]::backdrop {{ background: rgb(0 0 0 / 0.32); }}
+         [part=\"record-dialog\"] form, [part=\"record-dialog\"] [data-record-fields] {{ display: flex;
+                   flex-direction: column; gap: 10px; margin: 0; min-width: 0; }}
+         [part=\"record-dialog\"] h2 {{ margin: 0; font-size: 0.9375rem; font-weight: 600; }}
+         [part=\"record-dialog\"] [data-record-field] {{ display: flex; flex-direction: column; gap: 2px;
+                   min-width: 0; }}
+         [part=\"record-dialog\"] label {{ color: var({INK_MUTED_PROPERTY}); }}
+         [part=\"record-dialog\"] :is(select, input:not([type=\"checkbox\"])) {{ font: inherit;
+                   min-height: 32px; box-sizing: border-box; padding: 0 8px; min-width: 0; width: 100%; }}
+         [part=\"record-dialog\"] input[type=\"checkbox\"] {{ align-self: start; inline-size: 20px;
+                   min-height: 32px; margin: 0; }}
+         [part=\"record-dialog\"] [data-record-error], [part=\"record-dialog\"] [data-dialog-problem] {{
+                   color: var({INK_PROPERTY}); font-weight: 600; }}
+         [part=\"record-dialog\"] [data-record-error]::before {{ content: \"\\26A0\\FE0E \" / \"\"; }}
+         [part=\"record-dialog\"] [aria-invalid=\"true\"] {{ border-width: 2px;
+                   border-color: var({INK_PROPERTY}); }}
+         [part=\"record-dialog\"] :disabled {{ opacity: 0.6; }}
+         [part=\"record-dialog\"] [data-dialog-actions] {{ display: flex; justify-content: flex-end; gap: 8px; }}
+         [part=\"record-dialog\"] [data-dialog-actions] button {{ min-height: 32px; padding: 0 14px;
+                   border: 1px solid var({LINE_STRONG_PROPERTY}); }}
+         [part=\"record-dialog\"] :focus-visible {{
+                   outline: var({FOCUS_WIDTH_PROPERTY}) solid Highlight; outline-offset: 1px; }}
+         [part=\"filter-dialog\"], [part=\"grouping-menu\"], [part=\"filter-builder-dialog\"], [part=\"record-dialog\"] {{
                    box-sizing: border-box; background: var({SURFACE_PROPERTY}); color: var({INK_PROPERTY});
                    border: 1px solid var({LINE_STRONG_PROPERTY});
                    border-radius: min(var({RADIUS_PROPERTY}), 12px);

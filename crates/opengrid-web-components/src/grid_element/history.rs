@@ -54,6 +54,18 @@ fn run(host: &HtmlElement, undoing: bool) {
             let said = texts.history_added(undoing);
             (Step::Added(entry), said, None)
         }
+        Step::Record(edits) => {
+            let mut at = None;
+            for edit in &edits {
+                let (cell, _, loaded) = apply_cell(host, &runtime, edit, undoing, flag);
+                if loaded {
+                    at.get_or_insert(cell);
+                }
+            }
+            let row = at.map_or(edits.first().map_or(0, |edit| edit.row), |cell| cell.row);
+            let said = texts.history_record(undoing, row + 1, edits.len());
+            (Step::Record(edits), said, at)
+        }
         Step::Paste { edits, added } => {
             let (added, at) = apply_paste(host, &runtime, &edits, added, undoing, flag);
             let said = texts.history_paste(undoing, edits.len());

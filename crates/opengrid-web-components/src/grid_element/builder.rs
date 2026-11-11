@@ -90,14 +90,14 @@ pub(super) fn set(host: &HtmlElement, filter: Option<FilterExpr>) {
 
 /// A new element with `html` inside. The markup is ours; every word a page
 /// or a reader wrote goes in as text afterwards ([`say`]).
-fn element(host: &HtmlElement, tag: &str, html: &str) -> Option<Element> {
+pub(super) fn element(host: &HtmlElement, tag: &str, html: &str) -> Option<Element> {
     let node = host.owner_document()?.create_element(tag).ok()?;
     node.set_inner_html(html);
     Some(node)
 }
 
 /// Puts `text` into each node `selector` finds under `scope`, in order.
-fn say(scope: &Element, selector: &str, texts: &[&str]) {
+pub(super) fn say(scope: &Element, selector: &str, texts: &[&str]) {
     let Ok(nodes) = scope.query_selector_all(selector) else {
         return;
     };

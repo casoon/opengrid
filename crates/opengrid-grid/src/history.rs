@@ -42,6 +42,9 @@ pub enum Step {
         edits: Vec<CellEdit>,
         added: Vec<AddedEntry>,
     },
+    /// A record saved as a form is **one** step: its changed fields go back
+    /// together, each as the cell edit it was (issue #325).
+    Record(Vec<CellEdit>),
 }
 
 /// The most steps kept; the oldest go first.
@@ -99,6 +102,10 @@ impl History {
                     edits.retain(|edit| !edit.is_stale(key, col, now));
                     !edits.is_empty() || !added.is_empty()
                 }
+                Step::Record(edits) => {
+                    edits.retain(|edit| !edit.is_stale(key, col, now));
+                    !edits.is_empty()
+                }
                 Step::Added(_) => true,
             });
         }
@@ -138,6 +145,10 @@ impl History {
                         entry.values = pick(&entry.values);
                     }
                     !edits.is_empty() || !added.is_empty()
+                }
+                Step::Record(edits) => {
+                    edits.retain_mut(edit);
+                    !edits.is_empty()
                 }
             });
         }
@@ -321,6 +332,25 @@ mod tests {
                 added: vec![entry],
             }]
         );
+    }
+
+    /// A record saved as a form keeps the fields the page did not override and
+    /// goes with the last of them (issue #325).
+    #[test]
+    fn a_record_keeps_its_other_fields_and_goes_with_the_last() {
+        let mut history = History::default();
+        history.record(Step::Record(vec![keyed(1, 0, 30, 40), keyed(1, 1, 5, 6)]));
+        history.forget_cell(&Value::Int64(1), 0, &Value::Int64(99));
+        let Some(Step::Record(edits)) = history.take_undo() else {
+            panic!("the record stays");
+        };
+        assert_eq!(edits.len(), 1);
+        assert_eq!(edits[0].col, 1);
+
+        let mut history = History::default();
+        history.record(Step::Record(vec![keyed(1, 0, 30, 40)]));
+        history.forget_cell(&Value::Int64(1), 0, &Value::Int64(99));
+        assert!(!history.can_undo());
     }
 
     /// An added row is the reader's own: the page's word about a cell never
