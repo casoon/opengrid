@@ -51,6 +51,7 @@
     "./worker.js": "./worker.js",
     "./pkg/*": "./pkg/*",
     "./engine/*": "./engine/*",
+    "./xlsx/*": "./xlsx/*",
     "./package.json": "./package.json"
   },
   "main": "./loader.js",
@@ -68,6 +69,7 @@
     "texts/",
     "pkg/",
     "engine/",
+    "xlsx/",
     "LICENSE-MIT",
     "LICENSE-APACHE",
     "README.md",

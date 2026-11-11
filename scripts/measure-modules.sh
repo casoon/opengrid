@@ -47,12 +47,14 @@ build both
 build grid-only --no-default-features --features grid
 build pivot-only --no-default-features --features pivot
 CRATE=opengrid-wasm build engine
+CRATE=opengrid-xlsx build xlsx
 
 printf 'module\traw_B\traw\tgzip_B\tgzip\tbrotli_B\tbrotli\n'
 report "grid+pivot" "$out/both/m_bg.wasm"
 report "grid only" "$out/grid-only/m_bg.wasm"
 report "pivot only" "$out/pivot-only/m_bg.wasm"
 report "engine" "$out/engine/m_bg.wasm"
+report "xlsx" "$out/xlsx/m_bg.wasm"
 
 # What the two would cost side by side, and what they share.
 node -e '
@@ -80,8 +82,8 @@ node -e '
   const br = (p) => zlib.brotliCompressSync(fs.readFileSync(p), {
     params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 11 },
   }).length;
-  const [budget, both, engine] = process.argv.slice(1);
-  const measured = { "grid+pivot": br(both), engine: br(engine) };
+  const [budget, both, engine, xlsx] = process.argv.slice(1);
+  const measured = { "grid+pivot": br(both), engine: br(engine), xlsx: br(xlsx) };
   const bounds = {};
   for (const line of fs.readFileSync(budget, "utf8").split("\n")) {
     const text = line.replace(/#.*/, "").trim();
@@ -107,4 +109,4 @@ node -e '
     console.log("A module grew past its bound: shrink it, or raise the bound with its reason (scripts/module-budget.txt).");
     process.exit(1);
   }
-' scripts/module-budget.txt "$out/both/m_bg.wasm" "$out/engine/m_bg.wasm"
+' scripts/module-budget.txt "$out/both/m_bg.wasm" "$out/engine/m_bg.wasm" "$out/xlsx/m_bg.wasm"

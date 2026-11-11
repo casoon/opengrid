@@ -21,6 +21,14 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Added
 
+- **Export:** XLSX without a server ([#332](https://github.com/casoon/opengrid/issues/332)).
+  `exportRows(provider, query, { format: "xlsx" })` now writes the workbook in the tab for the
+  engine in the tab, a worker and the hybrid provider — the same writer and the same type rules as
+  the server's. It is a module of its own, `@casoon/opengrid/xlsx/` (about 245 KB brotli), that
+  `exportRows` loads the first time and a page that never exports to Excel does not fetch. The
+  workbook is held in memory, so a workbook in the tab is bounded by `maxRows` (250 000 by
+  default; about 120 MB at 100 000 rows) and by Excel's 1 048 575 rows
+  ([export guide](docs/guides/export.md#xlsx)).
 - **Grid:** filters joined by `or`. The search expression takes `or` and parentheses —
   `country = DE or (qty ≥ 900 and customer = Alpha)`, `and` binding tighter — and a value in double
   quotes. An expression the filter row cannot hold — one with an `or`, or with two conditions on
@@ -152,6 +160,13 @@ Two things belong in every release entry and are easy to leave out:
   with what they offered still at the crate root (`AppState`, `ErrorReport`, `router`, `Registry`,
   `RegistryError`, `RowFilter`, `SourcePolicy`); `opengrid_datasource_postgres::pg_type` is
   not public any more.
+- **Rust:** `opengrid-export`'s feature `xlsx` writes a workbook **in memory**, and the new feature
+  `xlsx-streaming` is what `xlsx` was — finished rows go to a temporary file, which the server has
+  and a browser has not ([#332](https://github.com/casoon/opengrid/issues/332)).
+  **What breaks:** a crate that enabled `opengrid-export/xlsx` for its constant memory enables
+  `xlsx-streaming` now (`opengrid-server` does). New: `opengrid_datasource::wire::result_from_bytes`,
+  the binary form of an answer read into a result — it moved there from the element module, and
+  `opengrid-datasource` depends on `opengrid-columns` for it.
 
 ### Fixed
 

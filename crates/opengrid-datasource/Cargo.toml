@@ -25,3 +25,5 @@ trait-variant = "0.1"
 # itself, because reading a value needs its column type first and JSON object
 # keys have no order.
 opengrid-json = { workspace = true }
+# The binary form of an answer (E35) is read here, next to the JSON form.
+opengrid-columns = { workspace = true }

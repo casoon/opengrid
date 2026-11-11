@@ -820,7 +820,7 @@ export async function exportRows(provider, query, options = {}) {
   const {
     format = "csv",
     chunkSize = 10_000,
-    maxRows = 1_000_000,
+    maxRows: askedMaxRows,
     onProgress,
     signal,
     delimiter,
@@ -833,13 +833,11 @@ export async function exportRows(provider, query, options = {}) {
       `exportRows: format is "csv", "json" or "xlsx", not ${JSON.stringify(format)}`,
     );
   }
-  if (format === "xlsx" && typeof provider?.export !== "function") {
-    // An XLSX file is written on the server (issue #72); pieces fetched here
-    // cannot become one.
-    throw new TypeError(
-      "exportRows: an XLSX export needs a provider that exports on the server (createRestProvider)",
-    );
-  }
+  // A workbook built in the tab is held whole in memory — about a kilobyte a row
+  // of five columns, a gigabyte at a million — so its default is lower than the
+  // server's, which streams to a file; asked for, it is the page's to raise.
+  const maxRows =
+    askedMaxRows ?? (format === "xlsx" && typeof provider?.export !== "function" ? XLSX_TAB_MAX_ROWS : 1_000_000);
   if (format !== "csv") {
     // A CSV option on another export would do nothing, and do it silently.
     const stray = CSV_OPTIONS.find((key) => options[key] !== undefined);
@@ -874,14 +872,19 @@ export async function exportRows(provider, query, options = {}) {
     throw aborted();
   }
 
-  const loaded = await loadOpengrid();
-  if (loaded.fallback) {
-    throw coded(
-      "module_not_loaded",
-      "exportRows: the WebAssembly module did not load, and the export notation is in it",
-    );
+  // The export notation of CSV and JSON is in the element module; a workbook
+  // is written by a module of its own, loaded below when the pieces come.
+  let module;
+  if (format !== "xlsx") {
+    const loaded = await loadOpengrid();
+    if (loaded.fallback) {
+      throw coded(
+        "module_not_loaded",
+        "exportRows: the WebAssembly module did not load, and the export notation is in it",
+      );
+    }
+    module = loaded.module;
   }
-  const { module } = loaded;
   const csvOptions = { delimiter, bom, protectFormulas, null: nullText };
   if (format === "csv") {
     // Read the options now: a wrong one should cost no request.
@@ -914,61 +917,120 @@ export async function exportRows(provider, query, options = {}) {
     return blob;
   }
 
-  // Each piece becomes a Blob of its own as soon as it is written, so its text
-  // can leave the JS heap; the browser may keep a Blob's bytes elsewhere.
-  const parts = format === "json" ? [new Blob(["["])] : [];
-  let rows = 0;
-  let total;
-  for (;;) {
+  // A workbook is built in the tab's memory by the XLSX module, piece by piece,
+  // and is the file at the end: there is no temporary file to stream to (#332).
+  let book;
+  try {
+    return await fetchPieces();
+  } finally {
+    book?.free();
+  }
+
+  async function fetchPieces() {
+    // Each piece becomes a Blob of its own as soon as it is written, so its text
+    // can leave the JS heap; the browser may keep a Blob's bytes elsewhere.
+    const parts = format === "json" ? [new Blob(["["])] : [];
+    let rows = 0;
+    let total;
+    for (;;) {
+      if (signal?.aborted) {
+        throw aborted();
+      }
+      // After the first piece nothing past `total` is asked for.
+      const limit = total === undefined ? chunkSize : Math.min(chunkSize, total - rows);
+      const piece = JSON.stringify({ ...query, sort, offset: rows, limit });
+      const answer = await unlessAborted(ask(provider, piece, signal), signal);
+      const result = countsOf(answer);
+      const count = result.rows;
+      const first = total === undefined;
+      if (first) {
+        total = result.total_count;
+        if (total > maxRows) {
+          throw coded(
+            "too_many_rows",
+            `exportRows: ${total} rows match, more than the ${maxRows} an export may have (maxRows)`,
+          );
+        }
+        if (format === "xlsx" && total > XLSX_MAX_ROWS) {
+          // Excel's limit is an error, never a shortened file — as on the server.
+          throw coded(
+            "too_many_rows",
+            `exportRows: ${total} rows match, more than the ${XLSX_MAX_ROWS} an Excel sheet holds`,
+          );
+        }
+      } else if (result.total_count !== total) {
+        throw changed(`${total} rows matched at first, ${result.total_count} at row ${rows + 1}`);
+      }
+      if (count < limit && rows + count < total) {
+        throw changed(`the rows ended at ${rows + count} of ${total}`);
+      }
+      if (format === "xlsx") {
+        // After the checks above: a refused export does not load the module.
+        book ??= new (await loadXlsx()).XlsxBook(sheetNameOf(query));
+        book.add(answer);
+      } else {
+        parts.push(
+          new Blob([
+            format === "csv"
+              ? module.export_csv(answer, csvOptions, first)
+              : // `first` here is "no row written yet", not "first piece": after an
+                // empty first piece the next one still leads without a comma.
+                module.export_json(answer, rows === 0),
+          ]),
+        );
+      }
+      rows += count;
+      onProgress?.({ rows, total });
+      if (rows >= total) {
+        break;
+      }
+    }
+    // An abort during the last `onProgress` still means no file.
     if (signal?.aborted) {
       throw aborted();
     }
-    // After the first piece nothing past `total` is asked for.
-    const limit = total === undefined ? chunkSize : Math.min(chunkSize, total - rows);
-    const piece = JSON.stringify({ ...query, sort, offset: rows, limit });
-    const answer = await unlessAborted(ask(provider, piece, signal), signal);
-    const result = countsOf(answer);
-    const count = result.rows;
-    const first = total === undefined;
-    if (first) {
-      total = result.total_count;
-      if (total > maxRows) {
-        throw coded(
-          "too_many_rows",
-          `exportRows: ${total} rows match, more than the ${maxRows} an export may have (maxRows)`,
-        );
-      }
-    } else if (result.total_count !== total) {
-      throw changed(`${total} rows matched at first, ${result.total_count} at row ${rows + 1}`);
+    if (format === "xlsx") {
+      return new Blob([book.finish()], { type: EXPORT_TYPES.xlsx });
     }
-    if (count < limit && rows + count < total) {
-      throw changed(`the rows ended at ${rows + count} of ${total}`);
+    if (format === "json") {
+      parts.push(new Blob(["]"]));
     }
-    parts.push(
-      new Blob([
-        format === "csv"
-          ? module.export_csv(answer, csvOptions, first)
-          : // `first` here is "no row written yet", not "first piece": after an
-            // empty first piece the next one still leads without a comma.
-            module.export_json(answer, rows === 0),
-      ]),
-    );
-    rows += count;
-    onProgress?.({ rows, total });
-    if (rows >= total) {
-      break;
-    }
+    return new Blob(parts, { type: EXPORT_TYPES[format] });
   }
-  // An abort during the last `onProgress` still means no file.
-  if (signal?.aborted) {
-    throw aborted();
-  }
-  if (format === "json") {
-    parts.push(new Blob(["]"]));
-  }
-  return new Blob(parts, {
-    type: format === "csv" ? "text/csv;charset=utf-8" : "application/json",
+}
+
+/** The most rows an Excel sheet holds, as `XLSX_MAX_ROWS` in `opengrid-export`. */
+const XLSX_MAX_ROWS = 1_048_575;
+
+/** `maxRows` of a workbook written in the tab, unless the page says otherwise. */
+const XLSX_TAB_MAX_ROWS = 250_000;
+
+/** The name of the workbook's sheet: the source, which the writer may refuse. */
+function sheetNameOf(query) {
+  return typeof query.source === "string" && query.source !== "" ? query.source : "export";
+}
+
+/**
+ * The XLSX writer of the tab, loaded the first time a workbook is asked for and
+ * kept: a module of its own (`xlsx/`, built by `just wasm-build-xlsx`), so a
+ * page that never exports to Excel does not fetch it. A failed load is not
+ * kept, so a later call tries again.
+ */
+let xlsxModule;
+async function loadXlsx() {
+  xlsxModule ??= import("./xlsx/opengrid_xlsx.js").then(async (glue) => {
+    await glue.default();
+    return glue;
   });
+  try {
+    return await xlsxModule;
+  } catch (error) {
+    xlsxModule = undefined;
+    throw coded(
+      "module_not_loaded",
+      `exportRows: the XLSX module did not load (${error?.message ?? error})`,
+    );
+  }
 }
 
 /**

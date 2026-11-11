@@ -19,13 +19,17 @@ opengrid-datasource = { workspace = true }
 # The pivot's answer (`PivotResult`), exported as it is shown (issue #3).
 opengrid-pivot = { workspace = true }
 opengrid-json = { workspace = true }
-# XLSX on the server (issue #72, decided by the owner): off by default, so the
-# browser modules never carry it. `constant_memory` writes finished rows to a
-# temporary file, so an export's memory does not grow with its rows.
-rust_xlsxwriter = { version = "0.102", default-features = false, features = ["constant_memory"], optional = true }
+# XLSX (issue #72, decided by the owner): off by default, so the element and
+# engine modules never carry it. The writer in the tab (#332) is a module of its
+# own, loaded when a page asks for a workbook.
+rust_xlsxwriter = { version = "0.102", default-features = false, optional = true }
 
 [features]
+# A workbook built in memory: what the tab can do, which has no temporary file.
 xlsx = ["dep:rust_xlsxwriter"]
+# `constant_memory` writes finished rows to a temporary file, so an export's
+# memory does not grow with its rows: the server's, which has a file system.
+xlsx-streaming = ["xlsx", "rust_xlsxwriter/constant_memory"]
 
 [[test]]
 name = "xlsx"

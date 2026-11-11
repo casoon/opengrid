@@ -21,9 +21,35 @@ struct Cell {
     text: String,
 }
 
-/// The cells of sheet 1 by reference (`A1`, `B2`, …), read from the XML.
+/// The strings of the shared table, for a workbook written in memory: there a
+/// text is `t="s"` with an index, where the streaming writer puts it inline.
+fn shared_strings(archive: &mut zip::ZipArchive<std::io::Cursor<&[u8]>>) -> Vec<String> {
+    let mut xml = String::new();
+    let Ok(mut file) = archive.by_name("xl/sharedStrings.xml") else {
+        return Vec::new();
+    };
+    file.read_to_string(&mut xml).unwrap();
+    xml.split("<si>")
+        .skip(1)
+        .map(|item| {
+            item.split("</si>")
+                .next()
+                .unwrap()
+                .split("<t>")
+                .nth(1)
+                .or_else(|| item.split("<t xml:space=\"preserve\">").nth(1))
+                .map(|text| text.split("</t>").next().unwrap().to_owned())
+                .unwrap_or_default()
+        })
+        .collect()
+}
+
+/// The cells of sheet 1 by reference (`A1`, `B2`, …), read from the XML. A text
+/// from the shared table is read as the inline string the streaming writer
+/// makes of it, so the assertions hold for both ways of writing.
 fn cells(file: &[u8]) -> std::collections::BTreeMap<String, Cell> {
     let mut archive = zip::ZipArchive::new(std::io::Cursor::new(file)).expect("a zip archive");
+    let shared = shared_strings(&mut archive);
     let mut xml = String::new();
     archive
         .by_name("xl/worksheets/sheet1.xml")
@@ -52,10 +78,17 @@ fn cells(file: &[u8]) -> std::collections::BTreeMap<String, Cell> {
             })
             .unwrap_or("")
             .to_owned();
+        let (kind, text) = match attribute("t").as_deref() {
+            Some("s") => (
+                Some("inlineStr".to_owned()),
+                shared[text.parse::<usize>().unwrap()].clone(),
+            ),
+            kind => (kind.map(str::to_owned), text),
+        };
         out.insert(
             reference.to_owned(),
             Cell {
-                kind: attribute("t"),
+                kind,
                 styled: attribute("s").is_some(),
                 text,
             },

@@ -16,7 +16,7 @@ them.
 
 | Call | What it answers | Where the work is done |
 |---|---|---|
-| `exportRows(provider, query, options)` | Every match of a query, as a `Blob` of CSV or JSON — or XLSX, written by a server. | Through any provider, in pieces — or in one request where the provider can. |
+| `exportRows(provider, query, options)` | Every match of a query, as a `Blob` of CSV, JSON or XLSX. | Through any provider, in pieces — or in one request where the provider can. XLSX is written by the server where the provider exports there, and in the tab otherwise. |
 | `createRestProvider(…).export(query, options)` | The same, from `POST /export/{source}`. | On an `opengrid-server`, streamed. `exportRows` uses it by itself. |
 | `get_pivot(host, options)` | An `<opengrid-pivot>` as it is shown, as CSV text. | In the element, without a request. |
 | `exportPivot(provider, host, options)` | The same pivot as an XLSX file, a `Blob`. | On an `opengrid-server`, in one request. |
@@ -184,10 +184,11 @@ what an export holds and a memory measurement for a million rows — is in
 
 ### XLSX
 
-`format: "xlsx"` writes an Excel workbook — on the server only: `exportRows` with any other
-provider is a `TypeError` before anything is fetched. One sheet, named after the source, the
-header row with the field names, frozen. XLSX is the format for people in a spreadsheet; CSV
-and JSON stay the exact ones, and nothing changes a value on the way:
+`format: "xlsx"` writes an Excel workbook: on the server where the provider exports there
+(`createRestProvider`), and **in the tab** for any other provider — the engine in the tab, a
+worker, the hybrid provider. One sheet, named after the source, the header row with the field
+names, frozen. XLSX is the format for people in a spreadsheet; CSV and JSON stay the exact ones,
+and nothing changes a value on the way:
 
 | Type | In the workbook |
 |---|---|
@@ -199,6 +200,21 @@ and JSON stay the exact ones, and nothing changes a value on the way:
 | `timestamp` | an Excel date-time in UTC, `yyyy-mm-dd hh:mm:ss.000` — **text** (ISO) with sub-millisecond digits |
 | `utf8` | a string — never a formula, so the formula guard has nothing to do |
 | NULL | an empty cell |
+
+**In the tab** the same writer runs as a module of its own, `@casoon/opengrid/xlsx/` (about
+250 KB brotli), which `exportRows` loads the first time a workbook is asked for and keeps; a page
+that never exports to Excel does not fetch it. A bundler follows the import; without one the files
+are served next to `loader.js`. Two things differ from the server:
+
+- **The workbook is built in memory.** The server writes finished rows to a temporary file; a
+  browser has none. So the memory the tab needs grows with the rows: measured with five columns of
+  mixed types, about 120 MB at 100 000 rows, 510 MB at 500 000 and 1 GB at a million. The rows are
+  therefore bounded by `maxRows`, **250 000 by default for a workbook in the tab** (a server's is
+  1 000 000), and by what an Excel sheet holds, 1 048 575. More is an error with the code
+  `too_many_rows`, never a shortened file; a page that knows its users' machines can raise
+  `maxRows`.
+- **Pieces, not one request:** the file is built from the same `chunkSize` pieces as a CSV, with the
+  same tie-breaking sort and the same detection of a source that changes underneath.
 
 One difference a workbook cannot hold: **the empty string and NULL are both an empty cell** —
 Excel has no empty text apart from an empty cell. CSV and JSON keep the two apart.
@@ -263,8 +279,8 @@ Three things to know:
   table: `exportPivot` reads the element's texts — its defaults, or what `set_texts` made of
   them — and sends them with the request. The page hands over nothing.
 - **Only with a server.** A pivot over the engine in the tab or in a worker has no
-  `exportPivot`; asking is a `TypeError` before anything is sent, as XLSX of `exportRows` is
-  there. Its CSV is `get_pivot` everywhere.
+  `exportPivot`; asking is a `TypeError` before anything is sent. (A workbook of a grid's rows
+  is different: `exportRows` writes it in the tab.) Its CSV is `get_pivot` everywhere.
 
 ## Paper and PDF
 
