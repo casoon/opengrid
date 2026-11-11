@@ -1,4 +1,5 @@
-//! The quick doors: "+ Filter" and "+ Group", the filter dialog and the operator menu — second doors to what the column menu and the filter row already do.
+//! The quick doors: "+ Filter" and "+ Group", the filter dialog and the operator
+//! menu — second doors to what the column menu and the filter row already do.
 
 use super::*;
 
