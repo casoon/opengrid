@@ -225,7 +225,9 @@ test("every header cell says its column: aria-colindex is the place it has on th
   }
 });
 
-test("a data cell is announced with its band and its column", async ({ page }) => {
+test("a data cell is announced with its band and its column", async ({ page, browserName }) => {
+  // The tree is read over the Chrome DevTools Protocol, which only Chromium has.
+  test.skip(browserName !== "chromium", "reads the accessibility tree over CDP");
   // What the cell names as its headers, resolved as a browser resolves
   // `headers`: ids in the cell's own tree, the band first.
   const announced = (selector, name) =>
