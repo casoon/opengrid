@@ -158,6 +158,8 @@ Two things belong in every release entry and are easy to leave out:
 - **Grid:** a grouped grid, and a tree, put their window six rows short of where a key or the
   scrolling asked for it: `Ctrl`+`End` stopped before the last position and `ArrowDown` at the
   window's edge needed two presses ([#342](https://github.com/casoon/opengrid/issues/342)).
+- **Docs:** the API reference's link to the protocol, where `where` is described, led to a
+  missing page on the project site.
 
 ## [0.15.0] - 2026-11-09
 
