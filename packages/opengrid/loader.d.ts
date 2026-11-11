@@ -1109,6 +1109,9 @@ export type TextKey =
   | "recordSave"
   | "recordDone"
   | "recordNothing"
+  | "rangeSize"
+  | "rangeCopied"
+  | "rangeUnloaded"
   | "redoPaste"
   | "undoNothing"
   | "redoNothing";

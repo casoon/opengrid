@@ -1988,6 +1988,12 @@ pub fn grid_css() -> String {
          /* Until now a selected row was announced and invisible. The tint alone
             would be 1.4.1, so the bar carries the information and the tint only
             helps it. Selected beats hovered, hence the order. */
+         /* A block of cells (issue #327): the tint is the row selection's, so the
+            outline carries it where colours are taken away. */
+         td[data-range] {{ background: var({SELECTED_PROPERTY});
+                   outline: 1px solid color-mix(in oklab, var({ACCENT_PROPERTY}) 55%, transparent);
+                   outline-offset: -1px; }}
+         table[data-ranging] td {{ user-select: none; }}
          tbody tr[data-selected=\"true\"] {{ background: var({SELECTED_PROPERTY});
                      box-shadow: inset 3px 0 0 var({ACCENT_PROPERTY}); }}
          /* The bar stands where the row starts (issue #320). */
@@ -2388,6 +2394,7 @@ pub fn grid_css() -> String {
             `color-mix` of two system colours resolves unpredictably, and the
             user's palette is the one that has to win. */
          @media (forced-colors: active) {{
+           td[data-range] {{ outline: 2px solid Highlight; }}
            :host {{ {SURFACE_PROPERTY}: Canvas; {SURFACE_2_PROPERTY}: Canvas;
                     {INK_PROPERTY}: CanvasText; {INK_MUTED_PROPERTY}: CanvasText;
                     {LINE_PROPERTY}: CanvasText; {LINE_STRONG_PROPERTY}: CanvasText;

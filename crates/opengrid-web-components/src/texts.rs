@@ -353,6 +353,12 @@ pub struct GridTexts {
     pub record_done: String,
     /// Said when saving changed no field. May use `{row}`.
     pub record_nothing: String,
+    /// What a marked block of cells is called. May use `{rows}` and `{cols}`.
+    pub range_size: String,
+    /// Said after a block was copied. May use `{rows}` and `{cols}`.
+    pub range_copied: String,
+    /// Said when the block reaches rows that are not loaded.
+    pub range_unloaded: String,
     /// Said when there is no step to undo.
     pub undo_nothing: String,
     /// Said when there is no step to redo.
@@ -596,6 +602,9 @@ pub(crate) const KEYS: &[&str] = &[
     "recordSave",
     "recordDone",
     "recordNothing",
+    "rangeSize",
+    "rangeCopied",
+    "rangeUnloaded",
     "undoNothing",
     "redoNothing",
     "validationWarning",
@@ -838,6 +847,9 @@ impl Default for GridTexts {
             record_save: "Save".to_owned(),
             record_done: "Record {row} saved, {count} fields changed".to_owned(),
             record_nothing: "Record {row}: no field changed".to_owned(),
+            range_size: "{rows} by {cols} cells".to_owned(),
+            range_copied: "Copied {rows} by {cols} cells".to_owned(),
+            range_unloaded: "Not copied: the range reaches rows that are not loaded".to_owned(),
             undo_nothing: "Nothing to undo".to_owned(),
             redo_nothing: "Nothing to redo".to_owned(),
             validation_warning: "Warning: {message}".to_owned(),
@@ -1070,6 +1082,24 @@ impl GridTexts {
     /// Said when saving changed no field.
     pub fn record_nothing(&self, row: u64) -> String {
         fill(&self.record_nothing, "row", &row.to_string())
+    }
+
+    /// A marked block: "3 by 4 cells".
+    pub fn range_size(&self, rows: u64, cols: u64) -> String {
+        fill(
+            &fill(&self.range_size, "rows", &rows.to_string()),
+            "cols",
+            &cols.to_string(),
+        )
+    }
+
+    /// Said after a block was copied.
+    pub fn range_copied(&self, rows: u64, cols: u64) -> String {
+        fill(
+            &fill(&self.range_copied, "rows", &rows.to_string()),
+            "cols",
+            &cols.to_string(),
+        )
     }
 
     /// "1 choice" or "{count} choices".
@@ -1809,6 +1839,9 @@ mod host {
         overwrite(&mut texts.record_save, string("recordSave"));
         overwrite(&mut texts.record_done, string("recordDone"));
         overwrite(&mut texts.record_nothing, string("recordNothing"));
+        overwrite(&mut texts.range_size, string("rangeSize"));
+        overwrite(&mut texts.range_copied, string("rangeCopied"));
+        overwrite(&mut texts.range_unloaded, string("rangeUnloaded"));
         overwrite(&mut texts.undo_nothing, string("undoNothing"));
         overwrite(&mut texts.redo_nothing, string("redoNothing"));
         overwrite(&mut texts.validation_warning, string("validationWarning"));

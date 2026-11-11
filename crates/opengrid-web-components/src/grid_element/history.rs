@@ -267,7 +267,11 @@ fn apply_paste(
 
 /// The focus goes to the cell that changed, the window with it; with no cell —
 /// a row came or went — to the new row, or the last one.
-fn focus_after(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>, at: Option<CellRef>) {
+pub(super) fn focus_after(
+    host: &HtmlElement,
+    runtime: &Rc<RefCell<GridRuntime>>,
+    at: Option<CellRef>,
+) {
     let (target, window, rows) = {
         let borrowed = runtime.borrow();
         let rows = borrowed.state.row_count();

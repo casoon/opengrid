@@ -37,6 +37,14 @@ Two things belong in every release entry and are easy to leave out:
   undo step. A cancelable `opengrid-record-open` lets a page open its own form instead. Needs `row-key`;
   off while grouped and in a tree ([#325](https://github.com/casoon/opengrid/issues/325),
   [Editing a whole record](docs/api.md#editing-a-whole-record)).
+- **Grid:** a block of cells, marked and copied. `Shift`+arrows, `Shift`+click and dragging mark the
+  rectangle between where it began and the focus, announced as a size („3 by 4 cells“) and drawn with
+  `data-range`; `Ctrl`/`Cmd`+`C` copies it as values, tab-separated, which a spreadsheet reads and the
+  grid's paste reads back unchanged. A text cell a spreadsheet would run as a formula gets the export's
+  guard (a leading `'`), which pasting into a text column takes off again. A copy covers the loaded
+  rows and says so otherwise; the row selection stays its own thing
+  ([#327](https://github.com/casoon/opengrid/issues/327),
+  [Copying a range of cells](docs/api.md#copying-a-range-of-cells)).
 - **Grid:** filters joined by `or`. The search expression takes `or` and parentheses —
   `country = DE or (qty ≥ 900 and customer = Alpha)`, `and` binding tighter — and a value in double
   quotes. An expression the filter row cannot hold — one with an `or`, or with two conditions on

@@ -101,6 +101,7 @@ mod paste;
 mod presentation_columns;
 mod print;
 mod quick_doors;
+mod range;
 mod record;
 mod search;
 mod tree_path;
@@ -311,6 +312,10 @@ struct GridRuntime {
     /// The finding the live region has said for the cell being edited, so it is
     /// said once (issue #188).
     validation_said: Option<String>,
+    /// The block of cells marked by `Shift`+arrows or the pointer (issue #327).
+    range: Option<opengrid_grid::CellRange>,
+    /// Where a drag with the pointer started, while the button is down.
+    drag_from: Option<CellRef>,
 }
 
 impl GridRuntime {
@@ -413,6 +418,8 @@ fn fresh_runtime(
         paste: None,
         epoch: 0,
         validation_said: None,
+        range: None,
+        drag_from: None,
     }
 }
 
@@ -486,6 +493,7 @@ fn reset_runtime(host: &HtmlElement) {
         // The preview went with the DOM (`clear_root`); what it would apply
         // names cells of a layout that is gone.
         runtime.paste = None;
+        runtime.range = None;
         runtime.epoch += 1;
         // A rebuild (columns, texts, presentation) is not a reason to close
         // every group the reader opened: the same grouping keeps its expanded
@@ -1279,6 +1287,7 @@ fn render(host: &HtmlElement, focus_after: bool) {
         combo::draw_cells(host, &root);
     }
 
+    range::paint(host);
     keep_pager_focus(host);
     if focus_after {
         focus_active(host);
@@ -1593,6 +1602,8 @@ fn settle(
         // land on are other rows now (issue #228).
         if kind == QueryKind::Data {
             runtime.epoch += 1;
+            // The positions a range marked are other rows now.
+            runtime.range = None;
             paste_dropped = runtime.paste.take().is_some();
         }
         match outcome {
@@ -2115,6 +2126,16 @@ fn add_listeners(root: &ShadowRoot) {
     let _ = root.add_event_listener_with_callback("change", validating.unchecked_ref());
     let typing = Closure::<dyn FnMut(Event)>::new(combo::on_input).into_js_value();
     let _ = root.add_event_listener_with_callback("input", typing.unchecked_ref());
+    let copied = Closure::<dyn FnMut(Event)>::new(range::on_copy).into_js_value();
+    let _ = root.add_event_listener_with_callback("copy", copied.unchecked_ref());
+    for (kind, handler) in [
+        ("mousedown", range::on_mouse_down as fn(Event)),
+        ("mouseover", range::on_mouse_over as fn(Event)),
+        ("mouseup", range::on_mouse_up as fn(Event)),
+    ] {
+        let listener = Closure::<dyn FnMut(Event)>::new(handler).into_js_value();
+        let _ = root.add_event_listener_with_callback(kind, listener.unchecked_ref());
+    }
     let pasted = Closure::<dyn FnMut(Event)>::new(paste::on_paste).into_js_value();
     let _ = root.add_event_listener_with_callback("paste", pasted.unchecked_ref());
     let scroll = Closure::<dyn FnMut(Event)>::new(on_scroll).into_js_value();
@@ -2573,6 +2594,11 @@ fn on_key_down(event: KeyboardEvent) {
     // reported against a display position: `Enter` on a leaf opens no editor.
     if is_tree(&host) && event.key() == "Enter" && matches!(active, ActiveCell::Data(_)) {
         event.prevent_default();
+        return;
+    }
+    // `Shift`+arrows mark a block of cells; any other key that moves or edits
+    // ends it (issue #327).
+    if range::on_key(&host, &runtime, &event, active) {
         return;
     }
     // `Shift`+`F2` opens the record as a form (issue #325).
@@ -4040,6 +4066,7 @@ fn on_focus_in(event: Event) {
     if from == active || same_band {
         return;
     }
+    range::on_focus(&host, &runtime, active);
     runtime.borrow_mut().set_active(active);
     focus_from(&root, viewport.as_ref(), from, active);
 }

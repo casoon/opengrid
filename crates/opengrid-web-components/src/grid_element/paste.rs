@@ -250,7 +250,14 @@ async fn prepare(host: &HtmlElement, anchor: CellRef, rows: Vec<Vec<String>>) {
                 ));
                 continue;
             }
-            match parse_cell(text, field.data_type, field.nullable, &notation) {
+            // A copy of a range guards a text cell a spreadsheet would run as a
+            // formula with a leading quote; here it is the text again (#327).
+            let read = if field.data_type == DataType::Utf8 {
+                opengrid_grid::range::unguard(text)
+            } else {
+                text.as_str()
+            };
+            match parse_cell(read, field.data_type, field.nullable, &notation) {
                 Some(value) => {
                     if is_new {
                         values[col] = value;
