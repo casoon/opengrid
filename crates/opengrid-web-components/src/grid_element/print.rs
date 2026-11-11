@@ -176,10 +176,13 @@ fn build(host: &HtmlElement, result: &opengrid_datasource::QueryResult, groups: 
     node(&table, "caption", Some(&caption.join(" \u{b7} ")));
 
     let header = node(&table, "thead", None).and_then(|thead| node(&thead, "tr", None));
+    let page = presentation::page_columns(host);
     for (col, field) in fields.iter().enumerate() {
+        // A banded column is `Band · Column` (issue #353): paper has one header row.
+        let title = banded_title(&page, &texts, field.name.as_str());
         let Some(th) = header
             .as_ref()
-            .and_then(|row| node(row, "th", Some(texts.column(field.name.as_str()))))
+            .and_then(|row| node(row, "th", Some(&title)))
         else {
             return;
         };
@@ -274,4 +277,32 @@ fn build(host: &HtmlElement, result: &opengrid_datasource::QueryResult, groups: 
         after.unchecked_ref(),
         &options,
     );
+}
+
+/// A column's title, with its band in front when it has one: `Address · City`.
+/// The one form a single header row can hold (issue #353).
+pub(super) fn banded_title(
+    page: &opengrid_grid::layout::PageColumns,
+    texts: &crate::texts::GridTexts,
+    name: &str,
+) -> String {
+    match page.band(name) {
+        Some(band) => format!("{band} \u{b7} {}", texts.column(name)),
+        None => texts.column(name).to_owned(),
+    }
+}
+
+/// The header texts of the columns shown that stand under a band, by field
+/// name — what `exportRows` takes as `headers` (issue #353).
+pub(super) fn export_headers(host: &HtmlElement) -> std::collections::BTreeMap<String, String> {
+    let page = presentation::page_columns(host);
+    let texts = texts(host);
+    columns_of(host)
+        .into_iter()
+        .filter(|name| page.band(name).is_some())
+        .map(|name| {
+            let title = banded_title(&page, &texts, &name);
+            (name, title)
+        })
+        .collect()
 }

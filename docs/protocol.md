@@ -166,6 +166,7 @@ Always JSON, whatever `Accept` said:
 `POST /export/{source}` takes the query body of `/query` and answers every row as a file:
 `?format=csv` or `?format=json`, CSV options `delimiter`, `bom`, `protectFormulas`, `null`.
 The headers carry `Content-Disposition: attachment` and `X-Total-Count`, the rows that follow.
+The header row of a CSV or an XLSX takes the page's words for a column as a parameter each, `header.<column>=<text>` (issue #353); JSON has no header row and refuses them. A column without one keeps its field name.
 Everything that can still be a status is decided before the first byte; a failure after it
 breaks the connection off instead of ending a shorter file. The details are in
 [Where queries run](../guides/where-queries-run/#exporting-from-a-server).

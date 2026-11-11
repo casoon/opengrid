@@ -518,6 +518,59 @@ test("hiding the last shown column of a band hides the band", async ({ page }) =
   expect(await header()).toEqual({ rows: 2, tall: 3, rowcount: "202", first: "3" });
 });
 
+test("print and exports name the band with its column: Band · Column", async ({ page }) => {
+  // The page's words for the banded columns, and none for the others.
+  const headers = await page.evaluate(() => window.__opengridModule.get_export_headers(document.getElementById("banded")));
+  expect(headers).toEqual({
+    customer: "Customer \u00b7 customer",
+    country: "Customer \u00b7 country",
+    amount: "Order \u00b7 amount",
+    qty: "Order \u00b7 qty",
+  });
+
+  // A CSV with them: the band in the header row, the data untouched.
+  const csv = await page.evaluate(async () => {
+    const { exportRows } = await import("/packages/opengrid/loader.js");
+    const grid = document.getElementById("banded");
+    const query = window.__opengridModule.get_query(grid);
+    const blob = await exportRows(window.__provider, query, {
+      headers: window.__opengridModule.get_export_headers(grid),
+      bom: false,
+      chunkSize: 50,
+    });
+    return await blob.text();
+  });
+  expect(csv.split("\r\n")[0]).toBe("id,Customer \u00b7 customer,Customer \u00b7 country,Order \u00b7 amount,Order \u00b7 qty,ordered_on");
+  expect(csv.split("\r\n").length).toBe(202);
+
+  // Without them the header is the field names, as before.
+  const plain = await page.evaluate(async () => {
+    const { exportRows } = await import("/packages/opengrid/loader.js");
+    const blob = await exportRows(window.__provider, window.__opengridModule.get_query(document.getElementById("banded")), { bom: false });
+    return (await blob.text()).split("\r\n")[0];
+  });
+  expect(plain).toBe("id,customer,country,amount,qty,ordered_on");
+
+  // JSON has no header row, and says so.
+  const refused = await page.evaluate(async () => {
+    const { exportRows } = await import("/packages/opengrid/loader.js");
+    try {
+      await exportRows(window.__provider, window.__opengridModule.get_query(document.getElementById("banded")), { format: "json", headers: { id: "x" } });
+    } catch (error) {
+      return error.message;
+    }
+    return null;
+  });
+  expect(refused).toContain("a JSON export has none");
+
+  // The paper has one header row too.
+  await page.evaluate(() => window.__opengridModule.prepare_print(document.getElementById("banded")));
+  const printed = await page.evaluate(() =>
+    [...document.getElementById("banded").shadowRoot.querySelector("[data-print]").shadowRoot.querySelectorAll("thead th")].map((th) => th.textContent),
+  );
+  expect(printed).toEqual(["id", "Customer \u00b7 customer", "Customer \u00b7 country", "Order \u00b7 amount", "Order \u00b7 qty", "ordered_on"]);
+});
+
 test("pinning a column of a band pins the band: one cell above its columns, in place", async ({ page }) => {
   const asked = await queries(page, "banded");
   await focusHeader(page, "#banded", "country");

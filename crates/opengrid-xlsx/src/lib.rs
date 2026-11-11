@@ -33,6 +33,14 @@ impl Book {
         })
     }
 
+    /// The header texts by field name (issue #353): a banded column is
+    /// `Band · Column`. Before the first piece, or it has no effect.
+    pub fn set_headers(&mut self, headers: std::collections::BTreeMap<String, String>) {
+        if let Some(writer) = self.writer.as_mut() {
+            writer.set_headers(headers);
+        }
+    }
+
     /// The next piece; the first also writes the header row.
     pub fn add(&mut self, result: &QueryResult) -> Result<(), String> {
         self.writer
@@ -101,6 +109,22 @@ impl XlsxBook {
             .map_err(|error| JsError::new(&error))
     }
 
+    /// Header texts by field name, `{ column: "Band · Column" }` (issue #353),
+    /// before the first piece. Anything but strings is ignored.
+    pub fn headers(&mut self, headers: JsValue) {
+        let mut map = std::collections::BTreeMap::new();
+        if headers.is_object() {
+            for entry in js_sys::Object::entries(&js_sys::Object::from(headers)).iter() {
+                let pair = js_sys::Array::from(&entry);
+                if let (Some(name), Some(text)) = (pair.get(0).as_string(), pair.get(1).as_string())
+                {
+                    map.insert(name, text);
+                }
+            }
+        }
+        self.book.set_headers(map);
+    }
+
     /// The next piece of the result: the answer of the provider, in either form.
     pub fn add(&mut self, piece: JsValue) -> Result<(), JsError> {
         match answer(&piece) {
@@ -151,6 +175,34 @@ mod tests {
         let xml = sheet(&file);
         // The header row and three rows: four `<row`s, not seven.
         assert_eq!(xml.matches("<row ").count(), 4, "{xml}");
+    }
+
+    fn shared_strings(file: &[u8]) -> String {
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(file)).expect("a zip");
+        let mut xml = String::new();
+        archive
+            .by_name("xl/sharedStrings.xml")
+            .expect("shared strings")
+            .read_to_string(&mut xml)
+            .unwrap();
+        xml
+    }
+
+    /// A banded column's header says `Band · Column` (issue #353); the other
+    /// keeps its field name.
+    #[test]
+    fn a_header_text_replaces_the_field_name() {
+        let mut book = Book::new("orders").unwrap();
+        book.set_headers(
+            [("name".to_owned(), "Who \u{b7} name".to_owned())]
+                .into_iter()
+                .collect(),
+        );
+        book.add_json(FIRST).unwrap();
+        let strings = shared_strings(&book.finish().unwrap());
+        assert!(strings.contains("Who \u{b7} name"), "{strings}");
+        assert!(strings.contains(">id<"), "{strings}");
+        assert!(!strings.contains(">name<"), "{strings}");
     }
 
     #[test]

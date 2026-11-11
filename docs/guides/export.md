@@ -354,6 +354,26 @@ part of the value: a text column holding `-5` would come back as `'-5`. Pass
 `protectFormulas: false` for such an export, and only for such an export; a page that serves
 both can offer two buttons. JSON has no guard: nothing opens JSON as a spreadsheet.
 
+## Naming the band
+
+A grid with [column bands](../../api/#column-bands) shows a band above its columns; a file has one
+header row. The print table writes `Address · City` for a banded column by itself. A CSV or an XLSX
+does so when the page hands it the texts:
+
+```js
+const blob = await exportRows(provider, loader.module.get_query(grid), {
+  format: "xlsx",
+  headers: loader.module.get_export_headers(grid),   // { city: "Address · City", … }
+});
+```
+
+`headers` maps a field name to the text of its header cell; a column without an entry keeps its field
+name, and the data is not touched. A JSON export has no header row and refuses the option. Over a
+server, `createRestProvider` sends each text as a parameter, `header.<column>`, to
+`POST /export/{source}` (CSV and XLSX; JSON refuses it, as it refuses a CSV option on another
+format). The text is written like a name: quoted in a CSV where it needs it, and a text a spreadsheet
+would run as a formula (`=…`) is guarded like any other.
+
 ## NULL in a CSV
 
 NULL is an empty, unquoted field; the empty string is `""`. A reader that tells quoted from
