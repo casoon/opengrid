@@ -341,6 +341,18 @@ pub struct GridTexts {
     pub undo_paste: String,
     /// What redo says for a paste. May use `{count}`.
     pub redo_paste: String,
+    /// What undo says for a record saved as a form. May use `{row}` and `{count}`.
+    pub undo_record: String,
+    /// What redo says for it.
+    pub redo_record: String,
+    /// The record form's title. May use `{row}`.
+    pub record_title: String,
+    /// The record form's save button.
+    pub record_save: String,
+    /// Said after saving. May use `{row}` and `{count}`.
+    pub record_done: String,
+    /// Said when saving changed no field. May use `{row}`.
+    pub record_nothing: String,
     /// Said when there is no step to undo.
     pub undo_nothing: String,
     /// Said when there is no step to redo.
@@ -578,6 +590,12 @@ pub(crate) const KEYS: &[&str] = &[
     "redoAdded",
     "undoPaste",
     "redoPaste",
+    "undoRecord",
+    "redoRecord",
+    "recordTitle",
+    "recordSave",
+    "recordDone",
+    "recordNothing",
     "undoNothing",
     "redoNothing",
     "validationWarning",
@@ -814,6 +832,12 @@ impl Default for GridTexts {
             redo_added: "Redone: row added".to_owned(),
             undo_paste: "Undone: paste, {count} values".to_owned(),
             redo_paste: "Redone: paste, {count} values".to_owned(),
+            undo_record: "Undone: record {row}, {count} fields".to_owned(),
+            redo_record: "Redone: record {row}, {count} fields".to_owned(),
+            record_title: "Edit record {row}".to_owned(),
+            record_save: "Save".to_owned(),
+            record_done: "Record {row} saved, {count} fields changed".to_owned(),
+            record_nothing: "Record {row}: no field changed".to_owned(),
             undo_nothing: "Nothing to undo".to_owned(),
             redo_nothing: "Nothing to redo".to_owned(),
             validation_warning: "Warning: {message}".to_owned(),
@@ -1013,6 +1037,39 @@ impl GridTexts {
             &self.redo_paste
         };
         fill(template, "count", &count.to_string())
+    }
+
+    /// What undo or redo says for a record saved as a form; `row` is 1-based.
+    pub fn history_record(&self, undoing: bool, row: u64, count: usize) -> String {
+        let template = if undoing {
+            &self.undo_record
+        } else {
+            &self.redo_record
+        };
+        fill(
+            &fill(template, "row", &row.to_string()),
+            "count",
+            &count.to_string(),
+        )
+    }
+
+    /// The record form's title.
+    pub fn record_title(&self, row: u64) -> String {
+        fill(&self.record_title, "row", &row.to_string())
+    }
+
+    /// Said after a record was saved with `count` changed fields.
+    pub fn record_done(&self, row: u64, count: usize) -> String {
+        fill(
+            &fill(&self.record_done, "row", &row.to_string()),
+            "count",
+            &count.to_string(),
+        )
+    }
+
+    /// Said when saving changed no field.
+    pub fn record_nothing(&self, row: u64) -> String {
+        fill(&self.record_nothing, "row", &row.to_string())
     }
 
     /// "1 choice" or "{count} choices".
@@ -1746,6 +1803,12 @@ mod host {
         overwrite(&mut texts.redo_added, string("redoAdded"));
         overwrite(&mut texts.undo_paste, string("undoPaste"));
         overwrite(&mut texts.redo_paste, string("redoPaste"));
+        overwrite(&mut texts.undo_record, string("undoRecord"));
+        overwrite(&mut texts.redo_record, string("redoRecord"));
+        overwrite(&mut texts.record_title, string("recordTitle"));
+        overwrite(&mut texts.record_save, string("recordSave"));
+        overwrite(&mut texts.record_done, string("recordDone"));
+        overwrite(&mut texts.record_nothing, string("recordNothing"));
         overwrite(&mut texts.undo_nothing, string("undoNothing"));
         overwrite(&mut texts.redo_nothing, string("redoNothing"));
         overwrite(&mut texts.validation_warning, string("validationWarning"));

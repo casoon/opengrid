@@ -122,6 +122,7 @@ fn surface() -> String {
         crate::grid_element_events::ROW_ADD_EVENT,
         crate::grid_element_events::PASTE_EVENT,
         crate::grid_element_events::BULK_EVENT,
+        crate::grid_element_events::RECORD_OPEN_EVENT,
         crate::grid_element_events::DRILL_DOWN_EVENT,
         crate::grid_element_events::SOURCE_REPLACED_EVENT,
     ] {
@@ -307,6 +308,7 @@ fn parts() -> Vec<String> {
     // when it opens (issue #324).
     parts.push("chip-edit".to_owned());
     parts.push("filter-builder-dialog".to_owned());
+    parts.push("record-dialog".to_owned());
     // The quick doors of issue #34 open popups built when they open.
     parts.push("filter-dialog".to_owned());
     parts.push("grouping-menu".to_owned());
@@ -365,6 +367,7 @@ events
   opengrid-row-add
   opengrid-paste
   opengrid-bulk-change
+  opengrid-record-open
   opengrid-drill-down
   opengrid-source-replaced
 
@@ -425,7 +428,7 @@ column-menu-button column-toggle columns columns-toggle density drill-down edito
 empty-text facet facet-bounds facet-cost facet-count facet-pill facet-pills facet-value \
 facets facets-head facets-toggle field-group field-menu filter filter-builder filter-builder-dialog filter-clear filter-dialog filter-operator \
 filter-row-toggle filter-value footer group-mark group-toggle grouping-menu header layout list list-item list-item-remove listbox menu-label operator-menu \
-page-first page-label page-last page-next page-previous pager paste-apply paste-discard paste-preview paste-summary row row-header search search-hint \
+page-first page-label page-last page-next page-previous pager paste-apply paste-discard paste-preview paste-summary record-dialog row row-header search search-hint \
 search-input search-list select select-all select-mark sort-button sort-direction \
 sort-index source status table toolbar total-row validation viewport
 
@@ -440,10 +443,10 @@ filterRemoved filterRowToggle filterValueLabel filtersCleared groupByColumn grou
 groupCollapsed groupExpanded groupInvalid groupRow groupSecondLevel \
 groupingFull hideColumn lang listItemAdded listItemRemove listItemRemoved loading matchesOne matchesOther newRow noValue nothingToAdd operatorLabel \
 operators pageFirst pageLast pageNext pageOf pagePrevious pasteApplied pasteApply pasteBadOne pasteBadOther pasteBlocked pasteCutOff pasteDiscard pasteDiscarded pastePreview pasteUnreadable pinEnd pinGroup pinNone pinStart pinsReleased pivotColumns pivotDrillDown pivotFilterHint pivotFilterLabel pivotFilters pivotMeasures pivotRows pivotShowAs pivotToolbar queriesOne queriesOther queryAnd \
-queryMissingCondition queryMissingJoin queryMissingValue queryOr queryUnclosed queryUnknownColumn queryUnopened queryWrongOperator redoAdded redoCell redoNothing redoPaste rowAdded rowsOne rowsOther runningTotal searchChip searchHint \
+queryMissingCondition queryMissingJoin queryMissingValue queryOr queryUnclosed queryUnknownColumn queryUnopened queryWrongOperator recordDone recordNothing recordSave recordTitle redoAdded redoCell redoNothing redoPaste redoRecord rowAdded rowsOne rowsOther runningTotal searchChip searchHint \
 searchLabel searchPlaceholder searchSuggestions selectAll selectedAll selectionCleared selectionMissing shareOfColumn shareOfRow shareOfTotal sortAscending \
 sortDescending sortKey sourceHybrid sourceLocal sourceRemote sourceWorker subtotal subtreeCell subtreeOnly toolbarGroup total \
-totalRow treeContext treeGroupIgnored treeLevelTooLarge treeOrphans treeRefused typeBool typeDate typeInteger typeList typeNumber typeText typeTime undoAdded undoCell undoNothing undoPaste ungroupColumn validationError validationWarning valueLabel
+totalRow treeContext treeGroupIgnored treeLevelTooLarge treeOrphans treeRefused typeBool typeDate typeInteger typeList typeNumber typeText typeTime undoAdded undoCell undoNothing undoPaste undoRecord ungroupColumn validationError validationWarning valueLabel
 ";
         assert_eq!(surface(), expected);
     }

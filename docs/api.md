@@ -926,6 +926,31 @@ it, marked unsaved; the page saves and answers with `set_cell_state` per key. It
 and a column the page fills (`readonly` in `set_columns`) refuses it, said in the status line. Off
 while grouped and in a tree. The keys are the [selection's own](#selecting-by-key).
 
+### Editing a whole record
+
+`Shift`+`F2` on a data cell opens the focused record as a
+form: a native modal `<dialog>` (`part="record-dialog"`) the grid builds from the schema, one labelled
+field per column in column order, each the editor its cell would open (a checkbox, a date, a
+combobox over the page's choices). A column the page fills (`readonly` in `set_columns`) is shown,
+not editable. The page behind the dialog is inert and `Tab` stays inside it; `Escape` or **Cancel**
+closes it and changes nothing; `Enter` in a field, or **Save**, saves. The focus goes back to the cell
+it came from.
+
+Before it opens, the grid fires a **cancelable** `opengrid-record-open` with `{ key, row }`: a page
+that wants its own form calls `preventDefault()` and the grid opens nothing. It needs `row-key` (the
+page names the record, as for [setting a value for the selected rows](#setting-a-value-for-the-selected-rows)),
+and is off while grouped and in a tree.
+
+**Saving is the edits it holds, fired as cell edits.** Each field is read as the cell editor reads it
+(an empty field is `NULL` where the column allows it) and checked first: a value the column cannot hold,
+an empty required field, or an `error` from a `block: true` [validator](#validation) stays
+in the dialog with the sentence under the field (`aria-invalid`, described by it) and the focus on the
+first such field; **nothing is saved until every field is fine.** Then one `opengrid-cell-change` fires
+per field whose value changed, in column order, exactly as for a cell edit — the page saves as it
+already does — and the cells show the values, marked unsaved. A record saved with nothing changed
+fires nothing and says so in the status line. The edits are **one step** of the [history](#undo-and-redo):
+`Ctrl`/`Cmd`+`Z` puts all of them back, firing one `opengrid-cell-change` per field with `undo: true`.
+
 ### Pasting
 
 `Ctrl`/`Cmd`+`V` on a data cell reads the clipboard's text — tab-separated, as every spreadsheet
@@ -1629,6 +1654,7 @@ exception to the first part: `loader.js` dispatches it on the element, without `
 |---|---|
 | `opengrid-selection-change` | One of two shapes, by what the selection names ([Selecting by key](#selecting-by-key)). **By position** (no `row-key`, no tree): `{ rows: number[], ranges: { from: number, to: number }[], count: number }` — logical row numbers, ascending, and the same rows as `ranges`: runs of adjacent rows, ascending, both ends inclusive (select-all over 100 000 rows is one range, `{ from: 0, to: 99999 }`). **By key** (`row-key`, or a [tree](#tree)): `{ count: number, keys: unknown[] }` — the keys of the selected records, and neither `rows` nor `ranges`. `"keys" in detail` tells them apart. |
 | `opengrid-bulk-change` | `{ keys, column, value }` — one value was set for the selected rows; see [Setting a value for the selected rows](#setting-a-value-for-the-selected-rows). |
+| `opengrid-record-open` | `{ key, row }` — **cancelable**: the reader asked for the record as a form; `preventDefault()` keeps the grid from opening its own. See [Editing a whole record](#editing-a-whole-record). |
 | `opengrid-paste` | `{ changes: [{ key?, row, column, value, previous }], added: [{ values, provisionalKey }] }` — a pasted block was applied; see [Pasting](#pasting). |
 | `opengrid-row-add` | `{ values, provisionalKey, undo?, redo? }` — a record was entered in the new row; see [Adding rows](#adding-rows). |
 | `opengrid-row-action` | `{ id, row, key? }` — an action was activated; `key` is the `row-key` value. |
@@ -1783,7 +1809,7 @@ theme that animates a part.
 `facet-pill`, `facet-pills`, `facet-value`, `facets`, `facets-head`, `facets-toggle`, `filter`,
 `filter-builder`, `filter-builder-dialog`, `filter-clear`, `filter-dialog`, `filter-operator`, `filter-row-toggle`, `filter-value`, `footer`,
 `field-group`, `field-menu`, `group-mark`, `group-toggle`, `grouping-menu`, `header`, `layout`, `list`, `list-item`, `list-item-remove`, `listbox`, `menu-label`, `operator-menu`, `page-first`, `page-label`, `page-last`, `page-next`,
-`page-previous`, `pager`, `paste-apply`, `paste-discard`, `paste-preview`, `paste-summary`, `row`, `row-header`, `search`, `search-hint`, `search-input`, `search-list`,
+`page-previous`, `pager`, `paste-apply`, `paste-discard`, `paste-preview`, `paste-summary`, `record-dialog`, `row`, `row-header`, `search`, `search-hint`, `search-input`, `search-list`,
 `select`, `select-all`, `select-mark`, `sort-button`, `sort-direction`, `sort-index`, `source`, `status`,
 `table`, `toolbar`, `total-row`, `validation`, `viewport`.
 
@@ -1990,6 +2016,8 @@ boolean reads — that is `set_formats`.
 | `undoCell` / `redoCell` | `Undone: {column} in row {row}` / `Redone: …` | `{column}`, `{row}` |
 | `undoAdded` / `redoAdded` | `Undone: row added` / `Redone: row added` | |
 | `undoPaste` / `redoPaste` | `Undone: paste, {count} values` / `Redone: …` | `{count}` |
+| `undoRecord` / `redoRecord` | `Undone: record {row}, {count} fields` / `Redone: …` | `{row}`, `{count}` |
+| `recordTitle` / `recordSave` / `recordDone` / `recordNothing` | `Edit record {row}` / `Save` / `Record {row} saved, {count} fields changed` / `Record {row}: no field changed` | `{row}`, `{count}` |
 | `undoNothing` / `redoNothing` | `Nothing to undo` / `Nothing to redo` | |
 | `bulkCaption` / `bulkApply` / `bulkMenu` | `Set {column} for {rows} selected` / `Set` / `Set for selected rows` | `{column}`, `{rows}` |
 | `bulkReadonly` / `bulkDone` | `{column} is read-only` / `{column} set for {rows}` | `{column}`, `{rows}` |

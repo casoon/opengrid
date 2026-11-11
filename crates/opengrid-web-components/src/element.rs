@@ -950,6 +950,21 @@ pub(crate) fn dispatch(host: &HtmlElement, name: &str, detail: &JsValue) {
     }
 }
 
+/// Like [`dispatch`], but `cancelable`: answers whether the page left it alone,
+/// so a page that called `preventDefault()` keeps the element from doing what
+/// the event announced (issue #325).
+pub(crate) fn dispatch_cancelable(host: &HtmlElement, name: &str, detail: &JsValue) -> bool {
+    let init = web_sys::CustomEventInit::new();
+    init.set_bubbles(true);
+    init.set_composed(true);
+    init.set_cancelable(true);
+    init.set_detail(detail);
+    match web_sys::CustomEvent::new_with_event_init_dict(name, &init) {
+        Ok(event) => host.dispatch_event(&event).unwrap_or(true),
+        Err(_) => true,
+    }
+}
+
 /// This module's linear memory in bytes.
 fn linear_memory() -> usize {
     core::arch::wasm32::memory_size(0) * 65_536

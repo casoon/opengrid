@@ -101,6 +101,9 @@ pub(crate) mod grid_element_events {
     pub const PASTE_EVENT: &str = "opengrid-paste";
     /// Fired when one value was set for the selected rows (issue #187).
     pub const BULK_EVENT: &str = "opengrid-bulk-change";
+    /// Fired, cancelable, when the reader asks for a record as a form
+    /// (issue #325).
+    pub const RECORD_OPEN_EVENT: &str = "opengrid-record-open";
     /// Fired when a pivot's value was pressed for the rows behind it
     /// (issue #330).
     pub const DRILL_DOWN_EVENT: &str = "opengrid-drill-down";
