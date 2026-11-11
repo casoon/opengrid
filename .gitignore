@@ -7,6 +7,8 @@ dist-18/
 pkg/
 # The engine module the npm package ships; scripts/pack-npm.sh builds it.
 packages/opengrid/engine/
+# The XLSX writer of the tab, likewise.
+packages/opengrid/xlsx/
 .DS_Store
 
 # Playwright-Artefakte (Baselines unter tests/e2e/__screenshots__ gehören ins Repo).

@@ -1,0 +1,29 @@
+[package]
+name = "opengrid-xlsx"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "The XLSX writer of the browser: a workbook from the answers of a query, loaded when a page asks for one"
+
+[lints]
+workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+opengrid-datasource = { workspace = true }
+# The same writer the server uses, held in memory: a tab has no temporary file.
+opengrid-export = { workspace = true, features = ["xlsx"] }
+# A workbook carries its creation time, which `std::time::SystemTime` cannot read
+# on `wasm32-unknown-unknown` (it panics): this feature reads it from
+# JavaScript's `Date`. The version is the one `opengrid-export` asks for.
+rust_xlsxwriter = { version = "0.102", default-features = false, features = ["wasm"] }
+# Pinned to the CLI that builds the module (`just wasm-build-xlsx`), as in
+# `opengrid-wasm`.
+wasm-bindgen = "=0.2.126"
+js-sys = "0.3"
+
+[dev-dependencies]
+zip = { version = "9", default-features = false, features = ["deflate"] }

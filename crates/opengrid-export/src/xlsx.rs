@@ -26,8 +26,10 @@
 //! A pivot is one flat sheet too ([`XlsxWriter::write_pivot`], issue #331):
 //! the header line and the rows of its CSV, with the cells typed as above.
 //!
-//! The workbook is written as the rows come (`constant_memory`: a finished row
-//! goes to a temporary file), and [`XlsxWriter::finish`] assembles the file.
+//! The workbook is written as the rows come, and [`XlsxWriter::finish`]
+//! assembles the file. With the feature `xlsx-streaming` (the server's) a
+//! finished row goes to a temporary file, so memory does not grow with the
+//! rows; without it (the tab's) the workbook is held in memory until `finish`.
 
 use opengrid_datasource::QueryResult;
 use opengrid_pivot::PivotResult;
@@ -72,9 +74,14 @@ impl XlsxWriter {
     /// `export` when Excel would not take it as a sheet name.
     pub fn new(sheet: &str) -> Result<Self, String> {
         let mut workbook = Workbook::new();
+        // On the server a finished row goes to a temporary file; in the tab there
+        // is none, and the workbook is held whole.
+        #[cfg(feature = "xlsx-streaming")]
         let worksheet = workbook
             .add_worksheet_with_constant_memory()
             .map_err(|error| error.to_string())?;
+        #[cfg(not(feature = "xlsx-streaming"))]
+        let worksheet = workbook.add_worksheet();
         if worksheet.set_name(sheet).is_err() {
             worksheet
                 .set_name("export")

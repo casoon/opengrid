@@ -11,6 +11,7 @@ members = [
     "crates/opengrid-connector",
     "crates/opengrid-connector-sqlite",
     "crates/opengrid-wasm",
+    "crates/opengrid-xlsx",
     "crates/opengrid-web-core",
     "crates/opengrid-web-components",
     "crates/opengrid-grid",

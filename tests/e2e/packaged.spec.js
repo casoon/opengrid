@@ -87,6 +87,9 @@ test("the manifest promises what a consumer needs", async ({ page }) => {
   // The engine module: `createWorkerProvider()` finds it next to the loader,
   // and a page that queries in the tab imports it through this entry.
   expect(manifest.exports["./engine/*"]).toBe("./engine/*");
+  // The XLSX writer of the tab (#332): `exportRows` loads it from here.
+  expect(manifest.exports["./xlsx/*"]).toBe("./xlsx/*");
+  expect(manifest.files).toContain("xlsx/");
   // `worker.js` installs an `onmessage` handler at import time; the rest of the
   // package is side-effect free and may be tree-shaken.
   expect(manifest.sideEffects).toEqual(["./worker.js"]);
@@ -174,6 +177,8 @@ test("the package leaks nothing about the machine that built it", async ({
     "pkg/opengrid_web_components.js",
     "engine/opengrid_wasm_bg.wasm",
     "engine/opengrid_wasm.js",
+    "xlsx/opengrid_xlsx_bg.wasm",
+    "xlsx/opengrid_xlsx.js",
     "loader.js",
     "worker.js",
   ];
@@ -208,4 +213,18 @@ test("the package carries both licences", async ({ page, baseURL }) => {
     expect(response.status(), `${file} is in the tarball`).toBe(200);
     expect((await response.text()).length).toBeGreaterThan(500);
   }
+});
+
+test("a workbook is written in the tab from the packed package (#332)", async ({ page }) => {
+  await page.waitForFunction(() => window.__opengridReady);
+  const file = await page.evaluate(async () => {
+    const blob = await window.__workbook({
+      source: "orders",
+      select: ["id"],
+      sort: [{ field: "id", direction: "asc" }],
+    });
+    return { type: blob.type, head: String.fromCharCode(...new Uint8Array(await blob.slice(0, 2).arrayBuffer())) };
+  });
+  expect(file.type).toBe("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  expect(file.head).toBe("PK");
 });

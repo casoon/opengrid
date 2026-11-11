@@ -33,6 +33,7 @@
       // The engine comes from the package too: it ships under `engine/`, and
       // this page queries in the tab with it, on the main thread.
       import {
+        exportRows,
         loadOpengrid,
         createLocalProvider,
       } from "/target/npm-package/package/loader.js";
@@ -47,6 +48,8 @@
         await init();
         const engine = new Engine();
         const provider = createLocalProvider(engine);
+        // A workbook in the tab loads the XLSX module from the package too.
+        window.__workbook = (query) => exportRows(provider, query, { format: "xlsx" });
         const schema = await (
           await fetch("/tests/e2e/fixtures/grid-orders.schema.json")
         ).text();
