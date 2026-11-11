@@ -125,7 +125,7 @@ use column_menu::{activate_menu_item, on_menu_key, open_column_menu};
 pub(crate) use editing::{CHOICES_KEY, write_row_state};
 use editing::{
     add_record, after_new_row_enter, begin_edit, build_editor, dispatch_row_add, editor_text,
-    end_edit, focus_editor,
+    end_edit, focus_editor, formatter,
 };
 use facets::{
     apply_facets, clear_selection, draw_facets, effective_filter, facet_chip_text, on_facet_change,
@@ -1238,7 +1238,7 @@ fn render(host: &HtmlElement, focus_after: bool) {
             pinned_slot,
             borrowed.row_height,
             &texts(host),
-            &Formatter::new(&formats(host), borrowed.state.schema()),
+            &formatter(host, borrowed.state.schema()),
             paging,
             borrowed.grouping.as_ref(),
             borrowed.tree.as_ref(),
@@ -1254,7 +1254,7 @@ fn render(host: &HtmlElement, focus_after: bool) {
         let styles = presentation::styles(host);
         let decorated = Decorated::of(&schema, &styles);
         if runtime.borrow().decorated.as_ref() != Some(&decorated) {
-            fix_operator_choices(&root, &schema);
+            fix_operator_choices(&root, &schema, &styles);
             fix_presentation(&root, &schema, &styles);
             runtime.borrow_mut().decorated = Some(decorated);
         }
@@ -4109,9 +4109,7 @@ fn redraw_cell(host: &HtmlElement, cell: CellRef) {
         let text = borrowed
             .state
             .cell(cell)
-            .map(|value| {
-                Formatter::new(&formats(host), borrowed.state.schema()).text(cell.col, value)
-            })
+            .map(|value| formatter(host, borrowed.state.schema()).text(cell.col, value))
             .unwrap_or_default();
         td.set_text_content(Some(&text));
         let _ = td.remove_attribute("data-validating");
@@ -4497,7 +4495,23 @@ impl ValueControl {
     fn set_value(&self, value: &str) {
         match self {
             Self::Input(input) => input.set_value(value),
-            Self::Choice(choice) => choice.set_value(value),
+            Self::Choice(choice) => {
+                choice.set_value(value);
+                // A key the lookup does not name — a view saved before the
+                // page's map changed — is still the filter: it gets an option
+                // of its own, named by the key as a cell names it
+                // (issue #326). A boolean's three options are always there.
+                if choice.value() != value
+                    && let Some(option) = choice
+                        .owner_document()
+                        .and_then(|document| document.create_element("option").ok())
+                {
+                    let _ = option.set_attribute("value", value);
+                    option.set_text_content(Some(value));
+                    let _ = choice.append_child(&option);
+                    choice.set_value(value);
+                }
+            }
         }
     }
 
@@ -4722,7 +4736,7 @@ fn on_filter_change(event: Event) {
         return;
     };
     let schema = runtime.borrow().state.schema().clone();
-    fix_operator_choices(&root, &schema);
+    fix_operator_choices(&root, &schema, &presentation::styles(&host));
 }
 
 /// What [`fix_operator_choices`] and [`fix_presentation`] work from: the
@@ -4796,12 +4810,20 @@ fn fix_presentation(
     }
 }
 
-fn fix_operator_choices(root: &ShadowRoot, schema: &opengrid_types::Schema) {
+fn fix_operator_choices(
+    root: &ShadowRoot,
+    schema: &opengrid_types::Schema,
+    styles: &presentation::ColumnStyles,
+) {
     for (col, field) in schema.fields().iter().enumerate() {
         let Some(operator) = OperatorControl::of(root, col) else {
             continue;
         };
-        let allowed = grid::operators_for(field.data_type, field.nullable);
+        let allowed = grid::operators_of(
+            field.data_type,
+            field.nullable,
+            styles.lookup(field.name.as_str()).is_some(),
+        );
         let chosen = operator
             .element()
             .get_attribute("data-op")
@@ -5740,12 +5762,19 @@ fn effective_aggregates(
         else {
             continue;
         };
-        if presentation::aggregates_for(field.data_type).contains(&function) {
+        // A lookup column is counted and nothing else (issue #326).
+        let lookup = configured.lookup(name).is_some();
+        if presentation::aggregates_of(field.data_type, lookup).contains(&function) {
             chosen.push((name.to_owned(), function));
         } else {
             refused.push(format!(
-                "{name}: {} is not an aggregate for this type",
-                function.as_str()
+                "{name}: {} is not an aggregate for {}",
+                function.as_str(),
+                if lookup {
+                    "a lookup column"
+                } else {
+                    "this type"
+                }
             ));
         }
     }
@@ -5909,7 +5938,7 @@ fn toggled_message(
         column,
         schema.fields(),
         &texts,
-        &Formatter::new(&formats(host), schema),
+        &formatter(host, schema),
     );
     texts.group_toggled(&label, count, open)
 }

@@ -61,6 +61,7 @@ pub(super) fn open_column_menu(host: &HtmlElement, col: usize) {
             visible: borrowed.state.schema().fields().len(),
             bulk: bulk::available(host, &borrowed, col),
             pin: pin_of(host, &name),
+            lookup: presentation::styles(host).lookup(&name).is_some(),
         };
         (crate::column_menu::entries(&column, &texts), name)
     };

@@ -374,6 +374,7 @@ loader.module.set_columns(host, {
 | `emphasis` / `muted` | Bold, or the muted ink. |
 | `aggregate` | `sum`, `avg`, `count`, `min`, `max` or `range` — the column's aggregate in groups. |
 | `facet` | `list`, `pills`, `range` or `period` — how the column is offered as a facet. |
+| `lookup` | A map from the stored key to the label a reader reads, `{ 1: "Alpha GmbH", 2: "Beta AG" }`: the cell, the editor, the filter row and the facets show and choose by label; the query, the sort, the groups and every export keep the key. See [Lookup columns](#lookup-columns). The grid only; a table refuses it. |
 | `readonly` | The page fills this column with `set_values`: it never opens an editor, and its cells say `aria-readonly`. The grid only; a table refuses it. |
 
 **The configuration narrows; it never widens.** `sum` over a text column, a
@@ -823,6 +824,53 @@ Filtering a list column: **contains** (`has`), **contains all** (`has_all`, valu
 commas) and **is empty** (`is_empty`), besides the null checks. It is not sorted, grouped or
 faceted; its only aggregate is `count`. In CSV a list is the JSON array in the cell; see
 [Query semantics](../guides/query-semantics/) for what a list is.
+
+### Lookup columns
+
+A column that stores a key — `customer_id`, a country code — shows the key. With a `lookup` in
+`set_columns`, the page gives the labels, and the reader reads and chooses by them:
+
+```js
+loader.module.set_columns(grid, {
+  customer_id: { title: "Customer", lookup: { 1: "Alpha GmbH", 2: "Beta AG", 3: "Gamma Ltd" } },
+  country:     { lookup: { DE: "Germany", FR: "France" }, facet: "list" },
+});
+```
+
+The map is the only source of the labels: one plain object per column, the stored key on the left,
+the label on the right. The grid asks no second source for them, and the query model has no join.
+**The label is display. The value is the key** — in the query, on the wire, in the view and in every
+event.
+
+**Sorting a lookup column sorts by the key, not by the label.** Sorted ascending, `1`, `2`, `3`
+stand in that order whatever their labels say — *Zeta* before *Alpha* if those are the labels of
+`1` and `2` — and a reader who sees only labels sees an order that is not the alphabet's. The header
+says "sorted ascending" all the same: it is, by the key. A page that needs the order of the labels
+gives the source a column that holds them and sorts by that one, or uses keys that sort like their
+labels.
+
+| | By | |
+|---|---|---|
+| Cell | label | A key the map does not name shows **the key itself**; NULL shows nothing. The label leads over a format of `set_formats` for the column. Labels are text, so the column lines up at the start, number keys included, unless `align` says otherwise. |
+| Sort | key | See above. |
+| Grouping | key | The groups are the keys, in the keys' order; a group's header names it by its label, `Customer: Alpha GmbH (12 rows)`. |
+| Aggregate | key | `count` only: a key is not an amount, and the smallest key is not the first label. Any other aggregate is refused for the column — in `set_columns`, and from a view — and the column menu offers none. |
+| Editor | label | The ARIA **combobox** of [Lists](#lists) over the map's labels, in the map's order: typing filters them, `Enter` picks, and a text that is none of the labels is refused under the editor. What is committed is the key, and `opengrid-cell-change` carries the key as its `value`. Where the page also gave the column `set_choices`, those choices are what the editor offers, named by the map's labels where they have none of their own. |
+| Filter row | label | The column's value is **a choice among the map's labels**, with *is* and *is not* (and the null checks where the column may be null). The filter it writes compares the key, and the view's `filters` hold the key. The "+ Filter" dialog and the filter builder offer the same choice, and a filter's chip — the nested filter's too — names the label. A filter on a key the map does not name — a view saved under other labels — stays, named by the key. |
+| Facets | label | `list` and `pills` fit a lookup column of either type, and list the keys **the rows hold**, by label, in the keys' order. The selection in the view is the keys. `range` is refused: a span of keys is not a span of labels. |
+| Search | key | An expression compares the stored value — `customer_id = 2`, with `=` and `≠` only, joined by `and` or `or` like any other — and the free-text search reads values, as everywhere ([Search](#search)): a label is not found by it. |
+| `get_query`, export | key | [`get_query`](#exporting-the-view) and `exportRows` hand out the stored values, as for every column: what a file is read back from. |
+| Print | label | [`prepare_print`](#printing-the-view) writes the values as the grid shows them, the caption as the chips say it. |
+| Paste, `set_values`, validators | key | What the page or the clipboard writes into the column is the stored value. |
+
+A lookup fits a column of type `utf8` or `int64`. The keys of the map are JavaScript property names,
+so text: for an `int64` column each is the number's digits (`{ 7: "Seven" }` and `{ "7": "Seven" }`
+are the same map), and one that is not a whole number is reported. So are an empty key, a label
+that is not a non-empty string, and a `lookup` that is not a plain object — as every mistake in
+`set_columns`, in the status line, with none of the call applied. The options of the editor and of
+the filter row stand in the order JavaScript lists the object's keys: whole numbers ascending, then
+the others as written. The labels are the page's words, in the page's language. To change them,
+call `set_columns` again with the whole configuration.
 
 ### Undo and redo
 

@@ -114,7 +114,7 @@ pub(super) fn chips_of(host: &HtmlElement) -> Vec<Chip> {
     }
     for entry in &view.filters {
         out.push(Chip {
-            text: builder::condition_words(&texts, entry),
+            text: builder::condition_words(&texts, &presentation::styles(host), entry),
             removes: format!("column:{}", entry.column),
         });
     }

@@ -95,7 +95,12 @@
 # the dialog stubbed out); the rest is the expression's parser with
 # parentheses and quotes, the nested filter in the view, its chip and words,
 # the dialog's sheet and fifteen texts.
-grid+pivot    335400  # 332048 B, 2026-11-10, #324
+# Raised the same day from 335400: lookup columns (#326: the map of a column's
+# labels read and checked in `set_columns`, the label in the cell's text, the
+# filter row's choice among the labels, the dialog's and the builder's, the
+# editor's choices from the map, the chips' labels, the operators and the
+# aggregates of a column of keys) grew it by 3.4 KiB, to 335539 B.
+grid+pivot    338900  # 335539 B, 2026-11-10, #326
 # Raised 2026-09-30 from 108000: the bound was not raised with 0.7.0, which
 # shipped the engine at 115.2 KiB already (CHANGELOG); rule P9's sorted
 # grouping sets and order sets (#108) added the rest, to 121610 B.

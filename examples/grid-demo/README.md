@@ -56,6 +56,14 @@ not be loaded: …". An error does **not** replace the grid: table, rows and
 keyboard operation stay, only the line changes. Scrolling deliberately announces
 nothing, or the live region would chatter once per frame.
 
+## A lookup column
+
+`country` stores a code (`DE`) and shows the country's name: the page gives the
+labels with `lookup` in `set_columns`. Its field in the filter row is a choice
+among the names. The value stays the code — in the query, an export, an event —
+and **sorting the column sorts by the code**, not by the name: United Kingdom
+(`GB`) stands before United States (`US`), and Germany (`DE`) before France.
+
 ## The language of the texts
 
 The component's built-in texts are **English** and marked `lang="en"`. A page

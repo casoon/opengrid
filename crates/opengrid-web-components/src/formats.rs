@@ -337,6 +337,10 @@ export function __opengrid_intl_formatter(kind, locale, options) {
     /// The formats bound to a schema, ready for the renderer.
     pub struct Formatter {
         columns: Vec<Option<js_sys::Function>>,
+        /// The labels of the columns that store keys (issue #326); empty
+        /// where no column has any.
+        #[cfg(feature = "grid")]
+        lookups: Vec<Option<Rc<crate::presentation::Lookup>>>,
     }
 
     impl Formatter {
@@ -348,12 +352,34 @@ export function __opengrid_intl_formatter(kind, locale, options) {
                     .iter()
                     .map(|field| formats.function(field.name.as_str()).cloned())
                     .collect(),
+                #[cfg(feature = "grid")]
+                lookups: Vec::new(),
             }
+        }
+
+        /// With the labels `styles` gives the columns that store keys: such a
+        /// column shows its label, and the label leads over a format.
+        #[cfg(feature = "grid")]
+        pub fn with_lookups(
+            mut self,
+            styles: &crate::presentation::ColumnStyles,
+            schema: &Schema,
+        ) -> Self {
+            self.lookups = schema
+                .fields()
+                .iter()
+                .map(|field| styles.lookup(field.name.as_str()).cloned())
+                .collect();
+            self
         }
     }
 
     impl CellFormat for Formatter {
         fn text(&self, column: usize, value: &Value) -> String {
+            #[cfg(feature = "grid")]
+            if let Some(Some(lookup)) = self.lookups.get(column) {
+                return lookup.text(value);
+            }
             let plain = plain_text(value);
             let Some(Some(function)) = self.columns.get(column) else {
                 // No format for this column: no boundary crossing (R1).
