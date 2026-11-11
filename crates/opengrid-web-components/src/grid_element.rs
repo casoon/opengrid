@@ -104,6 +104,7 @@ mod quick_doors;
 mod range;
 mod record;
 mod search;
+mod template;
 mod tree_path;
 mod validate;
 mod view;
@@ -316,6 +317,9 @@ struct GridRuntime {
     range: Option<opengrid_grid::CellRange>,
     /// Where a drag with the pointer started, while the button is down.
     drag_from: Option<CellRef>,
+    /// Bumped by every `set_cell_templates`: a cell drawn under another round
+    /// is drawn again (issue #317).
+    templates_round: u64,
 }
 
 impl GridRuntime {
@@ -420,6 +424,7 @@ fn fresh_runtime(
         validation_said: None,
         range: None,
         drag_from: None,
+        templates_round: 0,
     }
 }
 
@@ -1285,6 +1290,7 @@ fn render(host: &HtmlElement, focus_after: bool) {
     // The lists of list columns are chips, drawn over the text the frame wrote.
     if let Some(root) = host.shadow_root() {
         combo::draw_cells(host, &root);
+        template::draw_cells(host, &root);
     }
 
     range::paint(host);
@@ -2136,6 +2142,8 @@ fn add_listeners(root: &ShadowRoot) {
         let listener = Closure::<dyn FnMut(Event)>::new(handler).into_js_value();
         let _ = root.add_event_listener_with_callback(kind, listener.unchecked_ref());
     }
+    let focusout = Closure::<dyn FnMut(Event)>::new(template::on_focus_out).into_js_value();
+    let _ = root.add_event_listener_with_callback("focusout", focusout.unchecked_ref());
     let pasted = Closure::<dyn FnMut(Event)>::new(paste::on_paste).into_js_value();
     let _ = root.add_event_listener_with_callback("paste", pasted.unchecked_ref());
     let scroll = Closure::<dyn FnMut(Event)>::new(on_scroll).into_js_value();
@@ -2326,6 +2334,15 @@ fn on_key_down(event: KeyboardEvent) {
         .target()
         .and_then(|node| node.dyn_into::<Element>().ok())
         && record::in_dialog(&target)
+    {
+        return;
+    }
+    // A control inside a cell template (issue #317) keeps its own keys, bar
+    // `Escape`, which comes back to the cell.
+    if let Some(target) = event
+        .target()
+        .and_then(|node| node.dyn_into::<Element>().ok())
+        && template::on_key(&host, &event, &target)
     {
         return;
     }
@@ -2673,7 +2690,11 @@ fn on_key_down(event: KeyboardEvent) {
                 ActiveCell::Header { .. } => activate_header(&host, &runtime, event.shift_key()),
                 // A band sorts nothing: its columns do, each on its own.
                 ActiveCell::Band { .. } => {}
-                ActiveCell::Data(cell) => begin_edit(&host, cell, None),
+                ActiveCell::Data(cell) => {
+                    if !template::enter(&host, cell) {
+                        begin_edit(&host, cell, None);
+                    }
+                }
             }
         }
         // The other two ways into the editor of the WAI-ARIA grid pattern:
@@ -3426,6 +3447,11 @@ pub(crate) fn write_cell_state(
     if let Some(cell) = cell {
         redraw_cell(host, cell);
     }
+}
+
+/// [`crate::element::set_cell_templates`] (issue #317).
+pub(crate) fn set_cell_templates(host: &HtmlElement, templates: &JsValue) {
+    template::store(host, templates);
 }
 
 /// [`crate::element::set_validators`] (issue #188).
