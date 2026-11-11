@@ -569,6 +569,57 @@ test("print and exports name the band with its column: Band · Column", async ({
     [...document.getElementById("banded").shadowRoot.querySelector("[data-print]").shadowRoot.querySelectorAll("thead th")].map((th) => th.textContent),
   );
   expect(printed).toEqual(["id", "Customer \u00b7 customer", "Customer \u00b7 country", "Order \u00b7 amount", "Order \u00b7 qty", "ordered_on"]);
+test("the band's cell hides the whole band: Delete, or its menu; the column list brings it back", async ({ page }) => {
+  // `Delete` on the band's cell.
+  await focusHeader(page, "#banded", "Order");
+  expect(await focused(page, "#banded")).toBe("band:Order");
+  await page.keyboard.press("Delete");
+  await expect.poll(() => columns(page, "#banded")).toEqual(["id", "customer", "country", "ordered_on"]);
+  await settled(page, "#banded");
+  expect(await status(page, "#banded")).toContain("Order hidden, 4 of 6 columns shown");
+  expect(await bands(page, "#banded")).toEqual([["Customer", ["customer", "country"]]]);
+  // The view holds it per column, as for any hidden column.
+  expect((await views(page, "banded")).at(-1).hidden).toEqual(["amount", "qty"]);
+
+  // The column list lists its columns; ticking one shows the band again.
+  await inside(page, "#banded", (root) => root.querySelector('[part="columns"] input[data-column="qty"]').click());
+  await expect.poll(() => columns(page, "#banded")).toEqual(["id", "customer", "country", "qty", "ordered_on"]);
+  await settled(page, "#banded");
+  expect(await bands(page, "#banded")).toEqual([
+    ["Customer", ["customer", "country"]],
+    ["Order", ["qty"]],
+  ]);
+
+  // Its menu: `Alt`+`↓` on the band's cell offers one entry.
+  await focusHeader(page, "#banded", "Customer");
+  await page.keyboard.press("Alt+ArrowDown");
+  await expect
+    .poll(() =>
+      inside(page, "#banded", (root) => [...root.querySelectorAll('[part="column-menu"] [role^="menuitem"]')].map((item) => item.textContent)),
+    )
+    .toEqual(["Hide band"]);
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(results.violations).toEqual([]);
+  await page.keyboard.press("Enter");
+  await expect.poll(() => columns(page, "#banded")).toEqual(["id", "qty", "ordered_on"]);
+  expect(await status(page, "#banded")).toContain("Customer hidden, 3 of 6 columns shown");
+});
+
+test("a band that is all there is stays, and says so", async ({ page }) => {
+  await page.evaluate(() =>
+    window.__opengridModule.set_view(document.getElementById("banded"), {
+      columns: { hidden: ["id", "customer", "country", "ordered_on"] },
+    }),
+  );
+  await expect.poll(() => columns(page, "#banded")).toEqual(["amount", "qty"]);
+  await settled(page, "#banded");
+  await focusHeader(page, "#banded", "Order");
+  await page.keyboard.press("Delete");
+  await expect.poll(() => status(page, "#banded")).toContain("Order is all that is shown and stays");
+  expect(await columns(page, "#banded")).toEqual(["amount", "qty"]);
+  // And there is no menu to open for it.
+  await page.keyboard.press("Alt+ArrowDown");
+  expect(await inside(page, "#banded", (root) => root.querySelectorAll('[part="column-menu"]').length)).toBe(0);
 });
 
 test("pinning a column of a band pins the band: one cell above its columns, in place", async ({ page }) => {

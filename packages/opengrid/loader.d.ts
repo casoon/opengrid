@@ -980,6 +980,8 @@ export type TextKey =
   | "groupSecondLevel"
   | "ungroupColumn"
   | "hideColumn"
+  | "hideBand"
+  | "bandKeep"
   | "pinGroup"
   | "pinNone"
   | "pinStart"

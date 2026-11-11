@@ -130,8 +130,8 @@ use chips::{chips_of, clear_chips, draw_chips, remove_chip, sync_chrome, toggle_
 use column_menu::{activate_menu_item, on_menu_key, open_column_menu};
 use column_ops::{
     Arrangement, adopt_sheets, announce, announce_refusals, apply_widths, arrangement, bands_of,
-    close_columns, columns_of, move_band, move_column, observe_columns, open_columns, pin_column,
-    pin_of, pool_of, rearrange, resize_column, retree, set_column_hidden, step_pin,
+    close_columns, columns_of, hide_band, move_band, move_column, observe_columns, open_columns,
+    pin_column, pin_of, pool_of, rearrange, resize_column, retree, set_column_hidden, step_pin,
 };
 pub(crate) use editing::{CHOICES_KEY, write_row_state};
 use editing::{
@@ -2424,6 +2424,21 @@ fn on_key_down(event: KeyboardEvent) {
         event.prevent_default();
         open_column_menu(&host, col);
         return;
+    }
+    // A band's cell offers hiding the band (issue #352): in its menu and with
+    // `Delete`, which needs no menu.
+    let band_cell = runtime.borrow().active;
+    if let ActiveCell::Band { col } = band_cell {
+        if opens_menu && host.has_attribute(grid::COLUMN_MENU_ATTRIBUTE) {
+            event.prevent_default();
+            column_menu::open_band_menu(&host, col);
+            return;
+        }
+        if event.key() == "Delete" && !event.ctrl_key() && !event.meta_key() && !event.alt_key() {
+            event.prevent_default();
+            hide_band(&host, col);
+            return;
+        }
     }
 
     // Column operations live on the header cell and are **keyboard first**:

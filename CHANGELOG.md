@@ -27,6 +27,11 @@ Two things belong in every release entry and are easy to leave out:
   `POST /export/{source}`. A column without a band keeps its field name; JSON has no header row and
   refuses the option ([#353](https://github.com/casoon/opengrid/issues/353),
   [export guide](docs/guides/export.md#naming-the-band), [Column bands](docs/api.md#column-bands)).
+- **Grid:** hide a whole band from its cell. `Delete` on a band's cell, or *Hide band* in its menu
+  (`Alt`+`↓`, `Shift`+`F10` or the context-menu key with `column-menu`), hides every column the band
+  spans in one step and names the band in the status line; the column list brings it back, and a band
+  that is all there is stays ([#352](https://github.com/casoon/opengrid/issues/352),
+  [Column bands](docs/api.md#column-bands)).
 - **Export:** XLSX without a server ([#332](https://github.com/casoon/opengrid/issues/332)).
   `exportRows(provider, query, { format: "xlsx" })` now writes the workbook in the tab for the
   engine in the tab, a worker and the hybrid provider — the same writer and the same type rules as

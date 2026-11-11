@@ -118,6 +118,10 @@ pub struct GridTexts {
     pub group_second_level: String,
     pub ungroup_column: String,
     pub hide_column: String,
+    /// The band cell's menu entry that hides the whole band (issue #352).
+    pub hide_band: String,
+    /// Said when hiding a band would leave no column. May use `{band}`.
+    pub band_keep: String,
     /// The menu's group of pin choices and its three entries (issue #316).
     pub pin_group: String,
     pub pin_none: String,
@@ -481,6 +485,8 @@ pub(crate) const KEYS: &[&str] = &[
     "groupSecondLevel",
     "ungroupColumn",
     "hideColumn",
+    "hideBand",
+    "bandKeep",
     "pinGroup",
     "pinNone",
     "pinStart",
@@ -728,6 +734,8 @@ impl Default for GridTexts {
             group_second_level: "Group as second level".to_owned(),
             ungroup_column: "Remove this grouping".to_owned(),
             hide_column: "Hide column".to_owned(),
+            hide_band: "Hide band".to_owned(),
+            band_keep: "{band} is all that is shown and stays".to_owned(),
             pin_group: "Pin".to_owned(),
             pin_none: "Not pinned".to_owned(),
             pin_start: "At the start".to_owned(),
@@ -1489,6 +1497,11 @@ impl GridTexts {
     }
 
     /// A column that was hidden or shown again.
+    /// Said when hiding a band would leave no column.
+    pub fn band_keep(&self, band: &str) -> String {
+        fill(&self.band_keep, "band", band)
+    }
+
     pub fn column_visibility(
         &self,
         column: &str,
@@ -1700,6 +1713,8 @@ mod host {
         overwrite(&mut texts.group_second_level, string("groupSecondLevel"));
         overwrite(&mut texts.ungroup_column, string("ungroupColumn"));
         overwrite(&mut texts.hide_column, string("hideColumn"));
+        overwrite(&mut texts.hide_band, string("hideBand"));
+        overwrite(&mut texts.band_keep, string("bandKeep"));
         overwrite(&mut texts.pin_group, string("pinGroup"));
         overwrite(&mut texts.pin_none, string("pinNone"));
         overwrite(&mut texts.pin_start, string("pinStart"));
