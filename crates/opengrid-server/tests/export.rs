@@ -367,7 +367,7 @@ async fn the_default_leaves_half_of_every_pool_to_queries() {
         .build()
         .await
         .expect("a server");
-    let exports = server.state().max_concurrent_exports;
+    let exports = server.state().max_concurrent_exports();
     assert!(exports >= 1);
     assert!(exports < pool, "{exports} exports for a pool of {pool}");
     assert_eq!(exports, (pool / 2).max(1));

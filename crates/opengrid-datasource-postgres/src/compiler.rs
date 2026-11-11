@@ -495,9 +495,8 @@ fn collated(column: &str, data_type: DataType) -> String {
     }
 }
 
-/// The PostgreSQL type of an opengrid type — the cast on every parameter, and
-/// the column type the test fixture creates.
-pub fn pg_type(data_type: DataType) -> String {
+/// The PostgreSQL type of an opengrid type — the cast on every parameter.
+pub(crate) fn pg_type(data_type: DataType) -> String {
     match data_type {
         DataType::Bool => "boolean".to_owned(),
         DataType::Int64 => "bigint".to_owned(),

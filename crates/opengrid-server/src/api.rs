@@ -126,27 +126,37 @@ impl Reporter {
 
 /// Everything a request needs, shared by every handler.
 pub struct AppState {
-    pub registry: Registry,
+    pub(crate) registry: Registry,
     /// Token → the context that token stands for.
-    pub tokens: BTreeMap<String, BTreeMap<String, String>>,
-    pub max_payload_bytes: usize,
-    pub timeout: Duration,
+    pub(crate) tokens: BTreeMap<String, BTreeMap<String, String>>,
+    pub(crate) max_payload_bytes: usize,
+    pub(crate) timeout: Duration,
     /// Origins a browser may call from; empty means no CORS headers.
-    pub allowed_origins: Vec<String>,
+    pub(crate) allowed_origins: Vec<String>,
     /// The most rows one export may have (issue #2).
-    pub max_export_rows: u64,
+    pub(crate) max_export_rows: u64,
     /// The most rows a tree's scope may have (see `ServerBuilder::max_tree_rows`).
-    pub max_tree_rows: u64,
+    pub(crate) max_tree_rows: u64,
     /// The most rows an Excel export may have.
-    pub max_xlsx_rows: u64,
+    pub(crate) max_xlsx_rows: u64,
     /// The exports that may run at once, and the places they take.
-    pub max_concurrent_exports: usize,
-    pub exports: Arc<Semaphore>,
+    pub(crate) max_concurrent_exports: usize,
+    pub(crate) exports: Arc<Semaphore>,
     /// Where the failures a caller is not told in full are written down.
-    pub reporter: Reporter,
+    pub(crate) reporter: Reporter,
 }
 
 impl AppState {
+    /// The sources the server answers for.
+    pub fn registry(&self) -> &Registry {
+        &self.registry
+    }
+
+    /// How many exports may run at once.
+    pub fn max_concurrent_exports(&self) -> usize {
+        self.max_concurrent_exports
+    }
+
     /// The shared state from its parts — what the builder and the
     /// configuration both come down to.
     pub(crate) fn from_parts(
