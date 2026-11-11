@@ -108,7 +108,9 @@
 # range with its keys, clicks and drag, its marks, the copy as values with the
 # formula guard, the guard taken off in a paste, three texts) grew it by
 # 4.1 KiB, to 340595 B.
-grid+pivot    346500  # 344125 B, 2026-11-11, #325 and #327 together
+# Raised the same day from 346500: a source that changes (#328: the event, the
+# notice and its button, `refresh`, two texts) grew it by 0.7 KiB, to 346766 B.
+grid+pivot    348400  # 346766 B, 2026-11-11, #328
 # Raised 2026-09-30 from 108000: the bound was not raised with 0.7.0, which
 # shipped the engine at 115.2 KiB already (CHANGELOG); rule P9's sorted
 # grouping sets and order sets (#108) added the rest, to 121610 B.

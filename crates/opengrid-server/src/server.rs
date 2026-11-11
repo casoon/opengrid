@@ -51,6 +51,15 @@ impl Server {
         crate::api::router(Arc::clone(&self.state))
     }
 
+    /// Says that the source `name` changed (issue #328): every client watching
+    /// it with `GET /watch/{source}` is told, and asks again. The server cannot
+    /// know when data behind a connector changes; the application that writes it
+    /// does. A source nobody watches costs nothing.
+    pub fn notify_changed(&self, name: &str) {
+        // No receiver is not a failure: nobody is watching.
+        let _ = self.state.changes.send(name.to_owned());
+    }
+
     /// The shared state — the sources and the settings the server runs with.
     pub fn state(&self) -> &Arc<AppState> {
         &self.state

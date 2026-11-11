@@ -434,6 +434,14 @@ pub(super) fn on_filter_clear(event: Event) {
         return;
     }
 
+    // The "Refresh" button of a changed source (issue #328).
+    if let Ok(host) = root.host().dyn_into::<HtmlElement>()
+        && live::is_button(&target)
+    {
+        live::refresh(&host);
+        return;
+    }
+
     // An action button of a row (issue #189).
     if let Ok(host) = root.host().dyn_into::<HtmlElement>()
         && on_action_click(&host, &target)

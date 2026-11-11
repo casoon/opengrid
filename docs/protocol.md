@@ -187,6 +187,29 @@ The rules and bounds are the pivot's, and it counts as an export: `max_xlsx_rows
 too many exports at once are `busy`. A server may leave this out; a client that gets a pivot
 result back treats it as "not offered".
 
+## Watching a source
+
+`GET /watch/{source}` is an **optional** stream that says a source changed. It is Server-Sent Events
+(`Content-Type: text/event-stream`), authorized like every other endpoint — the same bearer token,
+a source the server knows (`401`, `404` as elsewhere) — and **notification only**:
+
+```
+retry: 5000
+
+event: changed
+data: {"source":"orders"}
+
+: keep-alive
+```
+
+It carries no rows, so nothing a row filter or `allowed_fields` keeps from a caller can travel on
+it; the client asks `/query` for what it shows, with its own token and rules. `retry` is the
+reconnect delay in milliseconds; a comment line comes every 20 seconds so a proxy does not close an
+idle stream. A change **to a source** is a change for every watcher of it — the server does not
+know which tenant's rows moved — so a client treats `changed` as "ask again when the reader
+wants". A client that gets a `4xx` does not retry; a server may leave the endpoint out. In the
+library server the application says when data changed with `Server::notify_changed(name)`.
+
 ## The duties of a server
 
 A server that holds other people's data owes the browser four things, whatever it is written
