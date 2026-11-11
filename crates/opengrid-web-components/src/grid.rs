@@ -545,6 +545,8 @@ pub fn operators_for(data_type: DataType, nullable: bool) -> Vec<&'static str> {
     if data_type == DataType::Utf8 {
         operators.push("contains");
         operators.push("starts_with");
+        operators.push("icontains");
+        operators.push("istarts_with");
     }
     operators.push("eq");
     operators.push("ne");
@@ -586,6 +588,8 @@ pub fn operator_glyph(op: &str) -> &'static str {
     match op {
         "contains" => "\u{2217}",
         "starts_with" => "a\u{2026}",
+        "icontains" => "\u{2217}\u{2248}",
+        "istarts_with" => "a\u{2026}\u{2248}",
         "eq" => "=",
         "ne" => "\u{2260}",
         "gt" => ">",

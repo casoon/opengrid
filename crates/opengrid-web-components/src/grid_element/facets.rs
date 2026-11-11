@@ -265,7 +265,7 @@ pub(super) fn facet_chip_text(
                 })
                 .collect();
             if labels.len() == 1 {
-                let is = texts.operator(2, "eq");
+                let is = texts.operator(4, "eq");
                 format!("{} {is} {}", texts.column(column), labels[0])
             } else {
                 texts.facet_chip_values(column, &labels.join(", "))

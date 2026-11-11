@@ -141,7 +141,10 @@ grid+pivot    346500  # 344125 B, 2026-11-11, #325 and #327 together
 # bands (#319). The nested filter (#324: the tree a view may hold, checked,
 # and and-ed into a view's query) grew it by 1.0 KiB, to 156737 B — inside
 # the bound, with less room than two builds can differ by on two machines.
-engine        158300  # 156737 B, 2026-11-10, #324
+# Raised 2026-11-11 from 158300: `icontains` and `istarts_with` (#323) fold case
+# with `str::to_lowercase`, which brings Unicode's lowercase tables into the
+# module: 3.4 KiB, to 160139 B. #366 looks for it elsewhere.
+engine        161800  # 160139 B, 2026-11-11, #323
 
 # The XLSX writer of the tab (#332), a module of its own that `exportRows`
 # loads when a page asks for a workbook, so the element and the engine do not

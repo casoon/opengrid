@@ -1,0 +1,34 @@
+{
+  "id": "s5a-final-sigma",
+  "rule": "S5a",
+  "query": {
+    "source": "words",
+    "select": [
+      "id"
+    ],
+    "filter": {
+      "field": "word",
+      "op": "icontains",
+      "value": "ΟΔΟΣ"
+    },
+    "sort": [
+      {
+        "field": "id"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "id"
+    ],
+    "rows": [
+      [
+        10
+      ],
+      [
+        11
+      ]
+    ]
+  },
+  "ordered": true
+}

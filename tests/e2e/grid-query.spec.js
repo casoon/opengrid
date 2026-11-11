@@ -98,7 +98,7 @@ test("every kind of restriction is in it, and nothing else", async ({ page }) =>
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
   await page.keyboard.press("Enter");
-  await askedWith(page, '"contains"');
+  await askedWith(page, '"icontains"');
 
   const query = await getQuery(page);
   expect(query).toEqual(await lastRowsQuery(page));
@@ -106,7 +106,7 @@ test("every kind of restriction is in it, and nothing else", async ({ page }) =>
   expect(query.select).toEqual(["customer", "id", "country", "amount", "qty"]);
   expect(query.sort).toEqual([{ field: "amount", direction: "desc" }]);
   const filter = JSON.stringify(query.filter);
-  for (const part of ['"field":"qty","op":"gte","value":2', '"DE"', '"FR"', '"contains"']) {
+  for (const part of ['"field":"qty","op":"gte","value":2', '"DE"', '"FR"', '"icontains"']) {
     expect(filter).toContain(part);
   }
 });

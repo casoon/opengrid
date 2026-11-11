@@ -505,7 +505,7 @@ fn validate_filter(
                         values,
                     })
                 }
-                CmpOp::Contains | CmpOp::StartsWith => {
+                CmpOp::Contains | CmpOp::StartsWith | CmpOp::IContains | CmpOp::IStartsWith => {
                     if data_type != DataType::Utf8 {
                         return Err(QueryError::OperatorNotSupported {
                             path: format!("{path}.op"),

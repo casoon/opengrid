@@ -1,0 +1,6 @@
+{
+  "fields": [
+    { "name": "id", "type": "int64", "nullable": false },
+    { "name": "word", "type": "utf8", "nullable": true }
+  ]
+}

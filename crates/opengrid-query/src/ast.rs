@@ -209,6 +209,10 @@ pub enum CmpOp {
     In,
     Contains,
     StartsWith,
+    /// `contains` ignoring case (issue #323): both sides folded by [`fold_case`].
+    IContains,
+    /// `starts_with` ignoring case (issue #323).
+    IStartsWith,
     /// A list contains the value (issue #185). Named apart from `contains`,
     /// which is the substring of a text.
     Has,
@@ -229,6 +233,8 @@ impl CmpOp {
             CmpOp::In => "in",
             CmpOp::Contains => "contains",
             CmpOp::StartsWith => "starts_with",
+            CmpOp::IContains => "icontains",
+            CmpOp::IStartsWith => "istarts_with",
             CmpOp::Has => "has",
             CmpOp::HasAll => "has_all",
         }
@@ -246,16 +252,36 @@ impl CmpOp {
             "in" => CmpOp::In,
             "contains" => CmpOp::Contains,
             "starts_with" => CmpOp::StartsWith,
+            "icontains" => CmpOp::IContains,
+            "istarts_with" => CmpOp::IStartsWith,
             "has" => CmpOp::Has,
             "has_all" => CmpOp::HasAll,
             _ => return None,
         })
     }
 
-    /// True for the two string operators (case-sensitive in V1, rule S5).
+    /// True for the string operators: `contains` and `starts_with` compare code
+    /// points (rule S5), `icontains` and `istarts_with` fold case first (S5a).
     pub fn is_string_op(&self) -> bool {
-        matches!(self, CmpOp::Contains | CmpOp::StartsWith)
+        matches!(
+            self,
+            CmpOp::Contains | CmpOp::StartsWith | CmpOp::IContains | CmpOp::IStartsWith
+        )
     }
+
+    /// True for the two operators that ignore case.
+    pub fn ignores_case(&self) -> bool {
+        matches!(self, CmpOp::IContains | CmpOp::IStartsWith)
+    }
+}
+
+/// The text an ignoring-case operator compares (rule S5a): Unicode's default
+/// lowercase mapping of every code point, with the final sigma — what
+/// `str::to_lowercase` does, no locale. `İ` becomes `i̇` (`i` and a combining dot
+/// above), `ß` stays, `Σ` at the end of a word becomes `ς`. Every connector must
+/// give the same answer; the conformance suite holds them to it.
+pub fn fold_case(text: &str) -> String {
+    text.to_lowercase()
 }
 
 /// The keys a filter object may have.
@@ -400,6 +426,8 @@ named!(CmpOp {
     In = "in",
     Contains = "contains",
     StartsWith = "starts_with",
+    IContains = "icontains",
+    IStartsWith = "istarts_with",
     Has = "has",
     HasAll = "has_all",
 });
