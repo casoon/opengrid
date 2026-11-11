@@ -1,0 +1,35 @@
+# Budgets for the WebAssembly modules the package ships (issue #69).
+# `just measure-modules` builds them into target/peakmark/ and runs `peakmark check`.
+# A budget is the hard limit; peakmark.baseline.json holds the last accepted values.
+# The margin over the measurement is about 1 %: `wasm-opt` does not build bit-for-bit.
+
+[[module]]
+name     = "elements"
+artifact = "target/peakmark/both/m_bg.wasm"
+glue     = "target/peakmark/both/m.js"
+
+[module.budget]
+brotli = "348400 B"
+
+[[module]]
+name     = "engine"
+artifact = "target/peakmark/engine/m_bg.wasm"
+glue     = "target/peakmark/engine/m.js"
+
+[module.budget]
+brotli         = "161800 B"
+peak_memory    = "26 MiB"
+growth_per_run = "0"
+
+[[scenario]]
+module = "engine"
+file   = "scripts/peakmark/engine.mjs"
+repeat = 5
+
+[[module]]
+name     = "xlsx"
+artifact = "target/peakmark/xlsx/m_bg.wasm"
+glue     = "target/peakmark/xlsx/m.js"
+
+[module.budget]
+brotli = "248000 B"
