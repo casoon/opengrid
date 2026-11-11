@@ -66,6 +66,44 @@ pub(super) fn open_column_menu(host: &HtmlElement, col: usize) {
         (crate::column_menu::entries(&column, &texts), name)
     };
 
+    show_menu(host, &root, col, &name, entries);
+}
+
+/// Opens the menu of the band whose cell is at `col` (issue #352).
+pub(super) fn open_band_menu(host: &HtmlElement, col: usize) {
+    let Some(root) = host.shadow_root() else {
+        return;
+    };
+    let Some((band, _, count)) = bands_of(host)
+        .into_iter()
+        .find(|(_, first, _)| *first == col)
+    else {
+        return;
+    };
+    close_column_menu(host, false);
+    // A band that is all there is has nothing to hide.
+    if count >= columns_of(host).len() {
+        return;
+    }
+    show_menu(
+        host,
+        &root,
+        col,
+        &band,
+        crate::column_menu::band_entries(&texts(host)),
+    );
+}
+
+/// Builds the popup for `entries` under the header cell at `col` and puts the
+/// focus on its first entry.
+fn show_menu(
+    host: &HtmlElement,
+    root: &ShadowRoot,
+    col: usize,
+    name: &str,
+    entries: Vec<crate::column_menu::Entry>,
+) {
+    let texts = texts(host);
     let Some(document) = web_sys::window().and_then(|window| window.document()) else {
         return;
     };
@@ -80,7 +118,7 @@ pub(super) fn open_column_menu(host: &HtmlElement, col: usize) {
     ] {
         let _ = menu.set_attribute(attribute, value);
     }
-    let _ = menu.set_attribute("aria-label", &texts.column_menu(&name));
+    let _ = menu.set_attribute("aria-label", &texts.column_menu(name));
     // Our words throughout — the menu names no data of the page's except the
     // column in its label, and that one is also the page's word for it.
     if !texts.lang.trim().is_empty() {
@@ -93,7 +131,7 @@ pub(super) fn open_column_menu(host: &HtmlElement, col: usize) {
         return;
     };
     let _ = menu.show_popover();
-    place_menu(&root, &menu, col);
+    place_menu(root, &menu, col);
     if let Ok(Some(first)) = menu.query_selector("[role^=\"menuitem\"]")
         && let Ok(first) = first.dyn_into::<HtmlElement>()
     {
@@ -308,6 +346,7 @@ pub(super) fn activate_menu_item(host: &HtmlElement, item: &Element) {
             }
         }
         "hide" => set_column_hidden(host, &name, true),
+        "hide-band" => hide_band(host, col),
         "pin:none" => pin_column(host, &name, None),
         "pin:start" => pin_column(host, &name, Some(Pin::Start)),
         "pin:end" => pin_column(host, &name, Some(Pin::End)),
