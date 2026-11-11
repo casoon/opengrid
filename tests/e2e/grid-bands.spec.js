@@ -569,6 +569,8 @@ test("print and exports name the band with its column: Band · Column", async ({
     [...document.getElementById("banded").shadowRoot.querySelector("[data-print]").shadowRoot.querySelectorAll("thead th")].map((th) => th.textContent),
   );
   expect(printed).toEqual(["id", "Customer \u00b7 customer", "Customer \u00b7 country", "Order \u00b7 amount", "Order \u00b7 qty", "ordered_on"]);
+});
+
 test("the band's cell hides the whole band: Delete, or its menu; the column list brings it back", async ({ page }) => {
   // `Delete` on the band's cell.
   await focusHeader(page, "#banded", "Order");
