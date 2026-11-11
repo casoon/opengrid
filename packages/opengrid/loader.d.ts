@@ -127,6 +127,12 @@ export interface OpengridModule {
    * blocks the commit; `{ validate, block: true }` blocks on an `error`.
    */
   set_validators(host: HTMLElement, validators: Record<string, Validator | ValidatorRule>): void;
+  /**
+   * The DOM node a cell shows instead of its text (issue #317). A function per
+   * column; never an HTML string. The source's value stays what search, export
+   * and events read. The grid only.
+   */
+  set_cell_templates(host: HTMLElement, templates: Record<string, CellTemplate>): void;
   /** Defines the three elements. `loadOpengrid()` calls it. */
   register(): void;
 }
@@ -162,6 +168,8 @@ export interface ConnectOptions {
   onCellChange?: (detail: CellChangeDetail) => void;
   /** `set_actions`: compared by value. The grid only. */
   actions?: RowAction[];
+  /** `set_cell_templates`: functions compare by identity, as in `formats`. The grid only. */
+  cellTemplates?: Record<string, CellTemplate>;
   /** `set_validators`: functions compare by identity, as in `formats`. The grid only. */
   validators?: Record<string, Validator | ValidatorRule>;
   /**
@@ -1182,6 +1190,21 @@ export interface CellChangeDetail {
 /** What a validator says about a value, or `null` for nothing. */
 export type Finding = { level: "warning" | "error"; message: string } | null | undefined;
 /** `value` is the text in the editor, `row` the record as loaded, by field name. */
+/** What `set_cell_templates` gives a function (issue #317). */
+export interface CellTemplateArgument {
+  /** The cell's value as it is on the wire. */
+  value: WireValue;
+  /** The text the column's format makes of it. */
+  text: string;
+  /** The record as loaded, by field name. */
+  row: Record<string, WireValue>;
+  /** The record's `row-key` value; `undefined` without one. */
+  key: WireValue | undefined;
+}
+
+/** A node, or a string shown as text; `null` or `undefined` leaves the cell's text. */
+export type CellTemplate = (cell: CellTemplateArgument) => Node | string | null | undefined;
+
 export type Validator = (value: string, row: Record<string, WireValue>) => Finding;
 /** A validator that may block the commit on an `error`. */
 export interface ValidatorRule {

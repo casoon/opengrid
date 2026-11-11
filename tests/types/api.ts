@@ -136,6 +136,21 @@ export async function page(): Promise<void> {
   module.set_validators(grid, { seats: () => ({ level: "info", message: "x" }) });
   module.set_cell_state(grid, 7, "amount", "invalid", "Taken.");
 
+  // Cell templates (issue #317): a node, a string or nothing — never HTML.
+  module.set_cell_templates(grid, {
+    status: ({ value, text, row, key }) => {
+      key satisfies string | number | boolean | null | undefined;
+      row.id satisfies string | number | boolean | null | undefined;
+      const badge = document.createElement("span");
+      badge.textContent = value === "open" ? text : String(value);
+      return badge;
+    },
+    name: ({ text }) => text,
+    seats: () => null,
+  });
+  // @ts-expect-error — a template returns a node or a string, not a number
+  module.set_cell_templates(grid, { seats: () => 1 });
+
   // An action column (issue #189).
   module.set_actions(grid, [{ id: "open", label: "Open" }]);
   grid.addEventListener("opengrid-row-action", (event) => {
@@ -433,6 +448,7 @@ export async function page(): Promise<void> {
   // Editing through `connect` (issue #206).
   const editing = connect(grid, {
     actions: [{ id: "remove", label: "Remove" }],
+    cellTemplates: { name: ({ text }) => text },
     validators: { seats: (value) => (value ? null : { level: "error", message: "Required." }), name: { validate: () => null, block: true } },
     onRowAdd: async (detail) => ({ state: "saved", key: detail.values["id"] ?? null }),
     onPaste: (detail) => detail.changes.length satisfies number,

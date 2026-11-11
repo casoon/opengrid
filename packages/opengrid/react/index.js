@@ -55,6 +55,7 @@ const OPTIONS = [
   "onCellChange",
   "actions",
   "validators",
+  "cellTemplates",
   "onRowAdd",
   "onPaste",
   "onBulkChange",

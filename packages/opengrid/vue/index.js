@@ -42,7 +42,7 @@ import { connect } from "../loader.js";
 
 /** The options of `connect` that are props; deep ones compare by value. */
 const SHALLOW = ["provider"];
-const DEEP = ["texts", "formats", "presentation", "choices", "actions", "validators", "view"];
+const DEEP = ["texts", "formats", "presentation", "choices", "actions", "validators", "cellTemplates", "view"];
 
 /** The events, by `connect`'s callback. */
 const EVENTS = {

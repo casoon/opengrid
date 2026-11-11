@@ -45,6 +45,12 @@ Two things belong in every release entry and are easy to leave out:
   rows and says so otherwise; the row selection stays its own thing
   ([#327](https://github.com/casoon/opengrid/issues/327),
   [Copying a range of cells](docs/api.md#copying-a-range-of-cells)).
+- **Grid:** cell templates. `set_cell_templates(host, { column: ({ value, text, row, key }) => Node })`
+  (and `cellTemplates` in `connect` and the React, Vue and Svelte adapters) shows a node the page builds —
+  a link, a badge, a small bar — instead of a cell's text. Never an HTML string; the source's value stays
+  what search, filters, export, copy and events read. The cell stays one stop of the grid pattern:
+  `Enter` goes into its controls, `Escape` comes back. Cells are drawn again when their row changes under
+  them ([#317](https://github.com/casoon/opengrid/issues/317), [Cell templates](docs/api.md#cell-templates)).
 - **Grid:** filters joined by `or`. The search expression takes `or` and parentheses —
   `country = DE or (qty ≥ 900 and customer = Alpha)`, `and` binding tighter — and a value in double
   quotes. An expression the filter row cannot hold — one with an `or`, or with two conditions on

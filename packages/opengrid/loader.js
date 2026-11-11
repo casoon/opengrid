@@ -1360,6 +1360,12 @@ export function connect(host, options = {}) {
       const actions = changed.actions ?? [];
       write("actions", actions, stableKey(actions), (value) => module.set_actions(host, value));
     }
+    if ("cellTemplates" in changed) {
+      const cellTemplates = changed.cellTemplates ?? {};
+      write("cellTemplates", cellTemplates, identityKey(cellTemplates), (value) =>
+        module.set_cell_templates(host, value),
+      );
+    }
     if ("validators" in changed) {
       const validators = changed.validators ?? {};
       write("validators", validators, identityKey(validators), (value) =>
