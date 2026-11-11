@@ -67,7 +67,7 @@ const EXPORT_ERROR_CODES: [&str; 3] = ["too_many_rows", "source_changed", "modul
 
 /// The module functions a page calls through `loader.module`, in the order the
 /// freeze lists them.
-const FUNCTIONS: [&str; 16] = [
+const FUNCTIONS: [&str; 17] = [
     "register",
     "set_provider",
     "set_texts",
@@ -84,6 +84,7 @@ const FUNCTIONS: [&str; 16] = [
     "set_actions",
     "set_row_state",
     "set_validators",
+    "set_cell_templates",
 ];
 
 /// `#[wasm_bindgen]` exports that are **not** in the freeze, on purpose: the
@@ -388,6 +389,7 @@ functions
   set_actions
   set_row_state
   set_validators
+  set_cell_templates
 
 loader exports
   loadOpengrid

@@ -45,6 +45,7 @@ instead.
 | `set_cell_state(host, key, column, state, message?)` | What became of an edit the page saves: `saving`, `saved` or `error` — see [Saving edits](#saving-edits). |
 | `set_values(host, values)` | Values the page computes, `[{ key, column, value }]` — see [Saving edits](#saving-edits). |
 | `set_validators(host, validators)` | A function per column that runs while the reader types and says `null` or `{ level, message }` — see [Validation](#validation). |
+| `set_cell_templates(host, templates)` | A function per column that returns the DOM node a cell shows instead of its text — a link, a badge, a small bar — see [Cell templates](#cell-templates). |
 | `set_row_state(host, provisionalKey, state, detail?)` | What became of a row the reader added: `saving`, `saved` (with the record's key) or `error` (with a message) — see [Adding rows](#adding-rows). |
 | `set_actions(host, [{ id, label }])` | A trailing column per action, a button per row; fires `opengrid-row-action` — see [Row actions](#row-actions). |
 | `register()` | Defines the three elements. `loadOpengrid()` calls it; a page that loads the module itself calls it once. |
@@ -182,7 +183,7 @@ connection.disconnect();              // the listeners go; the element keeps its
 | `defaultView` | `set_view`, once — the uncontrolled form: after that the grid leads |
 | `presentation` | `set_columns` — named apart from the `columns` attribute, which is the projection |
 | `onViewChange`, `onSelectionChange`, `onCellChange` | the [events](#events) of the same names; each callback receives the `detail` (for the view: the view itself) |
-| `actions`, `validators` | `set_actions`, `set_validators` — the grid only |
+| `actions`, `validators`, `cellTemplates` | `set_actions`, `set_validators`, `set_cell_templates` — the grid only |
 | `onPaste`, `onBulkChange`, `onRowAction`, `onSourceReplaced` | `opengrid-paste`, `opengrid-bulk-change`, `opengrid-row-action`, `opengrid-source-replaced`; each callback receives the `detail` |
 | `onDrillDown` | `opengrid-drill-down` — the pivot only, with its `drill-down` attribute; the callback receives the `detail` |
 | `onRowAdd` | `opengrid-row-add`, and its answer is `set_row_state`: return `{ state: "saved", key }` or `{ state: "error", message }`, or a promise of one — the row shows `saving` until it settles; resolved with nothing, it is saved, and a rejection is an `error` with its message. No answer at all leaves the row unsaved for the page; an undone add is not answered |
@@ -996,6 +997,50 @@ saves as for single edits (`set_cell_state`, `set_row_state`). A cell that looks
 existing rows a block covers are asked of the source, so a block longer than the window is the
 same as one inside it; of those, the cells in the loaded window show the new values at once.
 Off while grouped and in a tree.
+
+### Cell templates
+
+```js
+loader.module.set_cell_templates(grid, {
+  status: ({ value, text, row, key }) => {
+    const badge = document.createElement("span");
+    badge.className = value === "open" ? "badge badge-open" : "badge";
+    badge.textContent = text;
+    return badge;
+  },
+  customer: ({ text, row }) => {
+    const link = document.createElement("a");
+    link.href = `/customers/${row.customer_id}`;
+    link.textContent = text;
+    return link;
+  },
+});
+```
+
+A function per column returns **a DOM node** — never an HTML string, so nothing the page did not
+build is parsed. It gets `{ value, text, row, key }`: the cell's value as it is on the wire, the
+text the column's format makes of it, the record as loaded (by field name) and its `row-key` value
+(without `row-key`, `undefined`). A string it returns is shown as text; `null`, `undefined` or a
+throw leaves the cell's own text. Replace the functions with another call; an empty object takes
+them all away. A column that is a list, an [action](#row-actions) or in a [tree](#tree) or a
+[grouping](#grouping) is not templated.
+
+**The node is rebuilt, not kept.** The grid pools its rows: a cell is drawn again when its row
+changes under it (scrolling, sorting, a result) and when anything in its record changed, so the
+function must build from its argument and keep no state. A cell that did not change is not drawn
+again.
+
+**What stays the value.** Search, filters, sorting, [export](#exporting-the-view), the
+[copy of a range](#copying-a-range-of-cells) and every event read the source's value, never the
+template: the DOM is a view of it. The cell's accessible name is what the node says — text inside it,
+or an `aria-label` on it — so a bar with no text needs `role="img"` and a label from the page.
+
+**Keys.** The cell is still one stop of the grid pattern. A focusable control inside it — a link, a
+button — is taken out of the tab order; `Enter` on the cell goes into it (the first control gets the
+focus, `Tab` reaches the others) and `Escape` comes back to the cell. While the focus is inside, the
+keys are the control's own. `F2` still edits an editable column; the cell's text is what the editor
+starts from. An uneditable template cell opens nothing on `Enter` but its controls. A row is as tall as
+the grid's row height: a node that is taller is cut off.
 
 ### Row actions
 

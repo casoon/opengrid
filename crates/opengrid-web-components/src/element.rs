@@ -142,6 +142,15 @@ pub fn set_actions(host: &HtmlElement, actions: JsValue) {
     crate::grid_element::set_actions(host, &actions);
 }
 
+/// Gives columns a template (issue #317): `{ column: ({ value, text, row, key }) => Node }`,
+/// the DOM node a cell shows instead of its text. Never an HTML string; the
+/// source's value stays what search, export and the events read.
+#[cfg(feature = "grid")]
+#[wasm_bindgen(js_name = set_cell_templates)]
+pub fn set_cell_templates(host: &HtmlElement, templates: JsValue) {
+    crate::grid_element::set_cell_templates(host, &templates);
+}
+
 /// Gives columns a validator that runs while the reader types (issue #188):
 /// `{ column: (value, row) => null | { level: "warning" | "error", message } }`,
 /// or `{ column: { validate, block: true } }` to make an `error` block the

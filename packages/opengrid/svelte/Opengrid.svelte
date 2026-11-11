@@ -43,6 +43,7 @@
     choices,
     actions,
     validators,
+    cellTemplates,
     onviewchange,
     onselectionchange,
     oncellchange,
@@ -67,6 +68,7 @@
       choices: $state.snapshot(choices),
       actions: $state.snapshot(actions),
       validators: validators && snapshotKeepingFunctions(validators),
+      cellTemplates: cellTemplates && snapshotKeepingFunctions(cellTemplates),
       view: $state.snapshot(view),
       defaultView: $state.snapshot(defaultView),
     };
