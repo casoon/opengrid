@@ -1,4 +1,5 @@
-//! Facets: the reader's value lists per column, their counts, and what a change of one does to the filter.
+//! Facets: the reader's value lists per column, their counts, and what a change
+//! of one does to the filter.
 
 use super::*;
 
