@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>opengrid range fixture</title>
+    <style>
+      opengrid-grid {
+        display: block;
+        height: 320px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid range fixture</h1>
+      <opengrid-grid
+        label="Items"
+        datasource="items"
+        columns="id,name,qty,note"
+        window-size="12"
+        row-key="id"
+        selection
+      ></opengrid-grid>
+    </main>
+    <script type="module">
+      // Issue #327: a block of cells, marked and copied. What is copied is
+      // recorded from the `copy` event; three notes say what a spreadsheet
+      // would run, split or quote.
+      import { loadOpengrid, createLocalProvider } from "/packages/opengrid/loader.js";
+      import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+
+      window.__copied = [];
+      window.__pasted = [];
+      document.addEventListener("copy", (event) => window.__copied.push(event.clipboardData.getData("text/plain")));
+      document.addEventListener("opengrid-paste", (event) => window.__pasted.push(event.detail));
+
+      await init();
+      const schema = JSON.stringify({
+        fields: [
+          { name: "id", type: "int64", nullable: false },
+          { name: "name", type: "utf8", nullable: false },
+          { name: "qty", type: "int64", nullable: true },
+          { name: "note", type: "utf8", nullable: true },
+        ],
+      });
+      const notes = { 1: "=1+1", 2: "a,b", 3: "two\tcells", 4: 'say "hi"' };
+      const rows = Array.from({ length: 40 }, (_, index) => ({
+        id: index + 1,
+        name: `Item ${index + 1}`,
+        qty: index * 10,
+        note: notes[index] ?? `note ${index + 1}`,
+      }));
+      const provider = createLocalProvider(new Engine());
+      await provider.loadRows("items", rows, schema);
+      const loader = await loadOpengrid();
+      const host = document.querySelector("opengrid-grid");
+      loader.module.set_provider(host, provider);
+      window.__ready = true;
+    </script>
+  </body>
+</html>

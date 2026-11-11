@@ -951,6 +951,28 @@ already does — and the cells show the values, marked unsaved. A record saved w
 fires nothing and says so in the status line. The edits are **one step** of the [history](#undo-and-redo):
 `Ctrl`/`Cmd`+`Z` puts all of them back, firing one `opengrid-cell-change` per field with `undo: true`.
 
+### Copying a range of cells
+
+`Shift`+arrow keys on a data cell mark the block between where it began and where the focus is;
+`Shift`+click and dragging with the pointer do the same. The live region says its size — „3 by 4
+cells“ — and each cell in it carries `data-range` (a tint with an outline, which holds in forced
+colours). **The row selection is another thing**: `Shift`+`Space` and the checkboxes select rows, and
+no cell says `aria-selected` for a range. Any key that moves or edits, a click elsewhere, and another
+result for the whole query end the range. Off while grouped and in a tree.
+
+`Ctrl`/`Cmd`+`C` puts the block on the clipboard as a spreadsheet reads it: tab-separated, a line
+break after each row, a cell holding a tab, a line break or a double quote in double quotes. A cell is
+its **value**, not what the column's format shows: `1234.5`, `2026-10-26`, `true`, a list as its
+elements joined by commas, `NULL` as nothing. `Ctrl`/`Cmd`+`V` reads it back — here, into a block of
+the same shape, and into a spreadsheet — with `NULL` as an empty cell (an empty text stays empty).
+
+**The formula guard of the [export](../guides/export/#the-formula-guard) applies:** a text cell that
+starts with `=`, `+`, `-`, `@`, a tab or a carriage return gets a leading `'`, so a spreadsheet runs
+nothing a user typed. Pasting into a text column of the grid takes that `'` off again. A copy covers
+the rows that are **loaded**: a range that reaches past them says so (`rangeUnloaded`) and copies
+nothing — scroll, or narrow the range. From a field (the filter row, the search, an open editor) the
+browser copies as it always did.
+
 ### Pasting
 
 `Ctrl`/`Cmd`+`V` on a data cell reads the clipboard's text — tab-separated, as every spreadsheet
@@ -2018,6 +2040,7 @@ boolean reads — that is `set_formats`.
 | `undoPaste` / `redoPaste` | `Undone: paste, {count} values` / `Redone: …` | `{count}` |
 | `undoRecord` / `redoRecord` | `Undone: record {row}, {count} fields` / `Redone: …` | `{row}`, `{count}` |
 | `recordTitle` / `recordSave` / `recordDone` / `recordNothing` | `Edit record {row}` / `Save` / `Record {row} saved, {count} fields changed` / `Record {row}: no field changed` | `{row}`, `{count}` |
+| `rangeSize` / `rangeCopied` / `rangeUnloaded` | `{rows} by {cols} cells` / `Copied {rows} by {cols} cells` / `Not copied: the range reaches rows that are not loaded` | `{rows}`, `{cols}` |
 | `undoNothing` / `redoNothing` | `Nothing to undo` / `Nothing to redo` | |
 | `bulkCaption` / `bulkApply` / `bulkMenu` | `Set {column} for {rows} selected` / `Set` / `Set for selected rows` | `{column}`, `{rows}` |
 | `bulkReadonly` / `bulkDone` | `{column} is read-only` / `{column} set for {rows}` | `{column}`, `{rows}` |

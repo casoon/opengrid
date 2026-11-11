@@ -77,12 +77,15 @@ web-sys = { version = "0.3", features = [
     "HtmlInputElement",
     "HtmlSelectElement",
     "KeyboardEvent",
+    # A range of cells is dragged out with the pointer (issue #327).
+    "MouseEvent",
     "Node",
     "NodeList",
     # The filter row follows the columns' widths (issue #62).
     "ResizeObserver",
     "ScrollIntoViewOptions",
     "ScrollLogicalPosition",
+    "Selection",
     "ShadowRoot",
     "ShadowRootInit",
     "ShadowRootMode",
