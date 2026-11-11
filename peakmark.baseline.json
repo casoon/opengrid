@@ -3,11 +3,11 @@
   "modules": {
     "elements": {
       "accepted": "2026-11-11",
-      "reason": "Taken over from scripts/module-budget.txt: 346766 B (node:zlib) at #328, 2026-11-11. Earlier reasons: git history of that file.",
+      "reason": "Band names in the header (#353): 349199 B (node:zlib), 2026-11-11, +1.4 KiB; budget raised to 350700 B on main.",
       "values": {
-        "raw": 1047554,
-        "gzip": 439561,
-        "brotli": 347066
+        "raw": 1057012,
+        "gzip": 442633,
+        "brotli": 349099
       }
     },
     "engine": {
@@ -23,11 +23,11 @@
     },
     "xlsx": {
       "accepted": "2026-11-11",
-      "reason": "Taken over from scripts/module-budget.txt: 245537 B (node:zlib) at #332, 2026-11-11. Earlier reasons: git history of that file.",
+      "reason": "Header texts in the workbook writer (#353): 247465 B (node:zlib), 2026-11-11, +1.8 KiB; budget raised to 250000 B on main.",
       "values": {
-        "raw": 670985,
-        "gzip": 298280,
-        "brotli": 245841
+        "raw": 677142,
+        "gzip": 300774,
+        "brotli": 247760
       }
     }
   }

@@ -9,7 +9,7 @@ artifact = "target/peakmark/both/m_bg.wasm"
 glue     = "target/peakmark/both/m.js"
 
 [module.budget]
-brotli = "348400 B"
+brotli = "350700 B"
 
 [[module]]
 name     = "engine"
@@ -32,4 +32,4 @@ artifact = "target/peakmark/xlsx/m_bg.wasm"
 glue     = "target/peakmark/xlsx/m.js"
 
 [module.budget]
-brotli = "248000 B"
+brotli = "250000 B"
