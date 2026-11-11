@@ -418,6 +418,25 @@ pub async fn check_lists<S: DataSource>(source: &S) -> Report {
     check_cases(source, "list-cases", &lists_schema()).await
 }
 
+/// The schema of the case-folding dataset (issue #323): German and Turkish
+/// words in their capitals, a final sigma, a NULL.
+pub fn words_schema() -> Schema {
+    load_schema(&suite_dir().join("data/words.schema.json")).expect("the suite's own schema")
+}
+
+/// The case-folding dataset's rows, as CSV with a header and `\N` for NULL.
+pub fn words_csv() -> PathBuf {
+    suite_dir().join("data/words.csv")
+}
+
+/// Runs the case-folding cases (`fold-cases/`, rule S5a) against `source`, which
+/// holds [`words_csv`] under [`words_schema`] as the source `words`: `icontains`
+/// and `istarts_with` fold as Unicode's lowercase mapping does, with no locale,
+/// in every source.
+pub async fn check_words<S: DataSource>(source: &S) -> Report {
+    check_cases(source, "fold-cases", &words_schema()).await
+}
+
 async fn check_cases<S: DataSource>(source: &S, directory: &str, schema: &Schema) -> Report {
     let mut checked =
         check_dir(&suite_dir().join(directory), schema).expect("the suite's own cases");

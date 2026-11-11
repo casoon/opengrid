@@ -35,6 +35,8 @@ pub const DESCENDING_GLYPH: &str = "▼";
 pub const FILTER_OPERATORS: &[&str] = &[
     "contains",
     "starts_with",
+    "icontains",
+    "istarts_with",
     "eq",
     "ne",
     "gt",

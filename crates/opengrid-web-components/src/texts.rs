@@ -657,6 +657,8 @@ pub(crate) const KEYS: &[&str] = &[
 pub const DEFAULT_OPERATORS: &[&str] = &[
     "contains",
     "starts with",
+    "contains (any case)",
+    "starts with (any case)",
     "is",
     "is not",
     "greater than",
@@ -2014,7 +2016,7 @@ mod tests {
     fn operators_read_as_words() {
         let texts = GridTexts::default();
         assert_eq!(texts.operator(0, "contains"), "contains");
-        assert_eq!(texts.operator(5, "gte"), "greater or equal");
+        assert_eq!(texts.operator(7, "gte"), "greater or equal");
 
         // A missing or empty label falls back to the token rather than shifting
         // the others — a label must never name a different operator than the
@@ -2025,7 +2027,7 @@ mod tests {
         };
         assert_eq!(sparse.operator(0, "contains"), "enthält");
         assert_eq!(sparse.operator(1, "starts_with"), "starts_with");
-        assert_eq!(sparse.operator(5, "gte"), "gte");
+        assert_eq!(sparse.operator(7, "gte"), "gte");
     }
 
     /// The `{name}` placeholders of a template. Only lowercase names count, so

@@ -43,6 +43,7 @@ The same case files run against
 | S3 | NULL ordering, ascending and descending |
 | S4 | Binary collation |
 | S5 | `contains` and `starts_with` are case-sensitive |
+| S5a | `icontains` and `istarts_with` fold both sides with Unicode's lowercase mapping (no locale, final sigma applied): `Müller` is found by `müller`, `Σ` at the end of a word becomes `ς`, `ß` stays (`STRASSE` is not `Straße`), and `İ` becomes `i` and a combining dot, so a Turkish `İstanbul` is not found by `istanbul`. The engine, SQLite (`og_fold`, registered by the connector) and PostgreSQL (`lower` under ICU's `und-x-icu` collation, so the database needs ICU) agree on `fold-cases/`. Accent-insensitive matching and locale collation of sorting are not part of it (#391) |
 | S6 | Multi-column sort and paging with offset |
 | S7 | NaN: not NULL, sorts after numbers, `-0.0` equals `0.0` |
 | S8 | Decimals are exact |

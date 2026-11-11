@@ -466,7 +466,7 @@ pub fn free_text(text: &str, schema: &Schema) -> Option<FilterExpr> {
         .filter_map(|field| FieldName::new(field.name.as_str()).ok())
         .map(|field| FilterExpr::Cmp {
             field,
-            op: CmpOp::Contains,
+            op: CmpOp::IContains,
             value: opengrid_json::Json::String(text.to_owned()),
         })
         .collect();

@@ -1,0 +1,34 @@
+{
+  "id": "s5a-turkish-dotted-capital-i-has-no-locale",
+  "rule": "S5a",
+  "query": {
+    "source": "words",
+    "select": [
+      "id"
+    ],
+    "filter": {
+      "field": "word",
+      "op": "icontains",
+      "value": "istanbul"
+    },
+    "sort": [
+      {
+        "field": "id"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "id"
+    ],
+    "rows": [
+      [
+        7
+      ],
+      [
+        9
+      ]
+    ]
+  },
+  "ordered": true
+}

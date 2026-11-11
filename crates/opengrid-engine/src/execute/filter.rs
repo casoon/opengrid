@@ -11,7 +11,7 @@ use std::collections::HashSet;
 use std::hash::Hash;
 
 use opengrid_columns::{Column, Table, Values};
-use opengrid_query::{CmpOp, ValidatedFilter};
+use opengrid_query::{CmpOp, ValidatedFilter, fold_case};
 use opengrid_types::{DataType, FieldName, Value};
 
 use super::ExecuteError;
@@ -302,7 +302,13 @@ fn holds(order: Ordering, op: CmpOp) -> bool {
         CmpOp::Lte => order != Ordering::Greater,
         CmpOp::Gt => order == Ordering::Greater,
         CmpOp::Gte => order != Ordering::Less,
-        CmpOp::In | CmpOp::Contains | CmpOp::StartsWith | CmpOp::Has | CmpOp::HasAll => {
+        CmpOp::In
+        | CmpOp::Contains
+        | CmpOp::StartsWith
+        | CmpOp::IContains
+        | CmpOp::IStartsWith
+        | CmpOp::Has
+        | CmpOp::HasAll => {
             unreachable!(
                 "`in` is an InList, the string operators are handled apart and a list's are its own"
             )
@@ -310,7 +316,8 @@ fn holds(order: Ordering, op: CmpOp) -> bool {
     }
 }
 
-/// `contains` and `starts_with` (rule S5: case-sensitive).
+/// `contains` and `starts_with` (rule S5: case-sensitive) and their ignoring-case
+/// forms `icontains` and `istarts_with` (rule S5a).
 ///
 /// Plain substring tests on the UTF-8 bytes: rule S13 asks for a binary
 /// comparison without Unicode normalisation, which is exactly what Rust's
@@ -331,6 +338,10 @@ fn string_op(
             found: column.data_type(),
         });
     }
+    // An ignoring-case operator folds the needle once and each cell as it goes
+    // (rule S5a).
+    let folded = op.ignores_case().then(|| fold_case(needle));
+    let needle = folded.as_deref().unwrap_or(needle);
     Ok((0..column.len())
         .map(|row| (!column.is_null(row)).then(|| needle_check(column.str(row), needle, op)))
         .collect())
@@ -340,6 +351,8 @@ fn needle_check(cell: &str, needle: &str, op: CmpOp) -> bool {
     match op {
         CmpOp::Contains => cell.contains(needle),
         CmpOp::StartsWith => cell.starts_with(needle),
+        CmpOp::IContains => fold_case(cell).contains(needle),
+        CmpOp::IStartsWith => fold_case(cell).starts_with(needle),
         other => unreachable!("only the string operators reach here, got {other:?}"),
     }
 }

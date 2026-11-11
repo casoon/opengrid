@@ -115,6 +115,8 @@ test("the operator names are words, the query keeps the wire tokens", async ({
   expect(operatorTexts).toEqual([
     "contains",
     "starts with",
+    "contains (any case)",
+    "starts with (any case)",
     "is",
     "is not",
     "greater than",
@@ -128,6 +130,8 @@ test("the operator names are words, the query keeps the wire tokens", async ({
   expect(operatorValues).toEqual([
     "contains",
     "starts_with",
+    "icontains",
+    "istarts_with",
     "eq",
     "ne",
     "gt",
@@ -168,13 +172,13 @@ test("set_texts overrides a subset and carries its language", async ({ page }) =
   // they were: in the language of the page.
   expect(german.filterLang).toBeNull();
   expect(german.columnLabelLang).toBeUndefined();
-  expect(german.operatorTexts[5]).toBe("größer gleich");
+  expect(german.operatorTexts[7]).toBe("größer gleich");
   expect(german.operatorTexts[0]).toBe("enthält");
   // Keyed by the wire token, so translating two of them leaves the other six
   // alone instead of shifting every label by one.
   expect(german.operatorTexts[1]).toBe("starts with");
   // The wire tokens are untouched by a translation.
-  expect(german.operatorValues[5]).toBe("gte");
+  expect(german.operatorValues[7]).toBe("gte");
   expect(german.operatorValues[1]).toBe("starts_with");
   // Keys the page did not mention keep their English default.
   // The name of the button says the comparison in the new words.

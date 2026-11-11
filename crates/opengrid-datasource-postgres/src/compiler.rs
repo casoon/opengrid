@@ -441,6 +441,25 @@ impl PostgresCompiler {
                         sql.param(value.clone(), *data_type);
                         sql.push(")");
                     }
+                    // Both sides folded by ICU's root lowercase mapping, which
+                    // is what the engine's `to_lowercase` is (S5a): `lower` under
+                    // the database's own collation would be libc's, and differ.
+                    CmpOp::IContains | CmpOp::IStartsWith => {
+                        let function = if *op == CmpOp::IContains {
+                            "strpos"
+                        } else {
+                            "starts_with"
+                        };
+                        sql.push(&format!(
+                            "{function}(lower({column} COLLATE \"und-x-icu\"), lower("
+                        ));
+                        sql.param(value.clone(), *data_type);
+                        sql.push(if *op == CmpOp::IContains {
+                            " COLLATE \"und-x-icu\")) > 0"
+                        } else {
+                            " COLLATE \"und-x-icu\"))"
+                        });
+                    }
                     _ => {
                         sql.push(&collated(&column, *data_type));
                         sql.push(&format!(" {} ", sql_operator(*op)));
@@ -529,7 +548,13 @@ fn sql_operator(op: CmpOp) -> &'static str {
         CmpOp::Gt => ">",
         CmpOp::Gte => ">=",
         // Handled before this point.
-        CmpOp::In | CmpOp::Contains | CmpOp::StartsWith | CmpOp::Has | CmpOp::HasAll => "=",
+        CmpOp::In
+        | CmpOp::Contains
+        | CmpOp::StartsWith
+        | CmpOp::IContains
+        | CmpOp::IStartsWith
+        | CmpOp::Has
+        | CmpOp::HasAll => "=",
     }
 }
 

@@ -24,7 +24,7 @@ mod validate;
 
 pub use ast::{
     Aggregate, AggregateFn, CmpOp, Collation, FilterExpr, NullsOrder, Query, Sort, SortDirection,
-    TreeSpec,
+    TreeSpec, fold_case,
 };
 pub use error::QueryError;
 pub use validate::{FLAT_COLUMNS, Limits, ValidatedFilter, ValidatedQuery, ValidatedTree};

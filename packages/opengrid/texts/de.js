@@ -219,6 +219,8 @@ export default {
   "operators": {
     "contains": "enthält",
     "starts_with": "beginnt mit",
+    "icontains": "enthält (Groß-/Kleinschreibung egal)",
+    "istarts_with": "beginnt mit (Groß-/Kleinschreibung egal)",
     "eq": "ist",
     "ne": "ist nicht",
     "gt": "größer als",

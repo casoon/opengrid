@@ -160,6 +160,30 @@ async fn both_engines_answer_the_same_thing() {
     );
 }
 
+/// The case-folding cases (issue #323, rule S5a) against a real PostgreSQL:
+/// `lower` under ICU's root collation folds as the engine does — German, Turkish
+/// and a final sigma — whatever collation the database was made with.
+#[tokio::test]
+async fn postgresql_folds_case_like_the_engine() {
+    let Some((client, url)) = pg::connect().await else {
+        return;
+    };
+    let schema = opengrid_conformance::words_schema();
+    let table =
+        pg::create_fixture_of(&client, &schema, "opengrid_conformance_words", "words.csv").await;
+
+    let source = PostgresDataSource::connect(&url, &table, schema).expect("a source");
+    let report = opengrid_conformance::check_words(&AsSource(&source)).await;
+
+    client
+        .batch_execute(&format!("DROP TABLE \"{table}\";"))
+        .await
+        .expect("drop table");
+    println!("case-folding conformance (PostgreSQL): {report}");
+    report.assert_ok();
+    assert!(report.cases >= 10, "{report}");
+}
+
 /// The list cases (issue #185) against a real PostgreSQL: arrays, `= ANY`,
 /// `@>` and `cardinality` answer as the engine does — a NULL array unknown,
 /// the empty array empty, order and repeats kept on the way out.

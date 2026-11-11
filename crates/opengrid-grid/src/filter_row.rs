@@ -241,6 +241,8 @@ mod tests {
             "in",
             "contains",
             "starts_with",
+            "icontains",
+            "istarts_with",
             "has",
             "has_all",
             "is_null",
