@@ -50,6 +50,27 @@ fn sqlite_answers_every_list_case() {
     assert!(report.cases >= 20, "{report}");
 }
 
+/// The case-folding cases (issue #323, rule S5a): `og_fold` gives SQLite the
+/// engine's Unicode lowercase, which its own `lower` (ASCII only) does not.
+#[test]
+fn sqlite_folds_case_like_the_engine() {
+    use opengrid_conformance::{check_words, words_csv, words_schema};
+
+    let schema = words_schema();
+    let csv = std::fs::read(words_csv()).expect("the words dataset");
+    let table = load_csv(&csv, &schema, CsvOptions::default()).expect("the rows");
+    let rows = QueryResult::new(schema.clone(), table.to_values(), 0);
+    let mut connection = Connection::open_in_memory().expect("an in-memory database");
+    create_table(&connection, "words", &schema).expect("the table");
+    insert(&mut connection, "words", &schema, &rows).expect("the rows go in");
+    let connector = SqliteConnector::new(connection, "words", schema).expect("a connector");
+
+    let report = block_on(check_words(&AsSource(&connector)));
+    println!("case-folding conformance (SQLite): {report}");
+    report.assert_ok();
+    assert!(report.cases >= 10, "{report}");
+}
+
 /// The pivot cases (rules P1–P12): SQLite answers the grouping sets, and the
 /// pivot — its subtotals, its order, a share or a running total over its
 /// cells — comes out as the engine's does, cell by cell. The engine is held

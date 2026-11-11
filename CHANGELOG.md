@@ -51,6 +51,14 @@ Two things belong in every release entry and are easy to leave out:
   what search, filters, export, copy and events read. The cell stays one stop of the grid pattern:
   `Enter` goes into its controls, `Escape` comes back. Cells are drawn again when their row changes under
   them ([#317](https://github.com/casoon/opengrid/issues/317), [Cell templates](docs/api.md#cell-templates)).
+- **Query:** `icontains` and `istarts_with` — `contains` and `starts_with` ignoring case, both sides
+  folded with Unicode's lowercase mapping and no locale (`Müller` is found by `müller`; `ß` stays, a
+  final `Σ` becomes `ς`, a Turkish `İ` becomes `i` and a combining dot). The engine, SQLite (a function
+  the connector registers) and PostgreSQL (`lower` under ICU's `und-x-icu`, so the database needs ICU)
+  agree on the new `fold-cases` of the conformance suite. The filter row offers them
+  ([#323](https://github.com/casoon/opengrid/issues/323),
+  [query semantics](docs/guides/query-semantics.mdx)). Locale collation of sorting is
+  [#391](https://github.com/casoon/opengrid/issues/391).
 - **Grid:** filters joined by `or`. The search expression takes `or` and parentheses —
   `country = DE or (qty ≥ 900 and customer = Alpha)`, `and` binding tighter — and a value in double
   quotes. An expression the filter row cannot hold — one with an `or`, or with two conditions on
@@ -133,6 +141,13 @@ Two things belong in every release entry and are easy to leave out:
 ### Changed
 
 - **Pages:** the project site uses the current shared theme (0.12.12).
+- **Pages:** the project site uses the current shared theme (0.12.11).
+- **Grid:** the free-text search ignores case. **What breaks:** it sent `contains` and now sends
+  `icontains`, so `de` finds `DE`; a source that does not know the new operator refuses the query.
+  The operator list of the filter row has two more entries after `starts_with`; `set_texts` keys by
+  token, so a page's translations are unaffected, but anything that picked an operator by its
+  position in the list has moved.
+- **Pages:** the project site uses the current shared theme (0.12.10).
 - **Grid:** the search expression reads `or` and parentheses. **What breaks:** ` or ` (and the
   `queryOr` word) inside a value now ends it, a `)` without its `(` inside a value is refused,
   and a value that starts with `"` and has a closing `"` is the text between them — write such

@@ -34,6 +34,9 @@
 //! - **S4/S13, strings**: SQLite's default `BINARY` collation is a byte
 //!   comparison of UTF-8 — the order the engine uses. `contains` and
 //!   `starts_with` use `instr`, which is case-sensitive; `LIKE` would not be.
+//!   `icontains` and `istarts_with` (S5a) fold both sides with `og_fold`, a
+//!   function the connector registers on its connection: SQLite's `lower` folds
+//!   ASCII only.
 //! - **S8, decimals**: integers throughout; a sum stays exact, an average is
 //!   divided as a float (S12).
 //!
@@ -75,6 +78,9 @@ pub struct SqliteConnector {
     tree_pushdown: bool,
 }
 
+/// The SQL function that folds case as the engine does (rule S5a).
+const FOLD: &str = "og_fold";
+
 impl SqliteConnector {
     /// The table `table` in the database file at `path`, laid out for `schema`
     /// (module docs).
@@ -96,6 +102,21 @@ impl SqliteConnector {
     ) -> Result<Self, DataSourceError> {
         quote(table)?;
         schema.check().map_err(|error| backend(error.to_string()))?;
+        // SQLite's own `lower` folds ASCII only; the engine's rule (S5a) is
+        // Unicode's, so the connector brings the engine's function.
+        connection
+            .create_scalar_function(
+                FOLD,
+                1,
+                rusqlite::functions::FunctionFlags::SQLITE_UTF8
+                    | rusqlite::functions::FunctionFlags::SQLITE_DETERMINISTIC,
+                |context| {
+                    Ok(context
+                        .get::<Option<String>>(0)?
+                        .map(|text| opengrid_query::fold_case(&text)))
+                },
+            )
+            .map_err(sqlite)?;
         Ok(Self {
             worker: worker::Worker::start(connection),
             table: table.to_owned(),
@@ -577,6 +598,16 @@ impl Compiler<'_> {
                         sql.param(value, *data_type)?;
                         sql.push(") = 1");
                     }
+                    // Both sides folded by the engine's function (S5a).
+                    CmpOp::IContains | CmpOp::IStartsWith => {
+                        sql.push(&format!("instr({FOLD}({column}), {FOLD}("));
+                        sql.param(value, *data_type)?;
+                        sql.push(if *op == CmpOp::IContains {
+                            ")) > 0"
+                        } else {
+                            ")) = 1"
+                        });
+                    }
                     _ => {
                         sql.push(&format!("{column} {} ", operator(*op)));
                         sql.param(value, *data_type)?;
@@ -612,7 +643,13 @@ fn operator(op: CmpOp) -> &'static str {
         CmpOp::Lte => "<=",
         CmpOp::Gt => ">",
         CmpOp::Gte => ">=",
-        CmpOp::In | CmpOp::Contains | CmpOp::StartsWith | CmpOp::Has | CmpOp::HasAll => "=",
+        CmpOp::In
+        | CmpOp::Contains
+        | CmpOp::StartsWith
+        | CmpOp::IContains
+        | CmpOp::IStartsWith
+        | CmpOp::Has
+        | CmpOp::HasAll => "=",
     }
 }
 

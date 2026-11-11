@@ -1,0 +1,27 @@
+{
+  "id": "s5a-istarts-with-is-a-prefix-only",
+  "rule": "S5a",
+  "query": {
+    "source": "words",
+    "select": [
+      "id"
+    ],
+    "filter": {
+      "field": "word",
+      "op": "istarts_with",
+      "value": "ller"
+    },
+    "sort": [
+      {
+        "field": "id"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "id"
+    ],
+    "rows": []
+  },
+  "ordered": true
+}

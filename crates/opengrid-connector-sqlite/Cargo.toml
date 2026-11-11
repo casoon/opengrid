@@ -22,7 +22,7 @@ opengrid-connector = { workspace = true }
 opengrid-json = { workspace = true }
 # Decided in #51 (E36): SQLite needs no installation — the library is compiled
 # in. Only this reference connector depends on it, never the server.
-rusqlite = { version = "0.41", features = ["bundled"] }
+rusqlite = { version = "0.41", features = ["bundled", "functions"] }
 
 [dev-dependencies]
 opengrid-conformance = { path = "../opengrid-conformance" }

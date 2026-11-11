@@ -493,8 +493,8 @@ OR         = "or",  or the queryOr word
   in the status line and stays in the field for correcting. It never falls back
   to a free-text search: that would look like it worked and show the wrong rows.
 - Free text searches **values**, not what a format prints: `30.00` does not find
-  an amount, and `31.12.` does not find a date. It is case-sensitive, like every
-  string operator in V1 (S5).
+  an amount, and `31.12.` does not find a date. It ignores case (`icontains`, rule S5a): `de`
+  finds `DE`. The filter row offers both forms, `contains` (exact) and `contains (any case)`.
 - The field is an ARIA **combobox**: while the last word is a bare prefix of a
   column, a listbox offers the columns. `↓`/`↑` move through it (the focus stays
   in the field), `Enter` takes one, `Escape` closes it — and, closed, empties the
@@ -1422,7 +1422,7 @@ JSON number, a decimal and a date are strings.
 
 ```
 where     = { "and": [where, …] } | { "or": [where, …] } | condition
-condition = { "field", "op", "value" }      op: eq ne gt gte lt lte contains starts_with has
+condition = { "field", "op", "value" }      op: eq ne gt gte lt lte contains starts_with icontains istarts_with has
           | { "field", "op": "has_all", "value": [ … ] }
           | { "field", "op" }               op: is_null is_not_null is_empty
 ```

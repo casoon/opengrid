@@ -44,7 +44,7 @@ The body's `source` must equal the path's; a mismatch is a `422` at `source`.
 ```
 
 - Operators: `eq`, `ne`, `lt`, `lte`, `gt`, `gte`, `in` (value is an array), `contains`,
-  `starts_with`, `is_null`, `is_not_null` (no value). Combine with `and`, `or`, `not`.
+  `starts_with`, `icontains`, `istarts_with` (ignoring case, rule S5a), `is_null`, `is_not_null` (no value). Combine with `and`, `or`, `not`.
   For a list column (`list<utf8>`, `list<int64>`): `has` (value is an element), `has_all` (value
   is an array of elements) and `is_empty` (no value) — and only those, plus the null checks. A
   list is a JSON array on the wire; its elements are never `null`.

@@ -157,20 +157,20 @@ test("a type the operator does not fit is named", async ({ page }) => {
   await expect.poll(() => status(page)).toBe("amount does not take ~");
 });
 
-test("free text searches the values of the text columns, case-sensitively", async ({ page }) => {
+test("free text searches the values of the text columns, ignoring case", async ({ page }) => {
   await focusSearch(page);
   await page.keyboard.type("DE");
   expect((await field(page)).hint).toBe(false);
   await page.keyboard.press("Enter");
-  await expect.poll(() => status(page)).toBe("52 matches");
+  await expect.poll(() => status(page)).toBe("65 matches");
 
-  // S5: `contains` is case-sensitive in V1, and the field does not pretend
-  // otherwise.
+  // S5a: free text folds case, so `de` finds what `DE` found — and more,
+  // since it is a substring of other values too.
   await page.keyboard.press("Escape");
   await expect.poll(() => status(page)).toBe("200 matches");
   await page.keyboard.type("de");
   await page.keyboard.press("Enter");
-  await expect.poll(() => status(page)).toBe("No matches");
+  await expect.poll(() => status(page)).toBe("65 matches");
 });
 
 test("free text never searches formatted display", async ({ page }) => {

@@ -188,38 +188,38 @@ test("filters by every operator with the keyboard", async ({ page }) => {
   await expect.poll(() => statusText(page)).toBe("2 matches");
   expect(await columnText(page, 1)).toEqual(["Alpha", "Alpha"]);
 
-  // eq(2)
-  await chooseOperator(page, 1, 2);
+  // eq(4)
+  await chooseOperator(page, 1, 4);
   await applyFilter(page, 1, "Beta");
   await expect.poll(() => statusText(page)).toBe("2 matches");
   expect(await columnText(page, 1)).toEqual(["Beta", "Beta"]);
 
-  // ne(3)
-  await chooseOperator(page, 1, 3);
+  // ne(5)
+  await chooseOperator(page, 1, 5);
   await applyFilter(page, 1, "Beta");
   await expect.poll(() => statusText(page)).toBe("3 matches");
   expect(await columnText(page, 1)).toEqual(["Gamma", "Alpha", "Alpha"]);
 
-  // gt(4)
-  await chooseOperator(page, 1, 4);
+  // gt(6)
+  await chooseOperator(page, 1, 6);
   await applyFilter(page, 1, "Beta");
   await expect.poll(() => statusText(page)).toBe("1 match");
   expect(await columnText(page, 1)).toEqual(["Gamma"]);
 
-  // gte(5)
-  await chooseOperator(page, 1, 5);
+  // gte(7)
+  await chooseOperator(page, 1, 7);
   await applyFilter(page, 1, "Beta");
   await expect.poll(() => statusText(page)).toBe("3 matches");
   expect(await columnText(page, 1)).toEqual(["Gamma", "Beta", "Beta"]);
 
-  // lt(6)
-  await chooseOperator(page, 1, 6);
+  // lt(8)
+  await chooseOperator(page, 1, 8);
   await applyFilter(page, 1, "Beta");
   await expect.poll(() => statusText(page)).toBe("2 matches");
   expect(await columnText(page, 1)).toEqual(["Alpha", "Alpha"]);
 
-  // lte(7)
-  await chooseOperator(page, 1, 7);
+  // lte(9)
+  await chooseOperator(page, 1, 9);
   await applyFilter(page, 1, "Beta");
   await expect.poll(() => statusText(page)).toBe("4 matches");
   expect(await columnText(page, 1)).toEqual(["Alpha", "Beta", "Alpha", "Beta"]);
@@ -233,7 +233,7 @@ test("the value input keeps the focus after Enter", async ({ page }) => {
 });
 
 test("the Clear button resets the filter and the count", async ({ page }) => {
-  await chooseOperator(page, 1, 2);
+  await chooseOperator(page, 1, 4);
   await applyFilter(page, 1, "Beta");
   await expect.poll(() => statusText(page)).toBe("2 matches");
 
