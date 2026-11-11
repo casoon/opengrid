@@ -1,16 +1,8 @@
 import { test, expect } from "@playwright/test";
+import { shadow } from "./helpers.js";
 
 // Issue #223: what a new answer does to the row the focus stands on, and to a
 // focus request whose query a newer one superseded.
-
-const shadow = (page, fn, arg) =>
-  page.evaluate(
-    ({ fn, arg }) => new Function("root", "arg", `return (${fn})(root, arg)`)(
-      document.querySelector("opengrid-grid").shadowRoot,
-      arg,
-    ),
-    { fn: fn.toString(), arg },
-  );
 
 const focusedPart = (page) =>
   shadow(page, (root) => {

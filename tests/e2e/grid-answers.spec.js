@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { status } from "./helpers.js";
 
 // Issue #236: what the grid shows when a sort or a filter answer arrives while
 // the reader has scrolled, and when answers arrive out of the order they were
@@ -14,8 +15,6 @@ const shadow = (page, fn, arg) =>
       ),
     { fn: fn.toString(), arg },
   );
-
-const status = (page) => shadow(page, (root) => root.querySelector('[part="status"]').textContent);
 
 /**
  * The ids and customers of the rows the grid shows, by logical row. A pool row

@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { status } from "./helpers.js";
 
 // Selecting by key (issue #322).
 //
@@ -47,8 +48,6 @@ const selectedIds = async (page) =>
 
 const rowcount = (page) =>
   shadow(page, (root) => Number(root.querySelector("table").getAttribute("aria-rowcount")));
-
-const status = (page) => shadow(page, (root) => root.querySelector('[part="status"]').textContent);
 
 const headerCheck = (page) =>
   shadow(page, (root) => root.querySelector('[part="select-mark"]').getAttribute("aria-checked"));

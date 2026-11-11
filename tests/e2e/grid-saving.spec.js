@@ -1,18 +1,10 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { shadow, status } from "./helpers.js";
 
 // A page that saves every cell on its own (issue #153): the edit names its
 // record, the page says what became of it, and fills a column of its own.
 // Keyboard-only, like the editing spec; the page's calls are made by the test.
-
-const shadow = (page, fn, arg) =>
-  page.evaluate(
-    ({ fn, arg }) => new Function("root", "arg", `return (${fn})(root, arg)`)(
-      document.querySelector("opengrid-grid").shadowRoot,
-      arg,
-    ),
-    { fn: fn.toString(), arg },
-  );
 
 const cell = (page, row, col) =>
   shadow(
@@ -31,8 +23,6 @@ const cell = (page, row, col) =>
     },
     { row, col },
   );
-
-const status = (page) => shadow(page, (root) => root.querySelector('[part="status"]').textContent);
 
 async function open(page) {
   await page.goto("/tests/e2e/fixtures/grid-save.html");

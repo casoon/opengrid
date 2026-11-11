@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { shadow, status } from "./helpers.js";
 
 // The filter row as one field per column (issue #96). It had two controls per
 // column — a comparison `<select>` and a value field — and at ordinary widths
@@ -7,17 +8,6 @@ import AxeBuilder from "@axe-core/playwright";
 // inside the field that opens a menu; typing filters with the type's default.
 //
 // The fixture of `grid.spec.js`: five rows, `id,customer,amount,qty`.
-
-const shadow = (page, fn, arg) =>
-  page.evaluate(
-    ({ fn, arg }) => new Function("root", "arg", `return (${fn})(root, arg)`)(
-      document.querySelector("opengrid-grid").shadowRoot,
-      arg,
-    ),
-    { fn: fn.toString(), arg },
-  );
-
-const status = (page) => shadow(page, (root) => root.querySelector('[part="status"]').textContent);
 
 /** The operator button of `col`, as a reader meets it. */
 const operator = (page, col) =>

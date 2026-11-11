@@ -1,19 +1,11 @@
 import { test, expect } from "@playwright/test";
+import { shadow } from "./helpers.js";
 
 // Issue #309: the focused row is pinned in its own pool slot (point 17). A window
 // that ends at the last row (or starts at the first) must not lose that row to the
 // pin. grid-long.html: 60 rows, a pool of 10, a viewport of about 6 rows.
 
 const LAST = 59;
-
-const shadow = (page, fn, arg) =>
-  page.evaluate(
-    ({ fn, arg }) => new Function("root", "arg", `return (${fn})(root, arg)`)(
-      document.querySelector("opengrid-grid").shadowRoot,
-      arg,
-    ),
-    { fn: fn.toString(), arg },
-  );
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/tests/e2e/fixtures/grid-long.html");

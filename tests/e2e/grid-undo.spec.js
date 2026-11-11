@@ -1,19 +1,10 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { shadow, status } from "./helpers.js";
 
 // Undo and redo (issue #186): the grid's own history, the page told with the
 // same events and a flag, the cell and the focus back where it happened.
 
-const shadow = (page, fn, arg) =>
-  page.evaluate(
-    ({ fn, arg }) => new Function("root", "arg", `return (${fn})(root, arg)`)(
-      document.querySelector("opengrid-grid").shadowRoot,
-      arg,
-    ),
-    { fn: fn.toString(), arg },
-  );
-
-const status = (page) => shadow(page, (root) => root.querySelector('[part="status"]').textContent);
 const events = (page) => page.evaluate(() => window.__events);
 const cell = (page, row, col) =>
   shadow(page, (root, { row, col }) => root.querySelector(`td[data-row="${row}"][data-col="${col}"]`)?.textContent.replace(/\s*\*$/, ""), { row, col });
