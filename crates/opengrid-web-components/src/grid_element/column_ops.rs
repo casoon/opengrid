@@ -218,6 +218,39 @@ pub(super) fn move_band(host: &HtmlElement, col: usize, by: i32) {
     dispatch_view(host);
 }
 
+/// Hides the band whose cell is at `col` — every column it spans, in one
+/// rebuild (issue #352). A band that is all there is stays, and says so. The
+/// columns come back from the column list, which lists them; the band is back
+/// with the first of them.
+pub(super) fn hide_band(host: &HtmlElement, col: usize) {
+    let shown = columns_of(host);
+    let Some((band, first, count)) = bands_of(host)
+        .into_iter()
+        .find(|(_, first, _)| *first == col)
+    else {
+        return;
+    };
+    let t = texts(host);
+    if count >= shown.len() {
+        announce(host, &t.band_keep(&band));
+        return;
+    }
+    let names: Vec<String> = shown[first..first + count].to_vec();
+    if !columns::update(host, |layout| {
+        names.iter().fold(false, |changed, name| {
+            layout.set_hidden(name, true) | changed
+        })
+    }) {
+        return;
+    }
+    let visible = columns_of(host).len() as u64;
+    let declared =
+        grid::parse_columns(host.get_attribute(COLUMNS_ATTRIBUTE).as_deref()).len() as u64;
+    rebuild(host, true);
+    announce(host, &t.column_visibility(&band, true, visible, declared));
+    dispatch_view(host);
+}
+
 /// Shows or hides a column and re-runs the query.
 pub(super) fn set_column_hidden(host: &HtmlElement, name: &str, hidden: bool) {
     if !columns::update(host, |layout| layout.set_hidden(name, hidden)) {

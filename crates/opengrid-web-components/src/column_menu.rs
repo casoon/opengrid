@@ -163,6 +163,12 @@ pub fn entries(column: &Column<'_>, texts: &GridTexts) -> Vec<Entry> {
     out
 }
 
+/// The menu of a band's cell (issue #352): hiding the whole band, and nothing
+/// else — a band sorts, filters and groups nothing.
+pub fn band_entries(texts: &GridTexts) -> Vec<Entry> {
+    vec![Entry::item("hide-band", &texts.hide_band)]
+}
+
 /// The grouping a `group:*` action leaves behind.
 ///
 /// `first` makes this column the only level; `second` keeps the outermost level

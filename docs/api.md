@@ -266,8 +266,9 @@ An interactive `<table role="grid">`: virtualized, keyboard-driven, filterable.
 | `Ctrl`/`Cmd`+`Shift`+`←`/`→` | header cell | resize the column |
 | `Alt`+`Shift`+`←`/`→` | header cell | pin the column one step towards that side: let go of a pin at the other end, or pin it at this one ([Pinned columns](#pinned-columns)) |
 | `Alt`+`Shift`+`←`/`→` | band cell, or the header cell of a column in a band | pin the **band** one step towards that side |
+| `Delete` | band cell | hide the whole band ([Column bands](#column-bands)) |
 | `↑` / `↓` | header cell of a column in a band / band cell | go to the band / back to the column ([Column bands](#column-bands)) |
-| `Alt`+`↓`, `Shift`+`F10`, context-menu key | header cell | open the column menu (with `column-menu`) |
+| `Alt`+`↓`, `Shift`+`F10`, context-menu key | header cell, or band cell | open the column menu (with `column-menu`); a band's offers *Hide band* |
 
 On a right-to-left page `←` and `→` change places, and nothing else does:
 [Right to left](#right-to-left).
@@ -639,7 +640,7 @@ There is one level of bands. A band is **always in one piece**: its columns stan
 | The header | Two rows as soon as one shown column has a band. The band's cell stands in the first row, across its columns; the header cells of its columns are in the second. The header cell of a column without a band spans both rows. Without a band the header is the one row it always is. |
 | The order | The columns of a band stand together where the **first** of them stands, in the order they have — also when `columns` or a view's `columns.order` names them apart. |
 | Moving | `Ctrl`/`Cmd`+`←`/`→` on the header cell of a column in a band moves the column **inside** its band and stops at the band's edge (`city is already at the end`). On the band's cell the same keys move the **band** with all its columns, past the column or the band beside it. A column without a band steps over a band as over one column; it never lands inside. A moved band is said like a moved column, with the place of its first column: `Address moved to position 2 of 6`. |
-| Hiding | A hidden column leaves its band; the band's cell spans the columns that are left. Hiding the last shown column of a band hides the band, and showing one again brings it back. |
+| Hiding | A hidden column leaves its band; the band's cell spans the columns that are left. Hiding the last shown column of a band hides the band, and showing one again brings it back. **The band's cell hides the whole band**: `Delete` on it, or *Hide band* in its menu (`Alt`+`↓`, `Shift`+`F10` or the context-menu key, with `column-menu`). Every column it spans is hidden in one step and the status line names the band (`Address hidden, 3 of 6 columns shown`); the view stores it per column, as for any hidden column (`columns.hidden`). A band that is all there is stays (`Address is all that is shown and stays`). **It comes back through the column list (`columns-toggle`)**, which lists its columns: ticking one shows the band again. Sorting, resizing and filtering stay off the band's cell. |
 | Pinning | A band is [pinned](#pinned-columns) as a whole. `pin` on one of its columns in `set_columns`, `Alt`+`Shift`+`←`/`→` on the band's cell or on the header cell of one of its columns, and the column menu's *Pin* group all pin the band: its cell stays in place above its columns, in one piece. The status line names the band (`Address pinned at the start`), and the view holds the choice for each of its columns, `columns.pinned: { street: "start", city: "start", postcode: "start" }`. |
 | Widths, sorting, the menu | These belong to the columns: a band has no width of its own and sorts nothing. `Enter`, `Space` and the resize keys do nothing on a band's cell, and the column menu opens from the columns' header cells. |
 | The view | Nothing new: a band is the page's configuration, not the reader's choice. A view saved without bands is arranged under them when it is restored. |
@@ -2043,7 +2044,8 @@ boolean reads — that is `set_formats`.
 | `filterColumn` | `Filter …` | |
 | `aggregateGroup` / `aggregateNone` | `Aggregate in groups` / `No aggregate` | |
 | `groupByColumn` / `groupSecondLevel` / `ungroupColumn` | `Group by this column` / `Group as second level` / `Remove this grouping` | |
-| `hideColumn` | `Hide column` | |
+| `hideColumn` / `hideBand` | `Hide column` / `Hide band` | |
+| `bandKeep` | `{band} is all that is shown and stays` | `{band}` |
 | `pinGroup` / `pinNone` / `pinStart` / `pinEnd` | `Pin` / `Not pinned` / `At the start` / `At the end` — the column menu's group and its three choices | |
 | `toolbarGroup` / `filterRowToggle` | `Grid tools` / `Filter row` | |
 | `densityGroup` / `densityCompact` / `densityNormal` / `densityComfortable` | `Density` / `Compact` / `Normal` / `Comfortable` | |
