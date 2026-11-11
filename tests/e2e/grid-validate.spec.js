@@ -1,20 +1,11 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { shadow, status } from "./helpers.js";
 
 // Validation while typing, without blocking (issue #188): the sentence under
 // the editor on every keystroke, on the cell afterwards, said once; an error
 // blocks only where the column asks.
 
-const shadow = (page, fn, arg) =>
-  page.evaluate(
-    ({ fn, arg }) => new Function("root", "arg", `return (${fn})(root, arg)`)(
-      document.querySelector("opengrid-grid").shadowRoot,
-      arg,
-    ),
-    { fn: fn.toString(), arg },
-  );
-
-const status = (page) => shadow(page, (root) => root.querySelector('[part="status"]').textContent);
 const under = (page) => shadow(page, (root) => root.querySelector('[part="validation"]')?.textContent ?? null);
 const cellMarks = (page, row, col) =>
   shadow(

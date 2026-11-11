@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { status } from "./helpers.js";
 
 // Issue #236: one keyboard-only walk through everything a grid offers — toolbar,
 // filter row, header, cells, editor, pager — in the order a reader meets it, and
@@ -26,7 +27,6 @@ const where = (page) =>
     return document.activeElement?.id || document.activeElement?.tagName.toLowerCase() || null;
   });
 
-const status = (page) => shadow(page, (root) => root.querySelector('[part="status"]').textContent);
 const ids = (page) =>
   shadow(page, (root) =>
     [...root.querySelectorAll('tbody td[data-col="0"]')]

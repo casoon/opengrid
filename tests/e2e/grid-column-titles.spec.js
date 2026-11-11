@@ -3,6 +3,7 @@
 // identifier — the query, the view, the search expression.
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { status } from "./helpers.js";
 
 const shadow = (page, fn, arg) =>
   page.evaluate(
@@ -12,8 +13,6 @@ const shadow = (page, fn, arg) =>
     },
     [fn.toString(), arg],
   );
-const status = (page) => shadow(page, (root) => root.querySelector('[part="status"]').textContent);
-
 test.beforeEach(async ({ page }) => {
   await page.goto("/tests/e2e/fixtures/grid-phase-f.html");
   await page.waitForFunction(() => window.__opengridReady && window.__opengridModule);

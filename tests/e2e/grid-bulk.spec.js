@@ -1,19 +1,10 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { shadow, status } from "./helpers.js";
 
 // One value for every selected row (issue #187): F2 or the column menu opens
 // the column's editor once, and one event names the records.
 
-const shadow = (page, fn, arg) =>
-  page.evaluate(
-    ({ fn, arg }) => new Function("root", "arg", `return (${fn})(root, arg)`)(
-      document.querySelector("opengrid-grid").shadowRoot,
-      arg,
-    ),
-    { fn: fn.toString(), arg },
-  );
-
-const status = (page) => shadow(page, (root) => root.querySelector('[part="status"]').textContent);
 const panel = (page) => shadow(page, (root) => root.querySelector('[part="bulk"]')?.getAttribute("aria-label") ?? null);
 const cell = (page, row, col) =>
   shadow(page, (root, { row, col }) => root.querySelector(`td[data-row="${row}"][data-col="${col}"]`)?.textContent, { row, col });

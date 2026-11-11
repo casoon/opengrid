@@ -1,17 +1,9 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { shadow } from "./helpers.js";
 
 // Rows the page already holds (issue #182): loaded as objects, replaced under
 // the same name, and a grid on the source keeps its view when that happens.
-
-const shadow = (page, fn, arg) =>
-  page.evaluate(
-    ({ fn, arg }) => new Function("root", "arg", `return (${fn})(root, arg)`)(
-      document.querySelector("opengrid-grid").shadowRoot,
-      arg,
-    ),
-    { fn: fn.toString(), arg },
-  );
 
 const column = (page, col) =>
   shadow(page, (root, col) =>

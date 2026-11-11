@@ -1,19 +1,10 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { shadow, status } from "./helpers.js";
 
 // Pasting a block from a spreadsheet (issue #184): anchored at the focused
 // cell, shown before it happens, applied with Enter, dropped with Escape.
 
-const shadow = (page, fn, arg) =>
-  page.evaluate(
-    ({ fn, arg }) => new Function("root", "arg", `return (${fn})(root, arg)`)(
-      document.querySelector("opengrid-grid").shadowRoot,
-      arg,
-    ),
-    { fn: fn.toString(), arg },
-  );
-
-const status = (page) => shadow(page, (root) => root.querySelector('[part="status"]').textContent);
 const summary = (page) =>
   shadow(page, (root) => root.querySelector('[part="paste-summary"]')?.textContent ?? null);
 const cell = (page, row, col) =>
