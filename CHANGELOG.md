@@ -95,7 +95,7 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Changed
 
-- **Pages:** the project site uses the current shared theme (0.12.8).
+- **Pages:** the project site uses the current shared theme (0.12.10).
 - **Grid:** the search expression reads `or` and parentheses. **What breaks:** ` or ` (and the
   `queryOr` word) inside a value now ends it, a `)` without its `(` inside a value is refused,
   and a value that starts with `"` and has a closing `"` is the text between them — write such
