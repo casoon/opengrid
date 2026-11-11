@@ -211,6 +211,18 @@ pub const DEFAULT_ROW_HEIGHT: u64 = 42;
 /// into the shadow tree.
 pub const ROW_HEIGHT_PROPERTY: &str = "--og-row-height";
 
+/// The least width of the table, which its columns need together (written with
+/// the column widths, `apply_widths`).
+///
+/// A body row is absolutely positioned and `display: table`, and is as wide as
+/// the table: `100%` of its containing block. That is the `<tbody>` where the
+/// browser honours `position: relative` on it (Chromium) and the viewport where
+/// it does not (WebKit) — and the viewport is narrower than a table that
+/// scrolls sideways, which left the rows narrower than their header and a
+/// pinned cell with no room to stand in (#379). The row's width is therefore
+/// the larger of the two: what the table is.
+pub const TABLE_LEAST_PROPERTY: &str = "--og-table-least";
+
 /// Rows kept above the first visible row so scrolling stays smooth.
 pub const OVERSCAN: u64 = 6;
 
@@ -1739,28 +1751,32 @@ pub fn grid_css() -> String {
          :host([{DENSITY_ATTRIBUTE}=\"{comfy_name}\"]) {{ {ROW_HEIGHT_PROPERTY}: {comfy_row}px;
                    {PAD_PROPERTY}: {comfy_pad}px; {FONT_SIZE_PROPERTY}: {comfy_font}; }}
          [part=\"layout\"] {{ display: flex; flex-direction: column; height: 100%; min-height: 0; }}
-         [part=\"filter\"] {{ display: flex; align-items: center; gap: 0; box-sizing: border-box;
+         [part=\"filter\"] {{ display: block; box-sizing: border-box;
                              flex: 0 0 auto;
                              height: var({FILTER_HEIGHT_PROPERTY}); padding: 0 var({PAD_PROPERTY});
                              background: var({SURFACE_2_PROPERTY});
                              border-bottom: 1px solid var({LINE_STRONG_PROPERTY});
                              overflow-x: auto; overflow-y: hidden; white-space: nowrap; }}
+         /* The row is the scroller; its fields stand in this track (see
+            `build_filter`). */
+         [part=\"filter\"] > [data-filter-track] {{ display: flex; align-items: center; gap: 0;
+                             height: 100%; width: max-content; }}
          /* Each group is as wide as its column (issue #62) and holds one field
             (issue #96): the value control takes the width, the operator button
             sits inside it, at its start. */
-         [part=\"filter\"] > span > select, [part=\"filter\"] > span > input {{
+         [data-filter-track] > span > select, [data-filter-track] > span > input {{
                              flex: 1 1 0; min-width: 0; }}
-         [part=\"filter\"] > span[data-filter-field] {{ position: relative; }}
-         [part=\"filter\"] > span > [part=\"filter-operator\"] {{ position: absolute;
+         [data-filter-track] > span[data-filter-field] {{ position: relative; }}
+         [data-filter-track] > span > [part=\"filter-operator\"] {{ position: absolute;
                              inset-inline-start: 4px; top: 50%; transform: translateY(-50%); z-index: 1;
                              min-width: {MIN_TARGET_SIZE}px; min-height: {MIN_TARGET_SIZE}px;
                              padding: 0 4px; border: 0; background: transparent;
                              color: var({INK_MUTED_PROPERTY}); font-weight: 600; line-height: 1;
                              cursor: pointer; }}
-         [part=\"filter\"] > span > [part=\"filter-operator\"]:hover {{
+         [data-filter-track] > span > [part=\"filter-operator\"]:hover {{
                              background: var({HOVER_PROPERTY}); color: var({INK_PROPERTY}); }}
-         [part=\"filter\"] > span > [part=\"filter-operator\"][hidden] {{ display: none; }}
-         [part=\"filter\"] > span > [part=\"filter-operator\"]:not([hidden]) + input {{
+         [data-filter-track] > span > [part=\"filter-operator\"][hidden] {{ display: none; }}
+         [data-filter-track] > span > [part=\"filter-operator\"]:not([hidden]) + input {{
                              padding-inline-start: calc({MIN_TARGET_SIZE}px + 10px); }}
          /* The operator menu (issue #96): a popover like the grouping menu. */
          [part=\"operator-menu\"] {{ position: fixed; inset: auto; margin: 0; padding: 6px;
@@ -1946,7 +1962,8 @@ pub fn grid_css() -> String {
          table {{ width: 100%; table-layout: fixed; border-collapse: collapse; }}
          thead {{ position: sticky; top: 0; z-index: 2;
                   background: var({SURFACE_2_PROPERTY}); color: var({INK_PROPERTY}); }}
-         tbody tr {{ position: absolute; inset-inline-start: 0; width: 100%; display: table; table-layout: fixed;
+         tbody tr {{ position: absolute; inset-inline-start: 0;
+                     width: max(100%, var({TABLE_LEAST_PROPERTY}, 0px)); display: table; table-layout: fixed;
                      background: var({SURFACE_PROPERTY}); }}
          tbody tr:hover {{ background: var({HOVER_PROPERTY}); }}
          /* Until now a selected row was announced and invisible. The tint alone
@@ -3489,10 +3506,20 @@ fn build_filter(
         &texts.filter_group,
         texts,
     );
+    // The fields stand in a track inside the row, which is the scroller. A
+    // pinned field is `sticky` in the track: WebKit keeps it in place right to
+    // left only when it is a child of a box that is wider than the scroller,
+    // and not a child of the scroller itself, which is the flex row (#379).
+    let track = element(buffer, nodes, Some(container), "div");
+    buffer.push(Patch::SetAttribute {
+        node: track,
+        name: "data-filter-track".to_owned(),
+        value: String::new(),
+    });
 
     let mut columns = Vec::with_capacity(fields.len());
     for (col, field) in fields.iter().enumerate() {
-        let group = element(buffer, nodes, Some(container), "span");
+        let group = element(buffer, nodes, Some(track), "span");
         buffer.push(Patch::SetAttribute {
             node: group,
             name: "data-filter-field".to_owned(),
@@ -3591,7 +3618,7 @@ fn build_filter(
         });
     }
 
-    let clear = element(buffer, nodes, Some(container), "button");
+    let clear = element(buffer, nodes, Some(track), "button");
     buffer.push(Patch::SetAttribute {
         node: clear,
         name: "type".to_owned(),
