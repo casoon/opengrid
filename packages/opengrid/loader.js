@@ -309,6 +309,115 @@ function createWatchers() {
   };
 }
 
+/**
+ * The grids a REST provider's source is shown in, and the server's stream that
+ * says it changed (issue #328): `GET /watch/{source}` with the token — fetch,
+ * not `EventSource`, which cannot send a header. The grid is told with a
+ * cancelable `opengrid-source-changed` on its element and decides what the
+ * reader sees; nothing is queried here. A cut stream is taken up again after
+ * the server's `retry` (at most 30 s, longer after each failure); an answer of
+ * 4xx ends it, since asking again would not change it.
+ */
+function createChangeStream(endpoint, token) {
+  const hosts = new Set();
+  let controller = null;
+  let closed = false;
+
+  const alive = () => {
+    for (const ref of [...hosts]) {
+      if (!ref.deref()) {
+        hosts.delete(ref);
+      }
+    }
+    return [...hosts].map((ref) => ref.deref());
+  };
+
+  const tell = (name) => {
+    for (const host of alive()) {
+      host.dispatchEvent(
+        new CustomEvent("opengrid-source-changed", { detail: { name }, cancelable: true }),
+      );
+    }
+  };
+
+  async function run() {
+    let wait = 5000;
+    let failures = 0;
+    while (!closed && alive().length > 0) {
+      controller = new AbortController();
+      try {
+        const response = await fetch(endpoint, {
+          headers: { Accept: "text/event-stream", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          signal: controller.signal,
+          redirect: "error",
+        });
+        if (response.status >= 400 && response.status < 500) {
+          return;
+        }
+        if (!response.ok || !response.body) {
+          throw new Error(`status ${response.status}`);
+        }
+        failures = 0;
+        const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+        let buffer = "";
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) {
+            break;
+          }
+          buffer += value;
+          let end;
+          while ((end = buffer.indexOf("\n\n")) >= 0) {
+            const block = buffer.slice(0, end);
+            buffer = buffer.slice(end + 2);
+            const lines = block.split("\n");
+            const retry = lines.find((line) => line.startsWith("retry:"));
+            if (retry) {
+              wait = Number(retry.slice(6)) || wait;
+            }
+            if (lines.includes("event: changed")) {
+              const data = lines.find((line) => line.startsWith("data:"));
+              let name;
+              try {
+                name = JSON.parse(data.slice(5)).source;
+              } catch {
+                name = undefined;
+              }
+              tell(name);
+            }
+          }
+        }
+      } catch {
+        if (closed) {
+          return;
+        }
+        failures += 1;
+      }
+      await new Promise((resolve) => setTimeout(resolve, Math.min(30000, wait * 2 ** Math.min(failures, 3))));
+    }
+    controller = null;
+  }
+
+  return {
+    watch(host) {
+      for (const ref of hosts) {
+        if (ref.deref() === host) {
+          return;
+        }
+      }
+      hosts.add(new WeakRef(host));
+      if (!controller && !closed) {
+        controller = new AbortController();
+        run();
+      }
+    },
+    close() {
+      closed = true;
+      controller?.abort();
+    },
+  };
+}
+
 /** Rows as the engine reads them: a JSON array of objects, as text. */
 function rowsJson(rows) {
   return typeof rows === "string" ? rows : JSON.stringify(rows);
@@ -382,7 +491,7 @@ export function createLocalProvider(engine) {
  * @param {string} [options.token] bearer token; the server refuses without one.
  * @returns {{execute: Function, describe: Function, export: Function, exportPivot: Function}}
  */
-export function createRestProvider({ url, source, token } = {}) {
+export function createRestProvider({ url, source, token, watch = false } = {}) {
   const base = String(url).replace(/\/$/, "");
   const endpoint = `${base}/query/${encodeURIComponent(source)}`;
   const headers = { "Content-Type": "application/json", Accept: ACCEPT_ANSWER };
@@ -391,8 +500,25 @@ export function createRestProvider({ url, source, token } = {}) {
   }
   // The export answers a file, CSV or JSON, whatever a query would.
   const { Accept: _answer, ...exportHeaders } = headers;
+  const changes = watch
+    ? createChangeStream(`${base}/watch/${encodeURIComponent(source)}`, token)
+    : null;
 
   return {
+    /**
+     * With `watch: true`, `set_provider` calls this: the grid hears
+     * `opengrid-source-changed` when the server says the source changed
+     * (issue #328). A page does not call it.
+     */
+    watch(host) {
+      changes?.watch(host);
+    },
+
+    /** Closes the change stream, if there is one. */
+    terminate() {
+      changes?.close();
+    },
+
     /** Where the queries run; the grid names it in its footer (issue #33). */
     kind: "remote",
     /**

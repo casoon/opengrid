@@ -151,6 +151,15 @@ pub fn set_cell_templates(host: &HtmlElement, templates: JsValue) {
     crate::grid_element::set_cell_templates(host, &templates);
 }
 
+/// Runs the grid's query again over a source that changed (issue #328), keeping
+/// the view, the focus by record, the selection by key and the history. What the
+/// "Refresh" button does; a page that took `opengrid-source-changed` over calls it.
+#[cfg(feature = "grid")]
+#[wasm_bindgen(js_name = refresh)]
+pub fn refresh(host: &HtmlElement) {
+    crate::grid_element::refresh(host);
+}
+
 /// Gives columns a validator that runs while the reader types (issue #188):
 /// `{ column: (value, row) => null | { level: "warning" | "error", message } }`,
 /// or `{ column: { validate, block: true } }` to make an `error` block the

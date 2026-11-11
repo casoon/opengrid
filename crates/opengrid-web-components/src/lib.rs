@@ -104,6 +104,9 @@ pub(crate) mod grid_element_events {
     /// Fired, cancelable, when the reader asks for a record as a form
     /// (issue #325).
     pub const RECORD_OPEN_EVENT: &str = "opengrid-record-open";
+    /// Said by a provider, cancelable: the source behind the grid changed
+    /// (issue #328). Dispatched on the element, not bubbling.
+    pub const SOURCE_CHANGED_EVENT: &str = "opengrid-source-changed";
     /// Fired when a pivot's value was pressed for the rows behind it
     /// (issue #330).
     pub const DRILL_DOWN_EVENT: &str = "opengrid-drill-down";

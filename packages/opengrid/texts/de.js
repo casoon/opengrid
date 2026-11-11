@@ -175,6 +175,8 @@ export default {
   "rangeSize": "{rows} mal {cols} Zellen",
   "rangeCopied": "{rows} mal {cols} Zellen kopiert",
   "rangeUnloaded": "Nicht kopiert: der Bereich reicht über Zeilen, die nicht geladen sind",
+  "sourceChanged": "Die Daten haben sich geändert. Aktualisieren, um sie zu sehen.",
+  "sourceRefresh": "Aktualisieren",
   "undoNothing": "Nichts rückgängig zu machen",
   "redoNothing": "Nichts zu wiederholen",
   "validationWarning": "Warnung: {message}",

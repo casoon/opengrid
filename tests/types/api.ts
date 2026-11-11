@@ -150,6 +150,13 @@ export async function page(): Promise<void> {
   });
   // @ts-expect-error — a template returns a node or a string, not a number
   module.set_cell_templates(grid, { seats: () => 1 });
+  // A source that changes (issue #328).
+  module.refresh(grid);
+  grid.addEventListener("opengrid-source-changed", (event) => {
+    event.detail.name satisfies string | undefined;
+    event.preventDefault();
+  });
+  createRestProvider({ url: "https://example.org", source: "orders", token: "t", watch: true });
 
   // An action column (issue #189).
   module.set_actions(grid, [{ id: "open", label: "Open" }]);

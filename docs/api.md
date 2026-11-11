@@ -44,6 +44,7 @@ instead.
 | `prepare_print(host)` | Builds the grid's print table — every match of the view — and answers a Promise of its row count; see [printing the view](#printing-the-view). |
 | `set_cell_state(host, key, column, state, message?)` | What became of an edit the page saves: `saving`, `saved` or `error` — see [Saving edits](#saving-edits). |
 | `set_values(host, values)` | Values the page computes, `[{ key, column, value }]` — see [Saving edits](#saving-edits). |
+| `refresh(host)` | Runs the grid's query again over a source that changed, keeping the view, the focus by record, the selection by key and the history — see [A source that changes](#a-source-that-changes). |
 | `set_validators(host, validators)` | A function per column that runs while the reader types and says `null` or `{ level, message }` — see [Validation](#validation). |
 | `set_cell_templates(host, templates)` | A function per column that returns the DOM node a cell shows instead of its text — a link, a badge, a small bar — see [Cell templates](#cell-templates). |
 | `set_row_state(host, provisionalKey, state, detail?)` | What became of a row the reader added: `saving`, `saved` (with the record's key) or `error` (with a message) — see [Adding rows](#adding-rows). |
@@ -95,7 +96,7 @@ All from `loader.js`, all the same shape:
 |---|---|
 | `createLocalProvider(engine)` | The engine on the main thread. `load(name, bytes, schema)`, `loadRows(name, rows, schema)` ([Data you already have](../guides/data-you-have/)), `execute`, `pivot` (see below), `stats()`, `terminate()` (a no-op here). `watch(host)` is what `set_provider` calls; a page does not. |
 | `createWorkerProvider({ moduleUrl?, wasmUrl?, workerUrl? })` | The engine in a module worker; started lazily, once. Every option is optional: without `moduleUrl` it is the engine the package ships under `engine/`, without `workerUrl` the package's `worker.js`. The same methods as the local provider; `terminate()` stops the worker. `moduleUrl` and `wasmUrl` are strings, since they travel to the worker by `postMessage`. A bundler follows the defaults; `moduleUrl` and `workerUrl` are for serving the files from elsewhere — see [Frameworks → Bundlers](../guides/frameworks/#what-every-adapter-does-the-same-way). |
-| `createRestProvider({ url, source, token })` | `POST /query/{source}` of an `opengrid-server`. Also offers `describe()` → `{ name, schema, capabilities, pivot_limits }`, and `export(query, options)` → a `Blob` from `POST /export/{source}` ([below](#over-a-server-one-request)), and `exportPivot(pivotQuery, options)` as the pivot provider does. |
+| `createRestProvider({ url, source, token, watch })` | `POST /query/{source}` of an `opengrid-server`; with `watch: true` it also follows the server's [change stream](#a-source-that-changes) (`terminate()` closes it). Also offers `describe()` → `{ name, schema, capabilities, pivot_limits }`, and `export(query, options)` → a `Blob` from `POST /export/{source}` ([below](#over-a-server-one-request)), and `exportPivot(pivotQuery, options)` as the pivot provider does. |
 | `createHybridProvider({ remote, planner, mode, onPlan })` | Splits each query between a remote source and the engine in the tab. `onPlan` receives the plan before anything is sent. |
 | `createPivotProvider({ url, source, token })` | `POST /pivot/{source}` — a whole pivot in one request. Also offers `exportPivot(pivotQuery, options)` → the pivot as an XLSX `Blob` from `POST /pivot/{source}?format=xlsx` ([exporting a pivot](#exportpivotprovider-host-options)). |
 
@@ -1041,6 +1042,26 @@ focus, `Tab` reaches the others) and `Escape` comes back to the cell. While the 
 keys are the control's own. `F2` still edits an editable column; the cell's text is what the editor
 starts from. An uneditable template cell opens nothing on `Enter` but its controls. A row is as tall as
 the grid's row height: a node that is taller is cut off.
+### A source that changes
+
+`createRestProvider({ url, source, token, watch: true })` opens the server's
+[change stream](protocol.md#watching-a-source) and tells the grids on it with a cancelable
+`opengrid-source-changed`. **Rows that move under the focus are a barrier**, so by default the grid
+moves nothing: the status line says once, politely, „The data changed. Refresh to see it.“, and a
+**Refresh** button (`part="refresh"`) sits above the rows. Another change while the notice stands says
+nothing more. The button — or the page, with `refresh(grid)` — runs the same query again and keeps
+the view, the focus (it follows its record by `row-key`, or stays at its place), the selection by key
+and the history. A page that wants its own handling calls `preventDefault()` on the event:
+
+```js
+grid.addEventListener("opengrid-source-changed", (event) => {
+  event.preventDefault();      // no notice, no button
+  if (!editing) loader.module.refresh(grid);
+});
+```
+
+The stream is notification only and needs the same token as a query; it is reconnected after the
+server's `retry`, not at all after a `4xx`. `provider.terminate()` closes it.
 
 ### Row actions
 
@@ -1728,6 +1749,7 @@ exception to the first part: `loader.js` dispatches it on the element, without `
 | `opengrid-cell-change` | `{ row, column, value, previous }` — everything needed to persist it. With `row-key` also `key`: the record's value of that field, `null` when the result does not carry it. |
 | `opengrid-drill-down` | `{ query: { source, filter? }, row, column, measure, value }` — a value of an `<opengrid-pivot>` with `drill-down` was pressed; `query` is the rows behind the cell, as the wire writes a query. See [Drilling down](#drilling-down). |
 | `opengrid-view-change` | `{ view }` — the whole [view](#the-view) after the change. Scrolling and selecting are not view changes. On `<opengrid-pivot>` the view is its `rows`, `columns`, `values`, `sort`, `collapsed` and `filter`. |
+| `opengrid-source-changed` | `{ name }` — **cancelable**: the server behind a REST provider created with `watch: true` said the source changed; see [A source that changes](#a-source-that-changes). Dispatched by `loader.js` on the grid, not bubbling. |
 | `opengrid-source-replaced` | `{ name }` — an engine provider replaced the source this element shows; the grid, table and pivot re-run their query, the grid clears its selection and history and asks a tree and the facets again. Dispatched by `loader.js` on every element on that `datasource`, not bubbling; `connect` hands it to `onSourceReplaced`. |
 | `opengrid-query` | `{ kind, ms, rows, total, bytes, form, memory }` after **every** answer of the provider, on the grid and the pivot (issue #70): where it ran (the provider's `kind`), the round trip in milliseconds measured in the tab, rows answered and matches before paging, the answer's size as it arrived and its form (`binary` or `json`), and the element module's WASM memory. Measured always, sent nowhere — what the page does with it is the page's. |
 
@@ -1876,7 +1898,7 @@ theme that animates a part.
 `facet-pill`, `facet-pills`, `facet-value`, `facets`, `facets-head`, `facets-toggle`, `filter`,
 `filter-builder`, `filter-builder-dialog`, `filter-clear`, `filter-dialog`, `filter-operator`, `filter-row-toggle`, `filter-value`, `footer`,
 `field-group`, `field-menu`, `group-mark`, `group-toggle`, `grouping-menu`, `header`, `layout`, `list`, `list-item`, `list-item-remove`, `listbox`, `menu-label`, `operator-menu`, `page-first`, `page-label`, `page-last`, `page-next`,
-`page-previous`, `pager`, `paste-apply`, `paste-discard`, `paste-preview`, `paste-summary`, `record-dialog`, `row`, `row-header`, `search`, `search-hint`, `search-input`, `search-list`,
+`page-previous`, `pager`, `paste-apply`, `paste-discard`, `paste-preview`, `paste-summary`, `record-dialog`, `refresh`, `row`, `row-header`, `search`, `search-hint`, `search-input`, `search-list`,
 `select`, `select-all`, `select-mark`, `sort-button`, `sort-direction`, `sort-index`, `source`, `status`,
 `table`, `toolbar`, `total-row`, `validation`, `viewport`.
 
@@ -2086,6 +2108,7 @@ boolean reads — that is `set_formats`.
 | `undoRecord` / `redoRecord` | `Undone: record {row}, {count} fields` / `Redone: …` | `{row}`, `{count}` |
 | `recordTitle` / `recordSave` / `recordDone` / `recordNothing` | `Edit record {row}` / `Save` / `Record {row} saved, {count} fields changed` / `Record {row}: no field changed` | `{row}`, `{count}` |
 | `rangeSize` / `rangeCopied` / `rangeUnloaded` | `{rows} by {cols} cells` / `Copied {rows} by {cols} cells` / `Not copied: the range reaches rows that are not loaded` | `{rows}`, `{cols}` |
+| `sourceChanged` / `sourceRefresh` | `The data changed. Refresh to see it.` / `Refresh` | |
 | `undoNothing` / `redoNothing` | `Nothing to undo` / `Nothing to redo` | |
 | `bulkCaption` / `bulkApply` / `bulkMenu` | `Set {column} for {rows} selected` / `Set` / `Set for selected rows` | `{column}`, `{rows}` |
 | `bulkReadonly` / `bulkDone` | `{column} is read-only` / `{column} set for {rows}` | `{column}`, `{rows}` |
