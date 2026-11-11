@@ -148,6 +148,12 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Fixed
 
+- **Grid:** pinned columns hold in Safari (WebKit)
+  ([#379](https://github.com/casoon/opengrid/issues/379)): the filter field of a pinned column right
+  to left, and the one of a pinned band, stay above their column; a filter field that takes the focus
+  stands clear of the pinned fields, and a pinned one no longer moves the grid; a pinned cell that
+  takes the focus no longer jumps the grid sideways; and the rows of a grid narrower than its table
+  are as wide as the table, so a pinned cell has room to stand in.
 - **Grid:** in a tree with rows whose parent is missing, the sentence about them replaced a notice
   that was waiting for the result — a page's `{ notice }` on `set_view` was never said. Both are
   said now, the page's first ([#344](https://github.com/casoon/opengrid/issues/344)).
