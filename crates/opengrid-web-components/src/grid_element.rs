@@ -2076,6 +2076,12 @@ fn add_listeners(root: &ShadowRoot) {
     let _ = root.add_event_listener_with_callback("keydown", keydown.unchecked_ref());
     let focusin = Closure::<dyn FnMut(Event)>::new(on_focus_in).into_js_value();
     let _ = root.add_event_listener_with_callback("focusin", focusin.unchecked_ref());
+    // WebKit fires `focus` and no `focusin` when script gives a date or time
+    // field the focus (#379). `focus` does not bubble, so it is heard on the way
+    // down, and only for those fields: every other control fires both, and
+    // would be handled twice.
+    let focus = Closure::<dyn FnMut(Event)>::new(on_focus_without_focusin).into_js_value();
+    let _ = root.add_event_listener_with_callback_and_bool("focus", focus.unchecked_ref(), true);
     // The "Clear" button of the filter row needs a click handler; keyboard
     // activation fires a click too, so one listener covers both.
     let click = Closure::<dyn FnMut(Event)>::new(on_filter_clear).into_js_value();
@@ -3604,7 +3610,10 @@ fn apply_widths(host: &HtmlElement) {
     {
         least += 44;
     }
-    rules.push_str(&format!("table {{ min-width: {least}px; }}\n"));
+    rules.push_str(&format!(
+        "table {{ min-width: {least}px; {}: {least}px; }}\n",
+        grid::TABLE_LEAST_PROPERTY
+    ));
     if let Some(sheet) = widths_sheet(&root) {
         sheet.replace_sync(&rules).unwrap_or_default();
     }
@@ -5348,6 +5357,109 @@ fn viewport_rows(runtime: &Rc<RefCell<GridRuntime>>) -> u64 {
     }
 }
 
+/// Runs `f` once the browser has drawn `frames` more frames.
+fn after_frames(frames: u32, f: impl FnOnce() + 'static) {
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let callback = Closure::once_into_js(move || {
+        if frames <= 1 {
+            f();
+        } else {
+            after_frames(frames - 1, f);
+        }
+    });
+    let _ = window.request_animation_frame(callback.unchecked_ref::<js_sys::Function>());
+}
+
+/// Puts the filter row right after a control in it took the focus (#379).
+///
+/// WebKit scrolls to a focused control in the next frame, not at once, and
+/// neither with the row's `scroll-padding` in mind — a control ends up under
+/// the pinned fields — nor leaving a pinned field alone — the row jumps to the
+/// place the field has in it. So what the handler did at once is looked at
+/// again two frames later, when that scroll has happened:
+///
+/// * a pinned field is in sight already: the row goes back to where it was
+///   (`sideways`);
+/// * any other control stands clear of the pinned fields, between those at
+///   either end.
+///
+/// Only while the control still has the focus: a reader who moved on is left
+/// alone.
+fn settle_filter_focus(root: &ShadowRoot, row: &Element, control: &Element, sideways: Option<i32>) {
+    let (root, row, control) = (root.clone(), row.clone(), control.clone());
+    after_frames(2, move || {
+        let Some(active) = root.active_element() else {
+            return;
+        };
+        let focused = if control.get_attribute("data-filter-field").is_some() {
+            control.contains(Some(&active))
+        } else {
+            active == control
+        };
+        if !focused {
+            return;
+        }
+        if let Some(sideways) = sideways {
+            if row.scroll_left() != sideways {
+                row.set_scroll_left(sideways);
+            }
+            // The row had moved the table with it, by its scroll event.
+            if let Ok(Some(viewport)) = root.query_selector("[part~=\"viewport\"]")
+                && viewport.scroll_left() != sideways
+            {
+                viewport.set_scroll_left(sideways);
+            }
+            return;
+        }
+        // The room between the pinned fields at either end, where they stand
+        // now: the row's `scroll-padding` is meant to say the same, but is a
+        // computed number that has to agree with the fields to the pixel.
+        let scrollport_left = row.get_bounding_client_rect().left() + f64::from(row.client_left());
+        let width = f64::from(row.client_width());
+        let (mut allowed_left, mut allowed_right) = (scrollport_left, scrollport_left + width);
+        if let Ok(fields) = row.query_selector_all("[data-filter-track] > span") {
+            for index in 0..fields.length() {
+                let Some(field) = fields
+                    .item(index)
+                    .and_then(|node| node.dyn_into::<Element>().ok())
+                else {
+                    continue;
+                };
+                if !is_pinned(&field) {
+                    continue;
+                }
+                let rect = field.get_bounding_client_rect();
+                if rect.left() + rect.width() / 2.0 < scrollport_left + width / 2.0 {
+                    allowed_left = allowed_left.max(rect.right());
+                } else {
+                    allowed_right = allowed_right.min(rect.left());
+                }
+            }
+        }
+        let rect = control.get_bounding_client_rect();
+        if rect.left() < allowed_left {
+            row.set_scroll_left(row.scroll_left() - (allowed_left - rect.left()).ceil() as i32);
+        } else if rect.right() > allowed_right {
+            row.set_scroll_left(row.scroll_left() + (rect.right() - allowed_right).ceil() as i32);
+        }
+    });
+}
+
+/// [`on_focus_in`] for the fields that fire no `focusin` in WebKit.
+fn on_focus_without_focusin(event: Event) {
+    let Some(target) = event.target().and_then(|t| t.dyn_into::<Element>().ok()) else {
+        return;
+    };
+    if target
+        .matches("input[type=\"date\"], input[type=\"time\"], input[type=\"datetime-local\"]")
+        .unwrap_or(false)
+    {
+        on_focus_in(event);
+    }
+}
+
 /// Keeps the runtime in step when the user focuses a cell directly (mouse click
 /// or `Tab` into the grid).
 fn on_focus_in(event: Event) {
@@ -5391,16 +5503,21 @@ fn on_focus_in(event: Event) {
         };
         // A pinned column's field is in sight already; the row stays where
         // it was instead of scrolling to the field's place in it.
-        if let Ok(Some(field)) = target.closest("[part=\"filter\"] > span")
+        let row = target.closest("[part=\"filter\"]").ok().flatten();
+        let sideways = scrolled_sideways(&root);
+        if let Ok(Some(field)) = target.closest("[data-filter-track] > span")
             && is_pinned(&field)
         {
-            if let (Some(row), Some(sideways)) = (field.parent_element(), scrolled_sideways(&root))
-            {
+            if let (Some(row), Some(sideways)) = (&row, sideways) {
                 row.set_scroll_left(sideways);
+                settle_filter_focus(&root, row, &target, Some(sideways));
             }
             return;
         }
         into.scroll_into_view_with_scroll_into_view_options(&options);
+        if let Some(row) = &row {
+            settle_filter_focus(&root, row, &into, None);
+        }
         return;
     }
     let Some(active) = active_from_element(&target) else {
