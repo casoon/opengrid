@@ -67,6 +67,8 @@ pub struct XlsxWriter {
     timestamp: Format,
     /// Per column, the number format of a decimal column (its scale).
     decimals: Vec<Option<Format>>,
+    /// Header texts by field name (issue #353).
+    headers: std::collections::BTreeMap<String, String>,
 }
 
 impl XlsxWriter {
@@ -98,7 +100,19 @@ impl XlsxWriter {
             date: Format::new().set_num_format("yyyy-mm-dd"),
             timestamp: Format::new().set_num_format("yyyy-mm-dd hh:mm:ss.000"),
             decimals: Vec::new(),
+            headers: std::collections::BTreeMap::new(),
         })
+    }
+
+    /// Header texts by field name: a banded column is `Band · Column`.
+    pub fn with_headers(mut self, headers: std::collections::BTreeMap<String, String>) -> Self {
+        self.headers = headers;
+        self
+    }
+
+    /// Sets the header texts of a workbook that is already started.
+    pub fn set_headers(&mut self, headers: std::collections::BTreeMap<String, String>) {
+        self.headers = headers;
     }
 
     /// The next piece; the first also writes the header row.
@@ -106,11 +120,12 @@ impl XlsxWriter {
         // A flat tree brings its level, path and match columns (T8).
         let result = &*crate::with_tree_columns(result);
         if self.row == 0 {
+            let headers = self.headers.clone();
             let names: Vec<&str> = result
                 .schema
                 .fields()
                 .iter()
-                .map(|field| field.name.as_str())
+                .map(|field| crate::csv::header_text(field.name.as_str(), &headers))
                 .collect();
             self.head(result.schema.fields(), &names)?;
         }

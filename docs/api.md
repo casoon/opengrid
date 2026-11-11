@@ -41,6 +41,7 @@ instead.
 | `set_columns(host, columns)` | Per-column presentation — see [`<opengrid-grid>`](#opengrid-grid). |
 | `get_query(host)` | The query of the current view, without a window — what an [export](#exporting-the-view) sends. In a [tree](#tree), every node flat (`tree.flat`), with its level and path. |
 | `get_pivot(host, options)` | The pivot as it is shown, as CSV — see [exporting a pivot](#exporting-a-pivot). |
+| `get_export_headers(host)` | The header texts of the banded columns shown, `{ column: "Band · Title" }`, for `exportRows`'s `headers` — see [Column bands](#column-bands). |
 | `prepare_print(host)` | Builds the grid's print table — every match of the view — and answers a Promise of its row count; see [printing the view](#printing-the-view). |
 | `set_cell_state(host, key, column, state, message?)` | What became of an edit the page saves: `saving`, `saved` or `error` — see [Saving edits](#saving-edits). |
 | `set_values(host, values)` | Values the page computes, `[{ key, column, value }]` — see [Saving edits](#saving-edits). |
@@ -643,7 +644,7 @@ There is one level of bands. A band is **always in one piece**: its columns stan
 | Widths, sorting, the menu | These belong to the columns: a band has no width of its own and sorts nothing. `Enter`, `Space` and the resize keys do nothing on a band's cell, and the column menu opens from the columns' header cells. |
 | The view | Nothing new: a band is the page's configuration, not the reader's choice. A view saved without bands is arranged under them when it is restored. |
 | The filter row, groups, totals | One field and one cell per column, as without bands. |
-| On paper, exports, `get_query` | The columns in the order shown, under one header row: the bands are not printed or exported. |
+| On paper, exports, `get_query` | **One header row, `Band · Column`** (issue #353): the print table writes `Address · City` over a banded column's cell; the exports do it when the page hands them the texts, `exportRows(provider, get_query(grid), { headers: get_export_headers(grid) })` — CSV and XLSX; a column without a band keeps its field name, and JSON has no header row. A server takes each as a parameter, `POST /export/{source}?header.city=Address%20%C2%B7%20City`. The query and the order of the columns are unchanged. |
 | Looks | The band's cell is the part `band`; a line at either side shows which columns it spans. |
 
 **Keys in the header.** With bands the header is two rows, and its cells span: a band's cell

@@ -12,7 +12,7 @@
 use opengrid_datasource::wire::result_from_json;
 #[cfg(feature = "pivot")]
 use opengrid_export::PivotLabels;
-use opengrid_export::{CsvOptions, csv_header, csv_rows, json_rows, with_tree_columns};
+use opengrid_export::{CsvOptions, csv_header_named, csv_rows, json_rows, with_tree_columns};
 use wasm_bindgen::prelude::*;
 
 #[cfg(feature = "pivot")]
@@ -30,17 +30,41 @@ const CSV_OPTION_KEYS: [&str; 4] = ["delimiter", "bom", "protectFormulas", "null
 /// mark) first. `options`: `{ delimiter, bom, protectFormulas, null }`, each
 /// optional (docs/guides/export.md, point 87).
 #[wasm_bindgen(js_name = export_csv)]
-pub fn export_csv(answer: JsValue, options: JsValue, header: bool) -> Result<String, JsError> {
+pub fn export_csv(
+    answer: JsValue,
+    options: JsValue,
+    header: bool,
+    headers: JsValue,
+) -> Result<String, JsError> {
     let result = read(&answer)?;
     // A flat tree brings its level, path and match columns (T8, #166).
     let result = with_tree_columns(&result);
     let options = csv_options(&options)?;
     let mut out = String::new();
     if header {
-        out.push_str(&csv_header(&result.schema, &options));
+        out.push_str(&csv_header_named(
+            &result.schema,
+            &options,
+            &header_texts(&headers),
+        ));
     }
     out.push_str(&csv_rows(&result, &options));
     Ok(out)
+}
+
+/// The header texts a page gave, `{ column: "Band · Column" }` (issue #353):
+/// strings only, anything else is left out.
+fn header_texts(headers: &JsValue) -> std::collections::BTreeMap<String, String> {
+    let mut texts = std::collections::BTreeMap::new();
+    if headers.is_object() {
+        for entry in js_sys::Object::entries(&js_sys::Object::from(headers.clone())).iter() {
+            let pair = js_sys::Array::from(&entry);
+            if let (Some(name), Some(text)) = (pair.get(0).as_string(), pair.get(1).as_string()) {
+                texts.insert(name, text);
+            }
+        }
+    }
+    texts
 }
 
 /// One piece of a JSON array: the rows as objects, joined by commas. `first`:

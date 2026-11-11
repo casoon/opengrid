@@ -242,6 +242,37 @@ async fn the_file_is_the_query_answer_in_the_export_notation() {
     assert_eq!(accepted.body, expected);
 }
 
+/// The header texts a page gives a column (issue #353): CSV and XLSX take them,
+/// a column without one keeps its name, JSON and an empty column are refused.
+#[tokio::test]
+async fn a_page_names_the_headers_of_its_columns() {
+    let body = r#"{"source":"orders","select":["id","customer"],"sort":[{"field":"id","direction":"asc"}],"limit":2,"offset":0}"#;
+    let named = export(
+        "?format=csv&bom=false&header.customer=Buyer%20%C2%B7%20customer",
+        DE,
+        body,
+    )
+    .await;
+    assert_eq!(named.status, StatusCode::OK, "{}", named.body);
+    assert_eq!(
+        named.body.lines().next(),
+        Some("id,Buyer \u{b7} customer"),
+        "{}",
+        named.body
+    );
+
+    let workbook = export("?format=xlsx&header.customer=Buyer", DE, body).await;
+    assert_eq!(workbook.status, StatusCode::OK);
+    assert!(workbook.bytes.starts_with(b"PK"));
+
+    let json = export("?format=json&header.customer=Buyer", DE, body).await;
+    assert_eq!(json.status, StatusCode::BAD_REQUEST, "{}", json.body);
+    assert!(error_of(&json).message.contains("JSON export has none"));
+
+    let empty = export("?format=csv&header.=Buyer", DE, body).await;
+    assert_eq!(empty.status, StatusCode::BAD_REQUEST, "{}", empty.body);
+}
+
 /// An empty export still says what it would have held.
 #[tokio::test]
 async fn nothing_to_export_is_a_header_or_an_empty_array() {

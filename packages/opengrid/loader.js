@@ -571,7 +571,7 @@ export function createRestProvider({ url, source, token, watch = false } = {}) {
      *   and the CSV options (`delimiter`, `bom`, `protectFormulas`, `null`).
      * @returns {Promise<Blob>} `text/csv;charset=utf-8` or `application/json`.
      */
-    async export(query, { format = "csv", signal, maxRows, onProgress, ...csv } = {}) {
+    async export(query, { format = "csv", signal, maxRows, onProgress, headers, ...csv } = {}) {
       for (const key of Object.keys(csv)) {
         if (!CSV_OPTIONS.includes(key)) {
           throw new TypeError(`export: unknown option "${key}"`);
@@ -584,6 +584,10 @@ export function createRestProvider({ url, source, token, watch = false } = {}) {
         if (csv[key] !== undefined) {
           parameters.set(key, String(csv[key]));
         }
+      }
+      // The header texts of CSV and XLSX, one parameter each (issue #353).
+      for (const [column, text] of Object.entries(headers ?? {})) {
+        parameters.set(`header.${column}`, text);
       }
       const response = await fetch(`${base}/export/${encodeURIComponent(source)}?${parameters}`, {
         method: "POST",
@@ -877,7 +881,7 @@ const EXPORT_TYPES = {
 /** The options of `exportPivot`, the function and the providers' method. */
 const PIVOT_EXPORT_OPTIONS = ["format", "texts", "signal"];
 /** The options of `exportRows` that are its own. */
-const EXPORT_OPTIONS = ["format", "chunkSize", "maxRows", "onProgress", "signal"];
+const EXPORT_OPTIONS = ["format", "chunkSize", "maxRows", "onProgress", "signal", "headers"];
 /**
  * The options handed to `export_csv` — only these, whatever else is passed.
  * The same list as `CSV_OPTION_KEYS` in
@@ -949,6 +953,7 @@ export async function exportRows(provider, query, options = {}) {
     maxRows: askedMaxRows,
     onProgress,
     signal,
+    headers,
     delimiter,
     bom,
     protectFormulas,
@@ -971,6 +976,18 @@ export async function exportRows(provider, query, options = {}) {
       throw new TypeError(
         `exportRows: "${stray}" is a CSV option, and this export is ${format.toUpperCase()}`,
       );
+    }
+  }
+  if (headers !== undefined) {
+    if (format === "json") {
+      throw new TypeError("exportRows: headers name the header row, and a JSON export has none");
+    }
+    if (
+      headers === null ||
+      typeof headers !== "object" ||
+      Object.values(headers).some((text) => typeof text !== "string")
+    ) {
+      throw new TypeError("exportRows: headers is an object of texts, by column");
     }
   }
   if (!Number.isSafeInteger(chunkSize) || chunkSize < 1) {
@@ -1014,7 +1031,7 @@ export async function exportRows(provider, query, options = {}) {
   const csvOptions = { delimiter, bom, protectFormulas, null: nullText };
   if (format === "csv") {
     // Read the options now: a wrong one should cost no request.
-    module.export_csv(NO_ROWS, csvOptions, false);
+    module.export_csv(NO_ROWS, csvOptions, false, headers);
   }
 
   const sort = [...(query.sort ?? [])];
@@ -1032,7 +1049,7 @@ export async function exportRows(provider, query, options = {}) {
     const blob = await unlessAborted(
       provider.export(
         { ...query, sort },
-        { format, signal, maxRows, onProgress, ...(format === "csv" ? csvOptions : {}) },
+        { format, signal, maxRows, onProgress, headers, ...(format === "csv" ? csvOptions : {}) },
       ),
       signal,
     );
@@ -1092,13 +1109,18 @@ export async function exportRows(provider, query, options = {}) {
       }
       if (format === "xlsx") {
         // After the checks above: a refused export does not load the module.
-        book ??= new (await loadXlsx()).XlsxBook(sheetNameOf(query));
+        if (!book) {
+          book = new (await loadXlsx()).XlsxBook(sheetNameOf(query));
+          if (headers) {
+            book.headers(headers);
+          }
+        }
         book.add(answer);
       } else {
         parts.push(
           new Blob([
             format === "csv"
-              ? module.export_csv(answer, csvOptions, first)
+              ? module.export_csv(answer, csvOptions, first, headers)
               : // `first` here is "no row written yet", not "first piece": after an
                 // empty first piece the next one still leads without a comma.
                 module.export_json(answer, rows === 0),

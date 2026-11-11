@@ -110,7 +110,10 @@
 # 4.1 KiB, to 340595 B.
 # Raised the same day from 346500: a source that changes (#328: the event, the
 # notice and its button, `refresh`, two texts) grew it by 0.7 KiB, to 346766 B.
-grid+pivot    348400  # 346766 B, 2026-11-11, #328
+# Raised the same day from 348400: band names in the header (#353: the print
+# table's titles, `get_export_headers`, the header texts of the CSV writer)
+# grew it by 1.4 KiB, to 349199 B.
+grid+pivot    350700  # 349199 B, 2026-11-11, #353
 # Raised 2026-09-30 from 108000: the bound was not raised with 0.7.0, which
 # shipped the engine at 115.2 KiB already (CHANGELOG); rule P9's sorted
 # grouping sets and order sets (#108) added the rest, to 121610 B.
@@ -154,4 +157,6 @@ engine        161800  # 160139 B, 2026-11-11, #323
 # `zlib-rs`, and the answer readers. The first estimate in the issue, about
 # 20-30 KB, came from a test crate whose writer LLVM had mostly dropped; this is
 # the real module.
-xlsx          248000  # 245537 B, 2026-11-11, #332
+# Raised the same day from 248000: header texts in the workbook writer (#353),
+# 1.8 KiB, to 247465 B — the writer is the module, and it is large.
+xlsx          250000  # 247465 B, 2026-11-11, #353

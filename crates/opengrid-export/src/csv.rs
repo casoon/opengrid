@@ -17,6 +17,8 @@
 //!   spreadsheet that splits on the *other* list separator would otherwise cut
 //!   `x;=cmd…` in two and run the second half.
 
+use std::collections::BTreeMap;
+
 use opengrid_datasource::QueryResult;
 use opengrid_types::{DataType, Schema};
 
@@ -77,6 +79,18 @@ impl Default for CsvOptions {
 
 /// The header line — the byte order mark first, when asked for.
 pub fn csv_header(schema: &Schema, options: &CsvOptions) -> String {
+    csv_header_named(schema, options, &BTreeMap::new())
+}
+
+/// [`csv_header`] with the header text a page gave a column (`headers`: field
+/// name → text, issue #353): a banded column is `Band · Column`. A column
+/// without one keeps its field name. The text is written like a name — quoted
+/// when it needs it, and guarded when it starts like a formula.
+pub fn csv_header_named(
+    schema: &Schema,
+    options: &CsvOptions,
+    headers: &BTreeMap<String, String>,
+) -> String {
     let mut out = String::new();
     if options.bom {
         out.push('\u{FEFF}');
@@ -84,7 +98,14 @@ pub fn csv_header(schema: &Schema, options: &CsvOptions) -> String {
     let names: Vec<String> = schema
         .fields()
         .iter()
-        .map(|field| quoted(field.name.as_str(), options))
+        .map(|field| {
+            let text = header_text(field.name.as_str(), headers);
+            if options.protect_formulas && is_formula(text) {
+                quoted(&format!("'{text}"), options)
+            } else {
+                quoted(text, options)
+            }
+        })
         .collect();
     out.push_str(&names.join(&options.delimiter.to_string()));
     out.push_str("\r\n");
@@ -114,10 +135,16 @@ pub fn csv_rows(result: &QueryResult, options: &CsvOptions) -> String {
     out
 }
 
+/// What a column's header says: the text a page gave it, or its field name.
+pub fn header_text<'a>(name: &'a str, headers: &'a BTreeMap<String, String>) -> &'a str {
+    headers.get(name).map_or(name, String::as_str)
+}
+
 /// A CSV written in pieces: the header with the first result, rows after.
 #[derive(Debug)]
 pub struct CsvWriter {
     options: CsvOptions,
+    headers: BTreeMap<String, String>,
     started: bool,
 }
 
@@ -125,8 +152,15 @@ impl CsvWriter {
     pub fn new(options: CsvOptions) -> Self {
         Self {
             options,
+            headers: BTreeMap::new(),
             started: false,
         }
+    }
+
+    /// Header texts by field name (issue #353).
+    pub fn with_headers(mut self, headers: BTreeMap<String, String>) -> Self {
+        self.headers = headers;
+        self
     }
 
     /// The next piece: the header before the first rows, then the rows. An
@@ -138,7 +172,11 @@ impl CsvWriter {
         let result = crate::with_tree_columns(result);
         if !self.started {
             self.started = true;
-            out.push_str(&csv_header(&result.schema, &self.options));
+            out.push_str(&csv_header_named(
+                &result.schema,
+                &self.options,
+                &self.headers,
+            ));
         }
         out.push_str(&csv_rows(&result, &self.options));
         out
@@ -199,6 +237,38 @@ fn quoted(text: &str, options: &CsvOptions) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A page names a column's header (issue #353): the others keep their field
+    /// names, and the text is quoted or guarded like any other.
+    #[test]
+    fn a_named_header_replaces_the_field_name() {
+        use opengrid_types::{DataType, Field, FieldName, Schema};
+        let schema = Schema::new(vec![
+            Field::new(FieldName::new("id").unwrap(), DataType::Int64),
+            Field::new(FieldName::new("city").unwrap(), DataType::Utf8),
+        ]);
+        let options = CsvOptions {
+            bom: false,
+            ..CsvOptions::default()
+        };
+        let mut headers = BTreeMap::new();
+        headers.insert("city".to_owned(), "Address \u{b7} City".to_owned());
+        assert_eq!(
+            csv_header_named(&schema, &options, &headers),
+            "id,Address \u{b7} City\r\n"
+        );
+        headers.insert("city".to_owned(), "A, B".to_owned());
+        assert_eq!(
+            csv_header_named(&schema, &options, &headers),
+            "id,\"A, B\"\r\n"
+        );
+        headers.insert("city".to_owned(), "=SUM(A1)".to_owned());
+        assert_eq!(
+            csv_header_named(&schema, &options, &headers),
+            "id,'=SUM(A1)\r\n"
+        );
+        assert_eq!(csv_header(&schema, &options), "id,city\r\n");
+    }
     use opengrid_types::{Field, FieldName, Value};
 
     fn field(name: &str, data_type: DataType) -> Field {

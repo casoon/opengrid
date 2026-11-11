@@ -23,7 +23,7 @@ mod pivot;
 #[cfg(feature = "xlsx")]
 mod xlsx;
 
-pub use csv::{CsvOptions, CsvWriter, csv_header, csv_rows};
+pub use csv::{CsvOptions, CsvWriter, csv_header, csv_header_named, csv_rows, header_text};
 pub use json::{JsonWriter, json_rows};
 pub use pivot::{PATH_SEPARATOR, PivotLabels, pivot_csv};
 #[cfg(feature = "xlsx")]

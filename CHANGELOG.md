@@ -21,6 +21,12 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Added
 
+- **Export, print:** band names in the header row. The print table writes `Address · City` over a banded
+  column; `exportRows(…, { headers })` does the same for CSV and XLSX with the texts
+  `get_export_headers(grid)` answers, and a server takes them as `header.<column>` parameters on
+  `POST /export/{source}`. A column without a band keeps its field name; JSON has no header row and
+  refuses the option ([#353](https://github.com/casoon/opengrid/issues/353),
+  [export guide](docs/guides/export.md#naming-the-band), [Column bands](docs/api.md#column-bands)).
 - **Export:** XLSX without a server ([#332](https://github.com/casoon/opengrid/issues/332)).
   `exportRows(provider, query, { format: "xlsx" })` now writes the workbook in the tab for the
   engine in the tab, a worker and the hybrid provider — the same writer and the same type rules as

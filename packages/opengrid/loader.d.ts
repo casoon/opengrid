@@ -67,6 +67,13 @@ export interface OpengridModule {
    */
   get_query(host: HTMLElement): ViewQuery | null;
   /**
+   * The header texts of the columns shown that stand under a band, by field name:
+   * `{ city: "Address · City" }` (issue #353). Pass it to `exportRows` as
+   * `headers`; the print table uses the same texts. Columns without a band are
+   * not in it.
+   */
+  get_export_headers(host: HTMLElement): Record<string, string>;
+  /**
    * The pivot as it is shown, as CSV text: one header line (`2025 · total`),
    * every row including subtotals and the grand total, the element's labels.
    * `null` while nothing is shown, and for the grid and the table. Throws on an
@@ -480,6 +487,14 @@ export interface ExportOptions extends CsvOptions {
    * default, and 250 000 for an XLSX written in the tab.
    */
   maxRows?: number;
+  /**
+   * Header texts by field name for CSV and XLSX, `{ city: "Address · City" }`
+   * (issue #353); `get_export_headers(grid)` answers them for a grid with bands.
+   * A column without one keeps its field name. A JSON export has no header row
+   * and refuses the option. The server takes each as a parameter,
+   * `header.<column>`.
+   */
+  headers?: Record<string, string>;
   /** Called after each piece. */
   onProgress?: (progress: ExportProgress) => void;
   /** Aborts the export: it rejects with an `AbortError` and gives no `Blob`. */
