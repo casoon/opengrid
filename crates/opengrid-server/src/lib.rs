@@ -22,6 +22,7 @@ mod api;
 mod export;
 mod registry;
 mod server;
+mod watch;
 
 pub use api::{AppState, ErrorReport, router};
 pub use opengrid_connector::Connector;

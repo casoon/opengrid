@@ -133,6 +133,11 @@ export interface OpengridModule {
    * and events read. The grid only.
    */
   set_cell_templates(host: HTMLElement, templates: Record<string, CellTemplate>): void;
+  /**
+   * Runs the grid's query again over a source that changed, keeping the view,
+   * the focus by record, the selection by key and the history (issue #328).
+   */
+  refresh(host: HTMLElement): void;
   /** Defines the three elements. `loadOpengrid()` calls it. */
   register(): void;
 }
@@ -403,6 +408,12 @@ export interface ServerOptions {
   source: string;
   /** Bearer token; the server refuses without one. */
   token?: string;
+  /**
+   * Opens `GET /watch/{source}` and tells the grids on this provider with
+   * `opengrid-source-changed` when the server says the source changed (issue #328).
+   * Off by default; a server may not offer it.
+   */
+  watch?: boolean;
 }
 
 /** The engine on the main thread. */
@@ -1120,6 +1131,8 @@ export type TextKey =
   | "rangeSize"
   | "rangeCopied"
   | "rangeUnloaded"
+  | "sourceChanged"
+  | "sourceRefresh"
   | "redoPaste"
   | "undoNothing"
   | "redoNothing";
@@ -1268,6 +1281,16 @@ export interface SourceReplacedDetail {
   name: string;
 }
 
+/**
+ * `opengrid-source-changed`: the source behind the grid changed (issue #328).
+ * **Cancelable**: `preventDefault()` keeps the grid's notice and "Refresh" button
+ * from showing; call `refresh(grid)` when it suits. Fired on the grid only; it
+ * does not bubble.
+ */
+export interface SourceChangedDetail {
+  name: string | undefined;
+}
+
 /** `opengrid-bulk-change`: one value for the selected rows (issue #187). */
 export interface BulkChangeDetail {
   /** The `row-key` values of the selected records. */
@@ -1343,6 +1366,7 @@ export interface OpengridEventMap {
   "opengrid-drill-down": CustomEvent<DrillDownDetail>;
   /** Dispatched by `loader.js` on the grid; it does not bubble. */
   "opengrid-source-replaced": CustomEvent<SourceReplacedDetail>;
+  "opengrid-source-changed": CustomEvent<SourceChangedDetail>;
 }
 
 // ---------------------------------------------------------------------------

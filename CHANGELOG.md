@@ -59,6 +59,14 @@ Two things belong in every release entry and are easy to leave out:
   ([#323](https://github.com/casoon/opengrid/issues/323),
   [query semantics](docs/guides/query-semantics.mdx)). Locale collation of sorting is
   [#391](https://github.com/casoon/opengrid/issues/391).
+- **Server, provider, grid:** a source that changes. `GET /watch/{source}` is an optional,
+  notification-only stream (Server-Sent Events, same token, no rows); the application says when data
+  changed with `Server::notify_changed`. `createRestProvider({ …, watch: true })` follows it and
+  tells the grid with a cancelable `opengrid-source-changed`. The grid moves **nothing**: the
+  status line says once that the data changed and a **Refresh** button (or `refresh(grid)`) runs the
+  query again, keeping the view, the focus by record, the selection by key and the history
+  ([#328](https://github.com/casoon/opengrid/issues/328),
+  [protocol](docs/protocol.md#watching-a-source), [A source that changes](docs/api.md#a-source-that-changes)).
 - **Grid:** filters joined by `or`. The search expression takes `or` and parentheses —
   `country = DE or (qty ≥ 900 and customer = Alpha)`, `and` binding tighter — and a value in double
   quotes. An expression the filter row cannot hold — one with an `or`, or with two conditions on

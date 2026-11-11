@@ -29,7 +29,14 @@ const LOADER_EXPORTS: [&str; 9] = [
 
 /// The methods of the provider `createRestProvider` answers — `export` is
 /// the server's export (issue #2), which `exportRows` uses when it is there.
-const REST_PROVIDER_METHODS: [&str; 4] = ["describe", "execute", "export", "exportPivot"];
+const REST_PROVIDER_METHODS: [&str; 6] = [
+    "describe",
+    "execute",
+    "export",
+    "exportPivot",
+    "terminate",
+    "watch",
+];
 
 /// The methods of the two engine providers — `stats` is what the engine holds
 /// (issue #70). The same list for both: a page swaps one for the other.
@@ -67,7 +74,7 @@ const EXPORT_ERROR_CODES: [&str; 3] = ["too_many_rows", "source_changed", "modul
 
 /// The module functions a page calls through `loader.module`, in the order the
 /// freeze lists them.
-const FUNCTIONS: [&str; 17] = [
+const FUNCTIONS: [&str; 18] = [
     "register",
     "set_provider",
     "set_texts",
@@ -85,6 +92,7 @@ const FUNCTIONS: [&str; 17] = [
     "set_row_state",
     "set_validators",
     "set_cell_templates",
+    "refresh",
 ];
 
 /// `#[wasm_bindgen]` exports that are **not** in the freeze, on purpose: the
@@ -126,6 +134,7 @@ fn surface() -> String {
         crate::grid_element_events::RECORD_OPEN_EVENT,
         crate::grid_element_events::DRILL_DOWN_EVENT,
         crate::grid_element_events::SOURCE_REPLACED_EVENT,
+        crate::grid_element_events::SOURCE_CHANGED_EVENT,
     ] {
         out.push_str(&format!("  {event}\n"));
     }
@@ -310,6 +319,7 @@ fn parts() -> Vec<String> {
     parts.push("chip-edit".to_owned());
     parts.push("filter-builder-dialog".to_owned());
     parts.push("record-dialog".to_owned());
+    parts.push("refresh".to_owned());
     // The quick doors of issue #34 open popups built when they open.
     parts.push("filter-dialog".to_owned());
     parts.push("grouping-menu".to_owned());
@@ -371,6 +381,7 @@ events
   opengrid-record-open
   opengrid-drill-down
   opengrid-source-replaced
+  opengrid-source-changed
 
 functions
   register
@@ -390,6 +401,7 @@ functions
   set_row_state
   set_validators
   set_cell_templates
+  refresh
 
 loader exports
   loadOpengrid
@@ -403,7 +415,7 @@ loader exports
   exportPivot
 
 provider methods
-  createRestProvider: describe execute export exportPivot
+  createRestProvider: describe execute export exportPivot terminate watch
   createWorkerProvider: execute load loadRows pivot stats terminate watch
   createLocalProvider: execute load loadRows pivot stats terminate watch
 
@@ -430,7 +442,7 @@ column-menu-button column-toggle columns columns-toggle density drill-down edito
 empty-text facet facet-bounds facet-cost facet-count facet-pill facet-pills facet-value \
 facets facets-head facets-toggle field-group field-menu filter filter-builder filter-builder-dialog filter-clear filter-dialog filter-operator \
 filter-row-toggle filter-value footer group-mark group-toggle grouping-menu header layout list list-item list-item-remove listbox menu-label operator-menu \
-page-first page-label page-last page-next page-previous pager paste-apply paste-discard paste-preview paste-summary record-dialog row row-header search search-hint \
+page-first page-label page-last page-next page-previous pager paste-apply paste-discard paste-preview paste-summary record-dialog refresh row row-header search search-hint \
 search-input search-list select select-all select-mark sort-button sort-direction \
 sort-index source status table toolbar total-row validation viewport
 
@@ -447,7 +459,7 @@ groupingFull hideColumn lang listItemAdded listItemRemove listItemRemoved loadin
 operators pageFirst pageLast pageNext pageOf pagePrevious pasteApplied pasteApply pasteBadOne pasteBadOther pasteBlocked pasteCutOff pasteDiscard pasteDiscarded pastePreview pasteUnreadable pinEnd pinGroup pinNone pinStart pinsReleased pivotColumns pivotDrillDown pivotFilterHint pivotFilterLabel pivotFilters pivotMeasures pivotRows pivotShowAs pivotToolbar queriesOne queriesOther queryAnd \
 queryMissingCondition queryMissingJoin queryMissingValue queryOr queryUnclosed queryUnknownColumn queryUnopened queryWrongOperator rangeCopied rangeSize rangeUnloaded recordDone recordNothing recordSave recordTitle redoAdded redoCell redoNothing redoPaste redoRecord rowAdded rowsOne rowsOther runningTotal searchChip searchHint \
 searchLabel searchPlaceholder searchSuggestions selectAll selectedAll selectionCleared selectionMissing shareOfColumn shareOfRow shareOfTotal sortAscending \
-sortDescending sortKey sourceHybrid sourceLocal sourceRemote sourceWorker subtotal subtreeCell subtreeOnly toolbarGroup total \
+sortDescending sortKey sourceChanged sourceHybrid sourceLocal sourceRefresh sourceRemote sourceWorker subtotal subtreeCell subtreeOnly toolbarGroup total \
 totalRow treeContext treeGroupIgnored treeLevelTooLarge treeOrphans treeRefused typeBool typeDate typeInteger typeList typeNumber typeText typeTime undoAdded undoCell undoNothing undoPaste undoRecord ungroupColumn validationError validationWarning valueLabel
 ";
         assert_eq!(surface(), expected);

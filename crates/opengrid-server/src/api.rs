@@ -142,6 +142,9 @@ pub struct AppState {
     /// The exports that may run at once, and the places they take.
     pub(crate) max_concurrent_exports: usize,
     pub(crate) exports: Arc<Semaphore>,
+    /// The names of the sources that changed (issue #328): what
+    /// `GET /watch/{source}` streams are the ones it was asked for.
+    pub(crate) changes: tokio::sync::broadcast::Sender<String>,
     /// Where the failures a caller is not told in full are written down.
     pub(crate) reporter: Reporter,
 }
@@ -178,6 +181,7 @@ impl AppState {
             max_xlsx_rows: settings.max_xlsx_rows,
             max_concurrent_exports: concurrent,
             exports: Arc::new(Semaphore::new(concurrent)),
+            changes: tokio::sync::broadcast::channel(64).0,
             reporter: Reporter::default(),
         }
     }
@@ -197,6 +201,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/pivot/{source}", post(pivot))
         .route("/source/{source}", get(describe))
         .route("/export/{source}", post(crate::export::export))
+        .route("/watch/{source}", get(crate::watch::watch))
         // axum buffers a body under its own 2 MiB limit before a handler runs,
         // so a configured size above that was capped and an unauthenticated
         // client could make the server buffer 2 MiB a request (issue #222).
@@ -729,7 +734,7 @@ fn request_body<T: opengrid_json::FromJson>(body: &[u8]) -> Result<T, WireError>
 /// One failure for every way of getting it wrong — missing header, wrong scheme,
 /// unknown token — because telling them apart tells an attacker which half to
 /// keep trying.
-fn authorize<'a>(
+pub(crate) fn authorize<'a>(
     state: &'a AppState,
     headers: &HeaderMap,
 ) -> Result<&'a BTreeMap<String, String>, Failure> {

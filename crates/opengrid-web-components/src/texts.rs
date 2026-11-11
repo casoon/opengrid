@@ -359,6 +359,10 @@ pub struct GridTexts {
     pub range_copied: String,
     /// Said when the block reaches rows that are not loaded.
     pub range_unloaded: String,
+    /// Said when the source behind the grid changed (issue #328).
+    pub source_changed: String,
+    /// The button that reads the change in.
+    pub source_refresh: String,
     /// Said when there is no step to undo.
     pub undo_nothing: String,
     /// Said when there is no step to redo.
@@ -605,6 +609,8 @@ pub(crate) const KEYS: &[&str] = &[
     "rangeSize",
     "rangeCopied",
     "rangeUnloaded",
+    "sourceChanged",
+    "sourceRefresh",
     "undoNothing",
     "redoNothing",
     "validationWarning",
@@ -852,6 +858,8 @@ impl Default for GridTexts {
             range_size: "{rows} by {cols} cells".to_owned(),
             range_copied: "Copied {rows} by {cols} cells".to_owned(),
             range_unloaded: "Not copied: the range reaches rows that are not loaded".to_owned(),
+            source_changed: "The data changed. Refresh to see it.".to_owned(),
+            source_refresh: "Refresh".to_owned(),
             undo_nothing: "Nothing to undo".to_owned(),
             redo_nothing: "Nothing to redo".to_owned(),
             validation_warning: "Warning: {message}".to_owned(),
@@ -1844,6 +1852,8 @@ mod host {
         overwrite(&mut texts.range_size, string("rangeSize"));
         overwrite(&mut texts.range_copied, string("rangeCopied"));
         overwrite(&mut texts.range_unloaded, string("rangeUnloaded"));
+        overwrite(&mut texts.source_changed, string("sourceChanged"));
+        overwrite(&mut texts.source_refresh, string("sourceRefresh"));
         overwrite(&mut texts.undo_nothing, string("undoNothing"));
         overwrite(&mut texts.redo_nothing, string("redoNothing"));
         overwrite(&mut texts.validation_warning, string("validationWarning"));

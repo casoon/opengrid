@@ -97,6 +97,7 @@ mod facets;
 mod filter_row;
 mod group_path;
 mod history;
+mod live;
 mod paste;
 mod presentation_columns;
 mod print;
@@ -557,6 +558,12 @@ fn on_connected(host: HtmlElement) {
         let _ = host.add_event_listener_with_callback(
             crate::grid_element_events::SOURCE_REPLACED_EVENT,
             replaced.unchecked_ref(),
+        );
+        // A provider that says the source changed (issue #328).
+        let changed = Closure::<dyn FnMut(Event)>::new(live::on_changed).into_js_value();
+        let _ = host.add_event_listener_with_callback(
+            crate::grid_element_events::SOURCE_CHANGED_EVENT,
+            changed.unchecked_ref(),
         );
         runtime.borrow_mut().row_height = height;
         // A `group-by` in the markup is read before anything else happens; one
@@ -3452,6 +3459,11 @@ pub(crate) fn write_cell_state(
 /// [`crate::element::set_cell_templates`] (issue #317).
 pub(crate) fn set_cell_templates(host: &HtmlElement, templates: &JsValue) {
     template::store(host, templates);
+}
+
+/// [`crate::element::refresh`] (issue #328).
+pub(crate) fn refresh(host: &HtmlElement) {
+    live::refresh(host);
 }
 
 /// [`crate::element::set_validators`] (issue #188).
