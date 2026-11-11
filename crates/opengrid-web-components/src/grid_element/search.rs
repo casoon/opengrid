@@ -243,7 +243,19 @@ fn apply_search(host: &HtmlElement) {
 
     if crate::search::looks_like_query(&value) {
         let schema = runtime.borrow().state.schema().clone();
-        match crate::search::parse(&value, &texts.query_and, Some(&texts.query_or), &schema) {
+        let styles = presentation::styles(host);
+        let lookups: Vec<String> = columns
+            .iter()
+            .filter(|name| styles.lookup(name).is_some())
+            .cloned()
+            .collect();
+        match crate::search::parse_for(
+            &value,
+            &texts.query_and,
+            Some(&texts.query_or),
+            &schema,
+            &lookups,
+        ) {
             // With an `or` it is the nested filter (issue #324): the one
             // place such a filter lives, and it replaces the one there was.
             Ok(crate::search::Parsed::Tree(tree)) => {

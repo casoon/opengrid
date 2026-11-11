@@ -232,7 +232,7 @@ fn facet_label(
         column,
         schema.fields(),
         &texts(host),
-        &Formatter::new(&formats(host), schema),
+        &formatter(host, schema),
     )
 }
 

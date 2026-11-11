@@ -557,6 +557,20 @@ pub fn operators_for(data_type: DataType, nullable: bool) -> Vec<&'static str> {
     operators
 }
 
+/// [`operators_for`], for a column that may be a lookup (issue #326): its
+/// value is a choice among labels, so it is one of them or it is not — a
+/// label has no order the key shares, and no part to look for in the key.
+pub fn operators_of(data_type: DataType, nullable: bool, lookup: bool) -> Vec<&'static str> {
+    if !lookup {
+        return operators_for(data_type, nullable);
+    }
+    let mut operators = vec!["eq", "ne"];
+    if nullable {
+        operators.extend(["is_null", "is_not_null"]);
+    }
+    operators
+}
+
 /// Whether an operator needs a value at all.
 ///
 /// `is_null`/`is_not_null` are the two that do not; their value input is
@@ -955,8 +969,12 @@ pub struct FilterColumnNodes {
     /// The value `<input>`; hidden for a boolean column.
     pub input: NodeId,
     /// The value `<select>` of a boolean column — *any*, *yes*, *no*
-    /// (issue #60); hidden for every other column.
+    /// (issue #60) — or of a lookup column: *any* and the labels
+    /// (issue #326). Hidden for every other column.
     pub choice: NodeId,
+    /// Whether the choice lists a lookup's labels. Known when the skeleton is
+    /// built: a new presentation is a new skeleton.
+    pub lookup: bool,
 }
 
 /// The nodes of one recycled pool row.
@@ -1776,7 +1794,8 @@ pub fn grid_css() -> String {
          [data-filter-track] > span > [part=\"filter-operator\"]:hover {{
                              background: var({HOVER_PROPERTY}); color: var({INK_PROPERTY}); }}
          [data-filter-track] > span > [part=\"filter-operator\"][hidden] {{ display: none; }}
-         [data-filter-track] > span > [part=\"filter-operator\"]:not([hidden]) + input {{
+         [data-filter-track] > span > [part=\"filter-operator\"]:not([hidden]) + input,
+         [data-filter-track] > span > [part=\"filter-operator\"]:not([hidden]) ~ select {{
                              padding-inline-start: calc({MIN_TARGET_SIZE}px + 10px); }}
          /* The operator menu (issue #96): a popover like the grouping menu. */
          [part=\"operator-menu\"] {{ position: fixed; inset: auto; margin: 0; padding: 6px;
@@ -2418,7 +2437,7 @@ pub fn build_grid(
     if search && !toolbar {
         build_search(buffer, nodes, layout, texts);
     }
-    let filter = build_filter(buffer, nodes, layout, fields, texts);
+    let filter = build_filter(buffer, nodes, layout, fields, texts, skeleton.presentation);
 
     // Inside the filter row, not above it: a new row of its own would shrink
     // the viewport, and the viewport is what `PageUp`/`PageDown` step by. With a
@@ -3473,6 +3492,7 @@ fn build_filter(
     parent: NodeId,
     fields: &[Field],
     texts: &GridTexts,
+    presentation: &crate::presentation::ColumnStyles,
 ) -> FilterNodes {
     let container = element(buffer, nodes, Some(parent), "div");
     buffer.push(Patch::SetAttribute {
@@ -3581,12 +3601,17 @@ fn build_filter(
         // filter, yes, no. A checkbox cannot say "no filter", and its `value`
         // is `on` whether it is ticked or not. Built for every column, because
         // the type only arrives with the first answer; shown for booleans only.
+        //
+        // A lookup column's value is a choice as well (issue #326): no filter,
+        // or one of the labels — the option's `value` is the key, which is
+        // what the filter compares and the view holds. The page said so, so
+        // it is known here and shown from the start.
+        let lookup = presentation.lookup(field.name.as_str());
         let choice = element(buffer, nodes, Some(group), "select");
         for (name, value) in [
             ("part", "filter-value".to_owned()),
             ("data-value-col", col.to_string()),
             ("aria-label", texts.value_label(field.name.as_str())),
-            ("hidden", String::new()),
         ] {
             buffer.push(Patch::SetAttribute {
                 node: choice,
@@ -3594,12 +3619,12 @@ fn build_filter(
                 value,
             });
         }
-        set_lang(buffer, choice, texts);
-        for (value, text) in [
-            ("", &texts.filter_any),
-            ("true", &texts.boolean_true),
-            ("false", &texts.boolean_false),
-        ] {
+        buffer.push(Patch::SetAttribute {
+            node: if lookup.is_some() { input } else { choice },
+            name: "hidden".to_owned(),
+            value: String::new(),
+        });
+        let mut option = |buffer: &mut PatchBuffer, value: &str, text: &str, ours: bool| {
             let option = element(buffer, nodes, Some(choice), "option");
             buffer.push(Patch::SetAttribute {
                 node: option,
@@ -3608,13 +3633,36 @@ fn build_filter(
             });
             buffer.push(Patch::SetText {
                 node: option,
-                text: text.clone(),
+                text: text.to_owned(),
             });
+            if ours {
+                set_lang(buffer, option, texts);
+            }
+        };
+        match lookup {
+            // The labels are the page's words; only *any* is ours.
+            Some(lookup) => {
+                option(buffer, "", &texts.filter_any, true);
+                for (key, label) in lookup.entries() {
+                    option(buffer, key, label, false);
+                }
+            }
+            None => {
+                set_lang(buffer, choice, texts);
+                for (value, text) in [
+                    ("", &texts.filter_any),
+                    ("true", &texts.boolean_true),
+                    ("false", &texts.boolean_false),
+                ] {
+                    option(buffer, value, text, false);
+                }
+            }
         }
         columns.push(FilterColumnNodes {
             operator,
             input,
             choice,
+            lookup: lookup.is_some(),
         });
     }
 
@@ -3799,9 +3847,9 @@ pub fn patch_grid(
         buffer.push(Patch::SetAttribute {
             node: column.operator,
             name: "data-ops".to_owned(),
-            value: operators_for(field.data_type, field.nullable).join(" "),
+            value: operators_of(field.data_type, field.nullable, column.lookup).join(" "),
         });
-        if field.data_type == DataType::Bool {
+        if field.data_type == DataType::Bool && !column.lookup {
             buffer.push(Patch::SetAttribute {
                 node: column.operator,
                 name: "hidden".to_owned(),
@@ -3820,7 +3868,7 @@ pub fn patch_grid(
         });
         // One value control per column is shown: the choice for a boolean,
         // the input for everything else.
-        let (shown, hidden) = if field.data_type == DataType::Bool {
+        let (shown, hidden) = if field.data_type == DataType::Bool || column.lookup {
             (column.choice, column.input)
         } else {
             (column.input, column.choice)
@@ -5567,6 +5615,172 @@ mod tests {
         );
         assert_eq!(input_step(DataType::Int64).as_deref(), Some("1"));
         assert_eq!(input_step(DataType::Utf8), None);
+    }
+
+    /// A lookup column is one of its labels or it is not (issue #326): no
+    /// order, no substring — whatever the type of its keys.
+    #[test]
+    fn a_lookup_column_offers_is_and_is_not() {
+        assert_eq!(operators_of(DataType::Utf8, false, true), ["eq", "ne"]);
+        assert_eq!(
+            operators_of(DataType::Int64, true, true),
+            ["eq", "ne", "is_null", "is_not_null"]
+        );
+        assert_eq!(
+            operators_of(DataType::Int64, true, false),
+            operators_for(DataType::Int64, true)
+        );
+    }
+
+    /// The filter value of a lookup column is a choice among the page's
+    /// labels, with the key as each option's value (issue #326) — shown from
+    /// the skeleton on, and kept shown by every frame, whatever type the
+    /// result gives the column.
+    #[test]
+    fn a_lookup_column_filters_by_a_choice_among_its_labels() {
+        use crate::presentation::{ColumnStyles, RawColumn, validate};
+        let schema = initial_schema(&["customer".to_owned(), "qty".to_owned()]);
+        let styles = ColumnStyles::new(
+            validate(
+                &[(
+                    "qty".to_owned(),
+                    RawColumn {
+                        lookup: Some(Some(vec![
+                            ("2".to_owned(), "Two".to_owned()),
+                            ("1".to_owned(), "One".to_owned()),
+                        ])),
+                        ..RawColumn::default()
+                    },
+                )],
+                &schema,
+                &[],
+            )
+            .expect("is accepted"),
+        );
+        let mut nodes = NodeAllocator::new();
+        let mut buffer = PatchBuffer::new();
+        let view = build_grid(
+            &mut buffer,
+            &mut nodes,
+            &GridSkeleton {
+                label: None,
+                schema: &schema,
+                pool: 2,
+                texts: &GridTexts::default(),
+                declared: &[],
+                presentation: &styles,
+                selection: false,
+                column_menu: false,
+                toolbar: false,
+                facets: false,
+                search: false,
+                actions: &[],
+                bands: &[],
+                filter_builder: false,
+            },
+        );
+        let (plain, lookup) = (&view.filter.columns[0], &view.filter.columns[1]);
+        assert!(!plain.lookup && lookup.lookup);
+
+        // The options of a node, as `(value, text)`, and who is hidden.
+        let options = |buffer: &PatchBuffer, select: NodeId| -> Vec<(String, String)> {
+            let children: Vec<NodeId> = buffer
+                .patches()
+                .iter()
+                .filter_map(|patch| match patch {
+                    Patch::AppendChild { parent, child } if *parent == select => Some(*child),
+                    _ => None,
+                })
+                .collect();
+            children
+                .iter()
+                .map(|option| {
+                    let mut pair = (String::new(), String::new());
+                    for patch in buffer.patches() {
+                        match patch {
+                            Patch::SetAttribute { node, name, value }
+                                if node == option && name == "value" =>
+                            {
+                                pair.0 = value.clone()
+                            }
+                            Patch::SetText { node, text } if node == option => {
+                                pair.1 = text.clone()
+                            }
+                            _ => {}
+                        }
+                    }
+                    pair
+                })
+                .collect()
+        };
+        let hidden = |buffer: &PatchBuffer| -> Vec<NodeId> {
+            buffer
+                .patches()
+                .iter()
+                .filter_map(|patch| match patch {
+                    Patch::SetAttribute { node, name, .. } if name == "hidden" => Some(*node),
+                    _ => None,
+                })
+                .collect()
+        };
+        let texts = GridTexts::default();
+        assert_eq!(
+            options(&buffer, lookup.choice),
+            [
+                (String::new(), texts.filter_any.clone()),
+                ("2".to_owned(), "Two".to_owned()),
+                ("1".to_owned(), "One".to_owned()),
+            ],
+            "any, then the labels in the page's order, each with its key"
+        );
+        assert_eq!(options(&buffer, plain.choice).len(), 3, "any, yes, no");
+        let built = hidden(&buffer);
+        assert!(built.contains(&lookup.input) && !built.contains(&lookup.choice));
+        assert!(built.contains(&plain.choice) && !built.contains(&plain.input));
+        // The labels are the page's words: the choice carries no `lang` of ours.
+        assert!(!buffer.patches().iter().any(|patch| matches!(
+            patch,
+            Patch::SetAttribute { node, name, .. } if *node == lookup.choice && name == "lang"
+        )));
+
+        // A frame: the result types the column, and the choice stays.
+        let state = state_with(&["Gamma", "Alpha"], 2, 0, 2);
+        let slots = assign_pool(&[None; 2], None, &window_rows(0, 2, 2), 2, 2);
+        let mut frame = PatchBuffer::new();
+        patch_grid(
+            &mut frame,
+            &view,
+            &state,
+            &slots,
+            ActiveCell::Header { col: 0 },
+            &[],
+            None,
+            DEFAULT_ROW_HEIGHT,
+            &texts,
+            &crate::formats::Plain,
+            Paging::whole(state.total_count()),
+            None,
+            None,
+            None,
+        );
+        let shown = hidden(&frame);
+        assert!(shown.contains(&lookup.input) && !shown.contains(&lookup.choice));
+        assert!(shown.contains(&plain.choice) && !shown.contains(&plain.input));
+        let ops: Vec<&str> = frame
+            .patches()
+            .iter()
+            .filter_map(|patch| match patch {
+                Patch::SetAttribute { node, name, value }
+                    if *node == lookup.operator && name == "data-ops" =>
+                {
+                    Some(value.as_str())
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(ops.len(), 1);
+        assert!(ops[0].starts_with("eq ne"), "{ops:?}");
+        assert!(!ops[0].contains("contains") && !ops[0].contains("gt"));
     }
 
     /// Every status has its own sentence; only `Ready` shows the count. The

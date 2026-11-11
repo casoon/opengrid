@@ -23,7 +23,14 @@ use web_sys::HtmlDialogElement;
 const DIALOG: &str = "[part=\"filter-builder-dialog\"]";
 
 /// One condition in words: "country is DE" — what a filter's chip says.
-pub(super) fn condition_words(texts: &crate::texts::GridTexts, entry: &FilterEntry) -> String {
+///
+/// A lookup column's condition holds the key and is said by its label
+/// (issue #326), like the cell that shows it.
+pub(super) fn condition_words(
+    texts: &crate::texts::GridTexts,
+    styles: &presentation::ColumnStyles,
+    entry: &FilterEntry,
+) -> String {
     let token = entry.op.as_str();
     let index = crate::shared::FILTER_OPERATORS
         .iter()
@@ -31,10 +38,14 @@ pub(super) fn condition_words(texts: &crate::texts::GridTexts, entry: &FilterEnt
         .unwrap_or(0);
     let operator = texts.operator(index, token);
     if grid::takes_value(token) {
+        let value = entry.value.trim();
         format!(
             "{} {operator} {}",
             texts.column(&entry.column),
-            entry.value.trim()
+            styles
+                .lookup(&entry.column)
+                .and_then(|lookup| lookup.label(value))
+                .unwrap_or(value)
         )
     } else {
         format!("{} {operator}", texts.column(&entry.column))
@@ -44,9 +55,10 @@ pub(super) fn condition_words(texts: &crate::texts::GridTexts, entry: &FilterEnt
 /// The nested filter in words: "country is DE or amount ≥ 1000".
 pub(super) fn words(host: &HtmlElement, filter: &FilterExpr) -> String {
     let texts = texts(host);
+    let styles = presentation::styles(host);
     filter_tree::words(
         filter,
-        &|entry| condition_words(&texts, entry),
+        &|entry| condition_words(&texts, &styles, entry),
         &texts.query_and,
         &texts.query_or,
     )
@@ -165,7 +177,26 @@ fn condition_node(host: &HtmlElement, filter: Option<&FilterExpr>) -> Option<Ele
             let token = entry.op.as_str();
             select_value(&row, "[data-dialog=\"op\"]", token);
             show_value_field(&row, token);
-            if let Ok(Some(input)) = row.query_selector("[data-dialog=\"value\"]")
+            // A lookup column's value is a choice among its labels, the key
+            // its value (issue #326); a key the map does not name is kept,
+            // named by itself.
+            if let Ok(Some(choice)) = row.query_selector("select[data-dialog=\"value\"]") {
+                if !entry.value.is_empty()
+                    && choice.query_selector_all("option").is_ok_and(|options| {
+                        (0..options.length()).all(|at| {
+                            options
+                                .item(at)
+                                .and_then(|node| node.dyn_into::<Element>().ok())
+                                .and_then(|option| option.get_attribute("value"))
+                                .as_deref()
+                                != Some(entry.value.as_str())
+                        })
+                    })
+                {
+                    option(&choice, &entry.value, &entry.value);
+                }
+                select_value(&row, "select[data-dialog=\"value\"]", &entry.value);
+            } else if let Ok(Some(input)) = row.query_selector("[data-dialog=\"value\"]")
                 && let Ok(input) = input.dyn_into::<HtmlInputElement>()
             {
                 if input.type_() == "checkbox" {
@@ -501,6 +532,13 @@ fn read_condition(host: &HtmlElement, row: &Element) -> Result<Option<FilterExpr
             } else {
                 input.value()
             }
+        })
+        // A lookup column's value is a choice; its value is the key.
+        .or_else(|| {
+            field
+                .clone()
+                .and_then(|node| node.dyn_into::<HtmlSelectElement>().ok())
+                .map(|choice| choice.value())
         })
         .unwrap_or_default();
     let (column, token) = (chosen("column"), chosen("op"));

@@ -180,6 +180,12 @@ pub(crate) fn write_row_state(
 /// Where `set_choices` stores what the page supplied.
 pub(crate) const CHOICES_KEY: &str = "__opengridChoices";
 
+/// How this grid's cells become text: the page's formats, and the label of a
+/// key where the column has a lookup (issue #326).
+fn formatter(host: &HtmlElement, schema: &opengrid_types::Schema) -> Formatter {
+    Formatter::new(&formats(host), schema).with_lookups(&presentation::styles(host), schema)
+}
+
 /// Opens the editor on the focused data cell (plan point 37).
 ///
 /// The editor is an ordinary form control inside the cell, typed after the
@@ -475,9 +481,7 @@ pub(super) fn end_edit(host: &HtmlElement, commit: bool) {
             borrowed
                 .state
                 .cell(cell)
-                .map(|value| {
-                    Formatter::new(&formats(host), borrowed.state.schema()).text(cell.col, value)
-                })
+                .map(|value| formatter(host, borrowed.state.schema()).text(cell.col, value))
                 .unwrap_or_default()
         };
         td.set_text_content(Some(&text));
