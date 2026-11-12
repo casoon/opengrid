@@ -19,6 +19,12 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-11-12
+
+Not yet verified by a screen reader: no pass with assistive technology has been recorded for this
+release ([#5](https://github.com/casoon/opengrid/issues/5)). The keyboard and `axe-core` checks run on
+every change.
+
 ### Added
 
 - **Grid:** detail panels under a row. `set_detail_renderer(grid, (record, key) => Node)` (`detailRenderer`
@@ -237,6 +243,7 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Fixed
 
+- **Grid:** copying a block of cells with `Ctrl`/`Cmd`+`C` works in Firefox and Safari, whose `copy` event does not pass through the shadow root ([#327](https://github.com/casoon/opengrid/issues/327)).
 - **Grid:** pinned columns hold in Safari (WebKit)
   ([#379](https://github.com/casoon/opengrid/issues/379)): the filter field of a pinned column right
   to left, and the one of a pinned band, stay above their column; a filter field that takes the focus
@@ -1623,7 +1630,8 @@ tested.
   tested: React 18 rendering on the server, SvelteKit, Nuxt, Next.js and Astro
   as real applications. A Vite production build needs `loadOpengrid({ moduleUrl })`.
 
-[Unreleased]: https://github.com/casoon/opengrid/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/casoon/opengrid/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/casoon/opengrid/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/casoon/opengrid/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/casoon/opengrid/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/casoon/opengrid/compare/v0.12.0...v0.13.0

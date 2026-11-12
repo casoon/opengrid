@@ -2166,6 +2166,10 @@ fn add_listeners(root: &ShadowRoot) {
     let _ = root.add_event_listener_with_callback("input", typing.unchecked_ref());
     let copied = Closure::<dyn FnMut(Event)>::new(range::on_copy).into_js_value();
     let _ = root.add_event_listener_with_callback("copy", copied.unchecked_ref());
+    // WebKit and Firefox aim the event at the host, past the shadow root.
+    let _ = root
+        .host()
+        .add_event_listener_with_callback("copy", copied.unchecked_ref());
     for (kind, handler) in [
         ("mousedown", range::on_mouse_down as fn(Event)),
         ("mouseover", range::on_mouse_over as fn(Event)),
