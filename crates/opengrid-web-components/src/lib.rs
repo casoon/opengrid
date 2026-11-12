@@ -104,6 +104,8 @@ pub(crate) mod grid_element_events {
     /// Fired, cancelable, when the reader asks for a record as a form
     /// (issue #325).
     pub const RECORD_OPEN_EVENT: &str = "opengrid-record-open";
+    /// Fired when a row's detail panel opened or closed (issue #318).
+    pub const DETAIL_TOGGLE_EVENT: &str = "opengrid-detail-toggle";
     /// Said by a provider, cancelable: the source behind the grid changed
     /// (issue #328). Dispatched on the element, not bubbling.
     pub const SOURCE_CHANGED_EVENT: &str = "opengrid-source-changed";

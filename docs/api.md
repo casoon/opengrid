@@ -48,6 +48,7 @@ instead.
 | `refresh(host)` | Runs the grid's query again over a source that changed, keeping the view, the focus by record, the selection by key and the history — see [A source that changes](#a-source-that-changes). |
 | `set_validators(host, validators)` | A function per column that runs while the reader types and says `null` or `{ level, message }` — see [Validation](#validation). |
 | `set_cell_templates(host, templates)` | A function per column that returns the DOM node a cell shows instead of its text — a link, a badge, a small bar — see [Cell templates](#cell-templates). |
+| `set_detail_renderer(host, renderer)` | A function that returns the DOM node of the panel under an open row — see [Detail panels](#detail-panels). |
 | `set_row_state(host, provisionalKey, state, detail?)` | What became of a row the reader added: `saving`, `saved` (with the record's key) or `error` (with a message) — see [Adding rows](#adding-rows). |
 | `set_actions(host, [{ id, label }])` | A trailing column per action, a button per row; fires `opengrid-row-action` — see [Row actions](#row-actions). |
 | `register()` | Defines the three elements. `loadOpengrid()` calls it; a page that loads the module itself calls it once. |
@@ -185,7 +186,7 @@ connection.disconnect();              // the listeners go; the element keeps its
 | `defaultView` | `set_view`, once — the uncontrolled form: after that the grid leads |
 | `presentation` | `set_columns` — named apart from the `columns` attribute, which is the projection |
 | `onViewChange`, `onSelectionChange`, `onCellChange` | the [events](#events) of the same names; each callback receives the `detail` (for the view: the view itself) |
-| `actions`, `validators`, `cellTemplates` | `set_actions`, `set_validators`, `set_cell_templates` — the grid only |
+| `actions`, `validators`, `cellTemplates`, `detailRenderer` | `set_actions`, `set_validators`, `set_cell_templates`, `set_detail_renderer` — the grid only |
 | `onPaste`, `onBulkChange`, `onRowAction`, `onSourceReplaced` | `opengrid-paste`, `opengrid-bulk-change`, `opengrid-row-action`, `opengrid-source-replaced`; each callback receives the `detail` |
 | `onDrillDown` | `opengrid-drill-down` — the pivot only, with its `drill-down` attribute; the callback receives the `detail` |
 | `onRowAdd` | `opengrid-row-add`, and its answer is `set_row_state`: return `{ state: "saved", key }` or `{ state: "error", message }`, or a promise of one — the row shows `saving` until it settles; resolved with nothing, it is saved, and a rejection is an `error` with its message. No answer at all leaves the row unsaved for the page; an undone add is not answered |
@@ -1044,6 +1045,51 @@ focus, `Tab` reaches the others) and `Escape` comes back to the cell. While the 
 keys are the control's own. `F2` still edits an editable column; the cell's text is what the editor
 starts from. An uneditable template cell opens nothing on `Enter` but its controls. A row is as tall as
 the grid's row height: a node that is taller is cut off.
+### Detail panels
+
+```js
+loader.module.set_detail_renderer(grid, (record, key) => {
+  const box = document.createElement("section");
+  box.append(orderTable(key)); // the page runs its own query for the child rows
+  return box;
+});
+```
+
+The page's function returns **a DOM node** for a record — never an HTML string — and the grid puts it
+in a panel under the record's row. It gets the record as loaded (by field name) and its `row-key`
+value. A string it returns is shown as text; `null`, `undefined` or a throw means this record has no
+panel, and it stays closed. `set_detail_renderer(grid, null)` takes the panels away. The detail is the
+page's content, not a second query: the grid asks the source for nothing here, and a page that wants
+child rows runs its own query in the function. The node is built **once** for as long as the panel is
+open — scrolling it out of view and back puts the same node in again — so it may hold state (an input
+the reader typed into).
+
+**Offered when** the grid has a `row-key`, is not grouped and is not a tree (a panel under a group
+header or a node has no clear meaning), and its rows fit the sizer (a result of more than 312 500
+rows at 32 px scrolls through a scale, where a row's place is not a sum). Otherwise there is no button
+and an open panel is closed. A new result — a sort, a filter, a search, a refresh — closes all the
+panels: its rows are others.
+
+**Structure.** The first cell of every row gets a button (`part="detail-toggle"`) with
+`aria-expanded` and the name `Show details` / `Hide details`; the row stays a `row`. An open row has
+one more `row` under it (`part="detail"` on its cell) holding one `gridcell` across all the columns,
+named `Details: ` and the row's first cell. `aria-rowcount` counts the panels and every `aria-rowindex`
+below one is that much higher, so a screen reader's position stays right.
+
+**Keys.** `Alt`+`↓` on a cell of the row opens the panel and `Alt`+`↑` closes it — the way a menu
+button opens — and the focus stays on the cell. The button is out of the tab order (the cell is the
+grid's one stop) and carries `aria-keyshortcuts`. Inside the panel the keys are the page's own;
+`Escape` closes the panel and returns to the row's first cell. Opening and closing is said once in
+the status line (`detailShown`, `detailHidden`) and fires `opengrid-detail-toggle`.
+
+**Height.** A panel is as tall as its node, measured when it is drawn and whenever it resizes (a
+section that opens, content that loads); the rows below and the scroll area follow. The panel is
+as wide as the table.
+
+**In the view.** `get_view().detail` holds the `row-key` values of the open panels and `set_view`
+opens them as their rows load; keys the source never loads stay waiting and are not an error. A
+view applied to a grid without a renderer keeps them for when it has one.
+
 ### A source that changes
 
 `createRestProvider({ url, source, token, watch: true })` opens the server's
@@ -1744,6 +1790,7 @@ exception to the first part: `loader.js` dispatches it on the element, without `
 |---|---|
 | `opengrid-selection-change` | One of two shapes, by what the selection names ([Selecting by key](#selecting-by-key)). **By position** (no `row-key`, no tree): `{ rows: number[], ranges: { from: number, to: number }[], count: number }` — logical row numbers, ascending, and the same rows as `ranges`: runs of adjacent rows, ascending, both ends inclusive (select-all over 100 000 rows is one range, `{ from: 0, to: 99999 }`). **By key** (`row-key`, or a [tree](#tree)): `{ count: number, keys: unknown[] }` — the keys of the selected records, and neither `rows` nor `ranges`. `"keys" in detail` tells them apart. |
 | `opengrid-bulk-change` | `{ keys, column, value }` — one value was set for the selected rows; see [Setting a value for the selected rows](#setting-a-value-for-the-selected-rows). |
+| `opengrid-detail-toggle` | `{ key, row, open }` — a row's detail panel opened or closed; see [Detail panels](#detail-panels). |
 | `opengrid-record-open` | `{ key, row }` — **cancelable**: the reader asked for the record as a form; `preventDefault()` keeps the grid from opening its own. See [Editing a whole record](#editing-a-whole-record). |
 | `opengrid-paste` | `{ changes: [{ key?, row, column, value, previous }], added: [{ values, provisionalKey }] }` — a pasted block was applied; see [Pasting](#pasting). |
 | `opengrid-row-add` | `{ values, provisionalKey, undo?, redo? }` — a record was entered in the new row; see [Adding rows](#adding-rows). |
@@ -1895,7 +1942,7 @@ as the tint (colour alone would be 1.4.1), and `prefers-reduced-motion` beats a
 theme that animates a part.
 
 **Parts:** `action`, `action-cell`, `action-header`, `add-field`, `add-filter`, `add-grouping`, `band`, `body`, `bulk`, `bulk-apply`, `bulk-cancel`, `caption`, `cell`, `cell-error`, `cell-saved`, `cell-saving`, `chip`, `chip-calc`, `chip-edit`, `chip-move`, `chip-remove`, `chips`,
-`chips-clear`, `column-menu`, `column-menu-button`, `column-toggle`, `columns`, `columns-toggle`, `density`, `drill-down`,
+`chips-clear`, `column-menu`, `column-menu-button`, `column-toggle`, `columns`, `columns-toggle`, `density`, `detail`, `detail-toggle`, `drill-down`,
 `editor`, `empty`, `empty-reset`, `empty-text`, `facet`, `facet-bounds`, `facet-cost`, `facet-count`,
 `facet-pill`, `facet-pills`, `facet-value`, `facets`, `facets-head`, `facets-toggle`, `filter`,
 `filter-builder`, `filter-builder-dialog`, `filter-clear`, `filter-dialog`, `filter-operator`, `filter-row-toggle`, `filter-value`, `footer`,
@@ -2111,6 +2158,8 @@ boolean reads — that is `set_formats`.
 | `undoRecord` / `redoRecord` | `Undone: record {row}, {count} fields` / `Redone: …` | `{row}`, `{count}` |
 | `recordTitle` / `recordSave` / `recordDone` / `recordNothing` | `Edit record {row}` / `Save` / `Record {row} saved, {count} fields changed` / `Record {row}: no field changed` | `{row}`, `{count}` |
 | `rangeSize` / `rangeCopied` / `rangeUnloaded` | `{rows} by {cols} cells` / `Copied {rows} by {cols} cells` / `Not copied: the range reaches rows that are not loaded` | `{rows}`, `{cols}` |
+| `detailShow` / `detailHide` / `detailPanel` | `Show details` / `Hide details` / `Details` (before the row's first cell) | |
+| `detailShown` / `detailHidden` | `Details shown` / `Details hidden` | |
 | `sourceChanged` / `sourceRefresh` | `The data changed. Refresh to see it.` / `Refresh` | |
 | `undoNothing` / `redoNothing` | `Nothing to undo` / `Nothing to redo` | |
 | `bulkCaption` / `bulkApply` / `bulkMenu` | `Set {column} for {rows} selected` / `Set` / `Set for selected rows` | `{column}`, `{rows}` |

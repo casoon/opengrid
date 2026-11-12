@@ -78,6 +78,18 @@ pub(crate) fn current_view(host: &HtmlElement) -> Option<GridView> {
         }
     };
     let selected = opengrid_grid::grid_view::selected_keys(selected);
+    // The open panels (issue #318), and the ones a restored view still waits
+    // for their rows to load.
+    let detail = {
+        let borrowed = runtime.borrow();
+        opengrid_grid::grid_view::selected_keys(
+            borrowed
+                .details
+                .iter()
+                .map(|opened| opened.key.clone())
+                .chain(borrowed.detail_wanted.iter().cloned()),
+        )
+    };
     let nested = runtime
         .borrow()
         .nested
@@ -95,6 +107,7 @@ pub(crate) fn current_view(host: &HtmlElement) -> Option<GridView> {
         filter_row,
         facets,
         selected,
+        detail,
         nested,
     })
 }
@@ -194,6 +207,7 @@ pub(crate) fn write_view(host: &HtmlElement, value: &JsValue, notice: Option<Str
         // selection is the same view.
         Ok(mut view) => {
             view.selected = opengrid_grid::grid_view::selected_keys(view.selected);
+            view.detail = opengrid_grid::grid_view::selected_keys(view.detail);
             view
         }
         Err(problems) => {
@@ -456,6 +470,8 @@ pub(super) fn apply_view(
         borrowed.view_round += 1;
         borrowed.restore = None;
     }
+    // The panels of a restored view open as their rows load (issue #318).
+    runtime.borrow_mut().detail_wanted = view.detail.clone();
     if by_key && !view.selected.is_empty() {
         // The keys are a page's word: the query that follows asks the source
         // which of them name a record first ([`restore_then_query`]).

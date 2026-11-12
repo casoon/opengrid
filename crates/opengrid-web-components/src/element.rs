@@ -146,6 +146,12 @@ pub fn set_actions(host: &HtmlElement, actions: JsValue) {
 /// the DOM node a cell shows instead of its text. Never an HTML string; the
 /// source's value stays what search, export and the events read.
 #[cfg(feature = "grid")]
+/// The function that builds the panel under an open row (issue #318).
+#[wasm_bindgen(js_name = set_detail_renderer)]
+pub fn set_detail_renderer(host: &HtmlElement, renderer: JsValue) {
+    crate::grid_element::set_detail_renderer(host, &renderer);
+}
+
 #[wasm_bindgen(js_name = set_cell_templates)]
 pub fn set_cell_templates(host: &HtmlElement, templates: JsValue) {
     crate::grid_element::set_cell_templates(host, &templates);

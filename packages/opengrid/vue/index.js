@@ -41,7 +41,7 @@ import { defineComponent, h, nextTick, onActivated, onBeforeUnmount, onMounted, 
 import { connect } from "../loader.js";
 
 /** The options of `connect` that are props; deep ones compare by value. */
-const SHALLOW = ["provider"];
+const SHALLOW = ["provider", "detailRenderer"];
 const DEEP = ["texts", "formats", "presentation", "choices", "actions", "validators", "cellTemplates", "view"];
 
 /** The events, by `connect`'s callback. */
