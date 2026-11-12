@@ -21,6 +21,10 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [0.16.0] - 2026-11-12
 
+Not yet verified by a screen reader: no pass with assistive technology has been recorded for this
+release ([#5](https://github.com/casoon/opengrid/issues/5)). The keyboard and `axe-core` checks run on
+every change.
+
 ### Added
 
 - **Grid:** detail panels under a row. `set_detail_renderer(grid, (record, key) => Node)` (`detailRenderer`
