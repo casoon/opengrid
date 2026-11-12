@@ -193,3 +193,17 @@ test("a panel that grows moves the rows below it", async ({ page }) => {
     .poll(async () => parseInt((await rowTop(page, 1)).top.match(/-?\d+/)[0]))
     .toBe(parseInt(before.top.match(/-?\d+/)[0]) + 80);
 });
+
+test("with page-size the panel counts for its page: the sizer, the indexes and the rows after it", async ({ page }) => {
+  await open(page);
+  await page.evaluate(() => document.querySelector("opengrid-grid").setAttribute("page-size", "20"));
+  await expect.poll(async () => (await table(page)).rows).toBe("21");
+  await shadow(page, (root) => root.querySelector('td[data-row="1"] button[data-detail-toggle]').click());
+  await expect.poll(() => panel(page, 1)).not.toBeNull();
+  expect((await table(page)).rows).toBe("22");
+  expect(Number((await rowTop(page, 2)).index)).toBe(5);
+  // Next page: the panel of page one is gone from view, the count is page two's.
+  await page.evaluate(() => document.querySelector("opengrid-grid").shadowRoot.querySelector('[part~="page-next"]').click());
+  await expect.poll(() => panel(page, 1)).toBeNull();
+  await expect.poll(async () => (await table(page)).rows).toBe("21");
+});

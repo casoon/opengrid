@@ -21,6 +21,14 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Added
 
+- **Grid:** detail panels under a row. `set_detail_renderer(grid, (record, key) => Node)` (`detailRenderer`
+  in the framework components) gives the node of a record's panel; a button in the row's first cell and
+  `Alt`+`↓` / `Alt`+`↑` open and close it. The panel is one more `row` with one `gridcell` across the
+  columns, `aria-rowcount` and the `aria-rowindex` of the rows below count it, its height is measured and
+  the scroll area follows. `opengrid-detail-toggle` fires; the view carries the open rows' keys
+  (`detail`). Needs a `row-key`; not offered grouped, as a tree or past the sizer's limit. Texts
+  `detailShow`, `detailHide`, `detailPanel`, `detailShown` and `detailHidden`
+  ([#318](https://github.com/casoon/opengrid/issues/318)).
 - **Export, print:** band names in the header row. The print table writes `Address · City` over a banded
   column; `exportRows(…, { headers })` does the same for CSV and XLSX with the texts
   `get_export_headers(grid)` answers, and a server takes them as `header.<column>` parameters on

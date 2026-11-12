@@ -1483,6 +1483,7 @@ whenever the reader changes any of it.
 | `filterRow` | Whether the filter row shows. `true` unless turned off. |
 | `facets` | The facet selections, by column. |
 | `selected` | The keys of the selected records, where the grid [selects by key](#selecting-by-key); left out while there are none. `set_view` restores them after asking the source which of them exist. |
+| `detail` | The keys of the records whose [detail panel](#detail-panels) is open; left out while there are none. `set_view` opens them as their rows load. |
 | `where` | The [nested filter](#nested-filter); left out while there is none, and a view without it has none. |
 
 **`where` is a query's `filter`, as [the wire](../protocol/) writes it** — the form
