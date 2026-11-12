@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "modules": {
+    "elements": {
+      "accepted": "2026-11-12",
+      "reason": "Detail panels (#318) and wasm-opt --low-memory-unused (#366): 353749 B (node:zlib) on main, 2026-11-12; budget 355500 B.",
+      "values": {
+        "raw": 1073494,
+        "gzip": 448623,
+        "brotli": 354374
+      }
+    },
+    "engine": {
+      "accepted": "2026-11-12",
+      "reason": "wasm-opt --low-memory-unused (#366): 159061 B (node:zlib) on main, 2026-11-12; budget 160600 B.",
+      "values": {
+        "raw": 463849,
+        "gzip": 195848,
+        "brotli": 159162,
+        "peak_memory": 24772608,
+        "growth_per_run": 0
+      }
+    },
+    "xlsx": {
+      "accepted": "2026-11-12",
+      "reason": "First memory scenario (50k rows in five pieces): 56.9 MiB peak, no growth per run; budget 64 MiB.",
+      "values": {
+        "raw": 672696,
+        "gzip": 299142,
+        "brotli": 246618,
+        "peak_memory": 59703296,
+        "growth_per_run": 0
+      }
+    }
+  }
+}
