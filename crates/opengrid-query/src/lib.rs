@@ -23,7 +23,7 @@ mod error;
 mod validate;
 
 pub use ast::{
-    Aggregate, AggregateFn, CmpOp, Collation, FilterExpr, NullsOrder, Query, Sort, SortDirection,
+    Aggregate, AggregateFn, CmpOp, Collation, FilterExpr, Locale, NullsOrder, Query, Sort, SortDirection,
     TreeSpec, fold_case,
 };
 pub use error::QueryError;

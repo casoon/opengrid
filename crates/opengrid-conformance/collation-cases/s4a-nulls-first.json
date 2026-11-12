@@ -1,0 +1,125 @@
+{
+  "id": "s4a-nulls-first",
+  "rule": "S4a",
+  "query": {
+    "source": "collation",
+    "select": [
+      "id",
+      "word"
+    ],
+    "filter": {
+      "field": "kind",
+      "op": "eq",
+      "value": "a"
+    },
+    "sort": [
+      {
+        "field": "word",
+        "direction": "asc",
+        "nulls": "first",
+        "collation": "de"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "id",
+      "word"
+    ],
+    "rows": [
+      [
+        29,
+        null
+      ],
+      [
+        30,
+        "10"
+      ],
+      [
+        31,
+        "9"
+      ],
+      [
+        6,
+        "ähnlich"
+      ],
+      [
+        16,
+        "Ångström"
+      ],
+      [
+        5,
+        "Apfel"
+      ],
+      [
+        3,
+        "Äpfel"
+      ],
+      [
+        2,
+        "apple"
+      ],
+      [
+        25,
+        "co-op"
+      ],
+      [
+        26,
+        "coop"
+      ],
+      [
+        28,
+        "é"
+      ],
+      [
+        27,
+        "é"
+      ],
+      [
+        12,
+        "Ol"
+      ],
+      [
+        11,
+        "Öl"
+      ],
+      [
+        13,
+        "ost"
+      ],
+      [
+        18,
+        "resume"
+      ],
+      [
+        17,
+        "résumé"
+      ],
+      [
+        19,
+        "Résumé"
+      ],
+      [
+        34,
+        "strasse"
+      ],
+      [
+        33,
+        "Strasse"
+      ],
+      [
+        32,
+        "Straße"
+      ],
+      [
+        1,
+        "Zebra"
+      ],
+      [
+        4,
+        "zoo"
+      ]
+    ]
+  },
+  "ordered": true
+}

@@ -20,6 +20,15 @@ opengrid-query = { workspace = true }
 opengrid-datasource = { workspace = true }
 opengrid-planner = { workspace = true }
 opengrid-json = { workspace = true }
+# The collation of a locale for a sort (rule S4a, issue #391), behind the
+# feature `icu`: ICU4X with its compiled data, about 300 KiB brotli in a wasm
+# module. The engine module of the browser is built without it and gets its
+# collator from a module of its own.
+icu_collator = { version = "2.4", optional = true }
+icu_locale_core = { version = "2", optional = true }
+
+[features]
+icu = ["dep:icu_collator", "dep:icu_locale_core"]
 
 [dev-dependencies]
 opengrid-conformance = { path = "../opengrid-conformance" }

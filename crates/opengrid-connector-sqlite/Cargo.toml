@@ -22,11 +22,13 @@ opengrid-connector = { workspace = true }
 opengrid-json = { workspace = true }
 # Decided in #51 (E36): SQLite needs no installation — the library is compiled
 # in. Only this reference connector depends on it, never the server.
-rusqlite = { version = "0.41", features = ["bundled", "functions"] }
+rusqlite = { version = "0.41", features = ["bundled", "functions", "collation"] }
+# SQLite has no collation of a locale (rule S4a, issue #391): the connector
+# registers the engine's, so the two cannot differ.
+opengrid-engine = { workspace = true, features = ["icu"] }
 
 [dev-dependencies]
 opengrid-conformance = { path = "../opengrid-conformance" }
-opengrid-engine = { path = "../opengrid-engine" }
 # The pivot cases run through the connector's `pivot`.
 opengrid-pivot = { path = "../opengrid-pivot" }
 # The timeout test drives a future with a deadline, as the server does.

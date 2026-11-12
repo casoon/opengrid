@@ -71,6 +71,27 @@ fn sqlite_folds_case_like_the_engine() {
     assert!(report.cases >= 10, "{report}");
 }
 
+/// The collation cases (issue #391, rule S4a): SQLite sorts by the collation
+/// the connector registers, in the orders PostgreSQL wrote down.
+#[test]
+fn sqlite_sorts_by_a_locale_like_the_engine() {
+    use opengrid_conformance::{check_collation, collation_csv, collation_schema};
+
+    let schema = collation_schema();
+    let csv = std::fs::read(collation_csv()).expect("the collation dataset");
+    let table = load_csv(&csv, &schema, CsvOptions::default()).expect("the rows");
+    let rows = QueryResult::new(schema.clone(), table.to_values(), 0);
+    let mut connection = Connection::open_in_memory().expect("an in-memory database");
+    create_table(&connection, "collation", &schema).expect("the table");
+    insert(&mut connection, "collation", &schema, &rows).expect("the rows go in");
+    let connector = SqliteConnector::new(connection, "collation", schema).expect("a connector");
+
+    let report = block_on(check_collation(&AsSource(&connector)));
+    println!("collation conformance (SQLite): {report}");
+    report.assert_ok();
+    assert!(report.cases >= 18, "{report}");
+}
+
 /// The pivot cases (rules P1–P12): SQLite answers the grouping sets, and the
 /// pivot — its subtotals, its order, a share or a running total over its
 /// cells — comes out as the engine's does, cell by cell. The engine is held

@@ -59,6 +59,9 @@ pub enum ExecuteError {
     TooLarge { message: String },
     /// A tree that breaks its rules — a key twice, a cycle (E38, T1/T3).
     Tree { message: String },
+    /// A sort names a locale and its collation could not be had: no collator
+    /// is there, or it does not know the locale (S4a).
+    Collation { message: String },
 }
 
 impl std::fmt::Display for ExecuteError {
@@ -78,7 +81,9 @@ impl std::fmt::Display for ExecuteError {
             ExecuteError::Value { field, message } => {
                 write!(f, "column {field:?}: {message}")
             }
-            ExecuteError::TooLarge { message } | ExecuteError::Tree { message } => {
+            ExecuteError::TooLarge { message }
+            | ExecuteError::Tree { message }
+            | ExecuteError::Collation { message } => {
                 f.write_str(message)
             }
         }

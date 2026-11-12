@@ -1,0 +1,65 @@
+{
+  "id": "s4a-a-page-of-a-collated-order",
+  "rule": "S4a",
+  "query": {
+    "source": "collation",
+    "select": [
+      "id",
+      "word"
+    ],
+    "sort": [
+      {
+        "field": "word",
+        "direction": "asc",
+        "nulls": "last",
+        "collation": "de"
+      },
+      {
+        "field": "id"
+      }
+    ],
+    "offset": 10,
+    "limit": 8
+  },
+  "expected": {
+    "columns": [
+      "id",
+      "word"
+    ],
+    "rows": [
+      [
+        26,
+        "coop"
+      ],
+      [
+        35,
+        "czar"
+      ],
+      [
+        28,
+        "é"
+      ],
+      [
+        27,
+        "é"
+      ],
+      [
+        8,
+        "ilik"
+      ],
+      [
+        9,
+        "Irmak"
+      ],
+      [
+        10,
+        "İzmir"
+      ],
+      [
+        7,
+        "ılık"
+      ]
+    ]
+  },
+  "ordered": true
+}

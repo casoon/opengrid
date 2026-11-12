@@ -37,6 +37,11 @@
 //!   `icontains` and `istarts_with` (S5a) fold both sides with `og_fold`, a
 //!   function the connector registers on its connection: SQLite's `lower` folds
 //!   ASCII only.
+//! - **S4a, a locale's collation**: SQLite has none. A sort key with a locale is
+//!   `COLLATE "og_<locale>"`, and the connector registers that collation the
+//!   first time a statement names it — the engine's own comparison (ICU4X,
+//!   then bytes), so the order is the engine's by construction. No index
+//!   serves such a sort.
 //! - **S8, decimals**: integers throughout; a sum stays exact, an average is
 //!   divided as a float (S12).
 //!
@@ -80,6 +85,8 @@ pub struct SqliteConnector {
 
 /// The SQL function that folds case as the engine does (rule S5a).
 const FOLD: &str = "og_fold";
+/// The prefix of the collations the connector registers (S4a): `og_de`.
+const COLLATION: &str = "og_";
 
 impl SqliteConnector {
     /// The table `table` in the database file at `path`, laid out for `schema`
@@ -116,6 +123,18 @@ impl SqliteConnector {
                         .map(|text| opengrid_query::fold_case(&text)))
                 },
             )
+            .map_err(sqlite)?;
+        // A locale's collation (S4a) is registered when a statement first
+        // names it: which locales a page will ask for is not known here.
+        connection
+            .collation_needed(|connection, name| {
+                let Some(locale) = name.strip_prefix(COLLATION) else {
+                    return Ok(());
+                };
+                let compare = opengrid_engine::collation::Icu::comparison(locale)
+                    .map_err(|message| rusqlite::Error::UserFunctionError(message.into()))?;
+                connection.create_collation(name, compare)
+            })
             .map_err(sqlite)?;
         Ok(Self {
             worker: worker::Worker::start(connection),
@@ -619,10 +638,16 @@ impl Compiler<'_> {
     }
 }
 
-/// One `ORDER BY` key over an output column, NULL placement written out (S3).
+/// One `ORDER BY` key over an output column, NULL placement written out (S3)
+/// and a locale's collation by the name the connector registers it under (S4a).
 fn sort_key(key: &Sort) -> Result<String, DataSourceError> {
+    let collation = match key.collation.locale() {
+        // The tag is letters, digits and `-` (`Locale::parse`), so it is a name.
+        Some(locale) => format!(" COLLATE \"{COLLATION}{}\"", locale.as_str()),
+        None => String::new(),
+    };
     Ok(format!(
-        "{} {} {}",
+        "{}{collation} {} {}",
         quote(key.field.as_str())?,
         match key.direction {
             SortDirection::Asc => "ASC",

@@ -437,6 +437,25 @@ pub async fn check_words<S: DataSource>(source: &S) -> Report {
     check_cases(source, "fold-cases", &words_schema()).await
 }
 
+/// The schema of the collation dataset (issue #391): German, Swedish and
+/// Turkish words, Greek and Cyrillic, two spellings of one `é`, two NULLs.
+pub fn collation_schema() -> Schema {
+    load_schema(&suite_dir().join("data/collation.schema.json")).expect("the suite's own schema")
+}
+
+/// The collation dataset's rows, as CSV with a header and `\N` for NULL.
+pub fn collation_csv() -> PathBuf {
+    suite_dir().join("data/collation.csv")
+}
+
+/// Runs the collation cases (`collation-cases/`, rule S4a) against `source`,
+/// which holds [`collation_csv`] under [`collation_schema`] as the source
+/// `collation`: a sort key with a locale orders Latin, Greek and Cyrillic text
+/// the same in every source. The expected orders are PostgreSQL's (ICU 78).
+pub async fn check_collation<S: DataSource>(source: &S) -> Report {
+    check_cases(source, "collation-cases", &collation_schema()).await
+}
+
 async fn check_cases<S: DataSource>(source: &S, directory: &str, schema: &Schema) -> Report {
     let mut checked =
         check_dir(&suite_dir().join(directory), schema).expect("the suite's own cases");
