@@ -19,6 +19,8 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-11-12
+
 ### Added
 
 - **Grid:** detail panels under a row. `set_detail_renderer(grid, (record, key) => Node)` (`detailRenderer`
@@ -1623,7 +1625,8 @@ tested.
   tested: React 18 rendering on the server, SvelteKit, Nuxt, Next.js and Astro
   as real applications. A Vite production build needs `loadOpengrid({ moduleUrl })`.
 
-[Unreleased]: https://github.com/casoon/opengrid/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/casoon/opengrid/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/casoon/opengrid/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/casoon/opengrid/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/casoon/opengrid/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/casoon/opengrid/compare/v0.12.0...v0.13.0
