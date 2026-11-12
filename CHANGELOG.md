@@ -159,6 +159,9 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Changed
 
+- **Build:** the shipped modules are optimised with `wasm-opt -Oz --low-memory-unused`, which makes the
+  element module 1.4 KiB, the engine 0.8 KiB and the XLSX module 0.9 KiB smaller (brotli); the budget
+  bounds are lowered to match ([#366](https://github.com/casoon/opengrid/issues/366)).
 - **Pages:** the project site uses the current shared theme (0.12.12).
 - **Pages:** the project site uses the current shared theme (0.12.11).
 - **Grid:** the free-text search ignores case. **What breaks:** it sent `contains` and now sends

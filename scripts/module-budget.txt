@@ -113,7 +113,13 @@
 # Raised the same day from 348400: band names in the header (#353: the print
 # table's titles, `get_export_headers`, the header texts of the CSV writer)
 # grew it by 1.4 KiB, to 349199 B.
-grid+pivot    350700  # 349199 B, 2026-11-11, #353
+# Lowered 2026-11-12 from 350700 (#366): `wasm-opt --low-memory-unused` — Rust's
+# modules keep nothing below the first kilobyte, so offsets there are free to
+# fold — took 1.4 KiB off the element module, to 348142 B. The measurement
+# found no other item out of proportion (see the breakdown in the issue).
+# The margin is 0.5 %, not 1 %: with `wasm-opt` pinned in CI the build is the
+# same to some dozens of bytes, and a bound this near the number is the point.
+grid+pivot    350000  # 348142 B, 2026-11-12, #366
 # Raised 2026-09-30 from 108000: the bound was not raised with 0.7.0, which
 # shipped the engine at 115.2 KiB already (CHANGELOG); rule P9's sorted
 # grouping sets and order sets (#108) added the rest, to 121610 B.
@@ -149,7 +155,9 @@ grid+pivot    350700  # 349199 B, 2026-11-11, #353
 # Raised 2026-11-11 from 158300: `icontains` and `istarts_with` (#323) fold case
 # with `str::to_lowercase`, which brings Unicode's lowercase tables into the
 # module: 3.4 KiB, to 160139 B. #366 looks for it elsewhere.
-engine        161800  # 160139 B, 2026-11-11, #323
+# Lowered 2026-11-12 from 161800 (#366): `--low-memory-unused` took 0.8 KiB off
+# the engine, to 159061 B.
+engine        160600  # 159061 B, 2026-11-12, #366
 
 # The XLSX writer of the tab (#332), a module of its own that `exportRows`
 # loads when a page asks for a workbook, so the element and the engine do not
@@ -159,4 +167,6 @@ engine        161800  # 160139 B, 2026-11-11, #323
 # the real module.
 # Raised the same day from 248000: header texts in the workbook writer (#353),
 # 1.8 KiB, to 247465 B — the writer is the module, and it is large.
-xlsx          250000  # 247465 B, 2026-11-11, #353
+# Lowered 2026-11-12 from 250000 (#366): `--low-memory-unused`, 0.9 KiB, to
+# 246551 B.
+xlsx          249000  # 246551 B, 2026-11-12, #366

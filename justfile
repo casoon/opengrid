@@ -48,7 +48,7 @@ wasm-test:
 wasm-build-xlsx out="packages/opengrid/xlsx":
     RUSTFLAGS="$REMAP" cargo build --release --target wasm32-unknown-unknown -p opengrid-xlsx
     wasm-bindgen --target web --out-dir {{out}} --out-name opengrid_xlsx "${CARGO_TARGET_DIR:-target}/wasm32-unknown-unknown/release/opengrid_xlsx.wasm"
-    wasm-opt -Oz -o {{out}}/opengrid_xlsx_bg.wasm {{out}}/opengrid_xlsx_bg.wasm
+    wasm-opt -Oz --low-memory-unused -o {{out}}/opengrid_xlsx_bg.wasm {{out}}/opengrid_xlsx_bg.wasm
 
 # WASM-Modul für die Demo bauen (plan/spezifikation/14-entscheidungen.md E4):
 # cargo release -> wasm-bindgen --target web -> wasm-opt -Oz.
@@ -60,7 +60,7 @@ wasm-build-xlsx out="packages/opengrid/xlsx":
 wasm-build out="examples/engine-demo/pkg":
     RUSTFLAGS="$REMAP" cargo build --release --target wasm32-unknown-unknown -p opengrid-wasm
     wasm-bindgen --target web --out-dir {{out}} --out-name opengrid_wasm "${CARGO_TARGET_DIR:-target}/wasm32-unknown-unknown/release/opengrid_wasm.wasm"
-    wasm-opt -Oz -o {{out}}/opengrid_wasm_bg.wasm {{out}}/opengrid_wasm_bg.wasm
+    wasm-opt -Oz --low-memory-unused -o {{out}}/opengrid_wasm_bg.wasm {{out}}/opengrid_wasm_bg.wasm
 
 # Demo lokal ausliefern. Server-Wurzel ist das Repo, weil die Demo den
 # Conformance-Datensatz lädt (crates/opengrid-conformance/data/).
@@ -72,7 +72,7 @@ serve-demo:
 wasm-build-components:
     RUSTFLAGS="$REMAP" cargo build --release --target wasm32-unknown-unknown -p opengrid-web-components
     wasm-bindgen --target web --out-dir packages/opengrid/pkg --out-name opengrid_web_components "${CARGO_TARGET_DIR:-target}/wasm32-unknown-unknown/release/opengrid_web_components.wasm"
-    wasm-opt -Oz -o packages/opengrid/pkg/opengrid_web_components_bg.wasm packages/opengrid/pkg/opengrid_web_components_bg.wasm
+    wasm-opt -Oz --low-memory-unused -o packages/opengrid/pkg/opengrid_web_components_bg.wasm packages/opengrid/pkg/opengrid_web_components_bg.wasm
 
 # Die Elemente als JavaScript für MCP-Apps-Hosts (#140, E40): deren CSP erlaubt
 # kein WebAssembly, also wird das Modul mit wasm2js übersetzt. wasm2js kennt nur

@@ -32,7 +32,7 @@ That freezes the list, not the design: it may still change before 1.0.
 
 All three ship in one module. The Cargo features `grid` and `pivot` exist for anyone who wants
 only one; `set_columns` and `set_formats` are in both, so a pivot-only build pulls the grid and
-query crates too (it grows from 122.9 to 125.0 KiB brotli). In React, Vue and Svelte they come as components — see
+query crates too (132.3 KiB brotli; the grid alone is 309.3 KiB, both elements 340.0 KiB). In React, Vue and Svelte they come as components — see
 [Frameworks](guides/frameworks/).
 
 ## What V1 deliberately does not do

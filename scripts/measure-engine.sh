@@ -24,9 +24,9 @@ trap 'rm -rf "$out"' EXIT
 RUSTFLAGS="${REMAP:-}" cargo build --release --target wasm32-unknown-unknown -p opengrid-wasm >/dev/null 2>&1
 module="$target/wasm32-unknown-unknown/release/opengrid_wasm.wasm"
 wasm-bindgen --target web --out-dir "$out/shipped" --out-name m "$module" >/dev/null 2>&1
-wasm-opt -Oz -o "$out/shipped/m_bg.wasm" "$out/shipped/m_bg.wasm"
+wasm-opt -Oz --low-memory-unused -o "$out/shipped/m_bg.wasm" "$out/shipped/m_bg.wasm"
 wasm-bindgen --target web --keep-debug --out-dir "$out/named" --out-name m "$module" >/dev/null 2>&1
-wasm-opt -Oz -g -o "$out/named/m_bg.wasm" "$out/named/m_bg.wasm"
+wasm-opt -Oz --low-memory-unused -g -o "$out/named/m_bg.wasm" "$out/named/m_bg.wasm"
 
 node -e '
   const fs = require("fs"), zlib = require("zlib");
