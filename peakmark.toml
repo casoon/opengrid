@@ -32,4 +32,11 @@ artifact = "target/peakmark/xlsx/m_bg.wasm"
 glue     = "target/peakmark/xlsx/m.js"
 
 [module.budget]
-brotli = "249000 B"
+brotli         = "249000 B"
+peak_memory    = "64 MiB"
+growth_per_run = "0"
+
+[[scenario]]
+module = "xlsx"
+file   = "scripts/peakmark/xlsx.mjs"
+repeat = 5

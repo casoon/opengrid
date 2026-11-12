@@ -23,11 +23,13 @@
     },
     "xlsx": {
       "accepted": "2026-11-12",
-      "reason": "wasm-opt --low-memory-unused (#366): 246551 B (node:zlib) on main, 2026-11-12; budget 249000 B.",
+      "reason": "First memory scenario (50k rows in five pieces): 56.9 MiB peak, no growth per run; budget 64 MiB.",
       "values": {
         "raw": 672696,
         "gzip": 299142,
-        "brotli": 246618
+        "brotli": 246618,
+        "peak_memory": 59703296,
+        "growth_per_run": 0
       }
     }
   }
