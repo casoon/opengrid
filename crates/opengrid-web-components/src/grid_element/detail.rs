@@ -573,12 +573,11 @@ fn build_panel(
                 .unwrap_or(JsValue::NULL);
             let node: Node = if let Some(node) = answer.dyn_ref::<Node>() {
                 node.clone()
-            } else if let Some(text) = answer.as_string() {
+            } else {
+                let text = answer.as_string()?;
                 let span = document.create_element("div").ok()?;
                 span.set_text_content(Some(&text));
                 span.into()
-            } else {
-                return None;
             };
             runtime
                 .borrow_mut()
