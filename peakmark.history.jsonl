@@ -3,3 +3,6 @@
 {"module":"xlsx","accepted":"2026-11-11","reason":"Taken over from scripts/module-budget.txt: 245537 B (node:zlib) at #332, 2026-11-11. Earlier reasons: git history of that file.","values":{"raw":670985,"gzip":298280,"brotli":245841}}
 {"module":"elements","accepted":"2026-11-11","reason":"Band names in the header (#353): 349199 B (node:zlib), 2026-11-11, +1.4 KiB; budget raised to 350700 B on main.","values":{"raw":1057012,"gzip":442633,"brotli":349099}}
 {"module":"xlsx","accepted":"2026-11-11","reason":"Header texts in the workbook writer (#353): 247465 B (node:zlib), 2026-11-11, +1.8 KiB; budget raised to 250000 B on main.","values":{"raw":677142,"gzip":300774,"brotli":247760}}
+{"module":"elements","accepted":"2026-11-12","reason":"Detail panels (#318) and wasm-opt --low-memory-unused (#366): 353749 B (node:zlib) on main, 2026-11-12; budget 355500 B.","values":{"raw":1073494,"gzip":448623,"brotli":354374}}
+{"module":"engine","accepted":"2026-11-12","reason":"wasm-opt --low-memory-unused (#366): 159061 B (node:zlib) on main, 2026-11-12; budget 160600 B.","values":{"raw":463849,"gzip":195848,"brotli":159162,"peak_memory":24772608,"growth_per_run":0}}
+{"module":"xlsx","accepted":"2026-11-12","reason":"wasm-opt --low-memory-unused (#366): 246551 B (node:zlib) on main, 2026-11-12; budget 249000 B.","values":{"raw":672696,"gzip":299142,"brotli":246618}}
