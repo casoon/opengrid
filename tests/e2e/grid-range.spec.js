@@ -52,7 +52,10 @@ test("Shift+arrows mark a block, say its size, and any other key ends it", async
   expect(await marked(page)).toEqual([]);
 });
 
-test("Ctrl+C copies values, tab-separated, and the block pastes back unchanged", async ({ page }) => {
+test("Ctrl+C copies values, tab-separated, and the block pastes back unchanged", async ({ page, browserName }) => {
+  // Firefox keeps the data of a `copy` event write-only, so a page cannot read
+  // back what the grid put there: what is copied there is checked by hand.
+  test.skip(browserName === "firefox", "the data of a copy event cannot be read back in Firefox");
   await open(page);
   await focusCell(page, 1, 2);
   await page.keyboard.press("Shift+ArrowDown");
