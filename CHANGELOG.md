@@ -243,6 +243,7 @@ every change.
 
 ### Fixed
 
+- **Grid:** copying a block of cells with `Ctrl`/`Cmd`+`C` works in Firefox and Safari, whose `copy` event does not pass through the shadow root ([#327](https://github.com/casoon/opengrid/issues/327)).
 - **Grid:** pinned columns hold in Safari (WebKit)
   ([#379](https://github.com/casoon/opengrid/issues/379)): the filter field of a pinned column right
   to left, and the one of a pinned band, stay above their column; a filter field that takes the focus

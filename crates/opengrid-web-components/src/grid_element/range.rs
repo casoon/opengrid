@@ -269,25 +269,41 @@ pub(super) fn on_mouse_up(event: Event) {
 /// `Ctrl`/`Cmd`+`C` with a range: the cells as tab-separated values, or — when
 /// the range reaches rows that are not loaded — a sentence and nothing copied.
 pub(super) fn on_copy(event: Event) {
-    let Some(root) = current_shadow_root(&event) else {
+    // Chromium aims the event at the cell, through the shadow root; WebKit and
+    // Firefox aim it at the host. The first listener to act keeps the second.
+    if event.default_prevented() {
+        return;
+    }
+    let Some(current) = event.current_target() else {
         return;
     };
-    let Ok(host) = root.host().dyn_into::<HtmlElement>() else {
-        return;
+    let (root, host) = match current.dyn_into::<ShadowRoot>() {
+        Ok(root) => {
+            let Ok(host) = root.host().dyn_into::<HtmlElement>() else {
+                return;
+            };
+            (root, host)
+        }
+        Err(current) => {
+            let Ok(host) = current.dyn_into::<HtmlElement>() else {
+                return;
+            };
+            let Some(root) = host.shadow_root() else {
+                return;
+            };
+            (root, host)
+        }
     };
     // From a field — the filter row, the search, an open editor — the browser
-    // copies as it always did.
-    if event
-        .target()
-        .and_then(|node| node.dyn_into::<Element>().ok())
-        .is_some_and(|target| {
-            target
-                .closest("input, select, textarea, [part=\"editor\"]")
-                .ok()
-                .flatten()
-                .is_some()
-        })
-    {
+    // copies as it always did. The focus says which, as the target of the
+    // event is the host in some engines.
+    if root.active_element().is_some_and(|active| {
+        active
+            .closest("input, select, textarea, [part=\"editor\"]")
+            .ok()
+            .flatten()
+            .is_some()
+    }) {
         return;
     }
     let Some(runtime) = runtime(&host) else {
