@@ -32,6 +32,11 @@
       window.__copied = [];
       window.__pasted = [];
       document.addEventListener("copy", (event) => window.__copied.push(event.clipboardData.getData("text/plain")));
+      // Firefox sends no `copy` event for a key with nothing selected: the grid
+      // writes the clipboard itself there, and that is recorded the same way.
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText = async (text) => void window.__copied.push(text);
+      }
       document.addEventListener("opengrid-paste", (event) => window.__pasted.push(event.detail));
 
       await init();
