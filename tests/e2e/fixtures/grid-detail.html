@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>opengrid detail panel fixture</title>
+    <style>
+      opengrid-grid {
+        display: block;
+        height: 360px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid detail panel fixture</h1>
+      <opengrid-grid
+        label="Customers"
+        datasource="customers"
+        columns="id,name,status"
+        window-size="30"
+        row-key="id"
+      ></opengrid-grid>
+    </main>
+    <script type="module">
+      // Issue #318: a panel under an open row, 100 px tall, with a link and a
+      // button in it. `__built` counts how often the page's function ran.
+      import { loadOpengrid, createLocalProvider } from "/packages/opengrid/loader.js";
+      import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+
+      window.__built = 0;
+      window.__events = [];
+      await init();
+      const schema = JSON.stringify({
+        fields: [
+          { name: "id", type: "int64", nullable: false },
+          { name: "name", type: "utf8", nullable: false },
+          { name: "status", type: "utf8", nullable: false },
+        ],
+      });
+      const rows = Array.from({ length: 500 }, (_, index) => ({
+        id: index + 1,
+        name: `Customer ${index + 1}`,
+        status: index % 3 === 0 ? "open" : "closed",
+      }));
+      const provider = createLocalProvider(new Engine());
+      await provider.loadRows("customers", rows, schema);
+      const loader = await loadOpengrid();
+      const host = document.querySelector("opengrid-grid");
+      loader.module.set_detail_renderer(host, (record, key) => {
+        window.__built += 1;
+        const box = document.createElement("div");
+        box.style.height = "100px";
+        box.style.boxSizing = "border-box";
+        box.dataset.key = String(key);
+        const link = document.createElement("a");
+        link.href = `#customer-${key}`;
+        link.textContent = `Open ${record.name}`;
+        box.append(link);
+        return box;
+      });
+      host.addEventListener("opengrid-detail-toggle", (event) => window.__events.push(event.detail));
+      loader.module.set_provider(host, provider);
+      window.__module = loader.module;
+      window.__ready = true;
+    </script>
+  </body>
+</html>

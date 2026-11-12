@@ -74,7 +74,7 @@ const EXPORT_ERROR_CODES: [&str; 3] = ["too_many_rows", "source_changed", "modul
 
 /// The module functions a page calls through `loader.module`, in the order the
 /// freeze lists them.
-const FUNCTIONS: [&str; 19] = [
+const FUNCTIONS: [&str; 20] = [
     "register",
     "set_provider",
     "set_texts",
@@ -94,6 +94,7 @@ const FUNCTIONS: [&str; 19] = [
     "set_validators",
     "set_cell_templates",
     "refresh",
+    "set_detail_renderer",
 ];
 
 /// `#[wasm_bindgen]` exports that are **not** in the freeze, on purpose: the
@@ -136,6 +137,7 @@ fn surface() -> String {
         crate::grid_element_events::DRILL_DOWN_EVENT,
         crate::grid_element_events::SOURCE_REPLACED_EVENT,
         crate::grid_element_events::SOURCE_CHANGED_EVENT,
+        crate::grid_element_events::DETAIL_TOGGLE_EVENT,
     ] {
         out.push_str(&format!("  {event}\n"));
     }
@@ -321,6 +323,8 @@ fn parts() -> Vec<String> {
     parts.push("filter-builder-dialog".to_owned());
     parts.push("record-dialog".to_owned());
     parts.push("refresh".to_owned());
+    parts.push("detail".to_owned());
+    parts.push("detail-toggle".to_owned());
     // The quick doors of issue #34 open popups built when they open.
     parts.push("filter-dialog".to_owned());
     parts.push("grouping-menu".to_owned());
@@ -383,6 +387,7 @@ events
   opengrid-drill-down
   opengrid-source-replaced
   opengrid-source-changed
+  opengrid-detail-toggle
 
 functions
   register
@@ -404,6 +409,7 @@ functions
   set_validators
   set_cell_templates
   refresh
+  set_detail_renderer
 
 loader exports
   loadOpengrid
@@ -440,7 +446,7 @@ custom properties (computed)
 
 parts
   action action-cell action-header add-field add-filter add-grouping band body bulk bulk-apply bulk-cancel caption cell cell-error cell-saved cell-saving chip chip-calc chip-edit chip-move chip-remove chips chips-clear column-menu \
-column-menu-button column-toggle columns columns-toggle density drill-down editor empty empty-reset \
+column-menu-button column-toggle columns columns-toggle density detail detail-toggle drill-down editor empty empty-reset \
 empty-text facet facet-bounds facet-cost facet-count facet-pill facet-pills facet-value \
 facets facets-head facets-toggle field-group field-menu filter filter-builder filter-builder-dialog filter-clear filter-dialog filter-operator \
 filter-row-toggle filter-value footer group-mark group-toggle grouping-menu header layout list list-item list-item-remove listbox menu-label operator-menu \
@@ -452,7 +458,7 @@ text keys
   addColumn addFilter addFilterTitle addGrouping addMeasure addRow aggregateAvg aggregateCell aggregateCount aggregateGroup aggregateMax aggregateMin \
 aggregateNone aggregateRange aggregateSum apply bandKeep booleanFalse booleanTrue bulkApply bulkCaption bulkDone bulkMenu bulkReadonly calcValue cancel cellRequired chipRemove chipsClear chipsGroup choiceRefused choicesOne choicesOther clear columnAtEdge \
 columnFull columnHidden columnMenu columnMoved columnPinnedEnd columnPinnedStart columnShown columnUnpinned columnWidth columnsGroup densityComfortable \
-densityCompact densityGroup densityNormal empty emptyFiltered emptyReset emptySource emptyValue \
+densityCompact densityGroup densityNormal detailHidden detailHide detailPanel detailShow detailShown empty emptyFiltered emptyReset emptySource emptyValue \
 error errorUnknown facetChipValues facetFrom facetQueries facetTo facetsGroup facetsReset \
 facetsToggle fieldEarlier fieldLater fieldRemove filterAny filterApplied filterBuilder filterBuilderAddCondition filterBuilderAddGroup filterBuilderAll filterBuilderAny filterBuilderCondition filterBuilderEdit filterBuilderGroup filterBuilderJoin filterColumn filterColumnLabel filterConditionLabel filterGroup filterInvalid \
 filterRemoved filterRowToggle filterValueLabel filtersCleared groupByColumn groupChip \

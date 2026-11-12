@@ -1514,6 +1514,12 @@ export function connect(host, options = {}) {
         module.set_cell_templates(host, value),
       );
     }
+    if ("detailRenderer" in changed) {
+      const detailRenderer = changed.detailRenderer ?? null;
+      write("detailRenderer", detailRenderer, identityKey({ detailRenderer }), (value) =>
+        module.set_detail_renderer(host, value),
+      );
+    }
     if ("validators" in changed) {
       const validators = changed.validators ?? {};
       write("validators", validators, identityKey(validators), (value) =>

@@ -141,6 +141,11 @@ export interface OpengridModule {
    */
   set_cell_templates(host: HTMLElement, templates: Record<string, CellTemplate>): void;
   /**
+   * The function that builds the panel under an open row (issue #318); `null`
+   * takes the panels away. Needs a `row-key`; not offered grouped or as a tree.
+   */
+  set_detail_renderer(host: HTMLElement, renderer: DetailRenderer | null): void;
+  /**
    * Runs the grid's query again over a source that changed, keeping the view,
    * the focus by record, the selection by key and the history (issue #328).
    */
@@ -182,6 +187,8 @@ export interface ConnectOptions {
   actions?: RowAction[];
   /** `set_cell_templates`: functions compare by identity, as in `formats`. The grid only. */
   cellTemplates?: Record<string, CellTemplate>;
+  /** `set_detail_renderer`: compared by identity. The grid only. */
+  detailRenderer?: DetailRenderer | null;
   /** `set_validators`: functions compare by identity, as in `formats`. The grid only. */
   validators?: Record<string, Validator | ValidatorRule>;
   /**
@@ -837,6 +844,11 @@ export interface View {
    */
   selected?: Array<string | number | boolean>;
   /**
+   * The keys of the records whose detail panel is open (issue #318). Left out
+   * while none is. A restored view opens them as their rows load.
+   */
+  detail?: Array<string | number | boolean>;
+  /**
    * The nested filter: the one filter with `or` across columns, and-ed onto
    * the filter row's (`filters`), the facets' and the page's. Left out while
    * there is none; a view without the field has none.
@@ -1150,6 +1162,11 @@ export type TextKey =
   | "rangeUnloaded"
   | "sourceChanged"
   | "sourceRefresh"
+  | "detailShow"
+  | "detailHide"
+  | "detailPanel"
+  | "detailShown"
+  | "detailHidden"
   | "redoPaste"
   | "undoNothing"
   | "redoNothing";
@@ -1232,6 +1249,16 @@ export interface CellTemplateArgument {
   key: WireValue | undefined;
 }
 
+/**
+ * The panel under an open row (issue #318): the record as the grid holds it and
+ * its `row-key` value. A node, or a string shown as text; `null` or
+ * `undefined`: this record has no panel.
+ */
+export type DetailRenderer = (
+  record: Record<string, WireValue>,
+  key: WireValue,
+) => Node | string | null | undefined;
+
 /** A node, or a string shown as text; `null` or `undefined` leaves the cell's text. */
 export type CellTemplate = (cell: CellTemplateArgument) => Node | string | null | undefined;
 
@@ -1306,6 +1333,17 @@ export interface SourceReplacedDetail {
  */
 export interface SourceChangedDetail {
   name: string | undefined;
+}
+
+/**
+ * `opengrid-detail-toggle`: a row's detail panel opened or closed (issue #318).
+ */
+export interface DetailToggleDetail {
+  /** The record's `row-key` value. */
+  key: WireValue;
+  /** The row in the result. */
+  row: number;
+  open: boolean;
 }
 
 /** `opengrid-bulk-change`: one value for the selected rows (issue #187). */
@@ -1384,6 +1422,7 @@ export interface OpengridEventMap {
   /** Dispatched by `loader.js` on the grid; it does not bubble. */
   "opengrid-source-replaced": CustomEvent<SourceReplacedDetail>;
   "opengrid-source-changed": CustomEvent<SourceChangedDetail>;
+  "opengrid-detail-toggle": CustomEvent<DetailToggleDetail>;
 }
 
 // ---------------------------------------------------------------------------

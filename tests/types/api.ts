@@ -456,6 +456,7 @@ export async function page(): Promise<void> {
   const editing = connect(grid, {
     actions: [{ id: "remove", label: "Remove" }],
     cellTemplates: { name: ({ text }) => text },
+    detailRenderer: (record, key) => `${String(record["name"])} (${String(key)})`,
     validators: { seats: (value) => (value ? null : { level: "error", message: "Required." }), name: { validate: () => null, block: true } },
     onRowAdd: async (detail) => ({ state: "saved", key: detail.values["id"] ?? null }),
     onPaste: (detail) => detail.changes.length satisfies number,

@@ -81,6 +81,10 @@ pub struct GridView {
     /// [`selected_keys`] gives them — empty where the grid selects by
     /// position, and then not written.
     pub selected: Vec<Value>,
+    /// The keys of the records whose detail panel is open (issue #318), in the
+    /// order of [`selected_keys`] — empty where none is, and then not written.
+    /// A panel is a row of a grid with a `row-key`, so only keys name it.
+    pub detail: Vec<Value>,
     /// The nested filter (issue #324) — `where` in the JSON — in the wire
     /// form of a query's filter, as [`crate::filter_tree`] restricts it. The
     /// filter row cannot hold an `or` across columns; this can. `None` is no
@@ -118,6 +122,7 @@ impl Default for GridView {
             filter_row: true,
             facets: Value::Object(Map::new()),
             selected: Vec::new(),
+            detail: Vec::new(),
             nested: None,
         }
     }
@@ -234,6 +239,9 @@ impl GridView {
         // selects by position has nothing to write here.
         if !self.selected.is_empty() {
             out.insert("selected".to_owned(), Value::Array(self.selected.clone()));
+        }
+        if !self.detail.is_empty() {
+            out.insert("detail".to_owned(), Value::Array(self.detail.clone()));
         }
         if let Some(nested) = &self.nested {
             out.insert("where".to_owned(), nested.clone());
@@ -524,6 +532,20 @@ impl GridView {
             }
         }
 
+        let mut detail = Vec::new();
+        if let Some(keys) = object.get("detail") {
+            match keys.as_array() {
+                Some(keys)
+                    if keys
+                        .iter()
+                        .all(|key| key.is_string() || key.is_number() || key.is_boolean()) =>
+                {
+                    detail = keys.clone();
+                }
+                _ => problems.push(ViewProblem::new("detail", "detail is not a list of keys")),
+            }
+        }
+
         // The nested filter is a query's filter, kept as written — in the one
         // form the codec writes it, so the same tree is the same view.
         let mut nested = None;
@@ -550,6 +572,7 @@ impl GridView {
                 filter_row,
                 facets: Value::Object(facets),
                 selected,
+                detail,
                 nested,
             })
         } else {
@@ -591,6 +614,7 @@ mod tests {
             filter_row: false,
             facets: opengrid_json::json!({ "customer": { "values": [null, "Alpha"] } }),
             selected: Vec::new(),
+            detail: Vec::new(),
             nested: Some(opengrid_json::json!({ "or": [
                 { "field": "customer", "op": "eq", "value": "Alpha" },
                 { "and": [

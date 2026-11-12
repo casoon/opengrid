@@ -151,6 +151,14 @@ pub fn set_cell_templates(host: &HtmlElement, templates: JsValue) {
     crate::grid_element::set_cell_templates(host, &templates);
 }
 
+/// The function that builds the panel under an open row (issue #318): `(record,
+/// key) => Node`. The grid only.
+#[cfg(feature = "grid")]
+#[wasm_bindgen(js_name = set_detail_renderer)]
+pub fn set_detail_renderer(host: &HtmlElement, renderer: JsValue) {
+    crate::grid_element::set_detail_renderer(host, &renderer);
+}
+
 /// Runs the grid's query again over a source that changed (issue #328), keeping
 /// the view, the focus by record, the selection by key and the history. What the
 /// "Refresh" button does; a page that took `opengrid-source-changed` over calls it.

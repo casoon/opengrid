@@ -119,7 +119,11 @@
 # found no other item out of proportion (see the breakdown in the issue).
 # The margin is 0.5 %, not 1 %: with `wasm-opt` pinned in CI the build is the
 # same to some dozens of bytes, and a bound this near the number is the point.
-grid+pivot    350000  # 348142 B, 2026-11-12, #366
+# Raised the same day from 350000: detail panels (#318: the page's node under an
+# open row, its buttons and its measured height, the geometry of panels in the
+# places, the indexes and the scroll position, the keys and the view's `detail`,
+# five texts) grew it by 5.6 KiB, to 353749 B.
+grid+pivot    355500  # 353749 B, 2026-11-12, #318
 # Raised 2026-09-30 from 108000: the bound was not raised with 0.7.0, which
 # shipped the engine at 115.2 KiB already (CHANGELOG); rule P9's sorted
 # grouping sets and order sets (#108) added the rest, to 121610 B.

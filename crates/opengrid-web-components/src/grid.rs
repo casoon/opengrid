@@ -1187,6 +1187,43 @@ pub fn is_capped(rows: u64, row_height: u64) -> bool {
     squeezed_px(rows, row_height) > 0
 }
 
+/// The rows whose detail panel is open, as `(row, height in px)` sorted by row
+/// (issue #318). A panel is one more `row` under its master, `height` tall, and
+/// every row after it sits that much lower — and one `aria-rowindex` later.
+pub type Panels = [(u64, u64)];
+
+/// The pixels of the panels that stand above `row` (the row's own is below it).
+pub fn panel_px_before(panels: &Panels, row: u64) -> u64 {
+    panels
+        .iter()
+        .take_while(|(open, _)| *open < row)
+        .map(|(_, px)| px)
+        .sum()
+}
+
+/// How many panels stand above `row`.
+pub fn panels_before(panels: &Panels, row: u64) -> u64 {
+    panels.iter().take_while(|(open, _)| *open < row).count() as u64
+}
+
+/// The row at the pixel `y` of the sizer, panels counted: [`visible_start`] when
+/// there are none. Inside a panel it is the panel's master, so the window keeps
+/// the row the panel belongs to.
+pub fn row_at(panels: &Panels, row_height: u64, y: u64) -> u64 {
+    let mut above = 0;
+    for (row, px) in panels {
+        let end = (row + 1).saturating_mul(row_height).saturating_add(above);
+        if y < end {
+            break;
+        }
+        if y < end.saturating_add(*px) {
+            return *row;
+        }
+        above = above.saturating_add(*px);
+    }
+    visible_start(y.saturating_sub(above), row_height)
+}
+
 /// The row `row`'s offset in the sizer: `row * row_height - shift`.
 ///
 /// Unscaled (`capped` false, `shift` 0) it is the product, as it always was.
@@ -2024,6 +2061,11 @@ pub fn grid_css() -> String {
                    border-bottom: 1px solid var({LINE_PROPERTY});
                    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
          td {{ height: var({ROW_HEIGHT_PROPERTY}); }}
+         /* A detail panel (issue #318) is as tall as the page's node. */
+         tbody tr[data-detail-row] {{ height: auto; }}
+         tbody tr[data-detail-row]:hover {{ background: var({SURFACE_PROPERTY}); }}
+         td[part=\"detail\"] {{ height: auto; padding: 0; white-space: normal; overflow: visible;
+                   text-overflow: clip; }}
          /* The selection column (point 61). A fixed, narrow column: its
             content is one glyph, and letting it share the table's flexible
             width would make it move as the data changes. */
@@ -3758,14 +3800,29 @@ pub fn patch_grid(
     grouping: Option<&crate::grouping::Grouping>,
     tree: Option<&crate::tree::Tree>,
     picked: Option<&crate::grouping::Picked>,
+    panels: &Panels,
 ) {
     let fields = state.schema().fields();
     // The rows shown: the result's and the ones the reader added (issue #183).
     let total_count = state.row_count();
+    // The panels in the page's own rows (issue #318); none while the sizer is
+    // capped, where a row's place is the scale's and not a sum.
+    let capped = paging.size.is_none() && is_capped(paging.rows, row_height);
+    let local_panels: Vec<(u64, u64)> = if capped || grouping.is_some() || tree.is_some() {
+        Vec::new()
+    } else {
+        panels
+            .iter()
+            .filter(|(row, _)| *row >= paging.base)
+            .map(|(row, px)| (row - paging.base, *px))
+            .collect()
+    };
+    let panel_px: u64 = local_panels.iter().map(|(_, px)| px).sum();
     let place = RowPlace {
         row_height,
         shift: paging.shift,
-        capped: paging.size.is_none() && is_capped(paging.rows, row_height),
+        capped,
+        panels: &local_panels,
     };
 
     // **The one place the role is decided** (F2): a grouped grid is a
@@ -3789,16 +3846,16 @@ pub fn patch_grid(
         value: format!(
             "position: relative; height: {}px;",
             if paging.size.is_some() {
-                paging.rows * row_height
+                paging.rows * row_height + panel_px
             } else {
-                sizer_height(paging.rows, row_height)
+                sizer_height(paging.rows, row_height) + panel_px
             }
         ),
     });
     buffer.push(Patch::SetAttribute {
         node: nodes.table,
         name: "aria-rowcount".to_owned(),
-        value: (paging.rows + nodes.header_rows()).to_string(),
+        value: (paging.rows + nodes.header_rows() + local_panels.len() as u64).to_string(),
     });
     // Rows can be selected, several at once (`Shift`+`Space`, `Ctrl`+`A`) —
     // except while grouped without a `row-key`, where a selection would name
@@ -4043,6 +4100,21 @@ pub fn patch_grid(
                 if place.capped {
                     set_style(buffer, row_nodes.row, &row_style(row, place));
                 }
+                // A panel opened or closed above the focused row moves it, and
+                // its index; the same two writes, which keep the focus.
+                if !place.panels.is_empty() {
+                    let local = row.saturating_sub(paging.base);
+                    set_style(buffer, row_nodes.row, &row_style(local, place));
+                    buffer.push(Patch::SetAttribute {
+                        node: row_nodes.row,
+                        name: "aria-rowindex".to_owned(),
+                        value: (local
+                            + 1
+                            + nodes.header_rows()
+                            + panels_before(place.panels, local))
+                        .to_string(),
+                    });
+                }
                 // A group header is exactly what the focus stands on when it is
                 // toggled — the fourth time the pin of point 17 meets a feature
                 // (phase E (i)). Its own label and `aria-expanded` are rewritten;
@@ -4093,7 +4165,8 @@ pub fn patch_grid(
                 buffer.push(Patch::SetAttribute {
                     node: row_nodes.row,
                     name: "aria-rowindex".to_owned(),
-                    value: (local + 1 + nodes.header_rows()).to_string(),
+                    value: (local + 1 + nodes.header_rows() + panels_before(place.panels, local))
+                        .to_string(),
                 });
                 // Under grouping a position is a group header or a data row, and
                 // the same pooled `<tr>` draws either — so scrolling still adds
@@ -4978,20 +5051,23 @@ fn patch_pager(
 ///
 /// The static `position: absolute` box comes from the shadow stylesheet; only
 /// the logical offset is per-row.
-fn row_style(row: u64, place: RowPlace) -> String {
+fn row_style(row: u64, place: RowPlace<'_>) -> String {
     format!(
         "transform: translateY({}px);",
         row_top(row, place.row_height, place.shift, place.capped)
+            + panel_px_before(place.panels, row) as i64
     )
 }
 
 /// What puts a row at its place: the pixel height of a row and, for a result
 /// taller than [`MAX_SIZER_PX`], the shift and the clamping of [`row_top`].
 #[derive(Clone, Copy)]
-struct RowPlace {
+struct RowPlace<'a> {
     row_height: u64,
     shift: u64,
     capped: bool,
+    /// The open panels above, in the page's rows (issue #318).
+    panels: &'a Panels,
 }
 
 /// The attributes a tree's node carries (issue #135, plan point 123):
@@ -5006,7 +5082,7 @@ fn patch_tree_row(
     row_nodes: &GridRowNodes,
     entry: &crate::tree::Entry,
     local: u64,
-    place: RowPlace,
+    place: RowPlace<'_>,
 ) {
     let row = row_nodes.row;
     let set = |buffer: &mut PatchBuffer, name: &str, value: String| {
@@ -5797,6 +5873,7 @@ mod tests {
             None,
             None,
             None,
+            &[],
         );
         let shown = hidden(&frame);
         assert!(shown.contains(&lookup.input) && !shown.contains(&lookup.choice));
@@ -6038,6 +6115,7 @@ mod tests {
             None,
             None,
             None,
+            &[],
         );
 
         let attributes = |name: &str| -> Vec<String> {
@@ -6113,6 +6191,7 @@ mod tests {
             None,
             None,
             None,
+            &[],
         );
         let sorts: Vec<&str> = buffer
             .patches()
@@ -6172,6 +6251,7 @@ mod tests {
             None,
             None,
             None,
+            &[],
         );
 
         let aria: Vec<&str> = buffer
@@ -6378,6 +6458,7 @@ mod tests {
                 None,
                 None,
                 None,
+                &[],
             );
             view.header_cells
                 .iter()
@@ -6747,6 +6828,7 @@ mod tests {
             None,
             None,
             None,
+            &[],
         );
         let indexes: Vec<&str> = buffer
             .patches()
@@ -6806,6 +6888,7 @@ mod tests {
             None,
             None,
             None,
+            &[],
         );
         assert!(buffer.patches().iter().any(|patch| matches!(
             patch,
@@ -6813,6 +6896,92 @@ mod tests {
                 if *node == view.tbody && name == "style"
                     && *value == format!("position: relative; height: {}px;", 5 * DEFAULT_ROW_HEIGHT)
         )));
+    }
+
+    /// Issue #318: with a panel open under row 0, the sizer and `aria-rowcount`
+    /// count it, and the row below sits lower and one `aria-rowindex` later.
+    #[test]
+    fn an_open_panel_is_counted_by_the_sizer_the_places_and_the_indexes() {
+        let schema = initial_schema(&["customer".to_owned()]);
+        let mut nodes = NodeAllocator::new();
+        let mut buffer = PatchBuffer::new();
+        let view = build_grid(
+            &mut buffer,
+            &mut nodes,
+            &GridSkeleton {
+                label: None,
+                schema: &schema,
+                pool: 2,
+                texts: &GridTexts::default(),
+                declared: &[],
+                presentation: &Default::default(),
+                selection: false,
+                column_menu: false,
+                toolbar: false,
+                filter_builder: false,
+                facets: false,
+                search: false,
+                actions: &[],
+                bands: &[],
+            },
+        );
+        let state = state_with(&["Gamma", "Alpha"], 2, 0, 2);
+        let slots = assign_pool(&[None, None], None, &window_rows(0, 2, 2), 2, 2);
+        let mut buffer = PatchBuffer::new();
+        patch_grid(
+            &mut buffer,
+            &view,
+            &state,
+            &slots,
+            ActiveCell::Header { col: 0 },
+            &[],
+            None,
+            DEFAULT_ROW_HEIGHT,
+            &GridTexts::default(),
+            &crate::formats::Plain,
+            Paging::whole(state.total_count()),
+            None,
+            None,
+            None,
+            &[(0, 100)],
+        );
+        let attribute = |node: NodeId, wanted: &str| {
+            buffer.patches().iter().rev().find_map(|patch| match patch {
+                Patch::SetAttribute {
+                    node: n,
+                    name,
+                    value,
+                } if *n == node && name == wanted => Some(value.clone()),
+                _ => None,
+            })
+        };
+        assert_eq!(
+            attribute(view.tbody, "style").as_deref(),
+            Some(
+                format!(
+                    "position: relative; height: {}px;",
+                    2 * DEFAULT_ROW_HEIGHT + 100
+                )
+                .as_str()
+            )
+        );
+        assert_eq!(attribute(view.table, "aria-rowcount").as_deref(), Some("4"));
+        // Row 0 stays; row 1 is one row and the panel lower, one index later.
+        assert_eq!(
+            attribute(view.rows[0].row, "aria-rowindex").as_deref(),
+            Some("2")
+        );
+        assert_eq!(
+            attribute(view.rows[1].row, "aria-rowindex").as_deref(),
+            Some("4")
+        );
+        assert_eq!(
+            attribute(view.rows[1].row, "style"),
+            Some(format!(
+                "transform: translateY({}px);",
+                DEFAULT_ROW_HEIGHT + 100
+            ))
+        );
     }
 
     /// Past the limit the sizer stops at it and the rows sit by the shift, while
@@ -6869,6 +7038,7 @@ mod tests {
             None,
             None,
             None,
+            &[],
         );
         let attribute = |node: NodeId, wanted: &str| {
             buffer.patches().iter().find_map(|patch| match patch {
@@ -6952,6 +7122,7 @@ mod tests {
             None,
             None,
             None,
+            &[],
         );
 
         // The sizer is `total * 48`, not `total * 32`.
@@ -7017,6 +7188,7 @@ mod tests {
             None,
             None,
             None,
+            &[],
         );
 
         let pinned_row = view.rows[3].row;
@@ -7303,6 +7475,33 @@ mod tests {
     }
 
     /// A result that fits the sizer is not scaled at all (issue #284).
+    /// Issue #318: a panel is that many pixels more between the rows, and the
+    /// position maps back to the row.
+    #[test]
+    fn panels_push_the_rows_below_and_scroll_back_to_their_row() {
+        let panels: &Panels = &[(2, 100), (5, 50)];
+        assert_eq!(panel_px_before(panels, 2), 0);
+        assert_eq!(panel_px_before(panels, 3), 100);
+        assert_eq!(panel_px_before(panels, 6), 150);
+        assert_eq!(panels_before(panels, 3), 1);
+        assert_eq!(panels_before(panels, 6), 2);
+        // 32 px rows: row 2 is at 64, its panel at 96..196, row 3 at 196.
+        assert_eq!(row_at(panels, 32, 95), 2);
+        assert_eq!(
+            row_at(panels, 32, 96),
+            2,
+            "inside the panel it is the master"
+        );
+        assert_eq!(row_at(panels, 32, 195), 2);
+        assert_eq!(row_at(panels, 32, 196), 3);
+        assert_eq!(row_at(&[], 32, 196), 6);
+        // The inverse of the places the rows are given.
+        for row in 0..12 {
+            let top = row * 32 + panel_px_before(panels, row);
+            assert_eq!(row_at(panels, 32, top), row, "row {row}");
+        }
+    }
+
     #[test]
     fn a_result_that_fits_the_sizer_has_no_scale() {
         // 312 500 rows of 32px are exactly the limit.
@@ -7492,6 +7691,7 @@ mod tests {
                 None,
                 None,
                 None,
+                &[],
             );
 
             for patch in frame.patches() {
@@ -7861,6 +8061,7 @@ mod tests {
                 None,
                 None,
                 None,
+                &[],
             );
             (view, buffer)
         };
