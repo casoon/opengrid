@@ -52,7 +52,10 @@ test("Refresh reads the change in and the focus follows its record", async ({ pa
   await page.evaluate(() => window.__reload(0));
   await tell(page);
   await expect.poll(() => buttons(page)).toBe(1);
-  await page.locator("opengrid-grid").locator('[part="refresh"]').click();
+  // By keyboard: Safari does not focus a button a pointer presses, so the
+  // focus has left the grid before the button is activated there.
+  await page.locator("opengrid-grid").locator('[part="refresh"]').focus();
+  await page.keyboard.press("Enter");
   await expect.poll(() => cell(page, 0, 0)).toBe("0");
   expect(await buttons(page)).toBe(0);
   // The record the focus stood on is one row further down now, and still has it.
@@ -75,19 +78,28 @@ test("a page that keeps the event from its default gets no notice, and refreshes
 test("a REST provider's change stream tells the grid, and a 4xx ends it", async ({ page }) => {
   await open(page);
   let asked = 0;
+  // Another origin, with a token: Firefox and WebKit send a preflight first.
+  const cors = {
+    "access-control-allow-origin": "*",
+    "access-control-allow-headers": "authorization, accept, cache-control",
+  };
   await page.route("**/watch/customers", async (route) => {
+    if (route.request().method() === "OPTIONS") {
+      await route.fulfill({ status: 204, headers: cors });
+      return;
+    }
     asked += 1;
     expect(route.request().headers().authorization).toBe("Bearer t0ken");
     await route.fulfill({
       status: 200,
-      headers: { "content-type": "text/event-stream" },
+      headers: { ...cors, "content-type": "text/event-stream" },
       body: 'retry: 100\n\n: ready\n\nevent: changed\ndata: {"source":"customers"}\n\n',
     });
   });
   await page.evaluate(() => {
     const provider = createRest();
     function createRest() {
-      return window.__rest("http://localhost:9");
+      return window.__rest("http://localhost:8765");
     }
     window.__provider = provider;
   });
@@ -95,7 +107,7 @@ test("a REST provider's change stream tells the grid, and a 4xx ends it", async 
   await page.evaluate(async () => {
     const { createRestProvider } = await import("/packages/opengrid/loader.js");
     window.__provider.terminate();
-    window.__provider = createRestProvider({ url: "http://localhost:9", source: "customers", token: "t0ken", watch: true });
+    window.__provider = createRestProvider({ url: "http://localhost:8765", source: "customers", token: "t0ken", watch: true });
     window.__provider.watch(document.querySelector("opengrid-grid"));
   });
   await expect.poll(() => page.evaluate(() => window.__changed.length)).toBeGreaterThan(0);
@@ -106,8 +118,12 @@ test("a REST provider's change stream tells the grid, and a 4xx ends it", async 
   await page.unroute("**/watch/customers");
   let refused = 0;
   await page.route("**/watch/customers", async (route) => {
+    if (route.request().method() === "OPTIONS") {
+      await route.fulfill({ status: 204, headers: cors });
+      return;
+    }
     refused += 1;
-    await route.fulfill({ status: 404, body: "{}" });
+    await route.fulfill({ status: 404, headers: cors, body: "{}" });
   });
   const before = refused;
   await page.waitForTimeout(1200);

@@ -106,8 +106,17 @@ pub(super) fn on_key(
     if matches!(
         key.as_str(),
         "Shift" | "Control" | "Meta" | "Alt" | "ContextMenu"
-    ) || ((event.ctrl_key() || event.meta_key()) && key.eq_ignore_ascii_case("c"))
-    {
+    ) {
+        return false;
+    }
+    if (event.ctrl_key() || event.meta_key()) && key.eq_ignore_ascii_case("c") {
+        if runtime
+            .borrow()
+            .range
+            .is_some_and(|range| !range.is_single())
+        {
+            copy_fallback(host, runtime);
+        }
         return false;
     }
     let (rows, cols) = match key.as_str() {
@@ -266,37 +275,19 @@ pub(super) fn on_mouse_up(event: Event) {
     }
 }
 
-/// `Ctrl`/`Cmd`+`C` with a range: the cells as tab-separated values, or — when
-/// the range reaches rows that are not loaded — a sentence and nothing copied.
-pub(super) fn on_copy(event: Event) {
-    let Some(root) = current_shadow_root(&event) else {
-        return;
-    };
-    let Ok(host) = root.host().dyn_into::<HtmlElement>() else {
-        return;
-    };
-    // From a field — the filter row, the search, an open editor — the browser
-    // copies as it always did.
-    if event
-        .target()
-        .and_then(|node| node.dyn_into::<Element>().ok())
-        .is_some_and(|target| {
-            target
-                .closest("input, select, textarea, [part=\"editor\"]")
-                .ok()
-                .flatten()
-                .is_some()
-        })
-    {
-        return;
-    }
-    let Some(runtime) = runtime(&host) else {
-        return;
-    };
-    let Some(block) = runtime.borrow().range.filter(|range| !range.is_single()) else {
-        return;
-    };
-    let texts = texts(&host);
+thread_local! {
+    /// Whether the browser sent a `copy` event for the key just pressed.
+    static COPY_SEEN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// The text of a block as values, or `None` — with the sentence said — when it
+/// reaches rows that are not loaded.
+fn copy_text(
+    host: &HtmlElement,
+    runtime: &Rc<RefCell<GridRuntime>>,
+    block: opengrid_grid::CellRange,
+) -> Option<String> {
+    let texts = texts(host);
     let text = {
         let borrowed = runtime.borrow();
         let (first_row, last_row) = block.rows();
@@ -312,9 +303,8 @@ pub(super) fn on_copy(event: Event) {
                         .borrow_mut()
                         .state
                         .set_notice(texts.range_unloaded.clone());
-                    render(&host, false);
-                    event.prevent_default();
-                    return;
+                    render(host, false);
+                    return None;
                 };
                 let text_column = borrowed
                     .state
@@ -332,6 +322,101 @@ pub(super) fn on_copy(event: Event) {
         }
         range::block_text(&lines)
     };
+    let (rows, cols) = block.size();
+    runtime
+        .borrow_mut()
+        .state
+        .set_notice(texts.range_copied(rows, cols));
+    render(host, false);
+    Some(text)
+}
+
+/// Firefox sends no `copy` event for a key when nothing is selected: if none
+/// came by the end of the task, the block goes to the clipboard directly.
+pub(super) fn copy_fallback(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>) {
+    COPY_SEEN.with(|seen| seen.set(false));
+    let host = host.clone();
+    let runtime = runtime.clone();
+    let callback = Closure::once_into_js(move || {
+        if COPY_SEEN.with(std::cell::Cell::get) {
+            return;
+        }
+        let Some(block) = runtime.borrow().range.filter(|range| !range.is_single()) else {
+            return;
+        };
+        let Some(text) = copy_text(&host, &runtime, block) else {
+            return;
+        };
+        let Some(clipboard) = web_sys::window()
+            .and_then(|window| js_sys::Reflect::get(&window, &"navigator".into()).ok())
+            .and_then(|navigator| js_sys::Reflect::get(&navigator, &"clipboard".into()).ok())
+            .filter(|clipboard| clipboard.is_object())
+        else {
+            return;
+        };
+        if let Ok(write) = js_sys::Reflect::get(&clipboard, &"writeText".into())
+            .and_then(|write| write.dyn_into::<js_sys::Function>())
+        {
+            let _ = write.call1(&clipboard, &JsValue::from_str(&text));
+        }
+    });
+    if let Some(window) = web_sys::window() {
+        let _ = window
+            .set_timeout_with_callback_and_timeout_and_arguments_0(callback.unchecked_ref(), 0);
+    }
+}
+
+/// `Ctrl`/`Cmd`+`C` with a range: the cells as tab-separated values, or — when
+/// the range reaches rows that are not loaded — a sentence and nothing copied.
+pub(super) fn on_copy(event: Event) {
+    // Chromium aims the event at the cell, through the shadow root; WebKit and
+    // Firefox aim it at the host. The first listener to act keeps the second.
+    if event.default_prevented() {
+        return;
+    }
+    let Some(current) = event.current_target() else {
+        return;
+    };
+    let (root, host) = match current.dyn_into::<ShadowRoot>() {
+        Ok(root) => {
+            let Ok(host) = root.host().dyn_into::<HtmlElement>() else {
+                return;
+            };
+            (root, host)
+        }
+        Err(current) => {
+            let Ok(host) = current.dyn_into::<HtmlElement>() else {
+                return;
+            };
+            let Some(root) = host.shadow_root() else {
+                return;
+            };
+            (root, host)
+        }
+    };
+    // From a field — the filter row, the search, an open editor — the browser
+    // copies as it always did. The focus says which, as the target of the
+    // event is the host in some engines.
+    if root.active_element().is_some_and(|active| {
+        active
+            .closest("input, select, textarea, [part=\"editor\"]")
+            .ok()
+            .flatten()
+            .is_some()
+    }) {
+        return;
+    }
+    let Some(runtime) = runtime(&host) else {
+        return;
+    };
+    let Some(block) = runtime.borrow().range.filter(|range| !range.is_single()) else {
+        return;
+    };
+    COPY_SEEN.with(|seen| seen.set(true));
+    let Some(text) = copy_text(&host, &runtime, block) else {
+        event.prevent_default();
+        return;
+    };
     let Some(data) = event
         .dyn_ref::<web_sys::ClipboardEvent>()
         .and_then(|event| event.clipboard_data())
@@ -342,10 +427,4 @@ pub(super) fn on_copy(event: Event) {
         return;
     }
     event.prevent_default();
-    let (rows, cols) = block.size();
-    runtime
-        .borrow_mut()
-        .state
-        .set_notice(texts.range_copied(rows, cols));
-    render(&host, false);
 }

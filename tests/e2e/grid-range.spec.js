@@ -52,7 +52,10 @@ test("Shift+arrows mark a block, say its size, and any other key ends it", async
   expect(await marked(page)).toEqual([]);
 });
 
-test("Ctrl+C copies values, tab-separated, and the block pastes back unchanged", async ({ page }) => {
+test("Ctrl+C copies values, tab-separated, and the block pastes back unchanged", async ({ page, browserName }) => {
+  // Firefox keeps the data of a `copy` event write-only, so a page cannot read
+  // back what the grid put there: what is copied there is checked by hand.
+  test.skip(browserName === "firefox", "the data of a copy event cannot be read back in Firefox");
   await open(page);
   await focusCell(page, 1, 2);
   await page.keyboard.press("Shift+ArrowDown");
@@ -60,7 +63,9 @@ test("Ctrl+C copies values, tab-separated, and the block pastes back unchanged",
   await page.keyboard.press("ControlOrMeta+c");
   // Values, not text: the number as it is, and the note that a spreadsheet
   // would run as a formula carries the guard.
-  expect(await page.evaluate(() => window.__copied)).toEqual(["10\t'=1+1\n20\ta,b\n"]);
+  // (Where the browser sends no `copy` event the grid writes the clipboard a
+  // task later: poll.)
+  await expect.poll(() => page.evaluate(() => window.__copied)).toEqual(["10\t'=1+1\n20\ta,b\n"]);
   expect(await status(page)).toContain("Copied 2 by 2 cells");
 
   // Notes 2 to 5 — a comma, a tab, a quote — in one column, and back into
@@ -68,6 +73,7 @@ test("Ctrl+C copies values, tab-separated, and the block pastes back unchanged",
   await focusCell(page, 1, 3);
   for (let i = 0; i < 3; i++) await page.keyboard.press("Shift+ArrowDown");
   await page.keyboard.press("ControlOrMeta+c");
+  await expect.poll(() => page.evaluate(() => window.__copied.length)).toBe(2);
   const copied = await page.evaluate(() => window.__copied.at(-1));
   await focusCell(page, 8, 3);
   await paste(page, copied);
