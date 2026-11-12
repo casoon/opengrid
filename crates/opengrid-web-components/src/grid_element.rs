@@ -92,6 +92,7 @@ mod chips;
 mod column_menu;
 mod column_ops;
 mod combo;
+mod detail;
 mod editing;
 mod facets;
 mod filter_row;
@@ -321,6 +322,15 @@ struct GridRuntime {
     /// Bumped by every `set_cell_templates`: a cell drawn under another round
     /// is drawn again (issue #317).
     templates_round: u64,
+    /// The rows whose detail panel is open, by row (issue #318).
+    details: Vec<detail::Opened>,
+    /// Whether the last frame drew with panels open.
+    panels_shown: bool,
+    /// Keys of open panels a restored view asked for, opened as their rows load.
+    detail_wanted: Vec<opengrid_json::Json>,
+    /// The nodes the page built for open panels, by key, so a panel scrolled
+    /// out of view and back is the same node.
+    detail_nodes: Vec<(String, JsValue)>,
 }
 
 impl GridRuntime {
@@ -426,6 +436,10 @@ fn fresh_runtime(
         range: None,
         drag_from: None,
         templates_round: 0,
+        details: Vec::new(),
+        panels_shown: false,
+        detail_wanted: Vec::new(),
+        detail_nodes: Vec::new(),
     }
 }
 
@@ -724,7 +738,7 @@ fn window_from_scroll(runtime: &Rc<RefCell<GridRuntime>>) {
     }
     .virtual_top();
     let offset = grid::window_offset(
-        grid::visible_start(virtual_top, borrowed.row_height),
+        detail::row_at(&borrowed, virtual_top),
         borrowed.state.row_count(),
         window.count,
     );
@@ -803,7 +817,7 @@ fn follow_active_row(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>) -> 
         if (window.offset..window.offset.saturating_add(window.count)).contains(&row) {
             return false;
         }
-        let top = row.saturating_mul(borrowed.row_height);
+        let top = detail::top_of(&borrowed, row);
         let scale = borrowed
             .viewport
             .as_ref()
@@ -1240,11 +1254,13 @@ fn render(host: &HtmlElement, focus_after: bool) {
         // focus while **scrolling** (point 17). A page change replaces every
         // row, so there is nothing to protect — and pinning would leave the
         // focused slot showing the old page's cell (point 38).
-        let pinned_slot = if paging.size.is_some() {
-            None
-        } else {
-            focus.and_then(|row| borrowed.slots.iter().position(|slot| *slot == Some(row)))
-        };
+        // The last panel closing moves the rows it pushed, the pinned one too.
+        let pinned_slot =
+            if paging.size.is_some() || (borrowed.panels_shown && borrowed.details.is_empty()) {
+                None
+            } else {
+                focus.and_then(|row| borrowed.slots.iter().position(|slot| *slot == Some(row)))
+            };
         let slots = grid::assign_pool(&borrowed.slots, focus, &rows, pool, total);
         let sorts = borrowed.state.sort_keys();
         (sorts, slots, pinned_slot)
@@ -1260,6 +1276,11 @@ fn render(host: &HtmlElement, focus_after: bool) {
         let Some(view) = borrowed.view.as_ref() else {
             return;
         };
+        let panels: Vec<(u64, u64)> = detail::panels(borrowed)
+            .into_iter()
+            .filter(|(row, _)| *row >= paging.base && *row < paging.base + paging.rows)
+            .collect();
+        borrowed.panels_shown = !panels.is_empty();
         let mut buffer = PatchBuffer::new();
         grid::patch_grid(
             &mut buffer,
@@ -1276,6 +1297,7 @@ fn render(host: &HtmlElement, focus_after: bool) {
             borrowed.grouping.as_ref(),
             borrowed.tree.as_ref(),
             keyed(borrowed).then_some(&borrowed.picked),
+            &panels,
         );
         if let Some(dom) = borrowed.dom.as_mut() {
             dom.apply_buffer(&buffer);
@@ -1298,6 +1320,7 @@ fn render(host: &HtmlElement, focus_after: bool) {
     if let Some(root) = host.shadow_root() {
         combo::draw_cells(host, &root);
         template::draw_cells(host, &root);
+        detail::draw(host, &root);
     }
 
     range::paint(host);
@@ -1617,6 +1640,8 @@ fn settle(
             runtime.epoch += 1;
             // The positions a range marked are other rows now.
             runtime.range = None;
+            // And the rows a panel stands under (issue #318).
+            detail::close_all(&mut runtime);
             paste_dropped = runtime.paste.take().is_some();
         }
         match outcome {
@@ -2353,6 +2378,14 @@ fn on_key_down(event: KeyboardEvent) {
     {
         return;
     }
+    // A page's panel under a row (issue #318) keeps its own keys, bar `Escape`.
+    if let Some(target) = event
+        .target()
+        .and_then(|node| node.dyn_into::<Element>().ok())
+        && detail::on_key(&host, &event, &target)
+    {
+        return;
+    }
     // The bulk panel (issue #187) answers `Enter` and `Escape`.
     if let Some(target) = event
         .target()
@@ -2638,6 +2671,10 @@ fn on_key_down(event: KeyboardEvent) {
     // `Shift`+arrows mark a block of cells; any other key that moves or edits
     // ends it (issue #327).
     if range::on_key(&host, &runtime, &event, active) {
+        return;
+    }
+    // `Alt`+`↓` and `Alt`+`↑` open and close the panel under the row (issue #318).
+    if detail::on_key_down(&host, &event, active) {
         return;
     }
     // `Shift`+`F2` opens the record as a form (issue #325).
@@ -3471,6 +3508,11 @@ pub(crate) fn write_cell_state(
     }
 }
 
+/// [`crate::element::set_detail_renderer`] (issue #318).
+pub(crate) fn set_detail_renderer(host: &HtmlElement, renderer: &JsValue) {
+    detail::store(host, renderer);
+}
+
 /// [`crate::element::set_cell_templates`] (issue #317).
 pub(crate) fn set_cell_templates(host: &HtmlElement, templates: &JsValue) {
     template::store(host, templates);
@@ -3858,7 +3900,7 @@ fn on_scroll(event: Event) {
     }
     .virtual_top();
 
-    let (total_count, pool, offset, row_height) = {
+    let (total_count, pool, offset, first_row) = {
         let runtime = runtime.borrow();
         let pool = runtime
             .view
@@ -3869,17 +3911,13 @@ fn on_scroll(event: Event) {
             runtime.state.row_count(),
             pool,
             runtime.state.window().offset,
-            runtime.row_height,
+            detail::row_at(&runtime, scroll_top),
         )
     };
     if total_count == 0 || pool == 0 {
         return;
     }
-    let wanted = grid::window_offset(
-        grid::visible_start(scroll_top, row_height),
-        total_count,
-        pool,
-    );
+    let wanted = grid::window_offset(first_row, total_count, pool);
     if wanted == offset {
         return;
     }

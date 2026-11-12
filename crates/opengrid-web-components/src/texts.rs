@@ -367,6 +367,16 @@ pub struct GridTexts {
     pub source_changed: String,
     /// The button that reads the change in.
     pub source_refresh: String,
+    /// A row's panel button when it is closed (issue #318).
+    pub detail_show: String,
+    /// The same button when it is open.
+    pub detail_hide: String,
+    /// The name of a panel, before the row's first cell.
+    pub detail_panel: String,
+    /// Said when a panel opened.
+    pub detail_shown: String,
+    /// Said when a panel closed.
+    pub detail_hidden: String,
     /// Said when there is no step to undo.
     pub undo_nothing: String,
     /// Said when there is no step to redo.
@@ -617,6 +627,11 @@ pub(crate) const KEYS: &[&str] = &[
     "rangeUnloaded",
     "sourceChanged",
     "sourceRefresh",
+    "detailShow",
+    "detailHide",
+    "detailPanel",
+    "detailShown",
+    "detailHidden",
     "undoNothing",
     "redoNothing",
     "validationWarning",
@@ -868,6 +883,11 @@ impl Default for GridTexts {
             range_unloaded: "Not copied: the range reaches rows that are not loaded".to_owned(),
             source_changed: "The data changed. Refresh to see it.".to_owned(),
             source_refresh: "Refresh".to_owned(),
+            detail_show: "Show details".to_owned(),
+            detail_hide: "Hide details".to_owned(),
+            detail_panel: "Details".to_owned(),
+            detail_shown: "Details shown".to_owned(),
+            detail_hidden: "Details hidden".to_owned(),
             undo_nothing: "Nothing to undo".to_owned(),
             redo_nothing: "Nothing to redo".to_owned(),
             validation_warning: "Warning: {message}".to_owned(),
@@ -1869,6 +1889,11 @@ mod host {
         overwrite(&mut texts.range_unloaded, string("rangeUnloaded"));
         overwrite(&mut texts.source_changed, string("sourceChanged"));
         overwrite(&mut texts.source_refresh, string("sourceRefresh"));
+        overwrite(&mut texts.detail_show, string("detailShow"));
+        overwrite(&mut texts.detail_hide, string("detailHide"));
+        overwrite(&mut texts.detail_panel, string("detailPanel"));
+        overwrite(&mut texts.detail_shown, string("detailShown"));
+        overwrite(&mut texts.detail_hidden, string("detailHidden"));
         overwrite(&mut texts.undo_nothing, string("undoNothing"));
         overwrite(&mut texts.redo_nothing, string("redoNothing"));
         overwrite(&mut texts.validation_warning, string("validationWarning"));

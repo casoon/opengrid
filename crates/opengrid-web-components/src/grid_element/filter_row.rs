@@ -442,6 +442,13 @@ pub(super) fn on_filter_clear(event: Event) {
         return;
     }
 
+    // The button of a row's detail panel (issue #318).
+    if let Ok(host) = root.host().dyn_into::<HtmlElement>()
+        && detail::on_click(&host, &target)
+    {
+        return;
+    }
+
     // An action button of a row (issue #189).
     if let Ok(host) = root.host().dyn_into::<HtmlElement>()
         && on_action_click(&host, &target)
