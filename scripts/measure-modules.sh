@@ -24,7 +24,7 @@ build() {
         -p "$crate" "$@" >/dev/null 2>&1
     wasm-bindgen --target web --out-dir "$out/$name" --out-name m \
         "$target/wasm32-unknown-unknown/release/${crate//-/_}.wasm" >/dev/null 2>&1
-    wasm-opt -Oz -o "$out/$name/m_bg.wasm" "$out/$name/m_bg.wasm"
+    wasm-opt -Oz --low-memory-unused -o "$out/$name/m_bg.wasm" "$out/$name/m_bg.wasm"
 }
 
 report() {
