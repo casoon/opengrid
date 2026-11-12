@@ -195,6 +195,13 @@ pub fn plan(
         ExecutionMode::Local => DataSourceCapabilities::default(),
         _ => capabilities,
     };
+    // A sort by a locale (S4a) needs a source that has collations; one that
+    // only sorts would refuse it, or worse, sort by something else.
+    let collates = query
+        .sort
+        .iter()
+        .any(|key| key.collation.locale().is_some());
+    let sorts = effective.sort && (!collates || effective.collation);
 
     if mode == ExecutionMode::Remote {
         for (wanted, can, name) in [
@@ -207,6 +214,7 @@ pub fn plan(
                 "aggregate",
             ),
             (!query.sort.is_empty(), capabilities.sort, "sort"),
+            (collates, capabilities.collation, "collation"),
             (
                 query.limit.is_some() || query.offset.is_some(),
                 capabilities.paging,
@@ -236,7 +244,7 @@ pub fn plan(
     // tree part of the answer (`children`, `match`, `orphans`) does not survive
     // the trip — so the client builds the level itself.
     let pages = query.limit.is_some() || query.offset.is_some();
-    let sort_is_the_clients = !query.sort.is_empty() && !effective.sort;
+    let sort_is_the_clients = !query.sort.is_empty() && !sorts;
     let page_is_the_clients = pages && !effective.paging;
     if query.tree.is_some()
         && (!effective.tree
@@ -287,7 +295,7 @@ pub fn plan(
     let rows_change_locally = client_steps.contains(&ClientStep::Group)
         || client_steps.contains(&ClientStep::Aggregate)
         || client_steps.contains(&ClientStep::Tree);
-    if !query.sort.is_empty() && (!effective.sort || rows_change_locally) {
+    if !query.sort.is_empty() && (!sorts || rows_change_locally) {
         source_query.sort = Vec::new();
         client_steps.push(ClientStep::Sort);
     }
@@ -515,9 +523,66 @@ mod tests {
             "aggregate" => caps.aggregate = false,
             "paging" => caps.paging = false,
             "tree" => caps.tree = false,
+            "collation" => caps.collation = false,
             other => panic!("unknown capability {other}"),
         }
         caps
+    }
+
+    /// A sort by a locale (S4a) is pushed only to a source with collations: one
+    /// that merely sorts keeps a binary sort and loses this one — and its
+    /// paging with it, since a page is cut from the order (#391).
+    #[test]
+    fn a_sort_by_a_locale_needs_a_source_with_collations() {
+        let collated = query(
+            r#"{"source":"orders","select":["id","country"],
+                "sort":[{"field":"country","collation":"de"},{"field":"id"}],
+                "offset":10,"limit":20}"#,
+        );
+        let pushed = plan(
+            &collated,
+            &schema(),
+            DataSourceCapabilities::ALL,
+            ExecutionMode::Auto,
+        )
+        .expect("plans");
+        assert!(pushed.client_steps.is_empty(), "{:?}", pushed.client_steps);
+        assert_eq!(pushed.source_query.sort, collated.sort);
+
+        let local = plan(
+            &collated,
+            &schema(),
+            without("collation"),
+            ExecutionMode::Auto,
+        )
+        .expect("plans");
+        assert!(local.client_steps.contains(&ClientStep::Sort));
+        assert!(local.source_query.sort.is_empty());
+        assert!(local.source_query.limit.is_none(), "the page is cut here");
+
+        // A binary sort is none of this.
+        let binary = plan(
+            &paged(),
+            &schema(),
+            without("collation"),
+            ExecutionMode::Auto,
+        )
+        .expect("plans");
+        assert!(binary.client_steps.is_empty(), "{:?}", binary.client_steps);
+
+        // And `remote` says what cannot be pushed.
+        let refused = plan(
+            &collated,
+            &schema(),
+            without("collation"),
+            ExecutionMode::Remote,
+        );
+        assert_eq!(
+            refused.unwrap_err(),
+            PlanError::NotPushable {
+                operation: "collation"
+            }
+        );
     }
 
     /// A tree (E38) stays where its filter is: a source without trees sends

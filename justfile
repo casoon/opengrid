@@ -21,7 +21,7 @@ check:
     cargo test --workspace --all-features
 
 # Die Crates, die für wasm32-unknown-unknown gebaut werden.
-WASM_CRATES := "-p opengrid-types -p opengrid-query -p opengrid-columns -p opengrid-engine -p opengrid-datasource -p opengrid-wasm -p opengrid-web-core -p opengrid-web-components -p opengrid-grid -p opengrid-export -p opengrid-xlsx"
+WASM_CRATES := "-p opengrid-types -p opengrid-query -p opengrid-columns -p opengrid-engine -p opengrid-datasource -p opengrid-wasm -p opengrid-web-core -p opengrid-web-components -p opengrid-grid -p opengrid-export -p opengrid-xlsx -p opengrid-collation"
 
 # Build aller wasm-fähigen Crates für wasm32-unknown-unknown.
 wasm-check:
@@ -49,6 +49,14 @@ wasm-build-xlsx out="packages/opengrid/xlsx":
     RUSTFLAGS="$REMAP" cargo build --release --target wasm32-unknown-unknown -p opengrid-xlsx
     wasm-bindgen --target web --out-dir {{out}} --out-name opengrid_xlsx "${CARGO_TARGET_DIR:-target}/wasm32-unknown-unknown/release/opengrid_xlsx.wasm"
     wasm-opt -Oz --low-memory-unused -o {{out}}/opengrid_xlsx_bg.wasm {{out}}/opengrid_xlsx_bg.wasm
+
+# Das Kollationsmodul (#391), das die Provider laden, wenn eine Query zum ersten
+# Mal nach einer Locale sortiert: ICU4X mit seinen Daten, dieselbe Kette wie
+# `wasm-build`. scripts/pack-npm.sh baut es nach packages/opengrid/collation/.
+wasm-build-collation out="packages/opengrid/collation":
+    RUSTFLAGS="$REMAP" cargo build --release --target wasm32-unknown-unknown -p opengrid-collation
+    wasm-bindgen --target web --out-dir {{out}} --out-name opengrid_collation "${CARGO_TARGET_DIR:-target}/wasm32-unknown-unknown/release/opengrid_collation.wasm"
+    wasm-opt -Oz --low-memory-unused -o {{out}}/opengrid_collation_bg.wasm {{out}}/opengrid_collation_bg.wasm
 
 # WASM-Modul für die Demo bauen (plan/spezifikation/14-entscheidungen.md E4):
 # cargo release -> wasm-bindgen --target web -> wasm-opt -Oz.

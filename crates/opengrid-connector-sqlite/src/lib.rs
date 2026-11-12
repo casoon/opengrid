@@ -226,6 +226,8 @@ impl Connector for SqliteConnector {
             aggregate: true,
             paging: true,
             tree: self.tree_pushdown,
+            // The engine's collation, registered on the connection (S4a).
+            collation: true,
             ..DataSourceCapabilities::default()
         }
     }

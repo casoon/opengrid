@@ -83,9 +83,7 @@ impl std::fmt::Display for ExecuteError {
             }
             ExecuteError::TooLarge { message }
             | ExecuteError::Tree { message }
-            | ExecuteError::Collation { message } => {
-                f.write_str(message)
-            }
+            | ExecuteError::Collation { message } => f.write_str(message),
         }
     }
 }

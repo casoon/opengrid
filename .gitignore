@@ -9,6 +9,7 @@ pkg/
 packages/opengrid/engine/
 # The XLSX writer of the tab, likewise.
 packages/opengrid/xlsx/
+packages/opengrid/collation/
 .DS_Store
 
 # Playwright-Artefakte (Baselines unter tests/e2e/__screenshots__ gehören ins Repo).

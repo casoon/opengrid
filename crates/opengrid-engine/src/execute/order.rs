@@ -36,7 +36,10 @@ pub(crate) fn sort_page(
 }
 
 /// The collation keys of every key that names a locale, `None` for the others.
-pub(crate) fn collated(table: &Table, keys: &[Sort]) -> Result<Vec<Option<SortKeys>>, ExecuteError> {
+pub(crate) fn collated(
+    table: &Table,
+    keys: &[Sort],
+) -> Result<Vec<Option<SortKeys>>, ExecuteError> {
     keys.iter()
         .map(|key| match key.collation.locale() {
             None => Ok(None),

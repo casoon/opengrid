@@ -25,6 +25,9 @@
 // The packaged engine glue, imported statically so that a bundler follows it and
 // the `.wasm` beside it; `init` names another one with `moduleUrl`.
 import * as packaged from "./engine/opengrid_wasm.js";
+// The collator, for a query that sorts by a locale (rule S4a): a module of its
+// own, fetched by the first such query.
+import { withCollator } from "./collation.js";
 
 /** The single engine instance, created on `init` and reused for every query. */
 let engine;
@@ -57,7 +60,9 @@ self.onmessage = async ({ data }) => {
         break;
       }
       case "query": {
-        const result = engine.execute_columns(data.query);
+        const result = await withCollator(engine, data.query, () =>
+          engine.execute_columns(data.query),
+        );
         self.postMessage({ id: data.id, result }, [result.buffer]);
         break;
       }

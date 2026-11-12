@@ -274,7 +274,9 @@ async fn a_source_describes_its_schema_and_capabilities() {
     // Every flag is there, not only the ones that happen to be true: a planner
     // reads them all, and a missing one would silently mean "cannot".
     let flags = described["capabilities"].as_object().expect("capabilities");
-    assert_eq!(flags.len(), 9, "the declaration is complete: {flags:?}");
+    assert_eq!(flags.len(), 10, "the declaration is complete: {flags:?}");
+    // The engine behind this source has ICU's collations (S4a, #391).
+    assert_eq!(described["capabilities"]["collation"], true);
     // Every source answers a tree through the server (plan point 122).
     assert_eq!(described["capabilities"]["tree"], true);
 

@@ -23,8 +23,8 @@ mod error;
 mod validate;
 
 pub use ast::{
-    Aggregate, AggregateFn, CmpOp, Collation, FilterExpr, Locale, NullsOrder, Query, Sort, SortDirection,
-    TreeSpec, fold_case,
+    Aggregate, AggregateFn, CmpOp, Collation, FilterExpr, Locale, NullsOrder, Query, Sort,
+    SortDirection, TreeSpec, fold_case,
 };
 pub use error::QueryError;
 pub use validate::{FLAT_COLUMNS, Limits, ValidatedFilter, ValidatedQuery, ValidatedTree};

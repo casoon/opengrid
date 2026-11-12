@@ -344,6 +344,9 @@ impl SendDataSource for PostgresDataSource {
             streaming: false,
             // Asked for, a tree's level is `WITH RECURSIVE` (issue #132).
             tree: self.tree_pushdown,
+            // ICU's collations (S4a); a database without ICU answers such a
+            // sort with its own error.
+            collation: true,
         }
     }
 }

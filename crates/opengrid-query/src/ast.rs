@@ -522,8 +522,7 @@ impl Locale {
     pub fn parse(tag: &str) -> Option<Self> {
         let mut parts = tag.split('-');
         let language = parts.next()?;
-        if !(2..=3).contains(&language.len()) || !language.bytes().all(|b| b.is_ascii_lowercase())
-        {
+        if !(2..=3).contains(&language.len()) || !language.bytes().all(|b| b.is_ascii_lowercase()) {
             return None;
         }
         let mut next = parts.next();
