@@ -141,7 +141,7 @@ use editing::{
 };
 use facets::{
     apply_facets, clear_selection, draw_facets, effective_filter, facet_chip_text, on_facet_change,
-    page_filter, reader_filter, refresh_facets, reset_facets, show_source, toggle_facet_value,
+    collated, page_filter, reader_filter, refresh_facets, reset_facets, show_source, toggle_facet_value,
 };
 use filter_row::{
     Decorated, OperatorControl, ValueControl, apply_filters, fix_operator_choices,
@@ -1034,7 +1034,10 @@ fn on_attribute_changed(
         // The page's filter (issue #330): other rows exist, as after a filter
         // of the reader's — the first window, no selection, the facets' values
         // listed anew. It is not the reader's, so the view has not changed.
-        grid::FILTER_ATTRIBUTE => {
+        // The page's collation (#391) is another order of the same rows, and
+        // what holds for a new filter holds for it: the first window, and a
+        // selection by position gone.
+        grid::FILTER_ATTRIBUTE | grid::COLLATION_ATTRIBUTE => {
             let Some(runtime) = runtime(&host) else {
                 return;
             };
@@ -1501,6 +1504,7 @@ pub(crate) fn run_query(host: &HtmlElement, kind: QueryKind, focus: bool) {
     }
 
     let query = grid::query_json(&source, &columns, &sorts, filter.as_ref(), offset, pool);
+    let query = collated(host, query);
     let mode = host.get_attribute(MODE_ATTRIBUTE).unwrap_or_default();
     let started = now();
     let promise = provider.execute(&query, &mode);
@@ -4427,8 +4431,10 @@ async fn ask_uncounted(
     query: &str,
     mode: &str,
 ) -> Result<opengrid_datasource::QueryResult, String> {
+    // The page's collation (S4a) on the text keys of whatever is asked.
+    let query = collated(host, query.to_owned());
     let started = now();
-    let answered = JsFuture::from(provider.execute(query, mode)).await;
+    let answered = JsFuture::from(provider.execute(&query, mode)).await;
     measured(host, provider.kind(), started, answered)
 }
 

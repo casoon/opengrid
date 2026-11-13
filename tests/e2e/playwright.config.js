@@ -9,7 +9,8 @@ import { fileURLToPath } from "node:url";
 // loads loader.js and the built WASM module under packages/opengrid/. Playwright
 // is pinned in package.json; `just e2e` builds the module first.
 
-const PORT = 8080;
+// `OPENGRID_E2E_PORT` moves it for a machine where something else holds 8080.
+const PORT = Number(process.env.OPENGRID_E2E_PORT ?? 8080);
 // The `opengrid-server` the hybrid and export fixtures query: the `e2e` preset of
 // examples/server, whose port is also written there.
 const SERVER_PORT = 8082;
