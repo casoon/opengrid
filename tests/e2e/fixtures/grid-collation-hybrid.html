@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>opengrid collation, hybrid fixture</title>
+    <style>
+      opengrid-grid {
+        display: block;
+        height: 1400px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid collation, hybrid fixture</h1>
+      <!-- Issue #408: a source that sorts but has no collations. The planner
+           leaves a sort by a locale to the engine in this tab, which asks the
+           collation module for its collator before it finishes the plan. -->
+      <opengrid-grid
+        label="Words, a source without collations"
+        datasource="collation"
+        columns="word,id"
+        window-size="60"
+        collation="und"
+      ></opengrid-grid>
+    </main>
+    <script type="module">
+      import {
+        loadOpengrid,
+        createLocalProvider,
+        createHybridProvider,
+      } from "/packages/opengrid/loader.js";
+      import initEngine, { Engine, Planner } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+
+      await initEngine({ module_or_path: "/examples/engine-demo/pkg/opengrid_wasm_bg.wasm" });
+      const [csv, schema] = await Promise.all([
+        fetch("/crates/opengrid-conformance/data/collation.csv").then((response) => response.arrayBuffer()),
+        fetch("/crates/opengrid-conformance/data/collation.schema.json").then((response) => response.text()),
+      ]);
+
+      // The "source": a second engine that answers rows and says it sorts but
+      // has no `collation`, as a database without ICU would. Its own engine
+      // could sort by a locale; the plan must not ask it to.
+      const source = new Engine();
+      const remote = createLocalProvider(source);
+      await remote.load("collation", csv, schema);
+      const capabilities = { filter: true, sort: true, group: true, aggregate: true, paging: true };
+      window.__capabilities = capabilities;
+
+      window.__plans = [];
+      const planner = new Planner(schema, JSON.stringify(capabilities), "auto");
+      const provider = createHybridProvider({
+        remote,
+        planner,
+        onPlan: (plan) => window.__plans.push(plan),
+      });
+
+      const loader = await loadOpengrid();
+      loader.module.set_provider(document.querySelector("opengrid-grid"), provider);
+      window.__ready = true;
+    </script>
+  </body>
+</html>
