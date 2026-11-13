@@ -10,6 +10,8 @@ import { fileURLToPath } from "node:url";
 // is pinned in package.json; `just e2e` builds the module first.
 
 // `OPENGRID_E2E_PORT` moves it for a machine where something else holds 8080.
+// The specs against the real server then fail: its CORS allows the origin
+// :8080 only (examples/server). Enough to run the others; CI uses 8080.
 const PORT = Number(process.env.OPENGRID_E2E_PORT ?? 8080);
 // The `opengrid-server` the hybrid and export fixtures query: the `e2e` preset of
 // examples/server, whose port is also written there.
