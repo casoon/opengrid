@@ -8,16 +8,24 @@ name     = "elements"
 artifact = "target/peakmark/both/m_bg.wasm"
 glue     = "target/peakmark/both/m.js"
 
+# Raised 2026-11-13 from 355500: the grid's `collation` attribute (#391: the
+# attribute, its check, the collation written onto the text keys of every query
+# the grid sends) grew the element module by 1.4 KiB, to 355811 B.
 [module.budget]
-brotli = "355500 B"
+brotli = "357600 B"
 
 [[module]]
 name     = "engine"
 artifact = "target/peakmark/engine/m_bg.wasm"
 glue     = "target/peakmark/engine/m.js"
 
+# Raised 2026-11-13 from 160600: a sort key's locale (#391: the tag in the query
+# model, the order by sort keys in both sort paths, the hook a collator is
+# installed through and the call into the collation module) grew the engine by
+# 4.2 KiB, to 163475 B. The collation's tables are not in it: they are the
+# module `collation` below.
 [module.budget]
-brotli         = "160600 B"
+brotli         = "165100 B"
 peak_memory    = "26 MiB"
 growth_per_run = "0"
 
@@ -40,3 +48,15 @@ growth_per_run = "0"
 module = "xlsx"
 file   = "scripts/peakmark/xlsx.mjs"
 repeat = 5
+
+# The collator of the browser (#391): ICU4X with its data, a module of its own
+# that the providers load when a query first sorts by a locale.
+[[module]]
+name     = "collation"
+artifact = "target/peakmark/collation/m_bg.wasm"
+glue     = "target/peakmark/collation/m.js"
+
+# 333152 B, 2026-11-13: almost all of it data (1.08 MB raw of 1.19 MB) — the
+# root collation, NFD normalisation and every CLDR locale's tailoring.
+[module.budget]
+brotli = "336500 B"

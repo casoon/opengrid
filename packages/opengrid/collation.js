@@ -7,7 +7,7 @@
  * not carry. They are a module of their own (`collation/`, built by
  * `just wasm-build-collation`); a page that never sorts by a locale does not
  * fetch it. The providers of the package call `withCollator` before the engine
- * runs a query; a page that drives an `Engine` itself does the same.
+ * runs a query.
  */
 
 /** A sort key's collation that is not `binary`, in a query or a plan as JSON. */

@@ -19,6 +19,38 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+### Added
+
+- **Query:** a sort key may order text by a locale. `"collation": "de"` on a key (`binary` stays
+  the default) sorts by that locale's collation — `ä` with `a` in German, after `z` in Swedish, `ı`
+  before `i` in Turkish — and strings the collation calls equal by their bytes; only a text column
+  takes it (rule S4a). The engine, SQLite and PostgreSQL give the same order for Latin, Greek and
+  Cyrillic text, checked by the conformance suite against orders PostgreSQL wrote; other scripts
+  sort by the collation without that promise. A source declares it with the capability
+  `collation`, and the planner leaves such a sort to the client where it is missing
+  ([#391](https://github.com/casoon/opengrid/issues/391)).
+- **Grid:** `collation="de"` sorts the grid's text columns by a locale (`collation` in the
+  framework components); it is in every query the grid sends and in `get_query`, not in the view.
+- **Package:** the collation module, `collation/`, about 330 KiB brotli: ICU4X with the tables of
+  every CLDR locale. The providers load it when a query first sorts by a locale in the browser —
+  a worker's engine in the worker — and give it to the engine with `Engine.set_collator`
+  (`Planner.set_collator` for the half of a hybrid plan). A page that never sorts by a locale, or
+  whose source sorts, does not fetch it.
+- **Crates:** `opengrid-engine` has the feature `icu` (ICU4X's collator with its compiled data,
+  `collation::Icu`); without it a collator is installed with `collation::install`.
+  `opengrid-connector` and `opengrid-connector-sqlite` turn it on.
+
+### Changed
+
+- **Crates:** in `opengrid-query`, `Collation` has the variant `Locale` and is no longer `Copy`.
+  **What breaks:** code that copied a `Sort`'s collation clones it now, and a `match` on
+  `Collation` needs the new arm. `QueryError` has the variant `CollationNotText`,
+  `ExecuteError` the variant `Collation`, `DataSourceCapabilities` the field `collation`
+  (a struct written out in full needs it), and `opengrid_columns::sort::SortKey` the field
+  `collated`.
+- **Build:** the engine module is 4.2 KiB larger (the order by sort keys and the collator's hook)
+  and the element module 1.4 KiB (the attribute); their budgets are raised to match.
+
 ## [0.16.0] - 2026-11-12
 
 Not yet verified by a screen reader: no pass with assistive technology has been recorded for this
