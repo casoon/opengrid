@@ -111,8 +111,9 @@ impl<'a> Level<'a> {
     fn of(depth: usize, columns: usize, result: &'a QueryResult) -> Self {
         let mut cells = HashMap::with_capacity(result.row_count());
         for row in 0..result.row_count() {
-            let keys: Vec<Value> = (0..depth + columns)
-                .map(|index| result.columns[index][row].clone())
+            let keys: Vec<Value> = result.columns[..depth + columns]
+                .iter()
+                .map(|column| column[row].clone())
                 .collect();
             cells.insert((same_key(&keys[..depth]), same_key(&keys[depth..])), row);
         }
@@ -213,8 +214,9 @@ pub fn assemble(
     // The columns, in the order the source sorted them (S3/S4).
     let mut columns = Vec::new();
     for row in 0..catalogue.row_count() {
-        let path: Vec<Value> = (0..across)
-            .map(|index| catalogue.columns[index][row].clone())
+        let path: Vec<Value> = catalogue.columns[..across]
+            .iter()
+            .map(|column| column[row].clone())
             .collect();
         for value in &pivot.values {
             columns.push(PivotColumn {
@@ -260,8 +262,9 @@ pub fn assemble(
             .map_or(&results[depth - level], |index| &results[sets + index]);
         let mut seen: std::collections::HashSet<Key> = std::collections::HashSet::new();
         for row in 0..ordering.row_count() {
-            let path: Vec<Value> = (0..level)
-                .map(|index| ordering.columns[index][row].clone())
+            let path: Vec<Value> = ordering.columns[..level]
+                .iter()
+                .map(|column| column[row].clone())
                 .collect();
             if seen.insert(same_key(&path)) {
                 children[level]
