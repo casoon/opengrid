@@ -43,6 +43,9 @@ Two things belong in every release entry and are easy to leave out:
   and `SortKey::collated` are new and matter to code that writes these types out in full.
 - **Build:** the engine module is 4.2 KiB larger and the element module 1.4 KiB; their budgets
   are raised to match.
+- **Pages:** the live demo's first grid sets its header, filter row and facets apart from the
+  page behind it, its checkboxes and fields have a darker outline and follow the site's dark
+  theme; the card under the hero on the start page has space above it.
 
 ## [0.16.0] - 2026-11-12
 
