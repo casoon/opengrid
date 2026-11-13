@@ -1170,7 +1170,7 @@ checksum = "d6790f58c7ff633d8771f42965289203411a5e5c68388703c06e14f24770b41e"
 
 [[package]]
 name = "opengrid-collation"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "opengrid-columns",
  "opengrid-engine",
@@ -1179,7 +1179,7 @@ dependencies = [
 
 [[package]]
 name = "opengrid-columns"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "opengrid-types",
  "proptest",
@@ -1187,7 +1187,7 @@ dependencies = [
 
 [[package]]
 name = "opengrid-conformance"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "opengrid-columns",
  "opengrid-datasource",
@@ -1199,7 +1199,7 @@ dependencies = [
 
 [[package]]
 name = "opengrid-connector"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "opengrid-columns",
  "opengrid-conformance",
@@ -1213,7 +1213,7 @@ dependencies = [
 
 [[package]]
 name = "opengrid-connector-sqlite"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "opengrid-conformance",
  "opengrid-connector",
@@ -1229,7 +1229,7 @@ dependencies = [
 
 [[package]]
 name = "opengrid-datasource"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "opengrid-columns",
  "opengrid-json",
@@ -1240,7 +1240,7 @@ dependencies = [
 
 [[package]]
 name = "opengrid-datasource-postgres"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "deadpool-postgres",
  "insta",
@@ -1262,7 +1262,7 @@ dependencies = [
 
 [[package]]
 name = "opengrid-engine"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "criterion",
  "icu_collator",
@@ -1280,7 +1280,7 @@ dependencies = [
 
 [[package]]
 name = "opengrid-example-server"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "axum",
  "opengrid-connector",
@@ -1295,7 +1295,7 @@ dependencies = [
 
 [[package]]
 name = "opengrid-export"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "opengrid-conformance",
  "opengrid-datasource",
@@ -1311,7 +1311,7 @@ dependencies = [
 
 [[package]]
 name = "opengrid-grid"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "opengrid-datasource",
  "opengrid-json",
@@ -1321,7 +1321,7 @@ dependencies = [
 
 [[package]]
 name = "opengrid-json"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "proptest",
  "serde_json",
@@ -1329,7 +1329,7 @@ dependencies = [
 
 [[package]]
 name = "opengrid-pivot"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "opengrid-columns",
  "opengrid-conformance",
@@ -1342,7 +1342,7 @@ dependencies = [
 
 [[package]]
 name = "opengrid-planner"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "opengrid-datasource",
  "opengrid-json",
@@ -1352,7 +1352,7 @@ dependencies = [
 
 [[package]]
 name = "opengrid-query"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "opengrid-json",
  "opengrid-types",
@@ -1360,7 +1360,7 @@ dependencies = [
 
 [[package]]
 name = "opengrid-server"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "axum",
  "http-body-util",
@@ -1384,14 +1384,14 @@ dependencies = [
 
 [[package]]
 name = "opengrid-types"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "opengrid-json",
 ]
 
 [[package]]
 name = "opengrid-wasm"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "opengrid-columns",
  "opengrid-conformance",
@@ -1410,7 +1410,7 @@ dependencies = [
 
 [[package]]
 name = "opengrid-web-components"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "js-sys",
  "opengrid-columns",
@@ -1430,7 +1430,7 @@ dependencies = [
 
 [[package]]
 name = "opengrid-web-core"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "js-sys",
  "opengrid-types",
@@ -1440,7 +1440,7 @@ dependencies = [
 
 [[package]]
 name = "opengrid-xlsx"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "js-sys",
  "opengrid-datasource",
@@ -2759,7 +2759,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "opengrid-types",
 ]
