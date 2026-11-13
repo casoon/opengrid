@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use opengrid_columns::sort::{SortKey, order};
 use opengrid_columns::{Column, Table, Values};
 use opengrid_datasource::{FlatTree, TreeLevel};
-use opengrid_query::{NullsOrder, SortDirection, ValidatedQuery, ValidatedTree};
+use opengrid_query::{ValidatedQuery, ValidatedTree};
 use opengrid_types::{DataType, Value};
 
 use super::{ExecuteError, QueryResult, aggregate, column, filter, project};
@@ -271,19 +271,14 @@ fn flat(
     let nodes = table.take(&shown);
 
     // One order over every shown node; siblings keep it among themselves.
-    let mut sort_keys = Vec::with_capacity(query.sort.len() + 1);
-    for key in &query.sort {
-        sort_keys.push(SortKey {
-            column: column(&nodes, key.field.as_str())?,
-            descending: matches!(key.direction, SortDirection::Desc),
-            nulls_first: matches!(key.nulls, NullsOrder::First),
-        });
-    }
+    let collated = super::order::collated(&nodes, &query.sort)?;
+    let mut sort_keys = super::order::sort_keys(&nodes, &query.sort, &collated)?;
     let key_column = column(&nodes, tree.key.as_str())?;
     sort_keys.push(SortKey {
         column: key_column,
         descending: false,
         nulls_first: false,
+        collated: None,
     });
     let ranked =
         order(&sort_keys, shown.len()).map_err(|message| ExecuteError::TooLarge { message })?;
@@ -389,18 +384,13 @@ fn level(
     let siblings = table.take(&members);
     // T6: the query's keys among siblings, ties by the key ascending — the
     // order is total, so a page is always the same page.
-    let mut sort_keys = Vec::with_capacity(query.sort.len() + 1);
-    for key in &query.sort {
-        sort_keys.push(SortKey {
-            column: column(&siblings, key.field.as_str())?,
-            descending: matches!(key.direction, SortDirection::Desc),
-            nulls_first: matches!(key.nulls, NullsOrder::First),
-        });
-    }
+    let collated = super::order::collated(&siblings, &query.sort)?;
+    let mut sort_keys = super::order::sort_keys(&siblings, &query.sort, &collated)?;
     sort_keys.push(SortKey {
         column: column(&siblings, tree.key.as_str())?,
         descending: false,
         nulls_first: false,
+        collated: None,
     });
     let count = siblings.num_rows();
     let offset = usize::try_from(query.offset.unwrap_or(0))

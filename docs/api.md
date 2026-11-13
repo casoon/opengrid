@@ -240,6 +240,7 @@ An interactive `<table role="grid">`: virtualized, keyboard-driven, filterable.
 | `tree-key` | The field the parent key refers to. `id` when absent. |
 | `row-key` | The field that names a record: `opengrid-cell-change` carries its value as `key`, and `set_cell_state` and `set_values` name rows by it. See [Saving edits](#saving-edits). |
 | `filter` | The **page's filter**, as the wire's JSON: `{"field":"country","op":"eq","value":"DE"}`, `{"and":[…]}`. And-ed onto every query the grid sends; not the reader's and not in the view. See [The page's filter](#the-pages-filter). |
+| `collation` | The **locale text sorts by**: `de`, `sv`, `sr-Latn`, `und` for the root collation. Without it text sorts by code point. See [Sorting text by a locale](#sorting-text-by-a-locale). |
 | `search` | Puts a **search field** above the grid: free text, or a filter written out. See [Search](#search). |
 | `facets` | Shows the **facet sidebar** — the facets a page configured with `set_columns`. See [Facets](#facets). |
 | `toolbar` | Puts a **toolbar** above the grid: the active filters and the grouping as chips, a switch for the filter row, the column list, the density. Opt-in. See [Toolbar](#toolbar). |
@@ -441,6 +442,29 @@ value (`"op":"eq","value":""`) and not NULL.
 | Not access control | The filter is written by the page and readable and changeable in the browser. What a reader **may** see is decided by the server's row filter; this only chooses what the page shows. |
 
 A framework component takes it as the `filter` prop, a string, as the pivot's.
+
+### Sorting text by a locale
+
+```html
+<opengrid-grid datasource="customers" columns="name,city" collation="de"></opengrid-grid>
+```
+
+Without `collation` text sorts by code point: `Zebra` before `apple`, `ä` after `z`. With
+it every sort key of the grid on a **text** column is ordered by that locale's collation
+— German puts `ä` with `a`, Swedish after `z`, Turkish `ı` before `i` — and numbers and
+dates sort as before. The value is a locale tag: a language (`de`, or `und` for the
+locale-neutral root collation), optionally a script (`sr-Latn`) and a region (`de-AT`).
+
+| | |
+|---|---|
+| Where it holds | In every query the grid sends and in `get_query`, so an export has the grid's order. It is the grid's, not the reader's: it is not in `get_view`/`set_view`. |
+| Who sorts | The source, when it says it can (`collation` among its capabilities): `opengrid-server` over PostgreSQL (ICU's collations), SQLite and its own engine. Otherwise the engine in the browser. |
+| What it costs | An engine in the browser needs the collation's tables, a **module of its own of about 330 KiB** (brotli). The providers of the package fetch it the first time a query sorts by a locale — a worker's engine in the worker — and never without one. A source that sorts itself needs nothing in the browser. |
+| What is promised | The same order from the engine, SQLite and PostgreSQL for **Latin, Greek and Cyrillic** text; the conformance suite checks it. Other scripts sort by the collation too, but the three are not held to one order there: Han in particular follows each side's own tables. Strings a collation calls equal (`é` in its two spellings) sort by their bytes. |
+| Changing it | Asks again, as a new sort does: the first rows, a selection by position dropped. |
+| What does not hold | A value that is not a locale tag is said in the status line and nothing is asked. A locale the collation has no rules for sorts by its parent's, in the end the root's. |
+
+A framework component takes it as the `collation` prop.
 
 ### Empty state
 

@@ -1,24 +1,2281 @@
 {
-  "version": 1,
+  "version": 2,
   "modules": {
-    "elements": {
-      "accepted": "2026-11-12",
-      "reason": "Detail panels (#318) and wasm-opt --low-memory-unused (#366): 353749 B (node:zlib) on main, 2026-11-12; budget 355500 B.",
+    "collation": {
+      "accepted": "2026-11-13",
+      "reason": "Collation of a locale for sorting (#391): the attribute in the elements (+1.4 KiB), the sort by keys and the collator's hook in the engine (+4.2 KiB), and the collation module, new, 333152 B.",
       "values": {
-        "raw": 1073494,
-        "gzip": 448623,
-        "brotli": 354374
+        "raw": 1190663,
+        "gzip": 441265,
+        "brotli": 333152
+      },
+      "contract": {
+        "runner_schema": 1,
+        "warmup_runs": 1,
+        "compression": "gzip-9 brotli-11-w22",
+        "artifact_sha256": "a7b372c4f8b4f2f76c651e8f3d95cfce84148c9fac7e4920e0ce6d66fb048ff1"
+      },
+      "inventory": {
+        "imports": [
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_Error_92b29b0548f8b746",
+            "kind": "func",
+            "type": "(i32, i32) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbindgen_init_externref_table",
+            "kind": "func",
+            "type": "() -> ()"
+          }
+        ],
+        "exports": [
+          {
+            "name": "__abort_handler",
+            "kind": "global",
+            "type": "i32"
+          },
+          {
+            "name": "__externref_table_dealloc",
+            "kind": "func",
+            "type": "(i32) -> ()"
+          },
+          {
+            "name": "__instance_terminated",
+            "kind": "global",
+            "type": "i32"
+          },
+          {
+            "name": "__wbindgen_externrefs",
+            "kind": "table",
+            "type": "externref 1024.."
+          },
+          {
+            "name": "__wbindgen_free",
+            "kind": "func",
+            "type": "(i32, i32, i32) -> ()"
+          },
+          {
+            "name": "__wbindgen_malloc",
+            "kind": "func",
+            "type": "(i32, i32) -> i32"
+          },
+          {
+            "name": "__wbindgen_realloc",
+            "kind": "func",
+            "type": "(i32, i32, i32, i32) -> i32"
+          },
+          {
+            "name": "__wbindgen_start",
+            "kind": "func",
+            "type": "() -> ()"
+          },
+          {
+            "name": "memory",
+            "kind": "memory",
+            "type": "33.."
+          },
+          {
+            "name": "sort_keys",
+            "kind": "func",
+            "type": "(i32, i32, i32, i32, i32, i32) -> (i32, i32, i32, i32)"
+          }
+        ],
+        "tables": [
+          {
+            "name": "#0",
+            "kind": "table",
+            "type": "funcref 59..59"
+          }
+        ],
+        "features": [
+          "bulk_memory",
+          "reference_types",
+          "multi_value",
+          "sign_extension"
+        ],
+        "sections": {
+          "code": 114101,
+          "data": 1075263,
+          "names": 0,
+          "debug": 0,
+          "custom": 260,
+          "structure": 997,
+          "overhead": 42
+        },
+        "functions": {
+          "count": 399,
+          "body_bytes": 113537,
+          "largest": [
+            {
+              "id": 13,
+              "size": 19790
+            },
+            {
+              "id": 2,
+              "size": 8904
+            },
+            {
+              "id": 3,
+              "size": 4914
+            },
+            {
+              "id": 93,
+              "size": 2273
+            },
+            {
+              "id": 6,
+              "size": 2179
+            },
+            {
+              "id": 20,
+              "size": 2131
+            },
+            {
+              "id": 5,
+              "size": 1461
+            },
+            {
+              "id": 208,
+              "size": 1330
+            },
+            {
+              "id": 4,
+              "size": 1265
+            },
+            {
+              "id": 348,
+              "size": 1136
+            },
+            {
+              "id": 14,
+              "size": 1135
+            },
+            {
+              "id": 10,
+              "size": 1048
+            },
+            {
+              "id": 92,
+              "size": 995
+            },
+            {
+              "id": 23,
+              "size": 923
+            },
+            {
+              "id": 30,
+              "size": 920
+            },
+            {
+              "id": 7,
+              "size": 912
+            },
+            {
+              "id": 66,
+              "size": 912
+            },
+            {
+              "id": 9,
+              "size": 875
+            },
+            {
+              "id": 11,
+              "size": 861
+            },
+            {
+              "id": 8,
+              "size": 806
+            }
+          ]
+        }
+      }
+    },
+    "elements": {
+      "accepted": "2026-11-13",
+      "reason": "Collation of a locale for sorting (#391): the attribute in the elements (+1.4 KiB), the sort by keys and the collator's hook in the engine (+4.2 KiB), and the collation module, new, 333152 B.",
+      "values": {
+        "raw": 1078414,
+        "gzip": 450556,
+        "brotli": 355811
+      },
+      "contract": {
+        "runner_schema": 1,
+        "warmup_runs": 1,
+        "compression": "gzip-9 brotli-11-w22",
+        "artifact_sha256": "1891634424c3d14cc0c2e306e80df0978bb4dd94115f473622c331635b8e2e12"
+      },
+      "inventory": {
+        "imports": [
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_Error_92b29b0548f8b746",
+            "kind": "func",
+            "type": "(i32, i32) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg___opengrid_apply_frame_5f2ac2be6ba3e8b2",
+            "kind": "func",
+            "type": "(externref, externref, i32, i32, i32, i32) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg___opengrid_define_element_ebb46b217d03dd15",
+            "kind": "func",
+            "type": "(i32, i32, externref, externref, externref, externref) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg___opengrid_intl_formatter_88843d244c885ace",
+            "kind": "func",
+            "type": "(i32, i32, i32, i32, externref) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg___opengrid_numbers_c883c82cb1b54a7e",
+            "kind": "func",
+            "type": "(i32, i32) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg___opengrid_page_lang_57301dc357997aac",
+            "kind": "func",
+            "type": "(i32, externref) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg___wbindgen_boolean_get_fa956cfa2d1bd751",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg___wbindgen_debug_string_c25d447a39f5578f",
+            "kind": "func",
+            "type": "(i32, externref) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg___wbindgen_is_function_1ff95bcc5517c252",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg___wbindgen_is_null_ea9085d691f535d3",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg___wbindgen_is_object_a27215656b807791",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg___wbindgen_is_undefined_c05833b95a3cf397",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg___wbindgen_number_get_394265ed1e1b84ee",
+            "kind": "func",
+            "type": "(i32, externref) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg___wbindgen_string_get_b0ca35b86a603356",
+            "kind": "func",
+            "type": "(i32, externref) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg___wbindgen_throw_344f42d3211c4765",
+            "kind": "func",
+            "type": "(i32, i32) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg__wbg_cb_unref_fffb441def202758",
+            "kind": "func",
+            "type": "(externref) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_activeElement_b85d218c5f49326e",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_addEventListener_109ae44e5cc4d506",
+            "kind": "func",
+            "type": "(externref, i32, i32, externref, i32) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_addEventListener_520e749bbae24529",
+            "kind": "func",
+            "type": "(externref, i32, i32, externref, externref) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_addEventListener_d85450ee1320c989",
+            "kind": "func",
+            "type": "(externref, i32, i32, externref) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_adoptedStyleSheets_29ecb7d2ba97edad",
+            "kind": "func",
+            "type": "(externref) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_altKey_50f830d1793a2eea",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_appendChild_f553e8704c4f14a6",
+            "kind": "func",
+            "type": "(externref, externref) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_attachShadow_aa3375d613891613",
+            "kind": "func",
+            "type": "(externref, externref) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_before_d0b01e57cd8d2b88",
+            "kind": "func",
+            "type": "(externref, externref) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_bottom_e6ed49b80d965dae",
+            "kind": "func",
+            "type": "(externref) -> f64"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_button_f6a9a7b725f1838e",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_buttons_d8acd46cf8f40ae9",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_call_8a2dd23819f8a60a",
+            "kind": "func",
+            "type": "(externref, externref) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_call_a6e5c5dce5018821",
+            "kind": "func",
+            "type": "(externref, externref, externref) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_call_e3b662382210db98",
+            "kind": "func",
+            "type": "(externref, externref, externref, externref) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_checked_596d0d7b35f55a01",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_childElementCount_02cdc7dd82dc3bf9",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_childElementCount_e7b55fd263a23895",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_clientHeight_994541cde34d3ca0",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_clientLeft_bdcddc3e40fccaa7",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_clientWidth_6852617da948be39",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_clipboardData_b99e24e2d915217c",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_close_b97b6a6385cfff98",
+            "kind": "func",
+            "type": "(externref) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_closest_d889c758da4bb13b",
+            "kind": "func",
+            "type": "(externref, i32, i32) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_contains_7189b09a477442a6",
+            "kind": "func",
+            "type": "(externref, externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_createDocumentFragment_ce446e0179ac5610",
+            "kind": "func",
+            "type": "(externref) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_createElement_fcbc0805de826d62",
+            "kind": "func",
+            "type": "(externref, i32, i32) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_ctrlKey_2e52816fa7160097",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_currentTarget_a8ed7ef60b89f253",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_customElements_c18208f2ede84a5e",
+            "kind": "func",
+            "type": "(externref) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_defaultPrevented_996f88f12d6fe393",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_disabled_03c1f71b366d407a",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_disabled_ff46632391f3512a",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_dispatchEvent_ca78eaf3d469bc25",
+            "kind": "func",
+            "type": "(externref, externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_document_179650d6cb13c263",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_entries_015dc610cd81ede0",
+            "kind": "func",
+            "type": "(externref) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_firstChild_984b883406cc95b8",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_firstElementChild_09d2c7dc8dd1cfd9",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_focus_2f77051f98540625",
+            "kind": "func",
+            "type": "(externref) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_focus_5ecef5db03850e25",
+            "kind": "func",
+            "type": "(externref, externref) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_for_e542e480b076809a",
+            "kind": "func",
+            "type": "(i32, i32) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_from_13e323c65fc8f464",
+            "kind": "func",
+            "type": "(externref) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_getAttribute_5a601ba4718b922a",
+            "kind": "func",
+            "type": "(i32, externref, i32, i32) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_getBoundingClientRect_e828e6c31c66dea6",
+            "kind": "func",
+            "type": "(externref) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_getComputedStyle_961681bdf7e518e8",
+            "kind": "func",
+            "type": "(externref, externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_getData_fcb88fae21d94f1e",
+            "kind": "func",
+            "type": "(i32, externref, i32, i32) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_getPropertyValue_dc6b061239dad6f1",
+            "kind": "func",
+            "type": "(i32, externref, i32, i32) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_getRootNode_f724c3be671a9a57",
+            "kind": "func",
+            "type": "(externref) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_getSelection_5d3a5a6e5b6a1ddd",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_get_507a50627bffa49b",
+            "kind": "func",
+            "type": "(externref, i32) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_get_78f252d074a84d0b",
+            "kind": "func",
+            "type": "(externref, externref) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_get_87cffd80c07c7611",
+            "kind": "func",
+            "type": "(externref, i32, i32) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_get_unchecked_6e0ad6d2a41b06f6",
+            "kind": "func",
+            "type": "(externref, i32) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_hasAttribute_1fc23d9b37b6dfb1",
+            "kind": "func",
+            "type": "(externref, i32, i32) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_height_96c07d9559d0200a",
+            "kind": "func",
+            "type": "(externref) -> f64"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_hidePopover_35bb234f587ca1a8",
+            "kind": "func",
+            "type": "(externref) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_host_18450e7fb2bf2108",
+            "kind": "func",
+            "type": "(externref) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_id_2bb4f5057d3bfc99",
+            "kind": "func",
+            "type": "(i32, externref) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_innerHeight_92315939e482496d",
+            "kind": "func",
+            "type": "(externref) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_innerWidth_dec7d2ac73df3e63",
+            "kind": "func",
+            "type": "(externref) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_insertBefore_9121f73148bc4f7c",
+            "kind": "func",
+            "type": "(externref, externref, externref) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_instanceof_ArrayBuffer_4480b9e0068a8adb",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_instanceof_ClipboardEvent_93c99362e111fcef",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_instanceof_CssStyleSheet_69eb2b4dfaec58a9",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_instanceof_Element_beebfaab75d12d9d",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_instanceof_FocusEvent_cadb56dad3dfd4ac",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_instanceof_HtmlDialogElement_6e2866d7ca6d56d9",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_instanceof_HtmlElement_4493a09212d3586f",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_instanceof_HtmlInputElement_ad3be04339d0e4df",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_instanceof_HtmlSelectElement_b4698f847dc49da5",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_instanceof_KeyboardEvent_be49f2d8e15d587a",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_instanceof_Map_e5b5e3db98422fcc",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_instanceof_MouseEvent_89eddfc6203c1749",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_instanceof_Node_d29e7ded486fd76a",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_instanceof_Object_33f20e6f12439f3e",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_instanceof_Promise_4cb210c0b8f8c959",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_instanceof_ResizeObserver_e05b8510cb207cdf",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_instanceof_ShadowRoot_8ab3038bc5e14d84",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_instanceof_Uint8Array_309b927aaf7a3fc7",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_instanceof_Window_05ba1ee4f6781663",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_isArray_0677c962b281d01a",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_isComposing_919a0fdf6ac030c9",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_isConnected_c24b5a7bb035eae0",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_isSameNode_75a8a5f6302c6182",
+            "kind": "func",
+            "type": "(externref, externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_is_7b9d0b289033c7de",
+            "kind": "func",
+            "type": "(externref, externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_item_20d060e2ba81115e",
+            "kind": "func",
+            "type": "(externref, i32) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_key_803dca86cdcfa8dd",
+            "kind": "func",
+            "type": "(i32, externref) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_keys_58421f8f96795607",
+            "kind": "func",
+            "type": "(externref) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_lastChild_40cbea243f82ab94",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_left_7e76a74d0db1754f",
+            "kind": "func",
+            "type": "(externref) -> f64"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_length_1f0964f4a5e2c6d8",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_length_370319915dc99107",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_length_6d37314da9372f80",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_length_f013b2ebf7dcf709",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_matches_9f92e758db2111f0",
+            "kind": "func",
+            "type": "(externref, i32, i32) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_metaKey_d961c7572a9f84f5",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_new_32b398fb48b6d94a",
+            "kind": "func",
+            "type": "() -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_new_5394f65338077341",
+            "kind": "func",
+            "type": "(externref) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_new_b667d279fd5aa943",
+            "kind": "func",
+            "type": "(i32, i32) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_new_cd45aabdf6073e84",
+            "kind": "func",
+            "type": "(externref) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_new_da52cf8fe3429cb2",
+            "kind": "func",
+            "type": "() -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_new_ff9311947c25f0ab",
+            "kind": "func",
+            "type": "() -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_new_typed_1824d93f294193e5",
+            "kind": "func",
+            "type": "(i32, i32) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_new_with_event_init_dict_b7d5fa264299bcfa",
+            "kind": "func",
+            "type": "(i32, i32, externref) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_nextElementSibling_2c75764f70deca9d",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_nextSibling_0e94ccfa3c22fa3c",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_now_86c0d4ba3fa605b8",
+            "kind": "func",
+            "type": "() -> f64"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_observe_f27242eadc2ebd47",
+            "kind": "func",
+            "type": "(externref, externref) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_of_85f52f8b6491a7ca",
+            "kind": "func",
+            "type": "(externref) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_of_b0cd2e09b31a9684",
+            "kind": "func",
+            "type": "(externref, externref, externref) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_ownerDocument_5a7a5473f8709b3e",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_parentElement_5030754e30795652",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_parentNode_fecbbdea2a930547",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_parse_1c0d8a8656d7e016",
+            "kind": "func",
+            "type": "(i32, i32) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_preventDefault_b64888c857500682",
+            "kind": "func",
+            "type": "(externref) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_prototypesetcall_4770620bbe4688a0",
+            "kind": "func",
+            "type": "(i32, i32, externref) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_push_d2ae3af0c1217ae6",
+            "kind": "func",
+            "type": "(externref, externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_querySelectorAll_09d62dd04b7efea2",
+            "kind": "func",
+            "type": "(externref, i32, i32) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_querySelectorAll_c5edaa743a5f3647",
+            "kind": "func",
+            "type": "(externref, i32, i32) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_querySelector_b41be1b1bf55eea5",
+            "kind": "func",
+            "type": "(externref, i32, i32) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_querySelector_b966f59fa9848d69",
+            "kind": "func",
+            "type": "(externref, i32, i32) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_queueMicrotask_0ab5b2d2393e99b9",
+            "kind": "func",
+            "type": "(externref) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_queueMicrotask_6a09b7bc46549209",
+            "kind": "func",
+            "type": "(externref) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_reject_90df95b492dd8563",
+            "kind": "func",
+            "type": "(externref) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_relatedTarget_7931777b8bd7975a",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_removeAllRanges_a09036f9adab2656",
+            "kind": "func",
+            "type": "(externref) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_removeAttribute_1e7d2c409776d836",
+            "kind": "func",
+            "type": "(externref, i32, i32) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_removeChild_8d9536328d674d54",
+            "kind": "func",
+            "type": "(externref, externref) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_removeProperty_70da952bc1b493fa",
+            "kind": "func",
+            "type": "(i32, externref, i32, i32) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_remove_ce1b54059317fe8a",
+            "kind": "func",
+            "type": "(externref) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_replaceSync_4449064c4c827515",
+            "kind": "func",
+            "type": "(externref, i32, i32) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_replaceWith_3ca6fe57f57a2bcf",
+            "kind": "func",
+            "type": "(externref, externref) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_requestAnimationFrame_1a85deeab66448c2",
+            "kind": "func",
+            "type": "(externref, externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_resolve_2191a4dfe481c25b",
+            "kind": "func",
+            "type": "(externref) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_right_36c53e00496f4f0a",
+            "kind": "func",
+            "type": "(externref) -> f64"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_scrollHeight_8cf19eb16ebc9b9b",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_scrollIntoView_5262843155744b69",
+            "kind": "func",
+            "type": "(externref) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_scrollIntoView_d8b806f471b7418e",
+            "kind": "func",
+            "type": "(externref, externref) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_scrollLeft_5be50f489b342a09",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_scrollTop_b3effa9c5de14d21",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_select_439dea2335b9e472",
+            "kind": "func",
+            "type": "(externref) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_selectedIndex_97ad3dd8ed57cf47",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_setAttribute_71039043be82d098",
+            "kind": "func",
+            "type": "(externref, i32, i32, i32, i32) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_setData_19a2f9f5b313cbd6",
+            "kind": "func",
+            "type": "(externref, i32, i32, i32, i32) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_setProperty_e4e51b1b1d681d15",
+            "kind": "func",
+            "type": "(externref, i32, i32, i32, i32) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_setTimeout_cfa2cf195c3738db",
+            "kind": "func",
+            "type": "(externref, externref, i32) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_set_8535240470bf2500",
+            "kind": "func",
+            "type": "(externref, externref, externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_set_8a16b38e4805b298",
+            "kind": "func",
+            "type": "(externref, i32, externref) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_set_adoptedStyleSheets_5f0e5fd87d2f8755",
+            "kind": "func",
+            "type": "(externref, externref) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_set_block_8135b3acafa1ca88",
+            "kind": "func",
+            "type": "(externref, i32) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_set_bubbles_b4e5c994b4f96f0e",
+            "kind": "func",
+            "type": "(externref, i32) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_set_cancelable_4980272de27d460b",
+            "kind": "func",
+            "type": "(externref, i32) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_set_checked_ebff10552290d993",
+            "kind": "func",
+            "type": "(externref, i32) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_set_composed_4b360b2fea1c1905",
+            "kind": "func",
+            "type": "(externref, i32) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_set_cssText_1d203a1b8ff80e20",
+            "kind": "func",
+            "type": "(externref, i32, i32) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_set_detail_564ad103413aa5dc",
+            "kind": "func",
+            "type": "(externref, externref) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_set_disabled_0ae5c051bdb880d2",
+            "kind": "func",
+            "type": "(externref, i32) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_set_disabled_cad2c12b3643aa52",
+            "kind": "func",
+            "type": "(externref, i32) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_set_id_4beae8b813c092d8",
+            "kind": "func",
+            "type": "(externref, i32, i32) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_set_inline_77b0fb4f96d76814",
+            "kind": "func",
+            "type": "(externref, i32) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_set_innerHTML_f78a45a07f97e136",
+            "kind": "func",
+            "type": "(externref, i32, i32) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_set_mode_17bd6a9f8e12d5a5",
+            "kind": "func",
+            "type": "(externref, i32) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_set_once_51a9fb6b8af8a72b",
+            "kind": "func",
+            "type": "(externref, i32) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_set_prevent_scroll_82778f333ef22ca8",
+            "kind": "func",
+            "type": "(externref, i32) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_set_scrollLeft_075e81a16fc93cca",
+            "kind": "func",
+            "type": "(externref, i32) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_set_scrollTop_431b03eeb3e9c636",
+            "kind": "func",
+            "type": "(externref, i32) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_set_selectedIndex_73b395b81db5623e",
+            "kind": "func",
+            "type": "(externref, i32) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_set_textContent_54dcad83ae15772d",
+            "kind": "func",
+            "type": "(externref, i32, i32) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_set_type_d2a9a3c584ce2f9a",
+            "kind": "func",
+            "type": "(externref, i32, i32) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_set_value_e0caa78ebf9917a8",
+            "kind": "func",
+            "type": "(externref, i32, i32) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_set_value_e5d078763e63e81e",
+            "kind": "func",
+            "type": "(externref, i32, i32) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_shadowRoot_9a0f635b93f2c2a0",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_shiftKey_9bcb8bdd60c2f152",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_shiftKey_9f797da486b2ade8",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_showModal_a752a06ee3bb248f",
+            "kind": "func",
+            "type": "(externref) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_showPopover_946be83fc4879638",
+            "kind": "func",
+            "type": "(externref) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_slice_d08ac263a5ef05e0",
+            "kind": "func",
+            "type": "(externref, i32, i32) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_static_accessor_GLOBAL_4ef717fb391d88b7",
+            "kind": "func",
+            "type": "() -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_static_accessor_GLOBAL_THIS_8d1badc68b5a74f4",
+            "kind": "func",
+            "type": "() -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_static_accessor_SELF_146583524fe1469b",
+            "kind": "func",
+            "type": "() -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_static_accessor_WINDOW_f2829a2234d7819e",
+            "kind": "func",
+            "type": "() -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_stringify_b54333f60f1e4dad",
+            "kind": "func",
+            "type": "(externref) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_style_6657aed849e5d757",
+            "kind": "func",
+            "type": "(externref) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_tagName_d99c8072027f3c98",
+            "kind": "func",
+            "type": "(i32, externref) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_target_e759594a8d965ed7",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_textContent_37277f66248f39e6",
+            "kind": "func",
+            "type": "(i32, externref) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_then_16d107c451e9905d",
+            "kind": "func",
+            "type": "(externref, externref, externref) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_then_6ec10ae38b3e92f7",
+            "kind": "func",
+            "type": "(externref, externref) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_then_e0960b859f3ff223",
+            "kind": "func",
+            "type": "(externref, externref) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_toLocaleString_09a867f646b9e754",
+            "kind": "func",
+            "type": "(externref, i32, i32) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_toggleAttribute_6b04726726e713ac",
+            "kind": "func",
+            "type": "(externref, i32, i32) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_top_fe120acfa924a430",
+            "kind": "func",
+            "type": "(externref) -> f64"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_type_9d13c17ea2611dd0",
+            "kind": "func",
+            "type": "(i32, externref) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_type_c1987e7fbaf7340e",
+            "kind": "func",
+            "type": "(i32, externref) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_value_1f687dfa7d6c3d08",
+            "kind": "func",
+            "type": "(i32, externref) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_value_d7621df0105931d8",
+            "kind": "func",
+            "type": "(i32, externref) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_values_3151680f2b3c0a44",
+            "kind": "func",
+            "type": "(externref) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_width_219185400361db86",
+            "kind": "func",
+            "type": "(externref) -> f64"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbindgen_cast_0000000000000001",
+            "kind": "func",
+            "type": "(i32, i32) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbindgen_cast_0000000000000002",
+            "kind": "func",
+            "type": "(i32, i32) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbindgen_cast_0000000000000003",
+            "kind": "func",
+            "type": "(i32, i32) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbindgen_cast_0000000000000004",
+            "kind": "func",
+            "type": "(i32, i32) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbindgen_cast_0000000000000005",
+            "kind": "func",
+            "type": "(i32, i32) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbindgen_cast_0000000000000006",
+            "kind": "func",
+            "type": "(i32, i32) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbindgen_cast_0000000000000007",
+            "kind": "func",
+            "type": "(i32, i32) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbindgen_cast_0000000000000008",
+            "kind": "func",
+            "type": "(i32, i32) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbindgen_cast_0000000000000009",
+            "kind": "func",
+            "type": "(i32, i32) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbindgen_cast_000000000000000a",
+            "kind": "func",
+            "type": "(f64) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbindgen_cast_000000000000000b",
+            "kind": "func",
+            "type": "(i32, i32) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbindgen_init_externref_table",
+            "kind": "func",
+            "type": "() -> ()"
+          },
+          {
+            "module": "./snippets/opengrid-web-components-35ed06b453a9b215/inline1.js",
+            "name": "__opengrid_follow_lang",
+            "kind": "func",
+            "type": "(externref, externref) -> ()"
+          },
+          {
+            "module": "./snippets/opengrid-web-core-b41714d4e7311909/inline0.js",
+            "name": "__opengrid_host_id",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./snippets/opengrid-web-core-b41714d4e7311909/inline0.js",
+            "name": "__opengrid_known_id",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./snippets/opengrid-web-core-b41714d4e7311909/inline0.js",
+            "name": "__opengrid_watch_with",
+            "kind": "func",
+            "type": "(externref) -> ()"
+          }
+        ],
+        "exports": [
+          {
+            "name": "__abort_handler",
+            "kind": "global",
+            "type": "i32"
+          },
+          {
+            "name": "__externref_drop_slice",
+            "kind": "func",
+            "type": "(i32, i32) -> ()"
+          },
+          {
+            "name": "__externref_table_alloc",
+            "kind": "func",
+            "type": "() -> i32"
+          },
+          {
+            "name": "__externref_table_dealloc",
+            "kind": "func",
+            "type": "(i32) -> ()"
+          },
+          {
+            "name": "__instance_terminated",
+            "kind": "global",
+            "type": "i32"
+          },
+          {
+            "name": "__wbindgen_destroy_closure",
+            "kind": "func",
+            "type": "(i32, i32) -> ()"
+          },
+          {
+            "name": "__wbindgen_exn_store",
+            "kind": "func",
+            "type": "(i32) -> ()"
+          },
+          {
+            "name": "__wbindgen_externrefs",
+            "kind": "table",
+            "type": "externref 1024.."
+          },
+          {
+            "name": "__wbindgen_free",
+            "kind": "func",
+            "type": "(i32, i32, i32) -> ()"
+          },
+          {
+            "name": "__wbindgen_malloc",
+            "kind": "func",
+            "type": "(i32, i32) -> i32"
+          },
+          {
+            "name": "__wbindgen_realloc",
+            "kind": "func",
+            "type": "(i32, i32, i32, i32) -> i32"
+          },
+          {
+            "name": "__wbindgen_start",
+            "kind": "func",
+            "type": "() -> ()"
+          },
+          {
+            "name": "export_csv",
+            "kind": "func",
+            "type": "(externref, externref, i32, externref) -> (i32, i32, i32, i32)"
+          },
+          {
+            "name": "export_json",
+            "kind": "func",
+            "type": "(externref, i32) -> (i32, i32, i32, i32)"
+          },
+          {
+            "name": "get_export_headers",
+            "kind": "func",
+            "type": "(externref) -> externref"
+          },
+          {
+            "name": "get_pivot",
+            "kind": "func",
+            "type": "(externref, externref) -> (i32, i32, i32)"
+          },
+          {
+            "name": "get_query",
+            "kind": "func",
+            "type": "(externref) -> externref"
+          },
+          {
+            "name": "get_view",
+            "kind": "func",
+            "type": "(externref) -> externref"
+          },
+          {
+            "name": "memory",
+            "kind": "memory",
+            "type": "19.."
+          },
+          {
+            "name": "pivot_words",
+            "kind": "func",
+            "type": "(externref) -> (i32, i32)"
+          },
+          {
+            "name": "prepare_print",
+            "kind": "func",
+            "type": "(externref) -> externref"
+          },
+          {
+            "name": "refresh",
+            "kind": "func",
+            "type": "(externref) -> ()"
+          },
+          {
+            "name": "register",
+            "kind": "func",
+            "type": "() -> (i32, i32)"
+          },
+          {
+            "name": "set_actions",
+            "kind": "func",
+            "type": "(externref, externref) -> ()"
+          },
+          {
+            "name": "set_cell_state",
+            "kind": "func",
+            "type": "(externref, externref, i32, i32, i32, i32, i32, i32) -> ()"
+          },
+          {
+            "name": "set_cell_templates",
+            "kind": "func",
+            "type": "(externref, externref) -> ()"
+          },
+          {
+            "name": "set_choices",
+            "kind": "func",
+            "type": "(externref, externref) -> ()"
+          },
+          {
+            "name": "set_columns",
+            "kind": "func",
+            "type": "(externref, externref) -> ()"
+          },
+          {
+            "name": "set_detail_renderer",
+            "kind": "func",
+            "type": "(externref, externref) -> ()"
+          },
+          {
+            "name": "set_formats",
+            "kind": "func",
+            "type": "(externref, externref) -> ()"
+          },
+          {
+            "name": "set_provider",
+            "kind": "func",
+            "type": "(externref, externref) -> ()"
+          },
+          {
+            "name": "set_row_state",
+            "kind": "func",
+            "type": "(externref, i32, i32, i32, i32, externref) -> ()"
+          },
+          {
+            "name": "set_texts",
+            "kind": "func",
+            "type": "(externref, externref) -> ()"
+          },
+          {
+            "name": "set_validators",
+            "kind": "func",
+            "type": "(externref, externref) -> ()"
+          },
+          {
+            "name": "set_values",
+            "kind": "func",
+            "type": "(externref, externref) -> ()"
+          },
+          {
+            "name": "set_view",
+            "kind": "func",
+            "type": "(externref, externref, externref) -> ()"
+          },
+          {
+            "name": "wasm_bindgen_3ef97a1e5b6108e7___convert__closures_____invoke_______true_",
+            "kind": "func",
+            "type": "(i32, i32) -> ()"
+          },
+          {
+            "name": "wasm_bindgen_3ef97a1e5b6108e7___convert__closures_____invoke___js_sys_bd6184612c3cc0f7___Function_fn_wasm_bindgen_3ef97a1e5b6108e7___JsValue_____wasm_bindgen_3ef97a1e5b6108e7___sys__Undefined___js_sys_bd6184612c3cc0f7___Function_fn_wasm_bindgen_3ef97a1e5b6108e7___JsValue_____wasm_bindgen_3ef97a1e5b6108e7___sys__Undefined_______true_",
+            "kind": "func",
+            "type": "(i32, i32, externref, externref) -> ()"
+          },
+          {
+            "name": "wasm_bindgen_3ef97a1e5b6108e7___convert__closures_____invoke___u32______true_",
+            "kind": "func",
+            "type": "(i32, i32, i32) -> ()"
+          },
+          {
+            "name": "wasm_bindgen_3ef97a1e5b6108e7___convert__closures_____invoke___wasm_bindgen_3ef97a1e5b6108e7___JsValue______true_",
+            "kind": "func",
+            "type": "(i32, i32, externref) -> ()"
+          },
+          {
+            "name": "wasm_bindgen_3ef97a1e5b6108e7___convert__closures_____invoke___wasm_bindgen_3ef97a1e5b6108e7___JsValue______true__2",
+            "kind": "func",
+            "type": "(i32, i32, externref) -> ()"
+          },
+          {
+            "name": "wasm_bindgen_3ef97a1e5b6108e7___convert__closures_____invoke___wasm_bindgen_3ef97a1e5b6108e7___JsValue______true__3",
+            "kind": "func",
+            "type": "(i32, i32, externref) -> ()"
+          },
+          {
+            "name": "wasm_bindgen_3ef97a1e5b6108e7___convert__closures_____invoke___wasm_bindgen_3ef97a1e5b6108e7___JsValue______true__5",
+            "kind": "func",
+            "type": "(i32, i32, externref) -> ()"
+          },
+          {
+            "name": "wasm_bindgen_3ef97a1e5b6108e7___convert__closures_____invoke___wasm_bindgen_3ef97a1e5b6108e7___JsValue______true__6",
+            "kind": "func",
+            "type": "(i32, i32, externref) -> ()"
+          },
+          {
+            "name": "wasm_bindgen_3ef97a1e5b6108e7___convert__closures_____invoke___wasm_bindgen_3ef97a1e5b6108e7___JsValue__core_37ee0ce0c4cd57d5___result__Result_____wasm_bindgen_3ef97a1e5b6108e7___JsError___true_",
+            "kind": "func",
+            "type": "(i32, i32, externref) -> (i32, i32)"
+          },
+          {
+            "name": "wasm_bindgen_3ef97a1e5b6108e7___convert__closures_____invoke___web_sys_282d863a4d61d515___features__gen_HtmlElement__HtmlElement__alloc_42d2b33bd937efdb___string__String__core_37ee0ce0c4cd57d5___option__Option_alloc_42d2b33bd937efdb___string__String___core_37ee0ce0c4cd57d5___option__Option_alloc_42d2b33bd937efdb___string__String_______true_",
+            "kind": "func",
+            "type": "(i32, i32, externref, i32, i32, i32, i32, i32, i32) -> ()"
+          }
+        ],
+        "tables": [
+          {
+            "name": "#0",
+            "kind": "table",
+            "type": "funcref 411..411"
+          }
+        ],
+        "features": [
+          "bulk_memory",
+          "reference_types",
+          "multi_value",
+          "sign_extension",
+          "saturating_float_to_int"
+        ],
+        "sections": {
+          "code": 925699,
+          "data": 134825,
+          "names": 0,
+          "debug": 0,
+          "custom": 260,
+          "structure": 17586,
+          "overhead": 44
+        },
+        "functions": {
+          "count": 2466,
+          "body_bytes": 922191,
+          "largest": [
+            {
+              "id": 230,
+              "size": 30092
+            },
+            {
+              "id": 2627,
+              "size": 28238
+            },
+            {
+              "id": 277,
+              "size": 16476
+            },
+            {
+              "id": 2640,
+              "size": 16441
+            },
+            {
+              "size": 13865,
+              "export": "set_texts"
+            },
+            {
+              "id": 251,
+              "size": 13173
+            },
+            {
+              "id": 2635,
+              "size": 11962
+            },
+            {
+              "size": 11942,
+              "export": "set_view"
+            },
+            {
+              "id": 245,
+              "size": 11836
+            },
+            {
+              "id": 231,
+              "size": 10406
+            },
+            {
+              "id": 233,
+              "size": 8912
+            },
+            {
+              "id": 232,
+              "size": 8469
+            },
+            {
+              "id": 237,
+              "size": 8277
+            },
+            {
+              "id": 252,
+              "size": 8175
+            },
+            {
+              "id": 236,
+              "size": 7224
+            },
+            {
+              "id": 235,
+              "size": 7204
+            },
+            {
+              "size": 6787,
+              "export": "get_pivot"
+            },
+            {
+              "id": 239,
+              "size": 6412
+            },
+            {
+              "id": 461,
+              "size": 6300
+            },
+            {
+              "id": 243,
+              "size": 5882
+            }
+          ]
+        }
       }
     },
     "engine": {
-      "accepted": "2026-11-12",
-      "reason": "wasm-opt --low-memory-unused (#366): 159061 B (node:zlib) on main, 2026-11-12; budget 160600 B.",
+      "accepted": "2026-11-13",
+      "reason": "Collation of a locale for sorting (#391): the attribute in the elements (+1.4 KiB), the sort by keys and the collator's hook in the engine (+4.2 KiB), and the collation module, new, 333152 B.",
       "values": {
-        "raw": 463849,
-        "gzip": 195848,
-        "brotli": 159162,
+        "raw": 481440,
+        "gzip": 202016,
+        "brotli": 163475,
         "peak_memory": 24772608,
         "growth_per_run": 0
+      },
+      "contract": {
+        "runner_schema": 1,
+        "warmup_runs": 1,
+        "compression": "gzip-9 brotli-11-w22",
+        "node": "v24.22.1",
+        "artifact_sha256": "e23d171a5de614b4cc3136229ea26d45204651f99c3f9d0d5c447451c1b45d8c"
+      },
+      "scenarios": {
+        "scripts/peakmark/engine.mjs": {
+          "sha256": "d459f2ba2817920e7d8d797b8dd9c0f64d8efc4fdb81148604f022fd676b94c1",
+          "repeat": 5,
+          "peak_memory": 24772608,
+          "growth_per_run": 0,
+          "after_instantiate": 1114112,
+          "after_run": [
+            24772608,
+            24772608,
+            24772608,
+            24772608,
+            24772608
+          ]
+        }
+      },
+      "inventory": {
+        "imports": [
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_Error_92b29b0548f8b746",
+            "kind": "func",
+            "type": "(i32, i32) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg___wbindgen_is_object_a27215656b807791",
+            "kind": "func",
+            "type": "(externref) -> i32"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg___wbindgen_string_get_b0ca35b86a603356",
+            "kind": "func",
+            "type": "(i32, externref) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg___wbindgen_throw_344f42d3211c4765",
+            "kind": "func",
+            "type": "(i32, i32) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_call_3db6b8e8d3f3686d",
+            "kind": "func",
+            "type": "(i32, externref, externref, i32, i32, i32, i32, i32, i32) -> ()"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbg_message_55bbca7265c2b1fa",
+            "kind": "func",
+            "type": "(externref) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbindgen_cast_0000000000000001",
+            "kind": "func",
+            "type": "(i32, i32) -> externref"
+          },
+          {
+            "module": "./m_bg.js",
+            "name": "__wbindgen_init_externref_table",
+            "kind": "func",
+            "type": "() -> ()"
+          }
+        ],
+        "exports": [
+          {
+            "name": "__abort_handler",
+            "kind": "global",
+            "type": "i32"
+          },
+          {
+            "name": "__externref_drop_slice",
+            "kind": "func",
+            "type": "(i32, i32) -> ()"
+          },
+          {
+            "name": "__externref_table_alloc",
+            "kind": "func",
+            "type": "() -> i32"
+          },
+          {
+            "name": "__externref_table_dealloc",
+            "kind": "func",
+            "type": "(i32) -> ()"
+          },
+          {
+            "name": "__instance_terminated",
+            "kind": "global",
+            "type": "i32"
+          },
+          {
+            "name": "__wbg_engine_free",
+            "kind": "func",
+            "type": "(i32, i32) -> ()"
+          },
+          {
+            "name": "__wbg_planner_free",
+            "kind": "func",
+            "type": "(i32, i32) -> ()"
+          },
+          {
+            "name": "__wbindgen_exn_store",
+            "kind": "func",
+            "type": "(i32) -> ()"
+          },
+          {
+            "name": "__wbindgen_externrefs",
+            "kind": "table",
+            "type": "externref 1024.."
+          },
+          {
+            "name": "__wbindgen_free",
+            "kind": "func",
+            "type": "(i32, i32, i32) -> ()"
+          },
+          {
+            "name": "__wbindgen_malloc",
+            "kind": "func",
+            "type": "(i32, i32) -> i32"
+          },
+          {
+            "name": "__wbindgen_realloc",
+            "kind": "func",
+            "type": "(i32, i32, i32, i32) -> i32"
+          },
+          {
+            "name": "__wbindgen_start",
+            "kind": "func",
+            "type": "() -> ()"
+          },
+          {
+            "name": "engine_execute",
+            "kind": "func",
+            "type": "(i32, i32, i32) -> (i32, i32, i32, i32)"
+          },
+          {
+            "name": "engine_execute_columns",
+            "kind": "func",
+            "type": "(i32, i32, i32) -> (i32, i32, i32, i32)"
+          },
+          {
+            "name": "engine_load_csv",
+            "kind": "func",
+            "type": "(i32, i32, i32, i32, i32, i32, i32) -> (i32, i32)"
+          },
+          {
+            "name": "engine_load_rows",
+            "kind": "func",
+            "type": "(i32, i32, i32, i32, i32, i32, i32) -> (i32, i32)"
+          },
+          {
+            "name": "engine_new",
+            "kind": "func",
+            "type": "() -> i32"
+          },
+          {
+            "name": "engine_pivot",
+            "kind": "func",
+            "type": "(i32, i32, i32) -> (i32, i32, i32, i32)"
+          },
+          {
+            "name": "engine_pivot_columns",
+            "kind": "func",
+            "type": "(i32, i32, i32) -> (i32, i32, i32, i32)"
+          },
+          {
+            "name": "engine_set_collator",
+            "kind": "func",
+            "type": "(i32, externref) -> ()"
+          },
+          {
+            "name": "engine_source_names",
+            "kind": "func",
+            "type": "(i32) -> (i32, i32)"
+          },
+          {
+            "name": "engine_stats",
+            "kind": "func",
+            "type": "(i32) -> (i32, i32)"
+          },
+          {
+            "name": "engine_view_query",
+            "kind": "func",
+            "type": "(i32, i32, i32, i32, i32, i32, i32) -> (i32, i32, i32, i32)"
+          },
+          {
+            "name": "memory",
+            "kind": "memory",
+            "type": "17.."
+          },
+          {
+            "name": "planner_finish",
+            "kind": "func",
+            "type": "(i32, i32, i32, i32, i32) -> (i32, i32, i32, i32)"
+          },
+          {
+            "name": "planner_finish_columns",
+            "kind": "func",
+            "type": "(i32, i32, i32, i32, i32) -> (i32, i32, i32, i32)"
+          },
+          {
+            "name": "planner_new",
+            "kind": "func",
+            "type": "(i32, i32, i32, i32, i32, i32) -> (i32, i32, i32)"
+          },
+          {
+            "name": "planner_plan",
+            "kind": "func",
+            "type": "(i32, i32, i32, i32, i32) -> (i32, i32, i32, i32)"
+          },
+          {
+            "name": "planner_set_collator",
+            "kind": "func",
+            "type": "(i32, externref) -> ()"
+          }
+        ],
+        "tables": [
+          {
+            "name": "#0",
+            "kind": "table",
+            "type": "funcref 210..210"
+          }
+        ],
+        "features": [
+          "bulk_memory",
+          "reference_types",
+          "multi_value",
+          "sign_extension"
+        ],
+        "sections": {
+          "code": 427552,
+          "data": 50572,
+          "names": 0,
+          "debug": 0,
+          "custom": 260,
+          "structure": 3012,
+          "overhead": 44
+        },
+        "functions": {
+          "count": 1133,
+          "body_bytes": 425970,
+          "largest": [
+            {
+              "id": 19,
+              "size": 24419
+            },
+            {
+              "size": 19649,
+              "export": "engine_view_query"
+            },
+            {
+              "id": 8,
+              "size": 18324
+            },
+            {
+              "id": 18,
+              "size": 17955
+            },
+            {
+              "id": 16,
+              "size": 13798
+            },
+            {
+              "size": 7424,
+              "export": "planner_finish"
+            },
+            {
+              "size": 7415,
+              "export": "planner_plan"
+            },
+            {
+              "id": 10,
+              "size": 6895
+            },
+            {
+              "size": 5724,
+              "export": "engine_load_csv"
+            },
+            {
+              "id": 14,
+              "size": 5453
+            },
+            {
+              "size": 5391,
+              "export": "planner_finish_columns"
+            },
+            {
+              "id": 9,
+              "size": 5157
+            },
+            {
+              "id": 12,
+              "size": 4919
+            },
+            {
+              "id": 13,
+              "size": 4882
+            },
+            {
+              "id": 58,
+              "size": 4733
+            },
+            {
+              "id": 11,
+              "size": 4460
+            },
+            {
+              "id": 21,
+              "size": 4355
+            },
+            {
+              "id": 15,
+              "size": 4184
+            },
+            {
+              "id": 17,
+              "size": 4136
+            },
+            {
+              "id": 27,
+              "size": 4044
+            }
+          ]
+        }
       }
     },
     "xlsx": {

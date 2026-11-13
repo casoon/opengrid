@@ -23,6 +23,7 @@
 //! |---|---|---|
 //! | S3 | `NULLS LAST` for `ASC`, `NULLS FIRST` for `DESC` | `NULLS FIRST`/`NULLS LAST` always written out |
 //! | S4 | the column's collation, usually locale-aware | `COLLATE "C"` on every string comparison and sort |
+//! | S4a | — | a sort key with a locale is `COLLATE "<locale>-x-icu"`, the ICU collation PostgreSQL predefines for it — deterministic, so strings it calls equal order by their bytes, as in the engine. The database needs ICU, and a locale it has no collation for is its error |
 //! | S11 | — | `count(*)` and `count("field")` are different queries |
 //! | S12 | `sum(bigint)` → `numeric`, `avg` → `numeric` | `::bigint`, `::numeric(38,s)`, `::double precision` |
 //!
@@ -487,7 +488,16 @@ impl PostgresCompiler {
                 name: key.field.as_str().to_owned(),
             })?;
 
-        sql.push(&collated(&quote_ident(key.field.as_str())?, data_type));
+        match key.collation.locale() {
+            // S4a. The tag is letters, digits and `-` (`Locale::parse`), so it
+            // cannot leave the quotes.
+            Some(locale) => sql.push(&format!(
+                "{} COLLATE \"{}-x-icu\"",
+                quote_ident(key.field.as_str())?,
+                locale.as_str()
+            )),
+            None => sql.push(&collated(&quote_ident(key.field.as_str())?, data_type)),
+        }
         sql.push(match key.direction {
             SortDirection::Asc => " ASC",
             SortDirection::Desc => " DESC",

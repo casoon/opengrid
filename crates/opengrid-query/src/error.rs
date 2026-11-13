@@ -55,6 +55,8 @@ pub enum QueryError {
     DuplicateAlias { path: String, alias: String },
     /// The sort key does not name an output column.
     SortUnknownColumn { path: String, column: String },
+    /// A locale collation on a sort key that is not text (rule S4a).
+    CollationNotText { path: String, column: String },
     /// `offset` without a stable order (rule S6).
     OffsetWithoutSort,
     /// `limit` exceeds `Limits::max_limit`.
@@ -101,6 +103,7 @@ impl QueryError {
             QueryError::AliasConflictsWithField { .. } => "AliasConflictsWithField",
             QueryError::DuplicateAlias { .. } => "DuplicateAlias",
             QueryError::SortUnknownColumn { .. } => "SortUnknownColumn",
+            QueryError::CollationNotText { .. } => "CollationNotText",
             QueryError::OffsetWithoutSort => "OffsetWithoutSort",
             QueryError::LimitTooLarge { .. } => "LimitTooLarge",
             QueryError::OffsetTooLarge { .. } => "OffsetTooLarge",
@@ -129,6 +132,7 @@ impl QueryError {
             | QueryError::AliasConflictsWithField { path, .. }
             | QueryError::DuplicateAlias { path, .. }
             | QueryError::ListTooLong { path, .. }
+            | QueryError::CollationNotText { path, .. }
             | QueryError::SortUnknownColumn { path, .. } => Some(path),
             QueryError::EmptyProjection
             | QueryError::FilterTooDeep { .. }
@@ -205,6 +209,9 @@ impl fmt::Display for QueryError {
             }
             QueryError::SortUnknownColumn { path, column } => {
                 write!(f, "{path}: {column:?} is not an output column")
+            }
+            QueryError::CollationNotText { path, column } => {
+                write!(f, "{path}: {column:?} is not text, and a locale orders text only")
             }
             QueryError::OffsetWithoutSort => f.write_str("offset requires a sort (rule S6)"),
             QueryError::LimitTooLarge { limit, max_limit } => {

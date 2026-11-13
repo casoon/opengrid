@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>opengrid collation fixture</title>
+    <style>
+      opengrid-grid {
+        display: block;
+        height: 1400px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid collation fixture</h1>
+      <!-- Issue #391: text sorted by a locale. The default sort is the first
+           column, so both grids sort by `word` as they load. -->
+      <opengrid-grid
+        id="local"
+        label="Words, engine in the tab"
+        datasource="collation"
+        columns="word,id"
+        window-size="60"
+      ></opengrid-grid>
+      <opengrid-grid
+        id="worker"
+        label="Words, engine in a worker"
+        datasource="collation"
+        columns="word,id"
+        window-size="60"
+        collation="sr-Latn"
+      ></opengrid-grid>
+    </main>
+    <script type="module">
+      import {
+        loadOpengrid,
+        createLocalProvider,
+        createWorkerProvider,
+      } from "/packages/opengrid/loader.js";
+      import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+
+      await init();
+      const [csv, schema] = await Promise.all([
+        fetch("/crates/opengrid-conformance/data/collation.csv").then((response) => response.arrayBuffer()),
+        fetch("/crates/opengrid-conformance/data/collation.schema.json").then((response) => response.text()),
+      ]);
+      const local = createLocalProvider(new Engine());
+      await local.load("collation", csv.slice(0), schema);
+      const worker = createWorkerProvider();
+      await worker.load("collation", csv.slice(0), schema);
+      const loader = await loadOpengrid();
+      loader.module.set_provider(document.querySelector("#local"), local);
+      loader.module.set_provider(document.querySelector("#worker"), worker);
+      window.__module = loader.module;
+      window.__ready = true;
+    </script>
+  </body>
+</html>

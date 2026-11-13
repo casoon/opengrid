@@ -27,6 +27,9 @@ pub struct DataSourceCapabilities {
     /// Answers one level of a tree (E38): the children of a node with their
     /// counts, matches with their ancestors.
     pub tree: bool,
+    /// Sorts by the collation of a locale (rule S4a, issue #391). Without it
+    /// a sort that names a locale is the client's, whatever `sort` says.
+    pub collation: bool,
 }
 
 impl DataSourceCapabilities {
@@ -41,10 +44,11 @@ impl DataSourceCapabilities {
         calculated_fields: true,
         streaming: true,
         tree: true,
+        collation: true,
     };
 }
 
-const FLAGS: [&str; 9] = [
+const FLAGS: [&str; 10] = [
     "filter",
     "sort",
     "group",
@@ -54,6 +58,7 @@ const FLAGS: [&str; 9] = [
     "calculated_fields",
     "streaming",
     "tree",
+    "collation",
 ];
 
 impl FromJson for DataSourceCapabilities {
@@ -69,13 +74,15 @@ impl FromJson for DataSourceCapabilities {
             calculated_fields: fields.read_or_default("calculated_fields")?,
             streaming: fields.read_or_default("streaming")?,
             tree: fields.read_or_default("tree")?,
+            collation: fields.read_or_default("collation")?,
         })
     }
 }
 
 impl ToJson for DataSourceCapabilities {
-    /// `tree` only when the source has it: a reader from before E38 rejects
-    /// a key it does not know, and a source without trees says nothing new.
+    /// `tree` and `collation` only when the source has them: a reader from
+    /// before E38 (or before #391) rejects a key it does not know, and a
+    /// source without them says nothing new.
     fn to_json(&self) -> Json {
         let mut json = opengrid_json::json!({
             "filter": self.filter,
@@ -87,10 +94,13 @@ impl ToJson for DataSourceCapabilities {
             "calculated_fields": self.calculated_fields,
             "streaming": self.streaming,
         });
-        if self.tree
-            && let Json::Object(object) = &mut json
-        {
-            object.insert("tree".to_owned(), Json::Bool(true));
+        if let Json::Object(object) = &mut json {
+            if self.tree {
+                object.insert("tree".to_owned(), Json::Bool(true));
+            }
+            if self.collation {
+                object.insert("collation".to_owned(), Json::Bool(true));
+            }
         }
         json
     }
@@ -102,6 +112,22 @@ mod tests {
 
     /// `tree` is written only when a source has it, so a reader from before
     /// E38 still reads every other declaration (#129).
+    /// The same for `collation` (#391).
+    #[test]
+    fn collation_travels_only_when_true() {
+        let without = DataSourceCapabilities {
+            collation: false,
+            ..DataSourceCapabilities::ALL
+        };
+        assert!(!opengrid_json::to_string(&without).contains("collation"));
+        let with = opengrid_json::to_string(&DataSourceCapabilities::ALL);
+        assert!(with.contains("\"collation\":true"));
+        let read: DataSourceCapabilities = opengrid_json::from_str(&with).unwrap();
+        assert_eq!(read, DataSourceCapabilities::ALL);
+        let old: DataSourceCapabilities = opengrid_json::from_str(r#"{"sort":true}"#).unwrap();
+        assert!(old.sort && !old.collation);
+    }
+
     #[test]
     fn tree_travels_only_when_true() {
         let without = DataSourceCapabilities {

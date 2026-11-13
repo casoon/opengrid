@@ -7,6 +7,7 @@
 //! no browser dependency (`web-sys`/`js-sys`), see
 //! plan/spezifikation/11-crates.md §Portabilität.
 
+pub mod collation;
 pub mod datasource;
 pub mod execute;
 pub mod hybrid;

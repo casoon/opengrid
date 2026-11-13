@@ -1,0 +1,113 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "site-dev",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--dir",
+        "site",
+        "dev",
+        "--port",
+        "4324"
+      ],
+      "port": 4324
+    },
+    {
+      "name": "serve-demo",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8080"
+      ],
+      "port": 8080
+    },
+    {
+      "name": "example-server",
+      "runtimeExecutable": "cargo",
+      "runtimeArgs": ["run", "-p", "opengrid-example-server", "--", "demo"],
+      "port": 8081
+    },
+    {
+      "name": "demo-vanilla",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--dir",
+        "/Users/jseidel/GitHub/web-opengrid",
+        "dev:vanilla"
+      ],
+      "port": 5171
+    },
+    {
+      "name": "demo-react",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--dir",
+        "/Users/jseidel/GitHub/web-opengrid",
+        "dev:react"
+      ],
+      "port": 5172
+    },
+    {
+      "name": "demo-vue",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--dir",
+        "/Users/jseidel/GitHub/web-opengrid",
+        "dev:vue"
+      ],
+      "port": 5173
+    },
+    {
+      "name": "demo-svelte",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--dir",
+        "/Users/jseidel/GitHub/web-opengrid",
+        "dev:svelte"
+      ],
+      "port": 5174
+    },
+    {
+      "name": "demo-angular",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--dir",
+        "/Users/jseidel/GitHub/web-opengrid",
+        "dev:angular"
+      ],
+      "port": 5175
+    },
+    {
+      "name": "demo-worker",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--dir",
+        "/Users/jseidel/GitHub/web-opengrid",
+        "exec",
+        "wrangler",
+        "dev",
+        "--config",
+        "worker/wrangler.jsonc",
+        "--env",
+        "local",
+        "--port",
+        "8787"
+      ],
+      "port": 8787
+    },
+    {
+      "name": "design-proto",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8090",
+        "--directory",
+        "/Users/jseidel/Downloads/OpenGrid Library Interface Design"
+      ],
+      "port": 8090
+    }
+  ]
+}

@@ -207,3 +207,32 @@ async fn postgresql_answers_every_list_case() {
     report.assert_ok();
     assert!(report.cases >= 20, "{report}");
 }
+
+/// The collation cases (issue #391, rule S4a) against a real PostgreSQL: a sort
+/// key with a locale is ICU's collation of it, whatever collation the database
+/// and the column were made with.
+#[tokio::test]
+async fn postgresql_sorts_by_a_locale_like_the_engine() {
+    let Some((client, url)) = pg::connect().await else {
+        return;
+    };
+    let schema = opengrid_conformance::collation_schema();
+    let table = pg::create_fixture_of(
+        &client,
+        &schema,
+        "opengrid_conformance_collation",
+        "collation.csv",
+    )
+    .await;
+
+    let source = PostgresDataSource::connect(&url, &table, schema).expect("a source");
+    let report = opengrid_conformance::check_collation(&AsSource(&source)).await;
+
+    client
+        .batch_execute(&format!("DROP TABLE \"{table}\";"))
+        .await
+        .expect("drop table");
+    println!("collation conformance (PostgreSQL): {report}");
+    report.assert_ok();
+    assert!(report.cases >= 18, "{report}");
+}

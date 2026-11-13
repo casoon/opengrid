@@ -95,6 +95,8 @@ export interface OpengridGridProps extends Options, ElementProps {
   rowKey?: string;
   /** The page's filter, as the wire's JSON; and-ed onto every query, not in the view. */
   filter?: string;
+  /** The locale text columns sort by (`de`, `sr-Latn`); by code point without it. */
+  collation?: string;
   /** An empty row after the last one to type a new record into (`onrowadd`). */
   addRow?: boolean;
   search?: boolean;
