@@ -257,14 +257,20 @@ const presets = [
   /* The site's own palette, handed to the grid through its tokens — light and dark follow. */
   .og-demo--site opengrid-grid {
     --og-surface: var(--surface);
-    --og-surface-2: var(--bg-deep);
+    /* Not --bg-deep: the stage behind the grid already is, and header, filter row and
+       facets would sink into it. A tint between page ground and surface keeps them apart. */
+    --og-surface-2: color-mix(in oklab, var(--bg) 65%, var(--surface));
     --og-ink: var(--text);
     --og-ink-muted: var(--muted);
     --og-line: var(--border);
-    --og-line-strong: var(--border-strong);
+    /* Control outlines (checkboxes, inputs, chips) need 3:1 against the surface;
+       the site's --border-strong is a hairline for cards and does not reach it. */
+    --og-line-strong: color-mix(in oklab, var(--muted) 65%, var(--surface));
     --og-accent: var(--accent);
     --og-on-accent: var(--surface);
     --og-radius: 8px;
+    /* Native controls inside (checkboxes, selects) follow the site's light/dark switch. */
+    color-scheme: inherit;
     border: 1px solid var(--border);
     border-radius: 12px;
   }

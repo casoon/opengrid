@@ -1,0 +1,73 @@
+{
+  "id": "s4a-turkish-dotless-i-before-i",
+  "rule": "S4a",
+  "query": {
+    "source": "collation",
+    "select": [
+      "id",
+      "word"
+    ],
+    "filter": {
+      "field": "kind",
+      "op": "eq",
+      "value": "b"
+    },
+    "sort": [
+      {
+        "field": "word",
+        "direction": "asc",
+        "nulls": "last",
+        "collation": "tr"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "id",
+      "word"
+    ],
+    "rows": [
+      [
+        15,
+        "cay"
+      ],
+      [
+        35,
+        "czar"
+      ],
+      [
+        14,
+        "çay"
+      ],
+      [
+        7,
+        "ılık"
+      ],
+      [
+        9,
+        "Irmak"
+      ],
+      [
+        8,
+        "ilik"
+      ],
+      [
+        10,
+        "İzmir"
+      ],
+      [
+        37,
+        "zucchini"
+      ],
+      [
+        36,
+        "Zürich"
+      ],
+      [
+        39,
+        null
+      ]
+    ]
+  },
+  "ordered": true
+}

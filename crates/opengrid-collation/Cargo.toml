@@ -1,0 +1,22 @@
+[package]
+name = "opengrid-collation"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "The collator of the browser: ICU4X's sort keys for a locale, loaded when a query first sorts by one"
+
+[lints]
+workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# The engine's own collator (`collation::Icu`), so a sort in the tab and a sort
+# on a server cannot differ; nothing else of the engine is linked.
+opengrid-engine = { workspace = true, features = ["icu"] }
+opengrid-columns = { workspace = true }
+# Pinned to the CLI that builds the module (`just wasm-build-collation`), as in
+# `opengrid-wasm`.
+wasm-bindgen = "=0.2.126"

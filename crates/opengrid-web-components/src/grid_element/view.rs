@@ -158,6 +158,14 @@ pub(super) fn current_query(host: &HtmlElement) -> Option<String> {
         sorts.push((columns[0].clone(), "asc"));
     }
     let query = grid::view_query_json(&source, &columns, &groups, &sorts, filter.as_ref());
+    // The page's collation (S4a), as on every query the grid sends.
+    let query = match super::facets::page_collation(host).ok()? {
+        Some(locale) => {
+            opengrid_grid::view_query::collated(&query, &locale, borrowed.state.schema())
+                .unwrap_or(query)
+        }
+        None => query,
+    };
     let Some(tree) = borrowed.tree.as_ref() else {
         return Some(query);
     };

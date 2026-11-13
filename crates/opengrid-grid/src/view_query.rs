@@ -85,6 +85,47 @@ fn query_object(
 /// The query of one level of a tree (issue #135): the rows of `select` —
 /// the shown columns, and the key when they do not hold it — at the level
 /// `tree` names, under the grid's filter and order, at most `limit` of them.
+/// `query` with the collation `locale` on every sort key that is a text column
+/// of `schema` (rule S4a, issue #391) — the grid's `collation` attribute put
+/// into a query it is about to send. Keys on other columns, and on names the
+/// schema does not have (an aggregate's alias), stay as they are: a locale
+/// orders text, and the query model refuses it anywhere else.
+///
+/// `None` when nothing changes — no sort, no text key, or not a query.
+pub fn collated(
+    query: &str,
+    locale: &opengrid_query::Locale,
+    schema: &opengrid_types::Schema,
+) -> Option<String> {
+    use opengrid_json::Json;
+    let mut parsed = Json::parse(query).ok()?;
+    if !matches!(parsed.get("sort"), Some(Json::Array(_))) {
+        return None;
+    }
+    let Json::Array(keys) = &mut parsed["sort"] else {
+        return None;
+    };
+    let mut changed = false;
+    for key in keys {
+        let Json::Object(key) = key else {
+            continue;
+        };
+        let text = key
+            .get("field")
+            .and_then(Json::as_str)
+            .and_then(|field| schema.field(field))
+            .is_some_and(|field| field.data_type == opengrid_types::DataType::Utf8);
+        if text {
+            key.insert(
+                "collation".to_owned(),
+                Json::String(locale.as_str().to_owned()),
+            );
+            changed = true;
+        }
+    }
+    changed.then(|| parsed.to_string())
+}
+
 pub fn tree_query_json(
     source: &str,
     select: &[String],
@@ -197,6 +238,46 @@ mod tests {
     use crate::grid_view::GridView;
     use opengrid_json::Json;
     use opengrid_types::{DataType, Field, FieldName, Schema};
+
+    /// The grid's collation goes on the text keys of a sort and nowhere else,
+    /// and the query it makes is one the model accepts (#391).
+    #[test]
+    fn a_collation_goes_on_the_text_keys_only() {
+        let schema = Schema::new(vec![
+            Field::required(FieldName::new("id").unwrap(), DataType::Int64),
+            Field::new(FieldName::new("name").unwrap(), DataType::Utf8),
+        ]);
+        let locale = opengrid_query::Locale::parse("de").unwrap();
+        let query = query_json(
+            "orders",
+            &["id".to_owned(), "name".to_owned()],
+            &[("name".to_owned(), "desc"), ("id".to_owned(), "asc")],
+            None,
+            0,
+            10,
+        );
+        let collated = collated(&query, &locale, &schema).expect("a text key");
+        let parsed = Json::parse(&collated).unwrap();
+        assert_eq!(parsed["sort"][0]["collation"].as_str(), Some("de"));
+        assert_eq!(parsed["sort"][0]["direction"].as_str(), Some("desc"));
+        assert!(parsed["sort"][1].get("collation").is_none());
+        let model: opengrid_query::Query = opengrid_json::from_str(&collated).unwrap();
+        model
+            .validate(&schema, &opengrid_query::Limits::default())
+            .expect("the model takes it");
+
+        // Nothing to do is said as such, not as a copy.
+        let by_id = query_json(
+            "orders",
+            &["id".to_owned()],
+            &[("id".to_owned(), "asc")],
+            None,
+            0,
+            10,
+        );
+        assert_eq!(super::collated(&by_id, &locale, &schema), None);
+        assert_eq!(super::collated("not a query", &locale, &schema), None);
+    }
 
     fn schema() -> Schema {
         let field = |name: &str, data_type| Field::new(FieldName::new(name).unwrap(), data_type);

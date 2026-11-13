@@ -433,7 +433,6 @@ named!(CmpOp {
 });
 named!(SortDirection { Asc = "asc", Desc = "desc" });
 named!(NullsOrder { First = "first", Last = "last" });
-named!(Collation { Binary = "binary" });
 named!(AggregateFn {
     Sum = "sum",
     Avg = "avg",
@@ -463,11 +462,93 @@ pub enum NullsOrder {
     Last,
 }
 
-/// String collation. V1 knows only `binary` (rule S4).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+/// How a sort key orders strings: by code point (`binary`, rule S4), or by the
+/// collation of a locale (rule S4a, issue #391).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Collation {
     #[default]
     Binary,
+    Locale(Locale),
+}
+
+impl Collation {
+    /// The word of the wire format: `binary`, or the locale's tag.
+    pub fn name(&self) -> &str {
+        match self {
+            Collation::Binary => "binary",
+            Collation::Locale(locale) => locale.as_str(),
+        }
+    }
+
+    /// The locale, unless the order is binary.
+    pub fn locale(&self) -> Option<&Locale> {
+        match self {
+            Collation::Binary => None,
+            Collation::Locale(locale) => Some(locale),
+        }
+    }
+}
+
+impl FromJson for Collation {
+    fn from_json(json: &Json) -> Result<Self, Error> {
+        let text = String::from_json(json)?;
+        if text == "binary" {
+            return Ok(Collation::Binary);
+        }
+        Locale::parse(&text).map(Collation::Locale).ok_or_else(|| {
+            Error::new(format!(
+                "collation {text:?} is neither `binary` nor a locale such as `de`, `sr-Latn` or `de-AT`"
+            ))
+        })
+    }
+}
+
+impl ToJson for Collation {
+    fn to_json(&self) -> Json {
+        Json::from(self.name())
+    }
+}
+
+/// A locale a collation is named by: a language (`de`, or `und` for the root
+/// collation), then optionally a script (`sr-Latn`) and a region (`de-AT`), in
+/// the canonical case of BCP 47.
+///
+/// Only the form is checked here. The tag goes into SQL as part of a collation's
+/// name, so nothing but letters, digits and `-` may pass.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Locale(String);
+
+impl Locale {
+    pub fn parse(tag: &str) -> Option<Self> {
+        let mut parts = tag.split('-');
+        let language = parts.next()?;
+        if !(2..=3).contains(&language.len()) || !language.bytes().all(|b| b.is_ascii_lowercase()) {
+            return None;
+        }
+        let mut next = parts.next();
+        if let Some(script) = next
+            && script.len() == 4
+        {
+            let bytes = script.as_bytes();
+            if !bytes[0].is_ascii_uppercase() || !bytes[1..].iter().all(u8::is_ascii_lowercase) {
+                return None;
+            }
+            next = parts.next();
+        }
+        if let Some(region) = next {
+            let letters = region.len() == 2 && region.bytes().all(|b| b.is_ascii_uppercase());
+            let digits = region.len() == 3 && region.bytes().all(|b| b.is_ascii_digit());
+            if !letters && !digits {
+                return None;
+            }
+            next = parts.next();
+        }
+        next.is_none().then(|| Locale(tag.to_owned()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 /// One sort key on an output column.

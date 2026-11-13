@@ -20,7 +20,9 @@ opengrid-datasource = { workspace = true }
 opengrid-pivot = { workspace = true }
 # The rows tier (issue #46): a source that only hands out rows is answered by
 # the engine, natively, on the server.
-opengrid-engine = { workspace = true }
+# With ICU4X's collations (rule S4a): what a source cannot sort, the engine
+# sorts here, and a sort by a locale is part of that.
+opengrid-engine = { workspace = true, features = ["icu"] }
 # Tables of pieces, held together while streaming (issue #50).
 opengrid-columns = { workspace = true }
 # `LocalConnector::from_csv` reads the schema file.

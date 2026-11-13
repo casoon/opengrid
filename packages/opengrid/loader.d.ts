@@ -346,6 +346,13 @@ export interface Engine {
   execute(queryJson: string): string;
   /** The result in the binary form — what the tab and worker providers answer. */
   execute_columns(queryJson: string): Uint8Array;
+  /**
+   * Gives the engine its collator: `sort_keys` of the collation module
+   * (`collation/opengrid_collation.js`). A sort key that names a locale needs
+   * it; the providers of the package load the module and call this when a
+   * query first sorts by one.
+   */
+  set_collator(sortKeys: (locale: string, texts: Uint8Array, ends: Uint32Array) => Uint8Array): void;
   /** What it holds, as JSON (see `EngineStats`). */
   stats(): string;
   /** A pivot over the engine's sources, as JSON (issue #28). */
@@ -400,6 +407,8 @@ export interface PlannerLike {
   plan(queryJson: string, mode: string): string;
   /** Finishes the client half over the source's answer; the result as JSON. */
   finish(clientQueryJson: string, resultJson: string): string;
+  /** The collator for the client half, as `Engine.set_collator`. */
+  set_collator(sortKeys: (locale: string, texts: Uint8Array, ends: Uint32Array) => Uint8Array): void;
   /** The same over an answer in the binary form; the result as bytes. */
   finish_columns(clientQueryJson: string, result: Uint8Array): Uint8Array;
 }
@@ -1447,6 +1456,12 @@ export interface OpengridGridAttributes {
    * and-ed onto every query the grid sends. Not the reader's and not in the view.
    */
   filter?: string;
+  /**
+   * The locale text columns sort by — `de`, `sv`, `sr-Latn`, `und` for the root
+   * collation. Every sort key of the grid on a text column carries it; without
+   * it text sorts by code point. Not in the view.
+   */
+  collation?: string;
   "group-by"?: string;
   /** The field holding a row's parent key: the rows show as a tree. */
   tree?: string;

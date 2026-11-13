@@ -38,6 +38,84 @@ use opengrid_query::{Limits, Query};
 use opengrid_types::{DataSourceId, Schema};
 use wasm_bindgen::prelude::*;
 
+#[wasm_bindgen]
+extern "C" {
+    /// The function of the collation module, `sort_keys(locale, texts, ends)`
+    /// (`crates/opengrid-collation`): a JavaScript function, called as one.
+    pub type CollatorFunction;
+
+    #[wasm_bindgen(method, catch, js_name = call)]
+    fn call(
+        this: &CollatorFunction,
+        receiver: &JsValue,
+        locale: &str,
+        texts: &[u8],
+        ends: &[u32],
+    ) -> Result<Vec<u8>, JsValue>;
+}
+
+/// The collation module behind the engine's [`Collator`]: the strings of a
+/// column go out in one buffer and their keys come back in one.
+struct ModuleCollator(CollatorFunction);
+
+impl opengrid_engine::collation::Collator for ModuleCollator {
+    fn sort_keys(
+        &self,
+        locale: &str,
+        texts: &mut dyn Iterator<Item = &str>,
+        keys: &mut opengrid_columns::sort::SortKeys,
+    ) -> Result<(), String> {
+        let mut bytes = Vec::new();
+        let mut ends = Vec::new();
+        for text in texts {
+            bytes.extend_from_slice(text.as_bytes());
+            ends.push(
+                u32::try_from(bytes.len())
+                    .map_err(|_| "a column of more than four gigabytes of text".to_owned())?,
+            );
+        }
+        let packed = self
+            .0
+            .call(&JsValue::UNDEFINED, locale, &bytes, &ends)
+            .map_err(|error| {
+                let message = js_message(&error);
+                format!("the collator refused {locale:?}: {message}")
+            })?;
+        let head = 4 * ends.len();
+        let wrong = || "the collator answered something that is not its keys".to_owned();
+        let body = packed.get(head..).ok_or_else(wrong)?;
+        let mut start = 0;
+        for end in packed[..head].as_chunks::<4>().0 {
+            let end = u32::from_le_bytes(*end) as usize;
+            keys.push(body.get(start..end).ok_or_else(wrong)?);
+            start = end;
+        }
+        Ok(())
+    }
+}
+
+/// The message of what JavaScript threw, where it has one.
+fn js_message(error: &JsValue) -> String {
+    #[wasm_bindgen]
+    extern "C" {
+        type Thrown;
+        #[wasm_bindgen(method, getter)]
+        fn message(this: &Thrown) -> JsValue;
+    }
+    if error.is_object()
+        && let Some(message) = error.unchecked_ref::<Thrown>().message().as_string()
+    {
+        return message;
+    }
+    error.as_string().unwrap_or_else(|| "no message".to_owned())
+}
+
+/// The collator of every engine and planner of this module: they sort on one
+/// thread, and the collator belongs to that.
+fn install_collator(sort_keys: CollatorFunction) {
+    opengrid_engine::collation::install(std::rc::Rc::new(ModuleCollator(sort_keys)));
+}
+
 /// The engine the browser talks to: a set of in-memory sources.
 ///
 /// One instance holds one [`LocalDataSource`] per name
@@ -56,6 +134,15 @@ impl Engine {
         Engine {
             sources: HashMap::new(),
         }
+    }
+
+    /// Gives the engine its collator (rule S4a, issue #391): `sort_keys` of
+    /// the collation module, which a page loads when a query first sorts by a
+    /// locale — the providers of the package do. Until then such a sort is
+    /// refused; a sort without a locale never needs it. It holds for every
+    /// engine and planner of this module.
+    pub fn set_collator(&self, sort_keys: CollatorFunction) {
+        install_collator(sort_keys);
     }
 
     /// Reads CSV bytes against an explicit schema and registers the source.
@@ -392,6 +479,12 @@ impl Planner {
     #[wasm_bindgen(constructor)]
     pub fn new(schema_json: &str, capabilities_json: &str, mode: &str) -> Result<Planner, JsError> {
         Planner::build(schema_json, capabilities_json, mode).map_err(|error| JsError::new(&error))
+    }
+
+    /// The collator for the half of a query the planner finishes here, as
+    /// [`Engine::set_collator`].
+    pub fn set_collator(&self, sort_keys: CollatorFunction) {
+        install_collator(sort_keys);
     }
 
     /// Splits `query_json`, answering the plan as JSON.

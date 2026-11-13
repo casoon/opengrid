@@ -1,0 +1,59 @@
+{
+  "id": "s4a-equal-by-the-collation-orders-by-bytes",
+  "rule": "S4a",
+  "query": {
+    "source": "collation",
+    "select": [
+      "id",
+      "word"
+    ],
+    "filter": {
+      "field": "id",
+      "op": "in",
+      "value": [
+        17,
+        18,
+        19,
+        27,
+        28
+      ]
+    },
+    "sort": [
+      {
+        "field": "word",
+        "direction": "asc",
+        "nulls": "last",
+        "collation": "de"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "id",
+      "word"
+    ],
+    "rows": [
+      [
+        28,
+        "é"
+      ],
+      [
+        27,
+        "é"
+      ],
+      [
+        18,
+        "resume"
+      ],
+      [
+        17,
+        "résumé"
+      ],
+      [
+        19,
+        "Résumé"
+      ]
+    ]
+  },
+  "ordered": true
+}

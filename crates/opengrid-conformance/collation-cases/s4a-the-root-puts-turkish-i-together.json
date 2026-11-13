@@ -1,0 +1,73 @@
+{
+  "id": "s4a-the-root-puts-turkish-i-together",
+  "rule": "S4a",
+  "query": {
+    "source": "collation",
+    "select": [
+      "id",
+      "word"
+    ],
+    "filter": {
+      "field": "kind",
+      "op": "eq",
+      "value": "b"
+    },
+    "sort": [
+      {
+        "field": "word",
+        "direction": "asc",
+        "nulls": "last",
+        "collation": "und"
+      }
+    ]
+  },
+  "expected": {
+    "columns": [
+      "id",
+      "word"
+    ],
+    "rows": [
+      [
+        15,
+        "cay"
+      ],
+      [
+        14,
+        "çay"
+      ],
+      [
+        35,
+        "czar"
+      ],
+      [
+        8,
+        "ilik"
+      ],
+      [
+        9,
+        "Irmak"
+      ],
+      [
+        10,
+        "İzmir"
+      ],
+      [
+        7,
+        "ılık"
+      ],
+      [
+        37,
+        "zucchini"
+      ],
+      [
+        36,
+        "Zürich"
+      ],
+      [
+        39,
+        null
+      ]
+    ]
+  },
+  "ordered": true
+}

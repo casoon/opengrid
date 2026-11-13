@@ -40,6 +40,8 @@
 // follows the import, and the `new URL("…_bg.wasm", import.meta.url)` inside the
 // glue, so the `.wasm` ends up in its output. `moduleUrl` replaces it.
 import * as packaged from "./pkg/opengrid_web_components.js";
+// The engine's collator, for a query that sorts by a locale (rule S4a).
+import { withCollator } from "./collation.js";
 
 /** Set once the first `loadOpengrid` call has run. */
 let loading;
@@ -452,8 +454,9 @@ export function createLocalProvider(engine) {
     watch(host) {
       watchers.watch(host);
     },
+    /** The answer itself, or a promise of it while the collator loads (S4a). */
     execute(queryJson) {
-      return engine.execute_columns(queryJson);
+      return withCollator(engine, queryJson, () => engine.execute_columns(queryJson));
     },
     /** What the engine holds (issue #70), as the worker provider says it. */
     async stats() {
@@ -863,10 +866,14 @@ export function createHybridProvider({ remote, planner, mode = "auto", onPlan } 
       if (!plan.client) {
         return partial;
       }
-      // The engine finishes in the form the source answered in.
-      return typeof partial === "string"
-        ? planner.finish(JSON.stringify(plan.client), partial)
-        : planner.finish_columns(JSON.stringify(plan.client), partial);
+      // The engine finishes in the form the source answered in — with its
+      // collator, when the client's half sorts by a locale (S4a).
+      const client = JSON.stringify(plan.client);
+      return withCollator(planner, client, () =>
+        typeof partial === "string"
+          ? planner.finish(client, partial)
+          : planner.finish_columns(client, partial),
+      );
     },
   };
 }

@@ -12,6 +12,9 @@ pub(super) fn effective_filter(
     except: Option<&str>,
 ) -> Result<Option<FilterExpr>, String> {
     let reader = reader_filter(host, runtime, except)?;
+    // A `collation` that is not a locale stops the queries as a filter that
+    // is not one does: sorting by code point instead would be a silent guess.
+    page_collation(host)?;
     Ok(match (page_filter(host)?, reader) {
         (Some(page), Some(reader)) => Some(FilterExpr::And(vec![page, reader])),
         (page, reader) => page.or(reader),
@@ -31,6 +34,36 @@ pub(super) fn page_filter(host: &HtmlElement) -> Result<Option<FilterExpr>, Stri
     opengrid_json::from_str::<FilterExpr>(&raw)
         .map(Some)
         .map_err(|error| format!("the filter attribute is not a filter: {error}"))
+}
+
+/// The page's `collation` attribute as a locale (rule S4a, issue #391): absent
+/// or empty is none, and what is not a locale is a sentence for the status
+/// line.
+pub(super) fn page_collation(host: &HtmlElement) -> Result<Option<opengrid_query::Locale>, String> {
+    let raw = host
+        .get_attribute(grid::COLLATION_ATTRIBUTE)
+        .unwrap_or_default();
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return Ok(None);
+    }
+    opengrid_query::Locale::parse(raw).map(Some).ok_or_else(|| {
+        format!("the collation attribute is not a locale such as \"de\" or \"sr-Latn\": {raw:?}")
+    })
+}
+
+/// `query` as the grid sends it: with the page's collation on its text sort
+/// keys ([`opengrid_grid::view_query::collated`]). Every query of the grid
+/// passes here, and so does the one `get_query` answers.
+pub(super) fn collated(host: &HtmlElement, query: String) -> String {
+    let Ok(Some(locale)) = page_collation(host) else {
+        return query;
+    };
+    let Some(runtime) = super::runtime(host) else {
+        return query;
+    };
+    let runtime = runtime.borrow();
+    opengrid_grid::view_query::collated(&query, &locale, runtime.state.schema()).unwrap_or(query)
 }
 
 /// What the reader filters by: the filter row's **and** every facet's —

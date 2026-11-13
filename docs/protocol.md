@@ -49,6 +49,12 @@ The body's `source` must equal the path's; a mismatch is a `422` at `source`.
   is an array of elements) and `is_empty` (no value) — and only those, plus the null checks. A
   list is a JSON array on the wire; its elements are never `null`.
 - Aggregates: `count` (without `field`: every row), `sum`, `avg`, `min`, `max`.
+- A sort key is `{ field, direction?, nulls?, collation? }`: `direction` `asc` (the default) or
+  `desc`, `nulls` `last` (the default) or `first`, and `collation` `binary` (the default, code
+  point order) or a locale — `de`, `sr-Latn`, `de-AT`, `und` — for a text column (rule S4a). A
+  source says whether it sorts by a locale with `collation` among its capabilities; the flag is
+  only written when it is `true`, and where it is missing the planner leaves such a sort to the
+  client.
 - `offset` needs a `sort`. Values are JSON, read against the column's type: a decimal as a
   string (`"10.00"`), a date as `"2026-01-31"`, a timestamp as RFC 3339 in UTC, a list column
   (`list<utf8>`, `list<int64>`) as a JSON array whose elements are never `null`.

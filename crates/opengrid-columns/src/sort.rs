@@ -5,7 +5,9 @@
 //! - **NULLs** go first or last per key, independent of the direction
 //!   (rule S3: `nulls` is always explicit and not flipped by `desc`).
 //! - **Strings** compare byte-wise, which for UTF-8 is codepoint order — the
-//!   `binary` collation of rule S4, so `"Z" < "z" < "ä"`.
+//!   `binary` collation of rule S4, so `"Z" < "z" < "ä"`. A key that carries
+//!   [`SortKeys`] orders by those instead (a locale's collation, rule S4a),
+//!   and strings the collation calls equal by their bytes.
 //! - **Floats** follow the IEEE 754 total order ([`f64::total_cmp`]): `NaN`
 //!   after every number, `-0.0` before `0.0` (rule S7 for sorting; the
 //!   *comparison* of S7, where `-0.0 = 0.0`, is the engine's business).
@@ -35,6 +37,46 @@ pub struct SortKey<'a> {
     pub column: &'a Column,
     pub descending: bool,
     pub nulls_first: bool,
+    /// The collation keys of a string column, one per row: the column orders
+    /// by them, then by its bytes. `None` is the binary order.
+    pub collated: Option<&'a SortKeys>,
+}
+
+/// One byte string per row that compares, byte by byte, as a collation orders
+/// the row's text — what a collator calls a sort key. The row of a NULL holds
+/// an empty one.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SortKeys {
+    bytes: Vec<u8>,
+    ends: Vec<usize>,
+}
+
+impl SortKeys {
+    pub fn with_capacity(rows: usize) -> Self {
+        Self {
+            bytes: Vec::new(),
+            ends: Vec::with_capacity(rows),
+        }
+    }
+
+    /// Appends the key of the next row.
+    pub fn push(&mut self, key: &[u8]) {
+        self.bytes.extend_from_slice(key);
+        self.ends.push(self.bytes.len());
+    }
+
+    pub fn len(&self) -> usize {
+        self.ends.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.ends.is_empty()
+    }
+
+    pub fn get(&self, row: usize) -> &[u8] {
+        let start = if row == 0 { 0 } else { self.ends[row - 1] };
+        &self.bytes[start..self.ends[row]]
+    }
 }
 
 /// The first `end` input positions in sort order (all of them when `end` is
@@ -49,7 +91,8 @@ pub struct SortKey<'a> {
 pub fn order(keys: &[SortKey<'_>], end: usize) -> Result<Vec<u32>, String> {
     let rows = keys.first().expect("at least one sort key").column.len();
     assert!(
-        keys.iter().all(|key| key.column.len() == rows),
+        keys.iter().all(|key| key.column.len() == rows
+            && key.collated.is_none_or(|collated| collated.len() == rows)),
         "sort keys come from one table"
     );
     u32::try_from(rows).map_err(|_| format!("{rows} rows are too many to sort"))?;
@@ -107,11 +150,18 @@ fn one_key(key: &SortKey<'_>, end: usize) -> Vec<u32> {
             by(pairs(&present, |at| values[at] as i64), desc, value_rows)
         }
         Values::Decimal(values) => by(pairs(&present, |at| values[at]), desc, value_rows),
-        Values::Utf8 { .. } => by(
-            pairs(&present, |at| column.str(at).as_bytes()),
-            desc,
-            value_rows,
-        ),
+        Values::Utf8 { .. } => match key.collated {
+            None => by(
+                pairs(&present, |at| column.str(at).as_bytes()),
+                desc,
+                value_rows,
+            ),
+            Some(collated) => by(
+                pairs(&present, |at| (collated.get(at), column.str(at).as_bytes())),
+                desc,
+                value_rows,
+            ),
+        },
         // A list has no order (issue #185): the query model refuses a sort on
         // one, and here every list keys the same, so the rows keep their order.
         Values::ListInt64 { .. } | Values::ListUtf8 { .. } => {
@@ -218,15 +268,10 @@ fn encode(key: &SortKey<'_>, row: usize, out: &mut Vec<u8>) {
         }
         Values::Date(values) => out.extend_from_slice(&(values[row] ^ i32::MIN).to_be_bytes()),
         Values::Utf8 { .. } => {
-            // Escaped and terminated, so no string is a prefix of another's
-            // encoding and the byte order is kept.
-            for byte in column.str(row).as_bytes() {
-                match byte {
-                    0x00 => out.extend_from_slice(&[0x00, 0xFF]),
-                    other => out.push(*other),
-                }
+            if let Some(collated) = key.collated {
+                terminated(collated.get(row), out);
             }
-            out.extend_from_slice(&[0x00, 0x00]);
+            terminated(column.str(row).as_bytes(), out);
         }
         // No order for lists (issue #185): every list encodes alike.
         Values::ListInt64 { .. } | Values::ListUtf8 { .. } => {}
@@ -236,6 +281,18 @@ fn encode(key: &SortKey<'_>, row: usize, out: &mut Vec<u8>) {
             *byte = !*byte;
         }
     }
+}
+
+/// Escaped and terminated, so no string is a prefix of another's encoding and
+/// the byte order is kept.
+fn terminated(bytes: &[u8], out: &mut Vec<u8>) {
+    for byte in bytes {
+        match byte {
+            0x00 => out.extend_from_slice(&[0x00, 0xFF]),
+            other => out.push(*other),
+        }
+    }
+    out.extend_from_slice(&[0x00, 0x00]);
 }
 
 /// An integer that orders like [`f64::total_cmp`] — the same bit trick.
@@ -399,6 +456,7 @@ mod tests {
                     column,
                     descending: *descending,
                     nulls_first: *nulls_first,
+                    collated: None,
                 })
                 .collect();
             let spelled: Vec<(Vec<Value>, bool, bool)> = keys
@@ -412,7 +470,7 @@ mod tests {
             // constant changes nothing.
             let constant = column(DataType::Int64, &vec![Value::Int64(0); rows]);
             let mut two = sort_keys.clone();
-            two.push(SortKey { column: &constant, descending: false, nulls_first: false });
+            two.push(SortKey { column: &constant, descending: false, nulls_first: false, collated: None });
             prop_assert_eq!(order(&two, end).unwrap(), expected);
         }
     }

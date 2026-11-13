@@ -21,16 +21,18 @@ dest="$root/target/npm-package"
 # the element module into pkg/, the engine (`Engine`, `Planner`) into engine/ —
 # the default of `createWorkerProvider()`, and what a page imports to query in
 # the tab — and the XLSX writer into xlsx/, which `exportRows` loads when a page
-# asks for a workbook in the tab. All three directories are build output and
-# gitignored.
+# asks for a workbook in the tab, and the collator into collation/, which the
+# providers load when a query first sorts by a locale. All four directories are
+# build output and gitignored.
 #
 # Emptied first: wasm-bindgen writes into a directory and never deletes, and
 # `files` ships whatever is there — a snippet directory left from an older
 # build would go out with the release. packaged.spec.js checks the snippets.
-rm -rf "$pkg/pkg" "$pkg/engine" "$pkg/xlsx"
+rm -rf "$pkg/pkg" "$pkg/engine" "$pkg/xlsx" "$pkg/collation"
 just wasm-build-components
 just wasm-build packages/opengrid/engine
 just wasm-build-xlsx packages/opengrid/xlsx
+just wasm-build-collation packages/opengrid/collation
 
 # The tarball is only what CI checked if the same wasm-opt built it: CI pins
 # binaryen (`BINARYEN_VERSION` in .github/workflows/ci.yml), a machine has

@@ -168,6 +168,14 @@ impl Query {
                     column: sort.field.to_string(),
                 });
             }
+            // A locale orders text; on a number or a date it would be ignored,
+            // and a query that says something it does not mean is refused.
+            if sort.collation.locale().is_some() && column.data_type != DataType::Utf8 {
+                return Err(QueryError::CollationNotText {
+                    path: format!("sort[{i}].collation"),
+                    column: sort.field.to_string(),
+                });
+            }
         }
 
         if self.offset.is_some() && self.sort.is_empty() {

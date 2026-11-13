@@ -51,6 +51,7 @@ build grid-only --no-default-features --features grid
 build pivot-only --no-default-features --features pivot
 CRATE=opengrid-wasm build engine
 CRATE=opengrid-xlsx build xlsx
+CRATE=opengrid-collation build collation
 
 printf 'module\traw_B\traw\tgzip_B\tgzip\tbrotli_B\tbrotli\n'
 report "grid+pivot" "$out/both/m_bg.wasm"
@@ -58,6 +59,7 @@ report "grid only" "$out/grid-only/m_bg.wasm"
 report "pivot only" "$out/pivot-only/m_bg.wasm"
 report "engine" "$out/engine/m_bg.wasm"
 report "xlsx" "$out/xlsx/m_bg.wasm"
+report "collation" "$out/collation/m_bg.wasm"
 
 # What the two would cost side by side, and what they share.
 node -e '

@@ -104,6 +104,32 @@ async fn a_valid_query_answers_in_the_wire_form() {
     );
 }
 
+/// A sort key with a locale (S4a, #391) reaches the server's engine, which has
+/// ICU's collations, and what is not a locale is refused before anything runs.
+/// That the order is the right one is the conformance suite's to say; this
+/// fixture has no two names the orders part on.
+#[tokio::test]
+async fn a_sort_by_a_locale_is_answered_and_a_wrong_one_refused() {
+    let sorted = |collation: &str| {
+        format!(
+            r#"{{"source":"orders","select":["customer"],"group":["customer"],"sort":[{{"field":"customer","collation":"{collation}"}}]}}"#
+        )
+    };
+    let (status, german) = post(app(false).await, "orders", Some(TOKEN), &sorted("de")).await;
+    assert_eq!(status, StatusCode::OK, "{german}");
+    let result = result_from_json(&german).expect("the body is a result");
+    assert_eq!(result.row_count(), 7, "every customer, and the NULL");
+
+    let (status, refused) = post(app(false).await, "orders", Some(TOKEN), &sorted("German")).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{refused}");
+
+    // A locale orders text only.
+    let number = r#"{"source":"orders","select":["id"],"sort":[{"field":"id","collation":"de"}]}"#;
+    let (status, body) = post(app(false).await, "orders", Some(TOKEN), number).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(error_of(&body).path.as_deref(), Some("sort[0].collation"));
+}
+
 #[tokio::test]
 async fn without_a_token_there_is_no_data() {
     let body = r#"{"source":"orders","select":["id"],"limit":1}"#;
@@ -274,7 +300,9 @@ async fn a_source_describes_its_schema_and_capabilities() {
     // Every flag is there, not only the ones that happen to be true: a planner
     // reads them all, and a missing one would silently mean "cannot".
     let flags = described["capabilities"].as_object().expect("capabilities");
-    assert_eq!(flags.len(), 9, "the declaration is complete: {flags:?}");
+    assert_eq!(flags.len(), 10, "the declaration is complete: {flags:?}");
+    // The engine behind this source has ICU's collations (S4a, #391).
+    assert_eq!(described["capabilities"]["collation"], true);
     // Every source answers a tree through the server (plan point 122).
     assert_eq!(described["capabilities"]["tree"], true);
 
