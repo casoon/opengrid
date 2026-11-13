@@ -140,8 +140,9 @@ use editing::{
     end_edit, focus_editor, formatter,
 };
 use facets::{
-    apply_facets, clear_selection, draw_facets, effective_filter, facet_chip_text, on_facet_change,
-    collated, page_filter, reader_filter, refresh_facets, reset_facets, show_source, toggle_facet_value,
+    apply_facets, clear_selection, collated, draw_facets, effective_filter, facet_chip_text,
+    on_facet_change, page_filter, reader_filter, refresh_facets, reset_facets, show_source,
+    toggle_facet_value,
 };
 use filter_row::{
     Decorated, OperatorControl, ValueControl, apply_filters, fix_operator_choices,

@@ -267,7 +267,14 @@ mod tests {
             .expect("the model takes it");
 
         // Nothing to do is said as such, not as a copy.
-        let by_id = query_json("orders", &["id".to_owned()], &[("id".to_owned(), "asc")], None, 0, 10);
+        let by_id = query_json(
+            "orders",
+            &["id".to_owned()],
+            &[("id".to_owned(), "asc")],
+            None,
+            0,
+            10,
+        );
         assert_eq!(super::collated(&by_id, &locale, &schema), None);
         assert_eq!(super::collated("not a query", &locale, &schema), None);
     }
