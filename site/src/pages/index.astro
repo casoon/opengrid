@@ -15,6 +15,32 @@ import Base from '@casoon/pages-theme/layouts/Base.astro';
 import config from 'virtual:casoon-pages/config';
 import { url } from '@casoon/pages-theme/url';
 import Diagram from '../components/Diagram.astro';
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { brotliCompressSync, constants } from 'node:zlib';
+
+// Figures that cannot go stale: counted from the repository, measured from the modules the
+// demo ships (`scripts/demo-assets.mjs` copies them into public/opengrid/ before the build).
+const caseDirs = import.meta.glob('../../../crates/opengrid-conformance/*cases/*.json');
+const specs = import.meta.glob<string>('../../../tests/e2e/*.spec.js', {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+});
+const conformanceCases = Object.keys(caseDirs).length;
+const axeSpecs = Object.values(specs).filter((source) => source.includes('@axe-core/playwright')).length;
+
+/** The size of a shipped module, brotli at quality 11 like `just measure-modules`; `null` when it is not there. */
+function brotliKiB(file: string): number | null {
+  const path = resolve(process.cwd(), 'public/opengrid', file);
+  if (!existsSync(path)) return null;
+  const packed = brotliCompressSync(readFileSync(path), {
+    params: { [constants.BROTLI_PARAM_QUALITY]: 11 },
+  });
+  return Math.round(packed.length / 1024);
+}
+const engineKiB = brotliKiB('engine/opengrid_wasm_bg.wasm');
+const elementsKiB = brotliKiB('pkg/opengrid_web_components_bg.wasm');
 
 // From README.md ("Data from a server"): a grid whose queries an opengrid-server answers.
 const page = `<opengrid-grid label="Orders" datasource="orders"
@@ -74,6 +100,36 @@ const page = `<opengrid-grid label="Orders" datasource="orders"
   </aside>
 
   <Features
+    heading="What sets it apart"
+    items={[
+      {
+        title: 'One engine, wherever the data is',
+        body: 'The same Rust code answers a query in the tab (WebAssembly, in a worker if you like), on your server against PostgreSQL or SQLite, or split between the two by a planner. Moving data from the browser to a server is a change of provider, not a second implementation.',
+      },
+      {
+        title: '“The same answer” is written down',
+        body: `NULL order, exact decimals, Unicode normalisation, text order: numbered rules, each pinned by case files — ${conformanceCases} of them. Every path that can answer a case has to match it: the native engine, the engine compiled to WebAssembly, SQLite and PostgreSQL. For text order, PostgreSQL wrote the expected answers.`,
+      },
+      {
+        title: 'Big tables stay responsive',
+        body: 'The engine runs in a worker, so sorting and grouping 100,000 rows does not block the page; the live demo does exactly that. On the server an export streams: ten times the rows, the same memory.',
+      },
+      {
+        title: 'A table where a table is meant',
+        body: `Reading data is a native <table>; role="grid" only where the reader works with it. Every feature is operated from the keyboard, and ${axeSpecs} end-to-end specs run axe-core over the result. What is verified, and what is still open, is written down.`,
+      },
+      {
+        title: 'The browser never sends SQL',
+        body: 'A query is a JSON document, checked against the fields and rows the token may see. The server is a library you build into your own program, which stays in charge of who is allowed in.',
+      },
+      {
+        title: 'Everything in one package',
+        body: 'Grouping with totals, pivot, trees, export, editing, detail panels, range copy and locale sorting are in one package under MIT or Apache-2.0. There is no second edition with the features an application ends up needing.',
+      },
+    ]}
+  />
+
+  <Features
     heading="Who it is for"
     items={[
       {
@@ -105,10 +161,10 @@ const page = `<opengrid-grid label="Orders" datasource="orders"
 
   <Facts
     items={[
-      { value: '3', label: 'elements: table, grid and pivot' },
+      { value: String(conformanceCases), label: 'conformance cases, each pinned to a numbered rule' },
+      { value: String(axeSpecs), label: 'end-to-end specs that run axe-core' },
+      ...(engineKiB ? [{ value: `${engineKiB} KiB`, label: 'the engine as WebAssembly, brotli' }] : []),
       { value: '3', label: 'places a query can run: tab, server, or both' },
-      { value: '5', label: 'built-in looks, from Base to Dark' },
-      { value: '5', label: 'live demo sites: JavaScript, React, Vue, Svelte, Angular' },
     ]}
   />
 
@@ -125,6 +181,16 @@ const page = `<opengrid-grid label="Orders" datasource="orders"
         from PostgreSQL, SQLite or a connector of your own. In between, the planner gives the
         server the part it can answer and finishes the rest in the tab. A shared set of
         conformance cases checks that all paths agree.
+      </p>
+      <p>
+        Why WebAssembly: the engine is Rust compiled once, so the code in the tab is the code in
+        the server, and 64-bit integers, exact decimals and timestamps to the microsecond survive
+        the trip that a JavaScript number would blur. It costs a module the page has to load —
+        {engineKiB && elementsKiB
+          ? `the engine is ${engineKiB} KiB and all three elements together ${elementsKiB} KiB, brotli-compressed`
+          : 'a few hundred kilobytes, brotli-compressed'}
+        — and a table of fifty rows does not need it. It pays off when sorting, filtering and
+        grouping grow, or when the data does.
       </p>
     </div>
     <Diagram name="where-queries-run" format="svg" narrow={{ width: 560, height: 720 }} />
