@@ -33,6 +33,11 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Added
 
+- **Tooling:** `bench/`, a measuring tool of its own (`just bench`): the same 100,000 rows and the same
+  questions for opengrid and other MIT-licensed grids, each on a page of its own in a real browser —
+  first rows, sort, filter, scroll frames, and the memory of the whole browser process — with a check
+  that every grid shows the right answer. Its results stay on the machine
+  ([#421](https://github.com/casoon/opengrid/issues/421)).
 - **Docs:** *What the engine costs* — the engine on 100,000 and 1,000,000 rows (load, filter, sort,
   group, pivot, memory), measured on an Apple M4 Pro, what a page pays for the WebAssembly modules,
   what the figures are not, and `scripts/measure-queries.mjs` to repeat them.
