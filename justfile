@@ -172,6 +172,13 @@ e2e: e2e-prepare mcp-test
 measure-pivot: wasm-build-components
     node scripts/measure-pivot.mjs
 
+# Das Messwerkzeug bench/ (#421): dieselben Zeilen, dieselben Fragen, jedes Grid auf seiner eigenen
+# Seite, im Browser gemessen — opengrid über Versionen und zum Vergleich andere MIT-Grids.
+# Eigenes Paket mit eigenem Lockfile, nicht Teil eines Releases. Ergebnisse bleiben lokal
+# (bench/results/, nicht eingecheckt). Beispiel: `just bench --rows 100000 --runs 9 --throttle 4`
+bench *args:
+    cd bench && pnpm install --frozen-lockfile && pnpm bench {{args}}
+
 # Scroll-Frame, Filter und Strg+A des Grids über 100 000 Zeilen (#235): Zeit,
 # DOM-Schreibzugriffe, Allokation — in Chromium und WebKit. Messwerte, kein Test.
 measure-grid: wasm-build wasm-build-components
