@@ -142,7 +142,7 @@ pub(super) fn fast(text: &str, schema: &Schema, stored: &Schema, layout: &Layout
                 check_null(field, Value::Null).ok()?;
             }
         }
-        builders.push(layout.complete(cells)).ok()?;
+        builders.push(&layout.complete(cells)).ok()?;
         at = skip_whitespace(bytes, at);
         match bytes.get(at) {
             Some(b',') => at = skip_whitespace(bytes, at + 1),
