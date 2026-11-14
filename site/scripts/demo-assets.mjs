@@ -11,6 +11,9 @@ const out = resolve(repo, 'site/public/opengrid');
 
 const files = {
   'packages/opengrid/loader.js': 'loader.js',
+  // loader.js imports it (#391); the collation module behind it is fetched only by a sort by
+  // a locale, which the demo does not make, so it is not copied.
+  'packages/opengrid/collation.js': 'collation.js',
   'packages/opengrid/pkg': 'pkg',
   'examples/engine-demo/pkg/opengrid_wasm.js': 'engine/opengrid_wasm.js',
   'examples/engine-demo/pkg/opengrid_wasm_bg.wasm': 'engine/opengrid_wasm_bg.wasm',
