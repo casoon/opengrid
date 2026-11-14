@@ -40,8 +40,6 @@
 // follows the import, and the `new URL("…_bg.wasm", import.meta.url)` inside the
 // glue, so the `.wasm` ends up in its output. `moduleUrl` replaces it.
 import * as packaged from "./pkg/opengrid_web_components.js";
-// The engine's collator, for a query that sorts by a locale (rule S4a).
-import { withCollator } from "./collation.js";
 
 /** Set once the first `loadOpengrid` call has run. */
 let loading;
@@ -769,6 +767,39 @@ function coded(code, message) {
   const error = new Error(message);
   error.code = code;
   return error;
+}
+
+// The collator of the engine (rule S4a): `collation.js` and the module behind it are fetched
+// by the first query that names a locale, and never otherwise — so a page that serves the
+// package's files itself and leaves them out loses locale sorts, not the grid. The same test
+// is in `worker.js`; the two must agree.
+const NAMES_A_LOCALE = /"collation"\s*:\s*"(?!binary")/;
+/** The engines and planners that were given their collator. */
+const withCollation = new WeakSet();
+
+async function giveCollation(engine) {
+  let collation;
+  try {
+    collation = await import("./collation.js");
+  } catch (error) {
+    throw coded(
+      "module_not_loaded",
+      `a sort by a locale needs collation.js, and it did not load (${error?.message ?? error})`,
+    );
+  }
+  await collation.giveCollator(engine);
+  withCollation.add(engine);
+}
+
+/**
+ * Runs `run`, the answer itself — or, for a query that names a locale and an engine that has
+ * no collator yet, a promise of it once the collation module is loaded.
+ */
+function withCollator(engine, json, run) {
+  if (withCollation.has(engine) || !NAMES_A_LOCALE.test(json)) {
+    return run();
+  }
+  return giveCollation(engine).then(run);
 }
 
 /**

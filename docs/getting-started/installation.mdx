@@ -10,12 +10,14 @@ order: 1
 npm install @casoon/opengrid
 ```
 
-One package, two WebAssembly modules:
+One package, four WebAssembly modules — two you always have, two a page fetches only when it asks for what they do:
 
 | In the package | Contains | Imported as |
 |---|---|---|
 | `loader.js`, `pkg/` | `<opengrid-table>`, `<opengrid-grid>`, `<opengrid-pivot>`; the providers and `connect` | `@casoon/opengrid` |
 | `engine/`, `worker.js` | `Engine` (in-memory sources over its own typed columns) and `Planner`; the worker that runs the engine | `@casoon/opengrid/engine/opengrid_wasm.js` |
+| `collation.js`, `collation/` | The collation of a locale, for a sort that names one (`collation="de"`): fetched by the first such query, in the tab or in the worker | — |
+| `xlsx/` | The XLSX writer, for `exportRows(…, { format: "xlsx" })` in the tab | — |
 
 A page that only talks to an `opengrid-server` never loads the engine. One that queries in the
 tab imports it, and `createWorkerProvider()` finds it on its own ([The public API →
@@ -60,6 +62,11 @@ A page without a bundler takes the files from `node_modules` and serves them as 
 mkdir -p opengrid
 cp -R node_modules/@casoon/opengrid/{loader.js,worker.js,pkg,engine} opengrid/
 ```
+
+Add `collation.js` and `collation/` to that list if a page sorts by a locale, and `xlsx/` if it
+exports a workbook in the tab. A page that leaves them out loses only that: the first sort by a
+locale is refused with an error that names `collation.js`, and everything else works.
+(Before 0.17.1 a missing `collation.js` stopped the loader and the worker altogether.)
 
 ```text
 opengrid/
