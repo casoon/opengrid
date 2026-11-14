@@ -96,7 +96,7 @@ const page = `<opengrid-grid label="Orders" datasource="orders"
     lead="Sorting, filtering and grouping live in one engine, not in the component. It runs next to your page, in a worker if you like, and the same code answers on your server, so the tab and the server give the same answer without a second implementation."
     points={[
       '**Fast where it counts.** On 100,000 rows a filter takes 1.4 ms, a sort 5 ms and a group-by 9 ms; on a million rows, 14, 52 and 96 ms.',
-      '**Light on memory.** The columns take 9.8 MiB for 100,000 rows and 98 MiB for a million; the module\'s memory, loading included, is 23.6 and 213 MiB. 64-bit integers, exact decimals and microsecond timestamps stay what they are.',
+      '**Compact, not free.** The columns take 9.8 MiB for 100,000 rows and 98 MiB for a million. The whole page holds more, because the engine keeps its own copy beside the page\'s data: about 170 MiB for 100,000 rows loaded from CSV and 660 MiB for a million (Chromium, measured). That is the price of sorting a million rows in 48 ms.',
       '**Off the main thread.** In a worker the page stays usable while the engine works; the live demo queries 100,000 rows that way.',
       engineKiB && elementsKiB
         ? `**What it costs.** A module the page loads: the engine is ${engineKiB} KiB and all three elements together ${elementsKiB} KiB, brotli-compressed. Fifty rows do not need it.`
@@ -116,8 +116,9 @@ const page = `<opengrid-grid label="Orders" datasource="orders"
         { label: 'Group by country, 100,000 rows', value: '9\u00a0ms' },
         { label: 'Filter, 1,000,000 rows', value: '14\u00a0ms' },
         { label: 'Sort, top 100, 1,000,000 rows', value: '52\u00a0ms' },
-        { label: 'Module memory, 100,000 rows', value: '23.6\u00a0MiB' },
-        { label: 'Module memory, 1,000,000 rows', value: '213\u00a0MiB' },
+        { label: 'Engine memory, 100,000 rows', value: '23.6\u00a0MiB' },
+        { label: 'Engine memory, 1,000,000 rows', value: '213\u00a0MiB' },
+        { label: 'The whole page, 1,000,000 rows', value: '658\u00a0MiB' },
       ]}
     />
     <p class="measured">

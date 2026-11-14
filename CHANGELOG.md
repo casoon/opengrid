@@ -39,6 +39,10 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Changed
 
+- **Pages:** the start page no longer says *Light on memory*. It says *Compact, not free*: the columns
+  take 98 MiB for a million rows, and the whole page holds about 660 MiB with the engine beside the
+  page's data (loaded from CSV; 1.1 GiB when the page hands over JavaScript objects). *What the engine
+  costs* has the table, measured with `bench/`.
 - **Pages:** the start page has two more cards, *Text in your language* (the collation of a
   locale) and *Next to an AI assistant* (MCP), and *What sets it apart* says what the collation
   is and promises.
