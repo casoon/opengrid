@@ -25,9 +25,30 @@
 // The packaged engine glue, imported statically so that a bundler follows it and
 // the `.wasm` beside it; `init` names another one with `moduleUrl`.
 import * as packaged from "./engine/opengrid_wasm.js";
-// The collator, for a query that sorts by a locale (rule S4a): a module of its
-// own, fetched by the first such query.
-import { withCollator } from "./collation.js";
+
+// The collator, for a query that sorts by a locale (rule S4a): `collation.js` and the module
+// behind it are fetched by the first such query, and never otherwise — so a page that serves
+// the package's files itself and leaves them out loses locale sorts, not the worker. The same
+// test is in `loader.js`; the two must agree.
+const NAMES_A_LOCALE = /"collation"\s*:\s*"(?!binary")/;
+let collatorGiven = false;
+
+async function withCollator(engine, json, run) {
+  if (!collatorGiven && NAMES_A_LOCALE.test(json)) {
+    let collation;
+    try {
+      collation = await import("./collation.js");
+    } catch (error) {
+      throw Object.assign(
+        new Error(`a sort by a locale needs collation.js, and it did not load (${error?.message ?? error})`),
+        { code: "module_not_loaded" },
+      );
+    }
+    await collation.giveCollator(engine);
+    collatorGiven = true;
+  }
+  return run();
+}
 
 /** The single engine instance, created on `init` and reused for every query. */
 let engine;
