@@ -92,6 +92,14 @@ const page = `<opengrid-grid label="Orders" datasource="orders"
         title: 'Data too big for the browser',
         body: 'Keep the data on your server: the browser sends a query object, never SQL, and the server enforces tokens, a row filter per tenant and the fields a client may see.',
       },
+      {
+        title: 'Text in your language',
+        body: 'Name a locale in the query and text sorts the way readers expect: ä with a in German, after z in Swedish. The tab, SQLite and PostgreSQL give the same order for Latin, Greek and Cyrillic text, checked against orders PostgreSQL wrote.',
+      },
+      {
+        title: 'Next to an AI assistant',
+        body: 'In chat clients that support MCP Apps the same grid opens beside the conversation. The reader works with the keyboard, the assistant filters and sorts the same view through tools, and fields you left out stay out of its reach.',
+      },
     ]}
   />
 
