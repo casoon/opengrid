@@ -1,0 +1,97 @@
+---
+title: What the engine costs
+description: The engine on 100,000 and 1,000,000 rows — load, filter, sort, group, pivot and the memory it holds — measured on an Apple M4 Pro with the script to repeat it, and what the WebAssembly module costs a page.
+order: 1.5
+---
+
+The engine is Rust compiled to WebAssembly, so the question every page has to answer is what it
+buys and what it costs. This page gives the figures for the engine **on its own**: no browser,
+no rendering, no network — the module that answers a query, loaded in Node. They are measured,
+dated, and repeatable with one script.
+
+## What was measured
+
+Measured on 14 November 2026 on an **Apple M4 Pro** (arm64), Node 24, with
+`scripts/measure-queries.mjs`: one run thrown away, then nine, **median** shown with the
+fastest and the slowest in brackets. The rows are ten columns of the conformance data set's
+shape — integers, text, an exact decimal, a float, a boolean, a date and a timestamp — as CSV.
+
+| 100,000 rows (CSV 7.4 MB) | Median | Range |
+|---|---|---|
+| Load the CSV | 143 ms | — |
+| Filter: country and amount, first 100 rows | 1.4 ms | 1.4–3.2 ms |
+| Text search in a column, first 100 rows | 3.9 ms | 3.6–4.2 ms |
+| Sort by amount, top 100 | 4.8 ms | 4.7–5.0 ms |
+| Group by country, sum and count | 9.2 ms | 9.0–9.3 ms |
+| Group by customer (500 groups), sum | 9.7 ms | 9.5–9.9 ms |
+| Pivot: country and customer, sum and count | 30 ms | 30–32 ms |
+| **Module memory** after the load | **23.6 MiB** | |
+| of which the columns | 9.8 MiB | |
+
+| 1,000,000 rows (CSV 74.6 MB) | Median | Range |
+|---|---|---|
+| Load the CSV | 1.3 s | — |
+| Filter: country and amount, first 100 rows | 14 ms | 14–15 ms |
+| Text search in a column, first 100 rows | 39 ms | 39–40 ms |
+| Sort by amount, top 100 | 52 ms | 50–52 ms |
+| Group by country, sum and count | 96 ms | 94–98 ms |
+| Group by customer (500 groups), sum | 101 ms | 101–104 ms |
+| Pivot: country and customer, sum and count | 305 ms | 301–307 ms |
+| **Module memory** after the load | **213 MiB** | |
+| of which the columns | 98 MiB | |
+
+Ten times the rows cost about ten times the time and about nine times the memory: the engine
+scans typed columns, and nothing in these queries grows faster than the data.
+
+## Two numbers for memory
+
+The **columns** — the data itself, typed — take 9.8 MiB for 100,000 rows and 98 MiB for a
+million: about a hundred bytes a row. A 64-bit integer takes eight bytes and stays an integer,
+an exact decimal stays exact, a timestamp keeps its microseconds, and a missing value costs a
+bit in a bitmap rather than a boxed object.
+
+The **module memory** is larger, 23.6 and 213 MiB, because it also holds the room that reading
+the CSV needed, and WebAssembly memory only grows. That is the number a page pays, and the one
+the engine's budget guards: `peakmark.toml` fails a release whose scenario (100,000 rows loaded,
+queried and pivoted) needs more than 26 MiB, or leaks from one run to the next.
+
+The numbers are the same in the tab and on a server, because it is the same code.
+
+## What a page pays
+
+The engine is a module the page loads before its first query. Compressed with Brotli:
+
+| Module | Size | Loaded |
+|---|---|---|
+| The engine (`engine/`) | about 160 KiB | when the page starts the engine |
+| All three elements (`pkg/`) | about 348 KiB | with the elements |
+| The collation of a locale (`collation/`) | about 330 KiB | only by a sort that names a locale |
+| The XLSX writer (`xlsx/`) | about 240 KiB | only by an export to a workbook |
+
+Sizes are kept inside budgets in `peakmark.toml`, so a release that grows one fails the build
+until the growth is explained. A table of fifty rows does not need an engine, and the page
+that only reads it should not pay for one.
+
+## In a worker
+
+The engine runs in a Web Worker as it runs on the page, so a query does not block the main
+thread. The [live demo](https://og-vanilla.casoon.dev/large-data) queries 100,000 rows that way.
+The figures above are the engine's own time; what the page adds is the transfer of the answer and
+the drawing of the rows on screen.
+
+## What these figures are not
+
+- **Not a browser measurement.** Rendering, scrolling and the filter row are measured
+  separately by `scripts/measure-grid.mjs` (`just measure-grid`), in Chromium and WebKit.
+- **Not a comparison with other grids.** One would need the same data, the same features and
+  each product set up as its own documentation recommends, and its method published before its
+  result. That is planned, not done; until then this page says nothing about anyone else.
+- **One machine.** An M4 Pro is a fast laptop. A phone, or a laptop three years older, takes
+  proportionally longer; run the script on the hardware your readers have.
+
+## Repeat it
+
+```sh
+just wasm-build
+node scripts/measure-queries.mjs --rows 100000,1000000 --runs 9
+```

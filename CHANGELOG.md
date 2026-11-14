@@ -29,6 +29,13 @@ Two things belong in every release entry and are easy to leave out:
   copy ([#415](https://github.com/casoon/opengrid/issues/415)).
 - **Pages:** the demo on the project page did not start since 0.17.0 (`loader.js` imports
   `collation.js`, which the site did not copy).
+- **Docs:** the API reference linked the protocol page as `protocol.md`, which is a 404 on the site.
+
+### Added
+
+- **Docs:** *What the engine costs* — the engine on 100,000 and 1,000,000 rows (load, filter, sort,
+  group, pivot, memory), measured on an Apple M4 Pro, what a page pays for the WebAssembly modules,
+  what the figures are not, and `scripts/measure-queries.mjs` to repeat them.
 
 ### Changed
 
@@ -37,9 +44,10 @@ Two things belong in every release entry and are easy to leave out:
   is and promises.
 - **Pages:** the project site uses the current shared theme (0.12.14): a wider header, a smaller
   CASOON badge, and a block right after the hero no longer sits flush against it.
-- **Pages:** the start page leads with *What sets it apart* — six points, each with what backs it —
-  and says why the engine is WebAssembly and what that costs. Its figures (conformance cases,
-  axe specs, the engine's size) are counted and measured when the site is built.
+- **Pages:** the start page leads with *Why WebAssembly* — what the engine buys and what it costs,
+  with figures measured on an Apple M4 Pro — and then four points on what sets opengrid apart,
+  in blocks of four so no card stands alone. Its other figures (conformance cases, axe specs,
+  module sizes) are counted and measured when the site is built.
 
 ## [0.17.0] - 2026-11-13
 
