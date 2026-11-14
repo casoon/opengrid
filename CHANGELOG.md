@@ -19,6 +19,11 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+### Fixed
+
+- **Pages:** the demo on the project page did not start since 0.17.0 (`loader.js` imports
+  `collation.js`, which the site did not copy).
+
 ### Changed
 
 - **Pages:** the start page has two more cards, *Text in your language* (the collation of a
