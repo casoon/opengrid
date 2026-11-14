@@ -1933,12 +1933,12 @@
       }
     },
     "engine": {
-      "accepted": "2026-11-13",
-      "reason": "Collation of a locale for sorting (#391): the attribute in the elements (+1.4 KiB), the sort by keys and the collator's hook in the engine (+4.2 KiB), and the collation module, new, 333152 B.",
+      "accepted": "2026-11-14",
+      "reason": "JSON fast path (#426): one pass over the text into the column builders, the general reader kept as the fallback (+1.6 KiB brotli); a JSON array loads 1.7 to 3 times faster.",
       "values": {
-        "raw": 481440,
-        "gzip": 202016,
-        "brotli": 163475,
+        "raw": 485490,
+        "gzip": 203693,
+        "brotli": 165070,
         "peak_memory": 24772608,
         "growth_per_run": 0
       },
