@@ -19,6 +19,11 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+### Changed
+
+- **Pages:** the project site uses the current shared theme (0.12.14): a wider header, a smaller
+  CASOON badge, and a block right after the hero no longer sits flush against it.
+
 ### Fixed
 
 - **Package:** a page that serves the package's files itself and leaves out `collation.js` no
