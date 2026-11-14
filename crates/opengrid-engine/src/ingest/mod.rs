@@ -182,7 +182,10 @@ pub fn load_csv(bytes: &[u8], schema: &Schema, options: CsvOptions) -> Result<Ta
     }
     // Record by record straight into the column builders (point 45): neither
     // the records nor the typed rows of the whole file exist at once.
-    let mut builders = Builders::new(schema, 0);
+    // Sized by the line breaks of the file, so the columns are allocated once: grown by doubling
+    // they hold the old and the new buffer at the same moment, and the module's memory, which
+    // never shrinks, keeps the room of every step (issue #427).
+    let mut builders = Builders::new(schema, bytes.iter().filter(|byte| **byte == b'\n').count());
     // The two row buffers are reused: a vector per row, twice, is two allocations per row.
     let (mut row, mut done) = (Vec::with_capacity(stored.fields().len()), Vec::new());
     let mut direct = Vec::new();
