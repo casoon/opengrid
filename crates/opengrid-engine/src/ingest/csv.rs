@@ -87,6 +87,11 @@ impl Field {
 /// Splits `input` into records, one at a time: the records of the whole file
 /// never exist at once. After an error the iterator ends.
 pub(crate) fn scan(input: &str, delimiter: u8) -> Scanner<'_> {
+    scan_from(input, delimiter, 1)
+}
+
+/// [`scan`] for a piece of a file that starts on physical line `first_line`.
+pub(crate) fn scan_from(input: &str, delimiter: u8, first_line: usize) -> Scanner<'_> {
     Scanner {
         input,
         delimiter,
@@ -94,10 +99,10 @@ pub(crate) fn scan(input: &str, delimiter: u8) -> Scanner<'_> {
         field: Field::default(),
         start: 0,
         index: 0,
-        line: 1,
-        record_line: 1,
+        line: first_line,
+        record_line: first_line,
         quoted: false,
-        quote_line: 1,
+        quote_line: first_line,
         field_start: true,
         started: false,
         done: false,
@@ -119,6 +124,49 @@ pub(crate) struct Scanner<'a> {
     field_start: bool,
     started: bool,
     done: bool,
+}
+
+impl Scanner<'_> {
+    /// The physical line the next record would start on.
+    pub(crate) fn line(&self) -> usize {
+        self.line
+    }
+}
+
+/// The end of the last whole record in `bytes`, which start at a record: the index after the last
+/// line break that is not inside a quoted field, or 0 if there is none. What follows it is the
+/// start of a record that has not been read to its end. The quotes are followed the way the
+/// scanner follows them — one opens a field only at its start — because counting them would be
+/// wrong for a stray quote in the middle of a field.
+pub(crate) fn last_boundary(bytes: &[u8], delimiter: u8) -> usize {
+    let (mut quoted, mut field_start, mut boundary) = (false, true, 0);
+    let mut index = 0;
+    while index < bytes.len() {
+        let byte = bytes[index];
+        if quoted {
+            if byte == b'"' {
+                if bytes.get(index + 1) == Some(&b'"') {
+                    index += 1;
+                } else {
+                    quoted = false;
+                }
+            }
+        } else if byte == delimiter {
+            field_start = true;
+        } else if byte == b'\n' {
+            field_start = true;
+            boundary = index + 1;
+        } else if byte == b'\r' {
+            field_start = true;
+        } else if byte == b'"' && field_start {
+            quoted = true;
+            field_start = false;
+        } else {
+            field_start = false;
+        }
+        index += 1;
+    }
+    boundary
 }
 
 impl<'a> Iterator for Scanner<'a> {

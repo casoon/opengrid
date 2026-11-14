@@ -198,6 +198,162 @@ pub fn load_csv(bytes: &[u8], schema: &Schema, options: CsvOptions) -> Result<Ta
     builders.finish()
 }
 
+/// A CSV file read piece by piece: what [`load_csv`] does with the whole file at once, for a file
+/// that arrives in chunks (a stream, a file read a slice at a time). Only a chunk and the columns
+/// are in memory, not the file as well (issue #427).
+///
+/// The pieces may end anywhere, inside a field or a character; a record that is not complete is
+/// kept until the next piece completes it. The result is the table [`load_csv`] makes of the
+/// pieces joined, errors and line numbers included.
+pub struct CsvLoader {
+    stored: Schema,
+    layout: Layout,
+    options: CsvOptions,
+    builders: Builders<'static>,
+    /// The bytes after the last whole record of what was fed.
+    carry: Vec<u8>,
+    /// Physical line the next record starts on.
+    line: usize,
+    header_pending: bool,
+    /// The file's size when the caller knows it: the columns are sized by it.
+    size_hint: usize,
+    started: bool,
+    first: bool,
+    row: Vec<Value>,
+    done: Vec<Value>,
+    direct: Vec<bool>,
+}
+
+impl CsvLoader {
+    /// A loader for a file of this schema. `size_hint` is the file's size in bytes, or 0 when it
+    /// is not known: it only sizes the columns, a wrong one costs memory, not correctness.
+    pub fn new(schema: &Schema, options: CsvOptions) -> Result<Self, IngestError> {
+        check_delimiter(options.delimiter)?;
+        // The file holds the stored columns; a derived one is computed, never read
+        // (plan point 54). Both ingest paths do it the same way, which is what keeps
+        // CSV and JSON yielding identical tables.
+        let stored = schema.stored();
+        let layout = Layout::of(schema, &stored);
+        Ok(Self {
+            row: Vec::with_capacity(stored.fields().len()),
+            stored,
+            layout,
+            header_pending: options.has_header,
+            options,
+            builders: Builders::with(schema.clone(), 0),
+            carry: Vec::new(),
+            line: 1,
+            size_hint: 0,
+            started: false,
+            first: true,
+            done: Vec::new(),
+            direct: Vec::new(),
+        })
+    }
+
+    /// Tells the loader the file's size, before the first piece.
+    pub fn with_size_hint(mut self, bytes: usize) -> Self {
+        self.size_hint = bytes;
+        self
+    }
+
+    /// Sizes the columns for `rows` rows, once.
+    fn start(&mut self, rows: usize) {
+        if !self.started {
+            self.started = true;
+            self.builders = Builders::with(self.builders.schema.clone(), rows);
+        }
+    }
+
+    /// The next piece of the file.
+    pub fn feed(&mut self, chunk: &[u8]) -> Result<(), IngestError> {
+        if !self.started && self.size_hint > 0 && !chunk.is_empty() {
+            // The rows of the whole file, from the lines of the first piece: an estimate, a
+            // little generous, so that the columns are rarely grown.
+            let lines = chunk.iter().filter(|byte| **byte == b'\n').count().max(1);
+            let estimate = self.size_hint / (chunk.len() / lines).max(1);
+            self.start(estimate + estimate / 50);
+        }
+        let mut joined = std::mem::take(&mut self.carry);
+        let whole: &[u8] = if joined.is_empty() {
+            chunk
+        } else {
+            joined.extend_from_slice(chunk);
+            &joined
+        };
+        // The BOM is not a field's first character: the quotes are followed from after it.
+        let skip = if self.first && whole.starts_with("\u{feff}".as_bytes()) {
+            3
+        } else {
+            0
+        };
+        let end = match csv::last_boundary(&whole[skip..], self.options.delimiter) {
+            0 => 0,
+            end => skip + end,
+        };
+        self.consume(&whole[..end])?;
+        self.carry = whole[end..].to_vec();
+        Ok(())
+    }
+
+    /// The end of the file: the table.
+    pub fn finish(mut self) -> Result<Table, IngestError> {
+        let rest = std::mem::take(&mut self.carry);
+        self.consume(&rest)?;
+        self.builders.finish()
+    }
+
+    /// Reads whole records: the bytes end where a record ends, or are the end of the file.
+    fn consume(&mut self, bytes: &[u8]) -> Result<(), IngestError> {
+        if bytes.is_empty() {
+            return Ok(());
+        }
+        let text = std::str::from_utf8(bytes).map_err(|error| IngestError::Input {
+            message: format!(
+                "input is not UTF-8 (invalid byte at offset {})",
+                error.valid_up_to()
+            ),
+        })?;
+        // A BOM marks the encoding, it is not part of the first column name.
+        let text = if std::mem::take(&mut self.first) {
+            text.strip_prefix('\u{feff}').unwrap_or(text)
+        } else {
+            text
+        };
+        let to_error = |error: csv::ScanError| IngestError::Csv {
+            line: error.line,
+            message: error.message,
+        };
+        let Self {
+            stored,
+            layout,
+            options,
+            builders,
+            line,
+            header_pending,
+            row,
+            done,
+            direct,
+            ..
+        } = self;
+        let mut records = csv::scan_from(text, options.delimiter, *line);
+        // Record by record straight into the column builders (point 45): neither
+        // the records nor the typed rows of the whole file exist at once.
+        for record in records.by_ref() {
+            let record = record.map_err(to_error)?;
+            if std::mem::take(header_pending) {
+                check_header(stored, &record.fields, record.line)?;
+                continue;
+            }
+            read_row(stored, &record, options, row, direct)?;
+            let finished = layout.complete_into(row, done);
+            builders.push_text(finished, layout, direct, &record.fields)?;
+        }
+        *line = records.line();
+        Ok(())
+    }
+}
+
 /// Reads JSON bytes — an array of objects in the column-oriented wire format
 /// (E6/E13) — into a table of the given schema.
 ///
@@ -345,19 +501,26 @@ impl<'a> PieceBuilder<'a> {
 
 /// One builder per column of the schema, filled a row at a time.
 struct Builders<'a> {
-    schema: &'a Schema,
+    schema: Schema,
+    lifetime: std::marker::PhantomData<&'a ()>,
     columns: Vec<ColumnBuilder>,
 }
 
 impl<'a> Builders<'a> {
     fn new(schema: &'a Schema, capacity: usize) -> Self {
+        Self::with(schema.clone(), capacity)
+    }
+
+    fn with(schema: Schema, capacity: usize) -> Self {
+        let columns = schema
+            .fields()
+            .iter()
+            .map(|field| ColumnBuilder::new(field.data_type, capacity))
+            .collect();
         Self {
             schema,
-            columns: schema
-                .fields()
-                .iter()
-                .map(|field| ColumnBuilder::new(field.data_type, capacity))
-                .collect(),
+            lifetime: std::marker::PhantomData,
+            columns,
         }
     }
 
@@ -405,7 +568,7 @@ impl<'a> Builders<'a> {
             .into_iter()
             .map(ColumnBuilder::finish)
             .collect();
-        Table::new(self.schema, columns).map_err(|message| IngestError::Schema { message })
+        Table::new(&self.schema, columns).map_err(|message| IngestError::Schema { message })
     }
 }
 
