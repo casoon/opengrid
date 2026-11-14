@@ -10,8 +10,11 @@
   },
   "dependencies": {
     "@casoon/opengrid": "0.17.0",
+    "@revolist/revogrid": "^4.31.5",
     "ag-grid-community": "^36.3.0",
-    "tabulator-tables": "^6.7.1"
+    "slickgrid": "^6.0.0",
+    "tabulator-tables": "^6.7.1",
+    "w2ui": "^2.0.0"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",

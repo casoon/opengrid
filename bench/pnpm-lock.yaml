@@ -11,12 +11,21 @@ importers:
       '@casoon/opengrid':
         specifier: 0.17.0
         version: 0.17.0
+      '@revolist/revogrid':
+        specifier: ^4.31.5
+        version: 4.31.5
       ag-grid-community:
         specifier: ^36.3.0
         version: 36.3.0
+      slickgrid:
+        specifier: ^6.0.0
+        version: 6.0.0
       tabulator-tables:
         specifier: ^6.7.1
         version: 6.7.1
+      w2ui:
+        specifier: ^2.0.0
+        version: 2.0.0
     devDependencies:
       '@playwright/test':
         specifier: 1.63.0
@@ -68,6 +77,9 @@ packages:
     resolution: {integrity: sha512-oxMK4vllB9RK5NQ2l1pq1IfOf2AvnEuj/vYGDj0H2nMtmtZpKtCwt/l00GEO6xjGfpBNAvjovvYdCm50dRQkpQ==}
     engines: {node: '>=20'}
     hasBin: true
+
+  '@revolist/revogrid@4.31.5':
+    resolution: {integrity: sha512-tWgNJpYPDrk/1tBYW4xZfgRNiab6ttZBqXwkeTdNX0fksNXnVsEXBEWegUvfkQs77QDRKcg2z1dUEop4G/Cttg==}
 
   '@rolldown/binding-android-arm-eabi@1.2.19':
     resolution: {integrity: sha512-e+Ebe0WT+9tbXmNKPIiC8YrWAHYwug3m6i4p3rZGGulfZri1jtI4HslT+OZnFf/OIHowWF71DTlHwXBP2SiA7A==}
@@ -298,6 +310,10 @@ packages:
     engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
 
+  slickgrid@6.0.0:
+    resolution: {integrity: sha512-zWzHmUR+kQDyicsIRGPR5IdZoBhPwuccX7gCtm76LtGNoU34omRb35/8VWEglEaDTphpeUNRM3zFOrPz7Ccvig==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+
   source-map-js@1.2.2:
     resolution: {integrity: sha512-KGj/8Y43x35aZVDtt+J4mK1hoLGHULMYfSkODJNQjNDC3oW1PqPoxMwo0pLUsWM/UEGzON/NxeHywEfNXNP3Vw==}
     engines: {node: '>=0.10.0'}
@@ -355,6 +371,9 @@ packages:
       yaml:
         optional: true
 
+  w2ui@2.0.0:
+    resolution: {integrity: sha512-oMvLitt2jMholqCpX0mDZ0b70ITjlLpfV56gswk7/cD2oPmlibV+DqcizESSs3+t5VJHiG0Xlcb23e4AoCN1Qw==}
+
 snapshots:
 
   '@casoon/opengrid@0.17.0': {}
@@ -387,6 +406,8 @@ snapshots:
   '@playwright/test@1.63.0':
     dependencies:
       playwright: 1.63.0
+
+  '@revolist/revogrid@4.31.5': {}
 
   '@rolldown/binding-android-arm-eabi@1.2.19':
     optional: true
@@ -554,6 +575,8 @@ snapshots:
       '@rolldown/binding-win32-arm64-msvc': 1.2.19
       '@rolldown/binding-win32-x64-msvc': 1.2.19
 
+  slickgrid@6.0.0: {}
+
   source-map-js@1.2.2: {}
 
   tabulator-tables@6.7.1: {}
@@ -575,3 +598,5 @@ snapshots:
       tinyglobby: 0.2.17
     optionalDependencies:
       fsevents: 2.3.3
+
+  w2ui@2.0.0: {}

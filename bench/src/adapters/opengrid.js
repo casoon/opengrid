@@ -1,5 +1,6 @@
 // opengrid, as a page installs it from npm: the element, a worker provider, the rows handed over
-// as the same objects every grid gets. `amount` is a float64 here, as it is a JS number in every
+// as the same objects every grid gets (`opengrid-csv.js` hands over CSV bytes, the engine's own
+// input). `amount` is a float64 here, as it is a JS number in every
 // other grid; the engine's exact decimal is a feature the others do not have, and not measured.
 import { createWorkerProvider, loadOpengrid } from "@casoon/opengrid";
 
