@@ -40,10 +40,11 @@ const REST_PROVIDER_METHODS: [&str; 6] = [
 
 /// The methods of the two engine providers — `stats` is what the engine holds
 /// (issue #70). The same list for both: a page swaps one for the other.
-const ENGINE_PROVIDER_METHODS: [&str; 7] = [
+const ENGINE_PROVIDER_METHODS: [&str; 8] = [
     "execute",
     "load",
     "loadRows",
+    "loadStream",
     "pivot",
     "stats",
     "terminate",
@@ -424,8 +425,8 @@ loader exports
 
 provider methods
   createRestProvider: describe execute export exportPivot terminate watch
-  createWorkerProvider: execute load loadRows pivot stats terminate watch
-  createLocalProvider: execute load loadRows pivot stats terminate watch
+  createWorkerProvider: execute load loadRows loadStream pivot stats terminate watch
+  createLocalProvider: execute load loadRows loadStream pivot stats terminate watch
 
 error fields
   status code path

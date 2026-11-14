@@ -33,6 +33,7 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Added
 
+- **Package, engine:** a CSV file can be read piece by piece: `provider.loadStream(name, source, schema, { chunkSize? })` on the worker and the local provider takes a `File`/`Blob`, a `ReadableStream` of bytes or an async iterable, and the engine module has `begin_csv`, `push_csv`, `end_csv` and `abort_csv` (Rust: `ingest::CsvLoader`). Only a piece and the columns are in memory, not the whole file as well: a 43 MB file loaded from a `fetch` stream takes about 30 MiB less in the browser than `load` of its bytes (the engine's module 118 MiB instead of 78–90 MiB). The pieces may end anywhere; the table, the errors and their line numbers are those of the whole file (#427). [Data you already have](docs/guides/data-you-have.md) has a section on it.
 - **Columns:** `ColumnBuilder::push_str` appends text to a text column without a `Value` in between. The CSV reader uses it, so a text cell is copied into its column once instead of being made a `String`, copied and freed (#429).
 - **Docs:** *What the engine costs* — the engine on 100,000 and 1,000,000 rows (load, filter, sort,
   group, pivot, memory), measured on an Apple M4 Pro, what a page pays for the WebAssembly modules,
