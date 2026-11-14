@@ -84,3 +84,41 @@ test("the worker reads the pieces the same way, and drops a file that fails", as
   expect(result.message).toContain("line 3");
   expect(result.after).toBe(1);
 });
+
+test("an async iterable that reuses one buffer is read as it was delivered", async ({ page }) => {
+  await open(page);
+  const rows = await page.evaluate(
+    async ({ file, schema }) => {
+      const { createWorkerProvider } = await import("/packages/opengrid/loader.js");
+      const worker = createWorkerProvider();
+      const bytes = new TextEncoder().encode(file);
+      // One buffer for every piece, refilled each time: the loader must not hand it on as its own
+      // (a transferred buffer is detached, and the next refill throws).
+      const reused = new Uint8Array(4);
+      async function* pieces() {
+        for (let at = 0; at < bytes.length; at += 4) {
+          const piece = bytes.subarray(at, at + 4);
+          reused.set(piece);
+          yield reused.subarray(0, piece.length);
+        }
+      }
+      await worker.loadStream("people", pieces(), schema);
+      const rows = (await worker.stats()).sources.find((s) => s.name === "people").rows;
+      worker.terminate();
+      return rows;
+    },
+    { file: FILE, schema: await page.evaluate(() => window.__schema) },
+  );
+  expect(rows).toBe(3);
+});
+
+test("a source that is not a source is refused, and the old rows stay", async ({ page }) => {
+  await open(page);
+  const message = await page.evaluate(() =>
+    window.__provider
+      .loadStream("people", "id,name,born\n1,A,\\N\n", window.__schema)
+      .then(() => null, (error) => error.message),
+  );
+  expect(message).toContain("Blob");
+  await expect.poll(() => names(page)).toEqual(["Ada", "Grace", "Edsger"]);
+});
