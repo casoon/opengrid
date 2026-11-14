@@ -419,6 +419,22 @@ impl ColumnBuilder {
         self.values.push_zero();
     }
 
+    /// Appends text to a text column without a [`Value`] in between — the text is copied into the
+    /// column once, with no `String` made and freed for it.
+    ///
+    /// An error, not a panic, for any other column type or more than 4 GiB of text.
+    pub fn push_str(&mut self, value: &str) -> Result<(), String> {
+        let Values::Utf8 { offsets, text } = &mut self.values else {
+            return Err(format!("expects {}, found text", self.data_type));
+        };
+        text.push_str(value);
+        let end = u32::try_from(text.len())
+            .map_err(|_| "holds more than 4 GiB of text, more than a column can".to_owned())?;
+        offsets.push(end);
+        self.validity.push(true);
+        Ok(())
+    }
+
     /// Appends a value, which has to be of the column's type or NULL.
     ///
     /// A mismatch is an error, not a panic: ingest is the path untrusted input
@@ -533,6 +549,21 @@ mod tests {
 
     fn read(column: &Column) -> Vec<Value> {
         (0..column.len()).map(|row| column.value(row)).collect()
+    }
+
+    /// Issue #429: text pushed as text is what the same text pushed as a value is.
+    #[test]
+    fn text_pushed_as_text_is_text_pushed_as_a_value() {
+        let mut direct = ColumnBuilder::new(DataType::Utf8, 3);
+        direct.push_str("a").unwrap();
+        direct.push_null();
+        direct.push_str("ä b").unwrap();
+        assert_eq!(
+            read(&direct.finish()),
+            read(&utf8(&[Some("a"), None, Some("ä b")]))
+        );
+        let mut number = ColumnBuilder::new(DataType::Int64, 1);
+        assert!(number.push_str("1").is_err());
     }
 
     /// Issue #213: a decimal of another scale is refused, not stored with a
