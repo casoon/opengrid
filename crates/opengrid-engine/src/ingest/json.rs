@@ -94,7 +94,8 @@ pub(super) fn fast(text: &str, schema: &Schema, stored: &Schema, layout: &Layout
         // An empty array is an empty table: the general path says so, with its schema checks.
         return None;
     }
-    let mut builders = Builders::new(schema, 0);
+    // Sized by the objects in the text, so the columns are allocated once (issue #427).
+    let mut builders = Builders::new(schema, text.bytes().filter(|byte| *byte == b'{').count());
     let mut seen = vec![false; fields.len()];
     loop {
         if bytes.get(at) != Some(&b'{') {
