@@ -205,3 +205,34 @@ fn input_without_records_yields_an_empty_table() {
         assert_eq!(table.schema().len(), 2, "the columns survive");
     }
 }
+
+/// Issue #429: a text cell of a CSV goes into its column as it is, past the `Value`. What that
+/// makes is what the JSON path makes of the same cells: empty text, the NULL spelling, quotes,
+/// line breaks, non-ASCII, and a required text column that is refused a NULL.
+#[test]
+fn text_cells_of_a_csv_are_what_the_same_cells_of_a_json_are() {
+    let schema = Schema::new(vec![
+        Field::required(FieldName::new("name").unwrap(), DataType::Utf8),
+        Field::new(FieldName::new("note").unwrap(), DataType::Utf8),
+        Field::new(FieldName::new("n").unwrap(), DataType::Int64),
+    ]);
+    let csv = "name,note,n\n\"a,\"\"b\"\"\",\\N,1\n,\"line\nbreak\",\\N\n ä ,,3\n";
+    let json = r#"[
+        {"name": "a,\"b\"", "note": null, "n": 1},
+        {"name": "", "note": "line\nbreak", "n": null},
+        {"name": " ä ", "note": "", "n": 3}
+    ]"#;
+    let from_csv = load_csv(csv.as_bytes(), &schema, CsvOptions::default()).unwrap();
+    let from_json = load_json(json.as_bytes(), &schema).unwrap();
+    assert_eq!(from_csv, from_json);
+
+    let refused = load_csv(
+        "name,note,n\n\\N,x,1\n".as_bytes(),
+        &schema,
+        CsvOptions::default(),
+    );
+    assert_eq!(
+        refused.unwrap_err().to_string(),
+        "CSV line 2, column name: NULL is not allowed in a non-nullable column"
+    );
+}
