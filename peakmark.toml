@@ -30,8 +30,11 @@ glue     = "target/peakmark/engine/m.js"
 # Raised 2026-11-14 from 166800: reading a CSV file in pieces (#427: the loader that keeps a
 # record that is cut between two pieces, the three calls and the abort on the engine) grew the
 # engine by 2.4 KiB, to 168318 B.
+# Raised 2026-11-14 from 170000: a page of a big table is taken without sorting the table (#428:
+# the bounded selection beside the full sort, once for each key type) grew the engine by 3.6 KiB,
+# to 171901 B; the sort of a million rows takes half the time and 42 MiB less of the module.
 [module.budget]
-brotli         = "170000 B"
+brotli         = "173700 B"
 peak_memory    = "26 MiB"
 growth_per_run = "0"
 
