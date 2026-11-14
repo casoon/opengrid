@@ -183,9 +183,12 @@ pub fn load_csv(bytes: &[u8], schema: &Schema, options: CsvOptions) -> Result<Ta
     // Record by record straight into the column builders (point 45): neither
     // the records nor the typed rows of the whole file exist at once.
     let mut builders = Builders::new(schema, 0);
+    // The two row buffers are reused: a vector per row, twice, is two allocations per row.
+    let (mut row, mut done) = (Vec::with_capacity(stored.fields().len()), Vec::new());
     for record in records {
         let record = record.map_err(to_error)?;
-        builders.push(layout.complete(read_row(&stored, &record, &options)?))?;
+        read_row(&stored, &record, &options, &mut row)?;
+        builders.push(layout.complete_into(&mut row, &mut done))?;
     }
     builders.finish()
 }
@@ -216,7 +219,7 @@ fn load_json_general(
     let rows = json::rows(text, stored)?;
     let mut builders = Builders::new(schema, rows.len());
     for row in rows {
-        builders.push(layout.complete(row))?;
+        builders.push(&layout.complete(row))?;
     }
     builders.finish()
 }
@@ -319,7 +322,7 @@ impl<'a> PieceBuilder<'a> {
                 .iter()
                 .map(|column| column[row].clone())
                 .collect();
-            self.builders.push(self.layout.complete(values))?;
+            self.builders.push(&self.layout.complete(values))?;
         }
         self.rows += row_count as u64;
         Ok(())
@@ -356,8 +359,8 @@ impl<'a> Builders<'a> {
     /// Appends one row. The values went through [`cell`] before, so a mismatch
     /// here means the caller is broken — reported as an error rather than a
     /// panic, because ingest is the path untrusted input takes.
-    fn push(&mut self, row: Vec<Value>) -> Result<(), IngestError> {
-        for ((builder, field), value) in self.columns.iter_mut().zip(self.schema.fields()).zip(&row)
+    fn push(&mut self, row: &[Value]) -> Result<(), IngestError> {
+        for ((builder, field), value) in self.columns.iter_mut().zip(self.schema.fields()).zip(row)
         {
             builder
                 .push(value)
@@ -538,7 +541,8 @@ fn read_row(
     schema: &Schema,
     record: &csv::Record,
     options: &CsvOptions,
-) -> Result<Vec<Value>, IngestError> {
+    row: &mut Vec<Value>,
+) -> Result<(), IngestError> {
     let fields = schema.fields();
     if record.fields.len() != fields.len() {
         return Err(IngestError::Csv {
@@ -550,7 +554,7 @@ fn read_row(
             ),
         });
     }
-    let mut row = Vec::with_capacity(fields.len());
+    row.clear();
     for (field, raw) in fields.iter().zip(&record.fields) {
         let value = if is_null(raw, options) {
             Value::Null
@@ -569,7 +573,7 @@ fn read_row(
             })?,
         );
     }
-    Ok(row)
+    Ok(())
 }
 
 /// NULL is allowed in a nullable column only.
@@ -620,15 +624,48 @@ impl Layout {
         Layout(Some(columns))
     }
 
-    fn complete(&self, row: Vec<Value>) -> Vec<Value> {
+    /// [`Self::complete`] into buffers the caller keeps: the row read, and the row finished. What
+    /// comes back is the finished row, which is `row` itself when nothing is derived.
+    fn complete_into<'a>(&self, row: &'a mut [Value], done: &'a mut Vec<Value>) -> &'a [Value] {
         let Some(columns) = &self.0 else {
             return row;
         };
+        // The parts first, while every stored value is still in the row; then the stored values
+        // move out of it — a text cell cloned is an allocation per cell per row.
+        done.clear();
+        for column in columns {
+            done.push(match column {
+                Source::Part(index, part) => part.of(&row[*index]),
+                Source::Stored(_) => Value::Null,
+            });
+        }
+        for (column, slot) in columns.iter().zip(done.iter_mut()) {
+            if let Source::Stored(index) = column {
+                *slot = std::mem::replace(&mut row[*index], Value::Null);
+            }
+        }
+        done
+    }
+
+    fn complete(&self, mut row: Vec<Value>) -> Vec<Value> {
+        let Some(columns) = &self.0 else {
+            return row;
+        };
+        // Parts first, while every stored value is still in the row; then the stored values move
+        // out of it, not cloned — a text cell cloned is an allocation per cell per row.
+        let parts: Vec<Value> = columns
+            .iter()
+            .filter_map(|column| match column {
+                Source::Part(index, part) => Some(part.of(&row[*index])),
+                Source::Stored(_) => None,
+            })
+            .collect();
+        let mut parts = parts.into_iter();
         columns
             .iter()
             .map(|column| match column {
-                Source::Stored(index) => row[*index].clone(),
-                Source::Part(index, part) => part.of(&row[*index]),
+                Source::Stored(index) => std::mem::replace(&mut row[*index], Value::Null),
+                Source::Part(..) => parts.next().expect("one part per derived column"),
             })
             .collect()
     }

@@ -1934,11 +1934,11 @@
     },
     "engine": {
       "accepted": "2026-11-14",
-      "reason": "JSON fast path (#426): one pass over the text into the column builders, the general reader kept as the fallback (+1.6 KiB brotli); a JSON array loads 1.7 to 3 times faster.",
+      "reason": "JSON fast path (#426: one pass over the text into the column builders, the general reader kept as the fallback; a JSON array loads 1.7 to 3 times faster) and the CSV reader (#429: timestamps and short decimals read by position, rows without a vector each; about 10 % faster), together +2.2 KiB brotli.",
       "values": {
-        "raw": 485490,
-        "gzip": 203693,
-        "brotli": 165070,
+        "raw": 487436,
+        "gzip": 204463,
+        "brotli": 165714,
         "peak_memory": 24772608,
         "growth_per_run": 0
       },

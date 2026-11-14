@@ -158,6 +158,16 @@ fn parse_decimal(s: &str) -> Result<Decimal, ValueError> {
     // The digits accumulate straight into the i128 — what `i128::parse` of the
     // concatenated digits did, without allocating the concatenation per cell
     // (point 45). An overflow is the same error it was.
+    // Up to 18 digits cannot overflow a u64, and a 64-bit multiplication is far cheaper than a
+    // checked 128-bit one (issue #429); more digits take the checked loop below.
+    if int_part.len() + frac_part.len() <= 18 {
+        let magnitude = int_part
+            .bytes()
+            .chain(frac_part.bytes())
+            .fold(0u64, |value, digit| value * 10 + u64::from(digit - b'0'));
+        let value = i128::from(magnitude);
+        return Ok(Decimal::new(if negative { -value } else { value }, scale));
+    }
     let mut magnitude: i128 = 0;
     for digit in int_part.bytes().chain(frac_part.bytes()) {
         magnitude = magnitude
@@ -253,6 +263,14 @@ impl fmt::Display for Date {
 
 const MICROS_PER_DAY: i64 = 86_400_000_000;
 
+/// The number of up to nine ASCII digits; `None` if any byte is not one.
+fn digits(bytes: &[u8]) -> Option<u32> {
+    bytes.iter().try_fold(0u32, |number, byte| {
+        byte.is_ascii_digit()
+            .then(|| number * 10 + u32::from(byte - b'0'))
+    })
+}
+
 /// An instant in UTC with microsecond resolution, stored as µs since the epoch.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Timestamp {
@@ -301,8 +319,42 @@ impl Timestamp {
         Date::from_days_since_epoch(self.micros.div_euclid(MICROS_PER_DAY) as i32)
     }
 
+    /// `YYYY-MM-DDTHH:MM:SSZ` or with exactly six fraction digits, digits only: `None` for any
+    /// other shape or an out-of-range field, which the general reading then judges.
+    fn parse_fixed(b: &[u8]) -> Option<Self> {
+        let micro = match b.len() {
+            20 => 0,
+            27 if b[19] == b'.' => digits(&b[20..26])?,
+            _ => return None,
+        };
+        if b[4] != b'-' || b[7] != b'-' || b[10] != b'T' || b[13] != b':' || b[16] != b':' {
+            return None;
+        }
+        if b[b.len() - 1] != b'Z' {
+            return None;
+        }
+        Self::from_ymd_hms(
+            digits(&b[0..4])? as i32,
+            digits(&b[5..7])?,
+            digits(&b[8..10])?,
+            digits(&b[11..13])?,
+            digits(&b[14..16])?,
+            digits(&b[17..19])?,
+            micro,
+        )
+    }
+
     /// Parses a strict `YYYY-MM-DDTHH:MM:SS[.ffffff]Z` string.
     pub fn parse(s: &str) -> Result<Self, ValueError> {
+        // The spelling nearly every file has, read by position (issue #429); anything else —
+        // and anything out of range — is read, and refused, by the general reading below.
+        if let Some(timestamp) = Self::parse_fixed(s.as_bytes()) {
+            return Ok(timestamp);
+        }
+        Self::parse_general(s)
+    }
+
+    fn parse_general(s: &str) -> Result<Self, ValueError> {
         let invalid = || ValueError::InvalidTimestamp(s.to_owned());
         let (date_part, rest) = s.split_once('T').ok_or_else(invalid)?;
         let time_part = rest.strip_suffix('Z').ok_or_else(invalid)?;
@@ -540,6 +592,61 @@ fn coerce_str(s: &str, data_type: &DataType) -> Result<Value, ValueError> {
 mod tests {
     use super::*;
 
+    /// Issue #429: the by-position reading of a timestamp gives what the general reading gives
+    /// — the same instant, or a refusal — for valid text, every one-byte change of it, and noise.
+    #[test]
+    fn the_fixed_timestamp_reading_is_the_general_one() {
+        let mut state = 0x9e37_79b9_7f4a_7c15u64;
+        let mut next = move |bound: u64| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state % bound
+        };
+        let alphabet = b"0123456789-:.TZz +/ae\xc3";
+        let mut checked = 0;
+        for _ in 0..200_000 {
+            let fraction = match next(3) {
+                0 => String::new(),
+                1 => format!(".{:06}", next(1_000_000)),
+                _ => format!(".{}", next(1000)),
+            };
+            let valid = format!(
+                "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}{fraction}Z",
+                next(10_000),
+                1 + next(13),
+                1 + next(32),
+                next(25),
+                next(61),
+                next(61)
+            );
+            let mut bytes = valid.clone().into_bytes();
+            let mut candidates = vec![valid];
+            for _ in 0..3 {
+                let at = next(bytes.len() as u64) as usize;
+                bytes[at] = alphabet[next(alphabet.len() as u64) as usize];
+                if let Ok(text) = String::from_utf8(bytes.clone()) {
+                    candidates.push(text);
+                }
+            }
+            for text in candidates {
+                assert_eq!(
+                    Timestamp::parse(&text),
+                    Timestamp::parse_general(&text),
+                    "{text:?}"
+                );
+                checked += 1;
+            }
+        }
+        assert!(checked > 700_000);
+        // The shapes the by-position reading takes, and one it must refuse.
+        assert!(Timestamp::parse_fixed(b"2026-03-05T12:00:00Z").is_some());
+        assert!(Timestamp::parse_fixed(b"2026-03-05T12:00:00.250000Z").is_some());
+        assert!(Timestamp::parse_fixed(b"2026-03-05T12:00:00.25Z").is_none());
+        assert!(Timestamp::parse_fixed(b"2026-02-30T12:00:00Z").is_none());
+        assert!(Timestamp::parse_fixed(b"+026-03-05T12:00:00Z").is_none());
+    }
+
     /// Issue #209: text from a filter literal, a CSV cell or the wire is not
     /// ASCII, and the parsers answer with an error for it instead of slicing
     /// through a character. A two-byte character is put at every position of a
@@ -556,6 +663,67 @@ mod tests {
         assert!(Date::parse("abcä-01-0").is_err());
         assert!(Timestamp::parse("2024-01-15T0ä:00:00Z").is_err());
         assert!(Date::parse("2024-01-15").is_ok());
+    }
+
+    /// Issue #429: the 64-bit reading of a short decimal gives what the checked 128-bit reading
+    /// gives, for every length across the switch between them.
+    #[test]
+    fn a_short_decimal_reads_as_the_checked_reading_does() {
+        let reference = |negative: bool, int: &str, frac: &str| {
+            let mut magnitude: i128 = 0;
+            for digit in int.bytes().chain(frac.bytes()) {
+                magnitude = magnitude * 10 + i128::from(digit - b'0');
+            }
+            Decimal::new(
+                if negative { -magnitude } else { magnitude },
+                frac.len() as u8,
+            )
+        };
+        let mut state = 0x2545_f491_4f6c_dd1du64;
+        let mut next = move |bound: u64| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state % bound
+        };
+        for _ in 0..100_000 {
+            let digits = |count: u64, next: &mut dyn FnMut(u64) -> u64| -> String {
+                (0..count)
+                    .map(|_| {
+                        if next(4) == 0 {
+                            '9'
+                        } else {
+                            char::from(b'0' + next(10) as u8)
+                        }
+                    })
+                    .collect()
+            };
+            let (a, b) = (next(20), next(20));
+            let int = digits(a, &mut next);
+            let frac = digits(b, &mut next);
+            if int.is_empty() && frac.is_empty() {
+                continue;
+            }
+            let negative = next(2) == 0;
+            let text = format!(
+                "{}{int}{}{frac}",
+                if negative { "-" } else { "" },
+                if next(3) == 0 && frac.is_empty() {
+                    ""
+                } else {
+                    "."
+                }
+            );
+            let (int_part, frac_part) = text
+                .trim_start_matches('-')
+                .split_once('.')
+                .unwrap_or((text.trim_start_matches('-'), ""));
+            assert_eq!(
+                parse_decimal(&text),
+                Ok(reference(negative, int_part, frac_part)),
+                "{text:?}"
+            );
+        }
     }
 
     /// The parsers of point 45 read digits without building a string; these are
