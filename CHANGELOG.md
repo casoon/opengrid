@@ -19,6 +19,12 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-11-13
+
+Not yet verified by a screen reader: no pass with assistive technology has been recorded for this
+release ([#5](https://github.com/casoon/opengrid/issues/5)). The keyboard and `axe-core` checks run on
+every change.
+
 ### Added
 
 - **Query:** a sort key may order text by a locale: `"collation": "de"` (rule S4a). The engine,
@@ -1658,7 +1664,8 @@ tested.
   tested: React 18 rendering on the server, SvelteKit, Nuxt, Next.js and Astro
   as real applications. A Vite production build needs `loadOpengrid({ moduleUrl })`.
 
-[Unreleased]: https://github.com/casoon/opengrid/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/casoon/opengrid/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/casoon/opengrid/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/casoon/opengrid/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/casoon/opengrid/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/casoon/opengrid/compare/v0.13.0...v0.14.0
