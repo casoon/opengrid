@@ -185,10 +185,12 @@ pub fn load_csv(bytes: &[u8], schema: &Schema, options: CsvOptions) -> Result<Ta
     let mut builders = Builders::new(schema, 0);
     // The two row buffers are reused: a vector per row, twice, is two allocations per row.
     let (mut row, mut done) = (Vec::with_capacity(stored.fields().len()), Vec::new());
+    let mut direct = Vec::new();
     for record in records {
         let record = record.map_err(to_error)?;
-        read_row(&stored, &record, &options, &mut row)?;
-        builders.push(layout.complete_into(&mut row, &mut done))?;
+        read_row(&stored, &record, &options, &mut row, &mut direct)?;
+        let finished = layout.complete_into(&mut row, &mut done);
+        builders.push_text(finished, &layout, &direct, &record.fields)?;
     }
     builders.finish()
 }
@@ -369,6 +371,31 @@ impl<'a> Builders<'a> {
         Ok(())
     }
 
+    /// [`Self::push`] for a CSV row whose text cells are still in the record: those go into the
+    /// column as they are, the others from `row`.
+    fn push_text(
+        &mut self,
+        row: &[Value],
+        layout: &Layout,
+        direct: &[bool],
+        texts: &[std::borrow::Cow<'_, str>],
+    ) -> Result<(), IngestError> {
+        for (at, ((builder, field), value)) in self
+            .columns
+            .iter_mut()
+            .zip(self.schema.fields())
+            .zip(row)
+            .enumerate()
+        {
+            let result = match layout.stored_index(at) {
+                Some(index) if direct[index] => builder.push_str(&texts[index]),
+                _ => builder.push(value),
+            };
+            result.map_err(|message| mismatch(field, message))?;
+        }
+        Ok(())
+    }
+
     fn finish(self) -> Result<Table, IngestError> {
         let columns = self
             .columns
@@ -542,6 +569,7 @@ fn read_row(
     record: &csv::Record,
     options: &CsvOptions,
     row: &mut Vec<Value>,
+    direct: &mut Vec<bool>,
 ) -> Result<(), IngestError> {
     let fields = schema.fields();
     if record.fields.len() != fields.len() {
@@ -555,8 +583,12 @@ fn read_row(
         });
     }
     row.clear();
+    direct.clear();
     for (field, raw) in fields.iter().zip(&record.fields) {
-        let value = if is_null(raw, options) {
+        // A text cell is not made a `Value`: it goes into its column as it is (issue #429).
+        let text = field.data_type == DataType::Utf8 && !is_null(raw, options);
+        direct.push(text);
+        let value = if text || is_null(raw, options) {
             Value::Null
         } else {
             cell::from_text(raw, field.data_type).map_err(|message| IngestError::Row {
@@ -565,6 +597,10 @@ fn read_row(
                 message,
             })?
         };
+        if text {
+            row.push(value);
+            continue;
+        }
         row.push(
             check_null(field, value).map_err(|message| IngestError::Row {
                 line: record.line,
@@ -622,6 +658,17 @@ impl Layout {
             })
             .collect();
         Layout(Some(columns))
+    }
+
+    /// The position in the stored row of column `column`, if it is a stored one.
+    fn stored_index(&self, column: usize) -> Option<usize> {
+        match &self.0 {
+            None => Some(column),
+            Some(columns) => match columns[column] {
+                Source::Stored(index) => Some(index),
+                Source::Part(..) => None,
+            },
+        }
     }
 
     /// [`Self::complete`] into buffers the caller keeps: the row read, and the row finished. What

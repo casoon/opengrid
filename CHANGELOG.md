@@ -33,13 +33,14 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Added
 
+- **Columns:** `ColumnBuilder::push_str` appends text to a text column without a `Value` in between. The CSV reader uses it, so a text cell is copied into its column once instead of being made a `String`, copied and freed (#429).
 - **Docs:** *What the engine costs* — the engine on 100,000 and 1,000,000 rows (load, filter, sort,
   group, pivot, memory), measured on an Apple M4 Pro, what a page pays for the WebAssembly modules,
   what the figures are not, and `scripts/measure-queries.mjs` to repeat them.
 
 ### Changed
 
-- **Engine:** loading a CSV file is about 10 % faster (1,000,000 rows of the benchmark's ten columns: 1.41 s to 1.25 s in WebAssembly, native 0.86 s to 0.68 s). A timestamp in the usual spelling and a decimal of up to 18 digits are read by position and in 64 bits, and a row no longer allocates two vectors. Anything else is read as before; results and error messages are unchanged (#429).
+- **Engine:** loading a CSV file is about 18 % faster (1,000,000 rows of the benchmark's ten columns: 1.41 s to 1.16 s in WebAssembly; native 0.86 s to 0.68 s before the text change). A timestamp in the usual spelling and a decimal of up to 18 digits are read by position and in 64 bits, a row no longer allocates two vectors, and text cells go straight into their column. Anything else is read as before; results and error messages are unchanged (#429).
 - **Engine:** loading a JSON array of objects reads the text in one pass into the column builders instead of building a tree and a vector per row first: 1.7 times faster at 100,000 rows and 3 times at 1,000,000 (191 ms to 110 ms, 3.3 s to 1.1 s, WebAssembly in Node). Anything the fast path does not read the same way — escapes in keys, unknown or repeated keys, nested values, malformed text — goes to the general reader, so results and error messages are unchanged (#426).
 - **Pages:** the start page no longer says *Light on memory*. It says *Compact, not free*: the columns
   take 98 MiB for a million rows, and the whole page holds about 660 MiB with the engine beside the
