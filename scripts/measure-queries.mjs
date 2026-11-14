@@ -55,7 +55,13 @@ for (const rows of ROWS) {
   const bytes = csv(rows);
   const engine = new Engine();
   const loadStart = performance.now();
-  engine.load_csv("orders", bytes, schema);
+  if (process.argv.includes("--stream")) {
+    engine.begin_csv("orders", schema, bytes.length);
+    for (let at = 0; at < bytes.length; at += 4 << 20) engine.push_csv(bytes.subarray(at, at + (4 << 20)));
+    engine.end_csv();
+  } else {
+    engine.load_csv("orders", bytes, schema);
+  }
   const load = performance.now() - loadStart;
   const held = JSON.parse(engine.stats());
   const memory = held.memory;
@@ -74,9 +80,24 @@ for (const rows of ROWS) {
     "group by customer (500 groups), sum": run({ select: ["customer"], group: ["customer"], aggregate: [{ field: "amount", fn: "sum", as: "total" }], sort: [{ field: "customer" }] }),
   };
   for (const [name, query] of Object.entries(scenarios)) {
+    const before = JSON.parse(engine.stats()).memory;
     console.log(`  ${name.padEnd(52)} ${ms(time(query))}`);
+    const grew = JSON.parse(engine.stats()).memory - before;
+    if (grew > 0) console.log(`    the module grew by ${(grew / 2 ** 20).toFixed(1)} MiB`);
   }
   const pivot = () => engine.pivot_columns(JSON.stringify({ source: "orders", rows: ["country", "customer"], columns: [], values: [{ field: "amount", fn: "sum", as: "total" }, { fn: "count", as: "n" }] }));
+  const beforePivot = JSON.parse(engine.stats()).memory;
   console.log(`  ${"pivot (country, customer) with sum and count".padEnd(52)} ${ms(time(pivot))}`);
+  const grewPivot = JSON.parse(engine.stats()).memory - beforePivot;
+  if (grewPivot > 0) console.log(`    the module grew by ${(grewPivot / 2 ** 20).toFixed(1)} MiB`);
+  // What the queries leave behind: the module's memory only grows, so after the queries it is the
+  // high-water mark of the biggest temporary; ten more rounds say whether it keeps growing.
+  const after = JSON.parse(engine.stats()).memory;
+  for (let round = 0; round < 10; round++) {
+    for (const query of Object.values(scenarios)) query();
+    pivot();
+  }
+  const again = JSON.parse(engine.stats()).memory;
+  console.log(`  module memory after the queries ${(after / 2 ** 20).toFixed(1)} MiB, after ten rounds more ${(again / 2 ** 20).toFixed(1)} MiB`);
   engine.free();
 }

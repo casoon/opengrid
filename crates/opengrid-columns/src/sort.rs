@@ -127,37 +127,22 @@ fn one_key(key: &SortKey<'_>, end: usize) -> Vec<u32> {
     // order, decimals up to 18 digits exactly), so one sorter serves them all;
     // only wide decimals and strings need their own.
     let sorted = match column.values() {
-        Values::Bool(values) => by(
-            pairs(&present, |at| i64::from(values[at])),
-            desc,
-            value_rows,
-        ),
+        Values::Bool(values) => by_top(&present, |at| i64::from(values[at]), desc, value_rows),
         Values::Int64(values) | Values::Timestamp(values) => {
-            by(pairs(&present, |at| values[at]), desc, value_rows)
+            by_top(&present, |at| values[at], desc, value_rows)
         }
-        Values::Float64(values) => by(
-            pairs(&present, |at| total_key(values[at])),
-            desc,
-            value_rows,
-        ),
-        Values::Date(values) => by(
-            pairs(&present, |at| i64::from(values[at])),
-            desc,
-            value_rows,
-        ),
+        Values::Float64(values) => by_top(&present, |at| total_key(values[at]), desc, value_rows),
+        Values::Date(values) => by_top(&present, |at| i64::from(values[at]), desc, value_rows),
         // A decimal of up to 18 digits fits an `i64`, and half the bytes move.
         Values::Decimal(values) if decimal_fits_i64(column) => {
-            by(pairs(&present, |at| values[at] as i64), desc, value_rows)
+            by_top(&present, |at| values[at] as i64, desc, value_rows)
         }
-        Values::Decimal(values) => by(pairs(&present, |at| values[at]), desc, value_rows),
+        Values::Decimal(values) => by_top(&present, |at| values[at], desc, value_rows),
         Values::Utf8 { .. } => match key.collated {
-            None => by(
-                pairs(&present, |at| column.str(at).as_bytes()),
-                desc,
-                value_rows,
-            ),
-            Some(collated) => by(
-                pairs(&present, |at| (collated.get(at), column.str(at).as_bytes())),
+            None => by_top(&present, |at| column.str(at).as_bytes(), desc, value_rows),
+            Some(collated) => by_top(
+                &present,
+                |at| (collated.get(at), column.str(at).as_bytes()),
                 desc,
                 value_rows,
             ),
@@ -165,7 +150,7 @@ fn one_key(key: &SortKey<'_>, end: usize) -> Vec<u32> {
         // A list has no order (issue #185): the query model refuses a sort on
         // one, and here every list keys the same, so the rows keep their order.
         Values::ListInt64 { .. } | Values::ListUtf8 { .. } => {
-            by(pairs(&present, |_| 0i64), desc, value_rows)
+            by_top(&present, |_| 0i64, desc, value_rows)
         }
     };
 
@@ -196,6 +181,82 @@ fn by<K: Ord>(mut pairs: Vec<(K, u32)>, desc: bool, need: usize) -> Vec<u32> {
     pairs.into_iter().map(|(_, at)| at).collect()
 }
 
+/// [`by`] over the rows of `rows`, without a pair for every row when only a few are wanted.
+///
+/// A page of a big table — the first hundred rows of a million — keeps the best `need` and lets
+/// the rest go by, so the memory is a page, not the table: the pairs of a million rows are 16 MB
+/// that the module's memory, which never shrinks, keeps afterwards (issue #428).
+fn by_top<K: Ord>(rows: &[u32], key: impl Fn(usize) -> K, desc: bool, need: usize) -> Vec<u32> {
+    if need == 0 {
+        return Vec::new();
+    }
+    if need.saturating_mul(TOP_RATIO) > rows.len() {
+        return by(pairs(rows, key), desc, need);
+    }
+    let compare = |a: &(K, u32), b: &(K, u32)| {
+        let order = a.0.cmp(&b.0);
+        let order = if desc { order.reverse() } else { order };
+        order.then(a.1.cmp(&b.1))
+    };
+    let mut best = Best::new(need);
+    for &at in rows {
+        let item = (key(at as usize), at);
+        if best.admits(|bound| compare(&item, bound)) {
+            best.push(item, compare);
+        }
+    }
+    best.into_sorted(compare)
+        .into_iter()
+        .map(|(_, at)| at)
+        .collect()
+}
+
+/// A page is taken without sorting the table when it is at most this fraction of it.
+const TOP_RATIO: usize = 8;
+
+/// The `need` smallest items seen so far, kept by letting the vector grow to twice the page and
+/// then cutting it back to the page: O(1) amortised per item, O(page) memory.
+struct Best<T> {
+    items: Vec<T>,
+    need: usize,
+    /// Whether the vector has been cut back once: from then on `items[need - 1]` is the largest of
+    /// the page, the bound a new item has to beat.
+    cut: bool,
+}
+
+impl<T> Best<T> {
+    fn new(need: usize) -> Self {
+        Self {
+            items: Vec::with_capacity(need.saturating_mul(2)),
+            need,
+            cut: false,
+        }
+    }
+
+    /// Whether an item can still belong to the page: `against` compares it with the bound.
+    fn admits(&self, against: impl Fn(&T) -> Ordering) -> bool {
+        !self.cut || against(&self.items[self.need - 1]) == Ordering::Less
+    }
+
+    fn push(&mut self, item: T, compare: impl Fn(&T, &T) -> Ordering) {
+        self.items.push(item);
+        if self.items.len() >= self.need * 2 {
+            self.items.select_nth_unstable_by(self.need - 1, &compare);
+            self.items.truncate(self.need);
+            self.cut = true;
+        }
+    }
+
+    fn into_sorted(mut self, compare: impl Fn(&T, &T) -> Ordering) -> Vec<T> {
+        if self.items.len() > self.need {
+            self.items.select_nth_unstable_by(self.need - 1, &compare);
+            self.items.truncate(self.need);
+        }
+        self.items.sort_unstable_by(compare);
+        self.items
+    }
+}
+
 /// Whether every coefficient of a decimal column fits an `i64` — true by type
 /// up to 18 digits of precision.
 fn decimal_fits_i64(column: &Column) -> bool {
@@ -224,12 +285,23 @@ fn first<T>(items: &mut Vec<T>, need: usize, compare: impl Fn(&T, &T) -> Orderin
 }
 
 fn several_keys(keys: &[SortKey<'_>], rows: usize, end: usize) -> Vec<u32> {
+    if end == 0 {
+        return Vec::new();
+    }
+    if end.saturating_mul(TOP_RATIO) <= rows {
+        return several_keys_top(keys, rows, end);
+    }
+    // The encoded keys of every row in one buffer: sized by the first row's, so it is not grown by
+    // doubling, which holds the old and the new buffer at once.
     let mut bytes = Vec::new();
     let mut starts = Vec::with_capacity(rows + 1);
     for row in 0..rows {
         starts.push(bytes.len());
         for key in keys {
             encode(key, row, &mut bytes);
+        }
+        if row == 0 {
+            bytes.reserve(bytes.len().saturating_mul(rows));
         }
     }
     starts.push(bytes.len());
@@ -239,6 +311,29 @@ fn several_keys(keys: &[SortKey<'_>], rows: usize, end: usize) -> Vec<u32> {
         .collect();
     first(&mut pairs, end, |a, b| a.cmp(b));
     pairs.into_iter().map(|(_, at)| at).collect()
+}
+
+/// [`several_keys`] for a page that is a small part of the table: each row's key is encoded into
+/// one scratch buffer and copied only when it can still belong to the page.
+fn several_keys_top(keys: &[SortKey<'_>], rows: usize, end: usize) -> Vec<u32> {
+    let compare = |a: &(Vec<u8>, u32), b: &(Vec<u8>, u32)| a.cmp(b);
+    let mut best: Best<(Vec<u8>, u32)> = Best::new(end);
+    let mut scratch = Vec::new();
+    for row in 0..rows {
+        scratch.clear();
+        for key in keys {
+            encode(key, row, &mut scratch);
+        }
+        let admitted = best
+            .admits(|bound| (scratch.as_slice(), row as u32).cmp(&(bound.0.as_slice(), bound.1)));
+        if admitted {
+            best.push((scratch.clone(), row as u32), compare);
+        }
+    }
+    best.into_sorted(compare)
+        .into_iter()
+        .map(|(_, at)| at)
+        .collect()
 }
 
 /// Appends the order-preserving bytes of one key cell.
@@ -424,7 +519,7 @@ mod tests {
     }
 
     fn keys() -> impl Strategy<Value = Vec<(DataType, Vec<Value>, bool, bool)>> {
-        (0usize..12, 1usize..4).prop_flat_map(|(rows, count)| {
+        (0usize..80, 1usize..4).prop_flat_map(|(rows, count)| {
             proptest::collection::vec(
                 data_types().prop_flat_map(move |data_type| {
                     (
@@ -472,6 +567,32 @@ mod tests {
             let mut two = sort_keys.clone();
             two.push(SortKey { column: &constant, descending: false, nulls_first: false, collated: None });
             prop_assert_eq!(order(&two, end).unwrap(), expected);
+        }
+    }
+
+    proptest! {
+        /// Issue #428: a small page of a big table is taken without sorting the table, and is the
+        /// page of the whole order — with keys that are mostly distinct, so the page is cut back
+        /// many times on the way, and with a second key that takes the byte path.
+        #[test]
+        fn a_small_page_of_a_big_table_is_the_start_of_the_order(
+            values in proptest::collection::vec(any::<i32>(), 300..700),
+            need in 1usize..40,
+            descending in any::<bool>(),
+        ) {
+            let rows = values.len();
+            let spelled: Vec<Value> = values.iter().map(|v| Value::Int64(i64::from(*v))).collect();
+            let key = column(DataType::Int64, &spelled);
+            let sort_key = SortKey { column: &key, descending, nulls_first: false, collated: None };
+            let mut expected = reference(&[(spelled.clone(), descending, false)], rows);
+            expected.truncate(need);
+            prop_assert_eq!(order(std::slice::from_ref(&sort_key), need).unwrap(), expected.clone());
+            let constant = column(DataType::Int64, &vec![Value::Int64(0); rows]);
+            let two = [
+                sort_key,
+                SortKey { column: &constant, descending: false, nulls_first: false, collated: None },
+            ];
+            prop_assert_eq!(order(&two, need).unwrap(), expected);
         }
     }
 
