@@ -24,8 +24,11 @@ glue     = "target/peakmark/engine/m.js"
 # installed through and the call into the collation module) grew the engine by
 # 4.2 KiB, to 163475 B. The collation's tables are not in it: they are the
 # module `collation` below.
+# Raised 2026-11-14 from 165100: the JSON fast path (#426: one pass over the text
+# into the column builders, the general reader kept as the fallback) grew the
+# engine by 1.6 KiB, to 165070 B; the load of a JSON array is 1.7 to 3 times faster.
 [module.budget]
-brotli         = "165100 B"
+brotli         = "166800 B"
 peak_memory    = "26 MiB"
 growth_per_run = "0"
 
