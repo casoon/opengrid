@@ -1,0 +1,79 @@
+{
+  "machine": "Apple M4 Pro",
+  "rows": 100000,
+  "throttle": 1,
+  "results": {
+    "slickgrid": [
+      {
+        "grid": "slickgrid",
+        "rows": 100000,
+        "startMs": 56.94999998807907,
+        "firstRows": {
+          "ms": 21.09000000357628,
+          "ok": true
+        },
+        "sort": {
+          "ms": 20.614999994635582,
+          "ok": true
+        },
+        "filter": {
+          "ms": 33.25,
+          "ok": true
+        },
+        "clear": {
+          "ms": 49.45499999821186,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 16.6700000000003,
+          "over33": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "moved": true
+        },
+        "memory": {
+          "load": 76.234375,
+          "after": 164.109375
+        }
+      },
+      {
+        "grid": "slickgrid",
+        "rows": 100000,
+        "startMs": 48.229999989271164,
+        "firstRows": {
+          "ms": 18.62000000476837,
+          "ok": true
+        },
+        "sort": {
+          "ms": 28.019999995827675,
+          "ok": true
+        },
+        "filter": {
+          "ms": 33.25,
+          "ok": true
+        },
+        "clear": {
+          "ms": 50.054999992251396,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 16.670000000000073,
+          "over33": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "moved": true
+        },
+        "memory": {
+          "load": 61.171875,
+          "after": 150.671875
+        }
+      }
+    ]
+  }
+}

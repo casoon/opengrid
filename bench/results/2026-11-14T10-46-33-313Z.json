@@ -1,0 +1,1069 @@
+{
+  "machine": "Apple M4 Pro",
+  "rows": 100000,
+  "throttle": 1,
+  "results": {
+    "aggrid": [
+      {
+        "grid": "aggrid",
+        "rows": 100000,
+        "startMs": 85.41500000655651,
+        "firstRows": {
+          "ms": 118.17000000178814,
+          "ok": true
+        },
+        "sort": {
+          "ms": 82.81499999761581,
+          "ok": true
+        },
+        "filter": {
+          "ms": 86.32500000298023,
+          "ok": true
+        },
+        "clear": {
+          "ms": 118.32999999821186,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 49.995000000000346,
+          "over33": 1,
+          "longTasks": 1,
+          "longTaskMs": 56,
+          "moved": true
+        },
+        "memory": {
+          "load": 157.671875,
+          "after": 346.21875
+        }
+      },
+      {
+        "grid": "aggrid",
+        "rows": 100000,
+        "startMs": 84.79500000178814,
+        "firstRows": {
+          "ms": 103.57499998807907,
+          "ok": true
+        },
+        "sort": {
+          "ms": 81.15999999642372,
+          "ok": true
+        },
+        "filter": {
+          "ms": 49.57999999821186,
+          "ok": true
+        },
+        "clear": {
+          "ms": 99.97000001370907,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 16.670000000000073,
+          "over33": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "moved": true
+        },
+        "memory": {
+          "load": 140.4375,
+          "after": 273.640625
+        }
+      },
+      {
+        "grid": "aggrid",
+        "rows": 100000,
+        "startMs": 81.68000000715256,
+        "firstRows": {
+          "ms": 106.92499999701977,
+          "ok": true
+        },
+        "sort": {
+          "ms": 83.57500000298023,
+          "ok": true
+        },
+        "filter": {
+          "ms": 56.79999999701977,
+          "ok": true
+        },
+        "clear": {
+          "ms": 117.43999999761581,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 16.670000000000073,
+          "over33": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "moved": true
+        },
+        "memory": {
+          "load": 143.234375,
+          "after": 331.203125
+        }
+      },
+      {
+        "grid": "aggrid",
+        "rows": 100000,
+        "startMs": 77.5,
+        "firstRows": {
+          "ms": 100.4699999988079,
+          "ok": true
+        },
+        "sort": {
+          "ms": 83.875,
+          "ok": true
+        },
+        "filter": {
+          "ms": 61.86499999463558,
+          "ok": true
+        },
+        "clear": {
+          "ms": 116.64000000059605,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 16.670000000000073,
+          "over33": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "moved": true
+        },
+        "memory": {
+          "load": 140.84375,
+          "after": 328.625
+        }
+      },
+      {
+        "grid": "aggrid",
+        "rows": 100000,
+        "startMs": 113.87999999523163,
+        "firstRows": {
+          "ms": 103.26000000536442,
+          "ok": true
+        },
+        "sort": {
+          "ms": 74.34000000357628,
+          "ok": true
+        },
+        "filter": {
+          "ms": 59.0249999910593,
+          "ok": true
+        },
+        "clear": {
+          "ms": 98.54999999701977,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 16.670000000000073,
+          "over33": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "moved": true
+        },
+        "memory": {
+          "load": 141.265625,
+          "after": 328.3125
+        }
+      }
+    ],
+    "opengrid": [
+      {
+        "grid": "opengrid",
+        "rows": 100000,
+        "startMs": 180.9299999922514,
+        "firstRows": {
+          "ms": 220.79999999701977,
+          "ok": true
+        },
+        "sort": {
+          "ms": 28.349999994039536,
+          "ok": true
+        },
+        "filter": {
+          "ms": 33.32500000298023,
+          "ok": true
+        },
+        "clear": {
+          "ms": 32.99500000476837,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 16.670000000000073,
+          "over33": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "moved": true
+        },
+        "memory": {
+          "load": 194.390625,
+          "after": 284.515625
+        }
+      },
+      {
+        "grid": "opengrid",
+        "rows": 100000,
+        "startMs": 38.85999999940395,
+        "firstRows": {
+          "ms": 208.00999999046326,
+          "ok": true
+        },
+        "sort": {
+          "ms": 35.93000000715256,
+          "ok": true
+        },
+        "filter": {
+          "ms": 32.49000000953674,
+          "ok": true
+        },
+        "clear": {
+          "ms": 32.82500000298023,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 16.670000000000073,
+          "over33": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "moved": true
+        },
+        "memory": {
+          "load": 193.265625,
+          "after": 281.96875
+        }
+      },
+      {
+        "grid": "opengrid",
+        "rows": 100000,
+        "startMs": 1135.934999987483,
+        "firstRows": {
+          "ms": 205.375,
+          "ok": true
+        },
+        "sort": {
+          "ms": 37.48499999940395,
+          "ok": true
+        },
+        "filter": {
+          "ms": 33.14000000059605,
+          "ok": true
+        },
+        "clear": {
+          "ms": 33.16500000655651,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 16.670000000000073,
+          "over33": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "moved": true
+        },
+        "memory": {
+          "load": 193.390625,
+          "after": 282.5625
+        }
+      },
+      {
+        "grid": "opengrid",
+        "rows": 100000,
+        "startMs": 39.46000000834465,
+        "firstRows": {
+          "ms": 208.05000001192093,
+          "ok": true
+        },
+        "sort": {
+          "ms": 30.939999997615814,
+          "ok": true
+        },
+        "filter": {
+          "ms": 32.23999999463558,
+          "ok": true
+        },
+        "clear": {
+          "ms": 34.17000000178814,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 16.670000000000073,
+          "over33": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "moved": true
+        },
+        "memory": {
+          "load": 193.015625,
+          "after": 282.203125
+        }
+      },
+      {
+        "grid": "opengrid",
+        "rows": 100000,
+        "startMs": 40.78499999642372,
+        "firstRows": {
+          "ms": 207.39000000059605,
+          "ok": true
+        },
+        "sort": {
+          "ms": 33.610000014305115,
+          "ok": true
+        },
+        "filter": {
+          "ms": 35.20000000298023,
+          "ok": true
+        },
+        "clear": {
+          "ms": 33.310000002384186,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 16.670000000000073,
+          "over33": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "moved": true
+        },
+        "memory": {
+          "load": 192.75,
+          "after": 282.25
+        }
+      }
+    ],
+    "revogrid": [
+      {
+        "grid": "revogrid",
+        "rows": 100000,
+        "startMs": 40.12000000476837,
+        "firstRows": {
+          "ms": 123.48999999463558,
+          "ok": true
+        },
+        "sort": {
+          "ms": 86.54500000178814,
+          "ok": true
+        },
+        "filter": {
+          "ms": 84.47499999403954,
+          "ok": true
+        },
+        "clear": {
+          "ms": 83.39000000059605,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 16.670000000000073,
+          "over33": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "moved": true
+        },
+        "memory": {
+          "load": 68.796875,
+          "after": 140.296875
+        }
+      },
+      {
+        "grid": "revogrid",
+        "rows": 100000,
+        "startMs": 40.304999992251396,
+        "firstRows": {
+          "ms": 123.73000000417233,
+          "ok": true
+        },
+        "sort": {
+          "ms": 83.9699999988079,
+          "ok": true
+        },
+        "filter": {
+          "ms": 84.90999999642372,
+          "ok": true
+        },
+        "clear": {
+          "ms": 83.3049999922514,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 16.670000000000073,
+          "over33": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "moved": true
+        },
+        "memory": {
+          "load": 69.734375,
+          "after": 148.109375
+        }
+      },
+      {
+        "grid": "revogrid",
+        "rows": 100000,
+        "startMs": 39.45000000298023,
+        "firstRows": {
+          "ms": 123.9450000077486,
+          "ok": true
+        },
+        "sort": {
+          "ms": 86.42499999701977,
+          "ok": true
+        },
+        "filter": {
+          "ms": 83.36499999463558,
+          "ok": true
+        },
+        "clear": {
+          "ms": 81.47499999403954,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 16.670000000000073,
+          "over33": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "moved": true
+        },
+        "memory": {
+          "load": 68.0625,
+          "after": 139.734375
+        }
+      },
+      {
+        "grid": "revogrid",
+        "rows": 100000,
+        "startMs": 39.82999999821186,
+        "firstRows": {
+          "ms": 122.0700000077486,
+          "ok": true
+        },
+        "sort": {
+          "ms": 88.14000000059605,
+          "ok": true
+        },
+        "filter": {
+          "ms": 83.54999999701977,
+          "ok": true
+        },
+        "clear": {
+          "ms": 83.31499999761581,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 16.670000000000073,
+          "over33": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "moved": true
+        },
+        "memory": {
+          "load": 68,
+          "after": 138.765625
+        }
+      },
+      {
+        "grid": "revogrid",
+        "rows": 100000,
+        "startMs": 39.645000010728836,
+        "firstRows": {
+          "ms": 122.84000000357628,
+          "ok": true
+        },
+        "sort": {
+          "ms": 88.02000001072884,
+          "ok": true
+        },
+        "filter": {
+          "ms": 82.7250000089407,
+          "ok": true
+        },
+        "clear": {
+          "ms": 83.57999999821186,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 16.670000000000073,
+          "over33": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "moved": true
+        },
+        "memory": {
+          "load": 68.203125,
+          "after": 145.78125
+        }
+      }
+    ],
+    "slickgrid": [
+      {
+        "grid": "slickgrid",
+        "rows": 100000,
+        "startMs": 42.67000000178814,
+        "firstRows": {
+          "ms": 19.734999999403954,
+          "ok": true
+        },
+        "sort": {
+          "ms": 15.525000005960464,
+          "ok": true
+        },
+        "filter": {
+          "ms": 33.650000005960464,
+          "ok": true
+        },
+        "clear": {
+          "ms": 51.53999999165535,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 16.670000000000073,
+          "over33": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "moved": true
+        },
+        "memory": {
+          "load": 61.09375,
+          "after": 150.6875
+        }
+      },
+      {
+        "grid": "slickgrid",
+        "rows": 100000,
+        "startMs": 42.03499999642372,
+        "firstRows": {
+          "ms": 21.864999994635582,
+          "ok": true
+        },
+        "sort": {
+          "ms": 28.554999992251396,
+          "ok": true
+        },
+        "filter": {
+          "ms": 33.23999999463558,
+          "ok": true
+        },
+        "clear": {
+          "ms": 50.064999997615814,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 16.670000000000073,
+          "over33": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "moved": true
+        },
+        "memory": {
+          "load": 60.765625,
+          "after": 150.796875
+        }
+      },
+      {
+        "grid": "slickgrid",
+        "rows": 100000,
+        "startMs": 43.310000002384186,
+        "firstRows": {
+          "ms": 18.53999999165535,
+          "ok": true
+        },
+        "sort": {
+          "ms": 32.54999999701977,
+          "ok": true
+        },
+        "filter": {
+          "ms": 31.775000005960464,
+          "ok": true
+        },
+        "clear": {
+          "ms": 49.96499998867512,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 16.670000000000073,
+          "over33": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "moved": true
+        },
+        "memory": {
+          "load": 61.25,
+          "after": 148.609375
+        }
+      },
+      {
+        "grid": "slickgrid",
+        "rows": 100000,
+        "startMs": 45.7250000089407,
+        "firstRows": {
+          "ms": 19.515000000596046,
+          "ok": true
+        },
+        "sort": {
+          "ms": 26.980000004172325,
+          "ok": true
+        },
+        "filter": {
+          "ms": 32.29999999701977,
+          "ok": true
+        },
+        "clear": {
+          "ms": 49,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 16.670000000000073,
+          "over33": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "moved": true
+        },
+        "memory": {
+          "load": 61.515625,
+          "after": 148.953125
+        }
+      },
+      {
+        "grid": "slickgrid",
+        "rows": 100000,
+        "startMs": 43.83999998867512,
+        "firstRows": {
+          "ms": 19.16500000655651,
+          "ok": true
+        },
+        "sort": {
+          "ms": 24.655000001192093,
+          "ok": true
+        },
+        "filter": {
+          "ms": 33.25499999523163,
+          "ok": true
+        },
+        "clear": {
+          "ms": 50.0249999910593,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 16.670000000000073,
+          "over33": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "moved": true
+        },
+        "memory": {
+          "load": 61.359375,
+          "after": 150.515625
+        }
+      }
+    ],
+    "tabulator": [
+      {
+        "grid": "tabulator",
+        "rows": 100000,
+        "startMs": 49.185000002384186,
+        "firstRows": {
+          "ms": 46.440000012516975,
+          "ok": true
+        },
+        "sort": {
+          "ms": 134.64499999582767,
+          "ok": true
+        },
+        "filter": {
+          "ms": 36.21000000834465,
+          "ok": true
+        },
+        "clear": {
+          "ms": 133.08500000834465,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 16.670000000000073,
+          "over33": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "moved": true
+        },
+        "memory": {
+          "load": 113.921875,
+          "after": 371.96875
+        }
+      },
+      {
+        "grid": "tabulator",
+        "rows": 100000,
+        "startMs": 48.39000000059605,
+        "firstRows": {
+          "ms": 43.84000000357628,
+          "ok": true
+        },
+        "sort": {
+          "ms": 133.41999998688698,
+          "ok": true
+        },
+        "filter": {
+          "ms": 33.41500000655651,
+          "ok": true
+        },
+        "clear": {
+          "ms": 134.8449999988079,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 16.670000000000073,
+          "over33": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "moved": true
+        },
+        "memory": {
+          "load": 113.875,
+          "after": 371.25
+        }
+      },
+      {
+        "grid": "tabulator",
+        "rows": 100000,
+        "startMs": 46.945000007748604,
+        "firstRows": {
+          "ms": 41.2250000089407,
+          "ok": true
+        },
+        "sort": {
+          "ms": 132.92499999701977,
+          "ok": true
+        },
+        "filter": {
+          "ms": 29.969999998807907,
+          "ok": true
+        },
+        "clear": {
+          "ms": 133.15000000596046,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 16.670000000000073,
+          "over33": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "moved": true
+        },
+        "memory": {
+          "load": 113.6875,
+          "after": 374.234375
+        }
+      },
+      {
+        "grid": "tabulator",
+        "rows": 100000,
+        "startMs": 47.474999994039536,
+        "firstRows": {
+          "ms": 40.44999998807907,
+          "ok": true
+        },
+        "sort": {
+          "ms": 135.76500000059605,
+          "ok": true
+        },
+        "filter": {
+          "ms": 35.645000010728836,
+          "ok": true
+        },
+        "clear": {
+          "ms": 133.37000000476837,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 16.670000000000073,
+          "over33": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "moved": true
+        },
+        "memory": {
+          "load": 113.953125,
+          "after": 371.78125
+        }
+      },
+      {
+        "grid": "tabulator",
+        "rows": 100000,
+        "startMs": 48.04500000178814,
+        "firstRows": {
+          "ms": 41.59499999880791,
+          "ok": true
+        },
+        "sort": {
+          "ms": 139.77999998629093,
+          "ok": true
+        },
+        "filter": {
+          "ms": 36.57500000298023,
+          "ok": true
+        },
+        "clear": {
+          "ms": 133.3149999976158,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 16.670000000000073,
+          "over33": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "moved": true
+        },
+        "memory": {
+          "load": 113.375,
+          "after": 370.703125
+        }
+      }
+    ],
+    "w2ui": [
+      {
+        "grid": "w2ui",
+        "rows": 100000,
+        "startMs": 1197.655000001192,
+        "firstRows": {
+          "ms": 129.45499999821186,
+          "ok": true
+        },
+        "sort": {
+          "ms": 59.6000000089407,
+          "ok": true
+        },
+        "filter": {
+          "ms": 28.115000009536743,
+          "ok": true
+        },
+        "clear": {
+          "ms": 117.23500001430511,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 16.670000000000073,
+          "over33": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "moved": true
+        },
+        "memory": {
+          "load": 176.328125,
+          "after": 252.6875
+        }
+      },
+      {
+        "grid": "w2ui",
+        "rows": 100000,
+        "startMs": 49.310000002384186,
+        "firstRows": {
+          "ms": 132.56500001251698,
+          "ok": true
+        },
+        "sort": {
+          "ms": 58.84000000357628,
+          "ok": true
+        },
+        "filter": {
+          "ms": 29.780000001192093,
+          "ok": true
+        },
+        "clear": {
+          "ms": 116.61499999463558,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 16.670000000000073,
+          "over33": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "moved": true
+        },
+        "memory": {
+          "load": 175.203125,
+          "after": 248.90625
+        }
+      },
+      {
+        "grid": "w2ui",
+        "rows": 100000,
+        "startMs": 48.360000014305115,
+        "firstRows": {
+          "ms": 138.80000001192093,
+          "ok": true
+        },
+        "sort": {
+          "ms": 62.144999995827675,
+          "ok": true
+        },
+        "filter": {
+          "ms": 34.314999997615814,
+          "ok": true
+        },
+        "clear": {
+          "ms": 115.29999999701977,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 83.32999999999993,
+          "over33": 1,
+          "longTasks": 1,
+          "longTaskMs": 70,
+          "moved": true
+        },
+        "memory": {
+          "load": 175.5625,
+          "after": 264.390625
+        }
+      },
+      {
+        "grid": "w2ui",
+        "rows": 100000,
+        "startMs": 52.689999997615814,
+        "firstRows": {
+          "ms": 128.48499999940395,
+          "ok": true
+        },
+        "sort": {
+          "ms": 63.05500000715256,
+          "ok": true
+        },
+        "filter": {
+          "ms": 32.87000000476837,
+          "ok": true
+        },
+        "clear": {
+          "ms": 116.68500000238419,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 16.670000000000073,
+          "over33": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "moved": true
+        },
+        "memory": {
+          "load": 175.640625,
+          "after": 249.6875
+        }
+      },
+      {
+        "grid": "w2ui",
+        "rows": 100000,
+        "startMs": 49.78000000119209,
+        "firstRows": {
+          "ms": 127.16500000655651,
+          "ok": true
+        },
+        "sort": {
+          "ms": 62.564999997615814,
+          "ok": true
+        },
+        "filter": {
+          "ms": 33.92000000178814,
+          "ok": true
+        },
+        "clear": {
+          "ms": 115.91499999165535,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 16.670000000000073,
+          "over33": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "moved": true
+        },
+        "memory": {
+          "load": 175.046875,
+          "after": 248.796875
+        }
+      }
+    ]
+  }
+}

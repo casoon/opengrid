@@ -1,0 +1,60 @@
+{
+  "machine": "Apple M4 Pro",
+  "rows": 100000,
+  "throttle": 1,
+  "results": {
+    "opengrid": [
+      {
+        "grid": "opengrid",
+        "rows": 100000,
+        "startMs": 111.45499999821186,
+        "error": "TypeError: Cannot read properties of undefined (reading 'shadowRoot')\n    at J (http://localhost:4173/assets/opengrid-BH0_L2Zc.js:1:36317)\n    at Object.firstRow (http://localhost:4173/assets/opengrid-BH0_L2Zc.js:1:36770)\n    at http://localhost:4173/assets/opengrid-BH0_L2Zc.js:1:39937\n    at Z (http://localhost:4173/assets/opengrid-BH0_L2Zc.js:1:38519)\n    at async vt (http://localhost:4173/assets/opengrid-BH0_L2Zc.js:1:39917)"
+      },
+      {
+        "grid": "opengrid",
+        "rows": 100000,
+        "startMs": 45.74500000476837,
+        "firstRows": {
+          "ms": 205.89000000476838,
+          "ok": true
+        },
+        "memoryAfterLoad": {
+          "bytes": 23080041,
+          "source": "jsHeap (WebAssembly not counted)"
+        },
+        "sort": {
+          "ms": 26.81500000834467,
+          "ok": true
+        },
+        "filter": {
+          "ms": 16.254999999403935,
+          "ok": true
+        },
+        "clear": {
+          "ms": 15.900000003576281,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 16.670000000000073,
+          "over33": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "moved": true
+        },
+        "memoryAfter": {
+          "bytes": 13833018,
+          "source": "jsHeap (WebAssembly not counted)"
+        }
+      },
+      {
+        "grid": "opengrid",
+        "rows": 100000,
+        "startMs": 43.474999994039536,
+        "error": "TypeError: Cannot read properties of undefined (reading 'shadowRoot')\n    at J (http://localhost:4173/assets/opengrid-BH0_L2Zc.js:1:36317)\n    at Object.firstRow (http://localhost:4173/assets/opengrid-BH0_L2Zc.js:1:36770)\n    at http://localhost:4173/assets/opengrid-BH0_L2Zc.js:1:39937\n    at Z (http://localhost:4173/assets/opengrid-BH0_L2Zc.js:1:38519)\n    at async vt (http://localhost:4173/assets/opengrid-BH0_L2Zc.js:1:39917)"
+      }
+    ]
+  }
+}
