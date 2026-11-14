@@ -32,7 +32,9 @@ use std::task::{Context, Poll, Waker};
 
 use opengrid_datasource::{DataSource, DataSourceCapabilities, QueryResult};
 use opengrid_engine::datasource::LocalDataSource;
-use opengrid_engine::ingest::{CsvOptions, load_csv as read_csv, load_json as read_json};
+use opengrid_engine::ingest::{
+    CsvLoader, CsvOptions, load_csv as read_csv, load_json as read_json,
+};
 use opengrid_planner::ExecutionMode;
 use opengrid_query::{Limits, Query};
 use opengrid_types::{DataSourceId, Schema};
@@ -124,6 +126,8 @@ fn install_collator(sort_keys: CollatorFunction) {
 #[wasm_bindgen]
 pub struct Engine {
     sources: HashMap<String, LocalDataSource>,
+    /// The CSV file being read in pieces (`begin_csv`), with the name it will be registered under.
+    pending: Option<(String, CsvLoader)>,
 }
 
 #[wasm_bindgen]
@@ -133,6 +137,7 @@ impl Engine {
     pub fn new() -> Engine {
         Engine {
             sources: HashMap::new(),
+            pending: None,
         }
     }
 
@@ -159,6 +164,41 @@ impl Engine {
     ) -> Result<(), JsError> {
         self.load_csv(name, bytes, schema_json)
             .map_err(|message| JsError::new(&message))
+    }
+
+    /// Starts reading a CSV file in pieces (issue #427): `push_csv` for each piece, then
+    /// `end_csv`. Only a piece and the columns are in memory, not the whole file as well. The
+    /// pieces may end anywhere. `size_hint` is the file's size in bytes, 0 when unknown; it only
+    /// sizes the columns. A file begun before and not ended is dropped.
+    #[wasm_bindgen(js_name = begin_csv)]
+    pub fn begin_csv_js(
+        &mut self,
+        name: &str,
+        schema_json: &str,
+        size_hint: f64,
+    ) -> Result<(), JsError> {
+        self.begin_csv(name, schema_json, size_hint)
+            .map_err(|message| JsError::new(&message))
+    }
+
+    /// The next piece of the file `begin_csv` started. A piece that cannot be read ends the
+    /// file: nothing is registered, and the error names the line.
+    #[wasm_bindgen(js_name = push_csv)]
+    pub fn push_csv_js(&mut self, bytes: &[u8]) -> Result<(), JsError> {
+        self.push_csv(bytes)
+            .map_err(|message| JsError::new(&message))
+    }
+
+    /// Drops the file `begin_csv` started, nothing registered: for a page whose reading of the
+    /// file failed. Nothing to drop is not an error.
+    pub fn abort_csv(&mut self) {
+        self.pending = None;
+    }
+
+    /// The end of the file: registers the source, replacing one of that name.
+    #[wasm_bindgen(js_name = end_csv)]
+    pub fn end_csv_js(&mut self) -> Result<(), JsError> {
+        self.end_csv().map_err(|message| JsError::new(&message))
     }
 
     /// Registers a source from rows the page already holds (issue #182): a
@@ -279,6 +319,45 @@ impl Engine {
             read_csv(bytes, &schema, CsvOptions::default()).map_err(|error| error.to_string())?;
         let source = LocalDataSource::new(table);
         self.sources.insert(id.as_str().to_owned(), source);
+        Ok(())
+    }
+
+    /// [`Engine::begin_csv_js`] without the `JsError`.
+    pub fn begin_csv(
+        &mut self,
+        name: &str,
+        schema_json: &str,
+        size_hint: f64,
+    ) -> Result<(), String> {
+        self.pending = None;
+        let id = DataSourceId::new(name).map_err(|error| format!("source {name:?}: {error}"))?;
+        let schema =
+            schema_json::from_json(schema_json).map_err(|error| format!("schema: {error}"))?;
+        let loader = CsvLoader::new(&schema, CsvOptions::default())
+            .map_err(|error| error.to_string())?
+            .with_size_hint(size_hint as usize);
+        self.pending = Some((id.as_str().to_owned(), loader));
+        Ok(())
+    }
+
+    /// [`Engine::push_csv_js`] without the `JsError`.
+    pub fn push_csv(&mut self, bytes: &[u8]) -> Result<(), String> {
+        let Some((_, loader)) = &mut self.pending else {
+            return Err("push_csv without begin_csv".to_owned());
+        };
+        loader.feed(bytes).map_err(|error| {
+            self.pending = None;
+            error.to_string()
+        })
+    }
+
+    /// [`Engine::end_csv_js`] without the `JsError`.
+    pub fn end_csv(&mut self) -> Result<(), String> {
+        let Some((name, loader)) = self.pending.take() else {
+            return Err("end_csv without begin_csv".to_owned());
+        };
+        let table = loader.finish().map_err(|error| error.to_string())?;
+        self.sources.insert(name, LocalDataSource::new(table));
         Ok(())
     }
 
@@ -680,5 +759,43 @@ mod stats_tests {
         // 2 ints, 3 offsets and 5 bytes of text, no NULL, no bitmap.
         assert_eq!(sources[1]["bytes"], 2 * 8 + 3 * 4 + 5);
         assert!(stats["memory"].as_u64().is_some());
+    }
+}
+
+#[cfg(test)]
+mod chunked_load_tests {
+    use super::Engine;
+
+    const SCHEMA: &str = r#"{"fields":[{"name":"n","type":"int64","nullable":false},{"name":"s","type":"utf8","nullable":true}]}"#;
+
+    /// Issue #427: a file pushed in pieces is the source `load_csv` makes of it.
+    #[test]
+    fn pieces_register_the_source_the_whole_file_does() {
+        let file = "n,s\n1,\"a\nb\"\n2,cde\n3,ä\n";
+        let mut whole = Engine::new();
+        whole.load_csv("t", file.as_bytes(), SCHEMA).unwrap();
+        let mut pieces = Engine::new();
+        pieces.begin_csv("t", SCHEMA, file.len() as f64).unwrap();
+        for byte in file.as_bytes().chunks(3) {
+            pieces.push_csv(byte).unwrap();
+        }
+        assert!(pieces.stats()["sources"].as_array().unwrap().is_empty());
+        pieces.end_csv().unwrap();
+        assert_eq!(whole.stats()["sources"], pieces.stats()["sources"]);
+    }
+
+    /// A piece that cannot be read ends the file, and nothing is registered; the calls out of order
+    /// are errors, not panics.
+    #[test]
+    fn a_broken_piece_registers_nothing_and_the_calls_keep_their_order() {
+        let mut engine = Engine::new();
+        assert!(engine.push_csv(b"x").is_err());
+        assert!(engine.end_csv().is_err());
+        engine.begin_csv("t", SCHEMA, 0.0).unwrap();
+        engine.push_csv(b"n,s\n1,a\n").unwrap();
+        let error = engine.push_csv(b"2\n").unwrap_err();
+        assert!(error.contains("line 3"), "{error}");
+        assert!(engine.end_csv().is_err());
+        assert!(engine.stats()["sources"].as_array().unwrap().is_empty());
     }
 }

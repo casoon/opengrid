@@ -16,6 +16,20 @@ notation of a result: decimals as strings, dates as `YYYY-MM-DD`, `null` for a m
 schema is required — ingest never guesses a type — and the engine reads the rows as it reads the
 same data from a CSV file, so a query answers the same either way.
 
+## A big file
+
+`load` takes the whole file as bytes, and the engine's memory holds the file next to the columns it
+makes of it. For a file of tens of megabytes, hand it over as a stream instead:
+
+```js
+await provider.loadStream("orders", file, schemaJson); // a File, a ReadableStream, an async iterable
+```
+
+The engine reads it a piece at a time (4 MiB by default, `{ chunkSize }` changes it), so only a
+piece and the columns are in memory. The pieces may end anywhere, inside a field or a character;
+the result, the errors and their line numbers are those of the whole file. The same replace rules
+hold: all or nothing.
+
 ## Replacing
 
 Loading under a name that is already loaded **replaces** the source, all at once. A grid showing

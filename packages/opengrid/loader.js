@@ -218,6 +218,28 @@ export function createWorkerProvider({
     },
 
     /**
+     * Loads a CSV file piece by piece (issue #427): a `File`/`Blob`, a
+     * `ReadableStream` of bytes or an async iterable of them. Only a piece and
+     * the columns are in the engine's memory, not the whole file as well. A
+     * name already loaded is replaced, all or nothing; a file that cannot be
+     * read leaves the old source and rejects with the line.
+     */
+    async loadStream(name, source, schema, options = {}) {
+      await start();
+      await request({ type: "load_begin", name, schema, size: sizeOf(source) });
+      try {
+        for await (const buffer of piecesOf(source, options.chunkSize)) {
+          await request({ type: "load_chunk", bytes: buffer }, [buffer]);
+        }
+        await request({ type: "load_end" });
+      } catch (error) {
+        await request({ type: "load_abort" });
+        throw error;
+      }
+      watchers.loaded(name);
+    },
+
+    /**
      * Loads rows the page already holds — an array of objects keyed by field
      * name (or that array as JSON text) — against a schema (issue #182). A
      * name already loaded is replaced, all or nothing.
@@ -443,6 +465,19 @@ export function createLocalProvider(engine) {
         bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes),
         schema,
       );
+      watchers.loaded(name);
+    },
+    async loadStream(name, source, schema, options = {}) {
+      engine.begin_csv(name, schema, sizeOf(source));
+      try {
+        for await (const buffer of piecesOf(source, options.chunkSize)) {
+          engine.push_csv(new Uint8Array(buffer));
+        }
+        engine.end_csv();
+      } catch (error) {
+        engine.abort_csv();
+        throw error;
+      }
       watchers.loaded(name);
     },
     async loadRows(name, rows, schema) {
@@ -1657,6 +1692,51 @@ function identityKey(value) {
     }
     return { function: functionIds.get(inner) };
   });
+}
+
+/** The bytes of a stream source when it says how many there are, else 0 (a hint, not a promise). */
+function sizeOf(source) {
+  return typeof source?.size === "number" ? source.size : 0;
+}
+
+/**
+ * The pieces of a CSV source: a `Blob` is read a slice at a time, a stream or an
+ * async iterable as it delivers. Each piece is an `ArrayBuffer` the caller may transfer.
+ */
+async function* piecesOf(source, chunkSize = 4 * 1024 * 1024) {
+  for await (const [piece, owned] of piecesAndOwners(source, chunkSize)) {
+    // A piece the loader made, or a stream's chunk, is the loader's to hand on; the bytes an async
+    // iterable yields may be reused by it, so they are copied.
+    yield owned && piece.byteOffset === 0 && piece.byteLength === piece.buffer.byteLength
+      ? piece.buffer
+      : toTransferable(piece);
+  }
+}
+
+async function* piecesAndOwners(source, chunkSize) {
+  if (typeof Blob !== "undefined" && source instanceof Blob) {
+    for (let at = 0; at < source.size; at += chunkSize) {
+      yield [new Uint8Array(await source.slice(at, at + chunkSize).arrayBuffer()), true];
+    }
+    return;
+  }
+  if (typeof source?.getReader === "function") {
+    const reader = source.getReader();
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) return;
+        yield [value, true];
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  }
+  if (typeof source?.[Symbol.asyncIterator] === "function") {
+    for await (const piece of source) yield [piece, false];
+    return;
+  }
+  throw new TypeError("a CSV source must be a Blob, a ReadableStream or an async iterable of bytes");
 }
 
 /**

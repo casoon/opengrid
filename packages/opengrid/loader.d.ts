@@ -312,6 +312,20 @@ export interface EngineProvider extends Provider {
   /** Loads CSV bytes as the source `name`, against a schema (JSON). */
   load(name: string, bytes: ArrayBuffer | Uint8Array, schema: string): Promise<void>;
   /**
+   * Loads a CSV file piece by piece as the source `name` (issue #427): a `File` or
+   * `Blob` (read a slice at a time), a `ReadableStream` of bytes or an async
+   * iterable of them. Only a piece and the columns are in the engine's memory, not
+   * the whole file as well. The pieces may end anywhere. A name that is already
+   * loaded is replaced, all or nothing; a piece that cannot be read rejects with
+   * the line, and the old source stays.
+   */
+  loadStream(
+    name: string,
+    source: Blob | ReadableStream<Uint8Array> | AsyncIterable<Uint8Array>,
+    schema: string,
+    options?: { chunkSize?: number },
+  ): Promise<void>;
+  /**
    * Loads rows the page already holds as the source `name` (issue #182): an
    * array of objects keyed by field name — or that array as JSON text — with
    * values in the wire notation of the result (decimals as strings, dates as
@@ -340,6 +354,12 @@ export interface EngineStats {
 /** The engine of the engine module, as `createLocalProvider` uses it. */
 export interface Engine {
   load_csv(name: string, bytes: Uint8Array, schema: string): void;
+  /** Reads a CSV file in pieces (issue #427): `begin_csv`, `push_csv` for each piece, `end_csv`. */
+  begin_csv(name: string, schema: string, sizeHint: number): void;
+  push_csv(bytes: Uint8Array): void;
+  end_csv(): void;
+  /** Drops a file `begin_csv` started. */
+  abort_csv(): void;
   /** Rows as JSON text (an array of objects); replaces a source of that name (issue #182). */
   load_rows(name: string, rowsJson: string, schema: string): void;
   /** The result as JSON. */

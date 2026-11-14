@@ -70,6 +70,26 @@ self.onmessage = async ({ data }) => {
         self.postMessage({ type: "loaded", id: data.id });
         break;
       }
+      case "load_begin": {
+        engine.begin_csv(data.name, data.schema, data.size);
+        self.postMessage({ type: "loaded", id: data.id });
+        break;
+      }
+      case "load_chunk": {
+        engine.push_csv(new Uint8Array(data.bytes));
+        self.postMessage({ type: "loaded", id: data.id });
+        break;
+      }
+      case "load_end": {
+        engine.end_csv();
+        self.postMessage({ type: "loaded", id: data.id });
+        break;
+      }
+      case "load_abort": {
+        engine.abort_csv();
+        self.postMessage({ type: "loaded", id: data.id });
+        break;
+      }
       case "rows": {
         engine.load_rows(data.name, data.rows, data.schema);
         self.postMessage({ type: "loaded", id: data.id });
