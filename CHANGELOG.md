@@ -19,11 +19,6 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
-### Changed
-
-- **Pages:** the project site uses the current shared theme (0.12.14): a wider header, a smaller
-  CASOON badge, and a block right after the hero no longer sits flush against it.
-
 ### Fixed
 
 - **Package:** a page that serves the package's files itself and leaves out `collation.js` no
@@ -40,6 +35,8 @@ Two things belong in every release entry and are easy to leave out:
 - **Pages:** the start page has two more cards, *Text in your language* (the collation of a
   locale) and *Next to an AI assistant* (MCP), and *What sets it apart* says what the collation
   is and promises.
+- **Pages:** the project site uses the current shared theme (0.12.14): a wider header, a smaller
+  CASOON badge, and a block right after the hero no longer sits flush against it.
 
 ## [0.17.0] - 2026-11-13
 
