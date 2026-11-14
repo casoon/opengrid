@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc ace5ee50301787a835c31fcd23c139f8e530699bc516cfcb620c49585514638c # shrinks to rows = ["{ \"id\": 0, \"name\": \"\", \"amount\": -0, \"flag\": true, \"day\": \"2026-03-05\" }"]

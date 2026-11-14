@@ -197,7 +197,23 @@ pub fn load_csv(bytes: &[u8], schema: &Schema, options: CsvOptions) -> Result<Ta
 pub fn load_json(bytes: &[u8], schema: &Schema) -> Result<Table, IngestError> {
     let stored = schema.stored();
     let layout = Layout::of(schema, &stored);
-    let rows = json::rows(text(bytes)?, &stored)?;
+    let text = text(bytes)?;
+    // The plain text first, in one pass (issue #426); what it will not read, the general path does.
+    if let Some(table) = json::fast(text, schema, &stored, &layout) {
+        return Ok(table);
+    }
+    load_json_general(text, schema, &stored, &layout)
+}
+
+/// The general path: the whole text as a JSON tree, then rows, then columns. It reads every shape
+/// the contract allows and says what is wrong with the rest.
+fn load_json_general(
+    text: &str,
+    schema: &Schema,
+    stored: &Schema,
+    layout: &Layout,
+) -> Result<Table, IngestError> {
+    let rows = json::rows(text, stored)?;
     let mut builders = Builders::new(schema, rows.len());
     for row in rows {
         builders.push(layout.complete(row))?;
