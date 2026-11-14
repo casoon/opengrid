@@ -21,6 +21,12 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Fixed
 
+- **Package:** a page that serves the package's files itself and leaves out `collation.js` no
+  longer breaks. Since 0.17.0 `loader.js` and `worker.js` imported it statically, so the loader
+  failed to load or the worker died without a word and the grid never showed a row. Both import
+  it on the first query that names a locale now; without the file only that sort is refused,
+  with an error that names it. `installation.mdx` lists what a page that copies the files must
+  copy ([#415](https://github.com/casoon/opengrid/issues/415)).
 - **Pages:** the demo on the project page did not start since 0.17.0 (`loader.js` imports
   `collation.js`, which the site did not copy).
 
