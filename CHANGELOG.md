@@ -37,6 +37,9 @@ Two things belong in every release entry and are easy to leave out:
   is and promises.
 - **Pages:** the project site uses the current shared theme (0.12.14): a wider header, a smaller
   CASOON badge, and a block right after the hero no longer sits flush against it.
+- **Pages:** the start page leads with *What sets it apart* — six points, each with what backs it —
+  and says why the engine is WebAssembly and what that costs. Its figures (conformance cases,
+  axe specs, the engine's size) are counted and measured when the site is built.
 
 ## [0.17.0] - 2026-11-13
 
