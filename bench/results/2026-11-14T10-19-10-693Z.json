@@ -1,0 +1,71 @@
+{
+  "machine": "Apple M4 Pro",
+  "rows": 100000,
+  "throttle": 1,
+  "results": {
+    "aggrid": [
+      {
+        "grid": "aggrid",
+        "rows": 100000,
+        "startMs": 91.3449999988079,
+        "firstRows": {
+          "ms": null,
+          "ok": false
+        },
+        "sort": {
+          "ms": null,
+          "ok": false
+        },
+        "filter": {
+          "ms": null,
+          "ok": false
+        },
+        "clear": {
+          "ms": null,
+          "ok": false
+        },
+        "error": "TypeError: Cannot set properties of null (setting 'scrollTop')\n    at f (http://localhost:4173/assets/harness-Ab6K1DZD.js:1:2133)\n    at m (http://localhost:4173/assets/harness-Ab6K1DZD.js:1:3233)",
+        "memory": {
+          "load": 17.859375
+        }
+      },
+      {
+        "grid": "aggrid",
+        "rows": 100000,
+        "startMs": 76.23499999940395,
+        "firstRows": {
+          "ms": null,
+          "ok": false
+        },
+        "sort": {
+          "ms": null,
+          "ok": false
+        },
+        "filter": {
+          "ms": null,
+          "ok": false
+        },
+        "clear": {
+          "ms": null,
+          "ok": false
+        },
+        "error": "TypeError: Cannot set properties of null (setting 'scrollTop')\n    at f (http://localhost:4173/assets/harness-Ab6K1DZD.js:1:2133)\n    at m (http://localhost:4173/assets/harness-Ab6K1DZD.js:1:3233)",
+        "memory": {
+          "load": 35.921875
+        }
+      }
+    ],
+    "tabulator": [
+      {
+        "grid": "tabulator",
+        "error": "no result: page.waitForFunction: Timeout 180000ms exceeded.",
+        "memory": {}
+      },
+      {
+        "grid": "tabulator",
+        "error": "no result: page.waitForFunction: Timeout 180000ms exceeded.",
+        "memory": {}
+      }
+    ]
+  }
+}

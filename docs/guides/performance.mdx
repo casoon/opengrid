@@ -43,7 +43,7 @@ shape — integers, text, an exact decimal, a float, a boolean, a date and a tim
 Ten times the rows cost about ten times the time and about nine times the memory: the engine
 scans typed columns, and nothing in these queries grows faster than the data.
 
-## Two numbers for memory
+## Two numbers for the engine's memory
 
 The **columns** — the data itself, typed — take 9.8 MiB for 100,000 rows and 98 MiB for a
 million: about a hundred bytes a row. A 64-bit integer takes eight bytes and stays an integer,
@@ -56,6 +56,26 @@ the engine's budget guards: `peakmark.toml` fails a release whose scenario (100,
 queried and pivoted) needs more than 26 MiB, or leaks from one run to the next.
 
 The numbers are the same in the tab and on a server, because it is the same code.
+
+## What the whole page holds
+
+The engine's own memory is not what the browser shows. Measured with `bench/` — the tool in the
+repository — in Chromium with the engine in a Worker: the browser's whole process tree, resident,
+minus an empty page's, with the rows loaded and after sorting, filtering and scrolling. It
+includes the rows the test page keeps as JavaScript objects and the engine's copy beside them.
+
+| Rows | Handed over as | Loaded | After the queries | First rows on screen |
+|---|---|---|---|---|
+| 100,000 | CSV bytes | 169 MiB | 263 MiB | 139 ms |
+| 100,000 | JavaScript objects | 193 MiB | 283 MiB | 191 ms |
+| 1,000,000 | CSV bytes | 658 MiB | 784 MiB | 841 ms |
+| 1,000,000 | JavaScript objects | 1,079 MiB | 1,102 MiB | 2.1 s |
+
+So the engine is **compact, not free**: it keeps its own typed copy next to whatever the page
+holds, and handing it JavaScript objects makes it serialise them once, which costs time and
+memory that CSV does not. That copy is what the queries run on: through the Worker, in the browser,
+a sort of 100,000 rows takes 29 ms and of a million 48 ms; a filter 33 and 52 ms; clearing the
+filter and the sort 33 and 50 ms.
 
 ## What a page pays
 

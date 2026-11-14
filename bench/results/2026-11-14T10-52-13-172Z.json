@@ -1,0 +1,221 @@
+{
+  "machine": "Apple M4 Pro",
+  "rows": 1000000,
+  "throttle": 1,
+  "results": {
+    "opengrid": [
+      {
+        "grid": "opengrid",
+        "rows": 1000000,
+        "startMs": 118.6550000011921,
+        "firstRows": {
+          "ms": 2101.3250000029802,
+          "ok": true
+        },
+        "sort": {
+          "ms": 44.24500000476837,
+          "ok": true
+        },
+        "filter": {
+          "ms": 49.85999999940395,
+          "ok": true
+        },
+        "clear": {
+          "ms": 50.96500000357628,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 16.670000000000073,
+          "over33": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "moved": true
+        },
+        "memory": {
+          "load": 1095.234375,
+          "after": 1118.9375
+        }
+      },
+      {
+        "grid": "opengrid",
+        "rows": 1000000,
+        "startMs": 91.88000001013279,
+        "firstRows": {
+          "ms": 2108.125,
+          "ok": true
+        },
+        "sort": {
+          "ms": 37.86999998986721,
+          "ok": true
+        },
+        "filter": {
+          "ms": 49.185000002384186,
+          "ok": true
+        },
+        "clear": {
+          "ms": 49.82999999821186,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 16.670000000000073,
+          "over33": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "moved": true
+        },
+        "memory": {
+          "load": 1079.234375,
+          "after": 1101.6875
+        }
+      },
+      {
+        "grid": "opengrid",
+        "rows": 1000000,
+        "startMs": 97.93999999761581,
+        "firstRows": {
+          "ms": 1985.030000001192,
+          "ok": true
+        },
+        "sort": {
+          "ms": 46.30500000715256,
+          "ok": true
+        },
+        "filter": {
+          "ms": 50.314999997615814,
+          "ok": true
+        },
+        "clear": {
+          "ms": 50.40500000119209,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 16.670000000000073,
+          "over33": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "moved": true
+        },
+        "memory": {
+          "load": 1078.421875,
+          "after": 1098.96875
+        }
+      }
+    ],
+    "opengrid-csv": [
+      {
+        "grid": "opengrid-csv",
+        "rows": 1000000,
+        "startMs": 95.49000000953674,
+        "firstRows": {
+          "ms": 838.1550000011921,
+          "ok": true
+        },
+        "sort": {
+          "ms": 47.53499999642372,
+          "ok": true
+        },
+        "filter": {
+          "ms": 49.15999999642372,
+          "ok": true
+        },
+        "clear": {
+          "ms": 34.104999989271164,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 16.670000000000073,
+          "over33": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "moved": true
+        },
+        "memory": {
+          "load": 658.21875,
+          "after": 783.125
+        }
+      },
+      {
+        "grid": "opengrid-csv",
+        "rows": 1000000,
+        "startMs": 90.84999999403954,
+        "firstRows": {
+          "ms": 841.4149999916553,
+          "ok": true
+        },
+        "sort": {
+          "ms": 46.59000000357628,
+          "ok": true
+        },
+        "filter": {
+          "ms": 51.74500000476837,
+          "ok": true
+        },
+        "clear": {
+          "ms": 50.25,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 16.670000000000073,
+          "over33": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "moved": true
+        },
+        "memory": {
+          "load": 658.28125,
+          "after": 784.484375
+        }
+      },
+      {
+        "grid": "opengrid-csv",
+        "rows": 1000000,
+        "startMs": 96.78999999165535,
+        "firstRows": {
+          "ms": 851.0450000017881,
+          "ok": true
+        },
+        "sort": {
+          "ms": 50.28000000119209,
+          "ok": true
+        },
+        "filter": {
+          "ms": 51.554999992251396,
+          "ok": true
+        },
+        "clear": {
+          "ms": 49.95999999344349,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 16.670000000000073,
+          "over33": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "moved": true
+        },
+        "memory": {
+          "load": 659.265625,
+          "after": 785.046875
+        }
+      }
+    ]
+  }
+}

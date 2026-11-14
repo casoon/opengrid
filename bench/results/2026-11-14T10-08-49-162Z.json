@@ -1,0 +1,184 @@
+{
+  "machine": "Apple M4 Pro",
+  "rows": 100000,
+  "throttle": 1,
+  "results": {
+    "opengrid": [
+      {
+        "grid": "opengrid",
+        "rows": 100000,
+        "startMs": 100.06499999761581,
+        "firstRows": {
+          "ms": 240.62999999225138,
+          "ok": true
+        },
+        "sort": {
+          "ms": 14.229999996423658,
+          "ok": true
+        },
+        "filter": {
+          "ms": 16.094999999403854,
+          "ok": true
+        },
+        "clear": {
+          "ms": 15.404999999999973,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 16.670000000000073,
+          "over33": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "moved": true
+        },
+        "memory": {
+          "load": 215.359375,
+          "after": 278.5625
+        }
+      },
+      {
+        "grid": "opengrid",
+        "rows": 100000,
+        "startMs": 43.24500000476837,
+        "firstRows": {
+          "ms": 203.74999999403954,
+          "ok": true
+        },
+        "sort": {
+          "ms": 9.415000002384204,
+          "ok": true
+        },
+        "filter": {
+          "ms": 16.449999992251378,
+          "ok": true
+        },
+        "clear": {
+          "ms": 15.849999991655295,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 16.670000000000073,
+          "over33": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "moved": true
+        },
+        "memory": {
+          "load": 173.0625,
+          "after": 250.15625
+        }
+      },
+      {
+        "grid": "opengrid",
+        "rows": 100000,
+        "startMs": 44.03000000119209,
+        "firstRows": {
+          "ms": 186.7800000011921,
+          "ok": true
+        },
+        "sort": {
+          "ms": 20.70999998867501,
+          "ok": true
+        },
+        "filter": {
+          "ms": 16.199999996423685,
+          "ok": true
+        },
+        "clear": {
+          "ms": 15.349999995827602,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 16.670000000000073,
+          "over33": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "moved": true
+        },
+        "memory": {
+          "load": 194.234375,
+          "after": 282.203125
+        }
+      },
+      {
+        "grid": "opengrid",
+        "rows": 100000,
+        "startMs": 44.355000004172325,
+        "firstRows": {
+          "ms": 204.08500000059604,
+          "ok": true
+        },
+        "sort": {
+          "ms": 22.860000001788194,
+          "ok": true
+        },
+        "filter": {
+          "ms": 15.375000000595946,
+          "ok": true
+        },
+        "clear": {
+          "ms": 15.305000001192184,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 16.670000000000073,
+          "over33": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "moved": true
+        },
+        "memory": {
+          "load": 190.984375,
+          "after": 279.28125
+        }
+      },
+      {
+        "grid": "opengrid",
+        "rows": 100000,
+        "startMs": 44.17499999701977,
+        "firstRows": {
+          "ms": 186.28499999701978,
+          "ok": true
+        },
+        "sort": {
+          "ms": 23.074999998807925,
+          "ok": true
+        },
+        "filter": {
+          "ms": 16.225000002980323,
+          "ok": true
+        },
+        "clear": {
+          "ms": 16.07499999046331,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 16.670000000000073,
+          "over33": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "moved": true
+        },
+        "memory": {
+          "load": 194.4375,
+          "after": 282.140625
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "machine": "Apple M4 Pro",
+  "rows": 100000,
+  "throttle": 1,
+  "results": {
+    "w2ui": [
+      {
+        "grid": "w2ui",
+        "rows": 100000,
+        "startMs": 95.25500001013279,
+        "firstRows": {
+          "ms": 149.19499999284744,
+          "ok": true
+        },
+        "sort": {
+          "ms": 68.98499999940395,
+          "ok": true
+        },
+        "filter": {
+          "ms": 33.83999998867512,
+          "ok": true
+        },
+        "clear": {
+          "ms": 117.33499999344349,
+          "ok": true
+        },
+        "scroll": {
+          "frames": 140,
+          "p50": 16.664999999999964,
+          "p95": 16.670000000000073,
+          "max": 16.670000000000073,
+          "over33": 0,
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "moved": true
+        },
+        "memory": {
+          "load": 193.453125,
+          "after": 273.296875
+        }
+      }
+    ]
+  }
+}
