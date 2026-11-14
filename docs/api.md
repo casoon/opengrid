@@ -1117,7 +1117,7 @@ view applied to a grid without a renderer keeps them for when it has one.
 ### A source that changes
 
 `createRestProvider({ url, source, token, watch: true })` opens the server's
-[change stream](protocol.md#watching-a-source) and tells the grids on it with a cancelable
+[change stream](../protocol/#watching-a-source) and tells the grids on it with a cancelable
 `opengrid-source-changed`. **Rows that move under the focus are a barrier**, so by default the grid
 moves nothing: the status line says once, politely, „The data changed. Refresh to see it.“, and a
 **Refresh** button (`part="refresh"`) sits above the rows. Another change while the notice stands says
