@@ -19,6 +19,12 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+### Changed
+
+- **Pages:** the start page has two more cards, *Text in your language* (the collation of a
+  locale) and *Next to an AI assistant* (MCP), and *What sets it apart* says what the collation
+  is and promises.
+
 ## [0.17.0] - 2026-11-13
 
 Not yet verified by a screen reader: no pass with assistive technology has been recorded for this

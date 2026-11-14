@@ -16,6 +16,7 @@ page.
 | Sorting, filtering, grouping | In the component, on the main thread | In an engine written in Rust, compiled to WebAssembly, in a worker if you like |
 | Data too big for the browser | A server mode: your backend answers, and you write the rules again | The same engine inside `opengrid-server`, or the query split between server and tab |
 | What "the same result" means | Whatever the two implementations happen to do with NULL, text order or decimals | Written down as rules and pinned by case files every path has to pass |
+| Text in a language | Often the browser's collation on one side and the database's on the other | A locale in the query (`"collation": "de"`): one order from the engine, SQLite and PostgreSQL for Latin, Greek and Cyrillic text |
 | What goes over the wire | Often filter expressions or parameters your backend turns into SQL | A query as a JSON document, checked against the fields and rows the token may see |
 | Markup | Usually nested `div`s with ARIA roles for every kind of table | A native `<table>` where the data is read, `role="grid"` only where it is worked with |
 | Framework | A wrapper per framework, or one framework only | Web Components, with thin components for React, Vue and Svelte |
@@ -50,6 +51,15 @@ numbered rules and pins each with case files — a query and the expected answer
 The same files run against the native engine, the WebAssembly build in a headless browser, the
 hybrid path and PostgreSQL. A path that disagrees fails its test.
 [Query semantics](../guides/query-semantics/) lists the rules.
+
+Text order is one of them. By default text sorts by code point, so `Zebra` comes before `apple`.
+A query can name a locale instead — `"collation": "de"` — and then `ä` sorts with `a` in German,
+after `z` in Swedish, and `ı` before `i` in Turkish. The engine, SQLite and PostgreSQL give the
+same order for Latin, Greek and Cyrillic text, and the expected orders in the case files were
+written by PostgreSQL, so the engine is checked against a database and not against itself. Other
+scripts sort by the collation too, but the three are not held to one order there (Han follows
+code points in the engine). The collation's tables are a module of their own, about 330 KiB, that
+the browser fetches only when a query names a locale.
 
 ## Rust, and only one layer that knows a browser
 
@@ -95,7 +105,10 @@ and what is still open is listed, without rounding up, in
 
 The same structure makes the grid readable for programs: roles, names and row counts are in the
 accessibility tree, and schema, query and view are JSON. The
-[MCP adapter](../guides/mcp/) uses nothing but that public surface.
+[MCP adapter](../guides/mcp/) uses nothing but that public surface. With it the grid opens in
+chat clients that support MCP Apps: the reader keeps the keyboard, the assistant sets the filter,
+sort and grouping of the same view through tools, and a field the operator left out of `fields`
+is refused by name.
 
 ## Everything in one package
 
