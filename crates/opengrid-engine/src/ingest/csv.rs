@@ -288,6 +288,28 @@ mod tests {
             .collect()
     }
 
+    /// Mutation testing found these unchecked: a field made of several stretches of the input —
+    /// text after a closing quote, an empty quoted part, a doubled quote — and a stray quote.
+    #[test]
+    fn a_field_of_several_stretches_is_all_of_them() {
+        let records = scan("\"ab\"cd,\"\"x,y\"\",\"a\"\"b\"c,ab\"c\"\n", b',').unwrap();
+        assert_eq!(
+            fields(&records),
+            vec![vec!["abcd", "x", "y\"\"", "a\"bc", "ab\"c\""]]
+        );
+    }
+
+    /// A line break inside quotes counts once: a CR followed by an LF is one, a CR alone is one.
+    #[test]
+    fn line_breaks_inside_quotes_are_counted_once_each() {
+        let records = scan("\"a\rb\",x\n\"c\r\nd\",y\nz", b',').unwrap();
+        assert_eq!(
+            records.iter().map(|record| record.line).collect::<Vec<_>>(),
+            vec![1, 3, 5]
+        );
+        assert_eq!(fields(&records)[1], vec!["c\r\nd", "y"]);
+    }
+
     #[test]
     fn splits_plain_records() {
         let records = scan("a,b\nc,d\n", b',').unwrap();
