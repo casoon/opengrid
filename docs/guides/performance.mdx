@@ -100,9 +100,9 @@ The engine is a module the page loads before its first query. Compressed with Br
 
 | Module | Size | Loaded |
 |---|---|---|
-| The engine (`engine/`) | about 168 KiB | when the page starts the engine |
+| The engine (`engine/`) | about 172 KiB | when the page starts the engine |
 | All three elements (`pkg/`) | about 348 KiB | with the elements |
-| The collation of a locale (`collation/`) | about 330 KiB | only by a sort that names a locale |
+| The collation of a locale (`collation/`) | about 325 KiB | only by a sort that names a locale |
 | The XLSX writer (`xlsx/`) | about 240 KiB | only by an export to a workbook |
 
 Sizes are kept inside budgets in `peakmark.toml`, so a release that grows one fails the build
