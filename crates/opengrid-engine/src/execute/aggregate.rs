@@ -342,7 +342,7 @@ impl Accumulator {
             (Accumulator::Count(count), AggregateFn::Count, _) => *count += 1,
             (Accumulator::SumInt64 { sum, seen }, AggregateFn::Sum, Values::Int64(values)) => {
                 *sum = sum
-                    .checked_add(values[row])
+                    .checked_add(values.get(row))
                     .ok_or_else(|| overflow(alias))?;
                 *seen = true;
             }
@@ -454,7 +454,8 @@ fn encode(column: &Column, row: usize, key: &mut Vec<u8>) {
     key.push(0x01);
     match column.values() {
         Values::Bool(values) => key.push(u8::from(values[row])),
-        Values::Int64(values) | Values::Timestamp(values) => {
+        Values::Int64(values) => key.extend_from_slice(&order_of_i64(values.get(row))),
+        Values::Timestamp(values) => {
             key.extend_from_slice(&order_of_i64(values[row]));
         }
         Values::Float64(values) => key.extend_from_slice(&order_of_f64(values[row])),
@@ -519,7 +520,7 @@ fn overflow(alias: &FieldName) -> ExecuteError {
 /// `avg` over Int64, Decimal or Float64 is a float (rule S12).
 fn as_number(column: &Column, row: usize, field: &FieldName) -> Result<f64, ExecuteError> {
     Ok(match (column.values(), column.data_type()) {
-        (Values::Int64(values), _) => values[row] as f64,
+        (Values::Int64(values), _) => values.get(row) as f64,
         (Values::Float64(values), _) => values[row],
         (Values::Decimal(values), DataType::Decimal { scale, .. }) => {
             values[row] as f64 / 10f64.powi(scale as i32)

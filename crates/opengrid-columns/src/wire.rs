@@ -60,7 +60,7 @@ use std::fmt;
 
 use opengrid_types::{DataType, Date, Decimal, Field, FieldName, Schema, Timestamp, Value};
 
-use crate::{Bitmap, Column, Table, Values};
+use crate::{Bitmap, Column, Ints, Table, Values};
 
 /// The media type of the binary form, for `Accept` and `Content-Type`.
 pub const MEDIA_TYPE: &str = "application/vnd.opengrid.columns";
@@ -405,7 +405,12 @@ impl Writer {
                 }
                 self.words(bits.words());
             }
-            Values::Int64(values) | Values::Timestamp(values) => {
+            Values::Int64(values) => {
+                for value in values.iter() {
+                    self.out.extend_from_slice(&value.to_le_bytes());
+                }
+            }
+            Values::Timestamp(values) => {
                 for value in values {
                     self.out.extend_from_slice(&value.to_le_bytes());
                 }
@@ -690,7 +695,7 @@ impl<'a> Reader<'a> {
                     .ok_or_else(|| WireError::new("the booleans do not fit"))?;
                 Values::Bool((0..rows).map(|row| bits.get(row)).collect())
             }
-            DataType::Int64 => Values::Int64(self.fixed(rows, i64::from_le_bytes)?),
+            DataType::Int64 => Values::Int64(Ints::from_vec(self.fixed(rows, i64::from_le_bytes)?)),
             DataType::Timestamp => Values::Timestamp(self.fixed(rows, i64::from_le_bytes)?),
             DataType::Float64 => Values::Float64(self.fixed(rows, f64::from_le_bytes)?),
             DataType::Decimal { precision, .. } => {
@@ -1141,6 +1146,37 @@ mod tests {
         assert_eq!(total, 41);
         same(&table, &back);
         assert_eq!(bytes.len() % 8, 0, "sections end on the boundary");
+    }
+
+    /// Issue #447: integers of every width go over the wire as eight bytes each and come back in the
+    /// narrowest width that holds them, with the same values.
+    #[test]
+    fn integers_of_every_width_round_trip() {
+        let schema = Schema::new(vec![Field::new(
+            FieldName::new("n").unwrap(),
+            DataType::Int64,
+        )]);
+        for values in [
+            vec![0, 1, -1, 127, -128],
+            vec![128, -129, 32_767, -32_768],
+            vec![32_768, i64::from(i32::MAX), i64::from(i32::MIN)],
+            vec![1 << 40, -(1 << 40), i64::MAX, i64::MIN],
+            vec![1, 2, 1 << 40, 3],
+        ] {
+            let cells: Vec<Value> = values.iter().map(|value| Value::Int64(*value)).collect();
+            let table = Table::from_values(&schema, &[cells]).unwrap();
+            let (back, _) = decode_result(&encode_result(&table, 0)).unwrap();
+            same(&table, &back);
+            let Values::Int64(ints) = back.column_at(0).values() else {
+                panic!("an int64 column")
+            };
+            assert_eq!(ints.to_vec(), values);
+            assert_eq!(
+                back.byte_size(),
+                table.byte_size(),
+                "the same width on both sides"
+            );
+        }
     }
 
     #[test]
