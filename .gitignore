@@ -17,3 +17,6 @@ test-results/
 playwright-report/
 blob-report/
 
+
+# What the measuring tool bench/ measured, including grids that are not ours: stays on the machine.
+bench/results/
