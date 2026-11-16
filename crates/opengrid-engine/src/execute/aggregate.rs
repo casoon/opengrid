@@ -36,18 +36,33 @@ pub(crate) fn run(table: &Table, query: &ValidatedQuery) -> Result<Table, Execut
     let aggregates = Aggregates::resolve(table, &query.aggregate)?;
 
     let mut index: HashMap<Vec<u8>, usize> = HashMap::new();
+    // The dictionary path: the group of a row by the codes of its keys, in a table.
+    let mut by_codes = groups.code_table();
     let mut state: Vec<Group> = Vec::new();
     let mut key = Vec::new();
     for row in 0..table.num_rows() {
-        key.clear();
-        groups.key(row, &mut key);
-        let group = match index.get(&key) {
-            Some(group) => *group,
-            None => {
-                let group = state.len();
-                state.push(Group::new(row, &aggregates));
-                index.insert(key.clone(), group);
-                group
+        let group = if let Some(slots) = by_codes.as_mut() {
+            let slot = groups.slot(row);
+            match slots[slot] {
+                NO_GROUP => {
+                    let group = state.len();
+                    state.push(Group::new(row, &aggregates));
+                    slots[slot] = group as u32;
+                    group
+                }
+                group => group as usize,
+            }
+        } else {
+            key.clear();
+            groups.key(row, &mut key);
+            match index.get(&key) {
+                Some(group) => *group,
+                None => {
+                    let group = state.len();
+                    state.push(Group::new(row, &aggregates));
+                    index.insert(key.clone(), group);
+                    group
+                }
             }
         };
         for (position, accumulator) in state[group].accumulated.iter_mut().enumerate() {
@@ -122,18 +137,44 @@ impl Group {
     }
 }
 
+/// A group slot nobody has taken yet.
+const NO_GROUP: u32 = u32::MAX;
+
+/// The most slots the code table of a grouping may have (4 bytes each): past it the keys are
+/// hashed, as for every other column.
+const MAX_SLOTS: usize = 1 << 18;
+
 /// The input columns the query groups by.
 struct GroupColumns<'a> {
     columns: Vec<&'a Column>,
+    /// For a text column that is a dictionary: the key of each distinct text, built once. A row
+    /// copies its text's key instead of escaping the text byte by byte.
+    text_keys: Vec<Option<Vec<Vec<u8>>>>,
 }
 
 impl<'a> GroupColumns<'a> {
     fn resolve(table: &'a Table, group: &[FieldName]) -> Result<Self, ExecuteError> {
-        let columns = group
+        let columns: Vec<&Column> = group
             .iter()
             .map(|field| super::column(table, field.as_str()))
             .collect::<Result<_, _>>()?;
-        Ok(GroupColumns { columns })
+        let text_keys = columns
+            .iter()
+            .map(|column| match column.values() {
+                Values::Utf8(strs) if strs.is_dictionary() => Some(
+                    (0..strs.distinct().unwrap_or(0))
+                        .map(|code| {
+                            // The `0x01` of a present cell, as `encode` writes it.
+                            let mut key = vec![0x01];
+                            encode_text(strs.dictionary_text(code).unwrap_or(""), &mut key);
+                            key
+                        })
+                        .collect(),
+                ),
+                _ => None,
+            })
+            .collect();
+        Ok(GroupColumns { columns, text_keys })
     }
 
     fn is_empty(&self) -> bool {
@@ -142,9 +183,48 @@ impl<'a> GroupColumns<'a> {
 
     /// The key of one row: its encoded cells, in group order.
     fn key(&self, row: usize, key: &mut Vec<u8>) {
-        for column in &self.columns {
-            encode(column, row, key);
+        for (column, texts) in self.columns.iter().zip(&self.text_keys) {
+            if let (Some(texts), Values::Utf8(strs), false) =
+                (texts, column.values(), column.is_null(row))
+            {
+                key.extend_from_slice(&texts[strs.code(row).expect("a dictionary has codes")]);
+            } else {
+                encode(column, row, key);
+            }
         }
+    }
+
+    /// An empty table of group slots, one for each combination of the columns' codes (and each
+    /// column's NULL), when every group column is a dictionary and there are not too many
+    /// combinations; `None` when the keys have to be hashed.
+    fn code_table(&self) -> Option<Vec<u32>> {
+        if self.is_empty() || self.text_keys.iter().any(Option::is_none) {
+            return None;
+        }
+        let mut slots = 1usize;
+        for texts in self.text_keys.iter().flatten() {
+            slots = slots.checked_mul(texts.len() + 1)?;
+            if slots > MAX_SLOTS {
+                return None;
+            }
+        }
+        Some(vec![NO_GROUP; slots])
+    }
+
+    /// The slot of a row in the table of [`Self::code_table`]: its codes, NULL last in each column.
+    fn slot(&self, row: usize) -> usize {
+        let mut slot = 0;
+        for (column, texts) in self.columns.iter().zip(&self.text_keys) {
+            let width = texts.as_ref().map_or(0, |texts| texts.len()) + 1;
+            let code = match column.values() {
+                Values::Utf8(strs) if !column.is_null(row) => {
+                    strs.code(row).expect("a dictionary has codes")
+                }
+                _ => width - 1,
+            };
+            slot = slot * width + code;
+        }
+        slot
     }
 
     /// The key columns of the result: one row per group, taken from the group's
@@ -461,21 +541,25 @@ fn encode(column: &Column, row: usize, key: &mut Vec<u8>) {
         Values::Float64(values) => key.extend_from_slice(&order_of_f64(values[row])),
         Values::Decimal(values) => key.extend_from_slice(&order_of_i128(values.get(row))),
         Values::Utf8(_) => {
-            // Escaped, so the encoding stays prefix-free *and* keeps the byte
-            // order (rules S4/S13: binary, no Unicode normalisation).
-            for byte in column.str(row).as_bytes() {
-                match byte {
-                    0x00 => key.extend_from_slice(&[0x00, 0xFF]),
-                    other => key.push(*other),
-                }
-            }
-            key.extend_from_slice(&[0x00, 0x00]);
+            encode_text(column.str(row), key);
         }
         Values::Date(values) => key.extend_from_slice(&order_of_i32(values[row])),
         // No key: validation refuses to group by a list (issue #185), so no
         // row ever gets here — and if one did, every list would be one group.
         Values::ListInt64 { .. } | Values::ListUtf8 { .. } => {}
     }
+}
+
+/// A text after the `0x01` of a present cell: escaped, so the encoding stays prefix-free *and*
+/// keeps the byte order (rules S4/S13: binary, no Unicode normalisation).
+fn encode_text(text: &str, key: &mut Vec<u8>) {
+    for byte in text.as_bytes() {
+        match byte {
+            0x00 => key.extend_from_slice(&[0x00, 0xFF]),
+            other => key.push(*other),
+        }
+    }
+    key.extend_from_slice(&[0x00, 0x00]);
 }
 
 /// Big-endian with the sign bit flipped: unsigned byte order == number order.
