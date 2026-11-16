@@ -3,7 +3,7 @@
 
 use opengrid_engine::Table;
 use opengrid_engine::ingest::{CsvOptions, IngestError, load_csv, load_json};
-use opengrid_types::{DataType, Field, FieldName, Schema};
+use opengrid_types::{DataType, DatePart, Field, FieldName, Schema};
 
 /// `id` is non-nullable, `note` is not: enough to exercise both directions.
 fn schema() -> Schema {
@@ -234,5 +234,74 @@ fn text_cells_of_a_csv_are_what_the_same_cells_of_a_json_are() {
     assert_eq!(
         refused.unwrap_err().to_string(),
         "CSV line 2, column name: NULL is not allowed in a non-nullable column"
+    );
+}
+
+/// Issue #440: a CSV record goes into its columns cell by cell, and the derived columns are
+/// taken from the cells kept for them. What that makes is what the JSON path, which builds the
+/// whole row first, makes of the same rows: a derived column that stands before its source, two
+/// sources with different years and months, the same source read twice, and a NULL in each.
+#[test]
+fn derived_columns_of_a_csv_are_what_the_same_rows_of_a_json_are() {
+    let name = |name: &str| FieldName::new(name).unwrap();
+    let schema = Schema::new(vec![
+        Field::derived(name("made_month"), DatePart::Month, name("made")),
+        Field::required(name("id"), DataType::Int64),
+        Field::derived(name("day_year"), DatePart::Year, name("day")),
+        Field::new(name("day"), DataType::Date),
+        Field::new(name("note"), DataType::Utf8),
+        Field::new(name("made"), DataType::Timestamp),
+        Field::derived(name("made_year"), DatePart::Year, name("made")),
+        Field::derived(name("day_month"), DatePart::Month, name("day")),
+    ]);
+    schema.check().unwrap();
+    let csv = "id,day,note,made\n\
+               1,2019-02-03,a,2031-11-30T23:59:59Z\n\
+               2,\\N,b,2024-07-01T00:00:00Z\n\
+               3,2022-12-31,\\N,\\N\n\
+               4,\\N,,\\N\n";
+    let json = r#"[
+        {"id": 1, "day": "2019-02-03", "note": "a", "made": "2031-11-30T23:59:59Z"},
+        {"id": 2, "day": null, "note": "b", "made": "2024-07-01T00:00:00Z"},
+        {"id": 3, "day": "2022-12-31", "note": null, "made": null},
+        {"id": 4, "day": null, "note": "", "made": null}
+    ]"#;
+    let from_csv = load_csv(csv.as_bytes(), &schema, CsvOptions::default()).unwrap();
+    let from_json = load_json(json.as_bytes(), &schema).unwrap();
+    assert_eq!(from_csv, from_json);
+    assert_eq!(from_csv.num_rows(), 4);
+}
+
+/// Issue #440: with the cells read one by one, the error of a record is still that of its
+/// first broken cell in the order of the file, and a wrong number of fields comes before any
+/// cell is read.
+#[test]
+fn the_first_broken_cell_of_a_record_is_the_one_reported() {
+    let name = |name: &str| FieldName::new(name).unwrap();
+    let schema = Schema::new(vec![
+        Field::required(name("id"), DataType::Int64),
+        Field::required(name("name"), DataType::Utf8),
+        Field::new(name("n"), DataType::Int64),
+    ]);
+    let error = |csv: &str| {
+        load_csv(csv.as_bytes(), &schema, CsvOptions::default())
+            .unwrap_err()
+            .to_string()
+    };
+    assert_eq!(
+        error("id,name,n\n1,a,2\n\\N,\\N,x\n"),
+        "CSV line 3, column id: NULL is not allowed in a non-nullable column"
+    );
+    assert_eq!(
+        error("id,name,n\n1,\\N,x\n"),
+        "CSV line 2, column name: NULL is not allowed in a non-nullable column"
+    );
+    assert_eq!(
+        error("id,name,n\n1,a,x\n"),
+        "CSV line 2, column n: \"x\" is not an int64"
+    );
+    assert_eq!(
+        error("id,name,n\nx,\\N\n"),
+        "CSV line 2: expected 3 fields, found 2"
     );
 }

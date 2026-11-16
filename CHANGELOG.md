@@ -41,6 +41,10 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Changed
 
+- **Engine:** a CSV file loads in half the time: a million rows of ten columns in 0.5 s instead
+  of 1.0 s, 100,000 in 65 ms instead of 118, and a file read piece by piece (`loadStream`) in
+  0.6 s instead of 1.1 s. The tables and the errors are the same
+  ([#440](https://github.com/casoon/opengrid/issues/440)).
 - **Docs:** *What the engine costs* says what using the grid adds to the page's memory: about
   55 MiB once, the browser's painting, and none of it in the engine
   ([#428](https://github.com/casoon/opengrid/issues/428)).

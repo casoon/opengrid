@@ -172,10 +172,30 @@ pub(crate) fn last_boundary(bytes: &[u8], delimiter: u8) -> usize {
 impl<'a> Iterator for Scanner<'a> {
     type Item = Result<Record<'a>, ScanError>;
 
+    /// The next record as a value of its own: an allocation per record, for the callers that
+    /// keep records. The load reads with [`Scanner::advance`].
     fn next(&mut self) -> Option<Self::Item> {
+        Some(self.advance()?.map(|line| Record {
+            fields: std::mem::take(&mut self.fields),
+            line,
+        }))
+    }
+}
+
+impl<'a> Scanner<'a> {
+    /// The fields of the record [`Self::advance`] read last.
+    pub(crate) fn fields(&self) -> &[Cow<'a, str>] {
+        &self.fields
+    }
+
+    /// Reads the next record into the scanner and returns the line it starts on. Its fields are
+    /// [`Self::fields`] until the next call: the vector is reused, not allocated per record
+    /// (issue #440).
+    pub(crate) fn advance(&mut self) -> Option<Result<usize, ScanError>> {
         if self.done {
             return None;
         }
+        self.fields.clear();
         let input = self.input;
         let bytes = input.as_bytes();
         while self.index < bytes.len() {
@@ -219,13 +239,7 @@ impl<'a> Iterator for Scanner<'a> {
                 // A line without any content is not a record.
                 let record = if self.started || !self.field.is_empty() || !self.fields.is_empty() {
                     self.fields.push(self.field.take(input));
-                    // The next record most likely has as many fields: sized once
-                    // instead of grown from nothing for every record (point 45).
-                    let width = self.fields.len();
-                    Some(Record {
-                        fields: std::mem::replace(&mut self.fields, Vec::with_capacity(width)),
-                        line: self.record_line,
-                    })
+                    Some(self.record_line)
                 } else {
                     self.field.take(input);
                     None
@@ -247,9 +261,28 @@ impl<'a> Iterator for Scanner<'a> {
                 self.field_start = false;
                 self.started = true;
             } else {
+                let whole = self.field_start;
                 self.field_start = false;
                 self.started = true;
-                self.index += 1;
+                // The rest of an unquoted field: nothing in it means anything but the delimiter
+                // and a line break — a quote here is a character like any other — so the bytes
+                // are passed over without the state above being looked at for each.
+                let delimiter = self.delimiter;
+                let rest = &bytes[self.index + 1..];
+                let ordinary = rest
+                    .iter()
+                    .position(|byte| *byte == delimiter || *byte == b'\n' || *byte == b'\r')
+                    .unwrap_or(rest.len());
+                self.index += 1 + ordinary;
+                // The common field — unquoted and ended by the delimiter — is this one stretch:
+                // it goes to the record as it is.
+                if whole && bytes.get(self.index) == Some(&delimiter) {
+                    self.fields
+                        .push(Cow::Borrowed(&input[self.start..self.index]));
+                    self.index += 1;
+                    self.start = self.index;
+                    self.field_start = true;
+                }
             }
         }
 
@@ -263,10 +296,7 @@ impl<'a> Iterator for Scanner<'a> {
         if self.started || !self.field.is_empty() || !self.fields.is_empty() {
             self.field.push(input, self.start, input.len());
             self.fields.push(self.field.take(input));
-            return Some(Ok(Record {
-                fields: std::mem::take(&mut self.fields),
-                line: self.record_line,
-            }));
+            return Some(Ok(self.record_line));
         }
         None
     }
@@ -308,6 +338,47 @@ mod tests {
             vec![1, 3, 5]
         );
         assert_eq!(fields(&records)[1], vec!["c\r\nd", "y"]);
+    }
+
+    /// Issue #440: the scanner keeps one record and reuses it. A record after a longer one has
+    /// its own fields only, and so has the last record of a file without a final line break.
+    #[test]
+    fn a_reused_record_holds_the_fields_of_its_own_line_only() {
+        let mut scanner = super::scan("a,b,c\nd\n\"e\",f", b',');
+        let mut seen = Vec::new();
+        while let Some(line) = scanner.advance() {
+            seen.push((line.unwrap(), scanner.fields().to_vec()));
+        }
+        assert_eq!(
+            seen,
+            vec![
+                (1, vec!["a".into(), "b".into(), "c".into()]),
+                (2, vec!["d".into()]),
+                (3, vec!["e".into(), "f".into()]),
+            ]
+        );
+        assert!(scanner.advance().is_none());
+    }
+
+    /// Issue #440: the bytes of an unquoted field are passed over in one go. It ends at the
+    /// delimiter and at each of the three line breaks and nowhere else — not at a quote, not at
+    /// a space — and what follows a closing quote still belongs to its field.
+    #[test]
+    fn an_unquoted_field_ends_at_the_delimiter_or_a_line_break_only() {
+        let records = scan("a\"b\"c,d e\rf g\r\nh\"\ni,\"j\"k l,m", b',').unwrap();
+        assert_eq!(
+            fields(&records),
+            vec![
+                vec!["a\"b\"c", "d e"],
+                vec!["f g"],
+                vec!["h\""],
+                vec!["i", "jk l", "m"]
+            ]
+        );
+        assert_eq!(
+            records.iter().map(|r| r.line).collect::<Vec<_>>(),
+            vec![1, 2, 3, 4]
+        );
     }
 
     #[test]
