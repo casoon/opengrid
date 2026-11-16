@@ -17,6 +17,7 @@
  *   load_begin / load_chunk / load_end / load_abort are for CSV
  *   query { type:"query", id, query }          -> { id, result }
  *   stats { type:"stats", id }                 -> { id, result }   (issue #70)
+ *   unload { type:"unload", id, name }         -> { id, result }   (issue #459): whether there was one
  *   pivot { type:"pivot", id, pivot }          -> { id, result }   (issue #28)
  *
  * Any request that throws answers `{ id, type:"error", message }`. The `bytes`
@@ -125,6 +126,10 @@ self.onmessage = async ({ data }) => {
       case "rows": {
         engine.load_rows(data.name, data.rows, data.schema);
         self.postMessage({ type: "loaded", id: data.id });
+        break;
+      }
+      case "unload": {
+        self.postMessage({ id: data.id, result: engine.unload(data.name) });
         break;
       }
       case "stats": {

@@ -336,6 +336,14 @@ export interface EngineProvider extends Provider {
   loadRows(name: string, rows: readonly Record<string, unknown>[] | string, schema: string): Promise<void>;
   /** Called by `set_provider`; the grid is told when a source it shows is replaced. */
   watch(host: HTMLElement): void;
+  /**
+   * Frees the source `name` (issue #459) and resolves with whether there was one.
+   * The engine's memory does not shrink — WebAssembly memory only grows — but the
+   * next load takes the room the table had: unloading before loading again needs
+   * one table's room instead of two, at the price of no data while the load runs.
+   * A grid on the name answers its next query with an unknown source.
+   */
+  unload(name: string): Promise<boolean>;
   /** What the engine holds: its memory and each source's size (issue #70). */
   stats(): Promise<EngineStats>;
   /** Stops a worker; a no-op in the tab. */
@@ -373,6 +381,8 @@ export interface Engine {
    * query first sorts by one.
    */
   set_collator(sortKeys: (locale: string, texts: Uint8Array, ends: Uint32Array) => Uint8Array): void;
+  /** Frees the source `name`; whether there was one (issue #459). */
+  unload(name: string): boolean;
   /** What it holds, as JSON (see `EngineStats`). */
   stats(): string;
   /** A pivot over the engine's sources, as JSON (issue #28). */
