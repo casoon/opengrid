@@ -156,7 +156,7 @@ fn in_list(
         }
         Values::Int64(cells) => {
             let set = literals!(Value::Int64, |literal| *literal);
-            members(column, &set, has_null, |at| cells[at])
+            members(column, &set, has_null, |at| cells.get(at))
         }
         Values::Decimal(cells) => {
             let set = literals!(Value::Decimal, |literal| literal.value());
@@ -260,7 +260,7 @@ fn compare(
     Ok(match (column.values(), value) {
         (Values::Bool(values), Value::Bool(literal)) => rows(column, |at| values[at], *literal, op),
         (Values::Int64(values), Value::Int64(literal)) => {
-            rows(column, |at| values[at], *literal, op)
+            rows(column, |at| values.get(at), *literal, op)
         }
         (Values::Decimal(values), Value::Decimal(literal)) => {
             rows(column, |at| values[at], literal.value(), op)
