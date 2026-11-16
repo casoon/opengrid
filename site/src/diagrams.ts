@@ -18,7 +18,7 @@ export interface DiagramOptions {
    * `svg`: the figure alone, for the start page; its title and description stay in the SVG.
    */
   format?: 'html' | 'svg';
-  /** Also render a portrait version of a flow chart for narrow screens (≤ 640 px). */
+  /** Also render a version for narrow screens (≤ 640 px): a flow chart in portrait, any other at this size. */
   narrow?: { width: number; height: number };
 }
 
@@ -44,10 +44,9 @@ export function renderSpec(spec: Spec, name: string, options: DiagramOptions = {
       })
       .join('');
   if (!narrow) return `${SURFACE_STYLE}${variants(spec, name)}`;
-  const portrait = {
-    ...spec,
-    ...narrow,
-    flow: { ...(spec.flow as Spec), orientation: 'portrait' },
-  };
+  // A flow chart turns to portrait; any other diagram is laid out again at the narrow size.
+  const portrait = spec.flow
+    ? { ...spec, ...narrow, flow: { ...(spec.flow as Spec), orientation: 'portrait' } }
+    : { ...spec, ...narrow };
   return `${SURFACE_STYLE}<div class="cl-wide">${variants(spec, name)}</div><div class="cl-narrow">${variants(portrait, `${name}-narrow`)}</div>`;
 }
