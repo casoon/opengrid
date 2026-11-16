@@ -27,9 +27,7 @@
 
 use std::cmp::Ordering;
 
-use opengrid_types::DataType;
-
-use crate::{Column, Values};
+use crate::{Column, Decimals, Values};
 
 /// One sort key: a column and how to order it.
 #[derive(Clone, Copy, Debug)]
@@ -133,10 +131,10 @@ fn one_key(key: &SortKey<'_>, end: usize) -> Vec<u32> {
         Values::Float64(values) => by_top(&present, |at| total_key(values[at]), desc, value_rows),
         Values::Date(values) => by_top(&present, |at| i64::from(values[at]), desc, value_rows),
         // A decimal of up to 18 digits fits an `i64`, and half the bytes move.
-        Values::Decimal(values) if decimal_fits_i64(column) => {
-            by_top(&present, |at| values[at] as i64, desc, value_rows)
+        Values::Decimal(Decimals::I64(values)) => {
+            by_top(&present, |at| values[at], desc, value_rows)
         }
-        Values::Decimal(values) => by_top(&present, |at| values[at], desc, value_rows),
+        Values::Decimal(values) => by_top(&present, |at| values.get(at), desc, value_rows),
         Values::Utf8(_) => match key.collated {
             None => by_top(&present, |at| column.str(at).as_bytes(), desc, value_rows),
             Some(collated) => by_top(
@@ -256,12 +254,6 @@ impl<T> Best<T> {
     }
 }
 
-/// Whether every coefficient of a decimal column fits an `i64` — true by type
-/// up to 18 digits of precision.
-fn decimal_fits_i64(column: &Column) -> bool {
-    matches!(column.data_type(), DataType::Decimal { precision, .. } if precision <= 18)
-}
-
 /// Sorts the front `need` elements into place and drops the rest. The order is
 /// total, so the front of a partial sort is the front of the full one.
 ///
@@ -361,7 +353,7 @@ fn encode(key: &SortKey<'_>, row: usize, out: &mut Vec<u8>) {
             out.extend_from_slice(&(total_key(values[row]) ^ i64::MIN).to_be_bytes());
         }
         Values::Decimal(values) => {
-            out.extend_from_slice(&(values[row] ^ i128::MIN).to_be_bytes());
+            out.extend_from_slice(&(values.get(row) ^ i128::MIN).to_be_bytes());
         }
         Values::Date(values) => out.extend_from_slice(&(values[row] ^ i32::MIN).to_be_bytes()),
         Values::Utf8(_) => {

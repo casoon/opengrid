@@ -348,7 +348,7 @@ impl Accumulator {
             }
             (Accumulator::SumDecimal { sum, seen }, AggregateFn::Sum, Values::Decimal(values)) => {
                 *sum = sum
-                    .checked_add(values[row])
+                    .checked_add(values.get(row))
                     .ok_or_else(|| overflow(alias))?;
                 // `i128` holds 39 digits, the result type 38: a sum past that
                 // is an overflow too, or the answer could not be read back.
@@ -459,7 +459,7 @@ fn encode(column: &Column, row: usize, key: &mut Vec<u8>) {
             key.extend_from_slice(&order_of_i64(values[row]));
         }
         Values::Float64(values) => key.extend_from_slice(&order_of_f64(values[row])),
-        Values::Decimal(values) => key.extend_from_slice(&order_of_i128(values[row])),
+        Values::Decimal(values) => key.extend_from_slice(&order_of_i128(values.get(row))),
         Values::Utf8(_) => {
             // Escaped, so the encoding stays prefix-free *and* keeps the byte
             // order (rules S4/S13: binary, no Unicode normalisation).
@@ -523,7 +523,7 @@ fn as_number(column: &Column, row: usize, field: &FieldName) -> Result<f64, Exec
         (Values::Int64(values), _) => values.get(row) as f64,
         (Values::Float64(values), _) => values[row],
         (Values::Decimal(values), DataType::Decimal { scale, .. }) => {
-            values[row] as f64 / 10f64.powi(scale as i32)
+            values.get(row) as f64 / 10f64.powi(scale as i32)
         }
         (_, other) => {
             return Err(ExecuteError::Value {

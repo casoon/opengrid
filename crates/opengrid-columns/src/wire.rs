@@ -60,7 +60,7 @@ use std::fmt;
 
 use opengrid_types::{DataType, Date, Decimal, Field, FieldName, Schema, Timestamp, Value};
 
-use crate::{Bitmap, Column, Ints, Strs, Table, Values};
+use crate::{Bitmap, Column, Decimals, Ints, Strs, Table, Values};
 
 /// The media type of the binary form, for `Accept` and `Content-Type`.
 pub const MEDIA_TYPE: &str = "application/vnd.opengrid.columns";
@@ -421,7 +421,7 @@ impl Writer {
                 }
             }
             Values::Decimal(values) => {
-                for value in values {
+                for value in values.iter() {
                     self.out.extend_from_slice(&value.to_le_bytes());
                 }
             }
@@ -724,7 +724,7 @@ impl<'a> Reader<'a> {
                         "a value has more than {precision} digits"
                     )));
                 }
-                Values::Decimal(values)
+                Values::Decimal(Decimals::from_vec(precision, values).map_err(WireError::new)?)
             }
             DataType::Date => {
                 let values = self.fixed(rows, i32::from_le_bytes)?;

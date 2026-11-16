@@ -2,7 +2,7 @@
 
 use opengrid_types::{DataType, Date, Decimal, Timestamp, Value};
 
-use crate::{Bitmap, Ints, StrBuilder, Strs};
+use crate::{Bitmap, Decimals, Ints, StrBuilder, Strs};
 
 /// The values of a column, one buffer per type of the query model.
 ///
@@ -16,8 +16,9 @@ pub enum Values {
     Int64(Ints),
     /// NaN is a value, not a NULL (rule S7).
     Float64(Vec<f64>),
-    /// The coefficient; the scale comes from the column's type.
-    Decimal(Vec<i128>),
+    /// The coefficient; the scale comes from the column's type. Eight bytes a value up to 18 digits
+    /// of precision, sixteen above (issue #450).
+    Decimal(Decimals),
     /// The texts: each distinct text once and a code a row where there are few, all of them in one
     /// buffer where there are many (issue #451).
     Utf8(Strs),
@@ -46,7 +47,9 @@ impl Values {
             DataType::Bool => Values::Bool(Vec::with_capacity(capacity)),
             DataType::Int64 => Values::Int64(Ints::with_capacity(capacity)),
             DataType::Float64 => Values::Float64(Vec::with_capacity(capacity)),
-            DataType::Decimal { .. } => Values::Decimal(Vec::with_capacity(capacity)),
+            DataType::Decimal { precision, .. } => {
+                Values::Decimal(Decimals::with_capacity(precision, capacity))
+            }
             // A text column's texts are the builder's until it is finished.
             DataType::Utf8 => Values::Utf8(Strs::from_flat(vec![0], String::new())),
             DataType::Date => Values::Date(Vec::with_capacity(capacity)),
@@ -93,7 +96,7 @@ impl Values {
             Values::Int64(values) => values.push(0),
             Values::Timestamp(values) => values.push(0),
             Values::Float64(values) => values.push(0.0),
-            Values::Decimal(values) => values.push(0),
+            Values::Decimal(values) => values.push_zero(),
             Values::Utf8(_) => unreachable!("the NULLs of a text column go through its builder"),
             Values::Date(values) => values.push(0),
             // The empty list: the same end as the one before.
@@ -109,7 +112,7 @@ impl Values {
             Values::Bool(values) => Values::Bool(positions.map(|at| values[at]).collect()),
             Values::Int64(values) => Values::Int64(positions.map(|at| values.get(at)).collect()),
             Values::Float64(values) => Values::Float64(positions.map(|at| values[at]).collect()),
-            Values::Decimal(values) => Values::Decimal(positions.map(|at| values[at]).collect()),
+            Values::Decimal(values) => Values::Decimal(values.gather(positions)),
             Values::Utf8(strs) => Values::Utf8(strs.gather(positions)),
             Values::Date(values) => Values::Date(positions.map(|at| values[at]).collect()),
             Values::Timestamp(values) => {
@@ -176,7 +179,7 @@ impl Column {
             Values::Int64(values) => values.byte_size(),
             Values::Timestamp(values) => values.len() * 8,
             Values::Float64(values) => values.len() * 8,
-            Values::Decimal(values) => values.len() * 16,
+            Values::Decimal(values) => values.byte_size(),
             Values::Utf8(strs) => strs.byte_size(),
             Values::Date(values) => values.len() * 4,
             Values::ListInt64 { offsets, items } => offsets.len() * 4 + items.len() * 8,
@@ -292,7 +295,7 @@ impl Column {
                 let DataType::Decimal { scale, .. } = self.data_type else {
                     unreachable!("a decimal buffer belongs to a decimal column")
                 };
-                Value::Decimal(Decimal::new(values[row], scale))
+                Value::Decimal(Decimal::new(values.get(row), scale))
             }
             Values::Utf8(_) => Value::Utf8(self.str(row).to_owned()),
             Values::Date(values) => Value::Date(Date::from_days_since_epoch(values[row])),
@@ -474,7 +477,7 @@ impl ColumnBuilder {
                 "expects decimal({precision}, {own}), found scale {scale}"
             ));
         }
-        values.push(coefficient);
+        values.push(coefficient)?;
         self.validity.push(true);
         Ok(())
     }
@@ -536,7 +539,7 @@ impl ColumnBuilder {
                         value.scale()
                     ));
                 }
-                values.push(value.value());
+                values.push(value.value())?;
             }
             (Values::Date(values), Value::Date(value)) => values.push(value.days_since_epoch()),
             (Values::Timestamp(values), Value::Timestamp(value)) => values.push(value.micros()),

@@ -45,9 +45,9 @@ test("the worker provider says what its engine holds", async ({ page }) => {
   expect(stats.memory).toBeGreaterThan(0);
   expect(stats.sources).toHaveLength(1);
   expect(stats.sources[0]).toMatchObject({ name: "orders", rows: ROWS, columns: 4 });
-  // Two int64 columns (a byte each at least, as wide as their values need), one decimal, one
+  // Two int64 columns (a byte each at least, as wide as their values need), one decimal (8 bytes up to 18 digits), one
   // text: at least the fixed-width part.
-  expect(stats.sources[0].bytes).toBeGreaterThanOrEqual(ROWS * (1 + 1 + 16));
+  expect(stats.sources[0].bytes).toBeGreaterThanOrEqual(ROWS * (1 + 1 + 8));
 });
 
 test("the local provider says the same about the engine in the tab", async ({ page }) => {

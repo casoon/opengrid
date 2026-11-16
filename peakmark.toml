@@ -44,6 +44,9 @@ glue     = "target/peakmark/engine/m.js"
 # its builder and lookup, the filters that test each distinct text once) grew it by 2.1 KiB, to
 # 178980 B; the columns of a million rows of ten columns are another 21 MiB smaller and a text
 # search takes half the time.
+# 2026-11-17: decimals of up to 18 digits in eight bytes (#450: the storage and its two widths, read
+# through `get`) grew it by 0.9 KiB, to 179939 B; the columns of the ten columns are 8 B a row
+# smaller. Inside the budget, which stays.
 [module.budget]
 brotli         = "180500 B"
 peak_memory    = "26 MiB"
