@@ -95,7 +95,7 @@ const page = `<opengrid-grid label="Orders" datasource="orders"
     title="The engine is Rust, compiled to WebAssembly."
     lead="Sorting, filtering and grouping live in one engine, not in the component. It runs next to your page, in a worker if you like, and the same code answers on your server, so the tab and the server give the same answer without a second implementation."
     points={[
-      '**Fast where it counts.** On 100,000 rows a filter takes 1.6 ms, a sort 3 ms and a group-by 10 ms; on a million rows, 15, 26 and 99 ms.',
+      '**Fast where it counts.** On 100,000 rows a filter takes 1.6 ms, a sort 3 ms and a group-by 10 ms; on a million rows, 15, 26 and 99 ms. A CSV of a million rows loads in 0.44 s.',
       '**Compact, not free.** The columns take 9.8 MiB for 100,000 rows and 98 MiB for a million. The whole page holds more, because the engine keeps its own copy beside the page\'s data: about 50 MiB for 100,000 rows and 145 to 175 MiB for a million, loaded from a fetched CSV (Chromium, measured). That is the price of sorting a million rows in 26 ms.',
       '**Off the main thread.** In a worker the page stays usable while the engine works; the live demo queries 100,000 rows that way.',
       engineKiB && elementsKiB
@@ -111,6 +111,8 @@ const page = `<opengrid-grid label="Orders" datasource="orders"
       layout="list"
       label="Measured: the engine on 100,000 and 1,000,000 rows"
       items={[
+        { label: 'Load a CSV, 100,000 rows', value: '59\u00a0ms' },
+        { label: 'Load a CSV, 1,000,000 rows', value: '0.44\u00a0s' },
         { label: 'Filter, 100,000 rows', value: '1.6\u00a0ms' },
         { label: 'Sort, top 100, 100,000 rows', value: '3\u00a0ms' },
         { label: 'Group by country, 100,000 rows', value: '10\u00a0ms' },
@@ -122,7 +124,7 @@ const page = `<opengrid-grid label="Orders" datasource="orders"
       ]}
     />
     <p class="measured">
-      Apple M4 Pro, the engine on its own, median of nine runs, 14 November 2026.{' '}
+      Apple M4 Pro, the engine on its own, median of nine runs, 14 November 2026, the loads 16 November.{' '}
       <a href={url('docs/guides/performance/')}>Method, all figures and the script to repeat it.</a>
     </p>
   </Spotlight>
