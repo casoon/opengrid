@@ -78,7 +78,7 @@ fn cell_identity(column: &Column, row: usize) -> Option<Identity<'_>> {
             };
             Identity::Decimal(values[row], scale)
         }
-        Values::Utf8 { .. } => Identity::Utf8(column.str(row)),
+        Values::Utf8(_) => Identity::Utf8(column.str(row)),
         Values::Date(values) => Identity::Date(values[row]),
         Values::Timestamp(values) => Identity::Timestamp(values[row]),
         Values::ListInt64 { .. } | Values::ListUtf8 { .. } => {

@@ -460,7 +460,7 @@ fn encode(column: &Column, row: usize, key: &mut Vec<u8>) {
         }
         Values::Float64(values) => key.extend_from_slice(&order_of_f64(values[row])),
         Values::Decimal(values) => key.extend_from_slice(&order_of_i128(values[row])),
-        Values::Utf8 { .. } => {
+        Values::Utf8(_) => {
             // Escaped, so the encoding stays prefix-free *and* keeps the byte
             // order (rules S4/S13: binary, no Unicode normalisation).
             for byte in column.str(row).as_bytes() {

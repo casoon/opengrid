@@ -137,7 +137,7 @@ fn one_key(key: &SortKey<'_>, end: usize) -> Vec<u32> {
             by_top(&present, |at| values[at] as i64, desc, value_rows)
         }
         Values::Decimal(values) => by_top(&present, |at| values[at], desc, value_rows),
-        Values::Utf8 { .. } => match key.collated {
+        Values::Utf8(_) => match key.collated {
             None => by_top(&present, |at| column.str(at).as_bytes(), desc, value_rows),
             Some(collated) => by_top(
                 &present,
@@ -364,7 +364,7 @@ fn encode(key: &SortKey<'_>, row: usize, out: &mut Vec<u8>) {
             out.extend_from_slice(&(values[row] ^ i128::MIN).to_be_bytes());
         }
         Values::Date(values) => out.extend_from_slice(&(values[row] ^ i32::MIN).to_be_bytes()),
-        Values::Utf8 { .. } => {
+        Values::Utf8(_) => {
             if let Some(collated) = key.collated {
                 terminated(collated.get(row), out);
             }

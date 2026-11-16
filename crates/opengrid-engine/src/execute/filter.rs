@@ -162,9 +162,9 @@ fn in_list(
             let set = literals!(Value::Decimal, |literal| literal.value());
             members(column, &set, has_null, |at| cells[at])
         }
-        Values::Utf8 { .. } => {
+        Values::Utf8(_) => {
             let set = literals!(Value::Utf8, |literal| literal.as_bytes());
-            members(column, &set, has_null, |at| column.str(at).as_bytes())
+            text_mask(column, |text| Some(set.contains(text.as_bytes())), has_null)
         }
         Values::Date(cells) => {
             let set = literals!(Value::Date, |literal| literal.days_since_epoch());
@@ -265,11 +265,10 @@ fn compare(
         (Values::Decimal(values), Value::Decimal(literal)) => {
             rows(column, |at| values[at], literal.value(), op)
         }
-        (Values::Utf8 { .. }, Value::Utf8(literal)) => rows(
+        (Values::Utf8(_), Value::Utf8(literal)) => text_mask(
             column,
-            |at| column.str(at).as_bytes(),
-            literal.as_bytes(),
-            op,
+            |text| Some(holds(text.as_bytes().cmp(literal.as_bytes()), op)),
+            false,
         ),
         (Values::Date(values), Value::Date(literal)) => {
             rows(column, |at| values[at], literal.days_since_epoch(), op)
@@ -342,9 +341,49 @@ fn string_op(
     // (rule S5a).
     let folded = op.ignores_case().then(|| fold_case(needle));
     let needle = folded.as_deref().unwrap_or(needle);
-    Ok((0..column.len())
-        .map(|row| (!column.is_null(row)).then(|| needle_check(column.str(row), needle, op)))
-        .collect())
+    Ok(text_mask(
+        column,
+        |text| Some(needle_check(text, needle, op)),
+        false,
+    ))
+}
+
+/// A mask over a text column from a test of the text: `Some(true)` or `Some(false)` for a cell,
+/// unknown for a NULL, and for a miss too when `unknown_on_miss` (a list that held a NULL).
+///
+/// A dictionary's texts are tested once each, not once per row: what the test says of a text it says
+/// of every row that has it, and the rows only look the answer up by their code (issue #451).
+fn text_mask(column: &Column, test: impl Fn(&str) -> Option<bool>, unknown_on_miss: bool) -> Mask {
+    let Values::Utf8(strs) = column.values() else {
+        unreachable!("a text column")
+    };
+    let answer = |hit: Option<bool>| match hit {
+        Some(false) if unknown_on_miss => None,
+        other => other,
+    };
+    if let Some(distinct) = strs.distinct() {
+        let answers: Vec<Option<bool>> = (0..distinct)
+            .map(|code| answer(test(strs.dictionary_text(code).expect("a dictionary text"))))
+            .collect();
+        return (0..column.len())
+            .map(|row| {
+                if column.is_null(row) {
+                    None
+                } else {
+                    answers[strs.code(row).expect("a dictionary row")]
+                }
+            })
+            .collect();
+    }
+    (0..column.len())
+        .map(|row| {
+            if column.is_null(row) {
+                None
+            } else {
+                answer(test(strs.get(row)))
+            }
+        })
+        .collect()
 }
 
 fn needle_check(cell: &str, needle: &str, op: CmpOp) -> bool {
