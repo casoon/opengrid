@@ -167,7 +167,7 @@ pub fn load_csv(bytes: &[u8], schema: &Schema, options: CsvOptions) -> Result<Ta
     // (plan point 54). Both ingest paths do it the same way, which is what keeps
     // CSV and JSON yielding identical tables.
     let stored = schema.stored();
-    let layout = Layout::of(schema, &stored);
+    let plan = Plan::of(schema, &stored);
 
     let to_error = |error: csv::ScanError| IngestError::Csv {
         line: error.line,
@@ -186,14 +186,10 @@ pub fn load_csv(bytes: &[u8], schema: &Schema, options: CsvOptions) -> Result<Ta
     // they hold the old and the new buffer at the same moment, and the module's memory, which
     // never shrinks, keeps the room of every step (issue #427).
     let mut builders = Builders::new(schema, bytes.iter().filter(|byte| **byte == b'\n').count());
-    // The two row buffers are reused: a vector per row, twice, is two allocations per row.
-    let (mut row, mut done) = (Vec::with_capacity(stored.fields().len()), Vec::new());
-    let mut direct = Vec::new();
-    for record in records {
-        let record = record.map_err(to_error)?;
-        read_row(&stored, &record, &options, &mut row, &mut direct)?;
-        let finished = layout.complete_into(&mut row, &mut done);
-        builders.push_text(finished, &layout, &direct, &record.fields)?;
+    let mut kept = Vec::new();
+    while let Some(line) = records.advance() {
+        let line = line.map_err(to_error)?;
+        builders.push_csv(&plan, records.fields(), line, &options, &mut kept)?;
     }
     builders.finish()
 }
@@ -207,7 +203,7 @@ pub fn load_csv(bytes: &[u8], schema: &Schema, options: CsvOptions) -> Result<Ta
 /// pieces joined, errors and line numbers included.
 pub struct CsvLoader {
     stored: Schema,
-    layout: Layout,
+    plan: Plan,
     options: CsvOptions,
     builders: Builders<'static>,
     /// The bytes after the last whole record of what was fed.
@@ -219,9 +215,8 @@ pub struct CsvLoader {
     size_hint: usize,
     started: bool,
     first: bool,
-    row: Vec<Value>,
-    done: Vec<Value>,
-    direct: Vec<bool>,
+    /// The values the derived columns of a row are taken from, reused row after row.
+    kept: Vec<Value>,
 }
 
 impl CsvLoader {
@@ -233,11 +228,10 @@ impl CsvLoader {
         // (plan point 54). Both ingest paths do it the same way, which is what keeps
         // CSV and JSON yielding identical tables.
         let stored = schema.stored();
-        let layout = Layout::of(schema, &stored);
+        let plan = Plan::of(schema, &stored);
         Ok(Self {
-            row: Vec::with_capacity(stored.fields().len()),
             stored,
-            layout,
+            plan,
             header_pending: options.has_header,
             options,
             builders: Builders::with(schema.clone(), 0),
@@ -246,8 +240,7 @@ impl CsvLoader {
             size_hint: 0,
             started: false,
             first: true,
-            done: Vec::new(),
-            direct: Vec::new(),
+            kept: Vec::new(),
         })
     }
 
@@ -326,28 +319,24 @@ impl CsvLoader {
         };
         let Self {
             stored,
-            layout,
+            plan,
             options,
             builders,
             line,
             header_pending,
-            row,
-            done,
-            direct,
+            kept,
             ..
         } = self;
         let mut records = csv::scan_from(text, options.delimiter, *line);
         // Record by record straight into the column builders (point 45): neither
         // the records nor the typed rows of the whole file exist at once.
-        for record in records.by_ref() {
-            let record = record.map_err(to_error)?;
+        while let Some(record_line) = records.advance() {
+            let record_line = record_line.map_err(to_error)?;
             if std::mem::take(header_pending) {
-                check_header(stored, &record.fields, record.line)?;
+                check_header(stored, records.fields(), record_line)?;
                 continue;
             }
-            read_row(stored, &record, options, row, direct)?;
-            let finished = layout.complete_into(row, done);
-            builders.push_text(finished, layout, direct, &record.fields)?;
+            builders.push_csv(plan, records.fields(), record_line, options, kept)?;
         }
         *line = records.line();
         Ok(())
@@ -537,27 +526,69 @@ impl<'a> Builders<'a> {
         Ok(())
     }
 
-    /// [`Self::push`] for a CSV row whose text cells are still in the record: those go into the
-    /// column as they are, the others from `row`.
-    fn push_text(
+    /// One CSV record, cell by cell into its columns: no row of [`Value`]s in between (issue
+    /// #440). The stored cells first, in the order of the file — which is the order the errors
+    /// are reported in — then the columns derived from them.
+    fn push_csv(
         &mut self,
-        row: &[Value],
-        layout: &Layout,
-        direct: &[bool],
-        texts: &[std::borrow::Cow<'_, str>],
+        plan: &Plan,
+        cells: &[std::borrow::Cow<'_, str>],
+        line: usize,
+        options: &CsvOptions,
+        kept: &mut Vec<Value>,
     ) -> Result<(), IngestError> {
-        for (at, ((builder, field), value)) in self
-            .columns
-            .iter_mut()
-            .zip(self.schema.fields())
-            .zip(row)
-            .enumerate()
-        {
-            let result = match layout.stored_index(at) {
-                Some(index) if direct[index] => builder.push_str(&texts[index]),
-                _ => builder.push(value),
-            };
-            result.map_err(|message| mismatch(field, message))?;
+        if cells.len() != plan.cells.len() {
+            return Err(IngestError::Csv {
+                line,
+                message: format!(
+                    "expected {} fields, found {}",
+                    plan.cells.len(),
+                    cells.len()
+                ),
+            });
+        }
+        let fields = self.schema.fields();
+        let in_row = |column: usize, message: String| IngestError::Row {
+            line,
+            column: fields[column].name.as_str().to_owned(),
+            message,
+        };
+        kept.clear();
+        for (cell, raw) in plan.cells.iter().zip(cells) {
+            let builder = &mut self.columns[cell.column];
+            if is_null(raw, options) {
+                if !cell.nullable {
+                    return Err(in_row(
+                        cell.column,
+                        "NULL is not allowed in a non-nullable column".to_owned(),
+                    ));
+                }
+                builder.push_null();
+                if cell.kept {
+                    kept.push(Value::Null);
+                }
+                continue;
+            }
+            if cell.text {
+                // A text cell is not made a `Value`: it goes into its column as it is (#429).
+                builder
+                    .push_str(raw)
+                    .map_err(|message| mismatch(&fields[cell.column], message))?;
+                continue;
+            }
+            let value = cell::from_text(raw, cell.data_type)
+                .map_err(|message| in_row(cell.column, message))?;
+            builder
+                .push(&value)
+                .map_err(|message| mismatch(&fields[cell.column], message))?;
+            if cell.kept {
+                kept.push(value);
+            }
+        }
+        for part in &plan.parts {
+            self.columns[part.column]
+                .push(&part.part.of(&kept[part.kept]))
+                .map_err(|message| mismatch(&fields[part.column], message))?;
         }
         Ok(())
     }
@@ -729,61 +760,89 @@ fn is_null(cell: &str, options: &CsvOptions) -> bool {
     options.null_values.iter().any(|null| null == cell)
 }
 
-/// Reads one CSV record: same field count, then one value per column.
-fn read_row(
-    schema: &Schema,
-    record: &csv::Record,
-    options: &CsvOptions,
-    row: &mut Vec<Value>,
-    direct: &mut Vec<bool>,
-) -> Result<(), IngestError> {
-    let fields = schema.fields();
-    if record.fields.len() != fields.len() {
-        return Err(IngestError::Csv {
-            line: record.line,
-            message: format!(
-                "expected {} fields, found {}",
-                fields.len(),
-                record.fields.len()
-            ),
-        });
-    }
-    row.clear();
-    direct.clear();
-    for (field, raw) in fields.iter().zip(&record.fields) {
-        // A text cell is not made a `Value`: it goes into its column as it is (issue #429).
-        let text = field.data_type == DataType::Utf8 && !is_null(raw, options);
-        direct.push(text);
-        let value = if text || is_null(raw, options) {
-            Value::Null
-        } else {
-            cell::from_text(raw, field.data_type).map_err(|message| IngestError::Row {
-                line: record.line,
-                column: field.name.as_str().to_owned(),
-                message,
-            })?
-        };
-        if text {
-            row.push(value);
-            continue;
-        }
-        row.push(
-            check_null(field, value).map_err(|message| IngestError::Row {
-                line: record.line,
-                column: field.name.as_str().to_owned(),
-                message,
-            })?,
-        );
-    }
-    Ok(())
-}
-
 /// NULL is allowed in a nullable column only.
 pub(crate) fn check_null(field: &Field, value: Value) -> Result<Value, String> {
     if value == Value::Null && !field.nullable {
         return Err("NULL is not allowed in a non-nullable column".to_owned());
     }
     Ok(value)
+}
+
+/// What a CSV record needs to go into its columns, worked out once per file: per cell the column
+/// it belongs to and how it is read, and the columns that are derived from a cell.
+struct Plan {
+    cells: Vec<PlanCell>,
+    parts: Vec<PlanPart>,
+}
+
+/// One stored cell of a record.
+struct PlanCell {
+    /// The column of the schema it goes into.
+    column: usize,
+    data_type: DataType,
+    text: bool,
+    nullable: bool,
+    /// Whether a derived column reads this cell: its value is kept for the row.
+    kept: bool,
+}
+
+/// One derived column.
+struct PlanPart {
+    column: usize,
+    /// Which of the kept values of the row it is a part of.
+    kept: usize,
+    part: opengrid_types::DatePart,
+}
+
+impl Plan {
+    fn of(schema: &Schema, stored: &Schema) -> Self {
+        let column_of = |name: &str| {
+            schema
+                .index_of(name)
+                .expect("a stored field is a field of the schema")
+        };
+        let sources: Vec<usize> = schema
+            .fields()
+            .iter()
+            .filter_map(|field| field.from.as_ref())
+            .map(|derivation| {
+                stored
+                    .index_of(derivation.field.as_str())
+                    .expect("the schema check proved the source exists")
+            })
+            .collect();
+        let cells: Vec<PlanCell> = stored
+            .fields()
+            .iter()
+            .enumerate()
+            .map(|(index, field)| PlanCell {
+                column: column_of(field.name.as_str()),
+                data_type: field.data_type,
+                text: field.data_type == DataType::Utf8,
+                nullable: field.nullable,
+                kept: sources.contains(&index),
+            })
+            .collect();
+        // The kept values of a row are in the order of the cells.
+        let slot = |cell: usize| cells[..cell].iter().filter(|cell| cell.kept).count();
+        let parts = schema
+            .fields()
+            .iter()
+            .enumerate()
+            .filter_map(|(column, field)| {
+                let derivation = field.from.as_ref()?;
+                let cell = stored
+                    .index_of(derivation.field.as_str())
+                    .expect("the schema check proved the source exists");
+                Some(PlanPart {
+                    column,
+                    kept: slot(cell),
+                    part: derivation.part,
+                })
+            })
+            .collect();
+        Plan { cells, parts }
+    }
 }
 
 /// Where each column of a row comes from — computed once, used per row.
@@ -824,40 +883,6 @@ impl Layout {
             })
             .collect();
         Layout(Some(columns))
-    }
-
-    /// The position in the stored row of column `column`, if it is a stored one.
-    fn stored_index(&self, column: usize) -> Option<usize> {
-        match &self.0 {
-            None => Some(column),
-            Some(columns) => match columns[column] {
-                Source::Stored(index) => Some(index),
-                Source::Part(..) => None,
-            },
-        }
-    }
-
-    /// [`Self::complete`] into buffers the caller keeps: the row read, and the row finished. What
-    /// comes back is the finished row, which is `row` itself when nothing is derived.
-    fn complete_into<'a>(&self, row: &'a mut [Value], done: &'a mut Vec<Value>) -> &'a [Value] {
-        let Some(columns) = &self.0 else {
-            return row;
-        };
-        // The parts first, while every stored value is still in the row; then the stored values
-        // move out of it — a text cell cloned is an allocation per cell per row.
-        done.clear();
-        for column in columns {
-            done.push(match column {
-                Source::Part(index, part) => part.of(&row[*index]),
-                Source::Stored(_) => Value::Null,
-            });
-        }
-        for (column, slot) in columns.iter().zip(done.iter_mut()) {
-            if let Source::Stored(index) = column {
-                *slot = std::mem::replace(&mut row[*index], Value::Null);
-            }
-        }
-        done
     }
 
     fn complete(&self, mut row: Vec<Value>) -> Vec<Value> {
