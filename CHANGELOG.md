@@ -34,6 +34,10 @@ Two things belong in every release entry and are easy to leave out:
 ### Added
 
 - **Package, engine:** a CSV file can be read piece by piece: `provider.loadStream(name, source, schema, { chunkSize? })` on the worker and the local provider takes a `File`/`Blob`, a `ReadableStream` of bytes or an async iterable, and the engine module has `begin_csv`, `push_csv`, `end_csv` and `abort_csv` (Rust: `ingest::CsvLoader`). Only a piece and the columns are in memory, not the whole file as well: a 43 MB file loaded from a `fetch` stream takes about 30 MiB less in the browser than `load` of its bytes (the engine's module 118 MiB instead of 78–90 MiB). The pieces may end anywhere; the table, the errors and their line numbers are those of the whole file (#427). [Data you already have](docs/guides/data-you-have.md) has a section on it.
+- **Columns:** `ColumnBuilder` has typed pushes, `push_bool`, `push_i64`, `push_f64`,
+  `push_decimal`, `push_date` and `push_timestamp`, for a cell that has just been read as that type.
+  A column of another type, or a decimal of another scale, is refused with an error
+  ([#442](https://github.com/casoon/opengrid/issues/442)).
 - **Columns:** `ColumnBuilder::push_str` appends text to a text column without a `Value` in between. The CSV reader uses it, so a text cell is copied into its column once instead of being made a `String`, copied and freed (#429).
 - **Docs:** *What the engine costs* — the engine on 100,000 and 1,000,000 rows (load, filter, sort,
   group, pivot, memory), measured on an Apple M4 Pro, what a page pays for the WebAssembly modules,
@@ -41,10 +45,11 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Changed
 
-- **Engine:** a CSV file loads in half the time: a million rows of ten columns in 0.5 s instead
-  of 1.0 s, 100,000 in 65 ms instead of 118, and a file read piece by piece (`loadStream`) in
-  0.6 s instead of 1.1 s. The tables and the errors are the same
-  ([#440](https://github.com/casoon/opengrid/issues/440)).
+- **Engine:** a CSV file loads in less than half the time: a million rows of ten columns in
+  0.44 s instead of 1.0 s, 100,000 in 59 ms instead of 118, and a file read piece by piece
+  (`loadStream`) in 0.5 s instead of 1.1 s. The tables and the errors are the same
+  ([#440](https://github.com/casoon/opengrid/issues/440),
+  [#442](https://github.com/casoon/opengrid/issues/442)).
 - **Docs:** *What the engine costs* says what using the grid adds to the page's memory: about
   55 MiB once, the browser's painting, and none of it in the engine
   ([#428](https://github.com/casoon/opengrid/issues/428)).

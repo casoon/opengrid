@@ -5,6 +5,7 @@
 //! same wire coercion as a JSON cell (E13), so scale handling (rule S8) and UTC
 //! normalization (rule S9) cannot drift apart between the two formats.
 
+use opengrid_columns::ColumnBuilder;
 use opengrid_types::{DataType, Value};
 
 /// Reads a CSV cell as the column's type.
@@ -32,6 +33,41 @@ pub(crate) fn from_text(raw: &str, data_type: DataType) -> Result<Value, String>
         // A list is the JSON array it is on the wire, in the one cell (issue #185).
         DataType::ListUtf8 | DataType::ListInt64 => {
             Value::from_wire_str(raw, &data_type).map_err(|error| error.to_string())
+        }
+    }
+}
+
+/// [`from_text`] straight into a builder: a `bool`, an `int64`, a `float64`, a decimal, a date or
+/// a timestamp goes into its column without a [`Value`] in between (issue #440). The same
+/// spellings and the same messages as [`from_text`], which a differential test holds equal.
+pub(crate) fn push_text(
+    builder: &mut ColumnBuilder,
+    raw: &str,
+    data_type: DataType,
+) -> Result<(), String> {
+    match data_type {
+        DataType::Bool => match raw {
+            "true" => builder.push_bool(true),
+            "false" => builder.push_bool(false),
+            other => Err(format!(
+                "{other:?} is not a bool (expected \"true\" or \"false\")"
+            )),
+        },
+        DataType::Int64 => match raw.parse::<i64>() {
+            Ok(value) => builder.push_i64(value),
+            Err(_) => Err(format!("{raw:?} is not an int64")),
+        },
+        DataType::Float64 => builder.push_f64(parse_float(raw)?),
+        DataType::Decimal { .. } | DataType::Date | DataType::Timestamp => {
+            match Value::from_wire_str(raw, &data_type).map_err(|error| error.to_string())? {
+                Value::Decimal(value) => builder.push_decimal(value.value(), value.scale()),
+                Value::Date(value) => builder.push_date(value.days_since_epoch()),
+                Value::Timestamp(value) => builder.push_timestamp(value.micros()),
+                other => Err(format!("{other:?} is not a {data_type}")),
+            }
+        }
+        DataType::Utf8 | DataType::ListUtf8 | DataType::ListInt64 => {
+            builder.push(&from_text(raw, data_type)?)
         }
     }
 }
@@ -64,6 +100,118 @@ mod tests {
 
     fn text(raw: &str, data_type: DataType) -> Result<Value, String> {
         from_text(raw, data_type)
+    }
+
+    /// Issue #440: a cell read into a builder is the cell read as a value — the same column
+    /// content or the same message — for every type and for spellings from both sides of each
+    /// rule: signs, exponents, the non-finite names, overlong and short decimals, impossible and
+    /// extreme dates, zone offsets, empty text.
+    #[test]
+    fn a_cell_read_into_a_builder_is_the_cell_read_as_a_value() {
+        let decimal = DataType::decimal(12, 2).unwrap();
+        let cases: &[(DataType, &[&str])] = &[
+            (DataType::Bool, &["true", "false", "True", "1", "", " true"]),
+            (
+                DataType::Int64,
+                &[
+                    "0",
+                    "-1",
+                    "+5",
+                    "9223372036854775807",
+                    "9223372036854775808",
+                    "-9223372036854775808",
+                    "1.0",
+                    "",
+                    " 1",
+                    "1e3",
+                ],
+            ),
+            (
+                DataType::Float64,
+                &[
+                    "1.5",
+                    "-0",
+                    "-0.0",
+                    "1e308",
+                    "1e309",
+                    "NaN",
+                    "Infinity",
+                    "-Infinity",
+                    "nan",
+                    "inf",
+                    "",
+                    "1,5",
+                    ".5",
+                    "5.",
+                ],
+            ),
+            (
+                decimal,
+                &[
+                    "1",
+                    "1.5",
+                    "1.25",
+                    "-0.01",
+                    "1.255",
+                    "9999999999.99",
+                    "99999999999.99",
+                    "1e2",
+                    ".5",
+                    "-",
+                    "",
+                    "0.001",
+                ],
+            ),
+            (
+                DataType::Date,
+                &[
+                    "2026-03-01",
+                    "0000-01-01",
+                    "9999-12-31",
+                    "2026-02-29",
+                    "2024-02-29",
+                    "2026-13-01",
+                    "2026-3-1",
+                    "",
+                    "2026-03-01T00:00:00Z",
+                ],
+            ),
+            (
+                DataType::Timestamp,
+                &[
+                    "2026-03-01T12:00:00Z",
+                    "2026-03-01T12:00:00.123456Z",
+                    "2026-03-01T12:00:00.1234567Z",
+                    "2026-03-01T12:00:00+02:00",
+                    "2026-03-01 12:00:00",
+                    "2026-03-01",
+                    "2026-03-01T24:00:00Z",
+                    "",
+                    "x",
+                ],
+            ),
+        ];
+        for (data_type, inputs) in cases {
+            for raw in *inputs {
+                let mut builder = ColumnBuilder::new(*data_type, 1);
+                let pushed = push_text(&mut builder, raw, *data_type);
+                match (from_text(raw, *data_type), pushed) {
+                    (Ok(value), Ok(())) => {
+                        let column = builder.finish();
+                        assert_eq!(column.len(), 1, "{data_type} {raw:?}");
+                        assert_eq!(
+                            format!("{:?}", column.value(0)),
+                            format!("{value:?}"),
+                            "{data_type} {raw:?}"
+                        );
+                    }
+                    (Err(message), Err(pushed)) => {
+                        assert_eq!(pushed, message, "{data_type} {raw:?}")
+                    }
+                    (value, pushed) => panic!("{data_type} {raw:?}: {value:?} against {pushed:?}"),
+                }
+            }
+        }
     }
 
     #[test]
