@@ -34,6 +34,7 @@ Two things belong in every release entry and are easy to leave out:
 ### Added
 
 - **Docs:** the performance guide measures server mode: a window of 40 rows, a filter, a text search and a grouping from PostgreSQL and SQLite at one and ten million rows, with the server's memory and `cargo run --example server_bench` to repeat it ([In server mode](https://casoon.github.io/opengrid/docs/guides/performance/#in-server-mode), [#452](https://github.com/casoon/opengrid/issues/452)).
+- **Pages:** the start page explains where the data lives — in the tab, on the server, or split — side by side, with when to start where, the query the browser sends instead of SQL, a diagram of one window fetched from the server, the sources a server reads and measured figures ([#453](https://github.com/casoon/opengrid/issues/453)).
 - **Engine:** the WebAssembly engine reads rows as packs of typed columns: `begin_columns`,
   `push_columns`, `end_columns` and `abort_columns`, as it reads CSV in pieces. An engine module
   without them still loads rows, as JSON text
