@@ -435,6 +435,93 @@ impl ColumnBuilder {
         Ok(())
     }
 
+    /// Appends a `bool` to a `bool` column, without a [`Value`] in between.
+    ///
+    /// The typed pushes — this one and the five after it — are for ingest, which has just read the
+    /// cell as that type. An error, not a panic, for a column of another type.
+    #[inline]
+    pub fn push_bool(&mut self, value: bool) -> Result<(), String> {
+        let Values::Bool(values) = &mut self.values else {
+            return Err(self.mismatch("bool"));
+        };
+        values.push(value);
+        self.validity.push(true);
+        Ok(())
+    }
+
+    /// Appends an `int64` to an `int64` column.
+    #[inline]
+    pub fn push_i64(&mut self, value: i64) -> Result<(), String> {
+        let Values::Int64(values) = &mut self.values else {
+            return Err(self.mismatch("int64"));
+        };
+        values.push(value);
+        self.validity.push(true);
+        Ok(())
+    }
+
+    /// Appends a `float64` to a `float64` column. NaN is a value, not a NULL (rule S7).
+    #[inline]
+    pub fn push_f64(&mut self, value: f64) -> Result<(), String> {
+        let Values::Float64(values) = &mut self.values else {
+            return Err(self.mismatch("float64"));
+        };
+        values.push(value);
+        self.validity.push(true);
+        Ok(())
+    }
+
+    /// Appends a decimal, given as its coefficient and its scale, to a decimal column of that
+    /// scale: a coefficient of another scale would silently change its meaning.
+    #[inline]
+    pub fn push_decimal(&mut self, coefficient: i128, scale: u8) -> Result<(), String> {
+        let (
+            Values::Decimal(values),
+            DataType::Decimal {
+                precision,
+                scale: own,
+            },
+        ) = (&mut self.values, self.data_type)
+        else {
+            return Err(self.mismatch("decimal"));
+        };
+        if scale != own {
+            return Err(format!(
+                "expects decimal({precision}, {own}), found scale {scale}"
+            ));
+        }
+        values.push(coefficient);
+        self.validity.push(true);
+        Ok(())
+    }
+
+    /// Appends a date, as the days since 1970-01-01, to a `date` column.
+    #[inline]
+    pub fn push_date(&mut self, days: i32) -> Result<(), String> {
+        let Values::Date(values) = &mut self.values else {
+            return Err(self.mismatch("date"));
+        };
+        values.push(days);
+        self.validity.push(true);
+        Ok(())
+    }
+
+    /// Appends a timestamp, as the microseconds since 1970-01-01T00:00:00Z (rule S9), to a
+    /// `timestamp` column.
+    #[inline]
+    pub fn push_timestamp(&mut self, micros: i64) -> Result<(), String> {
+        let Values::Timestamp(values) = &mut self.values else {
+            return Err(self.mismatch("timestamp"));
+        };
+        values.push(micros);
+        self.validity.push(true);
+        Ok(())
+    }
+
+    fn mismatch(&self, found: &str) -> String {
+        format!("expects {}, found {found}", self.data_type)
+    }
+
     /// Appends a value, which has to be of the column's type or NULL.
     ///
     /// A mismatch is an error, not a panic: ingest is the path untrusted input
@@ -564,6 +651,127 @@ mod tests {
         );
         let mut number = ColumnBuilder::new(DataType::Int64, 1);
         assert!(number.push_str("1").is_err());
+    }
+
+    /// Issue #440: a cell pushed typed is what the same cell pushed as a value is, between NULLs,
+    /// for each of the six types — including a negative zero, a NaN and the extremes.
+    #[test]
+    fn typed_pushes_are_pushes_of_the_value() {
+        let decimal = DataType::decimal(12, 2).unwrap();
+        let cases: Vec<(DataType, Vec<Value>)> = vec![
+            (DataType::Bool, vec![Value::Bool(true), Value::Bool(false)]),
+            (
+                DataType::Int64,
+                vec![
+                    Value::Int64(i64::MIN),
+                    Value::Int64(0),
+                    Value::Int64(i64::MAX),
+                ],
+            ),
+            (
+                DataType::Float64,
+                vec![
+                    Value::Float64(-0.0),
+                    Value::Float64(f64::NAN),
+                    Value::Float64(1.5),
+                ],
+            ),
+            (
+                decimal,
+                vec![
+                    Value::Decimal(Decimal::new(-12345, 2)),
+                    Value::Decimal(Decimal::new(0, 2)),
+                ],
+            ),
+            (
+                DataType::Date,
+                vec![
+                    Value::Date(Date::from_days_since_epoch(-1)),
+                    Value::Date(Date::from_days_since_epoch(19_000)),
+                ],
+            ),
+            (
+                DataType::Timestamp,
+                vec![
+                    Value::Timestamp(Timestamp::from_micros(-5)),
+                    Value::Timestamp(Timestamp::from_micros(1_700_000_000_123_456)),
+                ],
+            ),
+        ];
+        for (data_type, values) in cases {
+            let (mut typed, mut generic) = (
+                ColumnBuilder::new(data_type, 5),
+                ColumnBuilder::new(data_type, 5),
+            );
+            for value in &values {
+                typed.push_null();
+                generic.push_null();
+                match value {
+                    Value::Bool(v) => typed.push_bool(*v),
+                    Value::Int64(v) => typed.push_i64(*v),
+                    Value::Float64(v) => typed.push_f64(*v),
+                    Value::Decimal(v) => typed.push_decimal(v.value(), v.scale()),
+                    Value::Date(v) => typed.push_date(v.days_since_epoch()),
+                    Value::Timestamp(v) => typed.push_timestamp(v.micros()),
+                    other => panic!("not a case: {other:?}"),
+                }
+                .unwrap();
+                generic.push(value).unwrap();
+            }
+            let (typed, generic) = (typed.finish(), generic.finish());
+            assert_eq!(typed.len(), values.len() * 2, "{data_type}");
+            for row in 0..typed.len() {
+                // NaN is not equal to itself: compare what a value prints as.
+                assert_eq!(
+                    format!("{:?}", typed.value(row)),
+                    format!("{:?}", generic.value(row)),
+                    "{data_type} row {row}"
+                );
+            }
+            assert_eq!(typed.null_count(), values.len(), "{data_type}");
+        }
+    }
+
+    /// Issue #440: a typed push into a column of another type, or of another scale, is refused
+    /// and stores nothing.
+    #[test]
+    fn a_typed_push_into_the_wrong_column_is_refused() {
+        let mut builder = ColumnBuilder::new(DataType::Int64, 1);
+        assert_eq!(
+            builder.push_bool(true).unwrap_err(),
+            "expects int64, found bool"
+        );
+        assert_eq!(
+            builder.push_f64(1.0).unwrap_err(),
+            "expects int64, found float64"
+        );
+        assert_eq!(
+            builder.push_date(1).unwrap_err(),
+            "expects int64, found date"
+        );
+        assert_eq!(
+            builder.push_timestamp(1).unwrap_err(),
+            "expects int64, found timestamp"
+        );
+        assert_eq!(
+            builder.push_decimal(1, 0).unwrap_err(),
+            "expects int64, found decimal"
+        );
+        assert_eq!(builder.finish().len(), 0);
+
+        let mut decimal = ColumnBuilder::new(DataType::decimal(12, 2).unwrap(), 1);
+        assert_eq!(
+            decimal.push_decimal(100, 0).unwrap_err(),
+            "expects decimal(12, 2), found scale 0"
+        );
+        assert_eq!(
+            decimal.push_i64(1).unwrap_err(),
+            "expects decimal(12, 2), found int64"
+        );
+        assert_eq!(decimal.finish().len(), 0);
+
+        let mut text = ColumnBuilder::new(DataType::Utf8, 1);
+        assert_eq!(text.push_i64(1).unwrap_err(), "expects utf8, found int64");
     }
 
     /// Issue #213: a decimal of another scale is refused, not stored with a
