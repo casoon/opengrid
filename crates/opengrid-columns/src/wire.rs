@@ -60,7 +60,7 @@ use std::fmt;
 
 use opengrid_types::{DataType, Date, Decimal, Field, FieldName, Schema, Timestamp, Value};
 
-use crate::{Bitmap, Column, Ints, Table, Values};
+use crate::{Bitmap, Column, Ints, Strs, Table, Values};
 
 /// The media type of the binary form, for `Accept` and `Content-Type`.
 pub const MEDIA_TYPE: &str = "application/vnd.opengrid.columns";
@@ -431,12 +431,27 @@ impl Writer {
                 }
                 self.pad();
             }
-            Values::Utf8 { offsets, text } => {
+            Values::Utf8(Strs::Flat { offsets, text }) => {
                 for offset in offsets {
                     self.out.extend_from_slice(&offset.to_le_bytes());
                 }
                 self.pad();
                 self.out.extend_from_slice(text.as_bytes());
+                self.pad();
+            }
+            // A dictionary goes over the wire as the flat column it stands for: the offsets of the
+            // rows, then their texts (issue #451).
+            Values::Utf8(strs) => {
+                let mut end = 0u32;
+                self.out.extend_from_slice(&end.to_le_bytes());
+                for text in strs.iter() {
+                    end += text.len() as u32;
+                    self.out.extend_from_slice(&end.to_le_bytes());
+                }
+                self.pad();
+                for text in strs.iter() {
+                    self.out.extend_from_slice(text.as_bytes());
+                }
                 self.pad();
             }
             Values::ListInt64 { offsets, items } => {
@@ -731,10 +746,7 @@ impl<'a> Reader<'a> {
                 {
                     return Err(WireError::new("the text offsets do not fit the text"));
                 }
-                Values::Utf8 {
-                    offsets,
-                    text: text.to_owned(),
-                }
+                Values::Utf8(Strs::from_flat(offsets, text.to_owned()))
             }
             DataType::ListInt64 => {
                 let offsets = self.list_offsets(rows)?;
@@ -1177,6 +1189,43 @@ mod tests {
                 "the same width on both sides"
             );
         }
+    }
+
+    /// Issue #451: a text column that is a dictionary goes over the wire as the flat column it stands
+    /// for, and comes back flat with the same texts — NULLs, empty text and multi-byte text included.
+    #[test]
+    fn a_dictionary_goes_over_the_wire_as_its_texts() {
+        let schema = Schema::new(vec![Field::new(
+            FieldName::new("t").unwrap(),
+            DataType::Utf8,
+        )]);
+        let cells: Vec<Value> = ["DE", "", "FR", "日本語", "DE", "", "ä"]
+            .iter()
+            .enumerate()
+            .map(|(row, text)| {
+                if row == 5 {
+                    Value::Null
+                } else {
+                    Value::Utf8((*text).to_owned())
+                }
+            })
+            .collect();
+        let table = Table::from_values(&schema, &[cells]).unwrap();
+        let Values::Utf8(strs) = table.column_at(0).values() else {
+            panic!("text")
+        };
+        assert!(strs.is_dictionary(), "a few texts are a dictionary");
+        let bytes = encode_result(&table, 7);
+        let (back, _) = decode_result(&bytes).unwrap();
+        same(&table, &back);
+        let Values::Utf8(strs) = back.column_at(0).values() else {
+            panic!("text")
+        };
+        assert!(!strs.is_dictionary(), "a result is flat");
+        assert_eq!(bytes.len() % 8, 0);
+        // The same bytes as the flat column of the same texts makes.
+        let flat = table.slice(0, 7);
+        assert_eq!(encode_result(&flat, 7), bytes);
     }
 
     #[test]

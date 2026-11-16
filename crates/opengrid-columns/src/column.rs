@@ -2,7 +2,7 @@
 
 use opengrid_types::{DataType, Date, Decimal, Timestamp, Value};
 
-use crate::{Bitmap, Ints};
+use crate::{Bitmap, Ints, StrBuilder, Strs};
 
 /// The values of a column, one buffer per type of the query model.
 ///
@@ -18,12 +18,9 @@ pub enum Values {
     Float64(Vec<f64>),
     /// The coefficient; the scale comes from the column's type.
     Decimal(Vec<i128>),
-    /// All strings of the column in one buffer; string `i` is
-    /// `text[offsets[i]..offsets[i + 1]]`.
-    Utf8 {
-        offsets: Vec<u32>,
-        text: String,
-    },
+    /// The texts: each distinct text once and a code a row where there are few, all of them in one
+    /// buffer where there are many (issue #451).
+    Utf8(Strs),
     /// Days since 1970-01-01.
     Date(Vec<i32>),
     /// Microseconds since 1970-01-01T00:00:00Z (rule S9).
@@ -50,14 +47,8 @@ impl Values {
             DataType::Int64 => Values::Int64(Ints::with_capacity(capacity)),
             DataType::Float64 => Values::Float64(Vec::with_capacity(capacity)),
             DataType::Decimal { .. } => Values::Decimal(Vec::with_capacity(capacity)),
-            DataType::Utf8 => {
-                let mut offsets = Vec::with_capacity(capacity + 1);
-                offsets.push(0);
-                Values::Utf8 {
-                    offsets,
-                    text: String::new(),
-                }
-            }
+            // A text column's texts are the builder's until it is finished.
+            DataType::Utf8 => Values::Utf8(Strs::from_flat(vec![0], String::new())),
             DataType::Date => Values::Date(Vec::with_capacity(capacity)),
             DataType::Timestamp => Values::Timestamp(Vec::with_capacity(capacity)),
             DataType::ListInt64 => {
@@ -87,7 +78,7 @@ impl Values {
             Values::Timestamp(values) => values.len(),
             Values::Float64(values) => values.len(),
             Values::Decimal(values) => values.len(),
-            Values::Utf8 { offsets, .. } => offsets.len() - 1,
+            Values::Utf8(strs) => strs.len(),
             Values::Date(values) => values.len(),
             Values::ListInt64 { offsets, .. } | Values::ListUtf8 { offsets, .. } => {
                 offsets.len() - 1
@@ -103,7 +94,7 @@ impl Values {
             Values::Timestamp(values) => values.push(0),
             Values::Float64(values) => values.push(0.0),
             Values::Decimal(values) => values.push(0),
-            Values::Utf8 { offsets, text } => offsets.push(text.len() as u32),
+            Values::Utf8(_) => unreachable!("the NULLs of a text column go through its builder"),
             Values::Date(values) => values.push(0),
             // The empty list: the same end as the one before.
             Values::ListInt64 { offsets, .. } | Values::ListUtf8 { offsets, .. } => {
@@ -119,23 +110,7 @@ impl Values {
             Values::Int64(values) => Values::Int64(positions.map(|at| values.get(at)).collect()),
             Values::Float64(values) => Values::Float64(positions.map(|at| values[at]).collect()),
             Values::Decimal(values) => Values::Decimal(positions.map(|at| values[at]).collect()),
-            Values::Utf8 { offsets, text } => {
-                let bytes: usize = positions
-                    .clone()
-                    .map(|at| (offsets[at + 1] - offsets[at]) as usize)
-                    .sum();
-                let mut out = String::with_capacity(bytes);
-                let mut out_offsets = Vec::with_capacity(offsets.len());
-                out_offsets.push(0);
-                for at in positions {
-                    out.push_str(&text[offsets[at] as usize..offsets[at + 1] as usize]);
-                    out_offsets.push(out.len() as u32);
-                }
-                Values::Utf8 {
-                    offsets: out_offsets,
-                    text: out,
-                }
-            }
+            Values::Utf8(strs) => Values::Utf8(strs.gather(positions)),
             Values::Date(values) => Values::Date(positions.map(|at| values[at]).collect()),
             Values::Timestamp(values) => {
                 Values::Timestamp(positions.map(|at| values[at]).collect())
@@ -202,7 +177,7 @@ impl Column {
             Values::Timestamp(values) => values.len() * 8,
             Values::Float64(values) => values.len() * 8,
             Values::Decimal(values) => values.len() * 16,
-            Values::Utf8 { offsets, text } => offsets.len() * 4 + text.len(),
+            Values::Utf8(strs) => strs.byte_size(),
             Values::Date(values) => values.len() * 4,
             Values::ListInt64 { offsets, items } => offsets.len() * 4 + items.len() * 8,
             Values::ListUtf8 {
@@ -261,9 +236,7 @@ impl Column {
     /// When the column is not `Utf8`; the caller has checked the type.
     pub fn str(&self, row: usize) -> &str {
         match &self.values {
-            Values::Utf8 { offsets, text } => {
-                &text[offsets[row] as usize..offsets[row + 1] as usize]
-            }
+            Values::Utf8(strs) => strs.get(row),
             _ => panic!("str() on a {} column", self.data_type),
         }
     }
@@ -321,7 +294,7 @@ impl Column {
                 };
                 Value::Decimal(Decimal::new(values[row], scale))
             }
-            Values::Utf8 { .. } => Value::Utf8(self.str(row).to_owned()),
+            Values::Utf8(_) => Value::Utf8(self.str(row).to_owned()),
             Values::Date(values) => Value::Date(Date::from_days_since_epoch(values[row])),
             Values::Timestamp(values) => Value::Timestamp(Timestamp::from_micros(values[row])),
             Values::ListInt64 { offsets, items } => Value::List(
@@ -405,6 +378,9 @@ pub struct ColumnBuilder {
     data_type: DataType,
     validity: Bitmap,
     values: Values,
+    /// The texts of a text column while it is built (issue #451): a dictionary until it is not
+    /// worth it. `values` holds them once the column is finished.
+    text: Option<StrBuilder>,
 }
 
 impl ColumnBuilder {
@@ -414,13 +390,20 @@ impl ColumnBuilder {
             data_type,
             validity: Bitmap::with_capacity(capacity),
             values: Values::with_capacity(data_type, capacity),
+            text: (data_type == DataType::Utf8).then(|| StrBuilder::with_capacity(capacity)),
         }
     }
 
     /// Appends a NULL.
     pub fn push_null(&mut self) {
         self.validity.push(false);
-        self.values.push_zero();
+        match &mut self.text {
+            // The empty text, which a dictionary holds once.
+            Some(text) => text
+                .push("")
+                .expect("an empty text does not overflow a column"),
+            None => self.values.push_zero(),
+        }
     }
 
     /// Appends text to a text column without a [`Value`] in between — the text is copied into the
@@ -428,13 +411,10 @@ impl ColumnBuilder {
     ///
     /// An error, not a panic, for any other column type or more than 4 GiB of text.
     pub fn push_str(&mut self, value: &str) -> Result<(), String> {
-        let Values::Utf8 { offsets, text } = &mut self.values else {
+        let Some(text) = &mut self.text else {
             return Err(format!("expects {}, found text", self.data_type));
         };
-        text.push_str(value);
-        let end = u32::try_from(text.len())
-            .map_err(|_| "holds more than 4 GiB of text, more than a column can".to_owned())?;
-        offsets.push(end);
+        text.push(value)?;
         self.validity.push(true);
         Ok(())
     }
@@ -531,6 +511,11 @@ impl ColumnBuilder {
     /// A mismatch is an error, not a panic: ingest is the path untrusted input
     /// takes. The message reads after the column's name ("expects …").
     pub fn push(&mut self, value: &Value) -> Result<(), String> {
+        if let (Some(text), Value::Utf8(value)) = (&mut self.text, value) {
+            text.push(value)?;
+            self.validity.push(true);
+            return Ok(());
+        }
         match (&mut self.values, value) {
             (_, Value::Null) => {
                 self.push_null();
@@ -552,13 +537,6 @@ impl ColumnBuilder {
                     ));
                 }
                 values.push(value.value());
-            }
-            (Values::Utf8 { offsets, text }, Value::Utf8(value)) => {
-                text.push_str(value);
-                let end = u32::try_from(text.len()).map_err(|_| {
-                    "holds more than 4 GiB of text, more than a column can".to_owned()
-                })?;
-                offsets.push(end);
             }
             (Values::Date(values), Value::Date(value)) => values.push(value.days_since_epoch()),
             (Values::Timestamp(values), Value::Timestamp(value)) => values.push(value.micros()),
@@ -615,10 +593,14 @@ impl ColumnBuilder {
     /// The column.
     pub fn finish(self) -> Column {
         let validity = (self.validity.count_cleared() > 0).then_some(self.validity);
+        let values = match self.text {
+            Some(text) => Values::Utf8(text.finish()),
+            None => self.values,
+        };
         Column {
             data_type: self.data_type,
             validity,
-            values: self.values,
+            values,
         }
     }
 }
@@ -707,6 +689,71 @@ mod tests {
             wide.push_i64(value).unwrap();
         }
         assert_eq!(wide.finish().take(&[0, 1, 2]), bytes);
+    }
+
+    /// Issue #451: a text column of a few texts is a dictionary; NULL and the empty text are two
+    /// things, as they are in a flat one; and every way of reading it gives the texts back.
+    #[test]
+    fn a_text_column_of_few_texts_reads_back_as_its_texts() {
+        let cells = [
+            Some("DE"),
+            None,
+            Some(""),
+            Some("日本語"),
+            Some("DE"),
+            Some(""),
+            None,
+        ];
+        let mut by_str = ColumnBuilder::new(DataType::Utf8, cells.len());
+        let mut by_value = ColumnBuilder::new(DataType::Utf8, cells.len());
+        for cell in cells {
+            match cell {
+                Some(text) => {
+                    by_str.push_str(text).unwrap();
+                    by_value.push(&Value::Utf8(text.to_owned())).unwrap();
+                }
+                None => {
+                    by_str.push_null();
+                    by_value.push(&Value::Null).unwrap();
+                }
+            }
+        }
+        let (column, other) = (by_str.finish(), by_value.finish());
+        assert_eq!(column, other);
+        let Values::Utf8(strs) = column.values() else {
+            panic!("text")
+        };
+        assert!(strs.is_dictionary());
+        let value =
+            |cell: &Option<&str>| cell.map_or(Value::Null, |text| Value::Utf8(text.to_owned()));
+        assert_eq!(read(&column), cells.iter().map(value).collect::<Vec<_>>());
+        assert_eq!(column.null_count(), 2);
+        // Under a NULL the text is the empty one, and the empty text is not a NULL.
+        assert_eq!(column.str(1), "");
+        assert!(column.is_null(1) && !column.is_null(2));
+        // Taken, sliced, taken with gaps: flat columns of the same texts.
+        let taken = column.take(&[3, 0, 1]);
+        assert_eq!(
+            read(&taken),
+            vec![value(&cells[3]), value(&cells[0]), Value::Null]
+        );
+        assert_eq!(
+            read(&column.slice(2, 3)),
+            cells[2..5].iter().map(value).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            read(&column.take_optional(&[Some(3), None, Some(4)])),
+            vec![value(&cells[3]), Value::Null, value(&cells[4])]
+        );
+        // A dictionary is smaller than the flat column of the same texts.
+        let flat = column.slice(0, cells.len());
+        assert_eq!(flat, column);
+        assert!(
+            column.byte_size() < flat.byte_size() + 1,
+            "{} against {}",
+            column.byte_size(),
+            flat.byte_size()
+        );
     }
 
     /// Issue #429: text pushed as text is what the same text pushed as a value is.

@@ -281,7 +281,9 @@ mod tests {
             ],
         )
         .unwrap();
-        // 3 × 1 for the ints, which fit a byte; 4 offsets × 4 + 5 bytes of text + one bitmap word.
-        assert_eq!(table.byte_size(), 3 + 16 + 5 + 8);
+        // 3 × 1 for the ints, which fit a byte; the text is a dictionary of three texts ("ab", the
+        // empty text under the NULL, "cde"): 3 one-byte codes, 4 offsets × 4, 5 bytes of text; and
+        // one bitmap word.
+        assert_eq!(table.byte_size(), 3 + 3 + 16 + 5 + 8);
     }
 }
