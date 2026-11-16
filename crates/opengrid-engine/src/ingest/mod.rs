@@ -576,14 +576,20 @@ impl<'a> Builders<'a> {
                     .map_err(|message| mismatch(&fields[cell.column], message))?;
                 continue;
             }
+            if !cell.kept {
+                // The cell goes into its column as the type it is read as: no `Value` in between
+                // (issue #440).
+                cell::push_text(builder, raw, cell.data_type)
+                    .map_err(|message| in_row(cell.column, message))?;
+                continue;
+            }
+            // A derived column reads this cell: its value is kept for the row.
             let value = cell::from_text(raw, cell.data_type)
                 .map_err(|message| in_row(cell.column, message))?;
             builder
                 .push(&value)
                 .map_err(|message| mismatch(&fields[cell.column], message))?;
-            if cell.kept {
-                kept.push(value);
-            }
+            kept.push(value);
         }
         for part in &plan.parts {
             self.columns[part.column]
