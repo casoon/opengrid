@@ -70,7 +70,7 @@ fn cell_identity(column: &Column, row: usize) -> Option<Identity<'_>> {
     }
     Some(match column.values() {
         Values::Bool(values) => Identity::Bool(values[row]),
-        Values::Int64(values) => Identity::Int64(values[row]),
+        Values::Int64(values) => Identity::Int64(values.get(row)),
         Values::Float64(values) => Identity::Float64(float_identity(values[row])),
         Values::Decimal(values) => {
             let DataType::Decimal { scale, .. } = column.data_type() else {
@@ -78,7 +78,7 @@ fn cell_identity(column: &Column, row: usize) -> Option<Identity<'_>> {
             };
             Identity::Decimal(values[row], scale)
         }
-        Values::Utf8 { .. } => Identity::Utf8(column.str(row)),
+        Values::Utf8(_) => Identity::Utf8(column.str(row)),
         Values::Date(values) => Identity::Date(values[row]),
         Values::Timestamp(values) => Identity::Timestamp(values[row]),
         Values::ListInt64 { .. } | Values::ListUtf8 { .. } => {

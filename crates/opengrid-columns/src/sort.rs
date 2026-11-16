@@ -128,9 +128,8 @@ fn one_key(key: &SortKey<'_>, end: usize) -> Vec<u32> {
     // only wide decimals and strings need their own.
     let sorted = match column.values() {
         Values::Bool(values) => by_top(&present, |at| i64::from(values[at]), desc, value_rows),
-        Values::Int64(values) | Values::Timestamp(values) => {
-            by_top(&present, |at| values[at], desc, value_rows)
-        }
+        Values::Int64(values) => by_top(&present, |at| values.get(at), desc, value_rows),
+        Values::Timestamp(values) => by_top(&present, |at| values[at], desc, value_rows),
         Values::Float64(values) => by_top(&present, |at| total_key(values[at]), desc, value_rows),
         Values::Date(values) => by_top(&present, |at| i64::from(values[at]), desc, value_rows),
         // A decimal of up to 18 digits fits an `i64`, and half the bytes move.
@@ -138,7 +137,7 @@ fn one_key(key: &SortKey<'_>, end: usize) -> Vec<u32> {
             by_top(&present, |at| values[at] as i64, desc, value_rows)
         }
         Values::Decimal(values) => by_top(&present, |at| values[at], desc, value_rows),
-        Values::Utf8 { .. } => match key.collated {
+        Values::Utf8(_) => match key.collated {
             None => by_top(&present, |at| column.str(at).as_bytes(), desc, value_rows),
             Some(collated) => by_top(
                 &present,
@@ -352,7 +351,10 @@ fn encode(key: &SortKey<'_>, row: usize, out: &mut Vec<u8>) {
     let start = out.len();
     match column.values() {
         Values::Bool(values) => out.push(u8::from(values[row])),
-        Values::Int64(values) | Values::Timestamp(values) => {
+        Values::Int64(values) => {
+            out.extend_from_slice(&(values.get(row) ^ i64::MIN).to_be_bytes());
+        }
+        Values::Timestamp(values) => {
             out.extend_from_slice(&(values[row] ^ i64::MIN).to_be_bytes());
         }
         Values::Float64(values) => {
@@ -362,7 +364,7 @@ fn encode(key: &SortKey<'_>, row: usize, out: &mut Vec<u8>) {
             out.extend_from_slice(&(values[row] ^ i128::MIN).to_be_bytes());
         }
         Values::Date(values) => out.extend_from_slice(&(values[row] ^ i32::MIN).to_be_bytes()),
-        Values::Utf8 { .. } => {
+        Values::Utf8(_) => {
             if let Some(collated) = key.collated {
                 terminated(collated.get(row), out);
             }
@@ -452,7 +454,16 @@ mod tests {
     fn typed_values(data_type: DataType) -> BoxedStrategy<Value> {
         let value: BoxedStrategy<Value> = match data_type {
             DataType::Bool => any::<bool>().prop_map(Value::Bool).boxed(),
-            DataType::Int64 => (-3i64..3).prop_map(Value::Int64).boxed(),
+            // Mostly small numbers, so that there are ties, and numbers of every width among them
+            // (issue #447): the column is as wide as its widest value.
+            DataType::Int64 => prop_oneof![
+                6 => -3i64..3,
+                2 => any::<i16>().prop_map(i64::from),
+                1 => any::<i32>().prop_map(i64::from),
+                1 => prop_oneof![any::<i64>(), Just(i64::MIN), Just(i64::MAX)],
+            ]
+            .prop_map(Value::Int64)
+            .boxed(),
             DataType::Float64 => prop_oneof![
                 Just(f64::NAN),
                 Just(-f64::NAN),

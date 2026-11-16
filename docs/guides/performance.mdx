@@ -23,37 +23,43 @@ CSV a second.
 |---|---|---|
 | Load the CSV | 59 ms | — |
 | Filter: country and amount, first 100 rows | 1.6 ms | 1.6–3.8 ms |
-| Text search in a column, first 100 rows | 4.1 ms | 4.0–4.6 ms |
+| Text search in a column, first 100 rows | 2.2 ms | 2.1–2.3 ms |
 | Sort by amount, top 100 | 3.0 ms | 2.9–3.4 ms |
 | Group by country, sum and count | 9.6 ms | 9.5–10 ms |
 | Group by customer (500 groups), sum | 10 ms | 10–11 ms |
 | Pivot: country and customer, sum and count | 32 ms | 32–33 ms |
-| **Module memory** after the load | **19.2 MiB** | |
-| of which the columns | 9.8 MiB | |
+| **Module memory** after the load | **13.8 MiB** | |
+| of which the columns | 4.9 MiB | |
 
 | 1,000,000 rows (CSV 74.6 MB) | Median | Range |
 |---|---|---|
 | Load the CSV | 0.44 s | — |
-| Filter: country and amount, first 100 rows | 15 ms | 15–16 ms |
-| Text search in a column, first 100 rows | 40 ms | 39–40 ms |
+| Filter: country and amount, first 100 rows | 14 ms | 14–15 ms |
+| Text search in a column, first 100 rows | 21 ms | 21 ms |
 | Sort by amount, top 100 | 26 ms | 25–26 ms |
 | Group by country, sum and count | 99 ms | 99–101 ms |
 | Group by customer (500 groups), sum | 105 ms | 105–106 ms |
 | Pivot: country and customer, sum and count | 312 ms | 309–352 ms |
-| **Module memory** after the load | **199 MiB** | |
-| of which the columns | 98 MiB | |
+| **Module memory** after the load | **128 MiB** | |
+| of which the columns | 49 MiB | |
 
 Ten times the rows cost about ten times the time and about nine times the memory: the engine
 scans typed columns, and nothing in these queries grows faster than the data.
 
 ## Two numbers for the engine's memory
 
-The **columns** — the data itself, typed — take 9.8 MiB for 100,000 rows and 98 MiB for a
-million: about a hundred bytes a row. A 64-bit integer takes eight bytes and stays an integer,
-an exact decimal stays exact, a timestamp keeps its microseconds, and a missing value costs a
-bit in a bitmap rather than a boxed object.
+The **columns** — the data itself, typed — take 4.9 MiB for 100,000 rows and 49 MiB for a
+million: about fifty bytes a row for these ten columns and the three derived from them. An
+integer takes as many bytes as its largest value needs — one for a count of 0–39, four for an id up
+to a million, eight at most — and stays an integer. A text column with few distinct texts (a
+country, a status, a customer of a few hundred) keeps each text once and a code of one or two bytes
+a row; a column of distinct texts stays as it was. A filter or a search on such a column tests each
+distinct text once, not each row, which is why the search above takes half the time. An exact
+decimal stays exact, a timestamp keeps its microseconds, and a missing value costs a bit in a
+bitmap rather than a boxed object. The price is on the way in: loading takes about a tenth longer,
+for the lookup of every text.
 
-The **module memory** is larger, 19.2 and 199 MiB, because it also holds the room that reading
+The **module memory** is larger, 13.8 and 128 MiB, because it also holds the room that reading
 the CSV needed — the file's copy in the module, 71 MiB for the million rows — and WebAssembly
 memory only grows. That is the number a page pays, and the one the engine's budget guards:
 `peakmark.toml` fails a release whose scenario (100,000 rows loaded, queried and pivoted) needs
@@ -61,8 +67,8 @@ more than 26 MiB, or leaks from one run to the next. The queries add nothing to 
 all of them leave it where the load put it.
 
 A file loaded **piece by piece** (`loadStream`, 4 MiB at a time) does not need the copy: the same
-million rows leave the module at 140 MiB after the load and 149 MiB after the queries, which
-take their temporaries from the same room.
+million rows leave the module at 68 MiB after the load and after the queries, which take their
+temporaries from the same room.
 
 The numbers are the same in the tab and on a server, because it is the same code.
 
@@ -79,7 +85,9 @@ its own: a page that holds a million JavaScript objects pays for them on top.
 | 1,000,000 | 43 MB | 172–175 MiB | 142–145 MiB |
 
 So the engine is **compact, not free**: it keeps its own typed copy of the data — about 160 MiB
-for a million rows, 140 when the file is read in pieces — next to whatever the page holds.
+for a million rows, 140 when the file is read in pieces (these two figures and the table are from
+before the integers and the texts were stored compactly, which took 71 MiB off the module of a
+million rows) — next to whatever the page holds.
 
 A page that has its rows as JavaScript objects hands them over with `loadRows`, which turns them
 into typed columns in pieces of 65,536 rows and does not make a JSON text of the table. Measured
@@ -100,9 +108,9 @@ The engine is a module the page loads before its first query. Compressed with Br
 
 | Module | Size | Loaded |
 |---|---|---|
-| The engine (`engine/`) | about 168 KiB | when the page starts the engine |
+| The engine (`engine/`) | about 172 KiB | when the page starts the engine |
 | All three elements (`pkg/`) | about 348 KiB | with the elements |
-| The collation of a locale (`collation/`) | about 330 KiB | only by a sort that names a locale |
+| The collation of a locale (`collation/`) | about 325 KiB | only by a sort that names a locale |
 | The XLSX writer (`xlsx/`) | about 240 KiB | only by an export to a workbook |
 
 Sizes are kept inside budgets in `peakmark.toml`, so a release that grows one fails the build
@@ -115,6 +123,62 @@ The engine runs in a Web Worker as it runs on the page, so a query does not bloc
 thread. The [live demo](https://og-vanilla.casoon.dev/large-data) queries 100,000 rows that way.
 The figures above are the engine's own time; what the page adds is the transfer of the answer and
 the drawing of the rows on screen.
+
+## In server mode
+
+With a [REST provider](../where-queries-run/) the rows stay in the database. The grid asks for
+the window it shows — 40 rows by default — and the database filters, sorts, groups and counts.
+What a reader waits for is then the server and the database, not the engine in the tab.
+
+Measured on 16 November 2026 on the same **Apple M4 Pro**: `opengrid-server`, release build,
+with one source, answering `POST /query` over the loopback in the binary result form, as
+`createRestProvider` asks. PostgreSQL 16 ran on the same machine; SQLite is compiled into the
+server. The rows are those of the engine figures above, generated by the database. Indexes as a
+page tuned for these requests would have them: the key `id`, and `(country, amount)` for the
+filtered window. One run thrown away, then nine, **median** shown; other programs were running
+on the machine.
+
+| A window of 40 rows, or a grouping | PostgreSQL, 1M | PostgreSQL, 10M | SQLite, 1M | SQLite, 10M |
+|---|---|---|---|---|
+| First window, sorted by `id` | 13 ms | 181 ms | 1.7 ms | 18 ms |
+| Window in the middle (`offset` half the rows) | 32 ms | 396 ms | 12 ms | 119 ms |
+| Filter on country and amount, sorted by amount | 48 ms | 513 ms | 1.8 ms | 16 ms |
+| Text search in a column, any case | 80 ms | 957 ms | 121 ms | 1.18 s |
+| Group by country, sum and count | 65 ms | 905 ms | 104 ms | 1.03 s |
+| Count of every row (`limit` 0) | 13 ms | 168 ms | 1.6 ms | 18 ms |
+| **Server's peak memory** | 9.5 MiB | 9.4 MiB | 16 MiB | 17 MiB |
+
+A window's answer is 3.3 KiB on the wire, a grouping's 352 bytes, whatever the table's size. The
+server's memory is the whole process — server and the measuring client — and stays the same for
+ten times the rows; PostgreSQL's own memory is not in it, SQLite's page cache is.
+
+What the figures say:
+
+- **Every window carries its count.** `total_count` is what the grid needs for its scroll bar and
+  `aria-rowcount`, and it is a second statement for each window. In PostgreSQL counting ten million
+  rows takes about 170 ms, and that is most of the first window's 181 ms.
+- **A window far down costs more.** An `offset` makes the database walk past the rows before it:
+  dragging the scroll bar to the middle of ten million rows asks for 400 ms in PostgreSQL.
+- **The indexes decide, not opengrid.** With an index on `amount` alone, SQLite takes it for a
+  range over half the table: the filtered window then needs **5.5 s** at ten million rows instead
+  of 16 ms. A text search with `contains` reads every row in either database.
+- **Compared with the tab.** A million rows in the engine answer a filter in 15 ms and a grouping
+  in 99 ms, once the page has loaded them (0.44 s, 173 MiB in the engine). The server answers in
+  the same order of magnitude, puts nothing but the window into the browser, and answers from the
+  current data each time.
+
+Not measured here: the network between browser and server, which adds its round trip to every
+window; several readers at once; PostgreSQL on its own machine.
+
+```sh
+DATABASE_URL=postgres://$USER@localhost:5432/opengrid_dev \
+  cargo run --release -p opengrid-server --example server_bench -- postgres 1000000
+cargo run --release -p opengrid-server --example server_bench -- sqlite 10000000
+```
+
+The first run writes the rows (`bench_orders_<rows>` in the database,
+`target/bench-orders-<rows>.sqlite`) and keeps them for the next; the peak memory is read with
+`/usr/bin/time -l`.
 
 ## What these figures are not
 

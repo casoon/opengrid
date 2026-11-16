@@ -33,6 +33,8 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Added
 
+- **Docs:** the performance guide measures server mode: a window of 40 rows, a filter, a text search and a grouping from PostgreSQL and SQLite at one and ten million rows, with the server's memory and `cargo run --example server_bench` to repeat it ([In server mode](https://casoon.github.io/opengrid/docs/guides/performance/#in-server-mode), [#452](https://github.com/casoon/opengrid/issues/452)).
+- **Pages:** the start page explains where the data lives — in the tab, on the server, or split — side by side, with when to start where, the query the browser sends instead of SQL, a diagram of one window fetched from the server, the sources a server reads and measured figures ([#453](https://github.com/casoon/opengrid/issues/453)).
 - **Engine:** the WebAssembly engine reads rows as packs of typed columns: `begin_columns`,
   `push_columns`, `end_columns` and `abort_columns`, as it reads CSV in pieces. An engine module
   without them still loads rows, as JSON text
@@ -49,6 +51,24 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Changed
 
+- **Engine, columns:** a text column with few distinct texts — a country, a status, a customer of a few
+  hundred — keeps each text once and a code of one or two bytes a row; a column of distinct texts
+  is stored as before. The ten columns of the benchmark table take 51 bytes a row instead of 73,
+  and the module's memory after loading a million of them 128 MiB instead of 173, and 68 instead
+  of 112 when the file is read in pieces. A search or a filter on such a column tests each distinct
+  text once: a text search over a million rows takes 21 ms instead of 47. Loading takes about a
+  tenth longer. No answer changes. **What breaks:** `opengrid_columns::Values::Utf8` holds a
+  `Strs`, a dictionary or a flat column, and not `offsets` and `text`; read it with `Column::str`
+  or `Strs::get`
+  ([#451](https://github.com/casoon/opengrid/issues/451)).
+- **Engine, columns:** an `int64` column stores its values in as few bytes as they need — one for a
+  count, four for an id, eight at most — instead of eight each, and so do the columns derived
+  from a date. The ten columns of the benchmark table take 73 bytes a row instead of 103, the
+  module's memory after loading a million of them 173 MiB instead of 199, and 112 instead of 140
+  when the file is read in pieces. No answer changes, and no query gets slower. **What breaks:**
+  `opengrid_columns::Values::Int64` holds an `Ints` and not a `Vec<i64>`; read it with
+  `Ints::get`, `iter` or `to_vec`
+  ([#447](https://github.com/casoon/opengrid/issues/447)).
 - **Package, engine:** `loadRows` of an array of objects hands them over as typed columns, in packs of
   65,536 rows, instead of as one JSON text. A million rows reach the first rows in 0.27 s instead
   of 1.2 s, and the page holds 386 MiB instead of 847; 100,000 rows in 0.1 s instead of 0.17 s and
@@ -63,6 +83,7 @@ Two things belong in every release entry and are easy to leave out:
 - **Docs:** *What the engine costs* says what using the grid adds to the page's memory: about
   55 MiB once, the browser's painting, and none of it in the engine
   ([#428](https://github.com/casoon/opengrid/issues/428)).
+- **Pages:** the start page and *What the engine costs* carry the loading times since the CSV reader's faster passes (a million rows in 0.44 s, 100,000 in 59 ms) and the module sizes as they are now (the engine about 172 KiB, the collation about 325 KiB).
 - **Pages:** the figures of *What the engine costs* and of the start page are measured again after the optimisations (#426–#429, #428): a million rows load in 1.1 s instead of 1.3 s, a sort of the first 100 takes 26 ms instead of 52, the module holds 199 MiB instead of 213, and the whole page, with a fetched CSV and no rows of its own, about 175 MiB (145 read in pieces) instead of the 658 MiB the earlier test page showed, which included a million JavaScript objects it kept itself.
 - **Engine:** a sort that asks for a page of a big table (the first 100 of a million rows) keeps the best rows as it reads them instead of building and sorting a pair for every row: sorting a million rows by one key takes 25 ms instead of 51 ms, and the module no longer grows by 51 MiB for it (the memory after the usual queries on a streamed load: 191 MiB before, 149 MiB after). The order is the same, ties by position (#428).
 - **Engine:** loading a CSV file or a JSON array sizes the columns by the number of lines or objects in the text, so each is allocated once instead of grown by doubling. The module's memory, which never shrinks, holds 199 MiB instead of 215 MiB after a million CSV rows (the columns themselves take 98 MiB, the copy of the file 71 MiB) (#427).

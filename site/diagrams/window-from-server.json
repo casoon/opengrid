@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "type": "sequence",
+  "title": "One window of rows from the server",
+  "description": "A reader scrolls a grid over a million orders. The grid sends a query object, never SQL, for the 40 rows it shows. opengrid-server checks it against the token, the fields the client may see and the tenant's row filter, and asks the database for the window and the count, as SQL with parameters. Only the 40 rows and the total come back, about 3.3 KiB; the scroll bar is sized from the total.",
+  "source": "crates/opengrid-server, crates/opengrid-datasource-postgres, crates/opengrid-connector-sqlite, docs/protocol.md",
+  "width": 960,
+  "height": 600,
+  "sequence": {
+    "participants": [
+      { "id": "reader", "label": "Reader", "kind": "actor" },
+      { "id": "grid", "label": "opengrid-grid", "sublabel": "in your page" },
+      { "id": "server", "label": "opengrid-server", "sublabel": "in your program" },
+      { "id": "db", "label": "Database", "sublabel": "PostgreSQL, SQLite, …", "kind": "database" }
+    ],
+    "messages": [
+      { "from": "reader", "to": "grid", "label": "Scrolls to row 500,000" },
+      { "from": "grid", "to": "server", "label": "JSON query: offset 500,000, limit 40" },
+      { "from": "server", "to": "server", "label": "Token, allowed fields, tenant's row filter" },
+      { "from": "server", "to": "db", "label": "SQL with parameters: window and count" },
+      { "from": "db", "to": "server", "label": "40 rows, 1,000,000 in all", "kind": "reply" },
+      { "from": "server", "to": "grid", "label": "40 rows, about 3.3 KiB", "kind": "reply" },
+      { "from": "grid", "to": "reader", "label": "Rows drawn, scroll bar from the total", "kind": "reply" }
+    ],
+    "numbered": true
+  }
+}

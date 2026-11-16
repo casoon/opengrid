@@ -37,8 +37,15 @@ glue     = "target/peakmark/engine/m.js"
 # appends a pack to the column builders, with the derived columns, and the four calls on the
 # engine) grew it by 3.7 KiB, to 175703 B; a million row objects reach the first rows in 0.27 s
 # instead of 1.2 s and the page holds 461 MiB less.
+# 2026-11-16: integers stored as wide as they need (#447: the buffer and its widening, read through
+# `get` by the sort, the filter and the aggregates) grew it by 1.1 KiB, to 176878 B; the columns of
+# a million rows of ten columns are 29 MiB smaller. Inside the budget, which stays.
+# Raised 2026-11-17 from 177500: text with few distinct texts as a dictionary (#451: the dictionary,
+# its builder and lookup, the filters that test each distinct text once) grew it by 2.1 KiB, to
+# 178980 B; the columns of a million rows of ten columns are another 21 MiB smaller and a text
+# search takes half the time.
 [module.budget]
-brotli         = "177500 B"
+brotli         = "180500 B"
 peak_memory    = "26 MiB"
 growth_per_run = "0"
 

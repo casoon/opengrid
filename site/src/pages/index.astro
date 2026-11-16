@@ -4,10 +4,12 @@ import {
   Badge,
   Badges,
   BarCompare,
+  Button,
   CallToAction,
   CodeBlock,
   Compare,
   ElementList,
+  Facts,
   FlowPanel,
   Hero,
   Install,
@@ -21,6 +23,7 @@ import {
 import Base from '@casoon/pages-theme/layouts/Base.astro';
 import config from 'virtual:casoon-pages/config';
 import { url } from '@casoon/pages-theme/url';
+import Diagram from '../components/Diagram.astro';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { brotliCompressSync, constants } from 'node:zlib';
@@ -69,6 +72,19 @@ const query = `{
   "sort": [{ "field": "id", "direction": "asc", "nulls": "last" }],
   "offset": 0,
   "limit": 50
+}`;
+
+// What a grid in server mode sends for one window (docs/protocol.md, "The query object").
+const windowQuery = `{
+  "source": "orders",
+  "select": ["id", "customer", "country", "amount"],
+  "filter": { "and": [
+    { "field": "country", "op": "eq", "value": "DE" },
+    { "field": "amount", "op": "gte", "value": "500.00" }
+  ] },
+  "sort": [{ "field": "amount", "direction": "desc" }],
+  "offset": 500000,
+  "limit": 40
 }`;
 ---
 
@@ -172,12 +188,14 @@ const query = `{
         { label: 'Group by country', values: [10, 99], display: ['10 ms', '99 ms'] },
       ]}
       facts={[
+        { label: 'Load a CSV, 100,000 rows', value: '59\u00a0ms' },
+        { label: 'Load a CSV, 1,000,000 rows', value: '0.44\u00a0s' },
         { label: 'Engine memory, 100,000 rows', value: '19.2 MiB' },
         { label: 'Engine memory, 1,000,000 rows', value: '199 MiB' },
         ...(engineKiB ? [{ label: 'Engine module, brotli', value: `about ${engineKiB} KiB` }] : []),
       ]}
     >
-      Apple M4 Pro, median of nine runs, 14 November 2026.{' '}
+      Apple M4 Pro, median of nine runs, 14 November 2026, the loads 16 November.{' '}
       <a href={url('docs/guides/performance/')}>Method, all figures and the script to repeat it.</a>
     </BarCompare>
   </Split>
@@ -306,6 +324,130 @@ const query = `{
     ]}
   />
 
+  <section class="data" aria-labelledby="data-heading">
+    <h2 id="data-heading">Where your data lives</h2>
+    <p class="lead">
+      A large table reaches a reader in one of two ways: the page loads it and the browser does the
+      work, or it stays in your database and the grid asks for the part on screen. A third way
+      splits a query between the two. Which one fits depends on the data, not on the grid: the
+      element, its queries and its answers stay the same.
+    </p>
+
+    <div class="compare" role="region" aria-labelledby="compare-caption" tabindex="0">
+      <table>
+        <caption id="compare-caption">The three ways, side by side</caption>
+        <thead>
+          <tr>
+            <td></td>
+            <th scope="col">In the tab</th>
+            <th scope="col">On the server</th>
+            <th scope="col">Split</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row">How</th>
+            <td>The page loads the rows once. The engine, WebAssembly in a worker, answers every sort, filter and grouping in the browser.</td>
+            <td>The grid asks for the rows it shows, 40 at a time while the reader scrolls. Your database filters, sorts, groups and counts.</td>
+            <td>The planner gives the source the part it can answer and finishes the rest in the tab.</td>
+          </tr>
+          <tr>
+            <th scope="row">First load</th>
+            <td>The whole table: 0.44 s and 173 MiB in the engine for a million rows.</td>
+            <td>One window, about 3.3 KiB, whatever the table's size.</td>
+            <td>What the source sends for its part.</td>
+          </tr>
+          <tr>
+            <th scope="row">Each interaction</th>
+            <td>No round trip: a filter over a million rows takes 15 ms.</td>
+            <td>One request per window: 13 to 80 ms over a million rows in PostgreSQL, plus the network.</td>
+            <td>The source's time plus the tab's.</td>
+          </tr>
+          <tr>
+            <th scope="row">Freshness</th>
+            <td>A snapshot from when the page loaded it. The page loads again to see changes.</td>
+            <td>Every window is read from the current data. The server can tell the grid that a source changed, and the reader refreshes in place.</td>
+            <td>As current as the source.</td>
+          </tr>
+          <tr>
+            <th scope="row">Editing</th>
+            <td colspan="3">The same in all three: the grid edits, the page saves each change to its own API and tells the grid whether it was stored.</td>
+          </tr>
+          <tr>
+            <th scope="row">Who sees what</th>
+            <td>Every row the page loaded is in the browser.</td>
+            <td>Only the fields a token may see, and only its tenant's rows: the server adds that filter to every query.</td>
+            <td>As on the server.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="choose">
+      <div>
+        <h3>Start in the tab</h3>
+        <p>
+          It needs no server, and every interaction stays in the browser. Move the data to the
+          server when one of these is true:
+        </p>
+        <ul>
+          <li>The table is more than a browser should hold. A million rows take 173 MiB in the engine, and every reader's device pays for it.</li>
+          <li>The data changes while people look at it, or several people edit it.</li>
+          <li>Not every reader may see every row or field.</li>
+        </ul>
+        <p>
+          Switching is a change of provider, not of the page.{' '}
+          {conformanceCases} conformance cases check that the tab, the server and the split give
+          the same answer.
+        </p>
+      </div>
+      <div>
+        <h3>No SQL from the browser</h3>
+        <p>
+          The grid sends a query object. The server checks it against the token and turns it into
+          SQL with parameters; a field the token may not see does not exist for the client.
+        </p>
+        <CodeBlock code={windowQuery} lang="json" title="POST /query/orders" label="JSON" />
+      </div>
+    </div>
+
+    <Diagram name="window-from-server" format="svg" narrow={{ width: 576, height: 740 }} />
+
+    <h3>Where the rows can come from</h3>
+    <ul class="sources">
+      <li><strong>PostgreSQL</strong>: windows, groupings, a pivot as one statement, an export read through a cursor.</li>
+      <li><strong>SQLite</strong>: a file, nothing to install; SQLite is compiled into the server.</li>
+      <li><strong>A table in memory</strong>: a CSV file the server loads.</li>
+      <li><strong>A connector of your own</strong>: a Rust trait of three methods; a source that only hands out rows gets filtering, sorting and grouping from the engine.</li>
+      <li><strong>A server in another language</strong>: .NET, Java, Node or anything that speaks the HTTP protocol, proven with the same conformance cases.</li>
+    </ul>
+
+    <Facts
+      layout="list"
+      label="Measured: opengrid-server with PostgreSQL and SQLite"
+      items={[
+        { label: 'First window, 1,000,000 rows, PostgreSQL', value: '13 ms' },
+        { label: 'Filtered and sorted window, 1,000,000 rows, PostgreSQL', value: '48 ms' },
+        { label: 'Filtered and sorted window, 10,000,000 rows, SQLite', value: '16 ms' },
+        { label: 'Grouping, 10,000,000 rows, PostgreSQL', value: '0.9 s' },
+        { label: 'One window on the wire', value: '3.3 KiB' },
+        { label: 'Server memory, 10,000,000 rows', value: 'under 20 MiB' },
+      ]}
+    />
+    <p class="measured">
+      Apple M4 Pro, server and database on one machine, so no network in the figures; indexes on
+      the key and on the filtered columns; median of nine runs, 16 November 2026.{' '}
+      <a href={url('docs/guides/performance/#in-server-mode')}>Method, all figures and what decides them.</a>
+    </p>
+
+    <div class="links">
+      <Button href={url('docs/guides/where-queries-run/')} variant="secondary">Where queries run</Button>
+      <Button href={url('docs/guides/connectors/')} variant="secondary">Connectors</Button>
+      <Button href={url('docs/guides/saving-edits/')} variant="secondary">Saving edits</Button>
+      <Button href={url('docs/api/#a-source-that-changes')} variant="quiet">A source that changes →</Button>
+    </div>
+  </section>
+
   <Quickstart
     lead="Install the package, put an element on the page and connect it to a provider. The documentation walks through the engine in the tab, bundlers and the React, Vue and Svelte components."
     steps={[
@@ -336,5 +478,126 @@ const query = `{
     display: flex;
     flex-direction: column;
     gap: 20px;
+  }
+  /* The note under the measured figures: small, quiet, and on the 8 px grid. */
+  .measured {
+    margin: 16px 0 0;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--muted);
+    text-wrap: pretty;
+  }
+  .measured a {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  h2 {
+    margin: 0 0 14px;
+    color: var(--heading);
+    font-size: 30px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  .data {
+    max-width: var(--max);
+    margin: 0 auto;
+    padding: 0 24px 96px;
+  }
+  .data h3 {
+    margin: 0 0 8px;
+    color: var(--heading);
+    font-size: 20px;
+    font-weight: 600;
+  }
+  .data p,
+  .data li {
+    font-size: 15.5px;
+    text-wrap: pretty;
+  }
+  .lead {
+    max-width: 72ch;
+    margin: 0 0 24px;
+  }
+  /* The comparison scrolls sideways on its own at phone width, never the page. */
+  .compare {
+    overflow-x: auto;
+    margin: 0 0 40px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+  }
+  .compare:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .compare table {
+    width: 100%;
+    min-width: 720px;
+    border-collapse: collapse;
+    font-size: 14.5px;
+    line-height: 1.5;
+  }
+  .compare caption {
+    padding: 12px 16px 0;
+    text-align: start;
+    color: var(--muted);
+    font-size: 14px;
+  }
+  .compare th,
+  .compare td {
+    padding: 12px 16px;
+    text-align: start;
+    vertical-align: top;
+    border-top: 1px solid var(--border);
+  }
+  .compare thead th,
+  .compare thead td {
+    border-top: 0;
+  }
+  .compare thead th {
+    color: var(--heading);
+    font-weight: 600;
+  }
+  .compare tbody th {
+    width: 9rem;
+    color: var(--heading);
+    font-weight: 600;
+  }
+  @media (max-width: 640px) {
+    .compare table {
+      min-width: 600px;
+    }
+    .compare tbody th {
+      width: 6rem;
+    }
+  }
+  .choose {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
+    gap: 32px 48px;
+    margin: 0 0 16px;
+  }
+  .choose p {
+    margin: 0 0 16px;
+  }
+  .choose ul,
+  .sources {
+    margin: 0 0 16px;
+    padding-inline-start: 1.25rem;
+  }
+  .choose li,
+  .sources li {
+    margin: 0 0 8px;
+  }
+  .sources {
+    margin-bottom: 32px;
+  }
+  .data .links {
+    margin-top: 32px;
+  }
+  .links {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
   }
 </style>

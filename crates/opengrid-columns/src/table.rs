@@ -261,8 +261,8 @@ mod tests {
         assert_eq!(table.slice(5, 1).num_rows(), 0);
     }
 
-    /// The size is the buffers: 8 bytes per int, offsets plus text for
-    /// strings, and a bitmap word only where a NULL made one (issue #70).
+    /// The size is the buffers: as many bytes per int as its values need (issue #447), offsets plus
+    /// text for strings, and a bitmap word only where a NULL made one (issue #70).
     #[test]
     fn a_table_knows_its_bytes() {
         let schema = Schema::new(vec![
@@ -281,7 +281,9 @@ mod tests {
             ],
         )
         .unwrap();
-        // 3 × 8 for the ints; 4 offsets × 4 + 5 bytes of text + one bitmap word.
-        assert_eq!(table.byte_size(), 24 + 16 + 5 + 8);
+        // 3 × 1 for the ints, which fit a byte; the text is a dictionary of three texts ("ab", the
+        // empty text under the NULL, "cde"): 3 one-byte codes, 4 offsets × 4, 5 bytes of text; and
+        // one bitmap word.
+        assert_eq!(table.byte_size(), 3 + 3 + 16 + 5 + 8);
     }
 }

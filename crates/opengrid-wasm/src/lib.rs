@@ -837,8 +837,9 @@ mod stats_tests {
         assert_eq!(sources[1]["name"], "b");
         assert_eq!(sources[1]["rows"], 2);
         assert_eq!(sources[1]["columns"], 2);
-        // 2 ints, 3 offsets and 5 bytes of text, no NULL, no bitmap.
-        assert_eq!(sources[1]["bytes"], 2 * 8 + 3 * 4 + 5);
+        // 2 ints of a byte each (issue #447); the text a dictionary of two (#451): 2 one-byte codes,
+        // 3 offsets and 5 bytes of text; no NULL, no bitmap.
+        assert_eq!(sources[1]["bytes"], 2 + 2 + 3 * 4 + 5);
         assert!(stats["memory"].as_u64().is_some());
     }
 }

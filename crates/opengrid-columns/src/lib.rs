@@ -20,10 +20,14 @@
 
 mod bitmap;
 mod column;
+mod ints;
 pub mod sort;
+mod strs;
 mod table;
 pub mod wire;
 
 pub use bitmap::Bitmap;
 pub use column::{Column, ColumnBuilder, Values};
+pub use ints::Ints;
+pub use strs::{Codes, StrBuilder, Strs};
 pub use table::Table;

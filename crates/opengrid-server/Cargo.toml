@@ -42,6 +42,8 @@ opengrid-json = { workspace = true }
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
+# The server-mode measurement (issue #452) reads its answers off a socket.
+tokio = { version = "1", features = ["io-util"] }
 # The whole suite through `POST /query` in both result forms (issue #38).
 opengrid-conformance = { path = "../opengrid-conformance" }
 # The tests hand the server the reference connectors: the local engine over
