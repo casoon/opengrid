@@ -76,7 +76,7 @@ fn cell_identity(column: &Column, row: usize) -> Option<Identity<'_>> {
             let DataType::Decimal { scale, .. } = column.data_type() else {
                 unreachable!("a decimal buffer belongs to a decimal column")
             };
-            Identity::Decimal(values[row], scale)
+            Identity::Decimal(values.get(row), scale)
         }
         Values::Utf8(_) => Identity::Utf8(column.str(row)),
         Values::Date(values) => Identity::Date(values[row]),

@@ -160,7 +160,7 @@ fn in_list(
         }
         Values::Decimal(cells) => {
             let set = literals!(Value::Decimal, |literal| literal.value());
-            members(column, &set, has_null, |at| cells[at])
+            members(column, &set, has_null, |at| cells.get(at))
         }
         Values::Utf8(_) => {
             let set = literals!(Value::Utf8, |literal| literal.as_bytes());
@@ -263,7 +263,7 @@ fn compare(
             rows(column, |at| values.get(at), *literal, op)
         }
         (Values::Decimal(values), Value::Decimal(literal)) => {
-            rows(column, |at| values[at], literal.value(), op)
+            rows(column, |at| values.get(at), literal.value(), op)
         }
         (Values::Utf8(_), Value::Utf8(literal)) => text_mask(
             column,
