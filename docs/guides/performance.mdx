@@ -17,7 +17,8 @@ fastest and the slowest in brackets. Other programs were running on the machine,
 will be a little faster. The rows are ten columns of the conformance data set's
 shape — integers, text, an exact decimal, a float, a boolean, a date and a timestamp — as CSV.
 The two load times are of 16 November 2026, after the CSV reader's third pass: about 170 MB of
-CSV a second.
+CSV a second; the three grouping rows are of the same day, after grouping by a text
+dictionary's codes.
 
 | 100,000 rows (CSV 7.4 MB) | Median | Range |
 |---|---|---|
@@ -25,9 +26,9 @@ CSV a second.
 | Filter: country and amount, first 100 rows | 1.6 ms | 1.6–3.8 ms |
 | Text search in a column, first 100 rows | 2.2 ms | 2.1–2.3 ms |
 | Sort by amount, top 100 | 3.0 ms | 2.9–3.4 ms |
-| Group by country, sum and count | 9.6 ms | 9.5–10 ms |
-| Group by customer (500 groups), sum | 10 ms | 10–11 ms |
-| Pivot: country and customer, sum and count | 32 ms | 32–33 ms |
+| Group by country, sum and count | 5.0 ms | 4.9–6.8 ms |
+| Group by customer (500 groups), sum | 4.0 ms | 3.9–4.2 ms |
+| Pivot: country and customer, sum and count | 20 ms | 20–21 ms |
 | **Module memory** after the load | **13.2 MiB** | |
 | of which the columns | 4.1 MiB | |
 
@@ -37,9 +38,9 @@ CSV a second.
 | Filter: country and amount, first 100 rows | 14 ms | 14–15 ms |
 | Text search in a column, first 100 rows | 21 ms | 21 ms |
 | Sort by amount, top 100 | 26 ms | 25–26 ms |
-| Group by country, sum and count | 99 ms | 99–101 ms |
-| Group by customer (500 groups), sum | 105 ms | 105–106 ms |
-| Pivot: country and customer, sum and count | 312 ms | 309–352 ms |
+| Group by country, sum and count | 55 ms | 54–57 ms |
+| Group by customer (500 groups), sum | 41 ms | 41–42 ms |
+| Pivot: country and customer, sum and count | 190 ms | 189–201 ms |
 | **Module memory** after the load | **121 MiB** | |
 | of which the columns | 41 MiB | |
 
@@ -200,7 +201,7 @@ What the figures say:
   range over half the table: the filtered window then needs **5.5 s** at ten million rows instead
   of 16 ms. A text search with `contains` reads every row in either database.
 - **Compared with the tab.** A million rows in the engine answer a filter in 15 ms and a grouping
-  in 99 ms, once the page has loaded them (0.44 s, 173 MiB in the engine). The server answers in
+  in 55 ms, once the page has loaded them (0.44 s, 121 MiB in the engine). The server answers in
   the same order of magnitude, puts nothing but the window into the browser, and answers from the
   current data each time.
 

@@ -53,6 +53,13 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Changed
 
+- **Engine:** grouping by text columns with few distinct texts finds a row's group by the codes of
+  its texts instead of building and hashing a key from each text: a million rows grouped by country
+  take 55 ms instead of 101, by customer (500 groups) 41 instead of 107, and the pivot of country
+  and customer 190 instead of 316. Groups come in the same order as before and nothing else
+  changes; columns of other types, flat texts and more than 262,144 combinations of codes group
+  as before
+  ([#465](https://github.com/casoon/opengrid/issues/465)).
 - **Engine, columns:** an exact decimal of up to 18 digits of precision — an amount, a rate, a
   price: `decimal(12, 2)` — keeps its coefficient in eight bytes instead of sixteen; the type
   decides, wider decimals stay as they were. The ten columns of the benchmark table take 43 bytes a

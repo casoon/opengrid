@@ -47,8 +47,11 @@ glue     = "target/peakmark/engine/m.js"
 # 2026-11-17: decimals of up to 18 digits in eight bytes (#450: the storage and its two widths, read
 # through `get`) grew it by 0.9 KiB, to 179939 B; the columns of the ten columns are 8 B a row
 # smaller. Inside the budget, which stays.
+# Raised 2026-11-16 from 180500: grouping by a text dictionary's codes (#465: the key of each
+# distinct text built once, the table of group slots by code) grew it by 1.1 KiB, to 181022 B; a
+# million rows grouped by country take 55 ms instead of 101.
 [module.budget]
-brotli         = "180500 B"
+brotli         = "182000 B"
 peak_memory    = "26 MiB"
 growth_per_run = "0"
 
