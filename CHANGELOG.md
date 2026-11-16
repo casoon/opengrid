@@ -51,6 +51,16 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Changed
 
+- **Engine, columns:** a text column with few distinct texts — a country, a status, a customer of a few
+  hundred — keeps each text once and a code of one or two bytes a row; a column of distinct texts
+  is stored as before. The ten columns of the benchmark table take 51 bytes a row instead of 73,
+  and the module's memory after loading a million of them 128 MiB instead of 173, and 68 instead
+  of 112 when the file is read in pieces. A search or a filter on such a column tests each distinct
+  text once: a text search over a million rows takes 21 ms instead of 47. Loading takes about a
+  tenth longer. No answer changes. **What breaks:** `opengrid_columns::Values::Utf8` holds a
+  `Strs`, a dictionary or a flat column, and not `offsets` and `text`; read it with `Column::str`
+  or `Strs::get`
+  ([#451](https://github.com/casoon/opengrid/issues/451)).
 - **Engine, columns:** an `int64` column stores its values in as few bytes as they need — one for a
   count, four for an id, eight at most — instead of eight each, and so do the columns derived
   from a date. The ten columns of the benchmark table take 73 bytes a row instead of 103, the

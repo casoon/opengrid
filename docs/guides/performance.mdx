@@ -23,38 +23,43 @@ CSV a second.
 |---|---|---|
 | Load the CSV | 59 ms | — |
 | Filter: country and amount, first 100 rows | 1.6 ms | 1.6–3.8 ms |
-| Text search in a column, first 100 rows | 4.1 ms | 4.0–4.6 ms |
+| Text search in a column, first 100 rows | 2.2 ms | 2.1–2.3 ms |
 | Sort by amount, top 100 | 3.0 ms | 2.9–3.4 ms |
 | Group by country, sum and count | 9.6 ms | 9.5–10 ms |
 | Group by customer (500 groups), sum | 10 ms | 10–11 ms |
 | Pivot: country and customer, sum and count | 32 ms | 32–33 ms |
-| **Module memory** after the load | **16.6 MiB** | |
-| of which the columns | 6.9 MiB | |
+| **Module memory** after the load | **13.8 MiB** | |
+| of which the columns | 4.9 MiB | |
 
 | 1,000,000 rows (CSV 74.6 MB) | Median | Range |
 |---|---|---|
 | Load the CSV | 0.44 s | — |
-| Filter: country and amount, first 100 rows | 15 ms | 15–16 ms |
-| Text search in a column, first 100 rows | 40 ms | 39–40 ms |
+| Filter: country and amount, first 100 rows | 14 ms | 14–15 ms |
+| Text search in a column, first 100 rows | 21 ms | 21 ms |
 | Sort by amount, top 100 | 26 ms | 25–26 ms |
 | Group by country, sum and count | 99 ms | 99–101 ms |
 | Group by customer (500 groups), sum | 105 ms | 105–106 ms |
 | Pivot: country and customer, sum and count | 312 ms | 309–352 ms |
-| **Module memory** after the load | **173 MiB** | |
-| of which the columns | 69 MiB | |
+| **Module memory** after the load | **128 MiB** | |
+| of which the columns | 49 MiB | |
 
 Ten times the rows cost about ten times the time and about nine times the memory: the engine
 scans typed columns, and nothing in these queries grows faster than the data.
 
 ## Two numbers for the engine's memory
 
-The **columns** — the data itself, typed — take 6.9 MiB for 100,000 rows and 69 MiB for a
-million: about seventy bytes a row for these ten columns and the three derived from them. An
+The **columns** — the data itself, typed — take 4.9 MiB for 100,000 rows and 49 MiB for a
+million: about fifty bytes a row for these ten columns and the three derived from them. An
 integer takes as many bytes as its largest value needs — one for a count of 0–39, four for an id up
-to a million, eight at most — and stays an integer; an exact decimal stays exact, a timestamp keeps
-its microseconds, and a missing value costs a bit in a bitmap rather than a boxed object.
+to a million, eight at most — and stays an integer. A text column with few distinct texts (a
+country, a status, a customer of a few hundred) keeps each text once and a code of one or two bytes
+a row; a column of distinct texts stays as it was. A filter or a search on such a column tests each
+distinct text once, not each row, which is why the search above takes half the time. An exact
+decimal stays exact, a timestamp keeps its microseconds, and a missing value costs a bit in a
+bitmap rather than a boxed object. The price is on the way in: loading takes about a tenth longer,
+for the lookup of every text.
 
-The **module memory** is larger, 16.6 and 173 MiB, because it also holds the room that reading
+The **module memory** is larger, 13.8 and 128 MiB, because it also holds the room that reading
 the CSV needed — the file's copy in the module, 71 MiB for the million rows — and WebAssembly
 memory only grows. That is the number a page pays, and the one the engine's budget guards:
 `peakmark.toml` fails a release whose scenario (100,000 rows loaded, queried and pivoted) needs
@@ -62,7 +67,7 @@ more than 26 MiB, or leaks from one run to the next. The queries add nothing to 
 all of them leave it where the load put it.
 
 A file loaded **piece by piece** (`loadStream`, 4 MiB at a time) does not need the copy: the same
-million rows leave the module at 112 MiB after the load and after the queries, which take their
+million rows leave the module at 68 MiB after the load and after the queries, which take their
 temporaries from the same room.
 
 The numbers are the same in the tab and on a server, because it is the same code.
@@ -81,8 +86,8 @@ its own: a page that holds a million JavaScript objects pays for them on top.
 
 So the engine is **compact, not free**: it keeps its own typed copy of the data — about 160 MiB
 for a million rows, 140 when the file is read in pieces (these two figures and the table are from
-before the integers took only the bytes they need, which took 26 MiB off the module of a million
-rows) — next to whatever the page holds.
+before the integers and the texts were stored compactly, which took 71 MiB off the module of a
+million rows) — next to whatever the page holds.
 
 A page that has its rows as JavaScript objects hands them over with `loadRows`, which turns them
 into typed columns in pieces of 65,536 rows and does not make a JSON text of the table. Measured
