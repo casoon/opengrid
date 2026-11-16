@@ -33,6 +33,10 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Added
 
+- **Engine:** the WebAssembly engine reads rows as packs of typed columns: `begin_columns`,
+  `push_columns`, `end_columns` and `abort_columns`, as it reads CSV in pieces. An engine module
+  without them still loads rows, as JSON text
+  ([#445](https://github.com/casoon/opengrid/issues/445)).
 - **Package, engine:** a CSV file can be read piece by piece: `provider.loadStream(name, source, schema, { chunkSize? })` on the worker and the local provider takes a `File`/`Blob`, a `ReadableStream` of bytes or an async iterable, and the engine module has `begin_csv`, `push_csv`, `end_csv` and `abort_csv` (Rust: `ingest::CsvLoader`). Only a piece and the columns are in memory, not the whole file as well: a 43 MB file loaded from a `fetch` stream takes about 30 MiB less in the browser than `load` of its bytes (the engine's module 118 MiB instead of 78–90 MiB). The pieces may end anywhere; the table, the errors and their line numbers are those of the whole file (#427). [Data you already have](docs/guides/data-you-have.md) has a section on it.
 - **Columns:** `ColumnBuilder` has typed pushes, `push_bool`, `push_i64`, `push_f64`,
   `push_decimal`, `push_date` and `push_timestamp`, for a cell that has just been read as that type.
@@ -45,6 +49,12 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Changed
 
+- **Package, engine:** `loadRows` of an array of objects hands them over as typed columns, in packs of
+  65,536 rows, instead of as one JSON text. A million rows reach the first rows in 0.27 s instead
+  of 1.2 s, and the page holds 386 MiB instead of 847; 100,000 rows in 0.1 s instead of 0.17 s and
+  128 MiB instead of 158. The table and every refusal are the same, and anything that is not
+  plain still goes as JSON text. See [Data you already have](docs/guides/data-you-have.md)
+  ([#445](https://github.com/casoon/opengrid/issues/445)).
 - **Engine:** a CSV file loads in less than half the time: a million rows of ten columns in
   0.44 s instead of 1.0 s, 100,000 in 59 ms instead of 118, and a file read piece by piece
   (`loadStream`) in 0.5 s instead of 1.1 s. The tables and the errors are the same

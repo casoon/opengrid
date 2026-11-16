@@ -33,7 +33,7 @@ use std::task::{Context, Poll, Waker};
 use opengrid_datasource::{DataSource, DataSourceCapabilities, QueryResult};
 use opengrid_engine::datasource::LocalDataSource;
 use opengrid_engine::ingest::{
-    CsvLoader, CsvOptions, load_csv as read_csv, load_json as read_json,
+    ColumnsLoader, CsvLoader, CsvOptions, load_csv as read_csv, load_json as read_json,
 };
 use opengrid_planner::ExecutionMode;
 use opengrid_query::{Limits, Query};
@@ -128,6 +128,9 @@ pub struct Engine {
     sources: HashMap<String, LocalDataSource>,
     /// The CSV file being read in pieces (`begin_csv`), with the name it will be registered under.
     pending: Option<(String, CsvLoader)>,
+    /// The rows being read as packs of columns (`begin_columns`), with the name they will be
+    /// registered under.
+    pending_columns: Option<(String, ColumnsLoader)>,
 }
 
 #[wasm_bindgen]
@@ -138,6 +141,7 @@ impl Engine {
         Engine {
             sources: HashMap::new(),
             pending: None,
+            pending_columns: None,
         }
     }
 
@@ -199,6 +203,42 @@ impl Engine {
     #[wasm_bindgen(js_name = end_csv)]
     pub fn end_csv_js(&mut self) -> Result<(), JsError> {
         self.end_csv().map_err(|message| JsError::new(&message))
+    }
+
+    /// Starts reading the rows a page holds as packs of typed columns (issue #445): `push_columns`
+    /// for each pack, then `end_columns`. `rows` is the number of rows of the whole table; the
+    /// columns are sized by it. The format of a pack is in `opengrid_engine::ingest`. Rows begun
+    /// before and not ended are dropped. An error here or later sends the page to `load_rows`,
+    /// which owns every message.
+    #[wasm_bindgen(js_name = begin_columns)]
+    pub fn begin_columns_js(
+        &mut self,
+        name: &str,
+        schema_json: &str,
+        rows: f64,
+    ) -> Result<(), JsError> {
+        self.begin_columns(name, schema_json, rows)
+            .map_err(|message| JsError::new(&message))
+    }
+
+    /// The next pack of the rows `begin_columns` started. A pack that does not hold ends the
+    /// reading: nothing is registered.
+    #[wasm_bindgen(js_name = push_columns)]
+    pub fn push_columns_js(&mut self, pack: &[u8]) -> Result<(), JsError> {
+        self.push_columns(pack)
+            .map_err(|message| JsError::new(&message))
+    }
+
+    /// Drops the rows `begin_columns` started, nothing registered. Nothing to drop is not an
+    /// error.
+    pub fn abort_columns(&mut self) {
+        self.pending_columns = None;
+    }
+
+    /// The end of the rows: registers the source, replacing one of that name.
+    #[wasm_bindgen(js_name = end_columns)]
+    pub fn end_columns_js(&mut self) -> Result<(), JsError> {
+        self.end_columns().map_err(|message| JsError::new(&message))
     }
 
     /// Registers a source from rows the page already holds (issue #182): a
@@ -355,6 +395,47 @@ impl Engine {
     pub fn end_csv(&mut self) -> Result<(), String> {
         let Some((name, loader)) = self.pending.take() else {
             return Err("end_csv without begin_csv".to_owned());
+        };
+        let table = loader.finish().map_err(|error| error.to_string())?;
+        self.sources.insert(name, LocalDataSource::new(table));
+        Ok(())
+    }
+
+    /// [`Engine::begin_columns_js`] without the `JsError`.
+    pub fn begin_columns(
+        &mut self,
+        name: &str,
+        schema_json: &str,
+        rows: f64,
+    ) -> Result<(), String> {
+        self.pending_columns = None;
+        let id = DataSourceId::new(name).map_err(|error| format!("source {name:?}: {error}"))?;
+        let schema =
+            schema_json::from_json(schema_json).map_err(|error| format!("schema: {error}"))?;
+        if !(0.0..=4_294_967_295.0).contains(&rows) || rows.fract() != 0.0 {
+            return Err(format!("{rows} is not a number of rows"));
+        }
+        let loader =
+            ColumnsLoader::new(&schema, rows as usize).map_err(|error| error.to_string())?;
+        self.pending_columns = Some((id.as_str().to_owned(), loader));
+        Ok(())
+    }
+
+    /// [`Engine::push_columns_js`] without the `JsError`.
+    pub fn push_columns(&mut self, pack: &[u8]) -> Result<(), String> {
+        let Some((_, loader)) = &mut self.pending_columns else {
+            return Err("push_columns without begin_columns".to_owned());
+        };
+        loader.feed(pack).map_err(|error| {
+            self.pending_columns = None;
+            error.to_string()
+        })
+    }
+
+    /// [`Engine::end_columns_js`] without the `JsError`.
+    pub fn end_columns(&mut self) -> Result<(), String> {
+        let Some((name, loader)) = self.pending_columns.take() else {
+            return Err("end_columns without begin_columns".to_owned());
         };
         let table = loader.finish().map_err(|error| error.to_string())?;
         self.sources.insert(name, LocalDataSource::new(table));

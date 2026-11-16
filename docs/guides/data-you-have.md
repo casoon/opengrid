@@ -16,6 +16,13 @@ notation of a result: decimals as strings, dates as `YYYY-MM-DD`, `null` for a m
 schema is required — ingest never guesses a type — and the engine reads the rows as it reads the
 same data from a CSV file, so a query answers the same either way.
 
+The rows do not travel as one JSON text. The provider turns them into typed columns — numbers as
+numbers, text as bytes, in packs of 65,536 rows — and the engine appends each pack to its columns,
+so no text of the whole table is made, held or read a second time. Anything that is not plain goes
+the old way, as JSON text, which names what is wrong with it: a bigint, a number that is not exact
+or not finite, a text that is not well formed, a key the schema does not have, a list column. The
+table is the same either way, and so is every refusal.
+
 ## A big file
 
 `load` takes the whole file as bytes, and the engine's memory holds the file next to the columns it

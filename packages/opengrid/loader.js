@@ -193,6 +193,15 @@ export function createWorkerProvider({
 
   const watchers = createWatchers();
 
+  // Rows as packs of columns (issue #445): to the worker, which owns the engine.
+  const loadRowsAsColumns = columnLoader({
+    all: (name, schema, rows, pack) => request({ type: "columns", name, schema, rows, pack }, [pack]),
+    begin: (name, schema, rows) => request({ type: "columns_begin", name, schema, rows }),
+    push: (pack) => request({ type: "columns_chunk", pack }, [pack]),
+    end: () => request({ type: "columns_end" }),
+    abort: () => request({ type: "columns_abort" }),
+  });
+
   function start() {
     if (!worker) {
       // Written out in full: the `new Worker(new URL(…, import.meta.url), …)` form
@@ -246,7 +255,9 @@ export function createWorkerProvider({
      */
     async loadRows(name, rows, schema) {
       await start();
-      await request({ type: "rows", name, rows: rowsJson(rows), schema });
+      if (!(await loadRowsAsColumns(name, rows, schema))) {
+        await request({ type: "rows", name, rows: rowsJson(rows), schema });
+      }
       watchers.loaded(name);
     },
 
@@ -445,6 +456,262 @@ function rowsJson(rows) {
   return typeof rows === "string" ? rows : JSON.stringify(rows);
 }
 
+// ---------------------------------------------------------------------------------------------
+// Rows as columns (issue #445)
+//
+// An array of objects is handed to the engine as packs of typed columns, not as one JSON text:
+// no text of the whole table on the main thread, in the worker and in the module, and no second
+// reading of it. The format of a pack is in `crates/opengrid-engine/src/ingest/columns.rs`.
+//
+// The table has to be the table the JSON route makes of the same rows, so only what is plain is
+// sent this way. A value that is not, an unknown key, a column the engine does not read from
+// columns, or any error of the engine ends it, the engine drops what it had, and `loadRows` runs
+// the JSON route, which owns every message.
+// ---------------------------------------------------------------------------------------------
+
+/** Rows per pack: a bound on what is in flight at once, as the pieces of `loadStream` are. */
+const PACK_ROWS = 65536;
+const textEncoder = new TextEncoder();
+
+/** What the columns of `schema` are, or `null` when this way is not for these rows. */
+function columnPlan(rows, schema) {
+  // A text that is not well formed is not what `JSON.stringify` and the JSON reader would make of
+  // it; a browser that cannot say takes the JSON route.
+  if (!Array.isArray(rows) || rows.length === 0 || typeof "".isWellFormed !== "function") {
+    return null;
+  }
+  let fields;
+  try {
+    fields = JSON.parse(schema)?.fields;
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(fields)) {
+    return null;
+  }
+  const kinds = { bool: "bool", int64: "int", float64: "float", utf8: "utf8", date: "date", timestamp: "timestamp" };
+  const stored = [];
+  for (const field of fields) {
+    if (field?.from !== undefined && field?.from !== null) {
+      continue; // derived: computed by the engine, never sent
+    }
+    const kind = field?.type?.decimal ? "decimal" : kinds[field?.type];
+    if (typeof field?.name !== "string" || kind === undefined) {
+      return null; // a list column, or a schema the engine will explain
+    }
+    stored.push({ name: field.name, kind });
+  }
+  return stored.length > 0 ? stored : null;
+}
+
+/**
+ * One pack: rows `from` to `to` as typed columns, or `null` when a value is not plain.
+ * Plain is what the JSON route reads the same way: a boolean in a bool column, a safe integer
+ * in an int64, a finite number in a float64, a string in a text, date or timestamp column, a
+ * string or an integer in a decimal; `null` and a missing key are NULL.
+ */
+function packOf(rows, from, to, stored) {
+  const n = to - from;
+  const pad = (size) => (size + 7) & ~7;
+  const bitsLength = Math.ceil(n / 8);
+  const sections = [];
+  // The keys of a row against the keys the schema has: a row with a key it does not know is the
+  // JSON route's, which names the key. `present` counts the keys of the schema a row has.
+  const present = new Uint16Array(n);
+  const plain = Object.prototype;
+  for (let i = 0; i < n; i += 1) {
+    const row = rows[from + i];
+    if (row === null || typeof row !== "object" || Object.getPrototypeOf(row) !== plain) {
+      return null;
+    }
+  }
+  for (const { name, kind } of stored) {
+    let bits = null; // the validity bitmap, made at the first NULL
+    const missing = (i) => {
+      bits ??= new Uint8Array(bitsLength).fill(255);
+      bits[i >> 3] &= ~(1 << (i & 7));
+    };
+    if (kind === "bool") {
+      const values = new Uint8Array(n);
+      for (let i = 0; i < n; i += 1) {
+        const value = rows[from + i][name];
+        if (value === undefined) {
+          missing(i);
+          continue;
+        }
+        present[i] += 1;
+        if (value === null) {
+          missing(i);
+        } else if (typeof value === "boolean") {
+          values[i] = value ? 1 : 0;
+        } else {
+          return null;
+        }
+      }
+      sections.push({ bits, payload: values, text: null });
+    } else if (kind === "int" || kind === "float") {
+      const values = new Float64Array(n);
+      for (let i = 0; i < n; i += 1) {
+        const value = rows[from + i][name];
+        if (value === undefined) {
+          missing(i);
+          continue;
+        }
+        present[i] += 1;
+        if (value === null) {
+          missing(i);
+        } else if (
+          typeof value === "number" &&
+          (kind === "int" ? Number.isSafeInteger(value) : Number.isFinite(value))
+        ) {
+          // JSON writes -0 as 0.
+          values[i] = value === 0 ? 0 : value;
+        } else {
+          return null;
+        }
+      }
+      sections.push({ bits, payload: new Uint8Array(values.buffer), text: null });
+    } else {
+      // Text, and what the engine reads from text: a decimal, a date, a timestamp.
+      const offsets = new Uint32Array(n + 1);
+      let bytes = new Uint8Array(Math.max(256, n * 12));
+      let at = 0;
+      for (let i = 0; i < n; i += 1) {
+        let value = rows[from + i][name];
+        if (value === undefined) {
+          missing(i);
+          offsets[i + 1] = at;
+          continue;
+        }
+        present[i] += 1;
+        if (value === null) {
+          missing(i);
+          offsets[i + 1] = at;
+          continue;
+        }
+        if (kind === "decimal" && typeof value === "number" && Number.isSafeInteger(value)) {
+          value = String(value);
+        }
+        if (typeof value !== "string") {
+          return null;
+        }
+        const length = value.length;
+        if (at + length * 3 > bytes.length) {
+          const grown = new Uint8Array(Math.max(bytes.length * 2, at + length * 3));
+          grown.set(bytes.subarray(0, at));
+          bytes = grown;
+        }
+        // ASCII, which most text is, is copied as it is; the rest is encoded, if it is well formed.
+        let ascii = true;
+        for (let j = 0; j < length; j += 1) {
+          const code = value.charCodeAt(j);
+          if (code > 127) {
+            ascii = false;
+            break;
+          }
+          bytes[at + j] = code;
+        }
+        if (ascii) {
+          at += length;
+        } else if (value.isWellFormed()) {
+          at += textEncoder.encodeInto(value, bytes.subarray(at)).written;
+        } else {
+          return null;
+        }
+        offsets[i + 1] = at;
+      }
+      sections.push({ bits, payload: new Uint8Array(offsets.buffer), text: bytes.subarray(0, at) });
+    }
+  }
+  for (let i = 0; i < n; i += 1) {
+    let keys = 0;
+    for (const _key in rows[from + i]) {
+      keys += 1;
+    }
+    if (keys !== present[i]) {
+      return null;
+    }
+  }
+  // The pack: the header, then each column's section from a multiple of 8.
+  let total = pad(4 + 8 * stored.length);
+  const starts = sections.map((section) => {
+    const start = total;
+    total += pad((section.bits ? pad(bitsLength) : 0) + section.payload.length + (section.text?.length ?? 0));
+    return start;
+  });
+  const pack = new ArrayBuffer(total);
+  const view = new DataView(pack);
+  const all = new Uint8Array(pack);
+  view.setUint32(0, n, true);
+  sections.forEach((section, index) => {
+    view.setUint32(4 + 8 * index, section.bits ? 1 : 0, true);
+    view.setUint32(8 + 8 * index, section.text?.length ?? 0, true);
+    let at = starts[index];
+    if (section.bits) {
+      all.set(section.bits, at);
+      at += pad(bitsLength);
+    }
+    all.set(section.payload, at);
+    if (section.text) {
+      all.set(section.text, at + section.payload.length);
+    }
+  });
+  return pack;
+}
+
+/**
+ * Loads `rows` as packs of columns through `io`, or says that it did not (`false`): the rows are
+ * not plain, or the engine refused them or does not know the calls. The engine holds nothing of
+ * them then, and the caller takes the JSON route.
+ */
+async function loadColumns(name, rows, schema, io) {
+  const stored = columnPlan(rows, schema);
+  if (!stored) {
+    return false;
+  }
+  try {
+    if (rows.length <= PACK_ROWS) {
+      const pack = packOf(rows, 0, rows.length, stored);
+      if (!pack) {
+        return false;
+      }
+      await io.all(name, schema, rows.length, pack);
+      return true;
+    }
+    await io.begin(name, schema, rows.length);
+    for (let from = 0; from < rows.length; from += PACK_ROWS) {
+      const pack = packOf(rows, from, Math.min(rows.length, from + PACK_ROWS), stored);
+      if (!pack) {
+        await io.abort();
+        return false;
+      }
+      await io.push(pack);
+    }
+    await io.end();
+    return true;
+  } catch {
+    try {
+      await io.abort();
+    } catch {
+      // Nothing to drop, or no engine to ask: the JSON route is next either way.
+    }
+    return false;
+  }
+}
+
+/**
+ * [`loadColumns`] one at a time: the engine keeps one set of rows in the making, so two loads
+ * must not interleave their packs.
+ */
+function columnLoader(io) {
+  let queue = Promise.resolve();
+  return (name, rows, schema) => {
+    const run = queue.then(() => loadColumns(name, rows, schema, io));
+    queue = run.catch(() => {});
+    return run;
+  };
+}
+
 /**
  * A provider over an engine that is already initialised on the main thread.
  *
@@ -456,6 +723,18 @@ function rowsJson(rows) {
  */
 export function createLocalProvider(engine) {
   const watchers = createWatchers();
+  // Rows as packs of columns (issue #445); an engine module without the calls takes the JSON route.
+  const loadRowsAsColumns = columnLoader({
+    all: async (name, schema, rows, pack) => {
+      engine.begin_columns(name, schema, rows);
+      engine.push_columns(new Uint8Array(pack));
+      engine.end_columns();
+    },
+    begin: async (name, schema, rows) => engine.begin_columns(name, schema, rows),
+    push: async (pack) => engine.push_columns(new Uint8Array(pack)),
+    end: async () => engine.end_columns(),
+    abort: async () => engine.abort_columns(),
+  });
   return {
     /** Where the queries run; the grid names it in its footer (issue #33). */
     kind: "local",
@@ -481,7 +760,9 @@ export function createLocalProvider(engine) {
       watchers.loaded(name);
     },
     async loadRows(name, rows, schema) {
-      engine.load_rows(name, rowsJson(rows), schema);
+      if (!(await loadRowsAsColumns(name, rows, schema))) {
+        engine.load_rows(name, rowsJson(rows), schema);
+      }
       watchers.loaded(name);
     },
     watch(host) {

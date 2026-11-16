@@ -79,9 +79,13 @@ its own: a page that holds a million JavaScript objects pays for them on top.
 | 1,000,000 | 43 MB | 172–175 MiB | 142–145 MiB |
 
 So the engine is **compact, not free**: it keeps its own typed copy of the data — about 160 MiB
-for a million rows, 140 when the file is read in pieces — next to whatever the page holds. Handing
-it JavaScript objects (`loadRows`) makes it serialise them once, which costs time and memory that
-a CSV does not.
+for a million rows, 140 when the file is read in pieces — next to whatever the page holds.
+
+A page that has its rows as JavaScript objects hands them over with `loadRows`, which turns them
+into typed columns in pieces of 65,536 rows and does not make a JSON text of the table. Measured
+the same way, on a page that generates its million objects itself (so the objects are in the
+figure): 386 MiB, 1,000,000 rows, and the first rows on screen after 0.27 s. Before, as one JSON
+text, it was 847 MiB and 1.2 s; for 100,000 rows 128 MiB and 0.1 s against 158 MiB and 0.17 s.
 
 **Using the grid adds to that once, not each time.** After the first scroll through the table the
 same process tree holds about 55 MiB more, for 100,000 rows and for a million alike: it is what
