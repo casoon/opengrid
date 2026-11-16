@@ -47,6 +47,9 @@ pub struct SortKey<'a> {
 pub struct SortKeys {
     bytes: Vec<u8>,
     ends: Vec<usize>,
+    /// For a column of few distinct texts (issue #467): the key of each distinct text is in
+    /// `bytes`/`ends`, and row `i` has the key `codes[i]`.
+    codes: Option<Vec<u32>>,
 }
 
 impl SortKeys {
@@ -54,26 +57,37 @@ impl SortKeys {
         Self {
             bytes: Vec::new(),
             ends: Vec::with_capacity(rows),
+            codes: None,
         }
     }
 
-    /// Appends the key of the next row.
+    /// Appends the key of the next row (or of the next distinct text, for [`Self::by_codes`]).
     pub fn push(&mut self, key: &[u8]) {
         self.bytes.extend_from_slice(key);
         self.ends.push(self.bytes.len());
     }
 
+    /// These keys, one per distinct text, shared by the rows: row `i` has the key `codes[i]`.
+    pub fn by_codes(self, codes: Vec<u32>) -> Self {
+        Self {
+            codes: Some(codes),
+            ..self
+        }
+    }
+
+    /// The number of rows.
     pub fn len(&self) -> usize {
-        self.ends.len()
+        self.codes.as_ref().map_or(self.ends.len(), Vec::len)
     }
 
     pub fn is_empty(&self) -> bool {
-        self.ends.is_empty()
+        self.len() == 0
     }
 
     pub fn get(&self, row: usize) -> &[u8] {
-        let start = if row == 0 { 0 } else { self.ends[row - 1] };
-        &self.bytes[start..self.ends[row]]
+        let key = self.codes.as_ref().map_or(row, |codes| codes[row] as usize);
+        let start = if key == 0 { 0 } else { self.ends[key - 1] };
+        &self.bytes[start..self.ends[key]]
     }
 }
 

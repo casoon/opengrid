@@ -74,6 +74,8 @@ temporaries from the same room.
 
 The numbers are the same in the tab and on a server, because it is the same code.
 
+A sort by a **locale** (`"collation": "de"`) asks the collator for a sort key of each distinct text, not of each row, when the column has few of them. A million rows by `customer` (500 texts) take 17 ms for the first 100 rows and 114 ms for rows 500,000 on, against 15 and 77 ms for the binary order (16 November 2026, same machine; before, 501 and 609 ms).
+
 ## What the whole page holds
 
 The engine's own memory is not what the browser shows. Measured in Chromium, the engine in a

@@ -19,8 +19,8 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use opengrid_columns::Column;
 use opengrid_columns::sort::SortKeys;
+use opengrid_columns::{Column, Values};
 
 /// Makes the sort keys of a locale.
 pub trait Collator {
@@ -53,6 +53,18 @@ pub fn available() -> bool {
 /// empty string, which nothing reads.
 pub(crate) fn sort_keys(locale: &str, column: &Column) -> Result<SortKeys, String> {
     let rows = column.len();
+    // A column of few distinct texts is asked once per distinct text; its rows share the keys. The
+    // row of a NULL holds the empty text, which the dictionary has (issue #467).
+    if let Values::Utf8(strs) = column.values()
+        && let Some(distinct) = strs.distinct()
+    {
+        let mut texts = (0..distinct).map(|code| strs.dictionary_text(code).unwrap_or(""));
+        let keys = make(locale, &mut texts, distinct)?;
+        let codes = (0..rows)
+            .map(|row| strs.code(row).map_or(0, |code| code as u32))
+            .collect();
+        return Ok(keys.by_codes(codes));
+    }
     let mut texts = (0..rows).map(|row| {
         if column.is_null(row) {
             ""
@@ -60,15 +72,24 @@ pub(crate) fn sort_keys(locale: &str, column: &Column) -> Result<SortKeys, Strin
             column.str(row)
         }
     });
-    let mut keys = SortKeys::with_capacity(rows);
+    make(locale, &mut texts, rows)
+}
+
+/// `count` keys from the installed collator, or from the one built in.
+fn make(
+    locale: &str,
+    texts: &mut dyn Iterator<Item = &str>,
+    count: usize,
+) -> Result<SortKeys, String> {
+    let mut keys = SortKeys::with_capacity(count);
     let installed = INSTALLED.with(|installed| installed.borrow().clone());
     match installed {
-        Some(collator) => collator.sort_keys(locale, &mut texts, &mut keys)?,
-        None => built_in(locale, &mut texts, &mut keys)?,
+        Some(collator) => collator.sort_keys(locale, texts, &mut keys)?,
+        None => built_in(locale, texts, &mut keys)?,
     }
-    if keys.len() != rows {
+    if keys.len() != count {
         return Err(format!(
-            "the collator made {} keys for {rows} rows",
+            "the collator made {} keys for {count} rows",
             keys.len()
         ));
     }
