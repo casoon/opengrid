@@ -102,6 +102,42 @@ JavaScript heap and the number of elements in the grid stay where the load left 
 filtering add nothing measurable, and ten more rounds of sort, filter and scroll add about 15 MiB
 before it levels off.
 
+## Loading again
+
+WebAssembly memory grows and is never handed back to the browser. Inside the module, the
+allocator reuses what a table frees, so a page that loads again stays at its **high-water mark**
+instead of growing with each load. That high-water mark is set by how a page loads.
+
+Measured on 16 November 2026 in Chromium on the same M4 Pro with `scripts/measure-reload.mjs`.
+The engine runs in a worker, and each load is a million rows of the shape above. The table shows
+the engine's memory (`stats().memory`) and the physical footprint of the browser's whole process
+tree, minus the page with its CSV already fetched. Each row is a single run.
+
+| Ten loads of 1,000,000 rows | Engine, after load 1 → 10 | Browser, after load 10 |
+|---|---|---|
+| Same name, `load` of the bytes | 173 → 251 MiB, flat from load 2 | 320 MiB |
+| Same name, `loadStream` | 112 → 214 MiB, flat from load 3 | 210–295 MiB |
+| Ten names, `loadStream` | 112 → 844 MiB, +82 MiB a table | 826 MiB |
+| Same name, `unload` before each `loadStream` | 112 MiB, flat from load 1 | 126–221 MiB |
+| Same name ten times, then `terminate()` | — | 5 MiB |
+
+- **A name loaded again replaces its table, all or nothing.** The new table is built in full
+  before the old one goes, so a load that fails keeps the old data. For that moment both tables
+  are in memory, and the high-water mark is about two tables. Fragmentation adds nothing
+  measurable: two tables of 112 MiB leave 214 MiB.
+- **Another name keeps the old table.** A page that switches between data sets under new names
+  adds them up, until it lets one go with `unload(name)`.
+- **`unload` before a load keeps the mark at one table.** The table goes first, and the load takes
+  its room. The price is that there is no data while the load runs, and none if it fails. A grid on
+  the name answers a query in between with an unknown source.
+- **`terminate()` hands everything back.** It stops the worker, and its memory goes with it. A
+  new provider that loads and answers once took 0.54 s, against 0.51 s for the same load into a
+  worker already running. A page that is done with a data set can start over that cheaply.
+
+So a page that loads data again and again uses one name and `loadStream`. It calls `unload` first
+when one table's room matters more than keeping the old data until the new data is there. It ends
+the worker when it is done with all of it. The server mode keeps only the window in the browser.
+
 ## What a page pays
 
 The engine is a module the page loads before its first query. Compressed with Brotli:
@@ -195,4 +231,8 @@ The first run writes the rows (`bench_orders_<rows>` in the database,
 ```sh
 just wasm-build
 node scripts/measure-queries.mjs --rows 100000,1000000 --runs 9
+
+# Loading again, in Chromium (the engine and the elements as the package ships them)
+just wasm-build packages/opengrid/engine && just wasm-build-components
+node scripts/measure-reload.mjs --rows 1000000 --loads 10
 ```

@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>opengrid reload bench</title>
+  </head>
+  <body>
+    <script type="module">
+      // Issue #459: what a page's memory does when the engine in a worker loads
+      // a million rows again and again. The page only sets up and exposes
+      // `window.bench`; scripts/measure-reload.mjs drives and measures it.
+      import { createWorkerProvider } from "/packages/opengrid/loader.js";
+
+      let bytes;
+      let schema;
+      let provider;
+      window.bench = {
+        /**
+         * Fetches the CSV the script wrote (the rows of scripts/measure-queries.mjs), so
+         * the page makes no garbage of its own; the engine is not started yet.
+         */
+        async prepare(file) {
+          schema = await (await fetch("/crates/opengrid-conformance/data/orders.schema.json")).text();
+          bytes = new Uint8Array(await (await fetch(file)).arrayBuffer());
+          return bytes.length;
+        },
+        start() {
+          provider = createWorkerProvider();
+        },
+        /** `bytes`: `load` of a copy (it is transferred); `stream`: `loadStream` of a Blob. */
+        async load(name, how) {
+          const started = performance.now();
+          if (how === "bytes") await provider.load(name, bytes.slice(), schema);
+          else await provider.loadStream(name, new Blob([bytes]), schema);
+          return performance.now() - started;
+        },
+        async query(name) {
+          const started = performance.now();
+          await provider.execute(
+            JSON.stringify({
+              source: name,
+              select: ["id", "customer", "amount"],
+              filter: { field: "country", op: "eq", value: "DE" },
+              sort: [{ field: "amount", direction: "desc" }],
+              limit: 40,
+            }),
+          );
+          return performance.now() - started;
+        },
+        unload(name) {
+          return provider.unload(name);
+        },
+        stats() {
+          return provider.stats();
+        },
+        terminate() {
+          provider.terminate();
+          provider = undefined;
+        },
+      };
+      document.title = "ready";
+    </script>
+  </body>
+</html>

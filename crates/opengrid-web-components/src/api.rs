@@ -39,8 +39,9 @@ const REST_PROVIDER_METHODS: [&str; 6] = [
 ];
 
 /// The methods of the two engine providers — `stats` is what the engine holds
-/// (issue #70). The same list for both: a page swaps one for the other.
-const ENGINE_PROVIDER_METHODS: [&str; 8] = [
+/// (issue #70), `unload` frees one source (issue #459). The same list for both:
+/// a page swaps one for the other.
+const ENGINE_PROVIDER_METHODS: [&str; 9] = [
     "execute",
     "load",
     "loadRows",
@@ -48,6 +49,7 @@ const ENGINE_PROVIDER_METHODS: [&str; 8] = [
     "pivot",
     "stats",
     "terminate",
+    "unload",
     "watch",
 ];
 
@@ -425,8 +427,8 @@ loader exports
 
 provider methods
   createRestProvider: describe execute export exportPivot terminate watch
-  createWorkerProvider: execute load loadRows loadStream pivot stats terminate watch
-  createLocalProvider: execute load loadRows loadStream pivot stats terminate watch
+  createWorkerProvider: execute load loadRows loadStream pivot stats terminate unload watch
+  createLocalProvider: execute load loadRows loadStream pivot stats terminate unload watch
 
 error fields
   status code path
