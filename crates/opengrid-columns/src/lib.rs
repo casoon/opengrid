@@ -20,6 +20,7 @@
 
 mod bitmap;
 mod column;
+mod decimals;
 mod ints;
 pub mod sort;
 mod strs;
@@ -28,6 +29,7 @@ pub mod wire;
 
 pub use bitmap::Bitmap;
 pub use column::{Column, ColumnBuilder, Values};
+pub use decimals::Decimals;
 pub use ints::Ints;
 pub use strs::{Codes, StrBuilder, Strs};
 pub use table::Table;

@@ -28,8 +28,8 @@ CSV a second.
 | Group by country, sum and count | 9.6 ms | 9.5–10 ms |
 | Group by customer (500 groups), sum | 10 ms | 10–11 ms |
 | Pivot: country and customer, sum and count | 32 ms | 32–33 ms |
-| **Module memory** after the load | **13.8 MiB** | |
-| of which the columns | 4.9 MiB | |
+| **Module memory** after the load | **13.2 MiB** | |
+| of which the columns | 4.1 MiB | |
 
 | 1,000,000 rows (CSV 74.6 MB) | Median | Range |
 |---|---|---|
@@ -40,26 +40,27 @@ CSV a second.
 | Group by country, sum and count | 99 ms | 99–101 ms |
 | Group by customer (500 groups), sum | 105 ms | 105–106 ms |
 | Pivot: country and customer, sum and count | 312 ms | 309–352 ms |
-| **Module memory** after the load | **128 MiB** | |
-| of which the columns | 49 MiB | |
+| **Module memory** after the load | **121 MiB** | |
+| of which the columns | 41 MiB | |
 
 Ten times the rows cost about ten times the time and about nine times the memory: the engine
 scans typed columns, and nothing in these queries grows faster than the data.
 
 ## Two numbers for the engine's memory
 
-The **columns** — the data itself, typed — take 4.9 MiB for 100,000 rows and 49 MiB for a
-million: about fifty bytes a row for these ten columns and the three derived from them. An
+The **columns** — the data itself, typed — take 4.1 MiB for 100,000 rows and 41 MiB for a
+million: about forty-three bytes a row for these ten columns and the three derived from them. An
 integer takes as many bytes as its largest value needs — one for a count of 0–39, four for an id up
 to a million, eight at most — and stays an integer. A text column with few distinct texts (a
 country, a status, a customer of a few hundred) keeps each text once and a code of one or two bytes
 a row; a column of distinct texts stays as it was. A filter or a search on such a column tests each
 distinct text once, not each row, which is why the search above takes half the time. An exact
-decimal stays exact, a timestamp keeps its microseconds, and a missing value costs a bit in a
+decimal stays exact, and takes eight bytes up to 18 digits of precision, which an amount is
+(`decimal(12, 2)`), and sixteen above, a timestamp keeps its microseconds, and a missing value costs a bit in a
 bitmap rather than a boxed object. The price is on the way in: loading takes about a tenth longer,
 for the lookup of every text.
 
-The **module memory** is larger, 13.8 and 128 MiB, because it also holds the room that reading
+The **module memory** is larger, 13.2 and 121 MiB, because it also holds the room that reading
 the CSV needed — the file's copy in the module, 71 MiB for the million rows — and WebAssembly
 memory only grows. That is the number a page pays, and the one the engine's budget guards:
 `peakmark.toml` fails a release whose scenario (100,000 rows loaded, queried and pivoted) needs
@@ -67,7 +68,7 @@ more than 26 MiB, or leaks from one run to the next. The queries add nothing to 
 all of them leave it where the load put it.
 
 A file loaded **piece by piece** (`loadStream`, 4 MiB at a time) does not need the copy: the same
-million rows leave the module at 68 MiB after the load and after the queries, which take their
+million rows leave the module at 62 MiB after the load and after the queries, which take their
 temporaries from the same room.
 
 The numbers are the same in the tab and on a server, because it is the same code.

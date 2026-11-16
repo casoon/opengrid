@@ -53,6 +53,15 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Changed
 
+- **Engine, columns:** an exact decimal of up to 18 digits of precision — an amount, a rate, a
+  price: `decimal(12, 2)` — keeps its coefficient in eight bytes instead of sixteen; the type
+  decides, wider decimals stay as they were. The ten columns of the benchmark table take 43 bytes a
+  row instead of 51, and the module's memory after loading a million of them 121 MiB instead of
+  128. No answer changes (an exact sum stays exact), and no query gets slower. A coefficient that
+  does not fit the storage is refused when it is pushed, not cut. **What breaks:**
+  `opengrid_columns::Values::Decimal` holds a `Decimals` and not a `Vec<i128>`; read it with
+  `Decimals::get` or `iter`
+  ([#450](https://github.com/casoon/opengrid/issues/450)).
 - **Engine, columns:** a text column with few distinct texts — a country, a status, a customer of a few
   hundred — keeps each text once and a code of one or two bytes a row; a column of distinct texts
   is stored as before. The ten columns of the benchmark table take 51 bytes a row instead of 73,
