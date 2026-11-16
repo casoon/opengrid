@@ -81,6 +81,13 @@ for a million rows, 140 when the file is read in pieces — next to whatever the
 it JavaScript objects (`loadRows`) makes it serialise them once, which costs time and memory that
 a CSV does not.
 
+**Using the grid adds to that once, not each time.** After the first scroll through the table the
+same process tree holds about 55 MiB more, for 100,000 rows and for a million alike: it is what
+Chromium keeps for painting, in its renderer and GPU processes. The engine's memory, the page's
+JavaScript heap and the number of elements in the grid stay where the load left them. Sorting and
+filtering add nothing measurable, and ten more rounds of sort, filter and scroll add about 15 MiB
+before it levels off.
+
 ## What a page pays
 
 The engine is a module the page loads before its first query. Compressed with Brotli:
