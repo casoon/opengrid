@@ -53,6 +53,12 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Changed
 
+- **Engine, columns:** a sort by a locale makes one sort key per distinct text of a column with few
+  of them, and the rows share the keys, instead of one per row: a million rows by `customer` take 17 ms
+  for the first 100 rows with `de` instead of 501 ms, by `country` 16 ms instead of 208. The order is
+  the same. **What breaks:** `opengrid_columns::sort::SortKeys` has a second form (`by_codes`); `len`
+  and `get` read the same
+  ([#467](https://github.com/casoon/opengrid/issues/467)).
 - **Engine:** grouping by text columns with few distinct texts finds a row's group by the codes of
   its texts instead of building and hashing a key from each text: a million rows grouped by country
   take 55 ms instead of 101, by customer (500 groups) 41 instead of 107, and the pivot of country
