@@ -16,10 +16,12 @@ Measured on 14 November 2026 on an **Apple M4 Pro** (arm64), Node 24, with
 fastest and the slowest in brackets. Other programs were running on the machine, so a quiet one
 will be a little faster. The rows are ten columns of the conformance data set's
 shape — integers, text, an exact decimal, a float, a boolean, a date and a timestamp — as CSV.
+The two load times are of 16 November 2026, after the CSV reader's second pass: about 150 MB of
+CSV a second.
 
 | 100,000 rows (CSV 7.4 MB) | Median | Range |
 |---|---|---|
-| Load the CSV | 123 ms | — |
+| Load the CSV | 65 ms | — |
 | Filter: country and amount, first 100 rows | 1.6 ms | 1.6–3.8 ms |
 | Text search in a column, first 100 rows | 4.1 ms | 4.0–4.6 ms |
 | Sort by amount, top 100 | 3.0 ms | 2.9–3.4 ms |
@@ -31,7 +33,7 @@ shape — integers, text, an exact decimal, a float, a boolean, a date and a tim
 
 | 1,000,000 rows (CSV 74.6 MB) | Median | Range |
 |---|---|---|
-| Load the CSV | 1.1 s | — |
+| Load the CSV | 0.5 s | — |
 | Filter: country and amount, first 100 rows | 15 ms | 15–16 ms |
 | Text search in a column, first 100 rows | 40 ms | 39–40 ms |
 | Sort by amount, top 100 | 26 ms | 25–26 ms |
