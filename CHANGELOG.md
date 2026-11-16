@@ -49,6 +49,14 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Changed
 
+- **Engine, columns:** an `int64` column stores its values in as few bytes as they need — one for a
+  count, four for an id, eight at most — instead of eight each, and so do the columns derived
+  from a date. The ten columns of the benchmark table take 73 bytes a row instead of 103, the
+  module's memory after loading a million of them 173 MiB instead of 199, and 112 instead of 140
+  when the file is read in pieces. No answer changes, and no query gets slower. **What breaks:**
+  `opengrid_columns::Values::Int64` holds an `Ints` and not a `Vec<i64>`; read it with
+  `Ints::get`, `iter` or `to_vec`
+  ([#447](https://github.com/casoon/opengrid/issues/447)).
 - **Package, engine:** `loadRows` of an array of objects hands them over as typed columns, in packs of
   65,536 rows, instead of as one JSON text. A million rows reach the first rows in 0.27 s instead
   of 1.2 s, and the page holds 386 MiB instead of 847; 100,000 rows in 0.1 s instead of 0.17 s and
