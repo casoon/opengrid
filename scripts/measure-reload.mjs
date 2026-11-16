@@ -5,6 +5,8 @@
 //   same-bytes    LOADS loads under one name with `load` (the CSV's bytes)
 //   same-stream   LOADS loads under one name with `loadStream`
 //   names-stream  LOADS loads under LOADS names with `loadStream`
+//   unload-stream LOADS loads under one name with `loadStream`, each after
+//                 `unload` of the one before
 //   restart       LOADS loads as same-stream, then `terminate()` and a new
 //                 provider: the memory handed back, and the time to the first
 //                 answer (start, load, query) against a load into a warm worker
@@ -28,7 +30,7 @@ const option = (name, fallback) => {
 };
 const ROWS = Number(option("rows", 1_000_000));
 const LOADS = Number(option("loads", 10));
-const SCENARIOS = option("scenarios", "same-bytes,same-stream,names-stream,restart").split(",");
+const SCENARIOS = option("scenarios", "same-bytes,same-stream,names-stream,unload-stream,restart").split(",");
 const PORT = Number(option("port", 8131));
 const URL = `http://127.0.0.1:${PORT}/tests/bench/reload.html`;
 
@@ -121,6 +123,7 @@ async function run(scenario) {
   console.log("|---|---|---|---|");
   for (let i = 1; i <= LOADS; i++) {
     const name = scenario === "names-stream" ? `orders_${i}` : "orders";
+    if (scenario === "unload-stream") await page.evaluate((n) => window.bench.unload(n), name);
     const time = await page.evaluate(([n, h]) => window.bench.load(n, h), [name, how]);
     const engine = await engineMemory(page);
     const rss = await reading(page, pid);

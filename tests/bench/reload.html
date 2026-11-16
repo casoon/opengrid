@@ -47,6 +47,9 @@
           );
           return performance.now() - started;
         },
+        unload(name) {
+          return provider.unload(name);
+        },
         stats() {
           return provider.stats();
         },

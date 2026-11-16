@@ -273,6 +273,17 @@ export function createWorkerProvider({
     },
 
     /**
+     * Frees the source `name` (issue #459); resolves with whether there was
+     * one. The worker's memory does not shrink, but the next load takes the
+     * room the table had. A grid on the name answers its next query with an
+     * unknown source.
+     */
+    async unload(name) {
+      await start();
+      return request({ type: "unload", name });
+    },
+
+    /**
      * What the engine in the worker holds (issue #70): its WASM memory and,
      * per source, rows, columns and bytes.
      */
@@ -771,6 +782,10 @@ export function createLocalProvider(engine) {
     /** The answer itself, or a promise of it while the collator loads (S4a). */
     execute(queryJson) {
       return withCollator(engine, queryJson, () => engine.execute_columns(queryJson));
+    },
+    /** Frees the source `name` (issue #459), as the worker provider does. */
+    async unload(name) {
+      return engine.unload(name);
     },
     /** What the engine holds (issue #70), as the worker provider says it. */
     async stats() {

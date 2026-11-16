@@ -335,6 +335,15 @@ impl Engine {
     pub fn source_names(&self) -> Vec<String> {
         self.sources.keys().cloned().collect()
     }
+
+    /// Frees the source `name` (issue #459); `true` when there was one. The
+    /// module's memory does not shrink — WebAssembly memory only grows — but
+    /// the next load takes the room the table had, so a page that unloads
+    /// before it loads again needs one table's room, not two.
+    #[wasm_bindgen(js_name = unload)]
+    pub fn unload(&mut self, name: &str) -> bool {
+        self.sources.remove(name).is_some()
+    }
 }
 
 impl Default for Engine {
@@ -840,6 +849,25 @@ mod stats_tests {
         // 2 ints of a byte each (issue #447), 3 offsets and 5 bytes of text, no NULL, no bitmap.
         assert_eq!(sources[1]["bytes"], 2 + 3 * 4 + 5);
         assert!(stats["memory"].as_u64().is_some());
+    }
+
+    /// Issue #459: `unload` frees one source and leaves the others; a query on
+    /// it is then an unknown source, and the name can be loaded again.
+    #[test]
+    fn unload_frees_one_source_and_keeps_the_rest() {
+        let mut engine = Engine::new();
+        let schema = r#"{"fields":[{"name":"n","type":"int64","nullable":false}]}"#;
+        engine.load_csv("a", b"n\n1\n", schema).unwrap();
+        engine.load_csv("b", b"n\n2\n", schema).unwrap();
+        assert!(engine.unload("a"));
+        assert!(!engine.unload("a"));
+        let sources = engine.stats()["sources"].as_array().unwrap().clone();
+        assert_eq!(sources.len(), 1);
+        assert_eq!(sources[0]["name"], "b");
+        let query = r#"{"source":"a","select":["n"]}"#;
+        assert!(engine.execute_result(query).is_err());
+        engine.load_csv("a", b"n\n3\n", schema).unwrap();
+        assert_eq!(engine.execute_result(query).unwrap().row_count(), 1);
     }
 }
 
