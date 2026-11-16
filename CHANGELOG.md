@@ -41,6 +41,9 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Changed
 
+- **Docs:** *What the engine costs* says what using the grid adds to the page's memory: about
+  55 MiB once, the browser's painting, and none of it in the engine
+  ([#428](https://github.com/casoon/opengrid/issues/428)).
 - **Pages:** the figures of *What the engine costs* and of the start page are measured again after the optimisations (#426–#429, #428): a million rows load in 1.1 s instead of 1.3 s, a sort of the first 100 takes 26 ms instead of 52, the module holds 199 MiB instead of 213, and the whole page, with a fetched CSV and no rows of its own, about 175 MiB (145 read in pieces) instead of the 658 MiB the earlier test page showed, which included a million JavaScript objects it kept itself.
 - **Engine:** a sort that asks for a page of a big table (the first 100 of a million rows) keeps the best rows as it reads them instead of building and sorting a pair for every row: sorting a million rows by one key takes 25 ms instead of 51 ms, and the module no longer grows by 51 MiB for it (the memory after the usual queries on a streamed load: 191 MiB before, 149 MiB after). The order is the same, ties by position (#428).
 - **Engine:** loading a CSV file or a JSON array sizes the columns by the number of lines or objects in the text, so each is allocated once instead of grown by doubling. The module's memory, which never shrinks, holds 199 MiB instead of 215 MiB after a million CSV rows (the columns themselves take 98 MiB, the copy of the file 71 MiB) (#427).
