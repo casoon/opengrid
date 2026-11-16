@@ -33,8 +33,12 @@ glue     = "target/peakmark/engine/m.js"
 # Raised 2026-11-14 from 170000: a page of a big table is taken without sorting the table (#428:
 # the bounded selection beside the full sort, once for each key type) grew the engine by 3.6 KiB,
 # to 171901 B; the sort of a million rows takes half the time and 42 MiB less of the module.
+# Raised 2026-11-16 from 173700: rows that arrive as packs of typed columns (#445: the loader that
+# appends a pack to the column builders, with the derived columns, and the four calls on the
+# engine) grew it by 3.7 KiB, to 175703 B; a million row objects reach the first rows in 0.27 s
+# instead of 1.2 s and the page holds 461 MiB less.
 [module.budget]
-brotli         = "173700 B"
+brotli         = "177500 B"
 peak_memory    = "26 MiB"
 growth_per_run = "0"
 

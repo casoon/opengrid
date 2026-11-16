@@ -47,8 +47,11 @@ use opengrid_datasource::QueryResult;
 use opengrid_types::{DataType, Field, FieldName, Schema, Value};
 
 mod cell;
+mod columns;
 mod csv;
 mod json;
+
+pub use columns::ColumnsLoader;
 
 /// How to read a CSV source.
 #[derive(Clone, Debug, PartialEq, Eq)]
