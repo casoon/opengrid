@@ -1,21 +1,26 @@
 ---
 import {
+  AudienceList,
   Badge,
   Badges,
-  Button,
+  BarCompare,
   CallToAction,
   CodeBlock,
-  Facts,
-  Features,
+  Compare,
+  ElementList,
+  FlowPanel,
   Hero,
   Install,
   Quickstart,
-  Spotlight,
+  SectionIntro,
+  Showcase,
+  Split,
+  StatBand,
+  Tradeoffs,
 } from '@casoon/pages-theme/components';
 import Base from '@casoon/pages-theme/layouts/Base.astro';
 import config from 'virtual:casoon-pages/config';
 import { url } from '@casoon/pages-theme/url';
-import Diagram from '../components/Diagram.astro';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { brotliCompressSync, constants } from 'node:zlib';
@@ -52,6 +57,19 @@ const page = `<opengrid-grid label="Orders" datasource="orders"
     provider: createRestProvider({ url: "https://example.org", source: "orders", token: "…" }),
   });
 </script>`;
+
+// From docs/protocol.md: a query is a JSON document with a fixed shape.
+const query = `{
+  "source": "orders",
+  "select": ["id", "customer", "amount"],
+  "filter": { "and": [
+    { "field": "country", "op": "eq", "value": "DE" },
+    { "field": "amount", "op": "gte", "value": "10.00" }
+  ] },
+  "sort": [{ "field": "id", "direction": "asc", "nulls": "last" }],
+  "offset": 0,
+  "limit": 50
+}`;
 ---
 
 <Base>
@@ -90,71 +108,176 @@ const page = `<opengrid-grid label="Orders" datasource="orders"
     </picture>
   </Hero>
 
-  <Spotlight
+  <StatBand
+    label="opengrid in numbers"
+    items={[
+      { value: String(conformanceCases), label: 'conformance cases, each pinned to a numbered rule' },
+      { value: String(axeSpecs), label: 'end-to-end specs that run axe-core' },
+      { value: '3', label: 'places a query can run: tab, server, or both' },
+      { value: '5', label: 'live demo sites: JavaScript, React, Vue, Svelte, Angular' },
+    ]}
+  />
+
+  <SectionIntro
+    title="It is a query engine. The grid shows its answers."
+    lead="Most data grids are a JavaScript component that draws rows and also sorts, filters and groups them. opengrid starts from the other end, and that one decision explains most of what follows."
+  />
+
+  <Split
+    index="01"
+    eyebrow="One engine, everywhere"
+    title="The tab and the server give the same answer."
+    lead="An element never runs a query itself. It hands the query, as JSON, to a provider you choose, and the same Rust code answers wherever the provider points. Moving a data set from the browser to a server is a change of provider, not a second implementation."
+    note={'Name a locale and every path sorts alike: `"collation": "de"` gives one order from the engine, SQLite and PostgreSQL.'}
+    links={[
+      { label: 'Where queries run', href: url('docs/guides/where-queries-run/') },
+      { label: 'Query semantics', href: url('docs/guides/query-semantics/') },
+    ]}
+  >
+    <FlowPanel
+      start={{ title: 'Grid, table or pivot', body: 'hands its query to a provider, as JSON' }}
+      paths={[
+        { label: 'Browser', title: 'In the tab', body: 'WebAssembly, in a worker if you like. No server needed.' },
+        { label: 'Both', title: 'Hybrid', body: 'The planner sends the server what it can do and finishes the rest in the tab.' },
+        { label: 'Your server', title: 'On the server', body: 'opengrid-server reads PostgreSQL, SQLite or a connector of your own.' },
+      ]}
+      result={`Every path has to pass the same ${conformanceCases} case files. One that disagrees fails its test.`}
+    />
+  </Split>
+
+  <Split
+    index="02"
+    reverse
     eyebrow="Why WebAssembly"
-    title="The engine is Rust, compiled to WebAssembly."
-    lead="Sorting, filtering and grouping live in one engine, not in the component. It runs next to your page, in a worker if you like, and the same code answers on your server, so the tab and the server give the same answer without a second implementation."
+    title="A million rows sorted in 26 ms, off the main thread."
+    lead="Sorting, filtering and grouping live in an engine written in Rust, not in the component. It runs next to your page, in a worker if you like, so the page stays usable while it works."
     points={[
-      '**Fast where it counts.** On 100,000 rows a filter takes 1.6 ms, a sort 3 ms and a group-by 10 ms; on a million rows, 15, 26 and 99 ms.',
-      '**Compact, not free.** The columns take 9.8 MiB for 100,000 rows and 98 MiB for a million. The whole page holds more, because the engine keeps its own copy beside the page\'s data: about 50 MiB for 100,000 rows and 145 to 175 MiB for a million, loaded from a fetched CSV (Chromium, measured). That is the price of sorting a million rows in 26 ms.',
-      '**Off the main thread.** In a worker the page stays usable while the engine works; the live demo queries 100,000 rows that way.',
+      '**Types the data needs.** 64-bit integers stay integers, decimals are exact, timestamps keep microseconds.',
+      "**Compact, not free.** The engine keeps its own copy beside the page's data: the whole page holds about 145 to 175 MiB for a million rows, loaded from a fetched CSV.",
       engineKiB && elementsKiB
-        ? `**What it costs.** A module the page loads: the engine is ${engineKiB} KiB and all three elements together ${elementsKiB} KiB, brotli-compressed. Fifty rows do not need it.`
-        : '**What it costs.** A module the page loads, a few hundred kilobytes. Fifty rows do not need it.',
+        ? `**A module the page loads.** The engine is ${engineKiB} KiB and all three elements together ${elementsKiB} KiB, brotli-compressed. Fifty rows do not need it.`
+        : '**A module the page loads.** A few hundred kilobytes. Fifty rows do not need it.',
     ]}
     links={[
       { label: 'What the engine costs, measured', href: url('docs/guides/performance/') },
       { label: 'The 100,000-row demo', href: 'https://og-vanilla.casoon.dev/large-data' },
     ]}
   >
-    <Facts
-      layout="list"
-      label="Measured: the engine on 100,000 and 1,000,000 rows"
-      items={[
-        { label: 'Filter, 100,000 rows', value: '1.6\u00a0ms' },
-        { label: 'Sort, top 100, 100,000 rows', value: '3\u00a0ms' },
-        { label: 'Group by country, 100,000 rows', value: '10\u00a0ms' },
-        { label: 'Filter, 1,000,000 rows', value: '15\u00a0ms' },
-        { label: 'Sort, top 100, 1,000,000 rows', value: '26\u00a0ms' },
-        { label: 'Engine memory, 100,000 rows', value: '19.2\u00a0MiB' },
-        { label: 'Engine memory, 1,000,000 rows', value: '199\u00a0MiB' },
-        { label: 'The whole page, 1,000,000 rows', value: '175\u00a0MiB' },
+    <BarCompare
+      title="Measured: the engine on its own"
+      series={['100,000 rows', '1,000,000 rows']}
+      rows={[
+        { label: 'Filter', values: [1.6, 15], display: ['1.6 ms', '15 ms'] },
+        { label: 'Sort, top 100', values: [3, 26], display: ['3 ms', '26 ms'] },
+        { label: 'Group by country', values: [10, 99], display: ['10 ms', '99 ms'] },
+      ]}
+      facts={[
+        { label: 'Engine memory, 100,000 rows', value: '19.2 MiB' },
+        { label: 'Engine memory, 1,000,000 rows', value: '199 MiB' },
+        ...(engineKiB ? [{ label: 'Engine module, brotli', value: `about ${engineKiB} KiB` }] : []),
+      ]}
+    >
+      Apple M4 Pro, median of nine runs, 14 November 2026.{' '}
+      <a href={url('docs/guides/performance/')}>Method, all figures and the script to repeat it.</a>
+    </BarCompare>
+  </Split>
+
+  <Split
+    index="03"
+    eyebrow="Accessibility"
+    title="A table where a table is meant."
+    lead="The usual grid is one component for every case, built from divs and described through ARIA. opengrid has three elements because the cases differ: a native table for reading, a grid only where the reader works."
+    note={`Every feature is operated from the keyboard, state changes go through one live region, and axe-core runs in ${axeSpecs} end-to-end specs. What that verifies and what is still open is written down.`}
+    links={[{ label: 'Accessibility, without rounding up', href: url('docs/guides/accessibility/') }]}
+  >
+    <div class="stack">
+      <img
+        class="screenshot"
+        src={url('screens/grid-grouping.webp')}
+        width="1632"
+        height="1122"
+        loading="lazy"
+        alt="opengrid-grid from the live demo, grouped by country: a toolbar with + Filter, + Group and the density switch, a filter row, and one row per country with its row count and sums of quantity and amount."
+      />
+      <ElementList
+        items={[
+          { term: '<opengrid-table>', body: 'The answer is **read**: a native table, ordinary copy and paste, browser find.' },
+          { term: '<opengrid-grid>', body: 'The answer is **worked with**: selection, editing, filtering, sorting, virtualization or paging.' },
+          { term: '<opengrid-pivot>', body: 'Rows **crossed** with up to two column dimensions, with subtotals.' },
+        ]}
+      />
+    </div>
+  </Split>
+
+  <Split
+    index="04"
+    reverse
+    numbered
+    eyebrow="Security"
+    title="The browser never sends SQL."
+    lead="A query is a JSON document with a fixed shape, not a string a backend has to parse or interpolate. The server is a library in your own program, which decides who is let in. There is nothing to inject into."
+    points={[
+      '**A source by name.** The token stands for a tenant; its row filter is attached to every query and cannot be switched off.',
+      '**Only allowed fields.** A field outside the list does not exist for that client: the answer is the same error as a typo.',
+      '**Operators, not expressions.** Checked before anything reaches the database.',
+    ]}
+    links={[{ label: 'The protocol', href: url('docs/protocol/') }]}
+  >
+    <CodeBlock
+      code={query}
+      lang="json"
+      title="POST /query"
+      label="JSON"
+      marks={[
+        { line: 2, n: 1 },
+        { line: 3, n: 2 },
+        { line: 7, n: 3 },
       ]}
     />
-    <p class="measured">
-      Apple M4 Pro, the engine on its own, median of nine runs, 14 November 2026.{' '}
-      <a href={url('docs/guides/performance/')}>Method, all figures and the script to repeat it.</a>
-    </p>
-  </Spotlight>
+  </Split>
 
-  <Features
-    heading="What sets it apart"
-    items={[
-      {
-        title: 'One engine, everywhere',
-        body: `The same Rust code answers in the tab, on your server against PostgreSQL or SQLite, or split by a planner. ${conformanceCases} case files pin the answers, text order included: name a locale and every path sorts alike.`,
-      },
-      {
-        title: 'A table where a table is meant',
-        body: `A native <table> for reading, role="grid" only where the reader works. Keyboard throughout, axe-core in ${axeSpecs} specs; what is verified and what is still open is written down.`,
-      },
-      {
-        title: 'No SQL from the browser',
-        body: 'A query is a JSON document, checked against the fields and rows the token may see. The server is a library in your own program, which decides who is let in.',
-      },
-      {
-        title: 'Next to an AI assistant',
-        body: 'In chat clients with MCP Apps the same grid opens beside the conversation. The reader keeps the keyboard, the assistant sets the view through tools, and fields you left out stay out of reach.',
-      },
+  <Showcase
+    eyebrow="MCP Apps"
+    title="The same grid, next to an AI assistant."
+    lead="In chat clients with MCP Apps the grid opens beside the conversation. The reader keeps the keyboard, the assistant sets filter, sort and grouping of the same view through tools, and a field you left out is refused by name."
+    link={{ label: 'The MCP adapter', href: url('docs/guides/mcp/') }}
+  >
+    <video
+      controls
+      preload="none"
+      playsinline
+      width="1920"
+      height="1080"
+      poster={url('videos/opengrid-mcp-poster.webp')}
+      aria-label="Five requests to opengrid through MCP, as a chat with tool calls and the grid beside it"
+    >
+      <source src={url('videos/opengrid-mcp.mp4')} type="video/mp4" />
+    </video>
+  </Showcase>
+
+  <Compare
+    title="Next to a grid written in JavaScript"
+    lead="The differences in one table. Each row is explained, with its price, in the documentation."
+    columns={['A grid with its logic in JavaScript', 'opengrid']}
+    rows={[
+      { topic: 'Sorting, filtering, grouping', other: 'In the component, on the main thread', own: 'In an engine written in Rust, compiled to WebAssembly, in a worker if you like' },
+      { topic: 'Data too big for the browser', other: 'A server mode: your backend answers, and you write the rules again', own: 'The same engine inside opengrid-server, or the query split between server and tab' },
+      { topic: 'What "the same result" means', other: 'Whatever the two implementations happen to do with NULL, text order or decimals', own: 'Written down as rules and pinned by case files every path has to pass' },
+      { topic: 'Text in a language', other: "Often the browser's collation on one side and the database's on the other", own: 'A locale in the query ("collation": "de"): one order from the engine, SQLite and PostgreSQL for Latin, Greek and Cyrillic text' },
+      { topic: 'What goes over the wire', other: 'Often filter expressions or parameters your backend turns into SQL', own: 'A query as a JSON document, checked against the fields and rows the token may see' },
+      { topic: 'Markup', other: 'Usually nested divs with ARIA roles for every kind of table', own: 'A native <table> where the data is read, role="grid" only where it is worked with' },
+      { topic: 'Framework', other: 'A wrapper per framework, or one framework only', own: 'Web Components, with thin components for React, Vue and Svelte' },
+      { topic: 'Pivot, grouping, export, tree', other: 'Often part of a paid edition', own: 'In the one package, under MIT or Apache-2.0' },
     ]}
+    link={{ label: 'What sets it apart, in full', href: url('docs/what-sets-it-apart/') }}
   />
 
-  <Features
+  <AudienceList
     heading="Who it is for"
     items={[
       {
         title: 'Apps that live on tables',
-        body: 'Admin areas, reporting, internal tools: sorting, filtering, grouping, editing, a pivot with subtotals, trees and export, all in one package under MIT or Apache-2.0.',
+        body: 'Admin areas, reporting, internal tools: sorting, filtering, grouping, editing, a pivot with subtotals, trees and export, all in one package.',
       },
       {
         title: 'Any front end',
@@ -171,38 +294,17 @@ const page = `<opengrid-grid label="Orders" datasource="orders"
     ]}
   />
 
-  <Facts
+  <Tradeoffs
+    eyebrow="The price"
+    title="What you give up"
+    lead="This design has a price, and it is better read here than found later."
     items={[
-      { value: String(conformanceCases), label: 'conformance cases, each pinned to a numbered rule' },
-      { value: String(axeSpecs), label: 'end-to-end specs that run axe-core' },
-      { value: '3', label: 'places a query can run: tab, server, or both' },
-      { value: '5', label: 'live demo sites: JavaScript, React, Vue, Svelte, Angular' },
+      'The engine is a WebAssembly module the page has to load. A table of fifty rows does not need it.',
+      'There is no expression language: a column is stored or derived from a date part, never calculated in the grid.',
+      'A pivot has hard limits and answers with an error over them, never with a truncated result.',
+      'It is pre-1.0. The API is written down and tested, and may still change.',
     ]}
   />
-
-  <section class="how" aria-labelledby="how-heading">
-    <h2 id="how-heading">How it works</h2>
-    <div class="text">
-      <p>
-        An element never runs a query itself. It hands the query, as JSON, to a provider you
-        choose. The engine can answer it right in the tab, compiled to WebAssembly and running in
-        a worker if you like, so data the page loads itself needs no server at all.
-      </p>
-      <p>
-        For data that belongs on a server, <code>opengrid-server</code> answers the same queries
-        from PostgreSQL, SQLite or a connector of your own. In between, the planner gives the
-        server the part it can answer and finishes the rest in the tab. A shared set of
-        conformance cases checks that all paths agree.
-      </p>
-    </div>
-    <Diagram name="where-queries-run" format="svg" narrow={{ width: 560, height: 720 }} />
-    <div class="links">
-      <Button href={url('docs/guides/where-queries-run/')} variant="secondary">Where queries run</Button>
-      <Button href={url('docs/guides/query-semantics/')} variant="secondary">Query semantics</Button>
-      <Button href={url('demo/')} variant="secondary">Try the demo</Button>
-      <Button href="https://og-vanilla.casoon.dev/" variant="quiet">All live demos →</Button>
-    </div>
-  </section>
 
   <Quickstart
     lead="Install the package, put an element on the page and connect it to a provider. The documentation walks through the engine in the tab, bundlers and the React, Vue and Svelte components."
@@ -230,43 +332,9 @@ const page = `<opengrid-grid label="Orders" datasource="orders"
     border: 1px solid var(--border);
     border-radius: 12px;
   }
-  /* The note under the measured figures: small, quiet, and on the 8 px grid. */
-  .measured {
-    margin: 16px 0 0;
-    font-size: 14px;
-    line-height: 1.5;
-    color: var(--muted);
-    text-wrap: pretty;
-  }
-  .measured a {
-    text-decoration: underline;
-    text-underline-offset: 3px;
-  }
-  .how {
-    max-width: var(--max);
-    margin: 0 auto;
-    padding: 0 24px 96px;
-  }
-  h2 {
-    margin: 0 0 14px;
-    color: var(--heading);
-    font-size: 30px;
-    font-weight: 600;
-    letter-spacing: -0.02em;
-  }
-  .text {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
-    gap: 0 48px;
-  }
-  .text p {
-    margin: 0 0 16px;
-    font-size: 15.5px;
-  }
-  .links {
+  .stack {
     display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 12px;
+    flex-direction: column;
+    gap: 20px;
   }
 </style>
