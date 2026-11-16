@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>opengrid rows as columns fixture</title>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid rows as columns fixture</h1>
+    </main>
+    <script type="module">
+      // Issue #445: rows the page holds reach the engine as packs of columns. The page of the
+      // spec makes providers over it and compares what the two routes make of the same rows.
+      import { createLocalProvider, createWorkerProvider } from "/packages/opengrid/loader.js";
+      import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+
+      await init();
+      window.__lab = { Engine, createLocalProvider, createWorkerProvider };
+      window.__ready = true;
+    </script>
+  </body>
+</html>

@@ -12,6 +12,9 @@
  *   load  { type:"load", id, name, bytes, schema }
  *                                              -> { type:"loaded", id }
  *   rows  { type:"rows", id, name, rows, schema }  -> { type:"loaded", id }  (issue #182)
+ *   columns { type:"columns", id, name, schema, rows, pack } -> { type:"loaded", id }  (issue #445)
+ *   columns_begin / columns_chunk / columns_end / columns_abort: the same rows in packs, as
+ *   load_begin / load_chunk / load_end / load_abort are for CSV
  *   query { type:"query", id, query }          -> { id, result }
  *   stats { type:"stats", id }                 -> { id, result }   (issue #70)
  *   pivot { type:"pivot", id, pivot }          -> { id, result }   (issue #28)
@@ -87,6 +90,35 @@ self.onmessage = async ({ data }) => {
       }
       case "load_abort": {
         engine.abort_csv();
+        self.postMessage({ type: "loaded", id: data.id });
+        break;
+      }
+      case "columns": {
+        // The rows of a page as one pack of columns (issue #445); a pack that does not hold, or an
+        // engine module without the calls, answers with an error, and the page takes the JSON route.
+        engine.begin_columns(data.name, data.schema, data.rows);
+        engine.push_columns(new Uint8Array(data.pack));
+        engine.end_columns();
+        self.postMessage({ type: "loaded", id: data.id });
+        break;
+      }
+      case "columns_begin": {
+        engine.begin_columns(data.name, data.schema, data.rows);
+        self.postMessage({ type: "loaded", id: data.id });
+        break;
+      }
+      case "columns_chunk": {
+        engine.push_columns(new Uint8Array(data.pack));
+        self.postMessage({ type: "loaded", id: data.id });
+        break;
+      }
+      case "columns_end": {
+        engine.end_columns();
+        self.postMessage({ type: "loaded", id: data.id });
+        break;
+      }
+      case "columns_abort": {
+        engine.abort_columns();
         self.postMessage({ type: "loaded", id: data.id });
         break;
       }
