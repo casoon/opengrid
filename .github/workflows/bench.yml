@@ -1,0 +1,33 @@
+name: Bench
+
+# By hand only (`gh workflow run bench.yml`): the browser figures of `bench/` on a
+# GitHub Linux runner, for the Linux side of #421. A shared runner is a noisy
+# machine: its figures are not comparable with the baselines made on a Mac, only
+# with another run of this job, and the result is an artifact, not a verdict.
+on:
+  workflow_dispatch:
+    inputs:
+      rows:
+        description: "Rows"
+        default: "100000"
+      throttle:
+        description: "CPU slowdown (1 = none)"
+        default: "1"
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-build
+      # bench/ has its own lockfile and its own Playwright
+      - run: pnpm --dir bench install --frozen-lockfile
+      - run: pnpm --dir bench exec playwright install --with-deps chromium
+      - run: just bench-local --rows ${{ inputs.rows }} --runs 5 --throttle ${{ inputs.throttle }}
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: bench-linux-${{ inputs.rows }}-x${{ inputs.throttle }}
+          path: bench/results/*.json
+          if-no-files-found: error
