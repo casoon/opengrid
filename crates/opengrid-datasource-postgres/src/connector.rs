@@ -28,6 +28,14 @@ impl Connector for PostgresDataSource {
         Box::pin(SendDataSource::execute(self, query))
     }
 
+    fn execute_counted(
+        &self,
+        query: ValidatedQuery,
+        known_count: Option<u64>,
+    ) -> BoxFuture<'_, Result<QueryResult, DataSourceError>> {
+        Box::pin(self.execute_with_count(query, known_count))
+    }
+
     fn pivot<'a>(
         &'a self,
         pivot: &'a ValidatedPivotQuery,

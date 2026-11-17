@@ -176,10 +176,10 @@ fn answer(
     schema: &Schema,
     connection: &Connection,
     query: &ValidatedQuery,
+    known_count: Option<u64>,
 ) -> Result<QueryResult, DataSourceError> {
     let compiler = Compiler { table, schema };
     let statement = compiler.query(query)?;
-    let counting = compiler.count(query)?;
 
     let fields = query.output_schema.fields();
     let mut columns: Vec<Vec<Value>> = vec![Vec::new(); fields.len()];
@@ -196,17 +196,24 @@ fn answer(
     drop(rows);
     drop(prepared);
 
-    let total: i64 = connection
-        .query_row(
-            &counting.sql,
-            rusqlite::params_from_iter(counting.params.iter()),
-            |row| row.get(0),
-        )
-        .map_err(sqlite)?;
+    let total = match known_count {
+        Some(known) => known,
+        None => {
+            let counting = compiler.count(query)?;
+            let total: i64 = connection
+                .query_row(
+                    &counting.sql,
+                    rusqlite::params_from_iter(counting.params.iter()),
+                    |row| row.get(0),
+                )
+                .map_err(sqlite)?;
+            u64::try_from(total).unwrap_or(0)
+        }
+    };
     Ok(QueryResult::new(
         query.output_schema.clone(),
         columns,
-        u64::try_from(total).unwrap_or(0),
+        total,
     ))
 }
 
@@ -236,6 +243,14 @@ impl Connector for SqliteConnector {
         &self,
         query: ValidatedQuery,
     ) -> BoxFuture<'_, Result<QueryResult, DataSourceError>> {
+        self.execute_counted(query, None)
+    }
+
+    fn execute_counted(
+        &self,
+        query: ValidatedQuery,
+        known_count: Option<u64>,
+    ) -> BoxFuture<'_, Result<QueryResult, DataSourceError>> {
         match &query.tree {
             // A flat tree is the whole visible tree anyway (T8), and without
             // the pushdown every tree is the engine's: it answers from the
@@ -252,10 +267,9 @@ impl Connector for SqliteConnector {
             }
             None => {
                 let (table, schema) = (self.table.clone(), self.schema.clone());
-                Box::pin(
-                    self.worker
-                        .submit(move |connection| answer(&table, &schema, connection, &query)),
-                )
+                Box::pin(self.worker.submit(move |connection| {
+                    answer(&table, &schema, connection, &query, known_count)
+                }))
             }
         }
     }

@@ -9,6 +9,7 @@
 //! DATABASE_URL=postgres://$USER@localhost:5432/opengrid_dev \
 //!   cargo run --release -p opengrid-server --example server_bench -- postgres 1000000
 //! cargo run --release -p opengrid-server --example server_bench -- sqlite 10000000
+//! COUNT_CACHE=1 cargo run --release -p opengrid-server --example server_bench -- sqlite 10000000
 //! /usr/bin/time -l <target>/release/examples/server_bench postgres 1000000   # peak RSS
 //! ```
 //!
@@ -79,6 +80,14 @@ async fn main() -> Result<(), Error> {
     let server = Server::builder()
         .token("bench", std::iter::empty::<(&str, &str)>())
         .timeout(Duration::from_secs(120))
+        // The figures are of one request after another asking the same, so the
+        // cold ones need the count cache off (issue #457); `COUNT_CACHE=1` turns
+        // it on to see what a window costs when its count is remembered.
+        .count_cache_ttl(if std::env::var_os("COUNT_CACHE").is_some() {
+            Duration::from_secs(60)
+        } else {
+            Duration::ZERO
+        })
         .shared_source(
             "orders",
             connector.into(),

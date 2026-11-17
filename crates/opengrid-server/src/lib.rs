@@ -19,6 +19,7 @@
 //!   request can switch it off.
 
 mod api;
+mod count_cache;
 mod export;
 mod registry;
 mod server;

@@ -74,6 +74,21 @@ pub trait Connector: Send + Sync {
     fn execute(&self, query: ValidatedQuery)
     -> BoxFuture<'_, Result<QueryResult, DataSourceError>>;
 
+    /// [`execute`](Self::execute), told how many rows the query matches before
+    /// paging (`known_count`) because the server asked the same question a
+    /// moment ago (issue #457). A source that spends a statement on the count
+    /// skips it and answers with that number; the default ignores it. The
+    /// number is only ever one this source gave for the same filter, grouping
+    /// and aggregates.
+    fn execute_counted(
+        &self,
+        query: ValidatedQuery,
+        known_count: Option<u64>,
+    ) -> BoxFuture<'_, Result<QueryResult, DataSourceError>> {
+        let _ = known_count;
+        self.execute(query)
+    }
+
     /// Runs a whole pivot. The default asks one query per level through
     /// [`execute`](Self::execute); a source that can answer every level in one
     /// statement (PostgreSQL's `GROUPING SETS`) overrides it.
