@@ -536,6 +536,11 @@ test("a group's label runs across the row, and keeps to its pinned column while 
   // Unscrolled it is drawn as without a pin: over the cells beside it.
   expect(before).toMatchObject({ left: 0, overflow: "visible", cut: true });
   expect(before.text).toContain("country:");
+  // Focused it stays on one line: it is not cut off, so there is nothing to unfold.
+  await inside(page, "#grouped", (root) => root.querySelector('tr[data-kind="group"] td[data-col="0"]').focus());
+  expect(
+    await inside(page, "#grouped", (root) => getComputedStyle(root.activeElement).whiteSpace),
+  ).toBe("nowrap");
 
   await scrollTo(page, "#grouped", 180);
   const scrolled = await label();

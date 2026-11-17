@@ -301,7 +301,9 @@ pub fn pins_css(geometry: &PinGeometry) -> String {
     if geometry.label {
         css.push_str(
             "[part~=\"viewport\"][data-scrolled] tr[data-kind] td[data-col=\"0\"] { \
-             overflow: hidden; }\n",
+             overflow: hidden; }\n\
+             [part~=\"viewport\"][data-scrolled] tr[data-kind] td[data-col=\"0\"]:focus { \
+             white-space: normal; }\n",
         );
     }
     css.push_str("}\n");
