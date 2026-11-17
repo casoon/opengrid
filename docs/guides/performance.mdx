@@ -272,7 +272,10 @@ cache on, as it is by default; the network is the loopback) the page holds none 
 Over ten million rows in PostgreSQL the jump is 83 ms and the drag to the middle 550 ms: the
 database walks past five million rows (see the section above). `bench/baselines/` keeps these
 figures, in the tool's own format, so that a later change can be compared with them on the same
-machine (`just bench-local --baseline bench/baselines/main-2026-11-17-1000000.json`).
+machine (`just bench-local --baseline bench/baselines/main-2026-11-17-1000000.json`). With the CPU
+throttled to a quarter and a sixth of its speed (a mid-range laptop), objects handed over reach
+the first rows in 244 ms and 333 ms at 100,000 rows, and in 644 ms and 928 ms at 1,000,000;
+those runs are kept as `-x4-` and `-x6-` files.
 
 ## What these figures are not
 

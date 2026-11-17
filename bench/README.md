@@ -36,6 +36,7 @@ median of five, Apple M4 Pro) for released 0.17.0 and for `main` on 17 November 
 tool's format; `--baseline baselines/<file>.json` compares with them. A baseline only compares on
 the machine, rows and throttle it was made with: on another computer, make your own first
 (`just bench-self` on the release, keep the file, then `just bench-local --baseline`). When a
+`main-2026-11-17-x4-*` and `-x6-*` are the same two browser pages (objects and CSV; not server mode) with the CPU four and six times slower (`--throttle 4`, `--throttle 6`): compare with the same `--throttle`. When a
 release or a deliberate change is accepted, add its files here. Only opengrid's figures belong in
 `baselines/`; a run that includes other grids stays in `results/`.
 
