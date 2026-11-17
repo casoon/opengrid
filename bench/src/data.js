@@ -13,30 +13,37 @@ export const COLUMNS = [
   { field: "ordered_on", title: "Ordered", type: "text" },
 ];
 
+function makeRow(i) {
+  const day = String((i % 28) + 1).padStart(2, "0");
+  return {
+    id: i,
+    customer: `Customer ${i % 500}`,
+    country: COUNTRIES[i % 8],
+    // Two decimals, and **unique** for every id up to ten million: 7919 is coprime to the
+    // prime 10,000,019, so no two rows tie and every grid sorts to the same first row.
+    amount: ((i * 7919) % 10_000_019) / 100 + 0.5,
+    qty: i % 40,
+    ordered_on: `2026-03-${day}`,
+  };
+}
+
 export function makeRows(count) {
   const rows = new Array(count);
-  for (let i = 1; i <= count; i++) {
-    const day = String((i % 28) + 1).padStart(2, "0");
-    rows[i - 1] = {
-      id: i,
-      customer: `Customer ${i % 500}`,
-      country: COUNTRIES[i % 8],
-      // Two decimals, and **unique** for every id up to a million: 7919 is coprime to the
-      // prime 1,000,003, so no two rows tie and every grid sorts to the same first row.
-      amount: ((i * 7919) % 1_000_003) / 100 + 0.5,
-      qty: i % 40,
-      ordered_on: `2026-03-${day}`,
-    };
-  }
+  for (let i = 1; i <= count; i++) rows[i - 1] = makeRow(i);
   return rows;
 }
 
-/** What a correct answer looks like, so a grid that shows something else is marked wrong. */
-export function expected(rows) {
-  let top = rows[0];
+/**
+ * What a correct answer looks like, so a grid that shows something else is marked wrong. Counted
+ * row by row without holding them: a page that asks a server must not carry ten million objects
+ * only to know the answer.
+ */
+export function expected(count) {
+  let top = makeRow(1);
   let topDe = null;
   let deCount = 0;
-  for (const row of rows) {
+  for (let i = 1; i <= count; i++) {
+    const row = makeRow(i);
     if (row.amount > top.amount) top = row;
     if (row.country === "DE") {
       deCount++;
@@ -47,9 +54,10 @@ export function expected(rows) {
 }
 
 /** What a grouping by country with the sum of the amounts must say: per country, rows and sum. */
-export function expectedGroups(rows) {
+export function expectedGroups(count) {
   const groups = new Map();
-  for (const row of rows) {
+  for (let i = 1; i <= count; i++) {
+    const row = makeRow(i);
     const group = groups.get(row.country) ?? { key: row.country, count: 0, sum: 0 };
     group.count++;
     group.sum += row.amount;

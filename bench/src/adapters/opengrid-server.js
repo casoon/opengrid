@@ -1,0 +1,94 @@
+// opengrid in server mode: the same element, a REST provider, and the rows in a database behind
+// `opengrid-server` (`crates/opengrid-server/examples/bench_server.rs`, started by `run.mjs`, on
+// the loopback — the network is not measured). The page holds no rows; each window is a request.
+// `amount` is a float64 here, as in every other adapter. `amount` is a float64 here, as it is a JS number in every
+// other grid; the engine's exact decimal is a feature the others do not have, and not measured.
+import { createRestProvider, loadOpengrid } from "@casoon/opengrid";
+
+let host;
+let module;
+let state = { sort: [{ field: "id", direction: "asc" }], filters: [], group: [], aggregates: {} };
+const digits = (text) => Number(String(text ?? "").replace(/[^0-9]/g, ""));
+const rowsOf = () => [...host.shadowRoot.querySelectorAll("tbody tr")].filter((tr) => tr.querySelector("td[data-row]"));
+
+export default {
+  name: "opengrid-server",
+  remote: true,
+  async mount(container, rows, columns) {
+    ({ module } = await loadOpengrid());
+    host = document.createElement("opengrid-grid");
+    host.setAttribute("label", "Orders");
+    host.setAttribute("datasource", "orders");
+    host.setAttribute("columns", columns.map((c) => c.field).join(","));
+    host.style.display = "block";
+    host.style.height = "100%";
+    container.append(host);
+    const port = new URLSearchParams(location.search).get("server");
+    const provider = createRestProvider({ url: `http://127.0.0.1:${port}`, source: "orders", token: "bench" });
+    module.set_provider(host, provider);
+  },
+  firstRow() {
+    if (!host?.shadowRoot) return null;
+    const first = rowsOf().sort((a, b) => Number(a.querySelector("td[data-row]").dataset.row) - Number(b.querySelector("td[data-row]").dataset.row))[0];
+    const cell = first?.querySelectorAll("td")[0];
+    return cell ? { id: digits(cell.textContent) } : null;
+  },
+  visibleCountries() {
+    if (!host?.shadowRoot) return [];
+    return rowsOf().map((tr) => tr.querySelectorAll("td")[2]?.textContent.trim());
+  },
+  async sort(field, direction) {
+    state = { ...state, sort: [{ field, direction }] };
+    module.set_view(host, state);
+  },
+  async filter(field, value) {
+    state = { ...state, filters: [{ column: field, op: "eq", value }] };
+    module.set_view(host, state);
+  },
+  async clearFilter() {
+    state = { ...state, filters: [] };
+    module.set_view(host, state);
+  },
+  async group(field, aggregates) {
+    state = { ...state, group: [field], aggregates };
+    module.set_view(host, state);
+  },
+  async ungroup() {
+    state = { ...state, group: [], aggregates: {} };
+    module.set_view(host, state);
+  },
+  // The group headers on screen, read from the DOM: { key, count, sum } — the label says
+  // "country: DE (2500 rows)", the amount's cell holds the sum.
+  groups() {
+    if (!host?.shadowRoot) return [];
+    return [...host.shadowRoot.querySelectorAll("tbody tr[data-kind=group]")].flatMap((tr) => {
+      const cells = [...tr.querySelectorAll("td")].map((td) => td.textContent.trim());
+      const match = /^country: (\S+) \((\d+) rows\)/.exec(cells[0]);
+      return match ? [{ key: match[1], count: Number(match[2]), sum: Number(cells[3]) }] : [];
+    });
+  },
+  // What is painted in the viewport: the first row's index and whether every row there shows its
+  // own data (the id is the index plus one, as the rows are sorted by `id`). A row that still
+  // shows another row's text, or none, is not an answer yet.
+  painted() {
+    if (!host?.shadowRoot) return null;
+    const view = this.scroller().getBoundingClientRect();
+    const rows = [...host.shadowRoot.querySelectorAll("tbody tr")]
+      .map((tr) => ({ tr, cell: tr.querySelector("td[data-row]") }))
+      .filter(({ tr, cell }) => {
+        if (!cell) return false;
+        const box = tr.getBoundingClientRect();
+        return box.bottom > view.top && box.top < view.bottom;
+      })
+      .map(({ cell }) => ({ row: Number(cell.dataset.row), id: digits(cell.textContent) }));
+    if (!rows.length) return null;
+    return { first: Math.min(...rows.map((r) => r.row)), complete: rows.every((r) => r.id === r.row + 1) };
+  },
+  scroller() {
+    const all = [host, ...host.shadowRoot.querySelectorAll("*")];
+    return all.find((el) => el.scrollHeight > el.clientHeight + 50 && /auto|scroll/.test(getComputedStyle(el).overflowY));
+  },
+  rowHeight() {
+    return rowsOf()[0].querySelector("td").getBoundingClientRect().height;
+  },
+};
