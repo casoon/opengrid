@@ -40,7 +40,10 @@ grid, and then, in this order:
 | sort | `amount` descending is asked for … the right first row is painted |
 | filter | `country = DE` while sorted … the right first row, and only DE rows, are painted |
 | undo | the filter and the sort are cleared … row 1 is painted |
+| group | `country` is grouped, with the sum of `amount`: … every country's header is painted with the right row count and the right sum (to the cent) — only for a grid whose adapter has `group()`; others say `—` |
+| ungroup | the grouping is removed … row 1 is painted |
 | scroll | 120 steps of three rows, then 20 jumps of 2,000 rows: the frame times (p95, max, frames over 33 ms) |
+| KiB fetched, KiB wasm | every file the page requested, **from the built files** and brotli-compressed as a server would send them (not the wire, so a server that compresses or not changes nothing), and the WebAssembly among them, which the browser then compiles |
 | memory | the **whole browser process tree**, resident, minus an empty page's, once with the rows loaded and once after everything above — a Worker and WebAssembly count like everything else |
 
 Every time is to a frame that **shows the right answer** — the check reads the DOM — plus the
@@ -49,10 +52,10 @@ that is `—` was not reached within 30 s, and is reported as that, not left out
 
 ## What is not measured
 
-Accessibility, features (grouping, editing, pivot, export), how a grid looks, a first load over a
-real network. A grid that does more is not slower for it here, and a grid that does less is not
-faster; this is one question — sort, filter and scroll a large table — and it says nothing about
-the others.
+Accessibility, features beyond sorting, filtering, scrolling and one grouping (editing, pivot,
+export), how a grid looks, a first load over a real network. A grid that does more is not slower
+for it here, and a grid that does less is not faster; this is one question — sort, filter, group
+and scroll a large table — and it says nothing about the others.
 
 ## Fairness, and where it can fail
 

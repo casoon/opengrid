@@ -17,7 +17,7 @@ const SCHEMA = JSON.stringify({
 
 let host;
 let module;
-let state = { sort: [{ field: "id", direction: "asc" }], filters: [] };
+let state = { sort: [{ field: "id", direction: "asc" }], filters: [], group: [], aggregates: {} };
 const digits = (text) => Number(String(text ?? "").replace(/[^0-9]/g, ""));
 const rowsOf = () => [...host.shadowRoot.querySelectorAll("tbody tr")].filter((tr) => tr.querySelector("td[data-row]"));
 
@@ -48,15 +48,33 @@ export default {
   },
   async sort(field, direction) {
     state = { ...state, sort: [{ field, direction }] };
-    module.set_view(host, { sort: state.sort, filters: state.filters });
+    module.set_view(host, state);
   },
   async filter(field, value) {
     state = { ...state, filters: [{ column: field, op: "eq", value }] };
-    module.set_view(host, { sort: state.sort, filters: state.filters });
+    module.set_view(host, state);
   },
   async clearFilter() {
     state = { ...state, filters: [] };
-    module.set_view(host, { sort: state.sort, filters: state.filters });
+    module.set_view(host, state);
+  },
+  async group(field, aggregates) {
+    state = { ...state, group: [field], aggregates };
+    module.set_view(host, state);
+  },
+  async ungroup() {
+    state = { ...state, group: [], aggregates: {} };
+    module.set_view(host, state);
+  },
+  // The group headers on screen, read from the DOM: { key, count, sum } — the label says
+  // "country: DE (2500 rows)", the amount's cell holds the sum.
+  groups() {
+    if (!host?.shadowRoot) return [];
+    return [...host.shadowRoot.querySelectorAll("tbody tr[data-kind=group]")].flatMap((tr) => {
+      const cells = [...tr.querySelectorAll("td")].map((td) => td.textContent.trim());
+      const match = /^country: (\S+) \((\d+) rows\)/.exec(cells[0]);
+      return match ? [{ key: match[1], count: Number(match[2]), sum: Number(cells[3]) }] : [];
+    });
   },
   scroller() {
     const all = [host, ...host.shadowRoot.querySelectorAll("*")];

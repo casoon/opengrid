@@ -4,10 +4,12 @@
 //
 // Adapter: { name, async mount(container, rows, columns), firstRow(), visibleCountries(),
 //            async sort(field, direction), async filter(field, value), async clearFilter(),
+//            optional: async group(field, { amount: "sum" }), groups() -> [{ key, count, sum }],
+//            async ungroup() — a grid without them is not measured for grouping, and says "—",
 //            scroller(), rowHeight(), destroy() } — `firstRow()` reads what is **on screen**
 //            ({ id }), because a grid that has the answer and not yet the pixels has not answered.
 
-import { COLUMNS, expected, makeRows } from "./data.js";
+import { COLUMNS, expected, expectedGroups, makeRows } from "./data.js";
 
 const params = new URLSearchParams(location.search);
 const ROWS = Number(params.get("rows") ?? 100_000);
@@ -36,6 +38,17 @@ async function timed(trigger, settled) {
       return { ms: null, ok: false };
     }
   }
+}
+
+/** Every country, with its row count and its sum (to the cent: float sums differ in the last bits). */
+function groupsAreRight(shown, want) {
+  return (
+    shown.length === want.size &&
+    shown.every((g) => {
+      const w = want.get(g.key);
+      return w && g.count === w.count && Math.abs(g.sum - w.sum) < 0.01 + w.sum * 1e-9;
+    })
+  );
 }
 
 const percentile = (sorted, p) => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))];
@@ -146,6 +159,18 @@ export async function start(adapter) {
       },
       () => adapter.firstRow()?.id === 1,
     );
+
+    if (adapter.group) {
+      const wantGroups = expectedGroups(rows);
+      result.group = await timed(
+        () => adapter.group("country", { amount: "sum" }),
+        () => groupsAreRight(adapter.groups(), wantGroups),
+      );
+      result.ungroup = await timed(
+        () => adapter.ungroup(),
+        () => adapter.firstRow()?.id === 1,
+      );
+    }
 
     result.scroll = await scroll(adapter);
     await checkpoint("after");
