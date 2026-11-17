@@ -2100,7 +2100,11 @@ pub fn grid_css() -> String {
          /* Left-aligned whatever the column is: the label is a sentence, and in
             a right-aligned number column it would overflow to the left, out of
             the row. */
-         tr[data-kind=\"group\"] td[data-col=\"0\"] {{ overflow: visible; text-align: start; }}
+         /* One line when focused too: the label is wider than its cell by
+            design, and the unfolding of `td:focus` would wrap it inside the
+            narrow first column. */
+         tr[data-kind=\"group\"] td[data-col=\"0\"] {{ overflow: visible; text-align: start;
+                   white-space: nowrap; }}
          tr[data-kind=\"group\"] td[data-col=\"0\"]::before {{ content: \"\\25B8\" / \"\";
                    display: inline-block; width: 1.25em; color: var({INK_MUTED_PROPERTY}); }}
          tr[data-kind=\"group\"][aria-expanded=\"true\"] td[data-col=\"0\"]::before {{
@@ -6787,6 +6791,19 @@ mod tests {
         ] {
             assert!(styles.contains(rule), "the unfold rules lost {rule:?}");
         }
+    }
+
+    /// A group's label is wider than its cell on purpose; unfolding it on
+    /// focus would wrap it inside the narrow first column.
+    #[test]
+    fn a_focused_group_label_stays_on_one_line() {
+        let styles = grid_css();
+        let rule = styles
+            .split("tr[data-kind=\"group\"] td[data-col=\"0\"] {")
+            .nth(1)
+            .and_then(|rest| rest.split('}').next())
+            .expect("the group label rule");
+        assert!(rule.contains("white-space: nowrap"), "{rule}");
     }
 
     /// A single sort leaves the header's order index empty.
