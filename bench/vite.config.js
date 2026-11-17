@@ -24,7 +24,15 @@ const isolation = {
   "Cross-Origin-Embedder-Policy": "require-corp",
 };
 
+// `BENCH_LOCAL=1` measures the package built from this checkout (packages/opengrid, as `just
+// bench-local` builds it) instead of the version pinned in package.json: how a change of ours
+// compares with the release before it, on the same machine.
+const local = process.env.BENCH_LOCAL
+  ? { alias: [{ find: /^@casoon\/opengrid(\/|$)/, replacement: `${resolve(import.meta.dirname, "../packages/opengrid")}/` }] }
+  : {};
+
 export default defineConfig({
+  resolve: local,
   build: { target: "es2022", rollupOptions: { input: pages }, chunkSizeWarningLimit: 4000 },
   preview: { headers: isolation, port: 4173, strictPort: true },
   worker: { format: "es" },

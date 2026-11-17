@@ -232,10 +232,53 @@ The first run writes the rows (`bench_orders_<rows>` in the database,
 `target/bench-orders-<rows>.sqlite`) and keeps them for the next; the peak memory is read with
 `/usr/bin/time -l`.
 
+## In the browser, as a visitor sees it
+
+The measuring tool in `bench/` opens a built page in a fresh Chromium, hands it the same
+deterministic rows and times what a reader waits for, to **the frame that shows the right
+answer** (the check reads the DOM, then waits one frame more, so 33 ms is two frames at 60 Hz and
+the floor of every figure here). Memory is the whole browser process tree, resident, minus an
+empty page's — the Worker and WebAssembly count like everything else. Same machine as above
+(**Apple M4 Pro**, Chromium 153), 17 November 2026, **median of five**, the CPU not throttled.
+
+| 1,000,000 rows | released 0.17.0 | this checkout |
+|---|---|---|
+| First rows, rows handed over as JS objects | 2.35 s | **0.30 s** |
+| First rows, CSV bytes handed over | 0.87 s | 0.59 s |
+| Sort, filter, group by country with a sum | 35, 50, 100 ms | 32, 50, 83 ms |
+| Page memory after loading, objects / CSV | 1,090 / 687 MiB | **378** / 636 MiB |
+| 100,000 rows: first rows, objects / CSV | 215 / 153 ms | 112 / 128 ms |
+
+The objects row is the one that moved: since #445 the rows cross into the Worker as typed
+columns, not as JSON text. The page's own million objects are in the memory figure of that row
+(the tool holds them to hand them over); with CSV the page holds the file's bytes instead.
+Scrolling is a frame whatever the size: 120 steps of three rows and 20 jumps of 2,000 rows, p95
+16.7 ms, no frame over 33 ms. The page fetches **546 KiB** brotli-compressed (21 KiB more than 0.17.0), 526 KiB of it
+WebAssembly (engine and all elements); that is what a small table pays for and does not need.
+
+With the rows in a database behind `opengrid-server` (SQLite on the same machine; the count
+cache on, as it is by default; the network is the loopback) the page holds none of them:
+
+| Scrolling a table in server mode | 100,000 rows | 1,000,000 rows |
+|---|---|---|
+| First rows | 53 ms | 56 ms |
+| A step of three rows (p50) | 17 ms | 17 ms |
+| A jump of 2,000 rows (p50) | 33 ms | 33 ms |
+| A drag to the middle | 33 ms | 50 ms |
+| Group by country with a sum | 50 ms | 283 ms |
+| Requests, and bytes answered, for 141 moves | 139, 294 KiB | 140, 297 KiB |
+| Page memory after loading | 72 MiB | 72 MiB |
+
+Over ten million rows in PostgreSQL the jump is 83 ms and the drag to the middle 550 ms: the
+database walks past five million rows (see the section above). `bench/baselines/` keeps these
+figures, in the tool's own format, so that a later change can be compared with them on the same
+machine (`just bench-local --baseline bench/baselines/main-2026-11-17-1000000.json`).
+
 ## What these figures are not
 
-- **Not a browser measurement.** Rendering, scrolling and the filter row are measured
-  separately by `scripts/measure-grid.mjs` (`just measure-grid`), in Chromium and WebKit.
+- **Not a browser measurement**, except where a section says so: the figures of the engine are
+  its own; the page, the frame and the process memory are `bench/` (above) and
+  `scripts/measure-grid.mjs` (`just measure-grid`), in Chromium and WebKit.
 - **Not a comparison with other grids.** One would need the same data, the same features and
   each product set up as its own documentation recommends, and its method published before its
   result. That is planned, not done; until then this page says nothing about anyone else.
