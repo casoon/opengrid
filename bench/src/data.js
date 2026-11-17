@@ -45,3 +45,15 @@ export function expected(rows) {
   }
   return { topId: top.id, topDeId: topDe.id, deCount };
 }
+
+/** What a grouping by country with the sum of the amounts must say: per country, rows and sum. */
+export function expectedGroups(rows) {
+  const groups = new Map();
+  for (const row of rows) {
+    const group = groups.get(row.country) ?? { key: row.country, count: 0, sum: 0 };
+    group.count++;
+    group.sum += row.amount;
+    groups.set(row.country, group);
+  }
+  return groups;
+}

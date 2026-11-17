@@ -6,7 +6,7 @@
 //
 // `--baseline` compares the medians with an earlier run's **from the same machine** (a figure
 // from another computer says nothing about this one) and marks every figure more than
-// `--tolerance` percent worse — and worse by more than a frame, 16.7 ms, or 10 MiB, so that
+// `--tolerance` percent worse — and worse by more than a frame, 16.7 ms, 10 MiB or 10 KiB, so that
 // noise on a small figure is not a finding. `--fail-on-regress` exits 1 when there is one.
 //
 // `--throttle 4` slows the CPU four times (Chrome's own emulation), for a mid-range laptop.
@@ -17,7 +17,8 @@
 // and that is reported as that, not left out.
 
 import { execSync } from "node:child_process";
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { brotliCompressSync } from "node:zlib";
 import os from "node:os";
 import { resolve } from "node:path";
 import { chromium } from "@playwright/test";
@@ -78,6 +79,29 @@ const range = (values) => {
   return v.length ? [Math.min(...v), Math.max(...v)] : null;
 };
 
+/**
+ * What a page costs to fetch: every file it requested, as built — raw, and brotli-compressed as a
+ * server would send it — and the WebAssembly among them (what the browser then compiles). From
+ * the files, not from the wire, so that a server that compresses or not changes nothing.
+ */
+function sizeOf(paths) {
+  const total = { files: 0, raw: 0, brotli: 0, wasmRaw: 0, wasmBrotli: 0 };
+  for (const path of paths) {
+    const file = resolve(here, "dist", `.${path === "/" ? "/index.html" : path}`);
+    if (!existsSync(file) || !readFileSync(file).length) continue;
+    const bytes = readFileSync(file);
+    const packed = brotliCompressSync(bytes).length;
+    total.files++;
+    total.raw += bytes.length;
+    total.brotli += packed;
+    if (path.endsWith(".wasm")) {
+      total.wasmRaw += bytes.length;
+      total.wasmBrotli += packed;
+    }
+  }
+  return total;
+}
+
 const results = {};
 for (const grid of GRIDS) {
   results[grid] = [];
@@ -88,6 +112,11 @@ for (const grid of GRIDS) {
       const cdp = await context.newCDPSession(page);
       await cdp.send("Emulation.setCPUThrottlingRate", { rate: THROTTLE });
     }
+    // What the page asked for, to size afterwards from the built files (see `sizeOf`).
+    const requested = new Set();
+    page.on("response", (response) => {
+      if (response.url().startsWith(base)) requested.add(new URL(response.url()).pathname);
+    });
     await page.goto("about:blank");
     await settle(300);
     const baseline = treeMiB();
@@ -103,7 +132,7 @@ for (const grid of GRIDS) {
         await page.evaluate(() => window.__bench.release());
       }
       const result = await page.evaluate(() => window.__bench.result);
-      results[grid].push({ ...result, memory });
+      results[grid].push({ ...result, memory, bytes: sizeOf(requested) });
     } catch (error) {
       results[grid].push({ grid, error: `no result: ${error.message.split("\n")[0]}`, memory });
     }
@@ -131,6 +160,10 @@ const columns = [
   ["scroll p95 ms", (r) => r.scroll?.p95 ?? null, 1],
   ["scroll max ms", (r) => r.scroll?.max ?? null, 0],
   ["frames>33ms", (r) => r.scroll?.over33 ?? null, 0],
+  ["group ms", (r) => (r.group?.ok ? r.group.ms : null), 0],
+  ["ungroup ms", (r) => (r.ungroup?.ok ? r.ungroup.ms : null), 0],
+  ["KiB fetched (br)", (r) => (r.bytes ? r.bytes.brotli / 1024 : null), 0],
+  ["KiB wasm (br)", (r) => (r.bytes ? r.bytes.wasmBrotli / 1024 : null), 0],
   ["MiB loaded", (r) => r.memory?.load ?? null, 0],
   ["MiB after", (r) => r.memory?.after ?? null, 0],
 ];
@@ -156,8 +189,8 @@ if (baselineFile) {
     process.exit(2);
   }
   // Worse is more, for every figure here. The floor is what is too small to tell from noise.
-  const floors = { ms: 16.7, mib: 10 };
-  const compared = columns.map(([name, pick]) => [name, pick, name.startsWith("MiB") ? floors.mib : name === "frames>33ms" ? 1 : floors.ms]);
+  const floors = { ms: 16.7, mib: 10, kib: 10 };
+  const compared = columns.map(([name, pick]) => [name, pick, name.startsWith("MiB") ? floors.mib : name.startsWith("KiB") ? floors.kib : name === "frames>33ms" ? 1 : floors.ms]);
   let regressions = 0;
   console.log(`\nagainst ${baselineFile} (marked: more than ${tolerance * 100} % worse and past the floor)`);
   for (const [grid, runs] of Object.entries(results)) {
