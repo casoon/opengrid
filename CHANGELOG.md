@@ -33,6 +33,7 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Added
 
+- **Docs:** the performance guide compares opengrid with AG Grid Community, RevoGrid, SlickGrid, Tabulator and w2ui (all MIT) on 100,000 and 1,000,000 rows, says why it is faster where it is and where it is behind, and says how far to trust the adapters ([#421](https://github.com/casoon/opengrid/issues/421)).
 - **Docs, tools:** the performance guide has a section "In the browser, as a visitor sees it" with
   opengrid's own page-level figures (first rows, sort, filter, group, scrolling, bytes fetched, page
   memory; in the tab and in server mode), and `bench/baselines/` keeps them in the tool's format, also with the CPU four and six times slower;

@@ -277,14 +277,84 @@ throttled to a quarter and a sixth of its speed (a mid-range laptop), objects ha
 the first rows in 244 ms and 333 ms at 100,000 rows, and in 644 ms and 928 ms at 1,000,000;
 those runs are kept as `-x4-` and `-x6-` files.
 
+## Against other grids
+
+The same tool measured five other grids that are MIT-licensed, as each one's own
+documentation sets up a plain grid: **AG Grid Community 36.3**, **RevoGrid 4.31**, **SlickGrid
+6.0**, **Tabulator 6.7** and **w2ui 2.0**. Same rows, same six columns, same questions, the same
+page and the same Chromium (**Apple M4 Pro**, 17 November 2026, **median of five**, the CPU not
+throttled); every time is to the frame that shows the right answer, so 33 ms is two frames and
+the floor. *Undo* is clearing the filter and the sort. Memory is the whole browser process tree
+after loading; opengrid's first row is the rows handed over as JS objects, as every other grid is
+given them (the CSV row is the engine's own input).
+
+| 1,000,000 rows | First rows | Sort | Filter | Undo | Memory | Fetched (br) |
+|---|---|---|---|---|---|---|
+| **opengrid**, objects | 195 ms | **34 ms** | 50 ms | **50 ms** | 376 MiB | 546 KiB |
+| **opengrid**, CSV | 600 ms | 38 ms | 50 ms | 50 ms | 641 MiB | 546 KiB |
+| AG Grid Community | 555 ms | 736 ms | 312 ms | 833 ms | 524 MiB | 256 KiB |
+| RevoGrid | 130 ms | 266 ms | 97 ms | 166 ms | 239 MiB | 93 KiB |
+| SlickGrid | 75 ms | 211 ms | 47 ms | 466 ms | 257 MiB | 55 KiB |
+| Tabulator | 191 ms | 1,424 ms | 278 ms | 1,434 ms | 441 MiB | 88 KiB |
+| w2ui | 1,124 ms | 591 ms | 150 ms | 983 ms | 480 MiB | 157 KiB |
+
+| 100,000 rows | First rows | Sort | Filter | Undo | Memory |
+|---|---|---|---|---|---|
+| **opengrid**, objects | 97 ms | 32 ms | 33 ms | 33 ms | 123 MiB |
+| **opengrid**, CSV | 116 ms | 33 ms | 33 ms | 33 ms | 167 MiB |
+| AG Grid Community | 95 ms | 57 ms | 50 ms | 67 ms | 139 MiB |
+| RevoGrid | 115 ms | 96 ms | 83 ms | 83 ms | 65 MiB |
+| SlickGrid | 17 ms | 20 ms | 33 ms | 50 ms | 58 MiB |
+| Tabulator | 44 ms | 106 ms | 32 ms | 100 ms | 115 MiB |
+| w2ui | 135 ms | 49 ms | 31 ms | 100 ms | 171 MiB |
+
+**What the table says.** Over a million rows opengrid answers a sort in 34 ms where the others
+need 211 ms to 1.4 s, and undoes a filter and a sort in 50 ms where they need 166 ms to 1.4 s;
+only SlickGrid filters as fast (47 ms against 50 ms). Over a hundred thousand rows the grids are
+within a few frames of each other, and SlickGrid is ahead. Scrolling is a frame in every one of
+them (p95 16.7 ms): that is not where they differ.
+
+**Why opengrid is faster where it is.**
+
+- **The query runs on typed columns, not on objects.** A sort or a filter is a scan over a
+  typed column in an engine written in Rust, not a comparison function called on a million
+  JS objects. The engine's own figure for the same sort is 26 ms (above).
+- **Only the visible rows cross.** The page asks for a window of rows and gets it as one binary
+  answer, not every row, and scrolling is a frame at a million rows as it is at a hundred thousand.
+- **The work is off the main thread.** The engine runs in a Worker, so a query does not block
+  scrolling or typing.
+- **Cost grows with the data and no faster.** Ten times the rows cost about ten times the time
+  (see the first table of this page).
+- **The cost is paid once, at loading.** Since #445 the rows are made into typed columns
+  while the worker starts, so the table is ready for the first question. That is the one
+  step a JavaScript grid does not have, and the first column of the tables shows what it costs.
+- **The same engine can be on the server.** With the rows in a database behind
+  `opengrid-server` the page holds none of them: 72 MiB at a million rows, a window every
+  step (see above).
+
+**Where opengrid is behind.** The page fetches 546 KiB, 526 KiB of it the WebAssembly engine,
+against 55 to 256 KiB for the others; over a hundred thousand rows its first rows take 97 ms
+where SlickGrid and Tabulator need 17 and 44 ms; over a million rows RevoGrid (130 ms) and
+SlickGrid (75 ms) show their first rows sooner than opengrid's 195 ms; and handed objects, the
+page holds both its objects and the engine's columns. A table that small does not need an engine.
+
+**How far to trust it.** Each grid is set up by an adapter written from that grid's
+documentation, by us, and not checked by its maintainers; a different setting can change a
+figure, and we would rather be told. One machine, one browser, one question (sort, filter,
+undo, scroll a large table): a grid that does more is not slower for it here, and a grid that
+does less is not faster. The tool, the adapters and the method are in `bench/`; `pnpm bench`
+repeats it. We also ran a commercial grid, DevExtreme DataGrid, to check our own figures
+internally; its licence does not say whether results may be published, so this page has none of
+it and claims nothing about it.
+
 ## What these figures are not
 
 - **Not a browser measurement**, except where a section says so: the figures of the engine are
   its own; the page, the frame and the process memory are `bench/` (above) and
   `scripts/measure-grid.mjs` (`just measure-grid`), in Chromium and WebKit.
-- **Not a comparison with other grids.** One would need the same data, the same features and
-  each product set up as its own documentation recommends, and its method published before its
-  result. That is planned, not done; until then this page says nothing about anyone else.
+- **Not a comparison of everything.** The section "Against other grids" is one question, on
+  five MIT-licensed grids; it says nothing about editing, accessibility, pivot or export, and
+  nothing about a grid that is not in it.
 - **One machine.** An M4 Pro is a fast laptop. A phone, or a laptop three years older, takes
   proportionally longer; run the script on the hardware your readers have.
 
