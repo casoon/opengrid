@@ -192,3 +192,30 @@ test("two loads at once do not mix their packs", async ({ page }) => {
   expect(sequence.filter((type) => type !== "stats")).toEqual([...load, ...load]);
   expect(counts).toEqual([["a", 140000], ["b", 140000]]);
 });
+
+test("a pack the engine refuses stops the rest, aborts, and the rows take the JSON route", async ({ page }) => {
+  await open(page);
+  const calls = await page.evaluate(async (schema) => {
+    const { Engine, createLocalProvider } = window.__lab;
+    const rows = Array.from({ length: 200_000 }, (_, i) => ({ id: i, note: "x" }));
+    const engine = new Engine();
+    const calls = [];
+    let pushes = 0;
+    for (const name of ["begin_columns", "push_columns", "end_columns", "abort_columns", "load_rows"]) {
+      const original = engine[name].bind(engine);
+      engine[name] = (...args) => {
+        calls.push(name);
+        if (name === "push_columns" && (pushes += 1) === 2) {
+          throw new Error("refused");
+        }
+        return original(...args);
+      };
+    }
+    await createLocalProvider(engine).loadRows("t", rows, JSON.stringify(schema));
+    return calls;
+  }, SCHEMA);
+  // Two packs asked, the second refused; the later ones are not made; then the way out.
+  expect(calls.filter((c) => c === "push_columns").length).toBeLessThanOrEqual(3);
+  expect(calls.slice(-2)).toEqual(["abort_columns", "load_rows"]);
+  expect(calls).not.toContain("end_columns");
+});

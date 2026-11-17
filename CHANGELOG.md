@@ -58,6 +58,7 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Changed
 
+- **Package:** `loadRows` of an array of objects starts the worker while the rows are made into columns, and makes the next pack while the engine takes the one before: the first rows of a million-row table show after 190 ms instead of 300 ms (100,000 rows: 86 instead of 112 ms). A pack the engine refuses stops the rest, as before.
 - **Server:** the count of a query is remembered for 5 seconds, so the next window of it (only
   `offset` changes) does not count again: on ten million rows in PostgreSQL the first window takes
   0.5 ms instead of 146 ms, a filtered one 246 instead of 461 ms. The key is the filter (the token's

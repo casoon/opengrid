@@ -194,12 +194,22 @@ export function createWorkerProvider({
   const watchers = createWatchers();
 
   // Rows as packs of columns (issue #445): to the worker, which owns the engine.
+  let started = Promise.resolve();
   const loadRowsAsColumns = columnLoader({
-    all: (name, schema, rows, pack) => request({ type: "columns", name, schema, rows, pack }, [pack]),
-    begin: (name, schema, rows) => request({ type: "columns_begin", name, schema, rows }),
+    all: async (name, schema, rows, pack) => {
+      await started;
+      return request({ type: "columns", name, schema, rows, pack }, [pack]);
+    },
+    begin: async (name, schema, rows) => {
+      await started;
+      return request({ type: "columns_begin", name, schema, rows });
+    },
     push: (pack) => request({ type: "columns_chunk", pack }, [pack]),
     end: () => request({ type: "columns_end" }),
-    abort: () => request({ type: "columns_abort" }),
+    abort: async () => {
+      await started;
+      return request({ type: "columns_abort" });
+    },
   });
 
   function start() {
@@ -254,8 +264,10 @@ export function createWorkerProvider({
      * name already loaded is replaced, all or nothing.
      */
     async loadRows(name, rows, schema) {
-      await start();
+      // The worker starts while the rows are made into columns, which is most of the wait.
+      started = start();
       if (!(await loadRowsAsColumns(name, rows, schema))) {
+        await started;
         await request({ type: "rows", name, rows: rowsJson(rows), schema });
       }
       watchers.loaded(name);
@@ -689,14 +701,32 @@ async function loadColumns(name, rows, schema, io) {
       await io.all(name, schema, rows.length, pack);
       return true;
     }
+    // The next pack is made while the engine takes the one before: a pack waits for the one two
+    // before it, not for the one before (which would leave the engine idle while a pack is made),
+    // and the page gets the thread back between packs. The first is made before `begin` is asked,
+    // so that a worker still starting does its start while that is done.
+    let pack = packOf(rows, 0, PACK_ROWS, stored);
+    if (!pack) {
+      return false;
+    }
     await io.begin(name, schema, rows.length);
-    for (let from = 0; from < rows.length; from += PACK_ROWS) {
-      const pack = packOf(rows, from, Math.min(rows.length, from + PACK_ROWS), stored);
+    const sent = [];
+    let refused = null;
+    for (let from = 0; from < rows.length && !refused; from += PACK_ROWS) {
+      pack ??= packOf(rows, from, Math.min(rows.length, from + PACK_ROWS), stored);
       if (!pack) {
-        await io.abort();
-        return false;
+        refused = new Error("rows that are not plain");
+        break;
       }
-      await io.push(pack);
+      sent.push(io.push(pack).catch((error) => (refused ??= error)));
+      pack = null;
+      if (sent.length >= 2) {
+        await sent[sent.length - 2];
+      }
+    }
+    await Promise.all(sent);
+    if (refused) {
+      throw refused;
     }
     await io.end();
     return true;
