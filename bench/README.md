@@ -42,7 +42,10 @@ release or a deliberate change is accepted, add its files here. Only opengrid's 
 
 On a GitHub Linux runner: `gh workflow run bench.yml -f rows=100000 -f throttle=1` (workflow
 `bench.yml`, by hand only); the result is an artifact. A shared runner is a noisy machine, so its
-figures compare with another run of that job, not with the Mac baselines.
+figures compare with another run of that job, not with the Mac baselines;
+`baselines/linux-runner-2026-11-17-100000.json` is one such run (AMD EPYC runner, 100,000 rows, a
+frame of 16.7 ms everywhere it should be, first rows 146 ms), and it only compares when a later run
+lands on the same CPU model.
 
 ## Server mode
 
