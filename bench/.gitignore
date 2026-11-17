@@ -5,3 +5,6 @@ dist/
 results/
 # Adapters for grids whose licence is not MIT: written and run locally, never committed.
 src/adapters/local/
+pages/local/
+src/local/
+src/local-probe.js
