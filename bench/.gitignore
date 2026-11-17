@@ -1,0 +1,7 @@
+node_modules/
+dist/
+# What a run measures, including grids that are not ours and licences that do not allow
+# publishing figures: results stay on the machine that ran them.
+results/
+# Adapters for grids whose licence is not MIT: written and run locally, never committed.
+src/adapters/local/
