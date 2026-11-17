@@ -40,6 +40,10 @@ the machine, rows and throttle it was made with: on another computer, make your 
 release or a deliberate change is accepted, add its files here. Only opengrid's figures belong in
 `baselines/`; a run that includes other grids stays in `results/`.
 
+On a GitHub Linux runner: `gh workflow run bench.yml -f rows=100000 -f throttle=1` (workflow
+`bench.yml`, by hand only); the result is an artifact. A shared runner is a noisy machine, so its
+figures compare with another run of that job, not with the Mac baselines.
+
 ## Server mode
 
 `pnpm bench --grids opengrid-server --rows 1000000 [--db postgres]` measures the same page with
