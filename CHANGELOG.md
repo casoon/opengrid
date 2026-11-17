@@ -19,6 +19,15 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-11-17
+
+Not yet verified by a screen reader: no pass with assistive technology has been recorded for this
+release ([#5](https://github.com/casoon/opengrid/issues/5)). The keyboard and `axe-core` checks run on
+every change.
+
+**What breaks:** the Rust API of `opengrid-columns` (`SortKeys`, `Values::Decimal`, `Values::Utf8`
+and `Values::Int64` changed their shape, see *Changed*). The npm package's API is unchanged.
+
 ### Fixed
 
 - **Grouping:** a group row's label stays on one line when its cell has the focus. It was
@@ -1789,7 +1798,8 @@ tested.
   tested: React 18 rendering on the server, SvelteKit, Nuxt, Next.js and Astro
   as real applications. A Vite production build needs `loadOpengrid({ moduleUrl })`.
 
-[Unreleased]: https://github.com/casoon/opengrid/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/casoon/opengrid/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/casoon/opengrid/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/casoon/opengrid/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/casoon/opengrid/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/casoon/opengrid/compare/v0.14.0...v0.15.0
