@@ -81,6 +81,23 @@ export default {
       return match ? [{ key: match[1], count: Number(match[2]), sum: Number(cells[3]) }] : [];
     });
   },
+  // What is painted in the viewport: the first row's index and whether every row there shows its
+  // own data (the id is the index plus one, as the rows are sorted by `id`). A row that still
+  // shows another row's text, or none, is not an answer yet.
+  painted() {
+    if (!host?.shadowRoot) return null;
+    const view = this.scroller().getBoundingClientRect();
+    const rows = [...host.shadowRoot.querySelectorAll("tbody tr")]
+      .map((tr) => ({ tr, cell: tr.querySelector("td[data-row]") }))
+      .filter(({ tr, cell }) => {
+        if (!cell) return false;
+        const box = tr.getBoundingClientRect();
+        return box.bottom > view.top && box.top < view.bottom;
+      })
+      .map(({ cell }) => ({ row: Number(cell.dataset.row), id: digits(cell.textContent) }));
+    if (!rows.length) return null;
+    return { first: Math.min(...rows.map((r) => r.row)), complete: rows.every((r) => r.id === r.row + 1) };
+  },
   scroller() {
     const all = [host, ...host.shadowRoot.querySelectorAll("*")];
     return all.find((el) => el.scrollHeight > el.clientHeight + 50 && /auto|scroll/.test(getComputedStyle(el).overflowY));

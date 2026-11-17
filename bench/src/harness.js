@@ -51,7 +51,55 @@ function groupsAreRight(shown, want) {
   );
 }
 
-const percentile = (sorted, p) => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))];
+/** Tells the runner a stage begins or ends, so it can say what the requests in between were. */
+const mark = (name) => (window.__mark ? window.__mark(name) : undefined);
+
+/**
+ * What a reader waits for while scrolling a table whose rows are somewhere else: after each move
+ * of the scroll bar, the time until the row at the top is painted **with its data**. Three kinds:
+ * 120 steps of three rows (reading on), 20 jumps of 2,000 rows, and one drag to the middle.
+ * The same move for every adapter that can say which row is painted (`painted`).
+ */
+async function windows(adapter, rows) {
+  const scroller = adapter.scroller();
+  const rowHeight = adapter.rowHeight();
+  const max = scroller.scrollHeight - scroller.clientHeight;
+  // The time from moving the scroll bar to a viewport whose rows all show their data and whose
+  // first row is not the one it was: with scaled scrolling the index a position stands for is the
+  // grid's to say, so what is waited for is a painted answer that is somewhere else.
+  const to = async (top) => {
+    const target = Math.min(max, top);
+    const before = adapter.painted()?.first;
+    const start = performance.now();
+    scroller.scrollTop = target;
+    for (;;) {
+      await frame();
+      const now = adapter.painted();
+      if (now?.complete && (now.first !== before || target === scroller.scrollTop && target === 0)) return performance.now() - start;
+      if (performance.now() - start > 10_000) return null;
+    }
+  };
+  scroller.scrollTop = 0;
+  await frame();
+  await mark("windows:start");
+  const steps = [];
+  for (let i = 1; i <= 120; i++) steps.push(await to(i * 3 * rowHeight));
+  const jumps = [];
+  for (let i = 1; i <= 20; i++) jumps.push(await to(i * 2000 * rowHeight));
+  const middle = await to((rows / 2) * rowHeight);
+  await mark("windows:end");
+  const summary = (times) => {
+    const done = times.filter((t) => t != null).sort((a, b) => a - b);
+    return { n: times.length, failed: times.length - done.length, p50: percentile(done, 0.5), p95: percentile(done, 0.95), max: done[done.length - 1] };
+  };
+  scroller.scrollTop = 0;
+  await frame();
+  return { steps: summary(steps), jumps: summary(jumps), middle };
+}
+
+function percentile(sorted, p) {
+  return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))];
+}
 function summarise(frames, longTasks) {
   const sorted = [...frames].sort((a, b) => a - b);
   return {
@@ -118,8 +166,11 @@ export async function start(adapter) {
   const result = { grid: adapter.name, rows: ROWS };
   window.__bench = { done: false, waiting: null, result };
   try {
-    const rows = makeRows(ROWS);
-    const want = expected(rows);
+    const want = expected(ROWS);
+    const wantGroups = expectedGroups(ROWS);
+    // A grid whose rows are in a database does not get them: the page holds none, as a page
+    // that uses a server would not.
+    const rows = adapter.remote ? null : makeRows(ROWS);
     const container = document.getElementById("grid");
     container.style.height = `${HEIGHT}px`;
 
@@ -161,7 +212,6 @@ export async function start(adapter) {
     );
 
     if (adapter.group) {
-      const wantGroups = expectedGroups(rows);
       result.group = await timed(
         () => adapter.group("country", { amount: "sum" }),
         () => groupsAreRight(adapter.groups(), wantGroups),
@@ -172,7 +222,10 @@ export async function start(adapter) {
       );
     }
 
+    if (adapter.painted) result.windows = await windows(adapter, ROWS);
+    await mark("scroll:start");
     result.scroll = await scroll(adapter);
+    await mark("scroll:end");
     await checkpoint("after");
   } catch (error) {
     result.error = String(error?.stack ?? error);

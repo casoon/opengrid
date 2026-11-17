@@ -16,7 +16,7 @@
 // A figure that is `—` was not reached: the grid did not show the right answer within 30 s,
 // and that is reported as that, not left out.
 
-import { execSync } from "node:child_process";
+import { execSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { brotliCompressSync } from "node:zlib";
 import os from "node:os";
@@ -42,6 +42,26 @@ const GRIDS = option("grids", ALL.join(",")).split(",");
 const ROWS = Number(option("rows", 100_000));
 const RUNS = Number(option("runs", 5));
 const THROTTLE = Number(option("throttle", 1));
+
+// A grid whose name has `server` in it asks a database through `opengrid-server`: started once
+// for these rows (the first time it writes the table, which takes minutes for a million rows),
+// asked on the loopback, stopped at the end. `--db postgres` uses the database `DATABASE_URL` names.
+const SERVER_PORT = 8099;
+let backend = null;
+if (GRIDS.some((g) => g.includes("server"))) {
+  const kind = option("db", "sqlite");
+  backend = spawn("cargo", ["run", "--release", "-q", "-p", "opengrid-server", "--example", "bench_server", "--", kind, String(ROWS), String(SERVER_PORT)], {
+    cwd: resolve(here, ".."),
+    stdio: ["ignore", "pipe", "inherit"],
+  });
+  await new Promise((ready, fail) => {
+    backend.stdout.on("data", (chunk) => String(chunk).includes("listening") && ready());
+    backend.on("exit", (code) => fail(new Error(`the server stopped (${code}) before it listened`)));
+  });
+  backend.removeAllListeners("exit");
+  console.log(`server: opengrid-server on ${kind}, ${ROWS.toLocaleString("en")} rows, port ${SERVER_PORT}`);
+}
+const backendMiB = () => (backend ? Number(execSync(`ps -o rss= -p ${backend.pid}`, { encoding: "utf8" }).trim()) / 1024 : null);
 
 await build({ root: here, logLevel: "warn" });
 const server = await preview({ root: here, logLevel: "error" });
@@ -117,10 +137,25 @@ for (const grid of GRIDS) {
     page.on("response", (response) => {
       if (response.url().startsWith(base)) requested.add(new URL(response.url()).pathname);
     });
+    // The requests to the server, counted from outside: how many and how many bytes of answer,
+    // between the marks the page sets (`mark()` in harness.js).
+    const asked = { requests: 0, bytes: 0 };
+    const marks = {};
+    if (backend) {
+      page.on("requestfinished", async (request) => {
+        if (!request.url().startsWith(`http://127.0.0.1:${SERVER_PORT}`)) return;
+        asked.requests++;
+        asked.bytes += (await request.sizes()).responseBodySize;
+      });
+      await page.exposeFunction("__mark", async (name) => {
+        await settle(100);
+        marks[name] = { ...asked };
+      });
+    }
     await page.goto("about:blank");
     await settle(300);
     const baseline = treeMiB();
-    await page.goto(`${base}/pages/${grid}.html?rows=${ROWS}&sync=1`);
+    await page.goto(`${base}/pages/${grid}.html?rows=${ROWS}&sync=1&server=${SERVER_PORT}`);
     const memory = {};
     try {
       for (;;) {
@@ -132,7 +167,8 @@ for (const grid of GRIDS) {
         await page.evaluate(() => window.__bench.release());
       }
       const result = await page.evaluate(() => window.__bench.result);
-      results[grid].push({ ...result, memory, bytes: sizeOf(requested) });
+      const between = (from, to) => (marks[from] && marks[to] ? { requests: marks[to].requests - marks[from].requests, bytes: marks[to].bytes - marks[from].bytes } : null);
+      results[grid].push({ ...result, memory, bytes: sizeOf(requested), server: backend && grid.includes("server") ? { windows: between("windows:start", "windows:end"), scroll: between("scroll:start", "scroll:end"), asked, backendMiB: backendMiB() } : null });
     } catch (error) {
       results[grid].push({ grid, error: `no result: ${error.message.split("\n")[0]}`, memory });
     }
@@ -140,6 +176,7 @@ for (const grid of GRIDS) {
   }
 }
 await browser.close();
+backend?.kill();
 await server_.close();
 await server.close();
 
@@ -162,6 +199,14 @@ const columns = [
   ["frames>33ms", (r) => r.scroll?.over33 ?? null, 0],
   ["group ms", (r) => (r.group?.ok ? r.group.ms : null), 0],
   ["ungroup ms", (r) => (r.ungroup?.ok ? r.ungroup.ms : null), 0],
+  ["step p50 ms", (r) => r.windows?.steps?.p50 ?? null, 0],
+  ["step p95 ms", (r) => r.windows?.steps?.p95 ?? null, 0],
+  ["jump p50 ms", (r) => r.windows?.jumps?.p50 ?? null, 0],
+  ["jump p95 ms", (r) => r.windows?.jumps?.p95 ?? null, 0],
+  ["middle ms", (r) => r.windows?.middle ?? null, 0],
+  ["requests", (r) => r.server?.windows?.requests ?? null, 0],
+  ["KiB answered", (r) => (r.server?.windows ? r.server.windows.bytes / 1024 : null), 0],
+  ["server MiB", (r) => r.server?.backendMiB ?? null, 0],
   ["KiB fetched (br)", (r) => (r.bytes ? r.bytes.brotli / 1024 : null), 0],
   ["KiB wasm (br)", (r) => (r.bytes ? r.bytes.wasmBrotli / 1024 : null), 0],
   ["MiB loaded", (r) => r.memory?.load ?? null, 0],
