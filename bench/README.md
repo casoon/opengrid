@@ -52,10 +52,10 @@ that is `—` was not reached within 30 s, and is reported as that, not left out
 
 ## What is not measured
 
-Accessibility, features (grouping, editing, pivot, export), how a grid looks, a first load over a
-real network. A grid that does more is not slower for it here, and a grid that does less is not
-faster; this is one question — sort, filter and scroll a large table — and it says nothing about
-the others.
+Accessibility, features beyond sorting, filtering, scrolling and one grouping (editing, pivot,
+export), how a grid looks, a first load over a real network. A grid that does more is not slower
+for it here, and a grid that does less is not faster; this is one question — sort, filter, group
+and scroll a large table — and it says nothing about the others.
 
 ## Fairness, and where it can fail
 
