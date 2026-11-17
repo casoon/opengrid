@@ -184,6 +184,7 @@ bench-grids *args:
 bench-local *args: wasm-build-components
     just wasm-build packages/opengrid/engine
     just wasm-build-collation packages/opengrid/collation
+    just wasm-build-xlsx packages/opengrid/xlsx
     cd bench && pnpm install --frozen-lockfile && BENCH_LOCAL=1 pnpm bench:self {{args}}
 
 # Nur opengrid, ohne andere Grids; mit `--baseline results/<früher>.json` gegen eine frühere Version
