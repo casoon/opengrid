@@ -21,6 +21,8 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Fixed
 
+- **Grouping:** a group row's label stays on one line when its cell has the focus. It was
+  unfolded like any focused cell and wrapped over three lines inside the narrow first column.
 - **Package:** a page that serves the package's files itself and leaves out `collation.js` no
   longer breaks. Since 0.17.0 `loader.js` and `worker.js` imported it statically, so the loader
   failed to load or the worker died without a word and the grid never showed a row. Both import
