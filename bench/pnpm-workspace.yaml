@@ -1,0 +1,4 @@
+# bench/ is its own project, as site/ is: a lockfile of its own, and no workspace of the
+# repository around it (this file stops pnpm from finding the root one). The grids it measures
+# are installed here and nowhere else, so neither CI nor a release installs them.
+packages: []

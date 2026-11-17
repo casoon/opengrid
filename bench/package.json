@@ -1,0 +1,24 @@
+{
+  "name": "opengrid-bench",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Measures opengrid over versions and, for comparison, other grids that are MIT-licensed. Not part of a release: nothing here is published or shipped.",
+  "scripts": {
+    "build": "vite build",
+    "bench": "node run.mjs",
+    "bench:self": "node run.mjs --grids opengrid,opengrid-csv"
+  },
+  "dependencies": {
+    "@casoon/opengrid": "0.17.0",
+    "@revolist/revogrid": "^4.31.5",
+    "ag-grid-community": "^36.3.0",
+    "slickgrid": "^6.0.0",
+    "tabulator-tables": "^6.7.1",
+    "w2ui": "^2.0.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "vite": "8.3.6"
+  }
+}
