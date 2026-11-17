@@ -33,6 +33,11 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Added
 
+- **Docs, tools:** the performance guide has a section "In the browser, as a visitor sees it" with
+  opengrid's own page-level figures (first rows, sort, filter, group, scrolling, bytes fetched, page
+  memory; in the tab and in server mode), and `bench/baselines/` keeps them in the tool's format;
+  `just bench-local` measures this checkout against them, `--baseline` marks what got worse
+  ([#421](https://github.com/casoon/opengrid/issues/421)).
 - **Package, engine:** `provider.unload(name)` on the local and the worker provider, and `unload` on the engine module, free one source; a load after it takes the room the table had, so a page that reloads stays at one table instead of two ([Loading again](https://casoon.github.io/opengrid/docs/guides/performance/#loading-again), [#459](https://github.com/casoon/opengrid/issues/459)).
 - **Docs:** the performance guide measures loading again: what the engine and the browser hold after ten loads of a million rows under one name and under ten, and what `terminate()` hands back, with `scripts/measure-reload.mjs` to repeat it ([Loading again](https://casoon.github.io/opengrid/docs/guides/performance/#loading-again), [#459](https://github.com/casoon/opengrid/issues/459)).
 - **Docs:** the performance guide measures server mode: a window of 40 rows, a filter, a text search and a grouping from PostgreSQL and SQLite at one and ten million rows, with the server's memory and `cargo run --example server_bench` to repeat it ([In server mode](https://casoon.github.io/opengrid/docs/guides/performance/#in-server-mode), [#452](https://github.com/casoon/opengrid/issues/452)).

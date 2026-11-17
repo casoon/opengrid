@@ -179,6 +179,13 @@ measure-pivot: wasm-build-components
 bench-grids *args:
     cd bench && pnpm install --frozen-lockfile && pnpm bench {{args}}
 
+# Wie `bench-self`, aber mit dem Paket aus diesem Checkout statt der Version in bench/package.json
+# (baut die Module vorher). Mit `--baseline bench/baselines/<Datei>.json` gegen gespeicherte Werte.
+bench-local *args: wasm-build-components
+    just wasm-build packages/opengrid/engine
+    just wasm-build-collation packages/opengrid/collation
+    cd bench && pnpm install --frozen-lockfile && BENCH_LOCAL=1 pnpm bench:self {{args}}
+
 # Nur opengrid, ohne andere Grids; mit `--baseline results/<früher>.json` gegen eine frühere Version
 # derselben Maschine (siehe bench/README.md).
 bench-self *args:

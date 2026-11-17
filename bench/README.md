@@ -27,6 +27,18 @@ than a frame (16.7 ms) or 10 MiB; the exit code is 1 then. The baseline has to c
 machine, the same rows and the same throttle, or nothing is compared (exit 2). The sizes of the
 modules and the memory of the engine are peakmark's (`just measure-modules`), not this.
 
+## This checkout against a release, and the stored figures
+
+`just bench-local` builds the package from this checkout and measures it (`BENCH_LOCAL=1` aliases
+`@casoon/opengrid` to `packages/opengrid`), instead of the version pinned in `package.json`.
+`baselines/` holds opengrid's own figures (the three opengrid pages, 100,000 and 1,000,000 rows,
+median of five, Apple M4 Pro) for released 0.17.0 and for `main` on 17 November 2026, in the
+tool's format; `--baseline baselines/<file>.json` compares with them. A baseline only compares on
+the machine, rows and throttle it was made with: on another computer, make your own first
+(`just bench-self` on the release, keep the file, then `just bench-local --baseline`). When a
+release or a deliberate change is accepted, add its files here. Only opengrid's figures belong in
+`baselines/`; a run that includes other grids stays in `results/`.
+
 ## Server mode
 
 `pnpm bench --grids opengrid-server --rows 1000000 [--db postgres]` measures the same page with
