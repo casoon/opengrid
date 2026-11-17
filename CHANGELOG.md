@@ -35,7 +35,7 @@ Two things belong in every release entry and are easy to leave out:
 
 - **Docs, tools:** the performance guide has a section "In the browser, as a visitor sees it" with
   opengrid's own page-level figures (first rows, sort, filter, group, scrolling, bytes fetched, page
-  memory; in the tab and in server mode), and `bench/baselines/` keeps them in the tool's format;
+  memory; in the tab and in server mode), and `bench/baselines/` keeps them in the tool's format, also with the CPU four and six times slower;
   `just bench-local` measures this checkout against them, `--baseline` marks what got worse
   ([#421](https://github.com/casoon/opengrid/issues/421)).
 - **Package, engine:** `provider.unload(name)` on the local and the worker provider, and `unload` on the engine module, free one source; a load after it takes the room the table had, so a page that reloads stays at one table instead of two ([Loading again](https://casoon.github.io/opengrid/docs/guides/performance/#loading-again), [#459](https://github.com/casoon/opengrid/issues/459)).
