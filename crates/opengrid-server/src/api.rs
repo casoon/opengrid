@@ -145,6 +145,8 @@ pub struct AppState {
     /// The names of the sources that changed (issue #328): what
     /// `GET /watch/{source}` streams are the ones it was asked for.
     pub(crate) changes: tokio::sync::broadcast::Sender<String>,
+    /// The counts of recent queries (issue #457).
+    pub(crate) counts: crate::count_cache::CountCache,
     /// Where the failures a caller is not told in full are written down.
     pub(crate) reporter: Reporter,
 }
@@ -182,6 +184,7 @@ impl AppState {
             max_concurrent_exports: concurrent,
             exports: Arc::new(Semaphore::new(concurrent)),
             changes: tokio::sync::broadcast::channel(64).0,
+            counts: crate::count_cache::CountCache::new(settings.count_cache_ttl),
             reporter: Reporter::default(),
         }
     }
@@ -328,7 +331,17 @@ async fn query(
         if tree && !source.data.capabilities().tree {
             source.data.tree(&validated).await
         } else {
-            source.data.execute(validated.clone()).await
+            // The count of the same query a moment ago is not asked for again
+            // (issue #457).
+            let known = state.counts.get(&source_name, &validated);
+            let answered = source
+                .data
+                .execute_counted(validated.clone(), known)
+                .await?;
+            state
+                .counts
+                .put(&source_name, &validated, answered.total_count);
+            Ok(answered)
         }
     };
     let executed = tokio::time::timeout(state.timeout, answering)

@@ -53,6 +53,14 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Changed
 
+- **Server:** the count of a query is remembered for 5 seconds, so the next window of it (only
+  `offset` changes) does not count again: on ten million rows in PostgreSQL the first window takes
+  0.5 ms instead of 146 ms, a filtered one 246 instead of 461 ms. The key is the filter (the token's
+  row filter included), grouping and aggregates; `notify_changed` drops it, `count_cache_ttl` sets
+  the time, zero switches it off. A count can be stale for that time when a database changes without
+  the server being told. `Connector::execute_counted` is new and defaults to `execute`; PostgreSQL
+  and SQLite skip their count statement with it
+  ([#457](https://github.com/casoon/opengrid/issues/457)).
 - **Engine, columns:** a sort by a locale makes one sort key per distinct text of a column with few
   of them, and the rows share the keys, instead of one per row: a million rows by `customer` take 17 ms
   for the first 100 rows with `de` instead of 501 ms, by `country` 16 ms instead of 208. The order is

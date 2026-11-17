@@ -287,48 +287,7 @@ impl SendDataSource for PostgresDataSource {
     }
 
     async fn execute(&self, query: ValidatedQuery) -> Result<QueryResult, DataSourceError> {
-        match &query.tree {
-            // A flat tree is the whole visible tree anyway (T8), and without
-            // the pushdown every tree is the engine's: it answers from the
-            // scope's rows, as for any source.
-            Some(tree) if tree.flat || !self.tree_pushdown => {
-                return opengrid_connector::Connector::tree(self, &query).await;
-            }
-            // One level in SQL (issue #132).
-            Some(tree) => return self.execute_tree(&query, tree).await,
-            None => {}
-        }
-        {
-            let output: Vec<(String, DataType)> = query
-                .output_schema
-                .fields()
-                .iter()
-                .map(|field| (field.name.as_str().to_owned(), field.data_type))
-                .collect();
-
-            let compiled = self.compiler.compile(&query).map_err(compile)?;
-            let rows = self.rows(&compiled, &output).await?;
-
-            // `total_count` is the rows before paging — a second statement, for
-            // the reasons in `CompiledQuery::count_of`.
-            let counting = CompiledQuery::count_of(&query, &self.compiler).map_err(compile)?;
-            let counted = self
-                .rows(&counting, &[("total_count".to_owned(), DataType::Int64)])
-                .await?;
-            let total_count: u64 = counted
-                .first()
-                .and_then(|row| row.first().cloned().flatten())
-                .and_then(|text| text.parse().ok())
-                .unwrap_or(rows.len() as u64);
-
-            let columns = columns_of(rows, &output)?;
-
-            Ok(QueryResult::new(
-                query.output_schema.clone(),
-                columns,
-                total_count,
-            ))
-        }
+        self.execute_with_count(query, None).await
     }
 
     fn capabilities(&self) -> DataSourceCapabilities {
@@ -467,6 +426,61 @@ pub(crate) fn compile(error: crate::compiler::CompileError) -> DataSourceError {
 }
 
 impl PostgresDataSource {
+    /// [`execute`](SendDataSource::execute), with the count of the rows before
+    /// paging already known (issue #457): the second statement is not sent.
+    pub(crate) async fn execute_with_count(
+        &self,
+        query: ValidatedQuery,
+        known_count: Option<u64>,
+    ) -> Result<QueryResult, DataSourceError> {
+        match &query.tree {
+            // A flat tree is the whole visible tree anyway (T8), and without
+            // the pushdown every tree is the engine's: it answers from the
+            // scope's rows, as for any source.
+            Some(tree) if tree.flat || !self.tree_pushdown => {
+                return opengrid_connector::Connector::tree(self, &query).await;
+            }
+            // One level in SQL (issue #132).
+            Some(tree) => return self.execute_tree(&query, tree).await,
+            None => {}
+        }
+        {
+            let output: Vec<(String, DataType)> = query
+                .output_schema
+                .fields()
+                .iter()
+                .map(|field| (field.name.as_str().to_owned(), field.data_type))
+                .collect();
+
+            let compiled = self.compiler.compile(&query).map_err(compile)?;
+            let rows = self.rows(&compiled, &output).await?;
+
+            // `total_count` is the rows before paging — a second statement, for
+            // the reasons in `CompiledQuery::count_of`.
+            let total_count: u64 = if let Some(known) = known_count {
+                known
+            } else {
+                let counting = CompiledQuery::count_of(&query, &self.compiler).map_err(compile)?;
+                let counted = self
+                    .rows(&counting, &[("total_count".to_owned(), DataType::Int64)])
+                    .await?;
+                counted
+                    .first()
+                    .and_then(|row| row.first().cloned().flatten())
+                    .and_then(|text| text.parse().ok())
+                    .unwrap_or(rows.len() as u64)
+            };
+
+            let columns = columns_of(rows, &output)?;
+
+            Ok(QueryResult::new(
+                query.output_schema.clone(),
+                columns,
+                total_count,
+            ))
+        }
+    }
+
     /// A whole pivot in **one** statement (plan point 31).
     ///
     /// The database computes every level at once; this method splits the long

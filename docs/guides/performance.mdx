@@ -194,11 +194,22 @@ ten times the rows; PostgreSQL's own memory is not in it, SQLite's page cache is
 
 What the figures say:
 
-- **Every window carries its count.** `total_count` is what the grid needs for its scroll bar and
-  `aria-rowcount`, and it is a second statement for each window. In PostgreSQL counting ten million
-  rows takes about 170 ms, and that is most of the first window's 181 ms.
+- **Every window carries its count, and the server remembers it.** `total_count` is what the grid
+  needs for its scroll bar and `aria-rowcount`, and it is a second statement. In PostgreSQL
+  counting ten million rows takes about 170 ms, and that is most of the first window's 181 ms. The
+  server therefore keeps the count of a query for 5 seconds (the filter, grouping and aggregates
+  are the key; the sort and the page are not) and tells the connector, which skips the statement.
+  `notify_changed` drops it at once; `count_cache_ttl` sets the time, zero switches it off. The
+  figures above are measured with it off; with it on, a window after the first one of a query
+  (PostgreSQL, 10M, 17 November 2026, same machine, median of nine): the first window 146 ms
+  became 0.5 ms, the filtered window 461 ms became 246 ms, the grouping 631 ms became 370 ms,
+  the text search 743 ms became 1.4 ms. A count is stale for at most that time when the
+  database changes without the server being told.
 - **A window far down costs more.** An `offset` makes the database walk past the rows before it:
-  dragging the scroll bar to the middle of ten million rows asks for 400 ms in PostgreSQL.
+  dragging the scroll bar to the middle of ten million rows asks for 400 ms in PostgreSQL (227 ms
+  with the count remembered, so the walk is what is left). Keyset paging would avoid the walk
+  from a window on, not for a jump to a position, which is what the scroll bar does; it is not
+  built. An index on the sort column is what shortens it.
 - **The indexes decide, not opengrid.** With an index on `amount` alone, SQLite takes it for a
   range over half the table: the filtered window then needs **5.5 s** at ten million rows instead
   of 16 ms. A text search with `contains` reads every row in either database.
@@ -214,6 +225,7 @@ window; several readers at once; PostgreSQL on its own machine.
 DATABASE_URL=postgres://$USER@localhost:5432/opengrid_dev \
   cargo run --release -p opengrid-server --example server_bench -- postgres 1000000
 cargo run --release -p opengrid-server --example server_bench -- sqlite 10000000
+COUNT_CACHE=1 cargo run --release -p opengrid-server --example server_bench -- sqlite 10000000
 ```
 
 The first run writes the rows (`bench_orders_<rows>` in the database,

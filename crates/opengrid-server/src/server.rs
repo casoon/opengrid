@@ -57,6 +57,7 @@ impl Server {
     /// does. A source nobody watches costs nothing.
     pub fn notify_changed(&self, name: &str) {
         // No receiver is not a failure: nobody is watching.
+        self.state.counts.forget(name);
         let _ = self.state.changes.send(name.to_owned());
     }
 
@@ -76,6 +77,7 @@ pub(crate) struct Settings {
     pub max_concurrent_exports: Option<usize>,
     pub max_tree_rows: u64,
     pub max_xlsx_rows: u64,
+    pub count_cache_ttl: Duration,
 }
 
 impl Default for Settings {
@@ -88,6 +90,7 @@ impl Default for Settings {
             max_concurrent_exports: None,
             max_tree_rows: 5_000_000,
             max_xlsx_rows: 1_000_000,
+            count_cache_ttl: Duration::from_secs(5),
         }
     }
 }
@@ -181,6 +184,18 @@ impl ServerBuilder {
     /// the time counts against the server's timeout. Default 1 000 000.
     pub fn max_xlsx_rows(mut self, rows: u64) -> Self {
         self.settings.max_xlsx_rows = rows;
+        self
+    }
+
+    /// How long the server remembers how many rows a query matches, so that
+    /// the next window of it (only `offset` changes) does not count again
+    /// (issue #457). A change announced with
+    /// [`notify_changed`](Server::notify_changed) drops the counts of that
+    /// source at once; the time is the backstop for a database that changes
+    /// without the server being told. `Duration::ZERO` switches it off.
+    /// Default 5 seconds.
+    pub fn count_cache_ttl(mut self, ttl: Duration) -> Self {
+        self.settings.count_cache_ttl = ttl;
         self
     }
 
