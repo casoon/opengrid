@@ -108,8 +108,9 @@ and scroll a large table — and it says nothing about the others.
   20,000), and a timer that started after a synchronous mount gave negative times. **An adapter
   needs the eye of someone who knows the grid before a figure that names it is quoted.**
 - One machine, one browser. The CPU can be throttled; that is not another computer.
-- Results are written to `results/` and **stay there** (git-ignored): they name grids that are
-  not ours, and the licence of a product that is not MIT may not allow publishing figures.
+- Results are written to `results/` and **stay there** (git-ignored). The figures of the MIT-licensed
+  grids are published in the performance guide; a product that is not MIT stays local, and its
+  figures are not published unless its licence says they may be.
 
 ## Adding a grid
 
