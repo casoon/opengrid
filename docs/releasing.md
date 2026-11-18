@@ -168,10 +168,10 @@ command; say in the changelog whether one was tried.
 
 ### Rust crates
 
-Fourteen crates go to [crates.io](https://crates.io) with every release, at the version of
+Sixteen crates go to [crates.io](https://crates.io) with every release, at the version of
 the npm package: `opengrid-json`, `-types`, `-query`, `-columns`, `-datasource`, `-planner`,
 `-engine`, `-pivot`, `-grid`, `-export`, `-connector`, `-connector-sqlite`,
-`-datasource-postgres` and `-server`. Not published, by `publish = false`: `opengrid-wasm`,
+`-datasource-postgres`, `-server`, `-sql` and `-serve`. Not published, by `publish = false`: `opengrid-wasm`,
 `opengrid-web-core` and `opengrid-web-components` (they only make sense inside the npm
 package), `opengrid-conformance`, `xtask` and `examples/server`. `cargo publish --workspace`
 skips those.
@@ -204,8 +204,8 @@ These are the owner's steps; the workflow cannot do them.
 
 1. **GitHub:** create the environment `crates-io` (Settings → Environments) with a required
    reviewer, like `npm`.
-2. **Names:** all fourteen `opengrid-*` names were free on crates.io on 2026-11-09 (the API
-   answered 404 for each). Names are taken by the first publish, so check again just before.
+2. **Names:** the first fourteen `opengrid-*` names were free on crates.io on 2026-11-09 and
+   `opengrid-sql` and `opengrid-serve` on 2026-11-18 (the API answered 404 for each). Names are taken by the first publish, so check again just before.
 3. **The first publish needs a token.** crates.io lets you register a Trusted Publisher only
    for a crate that exists; as far as could be checked (the RFC and third-party reports, not
    the crates.io documentation itself), there is no "pending" trusted publisher for a new
@@ -220,7 +220,7 @@ These are the owner's steps; the workflow cannot do them.
    it. `cargo publish` then stops with the error; wait, and publish the rest with
    `cargo publish --locked -p <crate> -p <crate> …` (an existing version is an error, so
    name only the missing ones), or ask the crates.io team for a higher limit beforehand.
-4. **Then, for each of the fourteen crates:** crates.io → the crate → Settings → Trusted
+4. **Then, for each of the sixteen crates:** crates.io → the crate → Settings → Trusted
    Publishing → add: repository owner `casoon`, repository `opengrid`, workflow
    `release.yml`, environment `crates-io`. From the next release on the workflow does it.
    Optionally tick "Require trusted publishing" on each crate afterwards.
@@ -229,7 +229,7 @@ Checking the workflow itself before the real release is not possible without a r
 runs on tags only, like `publish-npm`. What is checked beforehand is everything it runs
 except the token and the upload — the dry run above and the selection of the crates
 (`cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.publish != [])
-| .name'` lists the fourteen).
+| .name'` lists the sixteen).
 
 ## After
 

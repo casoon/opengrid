@@ -19,6 +19,8 @@ version="${1:?usage: set-version.sh <x.y.z>}"
 perl -0pi -e "s/(\[workspace\.package\]\nversion = \")[^\"]+(\")/\${1}$version\${2}/" Cargo.toml
 # The internal crates, which crates.io wants versioned beside their path (#241).
 perl -pi -e "s/(path = \"crates\/opengrid-[a-z-]+\", version = \")[^\"]+(\")/\${1}$version\${2}/" Cargo.toml
+# A crate that names a sibling by path in its own manifest (`opengrid-serve`, #486).
+perl -pi -e "s/(path = \"\.\.\/opengrid-[a-z-]+\", version = \")[^\"]+(\")/\${1}$version\${2}/" crates/*/Cargo.toml
 # The README's `[dependencies]` example names the minor ("0.14"), which is what
 # a program writes in its Cargo.toml.
 minor="$(echo "$version" | sed -E 's/^([0-9]+\.[0-9]+).*/\1/')"
