@@ -11,12 +11,12 @@
 //! the server takes it like any other source, with the pivot pushed down to
 //! `GROUPING SETS` and the export read through a cursor.
 //!
-//! The compiler is the product's core, not a thin wrapper (E12): the whole point
+//! The compiler (`opengrid-sql`, one for every SQL database, with a dialect per
+//! database) is the product's core, not a thin wrapper (E12): the whole point
 //! is that the same query means the same thing in the browser and in the
 //! database, and that is decided here, in the places where PostgreSQL's defaults
 //! differ from the specification.
 
-mod compiler;
 mod connector;
 mod export;
 mod lease;
@@ -24,7 +24,10 @@ mod source;
 mod tls;
 mod tree;
 
-pub use compiler::{CompileError, CompiledQuery, PostgresCompiler, QueryCompiler};
+pub use opengrid_sql::{CompileError, CompiledQuery, QueryCompiler};
+
+/// The shared SQL compiler in its PostgreSQL dialect (issue #485).
+pub type PostgresCompiler = opengrid_sql::Compiler<opengrid_sql::Postgres>;
 pub use export::{ExportCanceller, PostgresExport};
 pub use source::{PoolOptions, PostgresDataSource};
 #[cfg(feature = "tls")]

@@ -1222,6 +1222,7 @@ dependencies = [
  "opengrid-json",
  "opengrid-pivot",
  "opengrid-query",
+ "opengrid-sql",
  "opengrid-types",
  "rusqlite",
  "tokio",
@@ -1251,6 +1252,7 @@ dependencies = [
  "opengrid-json",
  "opengrid-pivot",
  "opengrid-query",
+ "opengrid-sql",
  "opengrid-types",
  "rustls",
  "rustls-pki-types",
@@ -1380,6 +1382,17 @@ dependencies = [
  "tokio-postgres",
  "tower",
  "tower-http",
+]
+
+[[package]]
+name = "opengrid-sql"
+version = "0.18.1"
+dependencies = [
+ "insta",
+ "opengrid-conformance",
+ "opengrid-pivot",
+ "opengrid-query",
+ "opengrid-types",
 ]
 
 [[package]]

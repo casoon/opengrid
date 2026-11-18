@@ -47,11 +47,11 @@ use opengrid_types::{DataType, Schema};
 use tokio_postgres::CancelToken;
 use tokio_postgres::types::ToSql;
 
-use crate::compiler::{CompiledQuery, QueryCompiler};
 use crate::source::{
     PostgresDataSource, backend, columns_of, compile, text_params, texts, wrap_for_reading,
 };
 use crate::tls::Canceller;
+use opengrid_sql::{CompiledQuery, QueryCompiler};
 
 /// The cursor's name. One export per connection, so one name is enough.
 const CURSOR: &str = "opengrid_export";

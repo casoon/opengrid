@@ -1,6 +1,6 @@
 //! One level of a tree, answered by PostgreSQL (issue #132, rules T1–T7).
 //!
-//! The statements are the compiler's (`PostgresCompiler::tree_*`); this runs
+//! The statements are the compiler's (`opengrid_sql::Compiler::tree_*`); this runs
 //! them in one `REPEATABLE READ` transaction, so the checks, the counts and
 //! the level all read the same rows — a temporary copy of the tree's own
 //! columns, indexed, dropped with the transaction — and turns their text back
@@ -13,9 +13,9 @@ use tokio_postgres::IsolationLevel;
 use tokio_postgres::types::ToSql;
 
 use crate::PostgresDataSource;
-use crate::compiler::CompiledQuery;
 use crate::lease::Lease;
 use crate::source::{backend, compile, data, text_params, texts, value_from_text};
+use opengrid_sql::CompiledQuery;
 
 impl PostgresDataSource {
     /// Answers one level of a tree in PostgreSQL.
@@ -70,7 +70,7 @@ impl PostgresDataSource {
             }
         };
 
-        // The tree's rows, once, indexed (see `PostgresCompiler::tree_prepare`);
+        // The tree's rows, once, indexed (see `Compiler::tree_prepare`);
         // gone again with the transaction.
         let prepare = compiler.tree_prepare(query, tree).map_err(compile)?;
         let params = text_params(&prepare.params);
@@ -83,7 +83,7 @@ impl PostgresDataSource {
             .await
             .map_err(backend)?;
         transaction
-            .batch_execute(crate::compiler::TREE_INDEXES)
+            .batch_execute(opengrid_sql::Dialect::tree_indexes(compiler.dialect()))
             .await
             .map_err(backend)?;
 
