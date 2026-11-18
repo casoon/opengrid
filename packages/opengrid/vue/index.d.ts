@@ -89,6 +89,8 @@ export interface OpengridGridProps extends Options {
   collation?: string;
   /** An empty row after the last one to type a new record into (`@row-add`). */
   addRow?: boolean;
+  /** Locks editing for the whole grid; the page unlocks it at run time. */
+  editLocked?: boolean;
   search?: boolean;
   facets?: boolean;
   toolbar?: boolean;

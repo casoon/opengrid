@@ -245,6 +245,7 @@ An interactive `<table role="grid">`: virtualized, keyboard-driven, filterable.
 | `facets` | Shows the **facet sidebar** — the facets a page configured with `set_columns`. See [Facets](#facets). |
 | `toolbar` | Puts a **toolbar** above the grid: the active filters and the grouping as chips, a switch for the filter row, the column list, the density. Opt-in. See [Toolbar](#toolbar). |
 | `add-row` | An empty **new row** after the last one: type a record into it. See [Adding rows](#adding-rows). Off while grouped, in a tree and with `page-size`. |
+| `edit-locked` | **Locks editing** for the whole grid; remove it to unlock. See [Locking edits](#locking-edits). |
 | `filter-builder` | Puts **Advanced filter** into the toolbar: the button that opens the builder of the [nested filter](#nested-filter). Opt-in, and only with `toolbar`. Without it a nested filter still works — the search expression writes it, the view carries it — and its chip still opens the builder. |
 | `column-menu` | Gives every header a **column menu**: sort, filter, aggregate, group, hide. Opt-in. See [Column menu](#column-menu). |
 | `selection` | Shows the **selection column**: a checkbox per row and one in the header. Opt-in — selecting rows works from the keyboard either way; what this adds is the column that shows it and the pointer path to it. |
@@ -1831,6 +1832,24 @@ exception to the first part: `loader.js` dispatches it on the element, without `
 contract is a query. An edited value is shown at once and marked unsaved; a
 fresh result from the source clears the marks.
 
+### Locking edits
+
+A price list that reads by default and is unlocked by a button (issue #494) sets `edit-locked` on the
+grid and removes it again:
+
+```js
+grid.toggleAttribute("edit-locked", true); // locked
+grid.toggleAttribute("edit-locked", false); // "Edit prices": editing is back
+```
+
+Locked, no edit gets in: no cell editor (`Enter`, `F2`, a typed character), no paste, no value set for
+the selected rows, no record form, no new row (`add-row`) and no undo or redo. Every refused attempt is
+said in the status line (`editLocked` in `set_texts`). The grid and its cells say `aria-readonly`.
+Setting or removing the attribute runs no query and keeps the data, the sort, the filter, the scroll
+position and the focus. An editor that is open when the lock is set is closed **without** committing
+what was typed. The attribute is the whole state — the grid fires no event for it. Unlocked, the
+`readonly` of a column in `set_columns` applies as before. Adapters take it as `editLocked`.
+
 ### Saving edits
 
 A page that saves each edit on its own says back what became of it (issue #153).
@@ -2188,6 +2207,7 @@ boolean reads — that is `set_formats`.
 | `sourceChanged` / `sourceRefresh` | `The data changed. Refresh to see it.` / `Refresh` | |
 | `undoNothing` / `redoNothing` | `Nothing to undo` / `Nothing to redo` | |
 | `bulkCaption` / `bulkApply` / `bulkMenu` | `Set {column} for {rows} selected` / `Set` / `Set for selected rows` | `{column}`, `{rows}` |
+| `editLocked` | `Editing is locked` | |
 | `bulkReadonly` / `bulkDone` | `{column} is read-only` / `{column} set for {rows}` | `{column}`, `{rows}` |
 | `pastePreview` / `pasteApply` / `pasteDiscard` | `Paste preview` / `Paste` / `Discard` | |
 | `pasteUnreadable` | `“{value}” cannot be read as {type}` | `{value}`, `{type}` |

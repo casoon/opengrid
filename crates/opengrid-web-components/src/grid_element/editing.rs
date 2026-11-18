@@ -2,6 +2,29 @@
 
 use super::*;
 
+/// Whether the page locked editing for the whole grid (issue #494). The one
+/// question every way into an edit asks — the editor, paste, the bulk panel,
+/// the record form, the new row, undo and redo — so no path keeps its own.
+pub(super) fn edit_locked(host: &HtmlElement) -> bool {
+    host.has_attribute(grid::EDIT_LOCKED_ATTRIBUTE)
+}
+
+/// Says so in the status line and answers `true` when editing is locked: the
+/// attempt is refused out loud, not dropped.
+pub(super) fn refuse_locked(host: &HtmlElement) -> bool {
+    if !edit_locked(host) {
+        return false;
+    }
+    if let Some(runtime) = runtime(host) {
+        runtime
+            .borrow_mut()
+            .state
+            .set_notice(texts(host).edit_locked.clone());
+        render(host, false);
+    }
+    true
+}
+
 /// After `Enter` committed a cell of the new row: on to the next column, and
 /// from the last one — or with `Ctrl`/`Cmd` — the record is added (issue #183).
 pub(super) fn after_new_row_enter(host: &HtmlElement, cell: CellRef, add: bool) {
@@ -199,6 +222,9 @@ pub(super) fn formatter(host: &HtmlElement, schema: &opengrid_types::Schema) -> 
 /// it is the start of what is looked for. A date or a checkbox has no place
 /// for one character; it opens on the cell's value.
 pub(super) fn begin_edit(host: &HtmlElement, cell: CellRef, typed: Option<&str>) {
+    if refuse_locked(host) {
+        return;
+    }
     let Some(runtime) = runtime(host) else {
         return;
     };

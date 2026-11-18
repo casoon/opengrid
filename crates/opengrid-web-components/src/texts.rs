@@ -327,6 +327,8 @@ pub struct GridTexts {
     pub bulk_menu: String,
     /// Said when a read-only column is asked to be set. May use `{column}`.
     pub bulk_readonly: String,
+    /// Said when an edit is refused because the grid has `edit-locked`.
+    pub edit_locked: String,
     /// Said when the value was set. May use `{column}` and `{rows}`.
     pub bulk_done: String,
     /// What the live region says when a validator warns (issue #188). May use `{message}`.
@@ -640,6 +642,7 @@ pub(crate) const KEYS: &[&str] = &[
     "bulkApply",
     "bulkMenu",
     "bulkReadonly",
+    "editLocked",
     "bulkDone",
     "pastePreview",
     "pasteApply",
@@ -896,6 +899,7 @@ impl Default for GridTexts {
             bulk_apply: "Set".to_owned(),
             bulk_menu: "Set for selected rows".to_owned(),
             bulk_readonly: "{column} is read-only".to_owned(),
+            edit_locked: "Editing is locked".to_owned(),
             bulk_done: "{column} set for {rows}".to_owned(),
             paste_preview: "Paste preview".to_owned(),
             paste_apply: "Paste".to_owned(),
@@ -1902,6 +1906,7 @@ mod host {
         overwrite(&mut texts.bulk_apply, string("bulkApply"));
         overwrite(&mut texts.bulk_menu, string("bulkMenu"));
         overwrite(&mut texts.bulk_readonly, string("bulkReadonly"));
+        overwrite(&mut texts.edit_locked, string("editLocked"));
         overwrite(&mut texts.bulk_done, string("bulkDone"));
         overwrite(&mut texts.paste_preview, string("pastePreview"));
         overwrite(&mut texts.paste_apply, string("pasteApply"));

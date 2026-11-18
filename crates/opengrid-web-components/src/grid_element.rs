@@ -137,8 +137,8 @@ use column_ops::{
 };
 pub(crate) use editing::{CHOICES_KEY, write_row_state};
 use editing::{
-    add_record, after_new_row_enter, begin_edit, build_editor, dispatch_row_add, editor_text,
-    end_edit, focus_editor, formatter,
+    add_record, after_new_row_enter, begin_edit, build_editor, dispatch_row_add, edit_locked,
+    editor_text, end_edit, focus_editor, formatter, refuse_locked,
 };
 use facets::{
     apply_facets, clear_selection, collated, draw_facets, effective_filter, facet_chip_text,
@@ -707,6 +707,7 @@ fn follow_replaced(runtime: &mut GridRuntime, key: Option<Value>) {
 /// a page is not the end of the list (issue #183).
 fn sync_add_row(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>) {
     let on = host.has_attribute(grid::ADD_ROW_ATTRIBUTE)
+        && !edit_locked(host)
         && !is_paging(host)
         && !host.has_attribute(grid::TREE_ATTRIBUTE)
         && runtime.borrow().grouping.is_none();
@@ -967,6 +968,23 @@ fn on_attribute_changed(
         grid::ADD_ROW_ATTRIBUTE => {
             render(&host, false);
             run_query(&host, QueryKind::Window, false);
+        }
+        // The attribute is the state: no event, no query. What the reader had
+        // open is dropped unconfirmed, and the new row goes or comes back
+        // (issue #494).
+        grid::EDIT_LOCKED_ATTRIBUTE => {
+            if let Some(runtime) = runtime(&host) {
+                if edit_locked(&host) {
+                    end_edit(&host, false);
+                    paste::discard(&host);
+                    if let Some(root) = host.shadow_root() {
+                        bulk::close(&root);
+                        record::close_dialog(&root);
+                    }
+                }
+                sync_add_row(&host, &runtime);
+            }
+            render(&host, false);
         }
         grid::ROW_KEY_ATTRIBUTE => {
             if let Some(runtime) = runtime(&host) {
@@ -1312,10 +1330,19 @@ fn render(host: &HtmlElement, focus_after: bool) {
     if let Some(root) = host.shadow_root() {
         let schema = runtime.borrow().state.schema().clone();
         let styles = presentation::styles(host);
-        let decorated = Decorated::of(&schema, &styles);
+        let locked = edit_locked(host);
+        let decorated = Decorated::of(&schema, &styles, locked);
         if runtime.borrow().decorated.as_ref() != Some(&decorated) {
             fix_operator_choices(&root, &schema, &styles);
-            fix_presentation(&root, &schema, &styles);
+            fix_presentation(&root, &schema, &styles, locked);
+            // The grid says it, and its cells with it.
+            if let Ok(Some(table)) = root.query_selector("table[role=\"grid\"]") {
+                if locked {
+                    let _ = table.set_attribute("aria-readonly", "true");
+                } else {
+                    let _ = table.remove_attribute("aria-readonly");
+                }
+            }
             runtime.borrow_mut().decorated = Some(decorated);
         }
     }

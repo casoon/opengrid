@@ -28,6 +28,15 @@ pub(super) fn applicable(host: &HtmlElement, runtime: &GridRuntime, cell: CellRe
         && runtime.state.row_key(cell.row).is_some()
 }
 
+/// Closes the form, if one is open: the page locked editing under it.
+pub(super) fn close_dialog(root: &ShadowRoot) {
+    if let Ok(Some(dialog)) = root.query_selector(DIALOG)
+        && let Ok(dialog) = dialog.dyn_into::<HtmlDialogElement>()
+    {
+        dialog.close();
+    }
+}
+
 pub(super) fn in_dialog(target: &Element) -> bool {
     target.closest(DIALOG).ok().flatten().is_some()
 }
@@ -44,6 +53,9 @@ fn current_text(runtime: &GridRuntime, cell: CellRef) -> String {
 
 /// Opens the form on the record at `cell`, unless the page keeps it from it.
 pub(super) fn open(host: &HtmlElement, cell: CellRef) {
+    if refuse_locked(host) {
+        return;
+    }
     let (Some(root), Some(runtime), Some(document)) =
         (host.shadow_root(), runtime(host), host.owner_document())
     else {
@@ -237,6 +249,9 @@ fn read_value(data_type: DataType, nullable: bool, text: &str) -> Result<Value, 
 /// Reads every field, saves the changed ones as cell edits — or, if a field is
 /// not fine, keeps the form open with the reason under it and saves nothing.
 fn apply(host: &HtmlElement, dialog: &HtmlDialogElement) {
+    if refuse_locked(host) {
+        return;
+    }
     let Some(runtime) = runtime(host) else {
         return;
     };

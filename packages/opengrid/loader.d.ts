@@ -1175,6 +1175,7 @@ export type TextKey =
   | "bulkApply"
   | "bulkMenu"
   | "bulkReadonly"
+  | "editLocked"
   | "bulkDone"
   | "validationWarning"
   | "validationError"
@@ -1472,7 +1473,7 @@ export interface OpengridEventMap {
  * The attributes of `<opengrid-grid>`, as strings the way HTML has them — for
  * adapters and JSX typings to build on. For
  * the boolean ones — `selection`, `toolbar`, `search`, `facets`,
- * `column-menu`, `filter-builder`, `add-row` — presence is what counts, whatever the value.
+ * `column-menu`, `filter-builder`, `add-row`, `edit-locked` — presence is what counts, whatever the value.
  */
 export interface OpengridGridAttributes {
   label?: string;
@@ -1507,6 +1508,8 @@ export interface OpengridGridAttributes {
   "filter-builder"?: string;
   /** An empty row after the last one to type a new record into (`opengrid-row-add`). */
   "add-row"?: string;
+  /** Locks editing for the whole grid: no editor, paste, bulk set, record form, new row or undo. Remove it to unlock. */
+  "edit-locked"?: string;
   selection?: string;
   density?: Density;
   /** One of the built-in looks; Base when absent. */
