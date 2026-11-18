@@ -19,6 +19,16 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-11-18
+
+Not yet verified by a screen reader: no pass with assistive technology has been recorded for this
+release ([#5](https://github.com/casoon/opengrid/issues/5)). The keyboard and `axe-core` checks run on
+every change.
+
+**What breaks:** nothing in the npm package's API. New in the Rust crates: `opengrid-sql` and
+`opengrid-serve` (the `opengrid-server` command) are published for the first time; `PostgresCompiler`
+is now an alias of the shared compiler.
+
 ### Added
 
 - **Editing:** the attribute `edit-locked` locks editing for the whole grid, switchable at run time
