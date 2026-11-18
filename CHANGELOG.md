@@ -23,6 +23,8 @@ Two things belong in every release entry and are easy to leave out:
 
 - **Pages:** the start page links the live demo of each framework — JavaScript, React, Vue, Svelte and
   Angular — with its logo, straight to that demo's overview.
+- **Pages:** the demo page points to the framework demos too, as a small row of links above its own
+  examples.
 
 ## [0.18.1] - 2026-11-18
 

@@ -2,6 +2,7 @@
 import { Demo } from '@casoon/pages-theme/components';
 import Base from '@casoon/pages-theme/layouts/Base.astro';
 import { url } from '@casoon/pages-theme/url';
+import FrameworkDemos from '../components/FrameworkDemos.astro';
 
 // Built by `just wasm-build-components wasm-build`, copied by scripts/demo-assets.mjs.
 const assets = url('opengrid/');
@@ -29,6 +30,15 @@ const presets = [
       Nothing is sent to a server. The pivot needs an <code>opengrid-server</code> and is not part of
       this page.
     </p>
+
+    <aside class="frameworks-teaser" aria-labelledby="frameworks-teaser-title">
+      <h2 id="frameworks-teaser-title">The full demos, per framework</h2>
+      <p>
+        This page shows single elements. The bigger demos — the grid, the pivot and the query behind
+        them — run as a small app for each framework:
+      </p>
+      <FrameworkDemos compact />
+    </aside>
 
     <Demo
       title="<opengrid-grid> — search, facets, column menu"
@@ -241,6 +251,22 @@ const presets = [
     color: var(--heading);
   }
   .lead {
+    max-width: 70ch;
+    margin: 0;
+  }
+  .frameworks-teaser {
+    display: grid;
+    gap: 12px;
+    padding: 20px 24px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-card);
+  }
+  .frameworks-teaser h2 {
+    margin: 0;
+    color: var(--heading);
+    font-size: 1.125rem;
+  }
+  .frameworks-teaser p {
     max-width: 70ch;
     margin: 0;
   }
