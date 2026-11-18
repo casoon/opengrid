@@ -2105,6 +2105,12 @@ pub fn grid_css() -> String {
             narrow first column. */
          tr[data-kind=\"group\"] td[data-col=\"0\"] {{ overflow: visible; text-align: start;
                    white-space: nowrap; }}
+         /* The ring goes round the row: the label runs far past its cell, and a
+            ring on the cell would sit in the middle of it. */
+         tr[data-kind=\"group\"] td[data-col=\"0\"]:focus {{ outline: none; }}
+         tr[data-kind=\"group\"]:has(> td[data-col=\"0\"]:focus) {{
+                   outline: var({FOCUS_WIDTH_PROPERTY}) solid Highlight;
+                   outline-offset: calc(-1 * var({FOCUS_WIDTH_PROPERTY})); }}
          tr[data-kind=\"group\"] td[data-col=\"0\"]::before {{ content: \"\\25B8\" / \"\";
                    display: inline-block; width: 1.25em; color: var({INK_MUTED_PROPERTY}); }}
          tr[data-kind=\"group\"][aria-expanded=\"true\"] td[data-col=\"0\"]::before {{
