@@ -303,7 +303,9 @@ pub fn pins_css(geometry: &PinGeometry) -> String {
             "[part~=\"viewport\"][data-scrolled] tr[data-kind] td[data-col=\"0\"] { \
              overflow: hidden; }\n\
              [part~=\"viewport\"][data-scrolled] tr[data-kind] td[data-col=\"0\"]:focus { \
-             white-space: normal; }\n",
+             white-space: normal; outline: var(--og-focus-width) solid Highlight; }\n\
+             [part~=\"viewport\"][data-scrolled] tr[data-kind]:has(> td[data-col=\"0\"]:focus) { \
+             outline: none; }\n",
         );
     }
     css.push_str("}\n");

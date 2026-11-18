@@ -19,6 +19,11 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+### Fixed
+
+- **Grouping:** the focus ring of a group row goes round the row, not round the narrow first cell the
+  label runs out of. A label clipped to a pinned column keeps the ring on its cell.
+
 ## [0.18.0] - 2026-11-17
 
 Not yet verified by a screen reader: no pass with assistive technology has been recorded for this

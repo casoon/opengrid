@@ -541,6 +541,13 @@ test("a group's label runs across the row, and keeps to its pinned column while 
   expect(
     await inside(page, "#grouped", (root) => getComputedStyle(root.activeElement).whiteSpace),
   ).toBe("nowrap");
+  // The ring goes round the row, not round the narrow cell the label overflows.
+  const rings = () =>
+    inside(page, "#grouped", (root) => {
+      const cell = root.activeElement;
+      return [cell, cell.parentElement].map((el) => getComputedStyle(el).outlineStyle);
+    });
+  expect(await rings()).toEqual(["none", "solid"]);
 
   await scrollTo(page, "#grouped", 180);
   const scrolled = await label();
@@ -552,6 +559,8 @@ test("a group's label runs across the row, and keeps to its pinned column while 
   expect(
     await inside(page, "#grouped", (root) => getComputedStyle(root.activeElement).whiteSpace),
   ).toBe("normal");
+  // Clipped to its cell, the label is ringed with it.
+  expect(await rings()).toEqual(["solid", "none"]);
 });
 
 test("on paper nothing is pinned", async ({ page }) => {
