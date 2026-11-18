@@ -22,6 +22,7 @@ import {
   Tradeoffs,
 } from '@casoon/pages-theme/components';
 import Base from '@casoon/pages-theme/layouts/Base.astro';
+import FrameworkDemos from '../components/FrameworkDemos.astro';
 import config from 'virtual:casoon-pages/config';
 import { url } from '@casoon/pages-theme/url';
 import { existsSync, readFileSync } from 'node:fs';
@@ -477,6 +478,13 @@ const query = `{
   >
     <CodeBlock code={page} lang="html" title="index.html" label="HTML" />
   </Quickstart>
+
+  <Section
+    title="Try it in your framework"
+    lead="The same demos, once per framework: the grid, the pivot and the query behind them, each as a small app you can read."
+  >
+    <FrameworkDemos />
+  </Section>
 
   <CallToAction
     title="See it running before you install it."
