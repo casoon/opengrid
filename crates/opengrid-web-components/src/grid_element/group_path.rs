@@ -225,7 +225,7 @@ pub(super) fn run_grouped(
                 .and_then(|grouping| grouping.filter_for(&fetch.keys, filter.as_ref()));
             let query = grid::query_json(
                 &source,
-                &columns,
+                &select_of(&host),
                 &sorts,
                 scoped.as_ref(),
                 fetch.offset,

@@ -132,7 +132,8 @@ use column_menu::{activate_menu_item, on_menu_key, open_column_menu};
 use column_ops::{
     Arrangement, adopt_sheets, announce, announce_refusals, apply_widths, arrangement, bands_of,
     close_columns, columns_of, hide_band, move_band, move_column, observe_columns, open_columns,
-    pin_column, pin_of, pool_of, rearrange, resize_column, retree, set_column_hidden, step_pin,
+    pin_column, pin_of, pool_of, rearrange, resize_column, retree, select_of, set_column_hidden,
+    step_pin,
 };
 pub(crate) use editing::{CHOICES_KEY, write_row_state};
 use editing::{
@@ -1504,7 +1505,14 @@ pub(crate) fn run_query(host: &HtmlElement, kind: QueryKind, focus: bool) {
         render(host, false);
     }
 
-    let query = grid::query_json(&source, &columns, &sorts, filter.as_ref(), offset, pool);
+    let query = grid::query_json(
+        &source,
+        &select_of(host),
+        &sorts,
+        filter.as_ref(),
+        offset,
+        pool,
+    );
     let query = collated(host, query);
     let mode = host.get_attribute(MODE_ATTRIBUTE).unwrap_or_default();
     let started = now();
@@ -1667,6 +1675,11 @@ fn settle(
                 }
                 // A window is the same result moved, so what the reader is in
                 // the middle of — an editor, unsaved marks — stays (issue #224).
+                let hidden = runtime.tree.is_none()
+                    && row_key_of(host).is_some_and(|key| {
+                        !columns_of(host).iter().any(|name| name == key.as_str())
+                    });
+                runtime.state.set_row_key_hidden(hidden);
                 let patches = if kind == QueryKind::Window {
                     runtime.state.apply_window_result(result)
                 } else {
@@ -1828,7 +1841,14 @@ async fn ids_of(
         while at < offset + limit {
             // The largest `limit` a query may ask.
             let piece = (offset + limit - at).min(crate::tree::MAX_LEVEL);
-            let query = grid::query_json(&source, &columns, &sorts, scoped.as_ref(), at, piece);
+            let query = grid::query_json(
+                &source,
+                &select_of(host),
+                &sorts,
+                scoped.as_ref(),
+                at,
+                piece,
+            );
             let result = match ask_uncounted(host, &provider, &query, &mode).await {
                 Ok(result) => result,
                 Err(message) => {

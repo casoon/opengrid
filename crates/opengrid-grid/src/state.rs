@@ -112,6 +112,12 @@ pub struct GridState {
     changed: Vec<CellRef>,
     /// What the page that saves said about cells, by record (issue #153).
     saves: Saves,
+    /// The `row-key` field is not a shown column (issue #495): the query asks
+    /// for it after the shown ones and [`apply`](Self::apply) takes it off the
+    /// result, so the schema and the page stay what is drawn.
+    key_hidden: bool,
+    /// The values and the type of that hidden key column, for the loaded page.
+    key_held: Option<(Vec<Value>, opengrid_types::DataType)>,
     /// Rows the reader added, after the result (issue #183).
     added: AddedRows,
     /// What the page's validators said about cells the reader committed
@@ -146,6 +152,8 @@ impl GridState {
             editing: None,
             changed: Vec::new(),
             saves: Saves::default(),
+            key_hidden: false,
+            key_held: None,
             added: AddedRows::default(),
             validations: Vec::new(),
             history: History::default(),
@@ -372,10 +380,35 @@ impl GridState {
         }
     }
 
+    /// Says whether the `row-key` field is left out of the shown columns. Its
+    /// column then comes last in a result and is kept apart (issue #495).
+    pub fn set_row_key_hidden(&mut self, hidden: bool) {
+        self.key_hidden = hidden;
+        if !hidden {
+            self.key_held = None;
+        }
+    }
+
+    /// The loaded values of the `row-key` field, shown or not.
+    fn key_values(&self) -> Option<&Vec<Value>> {
+        let name = self.saves.key.as_ref()?;
+        match &self.key_held {
+            Some((values, _)) if self.key_hidden => Some(values),
+            _ => self.page.get(self.column_of(name)?),
+        }
+    }
+
     /// The key of a loaded row: the `row-key` field's value in it.
     pub fn row_key(&self, row: u64) -> Option<&Value> {
         if let RowKind::Added(place) = self.added.kind(row, self.total_count) {
             return Some(&self.added.rows()[place].key);
+        }
+        if let Some((values, _)) = self.key_held.as_ref().filter(|_| self.key_hidden) {
+            if !matches!(self.added.kind(row, self.total_count), RowKind::Source) {
+                return None;
+            }
+            let slot = usize::try_from(row.checked_sub(self.page_offset)?).ok()?;
+            return values.get(slot);
         }
         let col = self.column_of(self.saves.key.as_ref()?)?;
         self.value_at(col, row)
@@ -383,14 +416,15 @@ impl GridState {
 
     /// The loaded row whose `row-key` is `key`, if it is in the loaded page.
     pub fn row_of_key(&self, key: &Value) -> Option<u64> {
-        let col = self.column_of(self.saves.key.as_ref()?)?;
-        let rows = self.page.get(col)?;
-        let slot = rows.iter().position(|value| value == key)?;
+        let slot = self.key_values()?.iter().position(|value| value == key)?;
         Some(self.page_offset + slot as u64)
     }
 
     /// The type of the `row-key` field, once a result has told it.
     pub fn row_key_type(&self) -> Option<opengrid_types::DataType> {
+        if let Some((_, data_type)) = self.key_held.as_ref().filter(|_| self.key_hidden) {
+            return Some(*data_type);
+        }
         let col = self.column_of(self.saves.key.as_ref()?)?;
         Some(self.schema.fields()[col].data_type)
     }
@@ -535,13 +569,8 @@ impl GridState {
 
     /// Where a record's cell is in the loaded page.
     fn cell_of(&self, key: &Value, column: &FieldName) -> Option<CellRef> {
-        let key_col = self.column_of(self.saves.key.as_ref()?)?;
         let col = self.column_of(column)?;
-        let slot = self
-            .page
-            .get(key_col)?
-            .iter()
-            .position(|value| value == key)?;
+        let slot = self.key_values()?.iter().position(|value| value == key)?;
         Some(CellRef::new(self.page_offset + slot as u64, col))
     }
 
@@ -751,6 +780,23 @@ impl GridState {
         // arrive in (issue #153).
         let mut result = result;
         self.overlay(&result.schema, &mut result.columns);
+        // The hidden key rides last and is not drawn (issue #495).
+        let mut held = None;
+        if self.key_hidden
+            && let Some(name) = &self.saves.key
+            && result
+                .schema
+                .fields()
+                .last()
+                .is_some_and(|f| f.name == *name)
+            && result.columns.len() == result.schema.len()
+        {
+            let mut fields = result.schema.fields().to_vec();
+            let field = fields.pop().expect("checked above");
+            let values = result.columns.pop().unwrap_or_default();
+            result.schema = Schema::new(fields);
+            held = Some((values, field.data_type));
+        }
 
         if result.schema != self.schema {
             patches.push(Patch::Columns(result.schema.clone()));
@@ -785,6 +831,7 @@ impl GridState {
         self.total_count = result.total_count;
         self.page_offset = first;
         self.page = result.columns;
+        self.key_held = held;
         self.status = status;
         // A result with fewer rows leaves no selection behind on rows that are
         // not there (issue #226).
@@ -1696,6 +1743,32 @@ mod edit_tests {
         let state = keyed();
         assert_eq!(state.row_key(1), Some(&Value::Int64(2)));
         assert_eq!(grid().row_key(1), None, "no key without `row-key`");
+    }
+
+    /// A key the layout hides rides last in the result and is not a column of
+    /// the state, yet it still names the rows (issue #495).
+    #[test]
+    fn a_hidden_key_still_names_the_rows() {
+        let mut state = GridState::new(Schema::new(schema().fields()[1..].to_vec()));
+        state.set_row_key(Some(FieldName::new("id").unwrap()));
+        state.set_row_key_hidden(true);
+        state.set_window(Window::new(0, 10));
+        let full = result(&[(1, "DE", 10), (2, "FR", 20)], 2);
+        let columns = vec![
+            full.columns[1].clone(),
+            full.columns[2].clone(),
+            full.columns[0].clone(),
+        ];
+        let fields = vec![
+            schema().fields()[1].clone(),
+            schema().fields()[2].clone(),
+            schema().fields()[0].clone(),
+        ];
+        state.apply_result(QueryResult::new(Schema::new(fields), columns, 2));
+        assert_eq!(state.schema().len(), 2, "the key is not a shown column");
+        assert_eq!(state.row_key(1), Some(&Value::Int64(2)));
+        assert_eq!(state.row_of_key(&Value::Int64(2)), Some(1));
+        assert_eq!(state.row_key_type(), Some(opengrid_types::DataType::Int64));
     }
 
     /// A validator's word stays on the cell until the next result; the page's

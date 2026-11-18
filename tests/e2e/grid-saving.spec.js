@@ -166,3 +166,41 @@ test("has no axe violations with every state shown", async ({ page }) => {
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);
 });
+
+// Issue #495: hiding the key column is display only — the edit still names its
+// record, and the page's answer still finds the cell.
+async function editAfterHidingId(page) {
+  // `id` is column 0 while shown; `customer` is column 1, then column 0.
+  await edit(page, 0, 0, "Delta");
+  const changes = await page.evaluate(() => window.__changes);
+  expect(changes).toHaveLength(1);
+  expect(changes[0]).toMatchObject({ row: 0, key: 2, column: "customer", value: "Delta" });
+  await setState(page, 2, "customer", "saved");
+  await expect.poll(() => cell(page, 0, 0)).toMatchObject({ text: "Delta", state: "saved" });
+  // The key is neither drawn nor counted as a column.
+  const headers = await shadow(page, (root) => [...root.querySelectorAll("thead th")].map((th) => th.textContent));
+  expect(headers.join(" ")).not.toMatch(/\bid\b/i);
+  expect(
+    await shadow(page, (root) => root.querySelectorAll("tbody tr:first-child td[data-col]").length),
+  ).toBe(3);
+}
+
+test("a key column the page hides still names the record", async ({ page }) => {
+  await open(page);
+  await page.evaluate(() =>
+    window.__module.set_view(document.querySelector("opengrid-grid"), {
+      columns: { order: [], hidden: ["id"], widths: {} },
+    }),
+  );
+  await expect.poll(() => cell(page, 0, 0)).toMatchObject({ text: "Alpha" });
+  await editAfterHidingId(page);
+});
+
+test("a key column the reader hides still names the record", async ({ page }) => {
+  await open(page);
+  await shadow(page, (root) => root.querySelector('[part="columns-toggle"]').click());
+  await shadow(page, (root) => root.querySelector('input[data-column="id"]').click());
+  await expect.poll(() => cell(page, 0, 0).then((c) => c.text)).not.toBe("1");
+  await shadow(page, (root) => root.querySelector('[part="columns-toggle"]').click());
+  await editAfterHidingId(page);
+});
