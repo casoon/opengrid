@@ -21,6 +21,10 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Added
 
+- **Editing:** the attribute `edit-locked` locks editing for the whole grid, switchable at run time
+  (`editLocked` in the React, Vue and Svelte adapters): no editor, paste, bulk set, record form, new
+  row or undo while it is set. Details: [Locking edits](https://casoon.github.io/opengrid/docs/api/#locking-edits)
+  ([#494](https://github.com/casoon/opengrid/issues/494)).
 - **Pages:** the start page links the live demo of each framework — JavaScript, React, Vue, Svelte and
   Angular — with its logo, straight to that demo's overview.
 - **Pages:** the demo page points to the framework demos too, as a small row of links above its own

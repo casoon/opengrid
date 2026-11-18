@@ -103,6 +103,21 @@ one choice that is the character or starts with it — `3` picks `3` from `1`–
 `3`, `3-` alike. `Enter` commits, as it does after `Enter` or `F2` opened the editor; nothing is
 taken without it. The focus stays on the cell afterwards: the reader moves on with the arrows.
 
+## Lock editing until the reader asks
+
+A grid that is read by default — a price list, say — sets `edit-locked`; a button removes it, and
+"Done" sets it again:
+
+```js
+const lock = (on) => grid.toggleAttribute("edit-locked", on);
+```
+
+While it is set, nothing changes a value: no editor, no paste, no value for the selected rows, no
+record form, no new row and no undo. The refusal is said in the status line, and the grid and its
+cells say `aria-readonly`. Toggling it keeps the data, the sort, the filter, the scroll position and
+the focus, and an editor open at that moment is closed without committing. A column the page fills
+(`readonly` in `set_columns`) stays read-only after the unlock.
+
 ## What stays and what goes
 
 - A state or a value names a **record**, so it outlives sorting, filtering and reloading.

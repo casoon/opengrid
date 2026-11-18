@@ -293,11 +293,18 @@ pub(super) fn on_filter_change(event: Event) {
 pub(super) struct Decorated {
     schema: opengrid_types::Schema,
     markers: Vec<Vec<(&'static str, String)>>,
+    /// The grid-wide `edit-locked` (issue #494): every cell says `aria-readonly`.
+    locked: bool,
 }
 
 impl Decorated {
-    pub(super) fn of(schema: &opengrid_types::Schema, styles: &presentation::ColumnStyles) -> Self {
+    pub(super) fn of(
+        schema: &opengrid_types::Schema,
+        styles: &presentation::ColumnStyles,
+        locked: bool,
+    ) -> Self {
         Self {
+            locked,
             schema: schema.clone(),
             markers: schema
                 .fields()
@@ -329,6 +336,7 @@ pub(super) fn fix_presentation(
     root: &ShadowRoot,
     schema: &opengrid_types::Schema,
     styles: &presentation::ColumnStyles,
+    locked: bool,
 ) {
     for (col, field) in schema.fields().iter().enumerate() {
         let markers = styles.markers(field.name.as_str(), field.data_type);
@@ -347,9 +355,13 @@ pub(super) fn fix_presentation(
                 continue;
             }
             for name in ["data-mono", "data-emphasis", "data-muted", "aria-readonly"] {
-                if !markers.iter().any(|(marker, _)| *marker == name) {
+                let locked_cell = locked && name == "aria-readonly" && cell.tag_name() == "TD";
+                if !locked_cell && !markers.iter().any(|(marker, _)| *marker == name) {
                     let _ = cell.remove_attribute(name);
                 }
+            }
+            if locked && cell.tag_name() == "TD" {
+                let _ = cell.set_attribute("aria-readonly", "true");
             }
             for (name, value) in &markers {
                 let _ = cell.set_attribute(name, value);

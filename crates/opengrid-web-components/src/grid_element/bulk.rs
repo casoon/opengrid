@@ -32,6 +32,9 @@ pub(super) fn available(host: &HtmlElement, runtime: &GridRuntime, col: usize) -
 
 /// Opens the panel for column `col`. A read-only column is said to refuse.
 pub(super) fn open(host: &HtmlElement, col: usize) {
+    if refuse_locked(host) {
+        return;
+    }
     let (Some(runtime), Some(root), Some(document)) =
         (runtime(host), host.shadow_root(), host.owner_document())
     else {
@@ -102,7 +105,7 @@ pub(super) fn open(host: &HtmlElement, col: usize) {
 }
 
 /// Removes the panel, if there is one.
-fn close(root: &ShadowRoot) {
+pub(super) fn close(root: &ShadowRoot) {
     if let Ok(Some(panel)) = root.query_selector("[part=\"bulk\"]") {
         panel.remove();
     }
@@ -156,6 +159,9 @@ fn cancel(host: &HtmlElement) {
 
 /// Reads the editor and sets the value for the selected records.
 pub(super) fn apply(host: &HtmlElement) {
+    if refuse_locked(host) {
+        return;
+    }
     {
         let (Some(runtime), Some(root)) = (runtime(host), host.shadow_root()) else {
             return;

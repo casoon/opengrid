@@ -70,6 +70,12 @@ pub(super) fn on_paste(event: Event) {
     if is_grouped(&host) || is_tree(&host) {
         return;
     }
+    // A locked grid takes no paste; the browser does not get it either (#494).
+    if edit_locked(&host) {
+        event.prevent_default();
+        refuse_locked(&host);
+        return;
+    }
     let ActiveCell::Data(anchor) = runtime.borrow().active else {
         return;
     };
@@ -537,6 +543,9 @@ pub(super) fn discard(host: &HtmlElement) {
 /// would — marked unsaved — and the rows past the end are added; the page hears
 /// of all of it in one event.
 fn apply(host: &HtmlElement) {
+    if refuse_locked(host) {
+        return;
+    }
     let Some(runtime) = runtime(host) else {
         return;
     };

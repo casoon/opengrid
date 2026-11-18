@@ -19,6 +19,9 @@ pub(super) fn redo(host: &HtmlElement) {
 }
 
 fn run(host: &HtmlElement, undoing: bool) {
+    if refuse_locked(host) {
+        return;
+    }
     let Some(runtime) = runtime(host) else {
         return;
     };

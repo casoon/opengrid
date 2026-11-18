@@ -373,7 +373,7 @@ elements
 
 attributes
   opengrid-table: columns datasource label theme
-  opengrid-grid: add-row collation column-menu columns datasource density facets filter filter-builder group-by label mode page-size \
+  opengrid-grid: add-row collation column-menu columns datasource density edit-locked facets filter filter-builder group-by label mode page-size \
 row-key search selection theme toolbar tree tree-key window-size
   opengrid-pivot: collapsed columns datasource drill-down fields filter label measures rows sort theme toolbar values
 
@@ -461,7 +461,7 @@ text keys
   addColumn addFilter addFilterTitle addGrouping addMeasure addRow aggregateAvg aggregateCell aggregateCount aggregateGroup aggregateMax aggregateMin \
 aggregateNone aggregateRange aggregateSum apply bandKeep booleanFalse booleanTrue bulkApply bulkCaption bulkDone bulkMenu bulkReadonly calcValue cancel cellRequired chipRemove chipsClear chipsGroup choiceRefused choicesOne choicesOther clear columnAtEdge \
 columnFull columnHidden columnMenu columnMoved columnPinnedEnd columnPinnedStart columnShown columnUnpinned columnWidth columnsGroup densityComfortable \
-densityCompact densityGroup densityNormal detailHidden detailHide detailPanel detailShow detailShown empty emptyFiltered emptyReset emptySource emptyValue \
+densityCompact densityGroup densityNormal detailHidden detailHide detailPanel detailShow detailShown editLocked empty emptyFiltered emptyReset emptySource emptyValue \
 error errorUnknown facetChipValues facetFrom facetQueries facetTo facetsGroup facetsReset \
 facetsToggle fieldEarlier fieldLater fieldRemove filterAny filterApplied filterBuilder filterBuilderAddCondition filterBuilderAddGroup filterBuilderAll filterBuilderAny filterBuilderCondition filterBuilderEdit filterBuilderGroup filterBuilderJoin filterColumn filterColumnLabel filterConditionLabel filterGroup filterInvalid \
 filterRemoved filterRowToggle filterValueLabel filtersCleared groupByColumn groupChip \

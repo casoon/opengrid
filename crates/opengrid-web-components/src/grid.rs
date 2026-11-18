@@ -396,6 +396,8 @@ pub const LIST_PARTS: [&str; 4] = ["list", "list-item", "list-item-remove", "lis
 pub const BULK_PARTS: [&str; 3] = ["bulk", "bulk-apply", "bulk-cancel"];
 /// The empty row at the end that a new record is typed into (issue #183).
 pub const ADD_ROW_ATTRIBUTE: &str = "add-row";
+/// The grid-wide lock on editing (issue #494): present means no edit gets in.
+pub const EDIT_LOCKED_ATTRIBUTE: &str = "edit-locked";
 
 /// The boolean attribute that shows the facet sidebar (point 66).
 ///
@@ -701,6 +703,7 @@ pub const OBSERVED: &[&str] = &[
     FACETS_ATTRIBUTE,
     SEARCH_ATTRIBUTE,
     ADD_ROW_ATTRIBUTE,
+    EDIT_LOCKED_ATTRIBUTE,
     // CSS alone: the look is `:host([theme=…])` rules (issue #32).
     crate::theme::THEME_ATTRIBUTE,
 ];

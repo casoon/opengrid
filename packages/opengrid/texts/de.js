@@ -192,6 +192,7 @@ export default {
   "bulkApply": "Setzen",
   "bulkMenu": "Für ausgewählte Zeilen setzen",
   "bulkReadonly": "{column} ist schreibgeschützt",
+  "editLocked": "Bearbeiten ist gesperrt",
   "bulkDone": "{column} für {rows} gesetzt",
   "pastePreview": "Einfügevorschau",
   "pasteApply": "Einfügen",
