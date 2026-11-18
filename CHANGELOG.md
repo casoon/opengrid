@@ -26,6 +26,14 @@ Two things belong in every release entry and are easy to leave out:
 - **Pages:** the demo page points to the framework demos too, as a small row of links above its own
   examples.
 
+### Fixed
+
+- **Saving:** a `row-key` column that is hidden — by the page's `set_view` or by the reader in
+  "Columns" — is still queried. `opengrid-cell-change` and `opengrid-row-action` carried
+  `key: null` and `set_cell_state` / `set_values` found no record as soon as the key was not
+  shown. The key is selected after the shown columns and never drawn, counted, exported or
+  pasted into ([#495](https://github.com/casoon/opengrid/issues/495)).
+
 ## [0.18.1] - 2026-11-18
 
 Not yet verified by a screen reader: no pass with assistive technology has been recorded for this

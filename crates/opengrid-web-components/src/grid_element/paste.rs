@@ -175,7 +175,7 @@ async fn prepare(host: &HtmlElement, anchor: CellRef, rows: Vec<Vec<String>>) {
     let covered = (anchor.row + rows.len() as u64).min(source_rows) - first;
     let mut existing: Option<opengrid_datasource::QueryResult> = None;
     if covered > 0 && anchor.row < source_rows {
-        let columns = columns_of(host);
+        let columns = select_of(host);
         let query = grid::query_json(&source, &columns, &sorts, filter.as_ref(), first, covered);
         let mode = host.get_attribute(MODE_ATTRIBUTE).unwrap_or_default();
         // Not counted: the footer's query count is about the rows shown.
@@ -200,8 +200,10 @@ async fn prepare(host: &HtmlElement, anchor: CellRef, rows: Vec<Vec<String>>) {
             }
         }
     }
-    let key_column = row_key_of(host)
-        .and_then(|name| schema.fields().iter().position(|field| field.name == name));
+    let key_column = row_key_of(host).and_then(|name| {
+        let held = existing.as_ref().map_or(&schema, |result| &result.schema);
+        held.fields().iter().position(|field| field.name == name)
+    });
 
     let mut pending = Pending {
         changes: Vec::new(),
