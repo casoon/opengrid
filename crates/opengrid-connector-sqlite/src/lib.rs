@@ -57,6 +57,7 @@
 //! so a file next to the server and moderate traffic is what it is for.
 
 use std::fmt::Write as _;
+use std::sync::Arc;
 
 mod tree;
 mod worker;
@@ -65,10 +66,8 @@ use opengrid_connector::{
     BoxFuture, Connector, DataSourceCapabilities, DataSourceError, QueryResult, Schema,
     ValidatedQuery, Value,
 };
-use opengrid_query::{
-    Aggregate, AggregateFn, CmpOp, NullsOrder, Sort, SortDirection, ValidatedFilter,
-};
-use opengrid_types::{DataType, Date, DatePart, Decimal, Timestamp};
+use opengrid_sql::{CompileError, CompiledQuery, Dialect, QueryCompiler, Sqlite};
+use opengrid_types::{DataType, Date, Decimal, Timestamp};
 use rusqlite::types::Value as Sql;
 
 pub use rusqlite::Connection;
@@ -76,17 +75,17 @@ pub use rusqlite::Connection;
 /// A table in a SQLite database, answered by SQLite.
 pub struct SqliteConnector {
     worker: worker::Worker,
-    table: String,
+    compiler: Arc<SqlCompiler>,
     schema: Schema,
     /// A tree's level in SQL rather than in the engine (issue #132); off
     /// unless asked for, see [`SqliteConnector::with_tree_pushdown`].
     tree_pushdown: bool,
 }
 
-/// The SQL function that folds case as the engine does (rule S5a).
-const FOLD: &str = "og_fold";
-/// The prefix of the collations the connector registers (S4a): `og_de`.
-const COLLATION: &str = "og_";
+/// The shared SQL compiler in its SQLite dialect (issue #485).
+pub(crate) type SqlCompiler = opengrid_sql::Compiler<Sqlite>;
+
+use opengrid_sql::{COLLATION, FOLD};
 
 impl SqliteConnector {
     /// The table `table` in the database file at `path`, laid out for `schema`
@@ -138,7 +137,7 @@ impl SqliteConnector {
             .map_err(sqlite)?;
         Ok(Self {
             worker: worker::Worker::start(connection),
-            table: table.to_owned(),
+            compiler: Arc::new(SqlCompiler::sqlite(table, schema.clone())),
             schema,
             tree_pushdown: false,
         })
@@ -161,31 +160,27 @@ impl SqliteConnector {
 
 /// One level of a tree, answered by SQLite (issue #132).
 fn answer_tree(
-    table: &str,
-    schema: &Schema,
+    compiler: &SqlCompiler,
     connection: &Connection,
     query: &ValidatedQuery,
 ) -> Result<QueryResult, DataSourceError> {
     let tree = query.tree.as_ref().expect("a tree query");
-    let compiler = Compiler { table, schema };
-    tree::level(&compiler, connection, query, tree)
+    tree::level(compiler, connection, query, tree)
 }
 
 fn answer(
-    table: &str,
-    schema: &Schema,
+    compiler: &SqlCompiler,
     connection: &Connection,
     query: &ValidatedQuery,
     known_count: Option<u64>,
 ) -> Result<QueryResult, DataSourceError> {
-    let compiler = Compiler { table, schema };
-    let statement = compiler.query(query)?;
+    let statement = compiler.compile(query).map_err(compile)?;
 
     let fields = query.output_schema.fields();
     let mut columns: Vec<Vec<Value>> = vec![Vec::new(); fields.len()];
     let mut prepared = connection.prepare(&statement.sql).map_err(sqlite)?;
     let mut rows = prepared
-        .query(rusqlite::params_from_iter(statement.params.iter()))
+        .query(rusqlite::params_from_iter(params(&statement)?.iter()))
         .map_err(sqlite)?;
     while let Some(row) = rows.next().map_err(sqlite)? {
         for (index, field) in fields.iter().enumerate() {
@@ -199,11 +194,11 @@ fn answer(
     let total = match known_count {
         Some(known) => known,
         None => {
-            let counting = compiler.count(query)?;
+            let counting = CompiledQuery::count_of(query, compiler).map_err(compile)?;
             let total: i64 = connection
                 .query_row(
                     &counting.sql,
-                    rusqlite::params_from_iter(counting.params.iter()),
+                    rusqlite::params_from_iter(params(&counting)?.iter()),
                     |row| row.get(0),
                 )
                 .map_err(sqlite)?;
@@ -259,17 +254,19 @@ impl Connector for SqliteConnector {
                 Box::pin(async move { Connector::tree(self, &query).await })
             }
             Some(_) => {
-                let (table, schema) = (self.table.clone(), self.schema.clone());
+                let compiler = Arc::clone(&self.compiler);
                 Box::pin(
                     self.worker
-                        .submit(move |connection| answer_tree(&table, &schema, connection, &query)),
+                        .submit(move |connection| answer_tree(&compiler, connection, &query)),
                 )
             }
             None => {
-                let (table, schema) = (self.table.clone(), self.schema.clone());
-                Box::pin(self.worker.submit(move |connection| {
-                    answer(&table, &schema, connection, &query, known_count)
-                }))
+                let compiler = Arc::clone(&self.compiler);
+                Box::pin(
+                    self.worker.submit(move |connection| {
+                        answer(&compiler, connection, &query, known_count)
+                    }),
+                )
             }
         }
     }
@@ -328,369 +325,21 @@ pub fn insert(
     transaction.commit().map_err(sqlite)
 }
 
-/// SQL plus the values it expects.
-struct Statement {
-    sql: String,
-    params: Vec<Sql>,
+/// The values of a compiled statement as SQLite binds them.
+pub(crate) fn params(statement: &CompiledQuery) -> Result<Vec<Sql>, DataSourceError> {
+    statement.params.iter().map(stored).collect()
 }
 
-struct Compiler<'a> {
-    table: &'a str,
-    schema: &'a Schema,
-}
-
-/// The statement under construction: values only ever as `?`.
-#[derive(Default)]
-struct Builder {
-    sql: String,
-    params: Vec<Sql>,
-}
-
-impl Builder {
-    fn push(&mut self, text: &str) {
-        self.sql.push_str(text);
-    }
-
-    fn param(&mut self, value: &Value, data_type: DataType) -> Result<(), DataSourceError> {
-        self.params.push(bind(value, data_type)?);
-        self.sql.push('?');
-        Ok(())
-    }
-
-    fn finish(self) -> Statement {
-        Statement {
-            sql: self.sql,
-            params: self.params,
-        }
-    }
-}
-
-impl Compiler<'_> {
-    fn query(&self, query: &ValidatedQuery) -> Result<Statement, DataSourceError> {
-        let mut sql = Builder::default();
-        sql.push("SELECT ");
-        for (index, field) in query.output_schema.fields().iter().enumerate() {
-            if index > 0 {
-                sql.push(", ");
-            }
-            let name = field.name.as_str();
-            match query
-                .aggregate
-                .iter()
-                .find(|aggregate| aggregate.alias.as_str() == name)
-            {
-                Some(aggregate) => sql.push(&self.aggregate(aggregate)?),
-                None => sql.push(&self.column(name)?),
-            }
-            sql.push(" AS ");
-            sql.push(&quote(name)?);
-        }
-        self.table_and_filter(query, &mut sql)?;
-        if !query.group.is_empty() {
-            sql.push(" GROUP BY ");
-            let keys = query
-                .group
-                .iter()
-                .map(|field| self.column(field.as_str()))
-                .collect::<Result<Vec<_>, _>>()?;
-            sql.push(&keys.join(", "));
-        }
-        if !query.sort.is_empty() {
-            sql.push(" ORDER BY ");
-            let keys = query
-                .sort
-                .iter()
-                .map(sort_key)
-                .collect::<Result<Vec<_>, _>>()?;
-            sql.push(&keys.join(", "));
-        }
-        // SQLite knows `OFFSET` only after a `LIMIT`; -1 is "no limit".
-        if query.limit.is_some() || query.offset.is_some() {
-            sql.push(" LIMIT ");
-            sql.param(
-                &Value::Int64(query.limit.map_or(-1, |limit| limit as i64)),
-                DataType::Int64,
-            )?;
-            if let Some(offset) = query.offset {
-                sql.push(" OFFSET ");
-                sql.param(&Value::Int64(offset as i64), DataType::Int64)?;
-            }
-        }
-        Ok(sql.finish())
-    }
-
-    /// `total_count`: the rows before paging — one for an aggregate without
-    /// groups, the groups with a grouping.
-    fn count(&self, query: &ValidatedQuery) -> Result<Statement, DataSourceError> {
-        if query.group.is_empty() && !query.aggregate.is_empty() {
-            return Ok(Statement {
-                sql: "SELECT 1".to_owned(),
-                params: Vec::new(),
-            });
-        }
-        if query.group.is_empty() {
-            let mut sql = Builder::default();
-            sql.push("SELECT count(*)");
-            self.table_and_filter(query, &mut sql)?;
-            return Ok(sql.finish());
-        }
-        let counting = ValidatedQuery {
-            sort: Vec::new(),
-            offset: None,
-            limit: None,
-            ..query.clone()
-        };
-        let inner = self.query(&counting)?;
-        Ok(Statement {
-            sql: format!("SELECT count(*) FROM ({})", inner.sql),
-            params: inner.params,
-        })
-    }
-
-    fn table_and_filter(
-        &self,
-        query: &ValidatedQuery,
-        sql: &mut Builder,
-    ) -> Result<(), DataSourceError> {
-        sql.push(" FROM ");
-        sql.push(&quote(self.table)?);
-        if let Some(filter) = &query.filter {
-            sql.push(" WHERE ");
-            self.filter(filter, sql)?;
-        }
-        Ok(())
-    }
-
-    /// How a column is read: its quoted name, or for a derived one the
-    /// expression that computes it (UTC, rule S9).
-    fn column(&self, name: &str) -> Result<String, DataSourceError> {
-        let quoted = quote(name)?;
-        let Some(derivation) = self
-            .schema
-            .field(name)
-            .and_then(|field| field.from.as_ref())
-        else {
-            return Ok(quoted);
-        };
-        let source = quote(derivation.field.as_str())?;
-        let seconds = match self.schema.data_type(derivation.field.as_str()) {
-            // Microseconds to whole seconds, rounded down also before 1970.
-            Some(DataType::Timestamp) => {
-                format!("({source} / 1000000 - ({source} % 1000000 < 0))")
-            }
-            _ => format!("({source} * 86400)"),
-        };
-        let part = match derivation.part {
-            DatePart::Year => "%Y",
-            DatePart::Month => "%m",
-        };
-        Ok(format!(
-            "CAST(strftime('{part}', {seconds}, 'unixepoch') AS INTEGER)"
-        ))
-    }
-
-    fn data_type(&self, name: &str) -> Result<DataType, DataSourceError> {
-        self.schema
-            .data_type(name)
-            .ok_or_else(|| backend(format!("no column {name:?}")))
-    }
-
-    /// One aggregate, answering in the types rule S12 names.
-    fn aggregate(&self, aggregate: &Aggregate) -> Result<String, DataSourceError> {
-        let Some(field) = &aggregate.field else {
-            return Ok("count(*)".to_owned());
-        };
-        let column = self.column(field.as_str())?;
-        let data_type = self.data_type(field.as_str())?;
-        // A float set with a NaN in it sums and averages to NaN (S7).
-        let nan_guard = |expression: String| {
-            format!(
-                "CASE WHEN count(CASE WHEN typeof({column}) = 'text' THEN 1 END) > 0 \
-                 THEN 'NaN' ELSE {expression} END"
-            )
-        };
-        Ok(match (aggregate.function, data_type) {
-            (AggregateFn::Count, _) => format!("count({column})"),
-            (AggregateFn::Min, _) => format!("min({column})"),
-            (AggregateFn::Max, _) => format!("max({column})"),
-            (AggregateFn::Sum, DataType::Float64) => nan_guard(format!("sum({column})")),
-            (AggregateFn::Sum, _) => format!("sum({column})"),
-            (AggregateFn::Avg, DataType::Float64) => nan_guard(format!("avg({column})")),
-            (AggregateFn::Avg, DataType::Decimal { scale, .. }) => {
-                format!("(avg({column}) / {:.1})", 10f64.powi(i32::from(scale)))
-            }
-            (AggregateFn::Avg, _) => format!("CAST(avg({column}) AS REAL)"),
-        })
-    }
-
-    /// `column` holds `value` as an element.
-    fn has(column: &str, value: &Value, sql: &mut Builder) -> Result<(), DataSourceError> {
-        sql.push(&format!(
-            "EXISTS (SELECT 1 FROM json_each({column}) WHERE value = "
-        ));
-        sql.param(
-            value,
-            match value {
-                Value::Int64(_) => DataType::Int64,
-                _ => DataType::Utf8,
-            },
-        )?;
-        sql.push(")");
-        Ok(())
-    }
-
-    fn filter(&self, filter: &ValidatedFilter, sql: &mut Builder) -> Result<(), DataSourceError> {
-        match filter {
-            ValidatedFilter::And(parts) if parts.is_empty() => sql.push("1"),
-            ValidatedFilter::Or(parts) if parts.is_empty() => sql.push("0"),
-            ValidatedFilter::And(parts) | ValidatedFilter::Or(parts) => {
-                let joiner = if matches!(filter, ValidatedFilter::And(_)) {
-                    " AND "
-                } else {
-                    " OR "
-                };
-                sql.push("(");
-                for (index, part) in parts.iter().enumerate() {
-                    if index > 0 {
-                        sql.push(joiner);
-                    }
-                    self.filter(part, sql)?;
-                }
-                sql.push(")");
-            }
-            ValidatedFilter::Not(inner) => {
-                sql.push("(NOT ");
-                self.filter(inner, sql)?;
-                sql.push(")");
-            }
-            ValidatedFilter::IsNull { field } => {
-                sql.push(&format!("{} IS NULL", self.column(field.as_str())?));
-            }
-            ValidatedFilter::IsNotNull { field } => {
-                sql.push(&format!("{} IS NOT NULL", self.column(field.as_str())?));
-            }
-            // A list column holds its JSON array as text (issue #185): `json_each`
-            // reads the elements back, typed — a string as text, a number as an integer.
-            ValidatedFilter::Has { field, value } => {
-                let column = self.column(field.as_str())?;
-                // `EXISTS` over a NULL list is false, not unknown (S1): the CASE
-                // keeps the NULL list out of `NOT has` too.
-                sql.push(&format!("(CASE WHEN {column} IS NULL THEN NULL ELSE "));
-                Self::has(&column, value, sql)?;
-                sql.push(" END)");
-            }
-            ValidatedFilter::HasAll { field, values } => {
-                let column = self.column(field.as_str())?;
-                // Every value, and a NULL list is unknown: no values still needs a list.
-                sql.push(&format!("(CASE WHEN {column} IS NULL THEN NULL ELSE (1"));
-                for value in values {
-                    sql.push(" AND ");
-                    Self::has(&column, value, sql)?;
-                }
-                sql.push(") END)");
-            }
-            ValidatedFilter::IsEmpty { field } => {
-                let column = self.column(field.as_str())?;
-                sql.push(&format!(
-                    "({column} IS NOT NULL AND json_array_length({column}) = 0)"
-                ));
-            }
-            ValidatedFilter::InList {
-                field,
-                data_type,
-                values,
-            } => {
-                if values.is_empty() {
-                    sql.push("0");
-                    return Ok(());
-                }
-                sql.push(&self.column(field.as_str())?);
-                sql.push(" IN (");
-                for (index, value) in values.iter().enumerate() {
-                    if index > 0 {
-                        sql.push(", ");
-                    }
-                    sql.param(value, *data_type)?;
-                }
-                sql.push(")");
-            }
-            ValidatedFilter::Cmp {
-                field,
-                data_type,
-                op,
-                value,
-            } => {
-                let column = self.column(field.as_str())?;
-                match op {
-                    // `instr` compares bytes, case-sensitively (S5).
-                    CmpOp::Contains => {
-                        sql.push(&format!("instr({column}, "));
-                        sql.param(value, *data_type)?;
-                        sql.push(") > 0");
-                    }
-                    CmpOp::StartsWith => {
-                        sql.push(&format!("instr({column}, "));
-                        sql.param(value, *data_type)?;
-                        sql.push(") = 1");
-                    }
-                    // Both sides folded by the engine's function (S5a).
-                    CmpOp::IContains | CmpOp::IStartsWith => {
-                        sql.push(&format!("instr({FOLD}({column}), {FOLD}("));
-                        sql.param(value, *data_type)?;
-                        sql.push(if *op == CmpOp::IContains {
-                            ")) > 0"
-                        } else {
-                            ")) = 1"
-                        });
-                    }
-                    _ => {
-                        sql.push(&format!("{column} {} ", operator(*op)));
-                        sql.param(value, *data_type)?;
-                    }
-                }
-            }
-        }
-        Ok(())
-    }
-}
-
-/// One `ORDER BY` key over an output column, NULL placement written out (S3)
-/// and a locale's collation by the name the connector registers it under (S4a).
-fn sort_key(key: &Sort) -> Result<String, DataSourceError> {
-    let collation = match key.collation.locale() {
-        // The tag is letters, digits and `-` (`Locale::parse`), so it is a name.
-        Some(locale) => format!(" COLLATE \"{COLLATION}{}\"", locale.as_str()),
-        None => String::new(),
-    };
-    Ok(format!(
-        "{}{collation} {} {}",
-        quote(key.field.as_str())?,
-        match key.direction {
-            SortDirection::Asc => "ASC",
-            SortDirection::Desc => "DESC",
-        },
-        match key.nulls {
-            NullsOrder::First => "NULLS FIRST",
-            NullsOrder::Last => "NULLS LAST",
-        }
-    ))
-}
-
-fn operator(op: CmpOp) -> &'static str {
-    match op {
-        CmpOp::Eq => "=",
-        CmpOp::Ne => "<>",
-        CmpOp::Lt => "<",
-        CmpOp::Lte => "<=",
-        CmpOp::Gt => ">",
-        CmpOp::Gte => ">=",
-        CmpOp::In
-        | CmpOp::Contains
-        | CmpOp::StartsWith
-        | CmpOp::IContains
-        | CmpOp::IStartsWith
-        | CmpOp::Has
-        | CmpOp::HasAll => "=",
+/// A compile error as the connector's own (the same words as before the
+/// compiler was shared).
+pub(crate) fn compile(error: CompileError) -> DataSourceError {
+    match error {
+        CompileError::Identifier { name } => backend(format!(
+            "{name:?} is not an identifier this connector quotes"
+        )),
+        CompileError::UnknownField { name } => backend(format!("no column {name:?}")),
+        CompileError::Value { message } => backend(message),
+        other => backend(other.to_string()),
     }
 }
 
@@ -699,29 +348,21 @@ fn operator(op: CmpOp) -> &'static str {
 /// A decimal that does not fit SQLite's 64-bit integer is a backend error,
 /// not a wrapped number (issue #222).
 fn bind(value: &Value, data_type: DataType) -> Result<Sql, DataSourceError> {
+    stored(&Sqlite.param_value(value, data_type).map_err(compile)?)
+}
+
+/// A value the dialect has already brought to the column's scale.
+fn stored(value: &Value) -> Result<Sql, DataSourceError> {
     Ok(match value {
         Value::Null => Sql::Null,
         Value::Bool(value) => Sql::Integer(i64::from(*value)),
         Value::Int64(value) => Sql::Integer(*value),
         Value::Float64(value) if value.is_nan() => Sql::Text("NaN".to_owned()),
         Value::Float64(value) => Sql::Real(*value),
-        Value::Decimal(value) => {
-            let scale = match data_type {
-                DataType::Decimal { scale, .. } => scale,
-                _ => value.scale(),
-            };
-            let shift = u32::from(scale.saturating_sub(value.scale()));
-            let scaled = 10i128
-                .checked_pow(shift)
-                .and_then(|factor| value.value().checked_mul(factor))
-                .and_then(|scaled| i64::try_from(scaled).ok())
-                .ok_or_else(|| {
-                    backend(format!(
-                        "a decimal of scale {scale} does not fit SQLite's 64-bit integer"
-                    ))
-                })?;
-            Sql::Integer(scaled)
-        }
+        Value::Decimal(value) => Sql::Integer(
+            i64::try_from(value.value())
+                .map_err(|_| backend("a decimal does not fit SQLite's 64-bit integer"))?,
+        ),
         Value::Utf8(value) => Sql::Text(value.clone()),
         Value::Date(value) => Sql::Integer(i64::from(value.days_since_epoch())),
         Value::Timestamp(value) => Sql::Integer(value.micros()),
@@ -768,12 +409,7 @@ fn read(cell: Sql, data_type: DataType, name: &str) -> Result<Value, DataSourceE
 /// Quotes an identifier; identifiers come from the schema and the caller,
 /// never from a request.
 fn quote(name: &str) -> Result<String, DataSourceError> {
-    if name.is_empty() || name.contains('"') || name.contains('\0') {
-        return Err(backend(format!(
-            "{name:?} is not an identifier this connector quotes"
-        )));
-    }
-    Ok(format!("\"{name}\""))
+    opengrid_sql::quote_ident(name).map_err(compile)
 }
 
 fn sqlite(error: rusqlite::Error) -> DataSourceError {

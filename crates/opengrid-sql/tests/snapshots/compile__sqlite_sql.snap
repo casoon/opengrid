@@ -1,0 +1,277 @@
+---
+source: crates/opengrid-sql/tests/compile.rs
+expression: out
+---
+# s1-eq-excludes-null-rows
+SELECT "id" AS "id" FROM "orders" WHERE "amount" = ? ORDER BY "id" ASC NULLS LAST
+  1 = Decimal(Decimal { value: 1000, scale: 2 })
+
+# s1-gt-and-lte
+SELECT "id" AS "id", "qty" AS "qty" FROM "orders" WHERE ("qty" > ? AND "qty" <= ?) ORDER BY "id" ASC NULLS LAST
+  1 = Int64(47)
+  2 = Int64(50)
+
+# s1-is-not-null
+SELECT "id" AS "id" FROM "orders" WHERE ("id" IN (?, ?, ?) AND "amount" IS NOT NULL) ORDER BY "id" ASC NULLS LAST
+  1 = Int64(1)
+  2 = Int64(2)
+  3 = Int64(3)
+
+# s1-is-null-finds-the-null-row
+SELECT "id" AS "id" FROM "orders" WHERE ("id" IN (?, ?, ?) AND "amount" IS NULL)
+  1 = Int64(1)
+  2 = Int64(2)
+  3 = Int64(3)
+
+# s1-ne-excludes-null-rows
+SELECT "id" AS "id" FROM "orders" WHERE ("id" >= ? AND "id" <= ? AND "amount" <> ?) ORDER BY "id" ASC NULLS LAST
+  1 = Int64(1)
+  2 = Int64(3)
+  3 = Decimal(Decimal { value: 1000, scale: 2 })
+
+# s1-not-of-comparison-stays-unknown
+SELECT "id" AS "id" FROM "orders" WHERE ("id" IN (?, ?, ?) AND (NOT "amount" = ?)) ORDER BY "id" ASC NULLS LAST
+  1 = Int64(1)
+  2 = Int64(2)
+  3 = Int64(3)
+  4 = Decimal(Decimal { value: 1000, scale: 2 })
+
+# s1-or-of-two-ids
+SELECT "id" AS "id" FROM "orders" WHERE ("id" = ? OR "id" = ?) ORDER BY "id" ASC NULLS LAST
+  1 = Int64(1)
+  2 = Int64(50)
+
+# s10-empty-string-is-not-the-null-group
+SELECT "customer" AS "customer", count(*) AS "rows" FROM "orders" GROUP BY "customer" ORDER BY "customer" ASC NULLS LAST
+
+# s10-null-forms-its-own-group
+SELECT "country" AS "country", count(*) AS "rows" FROM "orders" GROUP BY "country" ORDER BY "country" ASC NULLS LAST
+
+# s11-aggregate-without-group-yields-one-row
+SELECT count(*) AS "rows", sum("amount") AS "s", (avg("amount") / 100.0) AS "a", min("amount") AS "lo", max("amount") AS "hi" FROM "orders" WHERE "country" = ?
+  1 = Utf8("XX")
+
+# s11-aggregates-ignore-null
+SELECT sum("amount") AS "s", min("qty") AS "lo", max("qty") AS "hi" FROM "orders" WHERE "id" IN (?, ?, ?)
+  1 = Int64(1)
+  2 = Int64(2)
+  3 = Int64(3)
+
+# s11-aggregates-on-all-null-set
+SELECT count(*) AS "rows", count("amount") AS "with_amount", count("qty") AS "with_qty", sum("amount") AS "s", CAST(avg("qty") AS REAL) AS "a", min("amount") AS "lo", max("amount") AS "hi" FROM "orders" WHERE "id" IN (?, ?)
+  1 = Int64(3)
+  2 = Int64(5)
+
+# s11-average-of-integers-is-a-float
+SELECT CAST(avg("qty") AS REAL) AS "a" FROM "orders" WHERE "id" IN (?, ?)
+  1 = Int64(1)
+  2 = Int64(2)
+
+# s11-count-star-versus-count-field
+SELECT count(*) AS "rows", count("qty") AS "with_qty" FROM "orders" WHERE "id" IN (?, ?, ?)
+  1 = Int64(1)
+  2 = Int64(2)
+  3 = Int64(3)
+
+# s11-group-over-empty-set-yields-no-row
+SELECT "country" AS "country", count(*) AS "rows" FROM "orders" WHERE "country" = ? GROUP BY "country"
+  1 = Utf8("XX")
+
+# s12-min-max-keep-the-input-type
+SELECT min("amount") AS "lo", max("amount") AS "hi" FROM "orders" WHERE "id" IN (?, ?)
+  1 = Int64(1)
+  2 = Int64(2)
+
+# s12-sum-of-decimal-widens-to-38
+SELECT sum("amount") AS "total" FROM "orders" WHERE "id" IN (?, ?)
+  1 = Int64(1)
+  2 = Int64(2)
+
+# s12-sum-of-float64-stays-float64
+SELECT CASE WHEN count(CASE WHEN typeof("ratio") = 'text' THEN 1 END) > 0 THEN 'NaN' ELSE sum("ratio") END AS "total" FROM "orders" WHERE "id" IN (?, ?)
+  1 = Int64(1)
+  2 = Int64(2)
+
+# s12-sum-of-int64-stays-int64
+SELECT sum("qty") AS "total" FROM "orders" WHERE "id" IN (?, ?)
+  1 = Int64(1)
+  2 = Int64(2)
+
+# s13-in-list-distinguishes-normalisation
+SELECT "id" AS "id", "note" AS "note" FROM "orders" WHERE "note" IN (?, ?) ORDER BY "id" ASC NULLS LAST
+  1 = Utf8("é")
+  2 = Utf8("e\u{301}")
+
+# s13-nfc-is-not-nfd
+SELECT "id" AS "id", "note" AS "note" FROM "orders" WHERE "note" = ?
+  1 = Utf8("é")
+
+# s13-nfd-is-not-nfc
+SELECT "id" AS "id", "note" AS "note" FROM "orders" WHERE "note" = ?
+  1 = Utf8("e\u{301}")
+
+# s14-empty-country-selects-three-rows
+SELECT "id" AS "id", "country" AS "country" FROM "orders" WHERE "country" IN (?) ORDER BY "id" ASC NULLS LAST
+  1 = Utf8("")
+
+# s14-empty-string-is-a-value
+SELECT "id" AS "id", "note" AS "note" FROM "orders" WHERE "note" = ?
+  1 = Utf8("")
+
+# s14-empty-string-is-not-null
+SELECT "id" AS "id" FROM "orders" WHERE ("id" IN (?, ?) AND "note" IS NULL)
+  1 = Int64(1)
+  2 = Int64(2)
+
+# s15-a-derived-column-filters
+SELECT "id" AS "id", "ordered_on" AS "ordered_on" FROM "orders" WHERE CAST(strftime('%Y', ("ordered_on" * 86400), 'unixepoch') AS INTEGER) = ? ORDER BY "id" ASC NULLS LAST
+  1 = Int64(2025)
+
+# s15-a-derived-column-sorts-with-nulls-last
+SELECT "id" AS "id", CAST(strftime('%m', ("ordered_on" * 86400), 'unixepoch') AS INTEGER) AS "ordered_month" FROM "orders" WHERE "id" <= ? ORDER BY "ordered_month" DESC NULLS LAST, "id" ASC NULLS LAST
+  1 = Int64(6)
+
+# s15-grouping-by-month-counts-every-month
+SELECT CAST(strftime('%m', ("ordered_on" * 86400), 'unixepoch') AS INTEGER) AS "ordered_month", count(*) AS "rows", sum("qty") AS "total" FROM "orders" GROUP BY CAST(strftime('%m', ("ordered_on" * 86400), 'unixepoch') AS INTEGER) ORDER BY "ordered_month" ASC NULLS LAST LIMIT ?
+  1 = Int64(4)
+
+# s15-the-year-turns-at-one-microsecond
+SELECT "id" AS "id", CAST(strftime('%Y', ("created_at" / 1000000 - ("created_at" % 1000000 < 0)), 'unixepoch') AS INTEGER) AS "created_year", CAST(strftime('%Y', ("ordered_on" * 86400), 'unixepoch') AS INTEGER) AS "ordered_year", CAST(strftime('%m', ("ordered_on" * 86400), 'unixepoch') AS INTEGER) AS "ordered_month" FROM "orders" WHERE "id" <= ? ORDER BY "id" ASC NULLS LAST
+  1 = Int64(5)
+
+# s15-year-is-a-column-like-any-other
+SELECT CAST(strftime('%Y', ("ordered_on" * 86400), 'unixepoch') AS INTEGER) AS "ordered_year", count(*) AS "rows" FROM "orders" GROUP BY CAST(strftime('%Y', ("ordered_on" * 86400), 'unixepoch') AS INTEGER) ORDER BY "ordered_year" ASC NULLS LAST
+
+# s2-in-empty-list-matches-nothing
+SELECT "id" AS "id" FROM "orders" WHERE 0
+
+# s2-in-list
+SELECT "id" AS "id" FROM "orders" WHERE ("id" <= ? AND "country" IN (?, ?)) ORDER BY "id" ASC NULLS LAST
+  1 = Int64(5)
+  2 = Utf8("DE")
+  3 = Utf8("FR")
+
+# s3-nulls-first-explicit
+SELECT "id" AS "id", "note" AS "note" FROM "orders" WHERE "id" IN (?, ?, ?) ORDER BY "note" ASC NULLS FIRST
+  1 = Int64(1)
+  2 = Int64(2)
+  3 = Int64(8)
+
+# s3-nulls-last-ascending
+SELECT "id" AS "id", "note" AS "note" FROM "orders" WHERE "id" IN (?, ?, ?) ORDER BY "note" ASC NULLS LAST
+  1 = Int64(1)
+  2 = Int64(2)
+  3 = Int64(8)
+
+# s3-nulls-last-descending
+SELECT "id" AS "id", "note" AS "note" FROM "orders" WHERE "id" IN (?, ?, ?) ORDER BY "note" DESC NULLS LAST
+  1 = Int64(1)
+  2 = Int64(2)
+  3 = Int64(8)
+
+# s4-binary-order-ascending
+SELECT "note" AS "note" FROM "orders" WHERE "note" IN (?, ?, ?, ?, ?, ?, ?, ?, ?) ORDER BY "note" ASC NULLS LAST
+  1 = Utf8("")
+  2 = Utf8("Abc")
+  3 = Utf8("Z")
+  4 = Utf8("abc")
+  5 = Utf8("abcde")
+  6 = Utf8("e\u{301}")
+  7 = Utf8("z")
+  8 = Utf8("ä")
+  9 = Utf8("é")
+
+# s4-binary-order-descending
+SELECT "note" AS "note" FROM "orders" WHERE "note" IN (?, ?, ?, ?, ?, ?, ?, ?, ?) ORDER BY "note" DESC NULLS LAST
+  1 = Utf8("")
+  2 = Utf8("Abc")
+  3 = Utf8("Z")
+  4 = Utf8("abc")
+  5 = Utf8("abcde")
+  6 = Utf8("e\u{301}")
+  7 = Utf8("z")
+  8 = Utf8("ä")
+  9 = Utf8("é")
+
+# s5-contains-is-case-sensitive
+SELECT "id" AS "id" FROM "orders" WHERE instr("note", ?) > 0 ORDER BY "id" ASC NULLS LAST
+  1 = Utf8("abc")
+
+# s5-starts-with-is-case-sensitive
+SELECT "id" AS "id" FROM "orders" WHERE instr("note", ?) = 1
+  1 = Utf8("Ab")
+
+# s6-multi-sort-country-then-amount-desc
+SELECT "id" AS "id", "country" AS "country", "amount" AS "amount" FROM "orders" ORDER BY "country" ASC NULLS LAST, "amount" DESC NULLS LAST LIMIT ?
+  1 = Int64(3)
+
+# s6-multi-sort-null-group-first
+SELECT "id" AS "id", "country" AS "country" FROM "orders" ORDER BY "country" ASC NULLS FIRST, "id" ASC NULLS LAST LIMIT ?
+  1 = Int64(2)
+
+# s6-offset-with-sort
+SELECT "id" AS "id" FROM "orders" ORDER BY "id" ASC NULLS LAST LIMIT ? OFFSET ?
+  1 = Int64(5)
+  2 = Int64(10)
+
+# s6-second-page-last
+SELECT "id" AS "id" FROM "orders" ORDER BY "id" ASC NULLS LAST LIMIT ? OFFSET ?
+  1 = Int64(5)
+  2 = Int64(45)
+
+# s7-nan-is-not-null-in-comparisons
+SELECT "id" AS "id" FROM "orders" WHERE ("id" IN (?, ?, ?) AND "ratio" <> ?) ORDER BY "id" ASC NULLS LAST
+  1 = Int64(2)
+  2 = Int64(3)
+  3 = Int64(4)
+  4 = Float64(1.0)
+
+# s7-nan-sorts-after-numbers
+SELECT "id" AS "id", "ratio" AS "ratio" FROM "orders" WHERE "id" IN (?, ?) ORDER BY "ratio" ASC NULLS LAST
+  1 = Int64(3)
+  2 = Int64(4)
+
+# s7-nan-sorts-before-numbers-descending
+SELECT "id" AS "id", "ratio" AS "ratio" FROM "orders" WHERE "id" IN (?, ?) ORDER BY "ratio" DESC NULLS LAST
+  1 = Int64(3)
+  2 = Int64(4)
+
+# s7-negative-zero-equals-zero
+SELECT "id" AS "id" FROM "orders" WHERE ("id" IN (?, ?) AND "ratio" = ?) ORDER BY "id" ASC NULLS LAST
+  1 = Int64(2)
+  2 = Int64(3)
+  3 = Float64(0.0)
+
+# s8-decimal-is-exact
+SELECT "id" AS "id", "amount" AS "amount" FROM "orders" WHERE "amount" = ?
+  1 = Decimal(Decimal { value: 99999999999, scale: 2 })
+
+# s8-integer-literal-on-decimal
+SELECT "id" AS "id", "amount" AS "amount" FROM "orders" WHERE "amount" > ?
+  1 = Decimal(Decimal { value: 5000, scale: 2 })
+
+# s8-negative-decimals-order-exactly
+SELECT "id" AS "id", "amount" AS "amount" FROM "orders" WHERE "amount" < ? ORDER BY "amount" ASC NULLS LAST
+  1 = Decimal(Decimal { value: 0, scale: 2 })
+
+# s9-date-has-no-time-zone
+SELECT "id" AS "id", "ordered_on" AS "ordered_on" FROM "orders" WHERE "ordered_on" = ?
+  1 = Date(Date { days: 20498 })
+
+# s9-date-year-boundary
+SELECT "id" AS "id", "ordered_on" AS "ordered_on" FROM "orders" WHERE ("ordered_on" >= ? AND "ordered_on" <= ?) ORDER BY "id" ASC NULLS LAST
+  1 = Date(Date { days: 20454 })
+  2 = Date(Date { days: 20454 })
+
+# s9-timestamp-microsecond-precision
+SELECT "id" AS "id" FROM "orders" WHERE ("id" IN (?, ?) AND "created_at" > ? AND "created_at" <= ?)
+  1 = Int64(5)
+  2 = Int64(6)
+  3 = Timestamp(Timestamp { micros: 1772323200499999 })
+  4 = Timestamp(Timestamp { micros: 1772323200500000 })
+
+# s9-timestamp-order
+SELECT "id" AS "id", "created_at" AS "created_at" FROM "orders" WHERE "id" IN (?, ?, ?) ORDER BY "created_at" ASC NULLS LAST
+  1 = Int64(1)
+  2 = Int64(2)
+  3 = Int64(3)

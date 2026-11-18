@@ -17,6 +17,9 @@ workspace = true
 opengrid-types = { workspace = true }
 opengrid-query = { workspace = true }
 opengrid-pivot = { workspace = true }
+# The one compiler for every SQL database; this crate brings the PostgreSQL
+# dialect's driver (issue #485).
+opengrid-sql = { workspace = true }
 opengrid-datasource = { workspace = true }
 # The contract the server takes its sources through (issue #45, E36).
 opengrid-connector = { workspace = true }

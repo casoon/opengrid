@@ -18,6 +18,7 @@ members = [
     "crates/opengrid-grid",
     "crates/opengrid-server",
     "crates/opengrid-datasource-postgres",
+    "crates/opengrid-sql",
     "crates/opengrid-planner",
     "crates/opengrid-pivot",
     "crates/opengrid-export",
@@ -49,6 +50,7 @@ opengrid-pivot = { path = "crates/opengrid-pivot", version = "0.18.1" }
 opengrid-grid = { path = "crates/opengrid-grid", version = "0.18.1" }
 opengrid-export = { path = "crates/opengrid-export", version = "0.18.1" }
 opengrid-connector = { path = "crates/opengrid-connector", version = "0.18.1" }
+opengrid-sql = { path = "crates/opengrid-sql", version = "0.18.1" }
 
 # Grundsatzlints (plan/spezifikation/11-crates.md, 14-entscheidungen.md E4).
 # `unsafe_code = "forbid"` gilt workspaceweit; clippy wird in CI/`just check`

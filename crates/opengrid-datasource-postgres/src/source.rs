@@ -33,9 +33,9 @@ use tokio_postgres::{NoTls, Socket};
 
 use opengrid_pivot::{PivotResult, ValidatedPivotQuery};
 
-use crate::compiler::{
-    CompileError, CompiledQuery, GROUPING_PREFIX, PostgresCompiler, QueryCompiler, quote_ident,
-};
+use opengrid_sql::{CompileError, CompiledQuery, GROUPING_PREFIX, QueryCompiler, quote_ident};
+
+use crate::PostgresCompiler;
 use crate::lease::Lease;
 use crate::tls::Canceller;
 
@@ -419,7 +419,7 @@ pub(crate) fn data(message: impl Into<String>) -> DataSourceError {
     }
 }
 
-pub(crate) fn compile(error: crate::compiler::CompileError) -> DataSourceError {
+pub(crate) fn compile(error: CompileError) -> DataSourceError {
     DataSourceError::Backend {
         message: error.to_string(),
     }

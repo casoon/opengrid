@@ -1,0 +1,26 @@
+[package]
+name = "opengrid-sql"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "One SQL compiler for opengrid's query vocabulary, with a dialect per database"
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+keywords = ["sql", "postgres", "sqlite", "data-grid"]
+categories = ["database"]
+
+[lints]
+workspace = true
+
+[dependencies]
+opengrid-types = { workspace = true }
+opengrid-query = { workspace = true }
+opengrid-pivot = { workspace = true }
+
+[dev-dependencies]
+# The conformance cases are the queries the snapshot compiles.
+opengrid-conformance = { path = "../opengrid-conformance" }
+# Snapshot of the SQLite dialect's statements; PostgreSQL's are pinned in
+# `opengrid-datasource-postgres`.
+insta = "1"

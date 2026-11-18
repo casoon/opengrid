@@ -25,6 +25,14 @@ Two things belong in every release entry and are easy to leave out:
   Angular — with its logo, straight to that demo's overview.
 - **Pages:** the demo page points to the framework demos too, as a small row of links above its own
   examples.
+- **Rust:** `opengrid-sql`, one SQL compiler over a validated query with a `Dialect` per database
+  (PostgreSQL and SQLite today); a further SQL database is a dialect and a driver.
+
+### Changed
+
+- **Rust:** `opengrid-datasource-postgres` and `opengrid-connector-sqlite` build their SQL with
+  `opengrid-sql` instead of a compiler each. Answers, capabilities and errors are unchanged;
+  `PostgresCompiler` is now an alias of the shared compiler in its PostgreSQL dialect.
 
 ## [0.18.1] - 2026-11-18
 
