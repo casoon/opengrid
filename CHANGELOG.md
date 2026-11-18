@@ -19,6 +19,11 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+### Added
+
+- **Pages:** the start page links the live demo of each framework — JavaScript, React, Vue, Svelte and
+  Angular — with its logo, straight to that demo's overview.
+
 ## [0.18.1] - 2026-11-18
 
 Not yet verified by a screen reader: no pass with assistive technology has been recorded for this
