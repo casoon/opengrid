@@ -1,0 +1,42 @@
+[package]
+name = "opengrid-serve"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "The opengrid-server command: read a database's schema, propose a configuration, serve it"
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+keywords = ["server", "cli", "data-grid", "opengrid"]
+categories = ["command-line-utilities", "database"]
+
+# The command is called `opengrid-server`; the library of that name stays free
+# of any database driver (issue #49), so the command is a crate of its own.
+[[bin]]
+name = "opengrid-server"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+opengrid-types = { workspace = true }
+opengrid-json = { workspace = true }
+opengrid-connector = { workspace = true }
+opengrid-server = { path = "../opengrid-server", version = "0.18.1" }
+opengrid-connector-sqlite = { path = "../opengrid-connector-sqlite", version = "0.18.1" }
+opengrid-datasource-postgres = { path = "../opengrid-datasource-postgres", version = "0.18.1" }
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+# The PostgreSQL schema test makes its tables directly; test-only.
+tokio-postgres = "0.7"
+# The whole conformance suite through a server started from an edited
+# proposal: the fixture goes into a SQLite file the way the demo writes it.
+opengrid-conformance = { path = "../opengrid-conformance" }
+opengrid-engine = { path = "../opengrid-engine" }
+opengrid-datasource = { path = "../opengrid-datasource" }
+opengrid-query = { path = "../opengrid-query" }

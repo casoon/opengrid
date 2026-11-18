@@ -248,7 +248,7 @@ impl PostgresDataSource {
 }
 
 /// The `sslmode` of a connection string, if it parses.
-fn sslmode(url: &str) -> Option<tokio_postgres::config::SslMode> {
+pub(crate) fn sslmode(url: &str) -> Option<tokio_postgres::config::SslMode> {
     url.parse::<tokio_postgres::Config>()
         .ok()
         .map(|config| config.get_ssl_mode())

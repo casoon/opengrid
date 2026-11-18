@@ -19,6 +19,7 @@
 
 mod connector;
 mod export;
+mod introspect;
 mod lease;
 mod source;
 mod tls;
@@ -29,6 +30,7 @@ pub use opengrid_sql::{CompileError, CompiledQuery, QueryCompiler};
 /// The shared SQL compiler in its PostgreSQL dialect (issue #485).
 pub type PostgresCompiler = opengrid_sql::Compiler<opengrid_sql::Postgres>;
 pub use export::{ExportCanceller, PostgresExport};
+pub use introspect::read_tables;
 pub use source::{PoolOptions, PostgresDataSource};
 #[cfg(feature = "tls")]
 pub use tls::rustls_connector;

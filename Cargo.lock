@@ -1361,6 +1361,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "opengrid-serve"
+version = "0.18.1"
+dependencies = [
+ "axum",
+ "http-body-util",
+ "opengrid-conformance",
+ "opengrid-connector",
+ "opengrid-connector-sqlite",
+ "opengrid-datasource",
+ "opengrid-datasource-postgres",
+ "opengrid-engine",
+ "opengrid-json",
+ "opengrid-query",
+ "opengrid-server",
+ "opengrid-types",
+ "tokio",
+ "tokio-postgres",
+ "tower",
+]
+
+[[package]]
 name = "opengrid-server"
 version = "0.18.1"
 dependencies = [
