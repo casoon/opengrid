@@ -1,0 +1,42 @@
+{
+  "proposal": true,
+  "listen": "127.0.0.1:8080",
+  "allow_origins": [],
+  "tokens": [{"env":"OPENGRID_TOKEN","context":{}}],
+  "sources": [
+    {
+      "name": "orders",
+      "database": "sqlite",
+      "connection": "OPENGRID_DATABASE_URL",
+      "table": "orders",
+      "schema": {
+        "fields": [
+          {"name":"id","type":"int64","nullable":false},
+          {"name":"customer","type":"utf8","nullable":true},
+          {"name":"country","type":"utf8","nullable":false},
+          {"name":"qty","type":"int64","nullable":true},
+          {"name":"ratio","type":"float64","nullable":true},
+          {"name":"paid","type":"bool","nullable":true},
+          {"name":"secret_note","type":"utf8","nullable":true}
+        ]
+      },
+      "left_out": [
+        {
+          "column": "amount",
+          "database_type": "DECIMAL(12,2)",
+          "reason": "the type has no opengrid type"
+        },
+        {
+          "column": "ordered_on",
+          "database_type": "DATE",
+          "reason": "the type has no opengrid type"
+        },
+        {
+          "column": "payload",
+          "database_type": "BLOB",
+          "reason": "the type has no opengrid type"
+        }
+      ]
+    }
+  ]
+}

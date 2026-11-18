@@ -1,0 +1,46 @@
+{
+  "proposal": true,
+  "listen": "127.0.0.1:8080",
+  "allow_origins": [],
+  "tokens": [{"env":"OPENGRID_TOKEN","context":{}}],
+  "sources": [
+    {
+      "name": "orders",
+      "database": "postgres",
+      "connection": "OPENGRID_DATABASE_URL",
+      "namespace": "opengrid_serve_test",
+      "table": "orders",
+      "schema": {
+        "fields": [
+          {"name":"id","type":"int64","nullable":false},
+          {"name":"customer","type":"utf8","nullable":true},
+          {"name":"country","type":"utf8","nullable":false},
+          {"name":"qty","type":"int64","nullable":true},
+          {"name":"ratio","type":"float64","nullable":true},
+          {"name":"paid","type":"bool","nullable":true},
+          {
+            "name": "amount",
+            "type": {"decimal":{"precision":12,"scale":2}},
+            "nullable": true
+          },
+          {"name":"ordered_on","type":"date","nullable":true},
+          {"name":"created_at","type":"timestamp","nullable":true},
+          {"name":"tags","type":"list<utf8>","nullable":true},
+          {"name":"counts","type":"list<int64>","nullable":true}
+        ]
+      },
+      "left_out": [
+        {
+          "column": "payload",
+          "database_type": "jsonb",
+          "reason": "the type has no opengrid type"
+        },
+        {
+          "column": "wall",
+          "database_type": "timestamp without time zone",
+          "reason": "the type has no opengrid type"
+        }
+      ]
+    }
+  ]
+}

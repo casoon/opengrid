@@ -50,6 +50,7 @@ pub use opengrid_types::{Schema, Value};
 
 use opengrid_datasource::SendDataSource;
 
+pub mod introspect;
 pub mod local;
 mod rows;
 pub use local::LocalConnector;

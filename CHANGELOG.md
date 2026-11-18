@@ -27,6 +27,13 @@ Two things belong in every release entry and are easy to leave out:
   examples.
 - **Rust:** `opengrid-sql`, one SQL compiler over a validated query with a `Dialect` per database
   (PostgreSQL and SQLite today); a further SQL database is a dialect and a driver.
+- **Server:** `opengrid-server propose` reads the schema behind a connection string (PostgreSQL or
+  SQLite) and writes a configuration proposal; `opengrid-server --config <file>` serves what the
+  edited file names. Tokens and the connection string come from the environment, columns the file
+  does not name are not served, and a type without a mapping is named and left out. Guide:
+  [From a connection string to a grid](https://casoon.github.io/opengrid/docs/guides/from-a-connection-string/).
+- **Rust:** `read_tables` in `opengrid-connector-sqlite` and `opengrid-datasource-postgres` read the
+  tables and columns of a database; the command is the new crate `opengrid-serve`.
 
 ### Changed
 

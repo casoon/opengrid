@@ -272,6 +272,79 @@ impl Connector for SqliteConnector {
     }
 }
 
+/// The tables of the database `connection` holds and, for each, the columns
+/// opengrid can serve (issue #486): `pragma table_info`, and a declared type
+/// mapped only where the connector reads the column back exactly —
+/// `INTEGER` as `int64`, `REAL` as `float64`, `TEXT` as `utf8`, `BOOLEAN` as
+/// `bool`. Every other declared type is named and left out, not guessed:
+/// `DECIMAL`, `DATE` and `DATETIME` hold text or numbers in a plain file, and
+/// the connector's own layout (module docs) stores them as scaled integers —
+/// a file written that way reads as `int64`, and its owner edits the type.
+pub fn read_tables(
+    connection: &Connection,
+) -> Result<Vec<opengrid_connector::introspect::TableProposal>, DataSourceError> {
+    use opengrid_connector::introspect::TableProposal;
+
+    let mut tables = connection
+        .prepare(
+            "SELECT name FROM sqlite_master WHERE type = 'table' \
+             AND name NOT LIKE 'sqlite_%' ORDER BY name",
+        )
+        .map_err(sqlite)?;
+    let names: Vec<String> = tables
+        .query_map([], |row| row.get(0))
+        .map_err(sqlite)?
+        .collect::<Result<_, _>>()
+        .map_err(sqlite)?;
+
+    let mut out = Vec::new();
+    for name in names {
+        let mut table = TableProposal::new(None, &name);
+        let mut columns = connection
+            .prepare(&format!("PRAGMA table_info({})", quote(&name)?))
+            .map_err(sqlite)?;
+        let rows = columns
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i64>(3)? != 0,
+                    row.get::<_, i64>(5)? != 0,
+                ))
+            })
+            .map_err(sqlite)?;
+        for row in rows {
+            let (column, declared, not_null, primary_key) = row.map_err(sqlite)?;
+            table.column(
+                &column,
+                &declared,
+                declared_type(&declared),
+                !(not_null || primary_key),
+            );
+        }
+        out.push(table);
+    }
+    Ok(out)
+}
+
+/// The opengrid type of a declared SQLite type, where the connector reads it
+/// back as exactly that.
+fn declared_type(declared: &str) -> Option<DataType> {
+    let upper = declared.to_ascii_uppercase();
+    let base = upper.split('(').next().unwrap_or("").trim();
+    match base {
+        "INTEGER" | "INT" | "BIGINT" | "SMALLINT" | "TINYINT" | "MEDIUMINT" | "INT8" | "INT2" => {
+            Some(DataType::Int64)
+        }
+        "REAL" | "FLOAT" | "DOUBLE" | "DOUBLE PRECISION" => Some(DataType::Float64),
+        "TEXT" | "VARCHAR" | "CHAR" | "CHARACTER" | "NVARCHAR" | "NCHAR" | "CLOB" => {
+            Some(DataType::Utf8)
+        }
+        "BOOLEAN" | "BOOL" => Some(DataType::Bool),
+        _ => None,
+    }
+}
+
 /// Creates `table` for the **stored** columns of `schema`, in the layout the
 /// connector reads (module docs).
 pub fn create_table(
