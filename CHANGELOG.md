@@ -19,6 +19,12 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+## [0.18.1] - 2026-11-18
+
+Not yet verified by a screen reader: no pass with assistive technology has been recorded for this
+release ([#5](https://github.com/casoon/opengrid/issues/5)). The keyboard and `axe-core` checks run on
+every change.
+
 ### Fixed
 
 - **Grouping:** the focus ring of a group row goes round the row, not round the narrow first cell the
@@ -1803,7 +1809,8 @@ tested.
   tested: React 18 rendering on the server, SvelteKit, Nuxt, Next.js and Astro
   as real applications. A Vite production build needs `loadOpengrid({ moduleUrl })`.
 
-[Unreleased]: https://github.com/casoon/opengrid/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/casoon/opengrid/compare/v0.18.1...HEAD
+[0.18.1]: https://github.com/casoon/opengrid/compare/v0.18.0...v0.18.1
 [0.18.0]: https://github.com/casoon/opengrid/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/casoon/opengrid/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/casoon/opengrid/compare/v0.15.0...v0.16.0
