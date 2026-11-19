@@ -13,8 +13,14 @@ test.beforeEach(async ({ page }) => {
   await page.waitForSelector("opengrid-grid td[data-row]");
 });
 
-const focusRow = (page, row) =>
-  shadow(page, (root, row) => root.querySelector(`td[data-row="${row}"][data-col="0"]`).focus(), row);
+// WebKit scrolls a focused cell into view in the next frame, not at once (see
+// `settle_filter_focus`). A scroll set before that frame is undone by it: the
+// end became `scrollTop` 1761 instead of 1792, a row short of the end (#420).
+// So the focus has its frames before the spec scrolls.
+const focusRow = async (page, row) => {
+  await shadow(page, (root, row) => root.querySelector(`td[data-row="${row}"][data-col="0"]`).focus(), row);
+  await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+};
 
 const scrollTo = (page, where) =>
   shadow(
