@@ -32,6 +32,8 @@ Two things belong in every release entry and are easy to leave out:
 ### Changed
 
 - **Contributors:** CI runs the conformance suite against MySQL 8.4 as well.
+- **Contributors:** a failed Firefox/WebKit run keeps the Playwright traces as the artifact
+  `e2e-browsers-traces` ([#420](https://github.com/casoon/opengrid/issues/420)).
 
 ## [0.19.0] - 2026-11-18
 
