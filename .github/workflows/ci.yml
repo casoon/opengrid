@@ -104,6 +104,35 @@ jobs:
       # filter in SQL, the count before the first byte, a client that leaves.
       - run: cargo test -p opengrid-server --test export_postgres
 
+  mysql:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # The conformance suite against a real MySQL 8 (issue #501), as for
+    # PostgreSQL: a service container, and the tests take its URL.
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: opengrid
+          MYSQL_DATABASE: opengrid
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -popengrid"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 3306:3306
+    env:
+      OPENGRID_TEST_MYSQL: "mysql://root:opengrid@127.0.0.1:3306/opengrid"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p opengrid-connector-mysql
+      # From a connection string to a server: the proposal, the edited file,
+      # the suite through the router, a column the file leaves out.
+      - run: cargo test -p opengrid-serve --test conformance_mysql
+
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 60

@@ -7,7 +7,7 @@ use opengrid_serve::{Config, DEFAULT_CONNECTION_ENV, read_proposal};
 const USAGE: &str = "usage:
   opengrid-server propose [--database-env VAR] [--namespace SCHEMA] [--out FILE]
       read the schema behind the connection string in $VAR (default OPENGRID_DATABASE_URL;
-      postgres://… or sqlite:<path>) and write a configuration proposal (default opengrid.json)
+      postgres://…, mysql://…/<database> or sqlite:<path>) and write a configuration proposal (default opengrid.json)
   opengrid-server --config FILE
       serve what FILE names; tokens and connection strings come from the environment";
 

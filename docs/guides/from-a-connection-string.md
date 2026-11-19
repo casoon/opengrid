@@ -1,6 +1,6 @@
 ---
 title: From a connection string to a grid
-description: Read the schema of your PostgreSQL or SQLite database, edit the proposal, start the server from the file.
+description: Read the schema of your PostgreSQL, MySQL or SQLite database, edit the proposal, start the server from the file.
 order: 6.5
 ---
 
@@ -10,7 +10,7 @@ takes you from a connection string to a running server in three steps, and relea
 until you have read what it would serve.
 
 ```sh
-export OPENGRID_DATABASE_URL=postgres://app@localhost/shop   # or sqlite:/path/to/shop.db
+export OPENGRID_DATABASE_URL=postgres://app@localhost/shop   # or mysql://app@localhost/shop, sqlite:/path/to/shop.db
 opengrid-server propose                                      # writes opengrid.json
 # read it, edit it, delete "proposal": true
 export OPENGRID_TOKEN=$(openssl rand -hex 32)
@@ -19,8 +19,9 @@ opengrid-server --config opengrid.json
 
 ## 1. The proposal
 
-`propose` reads the tables and columns of the database (`information_schema` for PostgreSQL,
-`pragma table_info` for SQLite; `--namespace` picks the PostgreSQL schema, `public` by default)
+`propose` reads the tables and columns of the database (`information_schema` for PostgreSQL and
+MySQL, `pragma table_info` for SQLite; `--namespace` picks the PostgreSQL schema, `public` by
+default; MySQL's tables are those of the database the URL names)
 and writes `opengrid.json`. It never overwrites a file. Each table becomes a source, each column
 with a type opengrid knows a field:
 
@@ -57,6 +58,18 @@ with a type opengrid knows a field:
 | `date` | `date` |
 | `timestamptz` | `timestamp`, microseconds, UTC; `timestamp` without a zone is left out |
 | `text[]`, `int[]`, `bigint[]` | `list<utf8>`, `list<int64>` |
+
+| MySQL | opengrid |
+|---|---|
+| `TINYINT(1)`, `BOOLEAN` | `bool` |
+| `TINYINT` … `BIGINT` | `int64` — `BIGINT UNSIGNED` does not fit and is left out |
+| `FLOAT`, `DOUBLE` | `float64` |
+| `DECIMAL(p,s)` | `decimal(p,s)` up to 38 digits |
+| `CHAR`, `VARCHAR`, `TEXT`, … in `utf8mb4` | `utf8` — another character set is left out |
+| `DATE` | `date` |
+| `TIMESTAMP` | `timestamp`, read in UTC; `DATETIME` is a wall clock and is left out |
+
+A MySQL `JSON` column is left out: name a list column by hand (`list<utf8>`, `list<int64>`).
 
 | SQLite (declared type) | opengrid |
 |---|---|

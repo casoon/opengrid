@@ -1,0 +1,277 @@
+---
+source: crates/opengrid-sql/tests/compile.rs
+expression: out
+---
+# s1-eq-excludes-null-rows
+SELECT "id" AS "id" FROM "orders" WHERE "amount" = CAST(? AS DECIMAL(12,2)) ORDER BY ("id" IS NULL) ASC, "id" ASC
+  1 = Decimal(Decimal { value: 1000, scale: 2 })
+
+# s1-gt-and-lte
+SELECT "id" AS "id", "qty" AS "qty" FROM "orders" WHERE ("qty" > ? AND "qty" <= ?) ORDER BY ("id" IS NULL) ASC, "id" ASC
+  1 = Int64(47)
+  2 = Int64(50)
+
+# s1-is-not-null
+SELECT "id" AS "id" FROM "orders" WHERE ("id" IN (?, ?, ?) AND "amount" IS NOT NULL) ORDER BY ("id" IS NULL) ASC, "id" ASC
+  1 = Int64(1)
+  2 = Int64(2)
+  3 = Int64(3)
+
+# s1-is-null-finds-the-null-row
+SELECT "id" AS "id" FROM "orders" WHERE ("id" IN (?, ?, ?) AND "amount" IS NULL)
+  1 = Int64(1)
+  2 = Int64(2)
+  3 = Int64(3)
+
+# s1-ne-excludes-null-rows
+SELECT "id" AS "id" FROM "orders" WHERE ("id" >= ? AND "id" <= ? AND "amount" <> CAST(? AS DECIMAL(12,2))) ORDER BY ("id" IS NULL) ASC, "id" ASC
+  1 = Int64(1)
+  2 = Int64(3)
+  3 = Decimal(Decimal { value: 1000, scale: 2 })
+
+# s1-not-of-comparison-stays-unknown
+SELECT "id" AS "id" FROM "orders" WHERE ("id" IN (?, ?, ?) AND (NOT "amount" = CAST(? AS DECIMAL(12,2)))) ORDER BY ("id" IS NULL) ASC, "id" ASC
+  1 = Int64(1)
+  2 = Int64(2)
+  3 = Int64(3)
+  4 = Decimal(Decimal { value: 1000, scale: 2 })
+
+# s1-or-of-two-ids
+SELECT "id" AS "id" FROM "orders" WHERE ("id" = ? OR "id" = ?) ORDER BY ("id" IS NULL) ASC, "id" ASC
+  1 = Int64(1)
+  2 = Int64(50)
+
+# s10-empty-string-is-not-the-null-group
+SELECT "customer" AS "customer", count(*) AS "rows" FROM "orders" GROUP BY "customer" ORDER BY ("customer" IS NULL) ASC, "customer" COLLATE utf8mb4_0900_bin ASC
+
+# s10-null-forms-its-own-group
+SELECT "country" AS "country", count(*) AS "rows" FROM "orders" GROUP BY "country" ORDER BY ("country" IS NULL) ASC, "country" COLLATE utf8mb4_0900_bin ASC
+
+# s11-aggregate-without-group-yields-one-row
+SELECT count(*) AS "rows", CAST(sum("amount") AS DECIMAL(38,2)) AS "s", CAST(avg("amount") AS DOUBLE) AS "a", min("amount") AS "lo", max("amount") AS "hi" FROM "orders" WHERE "country" COLLATE utf8mb4_0900_bin = ?
+  1 = Utf8("XX")
+
+# s11-aggregates-ignore-null
+SELECT CAST(sum("amount") AS DECIMAL(38,2)) AS "s", min("qty") AS "lo", max("qty") AS "hi" FROM "orders" WHERE "id" IN (?, ?, ?)
+  1 = Int64(1)
+  2 = Int64(2)
+  3 = Int64(3)
+
+# s11-aggregates-on-all-null-set
+SELECT count(*) AS "rows", count("amount") AS "with_amount", count("qty") AS "with_qty", CAST(sum("amount") AS DECIMAL(38,2)) AS "s", CAST(avg("qty") AS DOUBLE) AS "a", min("amount") AS "lo", max("amount") AS "hi" FROM "orders" WHERE "id" IN (?, ?)
+  1 = Int64(3)
+  2 = Int64(5)
+
+# s11-average-of-integers-is-a-float
+SELECT CAST(avg("qty") AS DOUBLE) AS "a" FROM "orders" WHERE "id" IN (?, ?)
+  1 = Int64(1)
+  2 = Int64(2)
+
+# s11-count-star-versus-count-field
+SELECT count(*) AS "rows", count("qty") AS "with_qty" FROM "orders" WHERE "id" IN (?, ?, ?)
+  1 = Int64(1)
+  2 = Int64(2)
+  3 = Int64(3)
+
+# s11-group-over-empty-set-yields-no-row
+SELECT "country" AS "country", count(*) AS "rows" FROM "orders" WHERE "country" COLLATE utf8mb4_0900_bin = ? GROUP BY "country"
+  1 = Utf8("XX")
+
+# s12-min-max-keep-the-input-type
+SELECT min("amount") AS "lo", max("amount") AS "hi" FROM "orders" WHERE "id" IN (?, ?)
+  1 = Int64(1)
+  2 = Int64(2)
+
+# s12-sum-of-decimal-widens-to-38
+SELECT CAST(sum("amount") AS DECIMAL(38,2)) AS "total" FROM "orders" WHERE "id" IN (?, ?)
+  1 = Int64(1)
+  2 = Int64(2)
+
+# s12-sum-of-float64-stays-float64
+SELECT sum("ratio") AS "total" FROM "orders" WHERE "id" IN (?, ?)
+  1 = Int64(1)
+  2 = Int64(2)
+
+# s12-sum-of-int64-stays-int64
+SELECT CAST(sum("qty") AS SIGNED) AS "total" FROM "orders" WHERE "id" IN (?, ?)
+  1 = Int64(1)
+  2 = Int64(2)
+
+# s13-in-list-distinguishes-normalisation
+SELECT "id" AS "id", "note" AS "note" FROM "orders" WHERE "note" COLLATE utf8mb4_0900_bin IN (?, ?) ORDER BY ("id" IS NULL) ASC, "id" ASC
+  1 = Utf8("é")
+  2 = Utf8("e\u{301}")
+
+# s13-nfc-is-not-nfd
+SELECT "id" AS "id", "note" AS "note" FROM "orders" WHERE "note" COLLATE utf8mb4_0900_bin = ?
+  1 = Utf8("é")
+
+# s13-nfd-is-not-nfc
+SELECT "id" AS "id", "note" AS "note" FROM "orders" WHERE "note" COLLATE utf8mb4_0900_bin = ?
+  1 = Utf8("e\u{301}")
+
+# s14-empty-country-selects-three-rows
+SELECT "id" AS "id", "country" AS "country" FROM "orders" WHERE "country" COLLATE utf8mb4_0900_bin IN (?) ORDER BY ("id" IS NULL) ASC, "id" ASC
+  1 = Utf8("")
+
+# s14-empty-string-is-a-value
+SELECT "id" AS "id", "note" AS "note" FROM "orders" WHERE "note" COLLATE utf8mb4_0900_bin = ?
+  1 = Utf8("")
+
+# s14-empty-string-is-not-null
+SELECT "id" AS "id" FROM "orders" WHERE ("id" IN (?, ?) AND "note" IS NULL)
+  1 = Int64(1)
+  2 = Int64(2)
+
+# s15-a-derived-column-filters
+SELECT "id" AS "id", "ordered_on" AS "ordered_on" FROM "orders" WHERE CAST(YEAR("ordered_on") AS SIGNED) = ? ORDER BY ("id" IS NULL) ASC, "id" ASC
+  1 = Int64(2025)
+
+# s15-a-derived-column-sorts-with-nulls-last
+SELECT "id" AS "id", CAST(MONTH("ordered_on") AS SIGNED) AS "ordered_month" FROM "orders" WHERE "id" <= ? ORDER BY ("ordered_month" IS NULL) ASC, "ordered_month" DESC, ("id" IS NULL) ASC, "id" ASC
+  1 = Int64(6)
+
+# s15-grouping-by-month-counts-every-month
+SELECT CAST(MONTH("ordered_on") AS SIGNED) AS "ordered_month", count(*) AS "rows", CAST(sum("qty") AS SIGNED) AS "total" FROM "orders" GROUP BY CAST(MONTH("ordered_on") AS SIGNED) ORDER BY ("ordered_month" IS NULL) ASC, "ordered_month" ASC LIMIT ?
+  1 = Int64(4)
+
+# s15-the-year-turns-at-one-microsecond
+SELECT "id" AS "id", CAST(YEAR("created_at") AS SIGNED) AS "created_year", CAST(YEAR("ordered_on") AS SIGNED) AS "ordered_year", CAST(MONTH("ordered_on") AS SIGNED) AS "ordered_month" FROM "orders" WHERE "id" <= ? ORDER BY ("id" IS NULL) ASC, "id" ASC
+  1 = Int64(5)
+
+# s15-year-is-a-column-like-any-other
+SELECT CAST(YEAR("ordered_on") AS SIGNED) AS "ordered_year", count(*) AS "rows" FROM "orders" GROUP BY CAST(YEAR("ordered_on") AS SIGNED) ORDER BY ("ordered_year" IS NULL) ASC, "ordered_year" ASC
+
+# s2-in-empty-list-matches-nothing
+SELECT "id" AS "id" FROM "orders" WHERE FALSE
+
+# s2-in-list
+SELECT "id" AS "id" FROM "orders" WHERE ("id" <= ? AND "country" COLLATE utf8mb4_0900_bin IN (?, ?)) ORDER BY ("id" IS NULL) ASC, "id" ASC
+  1 = Int64(5)
+  2 = Utf8("DE")
+  3 = Utf8("FR")
+
+# s3-nulls-first-explicit
+SELECT "id" AS "id", "note" AS "note" FROM "orders" WHERE "id" IN (?, ?, ?) ORDER BY ("note" IS NULL) DESC, "note" COLLATE utf8mb4_0900_bin ASC
+  1 = Int64(1)
+  2 = Int64(2)
+  3 = Int64(8)
+
+# s3-nulls-last-ascending
+SELECT "id" AS "id", "note" AS "note" FROM "orders" WHERE "id" IN (?, ?, ?) ORDER BY ("note" IS NULL) ASC, "note" COLLATE utf8mb4_0900_bin ASC
+  1 = Int64(1)
+  2 = Int64(2)
+  3 = Int64(8)
+
+# s3-nulls-last-descending
+SELECT "id" AS "id", "note" AS "note" FROM "orders" WHERE "id" IN (?, ?, ?) ORDER BY ("note" IS NULL) ASC, "note" COLLATE utf8mb4_0900_bin DESC
+  1 = Int64(1)
+  2 = Int64(2)
+  3 = Int64(8)
+
+# s4-binary-order-ascending
+SELECT "note" AS "note" FROM "orders" WHERE "note" COLLATE utf8mb4_0900_bin IN (?, ?, ?, ?, ?, ?, ?, ?, ?) ORDER BY ("note" IS NULL) ASC, "note" COLLATE utf8mb4_0900_bin ASC
+  1 = Utf8("")
+  2 = Utf8("Abc")
+  3 = Utf8("Z")
+  4 = Utf8("abc")
+  5 = Utf8("abcde")
+  6 = Utf8("e\u{301}")
+  7 = Utf8("z")
+  8 = Utf8("ä")
+  9 = Utf8("é")
+
+# s4-binary-order-descending
+SELECT "note" AS "note" FROM "orders" WHERE "note" COLLATE utf8mb4_0900_bin IN (?, ?, ?, ?, ?, ?, ?, ?, ?) ORDER BY ("note" IS NULL) ASC, "note" COLLATE utf8mb4_0900_bin DESC
+  1 = Utf8("")
+  2 = Utf8("Abc")
+  3 = Utf8("Z")
+  4 = Utf8("abc")
+  5 = Utf8("abcde")
+  6 = Utf8("e\u{301}")
+  7 = Utf8("z")
+  8 = Utf8("ä")
+  9 = Utf8("é")
+
+# s5-contains-is-case-sensitive
+SELECT "id" AS "id" FROM "orders" WHERE INSTR("note" COLLATE utf8mb4_0900_bin, ?) > 0 ORDER BY ("id" IS NULL) ASC, "id" ASC
+  1 = Utf8("abc")
+
+# s5-starts-with-is-case-sensitive
+SELECT "id" AS "id" FROM "orders" WHERE INSTR("note" COLLATE utf8mb4_0900_bin, ?) = 1
+  1 = Utf8("Ab")
+
+# s6-multi-sort-country-then-amount-desc
+SELECT "id" AS "id", "country" AS "country", "amount" AS "amount" FROM "orders" ORDER BY ("country" IS NULL) ASC, "country" COLLATE utf8mb4_0900_bin ASC, ("amount" IS NULL) ASC, "amount" DESC LIMIT ?
+  1 = Int64(3)
+
+# s6-multi-sort-null-group-first
+SELECT "id" AS "id", "country" AS "country" FROM "orders" ORDER BY ("country" IS NULL) DESC, "country" COLLATE utf8mb4_0900_bin ASC, ("id" IS NULL) ASC, "id" ASC LIMIT ?
+  1 = Int64(2)
+
+# s6-offset-with-sort
+SELECT "id" AS "id" FROM "orders" ORDER BY ("id" IS NULL) ASC, "id" ASC LIMIT ? OFFSET ?
+  1 = Int64(5)
+  2 = Int64(10)
+
+# s6-second-page-last
+SELECT "id" AS "id" FROM "orders" ORDER BY ("id" IS NULL) ASC, "id" ASC LIMIT ? OFFSET ?
+  1 = Int64(5)
+  2 = Int64(45)
+
+# s7-nan-is-not-null-in-comparisons
+SELECT "id" AS "id" FROM "orders" WHERE ("id" IN (?, ?, ?) AND "ratio" <> ?) ORDER BY ("id" IS NULL) ASC, "id" ASC
+  1 = Int64(2)
+  2 = Int64(3)
+  3 = Int64(4)
+  4 = Float64(1.0)
+
+# s7-nan-sorts-after-numbers
+SELECT "id" AS "id", "ratio" AS "ratio" FROM "orders" WHERE "id" IN (?, ?) ORDER BY ("ratio" IS NULL) ASC, "ratio" ASC
+  1 = Int64(3)
+  2 = Int64(4)
+
+# s7-nan-sorts-before-numbers-descending
+SELECT "id" AS "id", "ratio" AS "ratio" FROM "orders" WHERE "id" IN (?, ?) ORDER BY ("ratio" IS NULL) ASC, "ratio" DESC
+  1 = Int64(3)
+  2 = Int64(4)
+
+# s7-negative-zero-equals-zero
+SELECT "id" AS "id" FROM "orders" WHERE ("id" IN (?, ?) AND "ratio" = ?) ORDER BY ("id" IS NULL) ASC, "id" ASC
+  1 = Int64(2)
+  2 = Int64(3)
+  3 = Float64(0.0)
+
+# s8-decimal-is-exact
+SELECT "id" AS "id", "amount" AS "amount" FROM "orders" WHERE "amount" = CAST(? AS DECIMAL(12,2))
+  1 = Decimal(Decimal { value: 99999999999, scale: 2 })
+
+# s8-integer-literal-on-decimal
+SELECT "id" AS "id", "amount" AS "amount" FROM "orders" WHERE "amount" > CAST(? AS DECIMAL(12,2))
+  1 = Decimal(Decimal { value: 5000, scale: 2 })
+
+# s8-negative-decimals-order-exactly
+SELECT "id" AS "id", "amount" AS "amount" FROM "orders" WHERE "amount" < CAST(? AS DECIMAL(12,2)) ORDER BY ("amount" IS NULL) ASC, "amount" ASC
+  1 = Decimal(Decimal { value: 0, scale: 2 })
+
+# s9-date-has-no-time-zone
+SELECT "id" AS "id", "ordered_on" AS "ordered_on" FROM "orders" WHERE "ordered_on" = CAST(? AS DATE)
+  1 = Date(Date { days: 20498 })
+
+# s9-date-year-boundary
+SELECT "id" AS "id", "ordered_on" AS "ordered_on" FROM "orders" WHERE ("ordered_on" >= CAST(? AS DATE) AND "ordered_on" <= CAST(? AS DATE)) ORDER BY ("id" IS NULL) ASC, "id" ASC
+  1 = Date(Date { days: 20454 })
+  2 = Date(Date { days: 20454 })
+
+# s9-timestamp-microsecond-precision
+SELECT "id" AS "id" FROM "orders" WHERE ("id" IN (?, ?) AND "created_at" > CAST(? AS DATETIME(6)) AND "created_at" <= CAST(? AS DATETIME(6)))
+  1 = Int64(5)
+  2 = Int64(6)
+  3 = Timestamp(Timestamp { micros: 1772323200499999 })
+  4 = Timestamp(Timestamp { micros: 1772323200500000 })
+
+# s9-timestamp-order
+SELECT "id" AS "id", "created_at" AS "created_at" FROM "orders" WHERE "id" IN (?, ?, ?) ORDER BY ("created_at" IS NULL) ASC, "created_at" ASC
+  1 = Int64(1)
+  2 = Int64(2)
+  3 = Int64(3)

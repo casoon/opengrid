@@ -10,6 +10,7 @@ members = [
     "crates/opengrid-datasource",
     "crates/opengrid-connector",
     "crates/opengrid-connector-sqlite",
+    "crates/opengrid-connector-mysql",
     "crates/opengrid-wasm",
     "crates/opengrid-xlsx",
     "crates/opengrid-collation",
