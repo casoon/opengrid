@@ -176,6 +176,8 @@ jobs:
           name: e2e-browsers-traces
           path: tests/e2e/test-results/
           retention-days: 14
+
+  publish-dry-run:
     runs-on: ubuntu-latest
     # About a minute with a warm cache; a cold Rust build takes several, and
     # the MCP view's nightly build of std (below) some more.
