@@ -6,7 +6,7 @@
 //! [`Dialect`]: quoting, placeholders, NULL order, collation, how decimals and
 //! dates are stored, the aggregate casts, and what the database cannot do
 //! (`GROUPING SETS`, `WITH RECURSIVE`). A new database is a dialect and a driver.
-//! [`Postgres`] and [`Sqlite`] are the two there are.
+//! [`Postgres`], [`Sqlite`] and [`MySql`] are the three there are.
 //!
 //! Two properties matter more than anything else, and both are structural rather
 //! than a matter of care:
@@ -25,12 +25,14 @@
 
 mod compiler;
 mod dialect;
+mod mysql;
 mod postgres;
 mod sqlite;
 mod tree;
 
 pub use compiler::{CompileError, CompiledQuery, Compiler, GROUPING_PREFIX, QueryCompiler};
 pub use dialect::{Dialect, Sql, quote_ident};
+pub use mysql::{MySql, read_as_text as mysql_read_as_text};
 pub use postgres::Postgres;
 pub use sqlite::{COLLATION, FOLD, Sqlite};
 pub use tree::{TREE_CHILDREN, TREE_MATCHED};

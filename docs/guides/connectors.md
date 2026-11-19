@@ -172,6 +172,19 @@ HTTP [protocol](../../protocol/) instead, and proves it with the same suite over
   `create_table` and `insert` write a table in the layout it reads: decimals as scaled
   integers, dates as days, timestamps as microseconds, NaN as the text `'NaN'`. It answers
   every conformance case.
+- **MySQL 8.0 and later** (`opengrid-connector-mysql`, driver `mysql_async`): a URL,
+  `mysql://user:password@host:3306/database`, TLS with `?require_ssl=true`. Every connection runs
+  with `ANSI_QUOTES`, the time zone `+00:00` and `utf8mb4`. Strings are compared under
+  `utf8mb4_0900_bin`, so a string column has to be `utf8mb4`; a timestamp is a `TIMESTAMP` (the
+  instant, read in UTC); a list is a `JSON` array. MySQL answers filters, sorts, groups,
+  aggregates and pages, and a sort by a locale it has a collation for
+  (`utf8mb4_<locale>_0900_as_cs`, ties by bytes). What it cannot answer as the engine would —
+  `icontains` and `istarts_with`, a locale it has no collation for — the engine answers over the
+  rows MySQL's filter matches, at most `MAX_ENGINE_ROWS` (1,000,000) of them; a tree always (a
+  temporary table cannot be read twice in one MySQL statement), a pivot level by level (no
+  `GROUPING SETS`). A `DOUBLE` holds no NaN, so the three conformance cases that read the
+  fixture's NaN cannot be stored; every other case agrees. A dropped statement is ended with
+  `KILL QUERY`.
 - **A table in memory** (`opengrid_connector::LocalConnector`, `from_csv` for a file).
 
 ### A tree in the database, or in the engine

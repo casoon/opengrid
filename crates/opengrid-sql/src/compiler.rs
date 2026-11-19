@@ -376,19 +376,17 @@ impl<D: Dialect> Compiler<D> {
             })?;
         let column = quote_ident(key.field.as_str())?;
 
-        match key.collation.locale() {
-            // S4a. The tag is letters, digits and `-` (`Locale::parse`), so it
-            // cannot leave the quotes.
-            Some(locale) => sql.push(&self.dialect.locale_sort(&column, locale.as_str())),
-            None => sql.push(&self.dialect.collate(&column, data_type)),
-        }
-        sql.push(match key.direction {
-            SortDirection::Asc => " ASC",
-            SortDirection::Desc => " DESC",
-        });
-        // S3: never rely on the default, which differs between the engines
+        // S4a: the tag is letters, digits and `-` (`Locale::parse`), so it
+        // cannot leave the quotes. S3: the NULL placement is always written
+        // out, never left to the default, which differs between the engines
         // exactly for DESC.
-        sql.push(self.dialect.nulls(key.nulls));
+        sql.push(&self.dialect.order(
+            &column,
+            data_type,
+            key.collation.locale().map(|locale| locale.as_str()),
+            key.direction == SortDirection::Desc,
+            key.nulls,
+        )?);
         Ok(())
     }
 }

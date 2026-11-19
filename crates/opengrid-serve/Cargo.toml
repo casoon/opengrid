@@ -26,6 +26,7 @@ opengrid-connector = { workspace = true }
 opengrid-server = { path = "../opengrid-server", version = "0.19.0" }
 opengrid-connector-sqlite = { path = "../opengrid-connector-sqlite", version = "0.19.0" }
 opengrid-datasource-postgres = { path = "../opengrid-datasource-postgres", version = "0.19.0" }
+opengrid-connector-mysql = { path = "../opengrid-connector-mysql", version = "0.19.0" }
 axum = "0.8"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
 
@@ -34,6 +35,8 @@ tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
 # The PostgreSQL schema test makes its tables directly; test-only.
 tokio-postgres = "0.7"
+# The MySQL server test makes its table directly; test-only.
+mysql_async = { version = "0.37", default-features = false, features = ["minimal-rust", "default-rustls-ring"] }
 # The whole conformance suite through a server started from an edited
 # proposal: the fixture goes into a SQLite file the way the demo writes it.
 opengrid-conformance = { path = "../opengrid-conformance" }

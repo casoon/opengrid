@@ -7,7 +7,7 @@ description = "One SQL compiler for opengrid's query vocabulary, with a dialect 
 repository.workspace = true
 homepage.workspace = true
 readme = "README.md"
-keywords = ["sql", "postgres", "sqlite", "data-grid"]
+keywords = ["sql", "postgres", "sqlite", "mysql", "data-grid"]
 categories = ["database"]
 
 [lints]
@@ -24,3 +24,5 @@ opengrid-conformance = { path = "../opengrid-conformance" }
 # Snapshot of the SQLite dialect's statements; PostgreSQL's are pinned in
 # `opengrid-datasource-postgres`.
 insta = "1"
+# Queries written as JSON for the MySQL dialect's refusals.
+opengrid-json = { path = "../opengrid-json" }

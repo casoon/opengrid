@@ -55,6 +55,7 @@ fn error(message: impl Into<String>) -> ConfigError {
 pub enum Database {
     Postgres,
     Sqlite,
+    MySql,
 }
 
 impl Database {
@@ -62,14 +63,17 @@ impl Database {
         match self {
             Database::Postgres => "postgres",
             Database::Sqlite => "sqlite",
+            Database::MySql => "mysql",
         }
     }
 
     /// The database a connection string names: `sqlite:<path>` is SQLite,
-    /// anything else a libpq string or URL.
+    /// `mysql://…` MySQL, anything else a libpq string or URL.
     pub fn of_connection(connection: &str) -> Self {
         if connection.starts_with("sqlite:") {
             Database::Sqlite
+        } else if connection.starts_with("mysql://") {
+            Database::MySql
         } else {
             Database::Postgres
         }
@@ -368,9 +372,10 @@ impl SourceConfig {
         let database = match fields.read::<String>("database").map_err(wrap)?.as_str() {
             "postgres" => Database::Postgres,
             "sqlite" => Database::Sqlite,
+            "mysql" => Database::MySql,
             other => {
                 return Err(error(format!(
-                    "a source's database is {other:?}: it is \"postgres\" or \"sqlite\""
+                    "a source's database is {other:?}: it is \"postgres\", \"sqlite\" or \"mysql\""
                 )));
             }
         };
@@ -445,6 +450,26 @@ impl SourceConfig {
                         )
                     }
                     None => opengrid_datasource_postgres::PostgresDataSource::connect(
+                        connection,
+                        &self.table,
+                        self.schema.clone(),
+                    ),
+                }
+                .map_err(failed)?;
+                Ok(std::sync::Arc::new(source))
+            }
+            // The namespace of a MySQL source is its database, if not the URL's.
+            Database::MySql => {
+                let source = match &self.namespace {
+                    Some(database) => {
+                        opengrid_connector_mysql::MySqlConnector::connect_in_database(
+                            connection,
+                            database,
+                            &self.table,
+                            self.schema.clone(),
+                        )
+                    }
+                    None => opengrid_connector_mysql::MySqlConnector::connect(
                         connection,
                         &self.table,
                         self.schema.clone(),

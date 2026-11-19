@@ -99,6 +99,26 @@ pub trait Dialect {
         }
     }
 
+    /// One `ORDER BY` term of a sort key: the key under its collation (S4, or
+    /// a locale's, S4a), the direction, and where the NULLs go (S3). A
+    /// database without `NULLS FIRST`/`LAST`, or whose locale collations are
+    /// not deterministic, writes more than one term here.
+    fn order(
+        &self,
+        column: &str,
+        data_type: DataType,
+        locale: Option<&str>,
+        descending: bool,
+        nulls: NullsOrder,
+    ) -> Result<String, CompileError> {
+        let key = match locale {
+            Some(locale) => self.locale_sort(column, locale),
+            None => self.collate(column, data_type),
+        };
+        let direction = if descending { " DESC" } else { " ASC" };
+        Ok(format!("{key}{direction}{}", self.nulls(nulls)))
+    }
+
     /// A derived column: the year or month of `source`, in UTC (S9).
     fn date_part(&self, part: DatePart, source: &str, source_type: Option<DataType>) -> String;
 

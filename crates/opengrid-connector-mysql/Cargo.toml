@@ -1,0 +1,38 @@
+[package]
+name = "opengrid-connector-mysql"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "MySQL 8 as a connector for opengrid-server"
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+keywords = ["mysql", "connector", "sql", "data-grid", "opengrid"]
+categories = ["database"]
+
+[lints]
+workspace = true
+
+[dependencies]
+opengrid-types = { workspace = true }
+opengrid-query = { workspace = true }
+opengrid-datasource = { workspace = true }
+opengrid-connector = { workspace = true }
+opengrid-columns = { workspace = true }
+# The one SQL compiler, here in its MySQL dialect (issue #501).
+opengrid-sql = { workspace = true }
+opengrid-json = { workspace = true }
+# What MySQL cannot answer as the engine does (case folding, a locale it has
+# no collation for) the engine answers over the rows MySQL sends.
+opengrid-engine = { workspace = true, features = ["icu"] }
+# The driver, decided in #501: async on tokio like the server, TLS through
+# rustls with ring like the PostgreSQL connector, nothing else.
+mysql_async = { version = "0.37", default-features = false, features = ["minimal-rust", "default-rustls-ring"] }
+# Already in the build through the driver; a dropped statement's `KILL QUERY`
+# is spawned on it.
+tokio = { version = "1", features = ["rt"] }
+
+[dev-dependencies]
+opengrid-conformance = { path = "../opengrid-conformance" }
+opengrid-pivot = { path = "../opengrid-pivot" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }

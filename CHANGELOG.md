@@ -19,6 +19,20 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+### Added
+
+- **Server:** MySQL 8.0 and later as a third SQL database: the connector `opengrid-connector-mysql`
+  (driver `mysql_async`) and the `MySql` dialect in `opengrid-sql`; `opengrid-server propose` and
+  `--config` take a `mysql://` connection string. What MySQL cannot answer as the engine would
+  (case-insensitive matching, a locale without a MySQL collation, trees) is answered by the
+  engine over MySQL's rows. Details:
+  [Connectors](https://casoon.github.io/opengrid/docs/guides/connectors/#reference-connectors)
+  ([#501](https://github.com/casoon/opengrid/issues/501)).
+
+### Changed
+
+- **Contributors:** CI runs the conformance suite against MySQL 8.4 as well.
+
 ## [0.19.0] - 2026-11-18
 
 Not yet verified by a screen reader: no pass with assistive technology has been recorded for this

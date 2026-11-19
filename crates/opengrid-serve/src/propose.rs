@@ -78,8 +78,9 @@ pub fn proposal(
     (pretty(&file), skipped)
 }
 
-/// Reads the schema behind `connection` (a libpq string or `sqlite:<path>`)
-/// and writes the proposal for it. `namespace` is PostgreSQL's schema.
+/// Reads the schema behind `connection` (a libpq string, `mysql://…/<database>`
+/// or `sqlite:<path>`) and writes the proposal for it. `namespace` is
+/// PostgreSQL's schema; MySQL's tables are the URL's database's.
 pub async fn read_proposal(
     connection: &str,
     connection_env: &str,
@@ -101,6 +102,9 @@ pub async fn read_proposal(
                 .map_err(|e| ConfigError(e.to_string()))?
         }
         Database::Postgres => opengrid_datasource_postgres::read_tables(connection, namespace)
+            .await
+            .map_err(|e| ConfigError(e.to_string()))?,
+        Database::MySql => opengrid_connector_mysql::read_tables(connection)
             .await
             .map_err(|e| ConfigError(e.to_string()))?,
     };
