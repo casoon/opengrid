@@ -167,8 +167,15 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps firefox webkit
       - run: just e2e-browsers
-
-  publish-dry-run:
+      # A flake fails the job (failOnFlakyTests) but passes on its retry, and
+      # the retry records a trace (`trace: on-first-retry`). Without this step
+      # the trace dies with the runner and the failure cannot be placed (#420).
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: e2e-browsers-traces
+          path: tests/e2e/test-results/
+          retention-days: 14
     runs-on: ubuntu-latest
     # About a minute with a warm cache; a cold Rust build takes several, and
     # the MCP view's nightly build of std (below) some more.
