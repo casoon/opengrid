@@ -19,6 +19,11 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+### Changed
+
+- **Pages:** the project site uses the current shared theme (0.16.0).
+
+
 ## [0.20.0] - 2026-11-19
 
 Not yet verified by a screen reader: no pass with assistive technology has been recorded for this
