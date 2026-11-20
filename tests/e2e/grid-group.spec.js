@@ -265,6 +265,10 @@ test("a window asks one query per group it touches", async ({ page }) => {
   await press(page, 'td[data-row="0"][data-col="0"]', "Enter");
   await expect.poll(() => rowcount(page)).toBe(7 + 52);
   await press(page, 'td[data-row="1"][data-col="0"]', "ArrowDown");
+  // WebKit scrolls the newly focused cell into view in the next frame, judged
+  // then. A scroll set before that frame is taken back to row 2: no query at
+  // all, or a second one for the way back (#420). So the focus has its frames.
+  await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
 
   await page.evaluate(() => {
     window.__queries.length = 0;
