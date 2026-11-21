@@ -124,14 +124,12 @@ const query = `{
     ]}
   />
 
-  <div class="after-stats">
   <Section
     title="Try it in your framework"
     lead="The same demos, once per framework: the grid, the pivot and the query behind them, each as a small app you can read."
   >
     <FrameworkDemos />
   </Section>
-  </div>
 
   <SectionIntro
     title="It is a query engine. The grid shows its answers."
@@ -496,10 +494,6 @@ const query = `{
 </Base>
 
 <style>
-  /* The theme's Section has no top padding; after the stat band it needs one. */
-  .after-stats {
-    padding-top: var(--section-y);
-  }
   .screenshot {
     display: block;
     width: 100%;
