@@ -158,6 +158,13 @@ aborted request stops; the tab and the worker cannot stop a query that has
 started and ignore it — the caller drops their answer. A provider written for
 two arguments still fits. [`exportRows`](#exporting-the-view) is what passes one.
 
+## From plain rows
+
+| | |
+|---|---|
+| `fromRows(host, rows, { schema?, provider? })` | Rows to a grid or table in one call: the schema (given, or `inferSchema(rows)`), a provider (`createWorkerProvider()` unless given), the rows loaded and the element connected. Sets `datasource` (`rows`) and `columns` (every field) where the element has none. Resolves with `{ schema, provider, connection }`. |
+| `inferSchema(rows)` | The schema JSON of `rows`, read from every row, as `loadRows` takes it. Refuses with code `cannot_infer`, naming row and field, what it cannot type. The rules: [Data you already have](../guides/data-you-have/#the-types-it-reads). |
+
 ## Connecting
 
 The module functions have rules — wait for the module, texts before the
@@ -1797,13 +1804,14 @@ the same for `/query`, `/pivot`, `/source` and `/export`:
 | `backend` | `502` | The source behind the server failed. | Try again later; the operator's log says why. |
 | `data` | `422` | The data breaks a rule the query relies on — a tree with a key twice or a cycle. The message names the rows. Retrying does not help. | Show the message to whoever owns the data. A client that does not know the code treats it like any failure. |
 
-**`exportRows`' own codes** never come from a server (`prepare_print` rejects with `too_many_rows` too, at its own bound):
+**The loader's own codes** never come from a server (`prepare_print` rejects with `too_many_rows` too, at its own bound):
 
 | `code` | What happened | What a page does |
 |---|---|---|
 | `too_many_rows` | More matches than `maxRows` — the first piece's `total_count`, or the server's `X-Total-Count` before the body. Nothing more is fetched. | Narrow the view. |
 | `source_changed` | A piece reported a different `total_count` than the first, or ended before the total. | Export again, or from a server, which reads one snapshot. |
 | `module_not_loaded` | The WebAssembly module did not load, and the export notation is in it. | Say the export is not available. |
+| `cannot_infer` | `inferSchema` (or `fromRows` without a schema) cannot type a field without guessing. The message names row and field ([Data you already have](../guides/data-you-have/#the-types-it-reads)). | Give a schema. |
 
 ## Events
 

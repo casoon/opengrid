@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>opengrid plain rows fixture</title>
+    <style>
+      opengrid-grid {
+        display: block;
+        height: 260px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid plain rows fixture</h1>
+      <opengrid-grid label="People"></opengrid-grid>
+    </main>
+    <script type="module">
+      // Issue #460: plain objects and no schema — a grid in five lines.
+      import { fromRows, inferSchema } from "/packages/opengrid/loader.js";
+      const rows = [
+        { id: 1, name: "Ada", born: "1815-12-10", active: true, score: 2 },
+        { id: 2, name: "Grace", born: "1906-12-09", active: false, score: 1.5 },
+        { id: 3, name: "Edsger", born: null, active: true, score: 3 },
+      ];
+      window.__shown = await fromRows(document.querySelector("opengrid-grid"), rows);
+      Object.assign(window, { __rows: rows, __inferSchema: inferSchema, __ready: true });
+    </script>
+  </body>
+</html>

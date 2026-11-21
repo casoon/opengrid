@@ -14,6 +14,8 @@ import {
   createWorkerProvider,
   exportPivot,
   exportRows,
+  fromRows,
+  inferSchema,
   loadOpengrid,
   type CellChangeDetail,
   type CodedError,
@@ -475,4 +477,18 @@ export async function page(): Promise<void> {
   // @ts-expect-error — an action has a label
   connect(grid, { actions: [{ id: "remove" }] });
   connection.disconnect();
+}
+
+// Plain rows to a table (issue #460).
+export async function plainRows(grid: HTMLElement): Promise<void> {
+  const rows = [{ id: 1, name: "Ada" }];
+  const schema: string = inferSchema(rows);
+  const shown = await fromRows(grid, rows);
+  await fromRows(grid, rows, { schema: shown.schema, provider: createWorkerProvider() });
+  shown.connection.disconnect();
+  await shown.provider.loadRows("rows", rows, schema);
+  // @ts-expect-error — the schema is the JSON text `loadRows` takes
+  await fromRows(grid, rows, { schema: { fields: [] } });
+  // @ts-expect-error — rows are objects keyed by field name
+  inferSchema([1, 2]);
 }

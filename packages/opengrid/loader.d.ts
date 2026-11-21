@@ -259,6 +259,48 @@ export function connect(
 ): Connection<PivotConnectOptions>;
 
 // ---------------------------------------------------------------------------
+// From plain rows (issue #460)
+// ---------------------------------------------------------------------------
+
+/**
+ * The schema JSON of `rows`, read from every row, as `loadRows` takes it: a
+ * boolean is `bool`; a number `int64` when every value of the field is an
+ * integer, else `float64` (with a warning: money wants a `decimal`); a string
+ * `date` when every value is a `YYYY-MM-DD` day, else `utf8`; a field `null` or
+ * missing in a row is nullable. Throws a {@link CodedError} with code `"cannot_infer"`,
+ * naming row and field, for values of two kinds in one field, an integer
+ * beyond 2^53, a number that is not finite, a bigint, an object, a list, or a
+ * field with no value in any row.
+ */
+export function inferSchema(rows: readonly Record<string, unknown>[]): string;
+
+export interface FromRowsOptions {
+  /** The schema JSON; wins over inference. */
+  schema?: string;
+  /** Where the rows go; a new `createWorkerProvider()` by default. */
+  provider?: EngineProvider;
+}
+
+export interface FromRowsResult {
+  /** The schema the rows were loaded with — given or inferred. */
+  schema: string;
+  provider: EngineProvider;
+  connection: Connection;
+}
+
+/**
+ * Rows to a table in one call: the schema (given, or {@link inferSchema}), a
+ * provider, the rows loaded into it and the element connected. `datasource`
+ * becomes `rows` and `columns` every field where the element has none. For
+ * `<opengrid-grid>` and `<opengrid-table>`.
+ */
+export function fromRows(
+  host: HTMLElement,
+  rows: readonly Record<string, unknown>[],
+  options?: FromRowsOptions,
+): Promise<FromRowsResult>;
+
+// ---------------------------------------------------------------------------
 // Providers
 // ---------------------------------------------------------------------------
 
@@ -641,7 +683,8 @@ export type ErrorCode =
   | "data"
   | "too_many_rows"
   | "source_changed"
-  | "module_not_loaded";
+  | "module_not_loaded"
+  | "cannot_infer";
 
 /**
  * What the REST and pivot providers and `exportRows` reject with: a plain

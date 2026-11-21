@@ -15,9 +15,11 @@
 use crate::{grid, pivot, table};
 
 /// What `packages/opengrid/loader.js` exports.
-const LOADER_EXPORTS: [&str; 9] = [
+const LOADER_EXPORTS: [&str; 11] = [
     "loadOpengrid",
     "connect",
+    "inferSchema",
+    "fromRows",
     "createLocalProvider",
     "createWorkerProvider",
     "createRestProvider",
@@ -71,9 +73,15 @@ const SERVER_ERROR_CODES: [&str; 8] = [
     "data",
 ];
 
-/// The `code`s of `exportRows`' own errors, the `coded(…)` calls of
-/// loader.js; a test below reads them from there.
-const EXPORT_ERROR_CODES: [&str; 3] = ["too_many_rows", "source_changed", "module_not_loaded"];
+/// The `code`s of the loader's own errors — `exportRows`', and `inferSchema`'s
+/// (issue #460) — the `coded(…)` calls of loader.js; a test below reads them
+/// from there.
+const EXPORT_ERROR_CODES: [&str; 4] = [
+    "too_many_rows",
+    "source_changed",
+    "module_not_loaded",
+    "cannot_infer",
+];
 
 /// The module functions a page calls through `loader.module`, in the order the
 /// freeze lists them.
@@ -174,7 +182,7 @@ fn surface() -> String {
     out.push_str(&format!("  {}\n", ERROR_FIELDS.join(" ")));
     out.push_str("\nerror codes (server)\n");
     out.push_str(&format!("  {}\n", SERVER_ERROR_CODES.join(" ")));
-    out.push_str("\nerror codes (exportRows)\n");
+    out.push_str("\nerror codes (loader)\n");
     out.push_str(&format!("  {}\n", EXPORT_ERROR_CODES.join(" ")));
 
     // Two groups, because they are two promises: a page *sets* the first and
@@ -417,6 +425,8 @@ functions
 loader exports
   loadOpengrid
   connect
+  inferSchema
+  fromRows
   createLocalProvider
   createWorkerProvider
   createRestProvider
@@ -436,8 +446,8 @@ error fields
 error codes (server)
   validation unknown_source limit_exceeded busy unauthorized backend malformed data
 
-error codes (exportRows)
-  too_many_rows source_changed module_not_loaded
+error codes (loader)
+  too_many_rows source_changed module_not_loaded cannot_infer
 
 custom properties (set)
   --og-font --og-font-mono --og-font-size --og-surface --og-surface-2 --og-ink --og-ink-muted \
@@ -625,7 +635,7 @@ totalRow treeContext treeGroupIgnored treeLevelTooLarge treeOrphans treeRefused 
             "provider methods",
             "error fields",
             "error codes (server)",
-            "error codes (exportRows)",
+            "error codes (loader)",
             "text keys",
         ])
         .into_iter()

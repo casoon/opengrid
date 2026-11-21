@@ -19,10 +19,17 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+### Added
+
+- **Loader:** `fromRows(host, rows)` puts rows the page holds into a grid in one call, without a
+  schema; `inferSchema(rows)` reads the types from the rows and hands back the schema JSON
+  `loadRows` takes. Details:
+  [Data you already have](https://casoon.github.io/opengrid/docs/guides/data-you-have/)
+  ([#460](https://github.com/casoon/opengrid/issues/460)).
+
 ### Changed
 
 - **Pages:** the project site uses the current shared theme (0.16.0).
-
 
 ## [0.20.0] - 2026-11-19
 

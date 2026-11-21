@@ -67,7 +67,20 @@ While the version is 0.x, a minor bump may break the Rust API
 
 ## Data in the browser
 
-The engine reads a CSV against a schema — it never guesses types.
+Rows the page already holds become a grid in one call; the types are read from the rows:
+
+```html
+<opengrid-grid label="Orders"></opengrid-grid>
+
+<script type="module">
+  import { fromRows } from "@casoon/opengrid";
+  const rows = [{ id: 1, customer: "Ada", amount: 120 }, { id: 2, customer: "Grace", amount: 80 }];
+  await fromRows(document.querySelector("opengrid-grid"), rows);
+</script>
+```
+
+When you need exact types — a decimal for money, a CSV file — the engine reads against a schema;
+it never guesses them itself.
 
 ```html
 <opengrid-grid label="Orders" datasource="orders" columns="id,customer,amount"></opengrid-grid>
