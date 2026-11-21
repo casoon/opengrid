@@ -30,10 +30,7 @@ version = 2
 # untrusted archive; neither writes nor test code extracts anything. The fix is
 # zip >= 9, which needs rust_xlsxwriter to move first. Remove these when it does.
 ignore = [
-    "RUSTSEC-2026-0367",
     "RUSTSEC-2026-0368",
-    "RUSTSEC-2026-0369",
-    "RUSTSEC-2026-0429",
 ]
 
 [bans]
