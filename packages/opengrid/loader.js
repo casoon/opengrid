@@ -1988,6 +1988,150 @@ export function connect(host, options = {}) {
   };
 }
 
+// ---------------------------------------------------------------------------------------------
+// From plain rows to a table (issue #460)
+//
+// The engine never guesses a type; the package may, for a page that has `[{…}, {…}]` and no
+// schema. What it guesses is an ordinary schema JSON, handed back to the caller, so the guess is
+// visible, can be saved, and can be passed to `loadRows` unchanged.
+// ---------------------------------------------------------------------------------------------
+
+const DATE_TEXT = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/** A `YYYY-MM-DD` that is a day of the calendar: `2026-02-30` is text, not a date. */
+function isDateText(text) {
+  const parts = DATE_TEXT.exec(text);
+  if (!parts) {
+    return false;
+  }
+  const [year, month, day] = [Number(parts[1]), Number(parts[2]) - 1, Number(parts[3])];
+  const date = new Date(0);
+  date.setUTCFullYear(year, month, day);
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month && date.getUTCDate() === day;
+}
+
+/** What a value is, in the words of a refusal. */
+function shapeOf(value) {
+  if (Array.isArray(value)) {
+    return "a list";
+  }
+  return { bigint: "a bigint", object: "an object" }[typeof value] ?? `a ${typeof value}`;
+}
+
+function refuseField(row, name, why) {
+  throw coded("cannot_infer", `inferSchema: row ${row}, field ${name}: ${why}; give a schema`);
+}
+
+/**
+ * The schema JSON of `rows`, read from every row: a boolean is `bool`; a number `int64` when every
+ * value of the field is an integer, else `float64`; a string `date` when every value is a
+ * `YYYY-MM-DD` day, else `utf8`; a field that is `null` or missing in a row is nullable. The
+ * fields are in the order they first appear.
+ *
+ * It refuses — an `Error` with `code: "cannot_infer"`, naming row and field — what it cannot type without
+ * guessing: values of two kinds in one field, an integer beyond 2^53, a number that is not finite,
+ * a bigint, an object or a list, a field with no value in any row. A field with fractions becomes
+ * `float64` and is named in a warning: money wants a `decimal` in a schema of its own.
+ *
+ * @param {Record<string, unknown>[]} rows
+ * @returns {string} the schema JSON `loadRows` takes.
+ */
+export function inferSchema(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    throw coded("cannot_infer", "inferSchema: no rows to read the types from; give a schema");
+  }
+  /** Per field, in order: the kind of its values, where it was seen first, and what it held. */
+  const fields = new Map();
+  rows.forEach((row, index) => {
+    if (row === null || typeof row !== "object" || Object.getPrototypeOf(row) !== Object.prototype) {
+      throw coded("cannot_infer", `inferSchema: row ${index} is ${row === null ? "null" : shapeOf(row)}, not an object of fields`);
+    }
+    for (const [name, value] of Object.entries(row)) {
+      let field = fields.get(name);
+      if (!field) {
+        field = { kind: null, row: index, values: 0, fraction: false, dates: true };
+        fields.set(name, field);
+      }
+      if (value === null || value === undefined) {
+        continue;
+      }
+      let kind;
+      if (typeof value === "boolean") {
+        kind = "bool";
+      } else if (typeof value === "number") {
+        if (!Number.isFinite(value)) {
+          refuseField(index, name, `${value} is not a finite number`);
+        }
+        if (Number.isInteger(value) && !Number.isSafeInteger(value)) {
+          refuseField(index, name, `${value} is beyond 2^53 and not exact in JavaScript`);
+        }
+        kind = "number";
+        field.fraction ||= !Number.isInteger(value);
+      } else if (typeof value === "string") {
+        kind = "string";
+        field.dates &&= isDateText(value);
+      } else {
+        refuseField(index, name, `${shapeOf(value)} cannot be typed`);
+      }
+      if (field.kind === null) {
+        field.kind = kind;
+        field.row = index;
+      } else if (field.kind !== kind) {
+        refuseField(index, name, `a ${kind} where row ${field.row} has a ${field.kind}`);
+      }
+      field.values += 1;
+    }
+  });
+  const schema = [];
+  for (const [name, field] of fields) {
+    if (field.kind === null) {
+      throw coded("cannot_infer", `inferSchema: field ${name} is null or missing in every row; give a schema`);
+    }
+    const type = {
+      bool: "bool",
+      number: field.fraction ? "float64" : "int64",
+      string: field.dates ? "date" : "utf8",
+    }[field.kind];
+    if (field.fraction) {
+      console.warn(
+        `[opengrid] inferSchema: field ${name} has fractions and becomes float64. ` +
+          "For money, give it a decimal in a schema: " +
+          `{ "name": "${name}", "type": { "decimal": { "precision": 12, "scale": 2 } } }`,
+      );
+    }
+    schema.push({ name, type, nullable: field.values < rows.length });
+  }
+  return JSON.stringify({ fields: schema });
+}
+
+/**
+ * Rows to a table in one call: the schema (`schema`, or `inferSchema(rows)`), a provider (the
+ * worker, unless `provider` is given), the rows loaded into it, and the element connected.
+ * `datasource` becomes `rows` and `columns` every field, where the element has none. For
+ * `<opengrid-grid>` and `<opengrid-table>`; a pivot's `columns` are its own.
+ *
+ * @param {HTMLElement} host
+ * @param {Record<string, unknown>[]} rows
+ * @param {{schema?: string, provider?: object}} [options]
+ * @returns {Promise<{schema: string, provider: object, connection: object}>}
+ */
+export async function fromRows(host, rows, { schema, provider } = {}) {
+  const used = schema ?? inferSchema(rows);
+  const target = provider ?? createWorkerProvider();
+  if (!host.getAttribute("datasource")) {
+    host.setAttribute("datasource", "rows");
+  }
+  if (!host.getAttribute("columns")) {
+    const names = JSON.parse(used).fields.filter((field) => field.from == null).map((field) => field.name);
+    host.setAttribute("columns", names.join(","));
+  }
+  // The module loads while the rows go in; the provider is set once they are there.
+  await Promise.all([target.loadRows(host.getAttribute("datasource"), rows, used), loadOpengrid()]);
+  const connection = connect(host, { provider: target });
+  await connection.ready;
+  return { schema: used, provider: target, connection };
+}
+
 /**
  * A JSON key that does not depend on the order an object's keys were written
  * in; `each` may stand in for a value first.
