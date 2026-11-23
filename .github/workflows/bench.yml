@@ -10,6 +10,9 @@ on:
       rows:
         description: "Rows"
         default: "100000"
+      grids:
+        description: "Pages in bench/pages, comma-separated (the MIT grids: aggrid,revogrid,slickgrid,tabulator,w2ui)"
+        default: "opengrid,opengrid-csv"
       throttle:
         description: "Chrome's slowdown of the page's main thread, not a Worker (1 = none)"
         default: "1"
@@ -35,10 +38,11 @@ jobs:
       - name: Bench
         env:
           ROWS: ${{ inputs.rows }}
+          GRIDS: ${{ inputs.grids }}
           THROTTLE: ${{ inputs.throttle }}
           CPU: ${{ inputs.cpu }}
         run: |
-          bench=(env "PATH=$PATH" "HOME=$HOME" BENCH_LOCAL=1 pnpm --dir bench bench:self --rows "$ROWS" --runs 5 --throttle "$THROTTLE")
+          bench=(env "PATH=$PATH" "HOME=$HOME" BENCH_LOCAL=1 pnpm --dir bench bench --grids "$GRIDS" --rows "$ROWS" --runs 5 --throttle "$THROTTLE")
           if [ -n "$CPU" ]; then
             sudo systemd-run --scope --quiet --uid="$(id -u)" --gid="$(id -g)" \
               -p CPUQuota="${CPU}%" -p CPUQuotaPeriodSec=10ms -- "${bench[@]}"
