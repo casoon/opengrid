@@ -23,6 +23,12 @@ Two things belong in every release entry and are easy to leave out:
 
 - **Pages:** the project site uses the current shared theme (0.17.0).
 
+### Fixed
+
+- **Docs:** the performance guide called its throttled figures a mid-range laptop, but Chromium's
+  CPU throttle does not reach a Worker, so the engine ran at full speed in them; the guide, the
+  bench tool and its output now say so ([#421](https://github.com/casoon/opengrid/issues/421)).
+
 
 ## [0.20.1] - 2026-11-23
 

@@ -9,7 +9,10 @@
 // `--tolerance` percent worse — and worse by more than a frame, 16.7 ms, 10 MiB or 10 KiB, so that
 // noise on a small figure is not a finding. `--fail-on-regress` exits 1 when there is one.
 //
-// `--throttle 4` slows the CPU four times (Chrome's own emulation), for a mid-range laptop.
+// `--throttle 4` slows the page's main thread four times (Chrome's own emulation). Not a Worker:
+// Chromium 153 refuses the emulation there ("only supported for pages, not workers"), so
+// opengrid's engine, which runs in one, keeps the machine's full speed. A throttled figure is the
+// page on a slow CPU with the engine on a fast one, not a mid-range laptop (#421).
 // Memory is the browser's whole process tree, resident, minus an empty page's: what the page
 // costs the machine, a Worker and WebAssembly included, measured from outside at two points
 // (rows loaded, and after sorting, filtering and scrolling).
@@ -189,6 +192,7 @@ const cell = (runs, pick, digits) => {
 };
 
 console.log(`\n${os.cpus()[0].model}, ${os.arch()}, Chromium ${browser.version()}, ${ROWS.toLocaleString("en")} rows, CPU x${THROTTLE}, median of ${RUNS} (range)`);
+if (THROTTLE > 1) console.log(`! x${THROTTLE} slows the main thread only; a Worker (opengrid's engine) runs at full speed`);
 const columns = [
   ["first rows ms", (r) => r.firstRows?.ok ? r.firstRows.ms : null, 0],
   ["sort ms", (r) => (r.sort?.ok ? r.sort.ms : null), 0],
