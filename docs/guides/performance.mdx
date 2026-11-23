@@ -277,7 +277,8 @@ page's main thread throttled to a quarter and a sixth of its speed, objects hand
 first rows in 244 ms and 333 ms at 100,000 rows, and in 644 ms and 928 ms at 1,000,000; those runs
 are kept as `-x4-` and `-x6-` files. They are **not** a mid-range laptop: Chromium's throttle does
 not reach a Worker, so the engine ran at the full speed of the M4 Pro and only the page's own work
-was slowed. A figure for a slower machine has to be measured on one.
+was slowed. A figure for a slower machine needs a limit the kernel enforces on every thread: the
+bench job's CPU quota (`bench/README.md`) is that.
 
 ## Against other grids
 
