@@ -8,7 +8,7 @@ shipped or installed by CI. It has its own lockfile, as `site/` has.
 cd bench && pnpm install
 pnpm bench                          # every grid, 100,000 rows, 5 runs
 pnpm bench --grids opengrid,aggrid --rows 100000 --runs 9
-pnpm bench --throttle 4             # the CPU four times slower: a mid-range laptop
+pnpm bench --throttle 4             # the main thread four times slower (not a Worker)
 ```
 
 ## opengrid over versions
@@ -36,7 +36,10 @@ median of five, Apple M4 Pro) for released 0.17.0 and for `main` on 17 November 
 tool's format; `--baseline baselines/<file>.json` compares with them. A baseline only compares on
 the machine, rows and throttle it was made with: on another computer, make your own first
 (`just bench-self` on the release, keep the file, then `just bench-local --baseline`). When a
-`main-2026-11-17-x4-*` and `-x6-*` are the same two browser pages (objects and CSV; not server mode) with the CPU four and six times slower (`--throttle 4`, `--throttle 6`): compare with the same `--throttle`. When a
+`main-2026-11-17-x4-*` and `-x6-*` are the same two browser pages (objects and CSV; not server mode) with the CPU four and six times slower (`--throttle 4`, `--throttle 6`): compare with the same `--throttle`. The throttle slows the
+page's main thread, not a Worker (Chromium refuses the emulation there), so opengrid's engine ran
+at full speed in them: they compare a change in the page's own work, and are not a mid-range
+laptop. When a
 release or a deliberate change is accepted, add its files here. Only opengrid's figures belong in
 `baselines/`; a run that includes other grids stays in `results/`.
 
@@ -107,7 +110,8 @@ and scroll a large table — and it says nothing about the others.
   while this was written: a Tabulator at `height: "100%"` rendered every row (twelve seconds for
   20,000), and a timer that started after a synchronous mount gave negative times. **An adapter
   needs the eye of someone who knows the grid before a figure that names it is quoted.**
-- One machine, one browser. The CPU can be throttled; that is not another computer.
+- One machine, one browser. The CPU can be throttled; that is not another computer, and the
+  throttle reaches the page's main thread only, not a Worker.
 - Results are written to `results/` and **stay there** (git-ignored). The figures of the MIT-licensed
   grids are published in the performance guide; a product that is not MIT stays local, and its
   figures are not published unless its licence says they may be.
