@@ -28,6 +28,9 @@ Two things belong in every release entry and are easy to leave out:
   ([#421](https://github.com/casoon/opengrid/issues/421)).
 - **Contributors:** the Linux bench job takes the grids to run (`-f grids=…`), so the MIT grids
   are measured on Linux as well ([#421](https://github.com/casoon/opengrid/issues/421)).
+- **Contributors:** a pull request labelled `bench` measures its base and itself on the same
+  Linux runner and fails where it is slower
+  ([#421](https://github.com/casoon/opengrid/issues/421)).
 
 ### Fixed
 

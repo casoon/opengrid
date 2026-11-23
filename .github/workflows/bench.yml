@@ -1,10 +1,16 @@
 name: Bench
 
-# By hand only (`gh workflow run bench.yml`): the browser figures of `bench/` on a
-# GitHub Linux runner, for the Linux side of #421. A shared runner is a noisy
-# machine: its figures are not comparable with the baselines made on a Mac, only
-# with another run of this job, and the result is an artifact, not a verdict.
+# The browser figures of `bench/` on a GitHub Linux runner (#421). A shared runner
+# is a noisy machine and lands on a different CPU from run to run: its figures are
+# not comparable with the baselines made on a Mac, nor with another day's run.
+#
+# - `bench`, by hand (`gh workflow run bench.yml`): one run, the result an artifact.
+# - `compare`, on a pull request labelled `bench`: main and the PR measured one after
+#   the other in the same job, so on the same CPU, and the PR marked where it is slower.
+#   A label, not every push: the run takes minutes and a noisy machine is no gate.
 on:
+  pull_request:
+    types: [labeled, synchronize]
   workflow_dispatch:
     inputs:
       rows:
@@ -20,8 +26,13 @@ on:
         description: "CPU quota for the whole tool, Worker included, in percent of one core (empty = none)"
         default: ""
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   bench:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -55,3 +66,43 @@ jobs:
           name: bench-linux-${{ inputs.rows }}-x${{ inputs.throttle }}-cpu${{ inputs.cpu || 'all' }}
           path: bench/results/*.json
           if-no-files-found: error
+
+  compare:
+    if: github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'bench')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+      - uses: ./.github/actions/setup-build
+      - run: pnpm --dir bench install --frozen-lockfile
+      - run: pnpm --dir bench exec playwright install --with-deps chromium
+      # The base first, with its own bench/ (its tool and its pinned Playwright).
+      - name: Bench the base
+        working-directory: base
+        run: |
+          pnpm --dir bench install --frozen-lockfile
+          pnpm --dir bench exec playwright install chromium
+          just bench-local --rows 100000 --runs 9
+          cp bench/results/*.json "$RUNNER_TEMP/base.json"
+      # Then this PR against it: a figure more than 20 % and more than a frame (or
+      # 10 MiB) worse is marked, and the job fails on one.
+      - name: Bench this PR against the base
+        run: |
+          set -o pipefail
+          just bench-local --rows 100000 --runs 9 --baseline "$RUNNER_TEMP/base.json" --fail-on-regress \
+            | tee "$RUNNER_TEMP/bench.txt"
+      - name: Summary
+        if: ${{ !cancelled() }}
+        run: |
+          { echo '```'; cat "$RUNNER_TEMP/bench.txt" 2>/dev/null; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: bench-compare
+          path: |
+            ${{ runner.temp }}/base.json
+            bench/results/*.json
