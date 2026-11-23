@@ -44,7 +44,9 @@ release or a deliberate change is accepted, add its files here. Only opengrid's 
 `baselines/`; a run that includes other grids stays in `results/`.
 
 On a GitHub Linux runner: `gh workflow run bench.yml -f rows=100000 -f throttle=1` (workflow
-`bench.yml`, by hand only); the result is an artifact. A shared runner is a noisy machine, so its
+`bench.yml`, by hand only); the result is an artifact. `-f grids=opengrid,aggrid,…` picks the
+pages (opengrid's two by default); only pages in the repository run there, so only the MIT grids.
+The log and the artifact of a public repository can be read by anyone signed in to GitHub. A shared runner is a noisy machine, so its
 figures compare with another run of that job, not with the Mac baselines;
 `baselines/linux-runner-2026-11-17-100000.json` is one such run (AMD EPYC runner, 100,000 rows, a
 frame of 16.7 ms everywhere it should be, first rows 146 ms), and it only compares when a later run
