@@ -25,16 +25,6 @@ allow = [
 
 [advisories]
 version = 2
-# zip 8.6 comes in through rust_xlsxwriter (the writer) and the export crate's
-# test-only reader. All four advisories concern `ZipArchive::extract` on an
-# untrusted archive; neither writes nor test code extracts anything. The fix is
-# zip >= 9, which needs rust_xlsxwriter to move first. Remove these when it does.
-ignore = [
-    "RUSTSEC-2026-0367",
-    "RUSTSEC-2026-0368",
-    "RUSTSEC-2026-0369",
-    "RUSTSEC-2026-0429",
-]
 
 [bans]
 multiple-versions = "warn"
