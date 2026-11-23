@@ -13,6 +13,9 @@
 // Chromium 153 refuses the emulation there ("only supported for pages, not workers"), so
 // opengrid's engine, which runs in one, keeps the machine's full speed. A throttled figure is the
 // page on a slow CPU with the engine on a fast one, not a mid-range laptop (#421).
+// A limit that reaches every thread is the kernel's: on Linux, run the whole tool in a cgroup with
+// a CPU quota (bench.yml's `cpu` input does). The runner reads the quota it runs under from
+// /proc/self/cgroup and cpu.max, records it, and compares only with a run under the same one.
 // Memory is the browser's whole process tree, resident, minus an empty page's: what the page
 // costs the machine, a Worker and WebAssembly included, measured from outside at two points
 // (rows loaded, and after sorting, filtering and scrolling).
@@ -45,6 +48,20 @@ const GRIDS = option("grids", ALL.join(",")).split(",");
 const ROWS = Number(option("rows", 100_000));
 const RUNS = Number(option("runs", 5));
 const THROTTLE = Number(option("throttle", 1));
+
+/** The CPU time this process tree may use, in cores (0.25 is a quarter of one), from the cgroup
+ * it runs in; null when there is no quota or no cgroup v2 (macOS). Read, not taken from an option,
+ * so that a result says what the kernel enforced. */
+function cpuLimit() {
+  try {
+    const path = readFileSync("/proc/self/cgroup", "utf8").match(/^0::(.*)$/m)?.[1];
+    const [quota, period] = readFileSync(`/sys/fs/cgroup${path}/cpu.max`, "utf8").trim().split(" ");
+    return quota === "max" ? null : Number(quota) / Number(period);
+  } catch {
+    return null;
+  }
+}
+const CPU_LIMIT = cpuLimit();
 
 // A grid whose name has `server` in it asks a database through `opengrid-server`: started once
 // for these rows (the first time it writes the table, which takes minutes for a million rows),
@@ -193,6 +210,7 @@ const cell = (runs, pick, digits) => {
 
 console.log(`\n${os.cpus()[0].model}, ${os.arch()}, Chromium ${browser.version()}, ${ROWS.toLocaleString("en")} rows, CPU x${THROTTLE}, median of ${RUNS} (range)`);
 if (THROTTLE > 1) console.log(`! x${THROTTLE} slows the main thread only; a Worker (opengrid's engine) runs at full speed`);
+if (CPU_LIMIT != null) console.log(`cgroup CPU quota: ${CPU_LIMIT} core(s) for the whole tool, browser and Worker included`);
 const columns = [
   ["first rows ms", (r) => r.firstRows?.ok ? r.firstRows.ms : null, 0],
   ["sort ms", (r) => (r.sort?.ok ? r.sort.ms : null), 0],
@@ -226,15 +244,15 @@ for (const [grid, runs] of Object.entries(results)) {
 }
 mkdirSync(resolve(here, "results"), { recursive: true });
 const file = resolve(here, "results", `${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
-writeFileSync(file, JSON.stringify({ machine: os.cpus()[0].model, rows: ROWS, throttle: THROTTLE, results }, null, 2));
+writeFileSync(file, JSON.stringify({ machine: os.cpus()[0].model, rows: ROWS, throttle: THROTTLE, cpuLimit: CPU_LIMIT, results }, null, 2));
 console.log(`\nwritten: ${file}`);
 
 const baselineFile = option("baseline", null);
 if (baselineFile) {
   const earlier = JSON.parse(readFileSync(resolve(baselineFile), "utf8"));
   const tolerance = Number(option("tolerance", 20)) / 100;
-  if (earlier.rows !== ROWS || earlier.throttle !== THROTTLE || earlier.machine !== os.cpus()[0].model) {
-    console.log(`\n! the baseline was measured with ${earlier.rows} rows, CPU x${earlier.throttle}, on ${earlier.machine}: not comparable`);
+  if (earlier.rows !== ROWS || earlier.throttle !== THROTTLE || (earlier.cpuLimit ?? null) !== CPU_LIMIT || earlier.machine !== os.cpus()[0].model) {
+    console.log(`\n! the baseline was measured with ${earlier.rows} rows, CPU x${earlier.throttle}, quota ${earlier.cpuLimit ?? "none"}, on ${earlier.machine}: not comparable`);
     process.exit(2);
   }
   // Worse is more, for every figure here. The floor is what is too small to tell from noise.

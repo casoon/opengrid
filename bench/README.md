@@ -50,6 +50,15 @@ figures compare with another run of that job, not with the Mac baselines;
 frame of 16.7 ms everywhere it should be, first rows 146 ms), and it only compares when a later run
 lands on the same CPU model.
 
+For a slower machine that includes the Worker, give the job a CPU quota: `-f cpu=25` runs the
+whole tool — node, the browser, the page and opengrid's Worker — in a cgroup that may use a
+quarter of one core (`systemd-run -p CPUQuota=25%`). The kernel enforces it on every thread,
+which Chrome's `--throttle` cannot; the runner reads the quota it ran under, prints it, writes it
+into the result as `cpuLimit` and compares only with a run under the same quota. It limits CPU
+time, not cores or memory: a quarter core is the whole tool on one slow core, not a laptop model.
+On 23 November 2026 (AMD EPYC, 100,000 objects, median of five) first rows went from 210 ms
+without a quota to 286 ms at `cpu=100` and 1,990 ms at `cpu=25`, the filter from 50 to 520 ms.
+
 ## Server mode
 
 `pnpm bench --grids opengrid-server --rows 1000000 [--db postgres]` measures the same page with
