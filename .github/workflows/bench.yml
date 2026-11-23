@@ -11,8 +11,11 @@ on:
         description: "Rows"
         default: "100000"
       throttle:
-        description: "CPU slowdown (1 = none)"
+        description: "Chrome's slowdown of the page's main thread, not a Worker (1 = none)"
         default: "1"
+      cpu:
+        description: "CPU quota for the whole tool, Worker included, in percent of one core (empty = none)"
+        default: ""
 
 jobs:
   bench:
@@ -24,10 +27,27 @@ jobs:
       # bench/ has its own lockfile and its own Playwright
       - run: pnpm --dir bench install --frozen-lockfile
       - run: pnpm --dir bench exec playwright install --with-deps chromium
-      - run: just bench-local --rows ${{ inputs.rows }} --runs 5 --throttle ${{ inputs.throttle }}
+      - run: just bench-local-build
+      # Chrome's throttle does not reach a Worker, so a slower machine for opengrid (whose engine
+      # runs in one) is a cgroup quota around the whole tool: the kernel limits every thread of
+      # node, the browser and the Worker together. A short period (10 ms) keeps the quota from
+      # showing as 100 ms stalls in the frame figures.
+      - name: Bench
+        env:
+          ROWS: ${{ inputs.rows }}
+          THROTTLE: ${{ inputs.throttle }}
+          CPU: ${{ inputs.cpu }}
+        run: |
+          bench=(env "PATH=$PATH" "HOME=$HOME" BENCH_LOCAL=1 pnpm --dir bench bench:self --rows "$ROWS" --runs 5 --throttle "$THROTTLE")
+          if [ -n "$CPU" ]; then
+            sudo systemd-run --scope --quiet --uid="$(id -u)" --gid="$(id -g)" \
+              -p CPUQuota="${CPU}%" -p CPUQuotaPeriodSec=10ms -- "${bench[@]}"
+          else
+            "${bench[@]}"
+          fi
       - uses: actions/upload-artifact@v7
         if: ${{ !cancelled() }}
         with:
-          name: bench-linux-${{ inputs.rows }}-x${{ inputs.throttle }}
+          name: bench-linux-${{ inputs.rows }}-x${{ inputs.throttle }}-cpu${{ inputs.cpu || 'all' }}
           path: bench/results/*.json
           if-no-files-found: error
