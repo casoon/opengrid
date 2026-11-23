@@ -41,6 +41,13 @@ every change.
 - **Contributors:** two WebKit specs wait for the focus scroll to land before they scroll on, and no
   longer fail now and then ([#420](https://github.com/casoon/opengrid/issues/420)).
 
+### Security
+
+- **Server:** the lockfile takes `url` 2.5.9 (from 2.5.8, through `mysql_async`), which fixes a
+  stack overflow in `Url::origin()` on nested `blob:` URLs
+  ([RUSTSEC-2026-0592](https://rustsec.org/advisories/RUSTSEC-2026-0592)). opengrid does not call
+  `origin()`; `cargo install opengrid-serve --locked` gets the fixed version.
+
 ## [0.20.0] - 2026-11-19
 
 Not yet verified by a screen reader: no pass with assistive technology has been recorded for this
