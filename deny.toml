@@ -25,6 +25,8 @@ allow = [
 
 [advisories]
 version = 2
+# An ignore that no longer matches anything (crate patched or gone) fails the check.
+unused-ignored-advisory = "deny"
 
 [bans]
 multiple-versions = "warn"

@@ -26,6 +26,8 @@ Two things belong in every release entry and are easy to leave out:
   a cgroup, so a slower machine slows opengrid's Worker too, which Chrome's throttle does not; the
   result records the quota and compares only with a run under the same one
   ([#421](https://github.com/casoon/opengrid/issues/421)).
+- **Contributors:** the Linux bench job takes the grids to run (`-f grids=…`), so the MIT grids
+  are measured on Linux as well ([#421](https://github.com/casoon/opengrid/issues/421)).
 
 ### Fixed
 
