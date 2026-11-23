@@ -19,6 +19,14 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+## [0.20.1] - 2026-11-23
+
+Not yet verified by a screen reader: no pass with assistive technology has been recorded for this
+release ([#5](https://github.com/casoon/opengrid/issues/5)). The keyboard and `axe-core` checks run on
+every change.
+
+**What breaks:** nothing; two functions are added to `loader.js`.
+
 ### Added
 
 - **Loader:** `fromRows(host, rows)` puts rows the page holds into a grid in one call, without a
@@ -30,6 +38,8 @@ Two things belong in every release entry and are easy to leave out:
 ### Changed
 
 - **Pages:** the project site uses the current shared theme (0.16.4).
+- **Contributors:** two WebKit specs wait for the focus scroll to land before they scroll on, and no
+  longer fail now and then ([#420](https://github.com/casoon/opengrid/issues/420)).
 
 ## [0.20.0] - 2026-11-19
 
@@ -1891,7 +1901,8 @@ tested.
   tested: React 18 rendering on the server, SvelteKit, Nuxt, Next.js and Astro
   as real applications. A Vite production build needs `loadOpengrid({ moduleUrl })`.
 
-[Unreleased]: https://github.com/casoon/opengrid/compare/v0.20.0...HEAD
+[Unreleased]: https://github.com/casoon/opengrid/compare/v0.20.1...HEAD
+[0.20.1]: https://github.com/casoon/opengrid/compare/v0.20.0...v0.20.1
 [0.20.0]: https://github.com/casoon/opengrid/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/casoon/opengrid/compare/v0.18.1...v0.19.0
 [0.18.1]: https://github.com/casoon/opengrid/compare/v0.18.0...v0.18.1
