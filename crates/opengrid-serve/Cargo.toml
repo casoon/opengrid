@@ -23,10 +23,10 @@ workspace = true
 opengrid-types = { workspace = true }
 opengrid-json = { workspace = true }
 opengrid-connector = { workspace = true }
-opengrid-server = { path = "../opengrid-server", version = "0.20.1" }
-opengrid-connector-sqlite = { path = "../opengrid-connector-sqlite", version = "0.20.1" }
-opengrid-datasource-postgres = { path = "../opengrid-datasource-postgres", version = "0.20.1" }
-opengrid-connector-mysql = { path = "../opengrid-connector-mysql", version = "0.20.1" }
+opengrid-server = { path = "../opengrid-server", version = "0.20.2" }
+opengrid-connector-sqlite = { path = "../opengrid-connector-sqlite", version = "0.20.2" }
+opengrid-datasource-postgres = { path = "../opengrid-datasource-postgres", version = "0.20.2" }
+opengrid-connector-mysql = { path = "../opengrid-connector-mysql", version = "0.20.2" }
 axum = "0.8"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
 
