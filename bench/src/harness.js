@@ -120,8 +120,14 @@ async function scroll(adapter) {
   const observer = new PerformanceObserver((list) => {
     for (const entry of list.getEntries()) longTasks.push(entry.duration);
   });
+  // Long Animation Frames (#518): a frame over 50 ms with what its time went to — script,
+  // style and layout forced from script, and the rendering after it. Chromium only; cheap,
+  // unlike a trace, whose invalidation tracking inflates the very recalcs it records.
+  const loafs = [];
+  const frameObserver = new PerformanceObserver((list) => loafs.push(...list.getEntries()));
   try {
     observer.observe({ entryTypes: ["longtask"] });
+    frameObserver.observe({ type: "long-animation-frame" });
   } catch {
     // Not every browser reports them.
   }
@@ -129,12 +135,14 @@ async function scroll(adapter) {
   await frame();
   const frames = [];
   let last = await frame();
+  const fineStart = last;
   for (let i = 0; i < 120; i++) {
     scroller.scrollTop += 3 * rowHeight;
     const now = await frame();
     frames.push(now - last);
     last = now;
   }
+  const jumpStart = last;
   const max = scroller.scrollHeight - scroller.clientHeight;
   for (let i = 0; i < 20; i++) {
     scroller.scrollTop = Math.min(max, (i + 1) * 2000 * rowHeight);
@@ -142,11 +150,32 @@ async function scroll(adapter) {
     frames.push(now - last);
     last = now;
   }
+  await frame();
   observer.disconnect();
+  frameObserver.disconnect();
   const moved = scroller.scrollTop > 0;
   scroller.scrollTop = 0;
   await frame();
-  return { ...summarise(frames, longTasks), moved };
+  return {
+    ...summarise(frames, longTasks),
+    // The 20 jumps (a drag of the thumb) apart from the 120 wheel steps.
+    jumpsOver33: frames.slice(120).filter((f) => f > 33.4).length,
+    loaf: { steps: longFrames(loafs, fineStart, jumpStart), jumps: longFrames(loafs, jumpStart, last) },
+    moved,
+  };
+}
+
+/** The long animation frames that started in [from, to): how many, and their milliseconds. */
+function longFrames(entries, from, to) {
+  const inside = entries.filter((e) => e.startTime >= from && e.startTime < to);
+  const sum = (pick) => inside.reduce((total, e) => total + pick(e), 0);
+  return {
+    count: inside.length,
+    ms: sum((e) => e.duration),
+    script: sum((e) => e.scripts.reduce((t, s) => t + s.duration, 0)),
+    forced: sum((e) => e.scripts.reduce((t, s) => t + s.forcedStyleAndLayoutDuration, 0)),
+    render: sum((e) => (e.renderStart ? e.startTime + e.duration - e.renderStart : 0)),
+  };
 }
 
 /**
