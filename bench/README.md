@@ -105,7 +105,7 @@ grid, and then, in this order:
 | undo | the filter and the sort are cleared … row 1 is painted |
 | group | `country` is grouped, with the sum of `amount`: … every country's header is painted with the right row count and the right sum (to the cent) — only for a grid whose adapter has `group()`; others say `—` |
 | ungroup | the grouping is removed … row 1 is painted |
-| scroll | 120 steps of three rows, then 20 jumps of 2,000 rows: the frame times (p95, max, frames over 33 ms) |
+| scroll | 120 steps of three rows, then 20 jumps of 2,000 rows: the frame times (p95, max, frames over 33 ms, and how many of the jumps were over 33 ms), and the frames over 50 ms as Chromium's Long Animation Frames report them: milliseconds of style and layout forced from script, and of rendering (both phases summed; per phase in the result file) |
 | KiB fetched, KiB wasm | every file the page requested, **from the built files** and brotli-compressed as a server would send them (not the wire, so a server that compresses or not changes nothing), and the WebAssembly among them, which the browser then compiles |
 | memory | the **whole browser process tree**, resident, minus an empty page's, once with the rows loaded and once after everything above — a Worker and WebAssembly count like everything else |
 

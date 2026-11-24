@@ -219,6 +219,9 @@ const columns = [
   ["scroll p95 ms", (r) => r.scroll?.p95 ?? null, 1],
   ["scroll max ms", (r) => r.scroll?.max ?? null, 0],
   ["frames>33ms", (r) => r.scroll?.over33 ?? null, 0],
+  ["jumps>33ms", (r) => r.scroll?.jumpsOver33 ?? null, 0],
+  ["LoAF forced ms", (r) => (r.scroll?.loaf ? r.scroll.loaf.steps.forced + r.scroll.loaf.jumps.forced : null), 0],
+  ["LoAF render ms", (r) => (r.scroll?.loaf ? r.scroll.loaf.steps.render + r.scroll.loaf.jumps.render : null), 0],
   ["group ms", (r) => (r.group?.ok ? r.group.ms : null), 0],
   ["ungroup ms", (r) => (r.ungroup?.ok ? r.ungroup.ms : null), 0],
   ["step p50 ms", (r) => r.windows?.steps?.p50 ?? null, 0],
@@ -257,7 +260,7 @@ if (baselineFile) {
   }
   // Worse is more, for every figure here. The floor is what is too small to tell from noise.
   const floors = { ms: 16.7, mib: 10, kib: 10 };
-  const compared = columns.map(([name, pick]) => [name, pick, name.startsWith("MiB") ? floors.mib : name.startsWith("KiB") ? floors.kib : name === "frames>33ms" ? 1 : floors.ms]);
+  const compared = columns.map(([name, pick]) => [name, pick, name.startsWith("MiB") ? floors.mib : name.startsWith("KiB") ? floors.kib : name.includes(">33ms") ? 1 : floors.ms]);
   let regressions = 0;
   console.log(`\nagainst ${baselineFile} (marked: more than ${tolerance * 100} % worse and past the floor)`);
   for (const [grid, runs] of Object.entries(results)) {
