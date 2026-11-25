@@ -1017,7 +1017,28 @@ fn on_attribute_changed(
             // Switching between paging and scrolling changes what the window
             // means, so the grid starts at the first page either way.
             if let Some(runtime) = runtime(&host) {
-                runtime.borrow_mut().page = 0;
+                // The pool is part of the skeleton: one of another size is a
+                // new skeleton around the same state, or the page is drawn in
+                // the old pool — empty rows a reader counts, or a page cut
+                // short (issue #539).
+                let pool = pool_of(&host) as usize;
+                let resized = {
+                    let mut borrowed = runtime.borrow_mut();
+                    borrowed.page = 0;
+                    let resized = borrowed
+                        .view
+                        .as_ref()
+                        .is_some_and(|view| view.pool() != pool);
+                    if resized {
+                        borrowed.view = None;
+                        borrowed.dom = None;
+                        borrowed.viewport = None;
+                    }
+                    resized
+                };
+                if resized {
+                    render(&host, false);
+                }
             }
             run_query(&host, QueryKind::Data, false);
         }
