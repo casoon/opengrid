@@ -21,6 +21,7 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Changed
 
+- **Pages:** the project site uses the current shared theme (0.18.0).
 - **Contributors:** the bench tool reports the jumps over 33 ms apart from the wheel steps, and the
   long animation frames of both: time in forced style and layout and in rendering
   ([#518](https://github.com/casoon/opengrid/issues/518)).
