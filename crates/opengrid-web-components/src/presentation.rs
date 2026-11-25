@@ -202,9 +202,15 @@ pub struct ColumnPresentation {
     pub aggregate: Option<Summary>,
     /// How this column is offered as a facet (point 66).
     pub facet: Option<FacetKind>,
-    /// The page fills this column (`set_values`, issue #153): it never opens
-    /// an editor and is announced as read-only.
-    pub readonly: bool,
+    /// What the page said about editing this column: `Some(true)` it fills
+    /// the column (`set_values`, issue #153), `Some(false)` it opens the
+    /// `row-key` column for editing (issue #523), `None` nothing — the key
+    /// column is then read-only and every other column editable.
+    pub readonly: Option<bool>,
+    /// The page means this column to be edited (issue #523): it is drawn so.
+    /// What can be edited is still everything not read-only; this says where
+    /// the editing is.
+    pub editable: bool,
     /// Where the column starts pinned (issue #316). The reader's choice leads
     /// after that, like a resize over `width`.
     pub pin: Option<Pin>,
@@ -243,6 +249,7 @@ pub struct RawColumn {
     pub aggregate: Option<String>,
     pub facet: Option<String>,
     pub readonly: Option<bool>,
+    pub editable: Option<bool>,
     pub pin: Option<String>,
     /// The `lookup` as `(key, label)` pairs; a label that is no string is
     /// empty here. `Some(None)`: something was given that is no plain object.
@@ -314,9 +321,19 @@ pub fn validate(
             mono: entry.mono.unwrap_or(false),
             emphasis: entry.emphasis.unwrap_or(false),
             muted: entry.muted.unwrap_or(false),
-            readonly: entry.readonly.unwrap_or(false),
+            readonly: entry.readonly,
+            editable: entry.editable.unwrap_or(false),
             ..ColumnPresentation::default()
         };
+
+        // Edited and filled by the page at once: the two cannot both be meant
+        // (issue #523).
+        if column.editable && column.readonly == Some(true) {
+            problems.push(PresentationProblem::new(
+                name,
+                "is readonly and editable at once",
+            ));
+        }
 
         if let Some(title) = &entry.title {
             if title.trim().is_empty() {
@@ -497,6 +514,7 @@ pub fn validate_for_table(
             (entry.aggregate.is_some(), "aggregate"),
             (entry.facet.is_some(), "facet"),
             (entry.readonly.is_some(), "readonly"),
+            (entry.editable.is_some(), "editable"),
             (entry.pin.is_some(), "pin"),
             (entry.lookup.is_some(), "lookup"),
             (entry.band.is_some(), "band"),
@@ -565,11 +583,6 @@ impl ColumnStyles {
             if column.muted {
                 markers.push(("data-muted", "true".to_owned()));
             }
-            // Said, not only drawn: a reader who cannot see that the column
-            // never opens an editor hears it (issue #153).
-            if column.readonly {
-                markers.push(("aria-readonly", "true".to_owned()));
-            }
         }
         markers
     }
@@ -591,9 +604,19 @@ impl ColumnStyles {
             .collect()
     }
 
-    /// Whether the page fills this column, so it never opens an editor.
-    pub fn readonly(&self, name: &str) -> bool {
-        self.get(name).is_some_and(|column| column.readonly)
+    /// Whether this column never opens an editor (issues #153, #523): the page
+    /// fills it (`readonly: true`), or it is the `row-key` column, whose value
+    /// names the record — unless the page opened it with `readonly: false`.
+    pub fn readonly(&self, name: &str, row_key: Option<&str>) -> bool {
+        match self.get(name).and_then(|column| column.readonly) {
+            Some(readonly) => readonly,
+            None => row_key == Some(name),
+        }
+    }
+
+    /// Whether the page means this column to be edited (issue #523).
+    pub fn editable(&self, name: &str) -> bool {
+        self.get(name).is_some_and(|column| column.editable)
     }
 
     /// The labels of a column that stores keys (issue #326), if it has any.
@@ -944,26 +967,71 @@ mod tests {
         }
     }
 
-    /// A column the page fills is said to be read-only, and a table, which
-    /// edits nothing, refuses the option (issue #153).
+    /// A column the page fills is read-only, and a table, which edits nothing,
+    /// refuses the option (issue #153).
     #[test]
-    fn a_readonly_column_is_announced_and_a_table_refuses_it() {
+    fn a_readonly_column_is_read_only_and_a_table_refuses_it() {
         let entry = RawColumn {
             readonly: Some(true),
             ..RawColumn::default()
         };
         let styles = ColumnStyles::new(validate(&raw(entry.clone()), &schema(), &[]).unwrap());
-        assert!(styles.readonly("amount"));
-        assert!(!styles.readonly("id"));
-        assert!(
-            styles
-                .markers("amount", DataType::Float64)
-                .contains(&("aria-readonly", "true".to_owned()))
-        );
+        assert!(styles.readonly("amount", None));
+        assert!(!styles.readonly("id", None));
         let problems = validate_for_table(&raw(entry), &schema(), &[]).expect_err("is refused");
         assert_eq!(
             problems[0].reason,
             "readonly belongs to the grid, not to a table"
+        );
+    }
+
+    /// The key column names the record, so it is read-only unless the page
+    /// opens it (issue #523).
+    #[test]
+    fn the_key_column_is_read_only() {
+        let fields = schema();
+        let none = ColumnStyles::default();
+        assert!(none.readonly("id", Some("id")));
+        assert!(!none.readonly("id", Some("customer")));
+        assert!(!none.readonly("id", None));
+        let opened = ColumnStyles::new(
+            validate(
+                &[(
+                    "id".to_owned(),
+                    RawColumn {
+                        readonly: Some(false),
+                        ..RawColumn::default()
+                    },
+                )],
+                &fields,
+                &[],
+            )
+            .unwrap(),
+        );
+        assert!(!opened.readonly("id", Some("id")));
+    }
+
+    /// `editable` draws a column as the one to edit, and contradicting it is
+    /// reported; a table refuses it (issue #523).
+    #[test]
+    fn an_editable_column_is_checked() {
+        let editable = RawColumn {
+            editable: Some(true),
+            ..RawColumn::default()
+        };
+        let styles = ColumnStyles::new(validate(&raw(editable.clone()), &schema(), &[]).unwrap());
+        assert!(styles.editable("amount"));
+        assert!(!styles.editable("customer"));
+        let both = RawColumn {
+            readonly: Some(true),
+            ..editable.clone()
+        };
+        let problems = validate(&raw(both), &schema(), &[]).expect_err("contradicts");
+        assert_eq!(problems[0].reason, "is readonly and editable at once");
+        let problems = validate_for_table(&raw(editable), &schema(), &[]).expect_err("is refused");
+        assert_eq!(
+            problems[0].reason,
+            "editable belongs to the grid, not to a table"
         );
     }
 
@@ -1346,6 +1414,7 @@ mod host {
                         aggregate: text("aggregate"),
                         facet: text("facet"),
                         readonly: flag("readonly"),
+                        editable: flag("editable"),
                         pin: text("pin"),
                         lookup,
                         band: text("band"),

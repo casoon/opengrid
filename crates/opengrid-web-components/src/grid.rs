@@ -472,6 +472,11 @@ pub const ACCENT_INK_PROPERTY: &str = "--og-accent-ink";
 /// because colour alone is 1.4.1.
 pub const SELECTED_PROPERTY: &str = "--og-selected";
 
+/// Computed: the background of a column the page means to be edited
+/// (`editable` in `set_columns`, issue #523). Translucent, so a selected or
+/// hovered row still shows through it; `transparent` turns the tint off.
+pub const EDITABLE_PROPERTY: &str = "--og-editable";
+
 /// Computed: the background of a hovered row.
 pub const HOVER_PROPERTY: &str = "--og-hover";
 
@@ -508,6 +513,7 @@ pub const COMPUTED_TOKENS: &[&str] = &[
     ACCENT_INK_PROPERTY,
     SELECTED_PROPERTY,
     HOVER_PROPERTY,
+    EDITABLE_PROPERTY,
 ];
 
 /// The default focus ring width. Drawn **inside** the cell
@@ -874,6 +880,9 @@ pub struct GridNodes {
     pub status: NodeId,
     /// Where the queries ran, beside the status line (issue #33); not live.
     pub source: NodeId,
+    /// How the focused cell is edited, or that editing is locked (issue #523);
+    /// not live (`part="edit-hint"`).
+    pub edit_hint: NodeId,
     /// The scrollable viewport (`overflow-y: auto`) inside the shadow root.
     pub viewport: NodeId,
     /// The table's `<tbody>`, used as the sizer (`height = total * row_height`).
@@ -1810,6 +1819,7 @@ pub fn grid_css() -> String {
                    {ACCENT_INK_PROPERTY}: color-mix(in oklab, var({ACCENT_PROPERTY}) 80%, var({INK_PROPERTY}));
                    {SELECTED_PROPERTY}: color-mix(in oklab, var({ACCENT_PROPERTY}) 9%, var({SURFACE_PROPERTY}));
                    {HOVER_PROPERTY}: color-mix(in oklab, var({INK_PROPERTY}) 4%, var({SURFACE_PROPERTY}));
+                   {EDITABLE_PROPERTY}: color-mix(in oklab, var({ACCENT_PROPERTY}) 6%, transparent);
                    background: var({SURFACE_PROPERTY}); color: var({INK_PROPERTY});
                    font-family: var({FONT_PROPERTY}); font-size: var({FONT_SIZE_PROPERTY}); }}
          /* Density (point 58). `normal` is `:host` itself, so a grid without the
@@ -2003,6 +2013,8 @@ pub fn grid_css() -> String {
          [part=\"source\"] {{ font-family: var({FONT_MONO_PROPERTY}); font-size: 0.75rem;
                              white-space: nowrap; }}
          [part=\"source\"]:empty {{ display: none; }}
+         [part=\"edit-hint\"] {{ font-size: 0.75rem; white-space: nowrap; }}
+         [part=\"edit-hint\"]:empty {{ display: none; }}
          [part=\"status\"][data-state=\"error\"] {{ font-weight: bold; color: var({INK_PROPERTY}); }}
          [part=\"viewport\"] {{ flex: 1 1 0; min-height: 0; overflow-y: auto; position: relative; display: block; }}
          [part=\"sort-direction\"], [part=\"sort-index\"] {{ margin-inline-start: 0.25rem; font-size: 0.75em;
@@ -2021,7 +2033,7 @@ pub fn grid_css() -> String {
             at least; `header_min_width` keeps the column wide enough for them. */
          [part=\"header\"] > span:first-child {{ display: inline-block; min-width: 2ch;
                    max-width: calc(100% - var(--og-reserve-sort, 0px) - var(--og-reserve-index, 0px)
-                                        - var(--og-reserve-menu, 0px));
+                                        - var(--og-reserve-menu, 0px) - var(--og-reserve-edit, 0px));
                    overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }}
          [part=\"header\"][aria-sort=\"ascending\"],
          [part=\"header\"][aria-sort=\"descending\"] {{ --og-reserve-sort: 1.1em; }}
@@ -2040,6 +2052,15 @@ pub fn grid_css() -> String {
             helps it. Selected beats hovered, hence the order. */
          /* A block of cells (issue #327): the tint is the row selection's, so the
             outline carries it where colours are taken away. */
+         /* What can be edited (issue #523). A column the page means to be
+            edited is tinted — translucent, over the row's own background, so a
+            selected or hovered row still shows; one that cannot be is drawn in
+            the muted ink. Group and total rows edit nothing. `:where` keeps the
+            rules as weak as the range's below, which follows and wins. */
+         :where(tbody tr:not([data-kind])) td[data-edit=\"editable\"] {{
+                   background: var({EDITABLE_PROPERTY}); }}
+         :where(tbody tr:not([data-kind])) td[data-edit=\"readonly\"] {{
+                   color: var({INK_MUTED_PROPERTY}); }}
          td[data-range] {{ background: var({SELECTED_PROPERTY});
                    outline: 1px solid color-mix(in oklab, var({ACCENT_PROPERTY}) 55%, transparent);
                    outline-offset: -1px; }}
@@ -2162,6 +2183,29 @@ pub fn grid_css() -> String {
                    margin-inline-start: 0.25rem; vertical-align: middle; cursor: pointer;
                    border-radius: min(var({RADIUS_PROPERTY}), 5px); color: var({INK_MUTED_PROPERTY}); }}
          [part=\"column-menu-button\"]:hover {{ background: var({HOVER_PROPERTY}); }}
+         /* The edit mark (issue #523): a lock on a column that cannot be
+            edited, a pencil on one the page means to be — on a touch screen
+            only, which has no cursor and no hover to hint at it. Drawn by
+            the stylesheet alone — no image a strict policy would refuse —
+            and in the flow, unpositioned, so a pinned header covers it when
+            it scrolls under. `aria-hidden`; the cells say `aria-readonly`. */
+         [part=\"edit-mark\"] {{ display: none; margin-inline-start: 0.3rem;
+                   color: var({INK_MUTED_PROPERTY}); vertical-align: -0.05em; }}
+         th[data-edit=\"readonly\"] {{ --og-reserve-edit: 1.1em; }}
+         th[data-edit=\"readonly\"] [part=\"edit-mark\"] {{ display: inline-block;
+                   width: 0.6em; height: 0.85em; }}
+         /* The shackle, then the body. */
+         th[data-edit=\"readonly\"] [part=\"edit-mark\"]::before {{ content: \"\";
+                   display: block; box-sizing: border-box; width: 70%; height: 45%;
+                   margin-inline: auto; border: 0.11em solid currentColor; border-bottom: 0;
+                   border-radius: 0.3em 0.3em 0 0; }}
+         th[data-edit=\"readonly\"] [part=\"edit-mark\"]::after {{ content: \"\";
+                   display: block; height: 55%; border-radius: 0.08em; background: currentColor; }}
+         @media (pointer: coarse) {{
+           th[data-edit=\"editable\"] {{ --og-reserve-edit: 1.3em; }}
+           th[data-edit=\"editable\"] [part=\"edit-mark\"] {{ display: inline-block; }}
+           th[data-edit=\"editable\"] [part=\"edit-mark\"]::before {{ content: \"\\270E\" / \"\"; }}
+         }}
          [part=\"column-menu\"] {{ position: fixed; inset: auto; margin: 0; padding: 6px;
                    min-width: 14rem; box-sizing: border-box;
                    background: var({SURFACE_PROPERTY}); color: var({INK_PROPERTY});
@@ -2465,7 +2509,10 @@ pub fn grid_css() -> String {
                     {LINE_PROPERTY}: CanvasText; {LINE_STRONG_PROPERTY}: CanvasText;
                     {ACCENT_PROPERTY}: Highlight; {ON_ACCENT_PROPERTY}: HighlightText;
                     {ACCENT_SOFT_PROPERTY}: Canvas; {ACCENT_INK_PROPERTY}: CanvasText;
-                    {SELECTED_PROPERTY}: Canvas; {HOVER_PROPERTY}: Canvas; }}
+                    {SELECTED_PROPERTY}: Canvas; {HOVER_PROPERTY}: Canvas;
+                    {EDITABLE_PROPERTY}: transparent; }}
+           /* The tint is gone here; the header's mark keeps the meaning. */
+           [part=\"edit-mark\"] {{ forced-color-adjust: none; color: CanvasText; }}
            /* A forced palette drops background images, and with them WebKit's
               drawn select arrow (above): the native select comes back, so it
               keeps its sign. Elsewhere the select is native already. */
@@ -2612,6 +2659,16 @@ pub fn build_grid(
         value: "footer".to_owned(),
     });
     let status = build_status(buffer, nodes, footer, texts);
+    // How the focused cell is edited, or that editing is locked (issue #523).
+    // Not live, like the source: it changes with every move of the focus, and
+    // the cells already say `aria-readonly`.
+    let hint = element(buffer, nodes, Some(footer), "span");
+    buffer.push(Patch::SetAttribute {
+        node: hint,
+        name: "part".to_owned(),
+        value: "edit-hint".to_owned(),
+    });
+    set_lang(buffer, hint, texts);
     // The pager pages the rows above it, so it sits below them (issue #75),
     // between what the rows say and where they came from.
     let pager = build_pager(buffer, nodes, footer, texts);
@@ -2881,6 +2938,9 @@ pub fn build_grid(
             node: name,
             text: texts.column(field.name.as_str()).to_owned(),
         });
+        // Lock or pencil, drawn by the stylesheet from the header's
+        // `data-edit` (issue #523); empty and hidden otherwise.
+        marker(buffer, nodes, th, "edit-mark");
         let direction = marker(buffer, nodes, th, "sort-direction");
         let index = marker(buffer, nodes, th, "sort-index");
         // The column menu (point 64): a pointer target only. The keyboard path
@@ -3109,6 +3169,7 @@ pub fn build_grid(
         filter,
         status,
         source,
+        edit_hint: hint,
         viewport,
         tbody,
         table,
@@ -4387,8 +4448,11 @@ pub fn patch_grid(
                     }
                     // The new row marks what it needs (issue #183): a required
                     // cell says so, and one a refused add lacked says why.
+                    // A read-only one is filled by the page, not the reader (#523).
                     let required = kind == RowKind::Draft
-                        && fields.get(col).is_some_and(|field| !field.nullable);
+                        && fields
+                            .get(col)
+                            .is_some_and(|field| state.added().requires(col, field));
                     if required {
                         buffer.push(Patch::SetAttribute {
                             node: *cell,
@@ -6350,6 +6414,7 @@ mod tests {
         let mut expected = vec![
             view.status,
             view.source,
+            view.edit_hint,
             view.columns.toggle,
             view.pager.container,
             view.empty,
@@ -6556,6 +6621,8 @@ mod tests {
                 "cell",
                 "columns",
                 "columns-toggle",
+                "edit-hint",
+                "edit-mark",
                 "empty",
                 "empty-reset",
                 "empty-text",

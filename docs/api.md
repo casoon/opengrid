@@ -389,7 +389,8 @@ loader.module.set_columns(host, {
 | `aggregate` | `sum`, `avg`, `count`, `min`, `max` or `range` — the column's aggregate in groups. |
 | `facet` | `list`, `pills`, `range` or `period` — how the column is offered as a facet. |
 | `lookup` | A map from the stored key to the label a reader reads, `{ 1: "Alpha GmbH", 2: "Beta AG" }`: the cell, the editor, the filter row and the facets show and choose by label; the query, the sort, the groups and every export keep the key. See [Lookup columns](#lookup-columns). The grid only; a table refuses it. |
-| `readonly` | The page fills this column with `set_values`: it never opens an editor, and its cells say `aria-readonly`. The grid only; a table refuses it. |
+| `readonly` | `true`: the page fills this column with `set_values`: it never opens an editor, and its cells say `aria-readonly`. `false`: opens the `row-key` column, which is read-only otherwise. See [What can be edited](#what-can-be-edited). The grid only; a table refuses it. |
+| `editable` | `true`: the page means this column to be edited — its cells are tinted and, on a touch screen, its header shows a pencil. Drawing only: what can be edited is every column that is not read-only. With `readonly: true` it is reported. See [What can be edited](#what-can-be-edited). The grid only; a table refuses it. |
 
 **The configuration narrows; it never widens.** `sum` over a text column, a
 `range` facet over text, a name the grid does not have — each is reported in the
@@ -1840,6 +1841,39 @@ exception to the first part: `loader.js` dispatches it on the element, without `
 contract is a query. An edited value is shown at once and marked unsaved; a
 fresh result from the source clears the marks.
 
+### What can be edited
+
+Every column can be edited **except** the read-only ones (issue #523):
+
+| Read-only | Why |
+|---|---|
+| A column with `readonly: true` in `set_columns` | the page fills it with `set_values` |
+| The **`row-key` column** | its value names the record — saving, the selection, undo and the detail panel go by it. `readonly: false` opens it for a page that maintains keys. |
+
+A read-only column opens no editor, takes no paste, no value set for the selected rows and no input in
+the record form — **in the new row too**: a read-only column is filled by the page or the source, so
+the new row does not require it, even where the schema says it is not nullable.
+
+**What the reader sees.** In a grid that edits — not under `edit-locked`, not a tree, not grouped
+without a `row-key` — a read-only column has a **lock** in its header (`part="edit-mark"`) and its
+values in the muted ink; its cells say `aria-readonly`. A column the page gives **`editable: true`**
+is drawn as the one to edit: its cells are tinted with `--og-editable`, translucent over the row, so a
+selected or hovered row still shows. On a touch screen (`pointer: coarse`), which has no cursor and no
+hover to hint at it, its header shows a **pencil** (the same part). The focused cell of such a column
+says how it opens in the footer (`part="edit-hint"`, `editHint`, not live). `editable` only draws: a
+column without it can still be edited, as before.
+
+```js
+loader.module.set_columns(grid, {
+  price: { editable: true },
+  note:  { editable: true },
+});
+```
+
+The tint is a token, so a page that wants the pencil and the lock but no tint sets
+`--og-editable: transparent` on the grid. Under a forced palette the tint is gone and the marks keep
+their meaning.
+
 ### Locking edits
 
 A price list that reads by default and is unlocked by a button (issue #494) sets `edit-locked` on the
@@ -1852,11 +1886,13 @@ grid.toggleAttribute("edit-locked", false); // "Edit prices": editing is back
 
 Locked, no edit gets in: no cell editor (`Enter`, `F2`, a typed character), no paste, no value set for
 the selected rows, no record form, no new row (`add-row`) and no undo or redo. Every refused attempt is
-said in the status line (`editLocked` in `set_texts`). The grid and its cells say `aria-readonly`.
+said in the status line (`editLocked` in `set_texts`). The grid and its cells say `aria-readonly`, and
+the footer says so for as long as the lock is set (`part="edit-hint"`, `editLockedHint`); the lock and
+pencil marks are not drawn.
 Setting or removing the attribute runs no query and keeps the data, the sort, the filter, the scroll
 position and the focus. An editor that is open when the lock is set is closed **without** committing
 what was typed. The attribute is the whole state — the grid fires no event for it. Unlocked, the
-`readonly` of a column in `set_columns` applies as before. Adapters take it as `editLocked`.
+columns that are [read-only](#what-can-be-edited) stay so. Adapters take it as `editLocked`.
 
 ### Saving edits
 
@@ -1942,6 +1978,7 @@ declaration on the element wins over an inherited value.
 | `--og-accent-ink` | 80 % accent on ink — the accent as readable text |
 | `--og-selected` | 9 % accent on surface — a selected row |
 | `--og-hover` | 4 % ink on surface — a hovered row |
+| `--og-editable` | 6 % accent, translucent — the cells of an `editable` column; `transparent` turns it off |
 
 **Density** sets three of these at once:
 
@@ -1995,7 +2032,7 @@ theme that animates a part.
 
 **Parts:** `action`, `action-cell`, `action-header`, `add-field`, `add-filter`, `add-grouping`, `band`, `body`, `bulk`, `bulk-apply`, `bulk-cancel`, `caption`, `cell`, `cell-error`, `cell-saved`, `cell-saving`, `chip`, `chip-calc`, `chip-edit`, `chip-move`, `chip-remove`, `chips`,
 `chips-clear`, `column-menu`, `column-menu-button`, `column-toggle`, `columns`, `columns-toggle`, `density`, `detail`, `detail-toggle`, `drill-down`,
-`editor`, `empty`, `empty-reset`, `empty-text`, `facet`, `facet-bounds`, `facet-cost`, `facet-count`,
+`edit-hint`, `edit-mark`, `editor`, `empty`, `empty-reset`, `empty-text`, `facet`, `facet-bounds`, `facet-cost`, `facet-count`,
 `facet-pill`, `facet-pills`, `facet-value`, `facets`, `facets-head`, `facets-toggle`, `filter`,
 `filter-builder`, `filter-builder-dialog`, `filter-clear`, `filter-dialog`, `filter-operator`, `filter-row-toggle`, `filter-value`, `footer`,
 `field-group`, `field-menu`, `group-mark`, `group-toggle`, `grouping-menu`, `header`, `layout`, `list`, `list-item`, `list-item-remove`, `listbox`, `menu-label`, `operator-menu`, `page-first`, `page-label`, `page-last`, `page-next`,
@@ -2216,6 +2253,7 @@ boolean reads — that is `set_formats`.
 | `undoNothing` / `redoNothing` | `Nothing to undo` / `Nothing to redo` | |
 | `bulkCaption` / `bulkApply` / `bulkMenu` | `Set {column} for {rows} selected` / `Set` / `Set for selected rows` | `{column}`, `{rows}` |
 | `editLocked` | `Editing is locked` | |
+| `editHint` / `editLockedHint` | `Enter to edit` / `Editing locked` — the footer's hint, not live | |
 | `bulkReadonly` / `bulkDone` | `{column} is read-only` / `{column} set for {rows}` | `{column}`, `{rows}` |
 | `pastePreview` / `pasteApply` / `pasteDiscard` | `Paste preview` / `Paste` / `Discard` | |
 | `pasteUnreadable` | `“{value}” cannot be read as {type}` | `{value}`, `{type}` |

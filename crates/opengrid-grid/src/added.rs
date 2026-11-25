@@ -70,6 +70,9 @@ pub struct AddedRows {
     rows: Vec<AddedRow>,
     /// Columns a fired draft lacked a value for, until the reader types one.
     missing: Vec<usize>,
+    /// Columns the reader cannot fill — read-only, so the page or the source
+    /// gives them their value (issue #523). Never required in the draft.
+    assigned: Vec<usize>,
     counter: u64,
 }
 
@@ -174,13 +177,25 @@ impl AddedRows {
         &self.missing
     }
 
+    /// Says which columns the reader cannot fill (issue #523): a read-only
+    /// column is not required in the draft, however the schema has it — no
+    /// one could ever add the row.
+    pub fn set_assigned(&mut self, columns: Vec<usize>) {
+        self.assigned = columns;
+    }
+
+    /// Whether column `col` of `field` needs a value before the draft is added.
+    pub fn requires(&self, col: usize, field: &Field) -> bool {
+        !field.nullable && !self.assigned.contains(&col)
+    }
+
     /// The required columns the draft holds nothing in.
     pub fn lacking(&self, schema: &Schema) -> Vec<usize> {
         schema
             .fields()
             .iter()
             .enumerate()
-            .filter(|(col, field)| is_lacking(field, self.draft.get(*col)))
+            .filter(|(col, field)| self.requires(*col, field) && is_empty(self.draft.get(*col)))
             .map(|(col, _)| col)
             .collect()
     }
@@ -272,13 +287,12 @@ impl AddedRows {
 }
 
 /// A required field without a value: NULL, or text with nothing in it.
-fn is_lacking(field: &Field, value: Option<&Value>) -> bool {
-    !field.nullable
-        && match value {
-            None | Some(Value::Null) => true,
-            Some(Value::Utf8(text)) => text.is_empty(),
-            Some(_) => false,
-        }
+fn is_empty(value: Option<&Value>) -> bool {
+    match value {
+        None | Some(Value::Null) => true,
+        Some(Value::Utf8(text)) => text.is_empty(),
+        Some(_) => false,
+    }
 }
 
 #[cfg(test)]
@@ -321,6 +335,18 @@ mod tests {
         assert_eq!(added.lacking(&schema()), vec![0]);
         added.set_draft(0, Value::Int64(1));
         assert!(added.lacking(&schema()).is_empty());
+    }
+
+    /// A read-only column is filled by the page or the source, so the draft
+    /// does not wait for it (issue #523).
+    #[test]
+    fn an_assigned_column_is_not_required() {
+        let mut added = rows();
+        added.set_assigned(vec![0]);
+        assert!(added.lacking(&schema()).is_empty());
+        assert!(!added.requires(0, &schema().fields()[0]));
+        added.set_assigned(Vec::new());
+        assert_eq!(added.lacking(&schema()), vec![0]);
     }
 
     #[test]

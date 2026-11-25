@@ -93,7 +93,7 @@ export class App {
   protected readonly roomsProvider = inject(ROOMS);
   protected readonly roomActions: RowAction[] = [{ id: "remove", label: "Remove" }];
   /** `id` says which room a row is: it stays in place when the grid scrolls sideways (issue #316). */
-  protected readonly roomColumns: ConnectOptions["presentation"] = { id: { pin: "start" } };
+  protected readonly roomColumns: ConnectOptions["presentation"] = { id: { pin: "start", readonly: false } };
   protected readonly roomValidators: ConnectOptions["validators"] = {
     seats: (value) => (Number(value) < 0 ? { level: "error", message: "Seats cannot be negative." } : null),
   };

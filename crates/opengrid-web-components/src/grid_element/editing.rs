@@ -9,6 +9,50 @@ pub(super) fn edit_locked(host: &HtmlElement) -> bool {
     host.has_attribute(grid::EDIT_LOCKED_ATTRIBUTE)
 }
 
+/// Whether column `field` never opens an editor, whatever the lock (issues #153,
+/// #523): the page fills it, or it is the `row-key` column the page did not
+/// open. The one answer the editor, paste, the bulk panel, the record form, the
+/// new row and the marks of the cells all take.
+pub(super) fn readonly_column(host: &HtmlElement, field: &opengrid_types::Field) -> bool {
+    let key = row_key_of(host);
+    presentation::styles(host).readonly(field.name.as_str(), key.as_ref().map(|key| key.as_str()))
+}
+
+/// Writes the footer's edit hint (issue #523): that editing is locked, for as
+/// long as it is, or how the focused cell opens when its column is one the
+/// page means to be edited. Empty otherwise — a hint on every cell of a grid
+/// that is only read would be noise.
+pub(super) fn show_edit_hint(host: &HtmlElement) {
+    let (Some(runtime), Some(root)) = (runtime(host), host.shadow_root()) else {
+        return;
+    };
+    let Ok(Some(node)) = root.query_selector("[part=\"edit-hint\"]") else {
+        return;
+    };
+    let texts = texts(host);
+    let text = if edit_locked(host) {
+        texts.edit_locked_hint.clone()
+    } else {
+        let active = runtime.borrow().active;
+        let marked = match active {
+            ActiveCell::Data(cell) => runtime
+                .borrow()
+                .decorated
+                .as_ref()
+                .is_some_and(|decorated| decorated.mark(cell.col) == Some("editable")),
+            _ => false,
+        };
+        if marked && (!is_grouped(host) || editable_group_row(host, active)) {
+            texts.edit_hint.clone()
+        } else {
+            String::new()
+        }
+    };
+    if node.text_content().unwrap_or_default() != text {
+        node.set_text_content(Some(&text));
+    }
+}
+
 /// Says so in the status line and answers `true` when editing is locked: the
 /// attempt is refused out loud, not dropped.
 pub(super) fn refuse_locked(host: &HtmlElement) -> bool {
@@ -236,9 +280,9 @@ pub(super) fn begin_edit(host: &HtmlElement, cell: CellRef, typed: Option<&str>)
         let Some(field) = borrowed.state.schema().fields().get(cell.col) else {
             return;
         };
-        // The page fills this column; an edit would be overwritten by the
-        // next value it sets (issue #153).
-        if presentation::styles(host).readonly(field.name.as_str()) {
+        // The page fills this column, it is derived, or it names the record
+        // (issues #153, #523).
+        if readonly_column(host, field) {
             return;
         }
         // A list is edited in a combobox over the page's choices; with none there

@@ -19,6 +19,22 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+### Breaking
+
+- **Grid:** the `row-key` column is read-only — no editor, no paste, no bulk value, no input in the
+  record form, in the new row neither. A page that maintains keys opens
+  the key column with `readonly: false` in `set_columns`. A read-only column is no longer required
+  in the new row ([#523](https://github.com/casoon/opengrid/issues/523);
+  [What can be edited](https://casoon.github.io/opengrid/docs/api/#what-can-be-edited)).
+
+### Added
+
+- **Grid:** a column that cannot be edited shows a lock in its header and its values in the muted
+  ink; a column the page gives `editable: true` is tinted (`--og-editable`), with a pencil in its
+  header on a touch screen. The footer says how the focused cell opens (`editHint`) and that
+  editing is locked (`editLockedHint`), outside the live region
+  ([#523](https://github.com/casoon/opengrid/issues/523)).
+
 ### Changed
 
 - **Pages:** the project site uses the current shared theme (0.18.0).

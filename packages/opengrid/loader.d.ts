@@ -798,10 +798,18 @@ export interface ColumnConfig {
   aggregate?: Aggregate;
   facet?: FacetKind;
   /**
-   * The page fills this column (`set_values`): it never opens an editor and
-   * its cells are announced as read-only. The grid only.
+   * `true`: the page fills this column (`set_values`): it never opens an
+   * editor and its cells are announced as read-only. `false`: opens the
+   * `row-key` column, read-only by default, for editing. The grid only.
    */
   readonly?: boolean;
+  /**
+   * The page means this column to be edited: its cells are tinted
+   * (`--og-editable`) and, on a touch screen, its header shows a pencil.
+   * Drawing only — every column not read-only can be edited. Contradicts
+   * `readonly: true` and a derived field. The grid only.
+   */
+  editable?: boolean;
   /**
    * The labels of the keys the column stores, key → label: the cell, the
    * editor, the filter row and the facets show and choose by label. The value
@@ -1219,6 +1227,8 @@ export type TextKey =
   | "bulkMenu"
   | "bulkReadonly"
   | "editLocked"
+  | "editHint"
+  | "editLockedHint"
   | "bulkDone"
   | "validationWarning"
   | "validationError"

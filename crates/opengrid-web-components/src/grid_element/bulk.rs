@@ -27,7 +27,7 @@ pub(super) fn available(host: &HtmlElement, runtime: &GridRuntime, col: usize) -
     let Some(field) = runtime.state.schema().fields().get(col) else {
         return false;
     };
-    applicable(host, runtime) && !presentation::styles(host).readonly(field.name.as_str())
+    applicable(host, runtime) && !readonly_column(host, field)
 }
 
 /// Opens the panel for column `col`. A read-only column is said to refuse.
@@ -48,7 +48,7 @@ pub(super) fn open(host: &HtmlElement, col: usize) {
         };
         (field, borrowed.picked.len() as u64)
     };
-    if presentation::styles(host).readonly(field.name.as_str()) {
+    if readonly_column(host, &field) {
         runtime
             .borrow_mut()
             .state

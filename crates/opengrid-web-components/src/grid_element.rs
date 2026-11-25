@@ -138,7 +138,7 @@ use column_ops::{
 pub(crate) use editing::{CHOICES_KEY, write_row_state};
 use editing::{
     add_record, after_new_row_enter, begin_edit, build_editor, dispatch_row_add, edit_locked,
-    editor_text, end_edit, focus_editor, formatter, refuse_locked,
+    editor_text, end_edit, focus_editor, formatter, readonly_column, refuse_locked, show_edit_hint,
 };
 use facets::{
     apply_facets, clear_selection, collated, draw_facets, effective_filter, facet_chip_text,
@@ -146,7 +146,7 @@ use facets::{
     toggle_facet_value,
 };
 use filter_row::{
-    Decorated, OperatorControl, ValueControl, apply_filters, fix_operator_choices,
+    ColumnEdit, Decorated, OperatorControl, ValueControl, apply_filters, fix_operator_choices,
     fix_presentation, is_filter_control, on_filter_change, on_filter_clear, operator_word,
     read_filter_entries,
 };
@@ -443,6 +443,32 @@ fn fresh_runtime(
         detail_wanted: Vec::new(),
         detail_nodes: Vec::new(),
     }
+}
+
+/// What each column says about editing (issue #523). Marks are drawn only
+/// where the grid edits at all: not under `edit-locked` (which says so once),
+/// not in a tree, not grouped without a `row-key`. A list column with nothing
+/// to pick from opens no editor, so it is not drawn as one to edit.
+fn column_edits(
+    host: &HtmlElement,
+    schema: &opengrid_types::Schema,
+    styles: &presentation::ColumnStyles,
+    locked: bool,
+) -> Vec<ColumnEdit> {
+    let edits = !locked && !is_tree(host) && (!is_grouped(host) || has_row_key(host));
+    schema
+        .fields()
+        .iter()
+        .enumerate()
+        .map(|(col, field)| {
+            let pickless = field.data_type.is_list() && combo::choices_of(host, col).is_none();
+            ColumnEdit::of(
+                readonly_column(host, field),
+                styles.editable(field.name.as_str()) && !pickless,
+                edits,
+            )
+        })
+        .collect()
 }
 
 /// The `row-key` field, if the attribute names a valid one.
@@ -1289,9 +1315,21 @@ fn render(host: &HtmlElement, focus_after: bool) {
         (sorts, slots, pinned_slot)
     };
 
+    // The new row asks nothing of a column the reader cannot fill (#523).
+    let assigned: Vec<usize> = {
+        let schema = runtime.borrow().state.schema().clone();
+        schema
+            .fields()
+            .iter()
+            .enumerate()
+            .filter(|(_, field)| readonly_column(host, field))
+            .map(|(col, _)| col)
+            .collect()
+    };
     {
         let mut borrowed = runtime.borrow_mut();
         borrowed.slots = slots;
+        borrowed.state.added_mut().set_assigned(assigned);
     }
     {
         let mut borrowed = runtime.borrow_mut();
@@ -1331,10 +1369,11 @@ fn render(host: &HtmlElement, focus_after: bool) {
         let schema = runtime.borrow().state.schema().clone();
         let styles = presentation::styles(host);
         let locked = edit_locked(host);
-        let decorated = Decorated::of(&schema, &styles, locked);
+        let edits = column_edits(host, &schema, &styles, locked);
+        let decorated = Decorated::of(&schema, &styles, locked, edits.clone());
         if runtime.borrow().decorated.as_ref() != Some(&decorated) {
             fix_operator_choices(&root, &schema, &styles);
-            fix_presentation(&root, &schema, &styles, locked);
+            fix_presentation(&root, &schema, &styles, locked, &edits);
             // The grid says it, and its cells with it.
             if let Ok(Some(table)) = root.query_selector("table[role=\"grid\"]") {
                 if locked {
@@ -1348,6 +1387,7 @@ fn render(host: &HtmlElement, focus_after: bool) {
     }
     sync_chrome(host);
     sync_descriptions(host);
+    show_edit_hint(host);
     // The lists of list columns are chips, drawn over the text the frame wrote.
     if let Some(root) = host.shadow_root() {
         combo::draw_cells(host, &root);
@@ -4231,11 +4271,14 @@ fn on_focus_in(event: Event) {
     let same_band =
         matches!(from, ActiveCell::Band { .. }) && target.matches(&selector(from)).unwrap_or(false);
     if from == active || same_band {
+        show_edit_hint(&host);
         return;
     }
     range::on_focus(&host, &runtime, active);
     runtime.borrow_mut().set_active(active);
     focus_from(&root, viewport.as_ref(), from, active);
+    // The focus moves without a frame; the footer's hint follows it (#523).
+    show_edit_hint(&host);
 }
 
 /// The shadow root a delegated listener was installed on.

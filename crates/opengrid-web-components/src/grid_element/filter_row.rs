@@ -295,16 +295,48 @@ pub(super) struct Decorated {
     markers: Vec<Vec<(&'static str, String)>>,
     /// The grid-wide `edit-locked` (issue #494): every cell says `aria-readonly`.
     locked: bool,
+    /// What each column says about editing (issue #523).
+    edits: Vec<ColumnEdit>,
+}
+
+/// What a column says about editing (issue #523): whether it is read-only —
+/// said by `aria-readonly` on its cells — and which mark it is drawn with,
+/// `data-edit` on its header and cells.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct ColumnEdit {
+    pub(super) readonly: bool,
+    pub(super) mark: Option<&'static str>,
+}
+
+impl ColumnEdit {
+    /// `edits`: whether the grid edits at all — not locked, not a tree, not
+    /// grouped without a key; a grid that edits nothing draws no marks.
+    pub(super) fn of(readonly: bool, declared: bool, edits: bool) -> Self {
+        let mark = match (edits, readonly, declared) {
+            (false, _, _) => None,
+            (true, true, _) => Some("readonly"),
+            (true, false, true) => Some("editable"),
+            (true, false, false) => None,
+        };
+        Self { readonly, mark }
+    }
 }
 
 impl Decorated {
+    /// The mark column `col` is drawn with (issue #523).
+    pub(super) fn mark(&self, col: usize) -> Option<&'static str> {
+        self.edits.get(col).and_then(|edit| edit.mark)
+    }
+
     pub(super) fn of(
         schema: &opengrid_types::Schema,
         styles: &presentation::ColumnStyles,
         locked: bool,
+        edits: Vec<ColumnEdit>,
     ) -> Self {
         Self {
             locked,
+            edits,
             schema: schema.clone(),
             markers: schema
                 .fields()
@@ -337,9 +369,22 @@ pub(super) fn fix_presentation(
     schema: &opengrid_types::Schema,
     styles: &presentation::ColumnStyles,
     locked: bool,
+    edits: &[ColumnEdit],
 ) {
     for (col, field) in schema.fields().iter().enumerate() {
-        let markers = styles.markers(field.name.as_str(), field.data_type);
+        let mut markers = styles.markers(field.name.as_str(), field.data_type);
+        let edit = edits.get(col).copied().unwrap_or(ColumnEdit {
+            readonly: false,
+            mark: None,
+        });
+        // Said, not only drawn: a reader who cannot see that the column never
+        // opens an editor hears it (issues #153, #523).
+        if edit.readonly {
+            markers.push(("aria-readonly", "true".to_owned()));
+        }
+        if let Some(mark) = edit.mark {
+            markers.push(("data-edit", mark.to_owned()));
+        }
         let Ok(cells) = root.query_selector_all(&format!("[data-col=\"{col}\"]")) else {
             continue;
         };
@@ -354,7 +399,13 @@ pub(super) fn fix_presentation(
             if !matches!(cell.tag_name().as_str(), "TD" | "TH") {
                 continue;
             }
-            for name in ["data-mono", "data-emphasis", "data-muted", "aria-readonly"] {
+            for name in [
+                "data-mono",
+                "data-emphasis",
+                "data-muted",
+                "aria-readonly",
+                "data-edit",
+            ] {
                 let locked_cell = locked && name == "aria-readonly" && cell.tag_name() == "TD";
                 if !locked_cell && !markers.iter().any(|(marker, _)| *marker == name) {
                     let _ = cell.remove_attribute(name);

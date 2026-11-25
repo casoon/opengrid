@@ -52,6 +52,8 @@
       window.__provider = provider;
       window.__schema = schema;
       window.__rows = rows;
+      // The page gives a new record its key: the key column is opened (issue #523).
+      loader.module.set_columns(document.querySelector("opengrid-grid"), { id: { readonly: false } });
       loader.module.set_provider(document.querySelector("opengrid-grid"), provider);
       window.__ready = true;
     </script>

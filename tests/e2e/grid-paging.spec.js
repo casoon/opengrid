@@ -145,7 +145,7 @@ test("the pager sits in the footer, below the rows it pages, and its buttons say
   });
   expect(pager.inFooter).toBe(true);
   expect(pager.belowRows).toBe(true);
-  expect(pager.between).toEqual(["status", "pager", "source"]);
+  expect(pager.between).toEqual(["status", "edit-hint", "pager", "source"]);
   expect(pager.buttons).toEqual([
     ["«", "First page", "0px"],
     ["‹", "Previous page", "0px"],

@@ -138,9 +138,9 @@ pub(super) fn open(host: &HtmlElement, cell: CellRef) {
         let _ = note.set_attribute("data-record-error", "");
         let _ = note.set_attribute("id", &format!("og-record-error-{col}"));
         let _ = note.set_attribute("hidden", "");
-        // A column the page fills, or a list with nothing to pick from, is
-        // shown and not edited — as its cell is.
-        let readonly = presentation::styles(host).readonly(name)
+        // A read-only column, or a list with nothing to pick from, is shown and
+        // not edited — as its cell is.
+        let readonly = readonly_column(host, field)
             || (field.data_type.is_list() && combo::choices_of(host, col).is_none());
         if readonly {
             let _ = editor.set_attribute("disabled", "");
