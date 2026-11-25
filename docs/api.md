@@ -245,7 +245,7 @@ An interactive `<table role="grid">`: virtualized, keyboard-driven, filterable.
 | `group-by` | Groups the rows by up to **three** columns, outermost first: `group-by="country,customer"`. See [Grouping](#grouping). |
 | `tree` | Shows the rows as a **tree**: the field that holds a row's parent key, `tree="parent_id"`. See [Tree](#tree). |
 | `tree-key` | The field the parent key refers to. `id` when absent. |
-| `row-key` | The field that names a record: `opengrid-cell-change` carries its value as `key`, and `set_cell_state` and `set_values` name rows by it. See [Saving edits](#saving-edits). |
+| `row-key` | The field that names a record: `opengrid-cell-change` carries its value as `key`, and `set_cell_state` and `set_values` name rows by it. Any field of the source — one left out of `columns` is fetched but never shown. See [Saving edits](#saving-edits). |
 | `filter` | The **page's filter**, as the wire's JSON: `{"field":"country","op":"eq","value":"DE"}`, `{"and":[…]}`. And-ed onto every query the grid sends; not the reader's and not in the view. See [The page's filter](#the-pages-filter). |
 | `collation` | The **locale text sorts by**: `de`, `sv`, `sr-Latn`, `und` for the root collation. Without it text sorts by code point. See [Sorting text by a locale](#sorting-text-by-a-locale). |
 | `search` | Puts a **search field** above the grid: free text, or a filter written out. See [Search](#search). |
@@ -769,7 +769,7 @@ A grid whose records have a key selects **by key** (issue #322):
 
 | The grid | The selection names | `opengrid-selection-change` | In the [view](#the-view) |
 |---|---|---|---|
-| `row-key`, a field among the `columns` — grouped or not, with or without `page-size` | records, by their `row-key` value | `{ count, keys }` | `selected` |
+| `row-key`, shown among the `columns` or not — grouped or not, with or without `page-size` | records, by their `row-key` value | `{ count, keys }` | `selected` |
 | a [tree](#tree) | nodes, by their `tree-key` value | `{ count, keys }` | `selected` |
 | neither | positions in the result | `{ rows, ranges, count }` | — |
 | `group-by` without `row-key` | nothing: a display position is a header as often as a row | — | — |
@@ -1848,7 +1848,7 @@ Every column can be edited **except** the read-only ones (issue #523):
 | Read-only | Why |
 |---|---|
 | A column with `readonly: true` in `set_columns` | the page fills it with `set_values` |
-| The **`row-key` column** | its value names the record — saving, the selection, undo and the detail panel go by it. `readonly: false` opens it for a page that maintains keys. |
+| The **`row-key` column** | its value names the record — saving, the selection, undo and the detail panel go by it. `readonly: false` opens it for a page that maintains keys. Left out of `columns`, the key is not shown at all and still names the records ([Saving edits](#saving-edits)). |
 
 A read-only column opens no editor, takes no paste, no value set for the selected rows and no input in
 the record form — **in the new row too**: a read-only column is filled by the page or the source, so
@@ -1913,6 +1913,18 @@ grid.addEventListener("opengrid-cell-change", async ({ detail }) => {
     loader.module.set_cell_state(grid, key, column, "error", `Grade for ${key} not saved: ${error.message}`);
   }
 });
+```
+
+**The key need not be shown.** `row-key` may name any field of the source: leave it out of
+`columns` and the grid fetches it with every query that names records — the rows, a group's rows,
+the keys behind "select all" and a view's selection — but shows it nowhere: not in the header, the
+column list, the filter row, print or [`get_query`](#exporting-the-view). Events, `set_cell_state`,
+`set_values`, the [selection](#selecting-by-key), undo and the [detail panel](#detail-panels) name
+records by it as with a shown key. A reader who hides a shown key column in the column list gets
+the same. A `row-key` that is no field of the source fails the query, said in the status line.
+
+```html
+<opengrid-grid datasource="rooms" columns="name,seats" row-key="id"></opengrid-grid>
 ```
 
 | `state` | What the grid does |

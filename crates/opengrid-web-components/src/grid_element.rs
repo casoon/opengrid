@@ -527,6 +527,16 @@ fn reset_runtime(host: &HtmlElement) {
             fresh.state.restore_edits(edits);
         }
         fresh.state.set_row_key(row_key_of(host));
+        // A key outside the columns is in no display schema: its type, told by
+        // an earlier result, lets the view's selection be checked before the
+        // rebuild's first result (issue #529).
+        if fresh.tree.is_none()
+            && let Some(field) = row_key_of(host)
+                .filter(|_| row_key_hidden(host))
+                .and_then(|key| known.get(key.as_str()))
+        {
+            fresh.state.hold_row_key_type(field.data_type);
+        }
         runtime.state = fresh.state;
         runtime.set_active(fresh.active);
         runtime.view = None;
@@ -1742,10 +1752,7 @@ fn settle(
                 }
                 // A window is the same result moved, so what the reader is in
                 // the middle of — an editor, unsaved marks — stays (issue #224).
-                let hidden = runtime.tree.is_none()
-                    && row_key_of(host).is_some_and(|key| {
-                        !columns_of(host).iter().any(|name| name == key.as_str())
-                    });
+                let hidden = runtime.tree.is_none() && row_key_hidden(host);
                 runtime.state.set_row_key_hidden(hidden);
                 let patches = if kind == QueryKind::Window {
                     runtime.state.apply_window_result(result)
@@ -1811,6 +1818,12 @@ fn settle(
     if unkeyed {
         dispatch_keys(host, &[]);
     }
+}
+
+/// Whether the `row-key` field is outside the shown columns: fetched with
+/// every window, never drawn (issues #495, #529).
+fn row_key_hidden(host: &HtmlElement) -> bool {
+    row_key_of(host).is_some_and(|key| !columns_of(host).iter().any(|name| name == key.as_str()))
 }
 
 /// Whether the grid selects by key right now (issue #322): its records have a
