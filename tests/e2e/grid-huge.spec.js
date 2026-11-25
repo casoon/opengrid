@@ -255,3 +255,23 @@ test("dragging the scroll bar asks once per frame and keeps the focus (#284)", a
   await expect.poll(async () => (await view(page)).shown.some((row) => row.row === 3)).toBe(true);
   expect((await view(page)).focusRow).toBe(3);
 });
+
+test("a jump over a scaled result places the window's rows once (#518)", async ({ page }) => {
+  await open(page, 3_000_000);
+  const { maxScroll } = await view(page);
+  // Every write of a row's place from here on, the scroll and the answer both.
+  await page.evaluate(() => {
+    const root = document.querySelector("opengrid-grid").shadowRoot;
+    window.__placed = 0;
+    new MutationObserver((records) => {
+      window.__placed += records.filter((record) => record.target.localName === "tr").length;
+    }).observe(root.querySelector("tbody"), { subtree: true, attributes: true, attributeFilter: ["style"] });
+  });
+  // A drag of the thumb to the middle: the shift changes, and so does the window.
+  await setScrollTop(page, Math.floor(maxScroll / 2));
+  await expect.poll(async () => firstShown(page)).toBeGreaterThan(1_400_000);
+  await page.waitForTimeout(100);
+  // The answer places each of the window's 20 rows; the old window is not placed
+  // first under the new shift, out of sight, only to be replaced.
+  expect(await page.evaluate(() => window.__placed)).toBeLessThanOrEqual(20);
+});

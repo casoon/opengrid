@@ -3923,9 +3923,10 @@ fn on_scroll(event: Event) {
         return;
     };
     let mut scroll_top = viewport.scroll_top().max(0);
+    let read_top = scroll_top;
     // Past the sizer's limit the position is read through the scale (issue
     // #284); a change of the shift moves every row, window or not.
-    let shifted = {
+    let (shifted, moved, put_back) = {
         let mut borrowed = runtime.borrow_mut();
         let previous = grid::Placement {
             scroll_top: borrowed.scroll_top.max(0) as u64,
@@ -3945,11 +3946,12 @@ fn on_scroll(event: Event) {
         borrowed.shift = placed.shift;
         // Remembered for the return: a browser forgets it (point 74).
         borrowed.scroll_top = scroll_top;
-        placed.shift != previous.shift
+        (
+            placed.shift != previous.shift,
+            u64::from(read_top.abs_diff(previous.scroll_top as i32)),
+            scroll_top != read_top,
+        )
     };
-    if shifted {
-        render(&host, false);
-    }
     let scroll_top = grid::Placement {
         scroll_top: scroll_top as u64,
         shift: runtime.borrow().shift,
@@ -3970,13 +3972,26 @@ fn on_scroll(event: Event) {
             detail::row_at(&runtime, scroll_top),
         )
     };
-    if total_count == 0 || pool == 0 {
-        return;
+    let wanted = (total_count > 0 && pool > 0)
+        .then(|| grid::window_offset(first_row, total_count, pool))
+        .filter(|wanted| *wanted != offset);
+    // A changed shift moves every row of the window. After a jump that asks for
+    // another window and carried the old rows out of sight — the browser moved
+    // them by more than the window and the viewport are high, and the position
+    // was not put back — the answer's render places the new rows with the new
+    // shift. Placing the old ones first is a second pass over the whole window
+    // in the same frame, which every jump over a scaled result paid (#518).
+    let out_of_sight = {
+        let borrowed = runtime.borrow();
+        let client = viewport.client_height().max(0) as u64;
+        !put_back && moved > pool.saturating_mul(borrowed.row_height) + client
+    };
+    if shifted && !(wanted.is_some() && out_of_sight) {
+        render(&host, false);
     }
-    let wanted = grid::window_offset(first_row, total_count, pool);
-    if wanted == offset {
+    let Some(wanted) = wanted else {
         return;
-    }
+    };
     runtime.borrow_mut().pending_offset = Some(wanted);
     schedule_scroll_query(&host, &runtime);
 }

@@ -26,6 +26,13 @@ Two things belong in every release entry and are easy to leave out:
   long animation frames of both: time in forced style and layout and in rendering
   ([#518](https://github.com/casoon/opengrid/issues/518)).
 
+### Fixed
+
+- **Grid:** a jump over a result taller than the browser lets an element be (dragging the scroll
+  bar over a million rows) placed the old window's rows under the new shift before the new
+  window's, two passes over the window in one frame; it now places them once
+  ([#518](https://github.com/casoon/opengrid/issues/518)).
+
 
 ## [0.20.2] - 2026-11-23
 
