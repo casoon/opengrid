@@ -821,9 +821,11 @@ export interface ColumnConfig {
   readonly?: boolean;
   /**
    * The page means this column to be edited: its cells are tinted
-   * (`--og-editable`) and, on a touch screen, its header shows a pencil.
-   * Drawing only — every column not read-only can be edited. Contradicts
-   * `readonly: true` and a derived field. The grid only.
+   * (`--og-editable`) and, on a touch screen, its header shows a pencil. As
+   * soon as one column is marked, **only the marked columns edit** — a column
+   * opened with `readonly: false` counts as marked; where none is marked,
+   * every column not read-only can be edited. Contradicts `readonly: true`
+   * and a derived field. The grid only.
    */
   editable?: boolean;
   /**
