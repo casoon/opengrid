@@ -34,6 +34,11 @@ Two things belong in every release entry and are easy to leave out:
   header on a touch screen. The footer says how the focused cell opens (`editHint`) and that
   editing is locked (`editLockedHint`), outside the live region
   ([#523](https://github.com/casoon/opengrid/issues/523)).
+- **Grid:** `row-key` may name a field left out of `columns`, so a page hides the ID by not listing
+  it: the key is fetched with every query that names records but shown nowhere, and events,
+  saving, the selection, undo and the detail panel name records by it as before
+  ([#529](https://github.com/casoon/opengrid/issues/529)). Details:
+  [Saving edits](https://casoon.github.io/opengrid/docs/api/#saving-edits).
 
 ### Changed
 

@@ -389,6 +389,14 @@ impl GridState {
         }
     }
 
+    /// Keeps the type of a hidden `row-key` field that an earlier result told,
+    /// for a state that has no result yet: a rebuild still selects by key
+    /// before its first result (issue #529). The values come with the result.
+    pub fn hold_row_key_type(&mut self, data_type: opengrid_types::DataType) {
+        self.key_hidden = true;
+        self.key_held = Some((Vec::new(), data_type));
+    }
+
     /// The loaded values of the `row-key` field, shown or not.
     fn key_values(&self) -> Option<&Vec<Value>> {
         let name = self.saves.key.as_ref()?;
@@ -1769,6 +1777,19 @@ mod edit_tests {
         assert_eq!(state.row_key(1), Some(&Value::Int64(2)));
         assert_eq!(state.row_of_key(&Value::Int64(2)), Some(1));
         assert_eq!(state.row_key_type(), Some(opengrid_types::DataType::Int64));
+    }
+
+    /// A fresh state keeps the type of a hidden key a result told before, so
+    /// it selects by key ahead of its own first result; it names no row until
+    /// the rows come (issue #529).
+    #[test]
+    fn a_held_key_type_types_the_key_before_a_result() {
+        let mut state = GridState::new(Schema::new(schema().fields()[1..].to_vec()));
+        state.set_row_key(Some(FieldName::new("id").unwrap()));
+        assert_eq!(state.row_key_type(), None, "nothing told the type yet");
+        state.hold_row_key_type(opengrid_types::DataType::Int64);
+        assert_eq!(state.row_key_type(), Some(opengrid_types::DataType::Int64));
+        assert_eq!(state.row_key(0), None);
     }
 
     /// A validator's word stays on the cell until the next result; the page's
