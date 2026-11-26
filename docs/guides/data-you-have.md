@@ -49,6 +49,36 @@ string where row 0 has a number`), an integer beyond 2^53, which JavaScript does
 a number that is not finite, a bigint, an object or a list, and a field that is `null` or missing
 in every row.
 
+## Presentation from the schema
+
+The schema says what a column holds, and that is most of what its look needs. `suggestColumns`
+writes it down as the two objects a page hands to the element, and the grid takes them as they
+come — or after you have changed them, they are plain objects:
+
+```js
+import { suggestColumns } from "@casoon/opengrid";
+
+const { columns, formats } = suggestColumns(schema, { rowKey: "id", distinct: { country: 5 } });
+console.log(columns, formats); // look, change what you want …
+loader.module.set_columns(grid, columns);
+loader.module.set_formats(grid, formats);
+```
+
+| A field | What is suggested |
+|---|---|
+| The `rowKey` | read-only, monospaced, muted and narrow — and nothing else |
+| `int64`, `decimal` | `align: "end"`, `aggregate: "sum"` |
+| `float64` | `align: "end"` |
+| `date` | a `date` format, in the locale of the page |
+| text or `int64` with at most 12 distinct values | `facet: "list"` |
+
+A field no rule fits is left out. It counts nothing: `distinct` is how many values each field has,
+for the fields you know, and without a count there is no facet. The call is refused with an `Error`
+for a schema that is not the JSON text of `{ fields }`, for a `rowKey` or `distinct` name the schema
+does not have, and for a count that is not a whole number. A grid reports a name it does not show
+in `set_columns`, so hand it the columns it has: leave out of `columns` what you left out of the
+element's `columns`.
+
 ## With a schema
 
 When the types matter — decimals, timestamps, an exact `nullable` — write the schema and load

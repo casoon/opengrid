@@ -165,6 +165,7 @@ two arguments still fits. [`exportRows`](#exporting-the-view) is what passes one
 |---|---|
 | `fromRows(host, rows, { schema?, provider? })` | Rows to a grid or table in one call: the schema (given, or `inferSchema(rows)`), a provider (`createWorkerProvider()` unless given), the rows loaded and the element connected. Sets `datasource` (`rows`) and `columns` (every field) where the element has none. Resolves with `{ schema, provider, connection }`. |
 | `inferSchema(rows)` | The schema JSON of `rows`, read from every row, as `loadRows` takes it. Refuses with code `cannot_infer`, naming row and field, what it cannot type. The rules: [Data you already have](../guides/data-you-have/#the-types-it-reads). |
+| `suggestColumns(schema, { rowKey?, distinct? })` | What the schema suggests for how the columns look: `{ columns, formats }`, the two objects `set_columns` and `set_formats` take. A plain function, so a page can log, change and pass on the result. The rules: [Presentation from the schema](../guides/data-you-have/#presentation-from-the-schema). |
 
 ## Connecting
 

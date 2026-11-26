@@ -2111,6 +2111,70 @@ export function inferSchema(rows) {
   return JSON.stringify({ fields: schema });
 }
 
+/** Up to this many distinct values a column is offered as a list facet. */
+const FACET_LIST_MAX = 12;
+
+/**
+ * What the schema suggests for how the columns look, as the two objects a page hands to
+ * `set_columns` and `set_formats` — a plain function, so the page can log the result, change it and
+ * pass it on; the grid guesses nothing of its own. The rules, field by field:
+ *
+ * - the `rowKey` field: read-only, monospaced, muted and narrow; nothing else;
+ * - an integer or a decimal: aligned at the end and summed in groups; a float: aligned at the end;
+ * - a date: a `date` format, in the locale of the page;
+ * - a text or an integer with at most 12 distinct values — `distinct` says how many each field has,
+ *   the function never counts — a `list` facet.
+ *
+ * A field no rule fits is left out. It throws a plain `Error` for what is wrong with the call: a
+ * schema that is not the JSON text of `{ fields }`, a `rowKey` or a `distinct` name the schema does
+ * not have, a count that is not a whole number.
+ *
+ * @param {string} schema the schema JSON, as `inferSchema` writes it and `loadRows` takes it.
+ * @param {{ rowKey?: string, distinct?: Record<string, number> }} [options]
+ * @returns {{ columns: Record<string, object>, formats: Record<string, object> }}
+ */
+export function suggestColumns(schema, options = {}) {
+  let fields;
+  try {
+    fields = JSON.parse(schema)?.fields;
+  } catch {
+    fields = undefined;
+  }
+  if (!Array.isArray(fields)) {
+    throw new Error("suggestColumns: the schema is not the JSON text of { fields: [...] }");
+  }
+  const { rowKey, distinct = {} } = options;
+  const names = new Set(fields.map((field) => field?.name));
+  if (rowKey !== undefined && !names.has(rowKey)) {
+    throw new Error(`suggestColumns: rowKey ${rowKey} is not a field of the schema`);
+  }
+  for (const [name, count] of Object.entries(distinct)) {
+    if (!names.has(name)) {
+      throw new Error(`suggestColumns: distinct names ${name}, which is not a field of the schema`);
+    }
+    if (!Number.isInteger(count) || count < 0) {
+      throw new Error(`suggestColumns: distinct ${name} is ${count}, not a count of values`);
+    }
+  }
+  const columns = {};
+  const formats = {};
+  for (const { name, type } of fields) {
+    const few = distinct[name] <= FACET_LIST_MAX; // false where no count was handed in
+    if (name === rowKey) {
+      columns[name] = { readonly: true, mono: true, muted: true, width: 96 };
+    } else if (type === "int64" || type?.decimal) {
+      columns[name] = { align: "end", aggregate: "sum", ...(few && type === "int64" ? { facet: "list" } : {}) };
+    } else if (type === "float64") {
+      columns[name] = { align: "end" };
+    } else if (type === "date") {
+      formats[name] = { kind: "date" };
+    } else if (type === "utf8" && few) {
+      columns[name] = { facet: "list" };
+    }
+  }
+  return { columns, formats };
+}
+
 /**
  * Rows to a table in one call: the schema (`schema`, or `inferSchema(rows)`), a provider (the
  * worker, unless `provider` is given), the rows loaded into it, and the element connected.

@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-import { shadow } from "./helpers.js";
+import { shadow, status } from "./helpers.js";
 
 // Plain rows to a table without a schema (issue #460): `fromRows` infers one, loads the rows into
 // the worker and connects the grid; `inferSchema` refuses what it cannot type, naming row and field.
@@ -111,4 +111,91 @@ test("what inference cannot type is refused, naming row and field", async ({ pag
     { name: "day", type: "utf8", nullable: false },
     { name: "n", type: "int64", nullable: true },
   ]);
+});
+
+// `suggestColumns`: what the schema says about how the columns look, as the two objects a page hands
+// on. A plain function — it counts nothing, the caller says how many values a field has.
+const suggest = (page, schema, options) =>
+  page.evaluate(
+    ([schema, options]) => {
+      try {
+        return { ...window.__suggestColumns(schema, options) };
+      } catch (error) {
+        return { error: error.message };
+      }
+    },
+    [schema, options],
+  );
+
+const schemaOf = (...fields) => JSON.stringify({ fields: fields.map(([name, type]) => ({ name, type, nullable: false })) });
+
+test("suggestColumns reads the rules off the schema", async ({ page }) => {
+  await open(page);
+  const schema = schemaOf(
+    ["id", "int64"],
+    ["name", "utf8"],
+    ["country", "utf8"],
+    ["born", "date"],
+    ["amount", { decimal: { precision: 12, scale: 2 } }],
+    ["score", "float64"],
+    ["qty", "int64"],
+    ["active", "bool"],
+    ["seen", "timestamp"],
+  );
+  const { columns, formats } = await suggest(page, schema, { rowKey: "id", distinct: { country: 5, name: 40, qty: 4 } });
+  expect(columns).toEqual({
+    id: { readonly: true, mono: true, muted: true, width: 96 },
+    country: { facet: "list" },
+    amount: { align: "end", aggregate: "sum" },
+    score: { align: "end" },
+    qty: { align: "end", aggregate: "sum", facet: "list" },
+  });
+  expect(formats).toEqual({ born: { kind: "date" } });
+});
+
+test("suggestColumns offers a facet only for a count it was handed, at most 12", async ({ page }) => {
+  await open(page);
+  const schema = schemaOf(["country", "utf8"], ["city", "utf8"], ["region", "utf8"]);
+  const { columns } = await suggest(page, schema, { distinct: { country: 12, region: 13 } });
+  expect(columns).toEqual({ country: { facet: "list" } });
+  expect((await suggest(page, schema)).columns).toEqual({});
+});
+
+test("suggestColumns takes the key's rules and nothing else, and its result is a plain object to change", async ({ page }) => {
+  await open(page);
+  const schema = schemaOf(["id", "int64"], ["qty", "int64"]);
+  const { columns } = await suggest(page, schema, { rowKey: "id", distinct: { id: 3 } });
+  expect(columns.id).toEqual({ readonly: true, mono: true, muted: true, width: 96 });
+  const changed = await page.evaluate((schema) => {
+    const suggestions = window.__suggestColumns(schema, { rowKey: "id" });
+    suggestions.columns.qty.aggregate = "avg";
+    return window.__suggestColumns(schema, { rowKey: "id" }).columns.qty.aggregate;
+  }, schema);
+  expect(changed).toBe("sum");
+});
+
+test("suggestColumns names what is wrong with the call", async ({ page }) => {
+  await open(page);
+  const schema = schemaOf(["id", "int64"]);
+  expect((await suggest(page, "not json")).error).toContain("not the JSON text of { fields");
+  expect((await suggest(page, "{}")).error).toContain("not the JSON text of { fields");
+  expect((await suggest(page, schema, { rowKey: "key" })).error).toContain("rowKey key is not a field");
+  expect((await suggest(page, schema, { distinct: { nope: 1 } })).error).toContain("distinct names nope");
+  expect((await suggest(page, schema, { distinct: { id: 1.5 } })).error).toContain("distinct id is 1.5");
+  expect((await suggest(page, schema, { distinct: { id: -1 } })).error).toContain("distinct id is -1");
+});
+
+test("what suggestColumns gives is taken by a grid as it is", async ({ page }) => {
+  await open(page);
+  await expect.poll(() => column(page, 2)).toEqual(["1815-12-10", "1906-12-09", ""]);
+  await page.evaluate(async () => {
+    const loader = await window.__loadOpengrid();
+    const grid = document.querySelector("opengrid-grid");
+    const { columns, formats } = window.__suggestColumns(window.__shown.schema, { rowKey: "id", distinct: { active: 2 } });
+    loader.module.set_columns(grid, columns);
+    loader.module.set_formats(grid, formats);
+  });
+  // The date column is formatted now — the format the schema suggested — and nothing was refused.
+  await expect.poll(() => column(page, 2)).not.toEqual(["1815-12-10", "1906-12-09", ""]);
+  expect(await status(page)).not.toMatch(/not applied|unknown|refused|not a/i);
 });

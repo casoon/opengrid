@@ -17,6 +17,7 @@ import {
   fromRows,
   inferSchema,
   loadOpengrid,
+  suggestColumns,
   type CellChangeDetail,
   type CodedError,
   type Engine,
@@ -491,4 +492,12 @@ export async function plainRows(grid: HTMLElement): Promise<void> {
   await fromRows(grid, rows, { schema: { fields: [] } });
   // @ts-expect-error — rows are objects keyed by field name
   inferSchema([1, 2]);
+  const { columns, formats } = suggestColumns(schema, { rowKey: "id", distinct: { name: 3 } });
+  const loaded = await loadOpengrid();
+  if (!loaded.fallback) {
+    loaded.module.set_columns(grid, columns);
+    loaded.module.set_formats(grid, formats);
+  }
+  // @ts-expect-error — the schema is the JSON text, not the parsed object
+  suggestColumns({ fields: [] });
 }
