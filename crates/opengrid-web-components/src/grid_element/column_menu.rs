@@ -72,6 +72,10 @@ pub(super) fn open_column_menu(host: &HtmlElement, col: usize) {
                 .narrow_pin(&name, &presentation::page_columns(host))
                 .is_some(),
             lookup: presentation::styles(host).lookup(&name).is_some(),
+            // Only where the page lets the column be edited: the reader's lock
+            // narrows what the page allows, it never widens it (issue #527).
+            lock: (!edit_locked(host) && !is_tree(host) && !page_readonly_column(host, &field))
+                .then(|| columns::layout(host).borrow().is_locked(&name)),
         };
         (crate::column_menu::entries(&column, &texts), name)
     };
@@ -356,6 +360,8 @@ pub(super) fn activate_menu_item(host: &HtmlElement, item: &Element) {
             }
         }
         "hide" => set_column_hidden(host, &name, true),
+        "lock" => set_column_locked(host, &name, true),
+        "unlock" => set_column_locked(host, &name, false),
         "hide-band" => hide_band(host, col),
         "pin:none" => pin_column(host, &name, None),
         "pin:start" => pin_column(host, &name, Some(Pin::Start)),

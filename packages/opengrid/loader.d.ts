@@ -946,6 +946,8 @@ export interface View {
   aggregates: Record<string, Aggregate>;
   /** Whether the filter row shows. */
   filterRow: boolean;
+  /** The columns the reader locked against editing; never beyond what the page allows. */
+  locked: string[];
   facets: Record<string, FacetSelection>;
   /**
    * The keys of the selected records, where the grid selects by key (`row-key`,
@@ -1258,6 +1260,12 @@ export type TextKey =
   | "bulkMenu"
   | "bulkReadonly"
   | "editLocked"
+  | "editUnlocked"
+  | "editToggle"
+  | "lockColumn"
+  | "unlockColumn"
+  | "columnLocked"
+  | "columnUnlocked"
   | "editHint"
   | "editLockedHint"
   | "bulkDone"
@@ -1615,6 +1623,8 @@ export interface OpengridGridAttributes {
   "add-row"?: string;
   /** Locks editing for the whole grid: no editor, paste, bulk set, record form, new row or undo. Remove it to unlock. */
   "edit-locked"?: string;
+  /** An *Edit* switch in the toolbar that sets and removes `edit-locked`. Needs `toolbar`. */
+  "edit-toggle"?: string;
   selection?: string;
   density?: Density;
   /** One of the built-in looks; Base when absent. */

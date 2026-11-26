@@ -15,7 +15,7 @@
 //! mouse fails it. So the keyboard protocol comes first and dragging, if it ever
 //! arrives, is the addition.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 /// The narrowest a key press will take a column, in pixels.
 ///
@@ -130,6 +130,10 @@ pub struct ColumnLayout {
     /// Where the reader pinned a column for narrow grids only (issue #525), or
     /// kept it from being pinned there (`None`); sorted like `pins`.
     narrow_pins: Vec<(String, Option<Pin>)>,
+    /// Columns the reader locked against editing (issue #527). It only ever
+    /// narrows what the page allows: a column the page keeps from editing is
+    /// not edited whatever is in here. Sorted, so a view writes it the same way.
+    locked: BTreeSet<String>,
 }
 
 impl ColumnLayout {
@@ -316,6 +320,26 @@ impl ColumnLayout {
             .position(|(column, _)| column.as_str() > name)
             .unwrap_or(self.pins.len());
         self.pins.insert(at, (name.to_owned(), pin));
+    }
+
+    /// Whether the reader locked a column against editing (issue #527).
+    pub fn is_locked(&self, name: &str) -> bool {
+        self.locked.contains(name)
+    }
+
+    /// Locks or unlocks a column for the reader. Answers whether anything
+    /// changed.
+    pub fn set_locked(&mut self, name: &str, locked: bool) -> bool {
+        if locked {
+            self.locked.insert(name.to_owned())
+        } else {
+            self.locked.remove(name)
+        }
+    }
+
+    /// The columns the reader locked, by name.
+    pub fn locked(&self) -> Vec<String> {
+        self.locked.iter().cloned().collect()
     }
 
     /// Whether a column is hidden.

@@ -9,13 +9,94 @@ pub(super) fn edit_locked(host: &HtmlElement) -> bool {
     host.has_attribute(grid::EDIT_LOCKED_ATTRIBUTE)
 }
 
-/// Whether column `field` never opens an editor, whatever the lock (issues #153,
-/// #523): the page fills it, or it is the `row-key` column the page did not
-/// open. The one answer the editor, paste, the bulk panel, the record form, the
-/// new row and the marks of the cells all take.
-pub(super) fn readonly_column(host: &HtmlElement, field: &opengrid_types::Field) -> bool {
+/// Whether the page keeps column `field` from being edited (issues #153, #523,
+/// #527): it fills it, it is the `row-key` column the page did not open, or the
+/// page marked other columns for editing and not this one. What the reader may
+/// lock is what this lets through.
+pub(super) fn page_readonly_column(host: &HtmlElement, field: &opengrid_types::Field) -> bool {
     let key = row_key_of(host);
-    presentation::styles(host).readonly(field.name.as_str(), key.as_ref().map(|key| key.as_str()))
+    let styles = presentation::styles(host);
+    let name = field.name.as_str();
+    styles.readonly(name, key.as_ref().map(|key| key.as_str())) || styles.unmarked(name)
+}
+
+/// Whether column `field` never opens an editor, whatever the lock (issues #153,
+/// #523, #527): the page keeps it from being edited, or the reader locked it.
+/// The one answer the editor, paste, the bulk panel, the record form, the new
+/// row and the marks of the cells all take.
+pub(super) fn readonly_column(host: &HtmlElement, field: &opengrid_types::Field) -> bool {
+    page_readonly_column(host, field)
+        || columns::layout(host)
+            .borrow()
+            .is_locked(field.name.as_str())
+}
+
+/// Applies a change of what may be edited — the attribute `edit-locked`, or a
+/// column the reader locked (issue #527). With `closing` what the reader had
+/// open is dropped unconfirmed; the new row goes or comes back. No event, no
+/// query: the data, the sort, the filter, the scroll position and the focus stay.
+pub(super) fn edit_state_changed(host: &HtmlElement, closing: bool) {
+    let Some(runtime) = runtime(host) else {
+        return;
+    };
+    if closing {
+        end_edit(host, false);
+        paste::discard(host);
+        if let Some(root) = host.shadow_root() {
+            bulk::close(&root);
+            record::close_dialog(&root);
+        }
+    }
+    sync_add_row(host, &runtime);
+    render(host, false);
+    sync_edit_toggle(host);
+}
+
+/// Locks or unlocks a column for the reader, from the column menu (issue #527).
+/// The lock narrows what the page allows and never widens it: a column the page
+/// keeps from editing offers neither.
+pub(super) fn set_column_locked(host: &HtmlElement, name: &str, locked: bool) {
+    if !columns::update(host, |layout| layout.set_locked(name, locked)) {
+        return;
+    }
+    edit_state_changed(host, locked);
+    let texts = texts(host);
+    let said = if locked {
+        texts.column_locked(name)
+    } else {
+        texts.column_unlocked(name)
+    };
+    announce(host, &said);
+    dispatch_view(host);
+}
+
+/// Whether the toolbar's switch offers editing: it is the inverse of the lock.
+pub(super) fn sync_edit_toggle(host: &HtmlElement) {
+    let Some(root) = host.shadow_root() else {
+        return;
+    };
+    if let Ok(Some(button)) = root.query_selector("[data-toolbar=\"edit\"]") {
+        let _ = button.set_attribute("aria-pressed", &(!edit_locked(host)).to_string());
+    }
+}
+
+/// The toolbar's "Edit" switch (issue #527): it sets and removes `edit-locked`,
+/// which is the whole state. What it says is said with the change.
+pub(super) fn toggle_editing(host: &HtmlElement) {
+    let locking = !edit_locked(host);
+    let texts = texts(host);
+    if let Some(runtime) = runtime(host) {
+        runtime.borrow_mut().state.set_notice(if locking {
+            texts.edit_locked.clone()
+        } else {
+            texts.edit_unlocked.clone()
+        });
+    }
+    let _ = if locking {
+        host.set_attribute(grid::EDIT_LOCKED_ATTRIBUTE, "")
+    } else {
+        host.remove_attribute(grid::EDIT_LOCKED_ATTRIBUTE)
+    };
 }
 
 /// Writes the footer's edit hint (issue #523): that editing is locked, for as

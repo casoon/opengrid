@@ -65,6 +65,12 @@ Two things belong in every release entry and are easy to leave out:
   (`overscroll-behavior-x: contain`); the page still scrolls on at the grid's end. New docs section
   for pages on a phone ([#526](https://github.com/casoon/opengrid/issues/526)). Details:
   [On a phone](https://casoon.github.io/opengrid/docs/api/#on-a-phone).
+- **Grid:** who may edit is decided in three layers, each narrowing the one before: `edit-locked`
+  for the whole grid, with the new `edit-toggle` (an *Edit* switch in the toolbar, adapters:
+  `editToggle`); the columns the page marked `editable: true` — once one is marked, only those edit —
+  and the reader's *Lock column* / *Unlock column* in the column menu, kept in the view as `locked`
+  ([#527](https://github.com/casoon/opengrid/issues/527)). Details:
+  [Locking edits](https://casoon.github.io/opengrid/docs/api/#locking-edits).
 
 ### Changed
 

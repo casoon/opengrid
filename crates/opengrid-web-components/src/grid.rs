@@ -399,6 +399,9 @@ pub const BULK_PARTS: [&str; 3] = ["bulk", "bulk-apply", "bulk-cancel"];
 pub const ADD_ROW_ATTRIBUTE: &str = "add-row";
 /// The grid-wide lock on editing (issue #494): present means no edit gets in.
 pub const EDIT_LOCKED_ATTRIBUTE: &str = "edit-locked";
+/// `edit-toggle`: the toolbar offers a switch that sets and removes
+/// `edit-locked` (issue #527). It needs `toolbar`.
+pub const EDIT_TOGGLE_ATTRIBUTE: &str = "edit-toggle";
 
 /// The boolean attribute that shows the facet sidebar (point 66).
 ///
@@ -716,6 +719,7 @@ pub const OBSERVED: &[&str] = &[
     SEARCH_ATTRIBUTE,
     ADD_ROW_ATTRIBUTE,
     EDIT_LOCKED_ATTRIBUTE,
+    EDIT_TOGGLE_ATTRIBUTE,
     // CSS alone: the look is `:host([theme=…])` rules (issue #32).
     crate::theme::THEME_ATTRIBUTE,
 ];
@@ -1777,6 +1781,9 @@ pub struct GridSkeleton<'a> {
     pub toolbar: bool,
     /// Whether the toolbar has the button of the filter builder (issue #324).
     pub filter_builder: bool,
+    /// Whether the toolbar has the switch for editing (issue #527), and whether
+    /// editing is on now: `Some(pressed)`.
+    pub edit_toggle: Option<bool>,
     /// Whether the facet sidebar is built (point 66).
     pub facets: bool,
     /// Whether the search field is built (point 67).
@@ -2611,6 +2618,7 @@ pub fn build_grid(
         column_menu,
         toolbar,
         filter_builder,
+        edit_toggle,
         facets,
         search,
         actions,
@@ -2638,6 +2646,7 @@ pub fn build_grid(
             filter_builder,
             !presentation.facets().is_empty(),
             facets,
+            edit_toggle,
         )
     });
     if search && !toolbar {
@@ -3366,6 +3375,7 @@ fn build_toolbar(
     filter_builder: bool,
     has_facets: bool,
     facets_shown: bool,
+    edit_toggle: Option<bool>,
 ) -> (NodeId, NodeId) {
     let attribute = |buffer: &mut PatchBuffer, node: NodeId, name: &str, value: &str| {
         buffer.push(Patch::SetAttribute {
@@ -3458,6 +3468,21 @@ fn build_toolbar(
         buffer.push(Patch::SetText {
             node: switch,
             text: texts.facets_toggle.clone(),
+        });
+        set_lang(buffer, switch, texts);
+    }
+
+    // The switch for editing (issue #527): pressed while editing is on, so the
+    // lock the page set at first is a button that unlocks.
+    if let Some(pressed) = edit_toggle {
+        let switch = element(buffer, nodes, Some(row), "button");
+        attribute(buffer, switch, "type", "button");
+        attribute(buffer, switch, "part", "edit-toggle");
+        attribute(buffer, switch, "data-toolbar", "edit");
+        attribute(buffer, switch, "aria-pressed", &pressed.to_string());
+        buffer.push(Patch::SetText {
+            node: switch,
+            text: texts.edit_toggle.clone(),
         });
         set_lang(buffer, switch, texts);
     }
@@ -5958,6 +5983,7 @@ mod tests {
                 actions: &[],
                 bands: &[],
                 filter_builder: false,
+                edit_toggle: None,
             },
         );
         let (plain, lookup) = (&view.filter.columns[0], &view.filter.columns[1]);
@@ -6160,6 +6186,7 @@ mod tests {
                 column_menu: false,
                 toolbar: false,
                 filter_builder: false,
+                edit_toggle: None,
                 facets: false,
                 search: false,
                 actions: &[],
@@ -6260,6 +6287,7 @@ mod tests {
                 column_menu: false,
                 toolbar: false,
                 filter_builder: false,
+                edit_toggle: None,
                 facets: false,
                 search: false,
                 actions: &[],
@@ -6336,6 +6364,7 @@ mod tests {
                 column_menu: false,
                 toolbar: false,
                 filter_builder: false,
+                edit_toggle: None,
                 facets: false,
                 search: false,
                 actions: &[],
@@ -6396,6 +6425,7 @@ mod tests {
                 column_menu: false,
                 toolbar: false,
                 filter_builder: false,
+                edit_toggle: None,
                 facets: false,
                 search: false,
                 actions: &[],
@@ -6476,6 +6506,7 @@ mod tests {
                 column_menu: false,
                 toolbar: false,
                 filter_builder: false,
+                edit_toggle: None,
                 facets: false,
                 search: false,
                 actions: &[],
@@ -6570,6 +6601,7 @@ mod tests {
                 column_menu: false,
                 toolbar: false,
                 filter_builder: false,
+                edit_toggle: None,
                 facets: false,
                 search: false,
                 actions: &[],
@@ -6605,6 +6637,7 @@ mod tests {
                 column_menu: false,
                 toolbar: false,
                 filter_builder: false,
+                edit_toggle: None,
                 facets: false,
                 search: false,
                 actions: &[],
@@ -6686,6 +6719,7 @@ mod tests {
                 column_menu: false,
                 toolbar: false,
                 filter_builder: false,
+                edit_toggle: None,
                 facets: false,
                 search: false,
                 actions: &[],
@@ -6785,6 +6819,7 @@ mod tests {
                 column_menu: false,
                 toolbar: false,
                 filter_builder: false,
+                edit_toggle: None,
                 facets: true,
                 search: false,
                 actions: &[],
@@ -6840,6 +6875,7 @@ mod tests {
                 column_menu: true,
                 toolbar: true,
                 filter_builder: false,
+                edit_toggle: None,
                 facets: true,
                 search: true,
                 actions: &[],
@@ -6994,6 +7030,7 @@ mod tests {
                 column_menu: false,
                 toolbar: false,
                 filter_builder: false,
+                edit_toggle: None,
                 facets: false,
                 search: false,
                 actions: &[],
@@ -7054,6 +7091,7 @@ mod tests {
                 column_menu: false,
                 toolbar: false,
                 filter_builder: false,
+                edit_toggle: None,
                 facets: false,
                 search: false,
                 actions: &[],
@@ -7110,6 +7148,7 @@ mod tests {
                 column_menu: false,
                 toolbar: false,
                 filter_builder: false,
+                edit_toggle: None,
                 facets: false,
                 search: false,
                 actions: &[],
@@ -7196,6 +7235,7 @@ mod tests {
                 column_menu: false,
                 toolbar: false,
                 filter_builder: false,
+                edit_toggle: None,
                 facets: false,
                 search: false,
                 actions: &[],
@@ -7288,6 +7328,7 @@ mod tests {
                 column_menu: false,
                 toolbar: false,
                 filter_builder: false,
+                edit_toggle: None,
                 facets: false,
                 search: false,
                 actions: &[],
@@ -7350,6 +7391,7 @@ mod tests {
                 column_menu: false,
                 toolbar: false,
                 filter_builder: false,
+                edit_toggle: None,
                 facets: false,
                 search: false,
                 actions: &[],
@@ -7857,6 +7899,7 @@ mod tests {
                     column_menu: false,
                     toolbar: false,
                     filter_builder: false,
+                    edit_toggle: None,
                     facets: false,
                     search: false,
                     actions: &[],
@@ -7926,6 +7969,7 @@ mod tests {
                     column_menu: false,
                     toolbar: false,
                     filter_builder: false,
+                    edit_toggle: None,
                     facets: false,
                     search: false,
                     actions: &[],
@@ -8050,6 +8094,7 @@ mod tests {
                 column_menu: false,
                 toolbar: false,
                 filter_builder: false,
+                edit_toggle: None,
                 facets: false,
                 search: false,
                 actions: &[Action {

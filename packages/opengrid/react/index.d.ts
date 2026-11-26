@@ -65,6 +65,8 @@ export interface OpengridGridProps extends ConnectOptions, ElementProps {
   addRow?: boolean;
   /** Locks editing for the whole grid; the page unlocks it at run time. */
   editLocked?: boolean;
+  /** An *Edit* switch in the toolbar that locks and unlocks editing (needs `toolbar`). */
+  editToggle?: boolean;
   search?: boolean;
   facets?: boolean;
   toolbar?: boolean;

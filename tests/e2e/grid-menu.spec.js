@@ -239,6 +239,8 @@ test("every entry has a way in without the menu", async ({ page }) => {
     "pin:start": "Alt+Shift+arrow on the header",
     "pin:end": "Alt+Shift+arrow on the header",
     "pin:narrow": "pinNarrow in set_columns / set_view",
+    lock: "set_view (locked)",
+    unlock: "set_view (locked)",
     "group:first": "group-by / set_view",
     "group:second": "group-by / set_view",
     "group:remove": "group-by / set_view",

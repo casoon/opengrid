@@ -178,6 +178,7 @@ export const OpengridGrid = component(
     collation: "collation",
     addRow: "add-row",
     editLocked: "edit-locked",
+    editToggle: "edit-toggle",
     search: "search",
     facets: "facets",
     toolbar: "toolbar",
@@ -187,7 +188,7 @@ export const OpengridGrid = component(
     density: "density",
     theme: "theme",
   },
-  ["search", "facets", "toolbar", "columnMenu", "filterBuilder", "selection", "addRow", "editLocked"],
+  ["search", "facets", "toolbar", "columnMenu", "filterBuilder", "selection", "addRow", "editLocked", "editToggle"],
 );
 
 export const OpengridTable = component(

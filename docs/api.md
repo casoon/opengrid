@@ -254,6 +254,7 @@ An interactive `<table role="grid">`: virtualized, keyboard-driven, filterable.
 | `toolbar` | Puts a **toolbar** above the grid: the active filters and the grouping as chips, a switch for the filter row, the column list, the density. Opt-in. See [Toolbar](#toolbar). |
 | `add-row` | An empty **new row** after the last one: type a record into it. See [Adding rows](#adding-rows). Off while grouped, in a tree and with `page-size`. |
 | `edit-locked` | **Locks editing** for the whole grid; remove it to unlock. See [Locking edits](#locking-edits). |
+| `edit-toggle` | Puts an **Edit** switch into the toolbar that sets and removes `edit-locked`. Needs `toolbar`. See [Locking edits](#locking-edits). |
 | `filter-builder` | Puts **Advanced filter** into the toolbar: the button that opens the builder of the [nested filter](#nested-filter). Opt-in, and only with `toolbar`. Without it a nested filter still works — the search expression writes it, the view carries it — and its chip still opens the builder. |
 | `column-menu` | Gives every header a **column menu**: sort, filter, aggregate, group, hide. Opt-in. See [Column menu](#column-menu). |
 | `selection` | Shows the **selection column**: a checkbox per row and one in the header. Opt-in — selecting rows works from the keyboard either way; what this adds is the column that shows it and the pointer path to it. |
@@ -616,6 +617,10 @@ aggregates through `group-by`, `set_columns` or the view.
 The `⋯` in the header is the pointer path, 24px square. It is not a second tab
 stop inside the grid: the header cell holds the roving tabindex and says its
 shortcut through `aria-keyshortcuts`.
+
+A column the page lets be edited has **Lock column** (**Unlock column** once locked): the reader's
+lock against editing ([Locking edits](#locking-edits)); it is also the one entry whose first door is
+`set_view` (`locked`).
 
 The menu is `role="menu"` and holds **no form**: "Filter …" moves the focus to
 the column's field in the filter row, because a field inside a menu breaks the
@@ -1580,7 +1585,7 @@ Sort, filters, column layout and density are one value:
 ```js
 const view = loader.module.get_view(grid);
 // { sort: [{field, direction}], filters: [{column, op, value}],
-//   columns: { order, hidden, widths, pinned, pinnedNarrow }, density,
+//   columns: { order, hidden, widths, pinned, pinnedNarrow }, density, locked: [],
 //   group: [], expanded: [], facets: {}, selected: [4, 9],
 //   where: { or: [{ field: "country", op: "eq", value: "DE" },
 //                 { field: "amount", op: "gte", value: 1000 }] } }
@@ -1601,6 +1606,7 @@ whenever the reader changes any of it.
 | Setting what it has | Costs nothing and says nothing — a page that writes the view back on every event must not make the grid talk to itself. |
 | Why it changed | `set_view(host, view, { notice })`: the page's sentence — "Saved view Q3 applied", "Filtered by the assistant" — is said **once, with the result**, in the one live region: `17 matches · Filtered by the assistant`. A second live region of the page would be a second utterance. A view the element already has says nothing, notice or not. The same on `<opengrid-pivot>`. |
 | `columns.pinned` | The reader's pins, `{ customer: "start", id: "none" }`: `start`, `end`, or `none` for a pin of `set_columns` taken away ([Pinned columns](#pinned-columns)). Leads over `set_columns`. A view saved without it leaves the pins to the page. |
+| `locked` | The columns the reader locked against editing, `["price", "note"]` ([Locking edits](#locking-edits)); always there, `[]` when none. A name the grid does not have refuses the view. |
 | `columns.pinnedNarrow` | The reader's pins for narrow grids, `{ customer: "start", id: "none" }`: `none` keeps a column loose there, a pin of the page's or the key column's taken away ([Pinned columns](#pinned-columns)). |
 | `group`, `expanded` | The grouping and its open groups. A path of keys that matches no group opens nothing. |
 | `aggregates` | The reader's aggregate per column, `{ amount: "sum" }`. Leads over `set_columns`. |
@@ -1940,6 +1946,8 @@ Every column can be edited **except** the read-only ones (issue #523):
 | Read-only | Why |
 |---|---|
 | A column with `readonly: true` in `set_columns` | the page fills it with `set_values` |
+| A column the page left out | as soon as **one column has `editable: true`**, only the marked columns edit — a column the page opened with `readonly: false` counts as marked ([Locking edits](#locking-edits)) |
+| A column the **reader locked** | the column menu's *Lock column*, kept in the view ([Locking edits](#locking-edits)) |
 | The **`row-key` column** | its value names the record — saving, the selection, undo and the detail panel go by it. `readonly: false` opens it for a page that maintains keys. Left out of `columns`, the key is not shown at all and still names the records ([Saving edits](#saving-edits)). |
 
 A read-only column opens no editor, takes no paste, no value set for the selected rows and no input in
@@ -1952,8 +1960,9 @@ values in the muted ink; its cells say `aria-readonly`. A column the page gives 
 is drawn as the one to edit: its cells are tinted with `--og-editable`, translucent over the row, so a
 selected or hovered row still shows. On a touch screen (`pointer: coarse`), which has no cursor and no
 hover to hint at it, its header shows a **pencil** (the same part). The focused cell of such a column
-says how it opens in the footer (`part="edit-hint"`, `editHint`, not live). `editable` only draws: a
-column without it can still be edited, as before.
+says how it opens in the footer (`part="edit-hint"`, `editHint`, not live). Where **no** column is marked,
+`editable` only draws and every column can be edited, as before; once one is marked, the columns left out are read-only too
+([Locking edits](#locking-edits)).
 
 ```js
 loader.module.set_columns(grid, {
@@ -1985,6 +1994,28 @@ Setting or removing the attribute runs no query and keeps the data, the sort, th
 position and the focus. An editor that is open when the lock is set is closed **without** committing
 what was typed. The attribute is the whole state — the grid fires no event for it. Unlocked, the
 columns that are [read-only](#what-can-be-edited) stay so. Adapters take it as `editLocked`.
+
+**Who decides what** (issue #527). Three layers, and each only narrows the one before:
+
+| | |
+|---|---|
+| The grid | `edit-locked` locks **every** column, whatever a column says. Removed, the page's columns decide. |
+| The page, per column | `readonly: true` keeps a column from being edited. As soon as **one column has `editable: true`**, only the columns marked so edit — one the page opened with `readonly: false` counts as marked — and every other column is read-only, with the lock in its header. A grid in which no column is marked edits every column, as it always did. |
+| The reader, per column | The column menu's *Lock column* and *Unlock column*. The reader locks **only within what the page allows**: a column the page keeps from being edited offers neither, and the reader never unlocks it. |
+
+**The switch.** `edit-toggle` puts an **Edit** button into the toolbar (`part="edit-toggle"`, needs
+`toolbar`): `aria-pressed` while editing is on. It sets and removes `edit-locked` — the attribute stays
+the whole state, the grid fires no event for it — so a page that reads first sets `edit-locked` and
+`edit-toggle` and nothing else. The change is said in the status line (`editLocked`, `editUnlocked`);
+a lock closes what the reader had open without committing it, like `edit-locked` does. Adapters take it as
+`editToggle`.
+
+**Locking a column.** A column the reader locked behaves like a read-only one: no editor, no paste, no
+value set for the selected rows, no input in the record form, no requirement in the new row; its header
+shows the lock and its cells say `aria-readonly`. The change is said in the status line
+(`columnLocked`, `columnUnlocked`) and runs no query. The view holds the locks as **`locked`**, a list of
+field names ([The view](#the-view)); `set_view` restores them and refuses a name the grid does not have.
+A name of a column the page keeps from being edited stays in the view and opens nothing.
 
 ### Saving edits
 
@@ -2136,7 +2167,7 @@ theme that animates a part.
 
 **Parts:** `action`, `action-cell`, `action-header`, `add-field`, `add-filter`, `add-grouping`, `band`, `body`, `bulk`, `bulk-apply`, `bulk-cancel`, `caption`, `cell`, `cell-error`, `cell-menu`, `cell-saved`, `cell-saving`, `chip`, `chip-calc`, `chip-edit`, `chip-move`, `chip-remove`, `chips`,
 `chips-clear`, `column-menu`, `column-menu-button`, `column-toggle`, `columns`, `columns-toggle`, `density`, `detail`, `detail-toggle`, `drill-down`,
-`edge-end`, `edge-start`, `edit-hint`, `edit-mark`, `editor`, `empty`, `empty-reset`, `empty-text`, `facet`, `facet-bounds`, `facet-cost`, `facet-count`,
+`edge-end`, `edge-start`, `edit-hint`, `edit-mark`, `edit-toggle`, `editor`, `empty`, `empty-reset`, `empty-text`, `facet`, `facet-bounds`, `facet-cost`, `facet-count`,
 `facet-pill`, `facet-pills`, `facet-value`, `facets`, `facets-head`, `facets-toggle`, `filter`,
 `filter-builder`, `filter-builder-dialog`, `filter-clear`, `filter-dialog`, `filter-operator`, `filter-row-toggle`, `filter-value`, `footer`,
 `field-group`, `field-menu`, `group-mark`, `group-toggle`, `grouping-menu`, `header`, `layout`, `list`, `list-item`, `list-item-remove`, `listbox`, `menu-label`, `operator-menu`, `page-first`, `page-label`, `page-last`, `page-next`,
@@ -2361,7 +2392,10 @@ boolean reads — that is `set_formats`.
 | `sourceChanged` / `sourceRefresh` | `The data changed. Refresh to see it.` / `Refresh` | |
 | `undoNothing` / `redoNothing` | `Nothing to undo` / `Nothing to redo` | |
 | `bulkCaption` / `bulkApply` / `bulkMenu` | `Set {column} for {rows} selected` / `Set` / `Set for selected rows` | `{column}`, `{rows}` |
-| `editLocked` | `Editing is locked` | |
+| `editLocked` / `editUnlocked` | `Editing is locked` / `Editing is unlocked` | said when an edit is refused, and when the toolbar's switch changes it |
+| `editToggle` | `Edit` | the toolbar's switch |
+| `lockColumn` / `unlockColumn` | `Lock column` / `Unlock column` | the column menu |
+| `columnLocked` / `columnUnlocked` | `{column} locked against editing` / `{column} unlocked for editing` | `{column}` |
 | `editHint` / `editLockedHint` | `Enter to edit` / `Editing locked` — the footer's hint, not live | |
 | `bulkReadonly` / `bulkDone` | `{column} is read-only` / `{column} set for {rows}` | `{column}`, `{rows}` |
 | `pastePreview` / `pasteApply` / `pasteDiscard` | `Paste preview` / `Paste` / `Discard` | |

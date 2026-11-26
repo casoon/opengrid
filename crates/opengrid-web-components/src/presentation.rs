@@ -650,6 +650,17 @@ impl ColumnStyles {
         self.get(name).is_some_and(|column| column.editable)
     }
 
+    /// Whether the page left this column out of the ones it marked for editing
+    /// (issue #527): as soon as one column has `editable: true`, only the marked
+    /// columns edit — and a column the page opened with `readonly: false` is
+    /// as good as marked. A grid in which no column is marked edits every
+    /// column, as it always did.
+    pub fn unmarked(&self, name: &str) -> bool {
+        self.by_name.iter().any(|(_, column)| column.editable)
+            && !self.editable(name)
+            && self.get(name).and_then(|column| column.readonly) != Some(false)
+    }
+
     /// The labels of a column that stores keys (issue #326), if it has any.
     pub fn lookup(&self, name: &str) -> Option<&Rc<Lookup>> {
         self.get(name).and_then(|column| column.lookup.as_ref())

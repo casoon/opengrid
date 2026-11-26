@@ -242,6 +242,18 @@ impl GridView {
         }
         out.insert("aggregates".to_owned(), Value::Object(aggregates));
         out.insert("filterRow".to_owned(), Value::Bool(self.filter_row));
+        // The columns the reader locked against editing (issue #527); always
+        // there, an empty list when there are none.
+        out.insert(
+            "locked".to_owned(),
+            Value::Array(
+                self.columns
+                    .locked()
+                    .into_iter()
+                    .map(Value::String)
+                    .collect(),
+            ),
+        );
         out.insert("facets".to_owned(), self.facets.clone());
         // Only a selection by key, and only when there is one: a grid that
         // selects by position has nothing to write here.
@@ -499,6 +511,25 @@ impl GridView {
             .and_then(Value::as_bool)
             .unwrap_or(true);
 
+        // The reader's locks (issue #527): columns of this grid, or the view is
+        // refused like any view naming one it does not have.
+        match object.get("locked") {
+            None => {}
+            Some(Value::Array(names)) => {
+                for name in names.iter().filter_map(Value::as_str) {
+                    if known(name) {
+                        columns.set_locked(name, true);
+                    } else {
+                        problems.push(ViewProblem::new(
+                            "locked",
+                            format!("{name} is not a column of this grid"),
+                        ));
+                    }
+                }
+            }
+            Some(_) => problems.push(ViewProblem::new("locked", "locked is not a list")),
+        }
+
         // Facets name columns; which *kind* each is only the configuration
         // knows, so the selection is kept as written and read against it later.
         let mut facets = Map::new();
@@ -749,6 +780,29 @@ mod tests {
         let json = opengrid_json::json!({ "columns": { "pinnedNarrow": { "id": "middle" } } });
         let problems = GridView::from_json(&json, &declared()).expect_err("is refused");
         assert_eq!(problems[0].reason, "id: middle is not a pin");
+    }
+
+    /// The reader's locks are in the view under `locked` (issue #527), read
+    /// back as they were, and a column the grid does not have is named.
+    #[test]
+    fn a_view_holds_the_locked_columns() {
+        let json = opengrid_json::json!({ "locked": ["id", "amount"] });
+        let view = GridView::from_json(&json, &declared()).expect("reads");
+        assert_eq!(view.columns.locked(), ["amount", "id"]);
+        assert_eq!(
+            view.to_json()["locked"],
+            opengrid_json::json!(["amount", "id"])
+        );
+        assert_eq!(
+            GridView::default().to_json()["locked"],
+            opengrid_json::json!([]),
+            "a view without locks says none"
+        );
+        let json = opengrid_json::json!({ "locked": ["nope"] });
+        let problems = GridView::from_json(&json, &declared()).expect_err("is refused");
+        assert_eq!(problems[0].reason, "nope is not a column of this grid");
+        let json = opengrid_json::json!({ "locked": "id" });
+        assert!(GridView::from_json(&json, &declared()).is_err());
     }
 
     /// The pins are in the view under `columns.pinned` (issue #316), and one
