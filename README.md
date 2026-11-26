@@ -221,6 +221,10 @@ is tested and what is not: [Accessibility](https://github.com/casoon/opengrid/bl
 Pre-1.0: a minor version may change the API, a patch version does not
 ([CHANGELOG](https://github.com/casoon/opengrid/blob/main/CHANGELOG.md)).
 
+## Author
+
+Built and maintained by [Jörn Seidel](https://www.casoon.de/joern-seidel/) ([CASOON](https://www.casoon.de/)). Background and design decisions are described in an article on Insights (in German): [opengrid und MCP: Ein Data Grid für Modell und Mensch](https://insights.casoon.de/artikel/opengrid-mcp-data-grid-fuer-modell-und-mensch/).
+
 ## Licence
 
 MIT OR Apache-2.0.
