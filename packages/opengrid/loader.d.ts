@@ -1269,6 +1269,7 @@ export type TextKey =
   | "recordDone"
   | "recordNothing"
   | "rangeSize"
+  | "positionCell"
   | "rangeCopied"
   | "rangeUnloaded"
   | "sourceChanged"

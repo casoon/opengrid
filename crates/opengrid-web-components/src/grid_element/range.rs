@@ -75,6 +75,8 @@ pub(super) fn paint(host: &HtmlElement) {
             _ => {}
         }
     }
+    // The footer says the range's size and sums, or the focus's place (#525).
+    super::orientation::show(host);
 }
 
 pub(super) fn cell_of(td: &Element) -> Option<CellRef> {

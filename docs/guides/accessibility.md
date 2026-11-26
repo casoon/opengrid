@@ -14,6 +14,10 @@ Calling something accessible is easy and usually wrong, so here is the split.
 - Every feature is keyboard-operable. The grid follows the WAI-ARIA grid pattern; the key
   matrix is in [The public API](../../api/).
 - Every state change goes through one polite live region.
+- Where the focus is shows as well as being said: a tint on its row and its column's header, the
+  row and column in the footer, the rows in sight while flinging, a shadow at an edge with more
+  columns past it ([Where am I](../../api/#where-am-i)). Drawn only — the cells and the live region
+  say it already, so nothing is said twice.
 - The component's own words are English and overridable with `set_texts`. A `lang` given with
   them goes onto the elements that carry **those texts**, never onto the data. German ships with
   the package as `@casoon/opengrid/texts/de` ([Texts](../../api/#texts)).

@@ -465,11 +465,11 @@ custom properties (computed)
 
 parts
   action action-cell action-header add-field add-filter add-grouping band body bulk bulk-apply bulk-cancel caption cell cell-error cell-menu cell-saved cell-saving chip chip-calc chip-edit chip-move chip-remove chips chips-clear column-menu \
-column-menu-button column-toggle columns columns-toggle density detail detail-toggle drill-down edit-hint edit-mark editor empty empty-reset \
+column-menu-button column-toggle columns columns-toggle density detail detail-toggle drill-down edge-end edge-start edit-hint edit-mark editor empty empty-reset \
 empty-text facet facet-bounds facet-cost facet-count facet-pill facet-pills facet-value \
 facets facets-head facets-toggle field-group field-menu filter filter-builder filter-builder-dialog filter-clear filter-dialog filter-operator \
 filter-row-toggle filter-value footer group-mark group-toggle grouping-menu header layout list list-item list-item-remove listbox menu-label operator-menu \
-page-first page-label page-last page-next page-previous pager paste-apply paste-discard paste-preview paste-summary record-dialog refresh row row-header search search-hint \
+page-first page-label page-last page-next page-previous pager paste-apply paste-discard paste-preview paste-summary position record-dialog refresh row row-header scroll-position search search-hint \
 search-input search-list select select-all select-mark sort-button sort-direction \
 sort-index source status table toolbar total-row validation viewport
 
@@ -483,7 +483,7 @@ facetsToggle fieldEarlier fieldLater fieldRemove filterAny filterApplied filterB
 filterRemoved filterRowToggle filterValueLabel filtersCleared groupByColumn groupChip \
 groupCollapsed groupExpanded groupInvalid groupRow groupSecondLevel \
 groupingFull hideBand hideColumn lang listItemAdded listItemRemove listItemRemoved loading matchesOne matchesOther newRow noValue nothingToAdd operatorLabel \
-operators pageFirst pageLast pageNext pageOf pagePrevious pasteApplied pasteApply pasteBadOne pasteBadOther pasteBlocked pasteCutOff pasteDiscard pasteDiscarded pastePreview pasteUnreadable pinEnd pinGroup pinNone pinStart pinsReleased pivotColumns pivotDrillDown pivotFilterHint pivotFilterLabel pivotFilters pivotMeasures pivotRows pivotShowAs pivotToolbar queriesOne queriesOther queryAnd \
+operators pageFirst pageLast pageNext pageOf pagePrevious pasteApplied pasteApply pasteBadOne pasteBadOther pasteBlocked pasteCutOff pasteDiscard pasteDiscarded pastePreview pasteUnreadable pinEnd pinGroup pinNone pinStart pinsReleased pivotColumns pivotDrillDown pivotFilterHint pivotFilterLabel pivotFilters pivotMeasures pivotRows pivotShowAs pivotToolbar positionCell queriesOne queriesOther queryAnd \
 queryMissingCondition queryMissingJoin queryMissingValue queryOr queryUnclosed queryUnknownColumn queryUnopened queryWrongOperator rangeCopied rangeSize rangeUnloaded recordDone recordNothing recordSave recordTitle redoAdded redoCell redoNothing redoPaste redoRecord rowAdded rowsOne rowsOther runningTotal searchChip searchHint \
 searchLabel searchPlaceholder searchSuggestions selectAll selectedAll selectionCleared selectionMissing shareOfColumn shareOfRow shareOfTotal sortAscending \
 sortDescending sortKey sourceChanged sourceHybrid sourceLocal sourceRefresh sourceRemote sourceWorker subtotal subtreeCell subtreeOnly toolbarGroup total \

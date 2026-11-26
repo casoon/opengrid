@@ -377,6 +377,9 @@ pub struct GridTexts {
     pub record_nothing: String,
     /// What a marked block of cells is called. May use `{rows}` and `{cols}`.
     pub range_size: String,
+    /// Where the focused cell is, in the footer (issue #525). May use `{row}`,
+    /// `{rows}` and `{column}`.
+    pub position_cell: String,
     /// Said after a block was copied. May use `{rows}` and `{cols}`.
     pub range_copied: String,
     /// Said when the block reaches rows that are not loaded.
@@ -649,6 +652,7 @@ pub(crate) const KEYS: &[&str] = &[
     "recordDone",
     "recordNothing",
     "rangeSize",
+    "positionCell",
     "rangeCopied",
     "rangeUnloaded",
     "sourceChanged",
@@ -916,6 +920,7 @@ impl Default for GridTexts {
             record_done: "Record {row} saved, {count} fields changed".to_owned(),
             record_nothing: "Record {row}: no field changed".to_owned(),
             range_size: "{rows} by {cols} cells".to_owned(),
+            position_cell: "Row {row} of {rows} · {column}".to_owned(),
             range_copied: "Copied {rows} by {cols} cells".to_owned(),
             range_unloaded: "Not copied: the range reaches rows that are not loaded".to_owned(),
             source_changed: "The data changed. Refresh to see it.".to_owned(),
@@ -1168,6 +1173,16 @@ impl GridTexts {
             &fill(&self.range_size, "rows", &rows.to_string()),
             "cols",
             &cols.to_string(),
+        )
+    }
+
+    /// Where the focused cell is: "Row 1,234 of 5,000 · Customer". The numbers
+    /// come written as the page reads them.
+    pub fn position_cell(&self, row: &str, rows: &str, column: &str) -> String {
+        fill(
+            &fill(&fill(&self.position_cell, "row", row), "rows", rows),
+            "column",
+            self.column(column),
         )
     }
 
@@ -1938,6 +1953,7 @@ mod host {
         overwrite(&mut texts.record_done, string("recordDone"));
         overwrite(&mut texts.record_nothing, string("recordNothing"));
         overwrite(&mut texts.range_size, string("rangeSize"));
+        overwrite(&mut texts.position_cell, string("positionCell"));
         overwrite(&mut texts.range_copied, string("rangeCopied"));
         overwrite(&mut texts.range_unloaded, string("rangeUnloaded"));
         overwrite(&mut texts.source_changed, string("sourceChanged"));

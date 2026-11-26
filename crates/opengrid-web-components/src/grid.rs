@@ -888,6 +888,9 @@ pub struct GridNodes {
     /// How the focused cell is edited, or that editing is locked (issue #523);
     /// not live (`part="edit-hint"`).
     pub edit_hint: NodeId,
+    /// Where the focus is, or a range's size and sums (issue #525); not live
+    /// (`part="position"`).
+    pub position: NodeId,
     /// The scrollable viewport (`overflow-y: auto`) inside the shadow root.
     pub viewport: NodeId,
     /// The table's `<tbody>`, used as the sizer (`height = total * row_height`).
@@ -2019,6 +2022,31 @@ pub fn grid_css() -> String {
                              white-space: nowrap; }}
          [part=\"source\"]:empty {{ display: none; }}
          [part=\"edit-hint\"] {{ font-size: 0.75rem; white-space: nowrap; }}
+         /* Where the focus is (issue #525): the room the status line leaves,
+            so it gives way first on a phone. */
+         [part=\"position\"] {{ flex: 1 1 0; min-width: 0; overflow: hidden;
+                             text-overflow: ellipsis; white-space: nowrap;
+                             font-variant-numeric: tabular-nums; }}
+         [part=\"position\"]:empty {{ display: none; }}
+         /* The overlays of the viewport (issue #525), placed by the element
+            over the viewport's inner box. The fade is a transition, which the
+            reduced-motion rule at the end of the sheet takes away. */
+         [part=\"layout\"], [part=\"body\"] {{ position: relative; }}
+         [part=\"edge-start\"], [part=\"edge-end\"], [part=\"scroll-position\"] {{
+                   position: absolute; top: 0; left: 0; pointer-events: none; z-index: 3;
+                   opacity: 0; visibility: hidden;
+                   transition: opacity 150ms, visibility 0s 150ms; }}
+         [part=\"edge-start\"], [part=\"edge-end\"] {{ width: 10px; height: 0; }}
+         [part=\"edge-start\"] {{ background: linear-gradient(to right, color-mix(in oklab, var({INK_PROPERTY}) 16%, transparent), transparent); }}
+         [part=\"edge-end\"] {{ background: linear-gradient(to left, color-mix(in oklab, var({INK_PROPERTY}) 16%, transparent), transparent); }}
+         [part=\"edge-start\"]:dir(rtl) {{ background: linear-gradient(to left, color-mix(in oklab, var({INK_PROPERTY}) 16%, transparent), transparent); }}
+         [part=\"edge-end\"]:dir(rtl) {{ background: linear-gradient(to right, color-mix(in oklab, var({INK_PROPERTY}) 16%, transparent), transparent); }}
+         [part=\"scroll-position\"] {{ padding: 4px 10px; border-radius: 999px; white-space: nowrap;
+                   background: var({INK_PROPERTY}); color: var({SURFACE_PROPERTY});
+                   font-size: 0.8125rem; font-variant-numeric: tabular-nums;
+                   box-shadow: 0 2px 8px color-mix(in oklab, var({INK_PROPERTY}) 25%, transparent); }}
+         [data-shown]:is([part=\"edge-start\"], [part=\"edge-end\"], [part=\"scroll-position\"]) {{
+                   opacity: 1; visibility: visible; transition: opacity 150ms; }}
          [part=\"edit-hint\"]:empty {{ display: none; }}
          [part=\"status\"][data-state=\"error\"] {{ font-weight: bold; color: var({INK_PROPERTY}); }}
          [part=\"viewport\"] {{ flex: 1 1 0; min-height: 0; overflow-y: auto; position: relative; display: block; }}
@@ -2093,6 +2121,13 @@ pub fn grid_css() -> String {
          tbody tr[data-selected=\"true\"]:dir(rtl) {{
                      box-shadow: inset -3px 0 0 var({ACCENT_PROPERTY}); }}
          tbody tr:has(:focus) {{ z-index: 1; }}
+         /* The crosshair (issue #525): the focused cell's row and its column's
+            header take a light tint over their own background, so a reader
+            scrolled sideways still sees which row and which column. The focus
+            ring stays the mark; this only echoes it. */
+         tbody tr:focus-within, table:focus-within th[data-crosshair] {{
+                   background-image: linear-gradient(color-mix(in oklab, var({ACCENT_PROPERTY}) 8%, transparent), color-mix(in oklab, var({ACCENT_PROPERTY}) 8%, transparent)); }}
+         table:focus-within th[data-crosshair] {{ color: var({INK_PROPERTY}); }}
          tbody td:focus {{ white-space: normal; overflow-wrap: anywhere; }}
          tbody td {{ scroll-margin-top: var({HEADER_HEIGHT_PROPERTY}); }}
          /* Column bands (issue #319): the header is two rows tall, and a cell
@@ -2669,6 +2704,20 @@ pub fn build_grid(
         name: "tabindex".to_owned(),
         value: "-1".to_owned(),
     });
+    // Where am I (issue #525): a shadow at each edge with columns past it, and
+    // the rows in sight while a fling or a thumb drag runs. Laid over the
+    // viewport, not into it — inside, they would scroll with the rows — and
+    // drawn only: what they show, the scroll bar and `aria-rowindex` say too.
+    for part in ["edge-start", "edge-end", "scroll-position"] {
+        let node = element(buffer, nodes, Some(viewport_parent), "div");
+        for (name, value) in [("part", part), ("aria-hidden", "true")] {
+            buffer.push(Patch::SetAttribute {
+                node,
+                name: name.to_owned(),
+                value: value.to_owned(),
+            });
+        }
+    }
 
     // The footer (issue #33): the status line, and beside it where the
     // queries ran. The status line is the same live region as before; only
@@ -2681,6 +2730,15 @@ pub fn build_grid(
         value: "footer".to_owned(),
     });
     let status = build_status(buffer, nodes, footer, texts);
+    // Where the focus is (issue #525): "Row 1,234 of 5,000 · Customer", or a
+    // range's size and sums. Not live: the grid says every move already.
+    let position = element(buffer, nodes, Some(footer), "span");
+    buffer.push(Patch::SetAttribute {
+        node: position,
+        name: "part".to_owned(),
+        value: "position".to_owned(),
+    });
+    set_lang(buffer, position, texts);
     // How the focused cell is edited, or that editing is locked (issue #523).
     // Not live, like the source: it changes with every move of the focus, and
     // the cells already say `aria-readonly`.
@@ -3192,6 +3250,7 @@ pub fn build_grid(
         status,
         source,
         edit_hint: hint,
+        position,
         viewport,
         tbody,
         table,
@@ -6437,6 +6496,7 @@ mod tests {
             view.status,
             view.source,
             view.edit_hint,
+            view.position,
             view.columns.toggle,
             view.pager.container,
             view.empty,
@@ -6643,6 +6703,8 @@ mod tests {
                 "cell",
                 "columns",
                 "columns-toggle",
+                "edge-end",
+                "edge-start",
                 "edit-hint",
                 "edit-mark",
                 "empty",
@@ -6661,7 +6723,9 @@ mod tests {
                 "page-next",
                 "page-previous",
                 "pager",
+                "position",
                 "row",
+                "scroll-position",
                 "sort-direction",
                 "sort-index",
                 "source",
