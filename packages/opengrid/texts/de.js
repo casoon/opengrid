@@ -183,6 +183,7 @@ export default {
   "recordDone": "Datensatz {row} gespeichert, {count} Felder geändert",
   "recordNothing": "Datensatz {row}: kein Feld geändert",
   "rangeSize": "{rows} mal {cols} Zellen",
+  "positionCell": "Zeile {row} von {rows} · {column}",
   "rangeCopied": "{rows} mal {cols} Zellen kopiert",
   "rangeUnloaded": "Nicht kopiert: der Bereich reicht über Zeilen, die nicht geladen sind",
   "sourceChanged": "Die Daten haben sich geändert. Aktualisieren, um sie zu sehen.",

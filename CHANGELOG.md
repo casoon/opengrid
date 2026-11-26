@@ -49,6 +49,12 @@ Two things belong in every release entry and are easy to leave out:
   fire `opengrid-cell-action` (`onCellAction`) with the cell's column and record key
   ([#524](https://github.com/casoon/opengrid/issues/524)). Details:
   [The cell menu](https://casoon.github.io/opengrid/docs/api/#the-cell-menu).
+- **Grid:** where the focus is shows: its row and its column's header take a light tint, the
+  footer says `Row 1,234 of 5,000 · customer` (`positionCell`) or a range's size with its count,
+  sum and average — summed by the source when the range reaches past the loaded rows — a fling
+  shows the rows in sight beside the scroll bar, and an edge with columns past it shows a shadow
+  ([#525](https://github.com/casoon/opengrid/issues/525)). Details:
+  [Where am I](https://casoon.github.io/opengrid/docs/api/#where-am-i).
 
 ### Changed
 

@@ -100,6 +100,7 @@ mod filter_row;
 mod group_path;
 mod history;
 mod live;
+mod orientation;
 mod paste;
 mod pointer;
 mod presentation_columns;
@@ -339,6 +340,8 @@ struct GridRuntime {
     /// The nodes the page built for open panels, by key, so a panel scrolled
     /// out of view and back is the same node.
     detail_nodes: Vec<(String, JsValue)>,
+    /// A range's sums from the source and the scroll gesture (issue #525).
+    orientation: orientation::Orientation,
 }
 
 impl GridRuntime {
@@ -450,6 +453,7 @@ fn fresh_runtime(
         panels_shown: false,
         detail_wanted: Vec::new(),
         detail_nodes: Vec::new(),
+        orientation: Default::default(),
     }
 }
 
@@ -2312,6 +2316,10 @@ fn add_listeners(root: &ShadowRoot) {
     let _ = root.add_event_listener_with_callback("paste", pasted.unchecked_ref());
     let scroll = Closure::<dyn FnMut(Event)>::new(on_scroll).into_js_value();
     let _ = root.add_event_listener_with_callback_and_bool("scroll", scroll.unchecked_ref(), true);
+    // The end of a fling or a thumb drag takes the bubble away (issue #525).
+    let ended = Closure::<dyn FnMut(Event)>::new(orientation::on_scroll_end).into_js_value();
+    let _ =
+        root.add_event_listener_with_callback_and_bool("scrollend", ended.unchecked_ref(), true);
 }
 
 /// Handles the WAI-ARIA grid keyboard matrix
@@ -4000,6 +4008,15 @@ fn on_scroll(event: Event) {
             }
         }
     }
+    // The shadows at the edges follow a sideways scroll (issue #525).
+    if event
+        .target()
+        .and_then(|target| target.dyn_into::<Element>().ok())
+        .and_then(|target| target.get_attribute("part"))
+        .is_some_and(|part| part.split_whitespace().any(|name| name == "viewport"))
+    {
+        orientation::edges(&root);
+    }
     // While paging there is nothing to scroll into: the sizer is the page, and
     // the window belongs to the pager (point 38).
     if is_paging(&host) {
@@ -4071,6 +4088,8 @@ fn on_scroll(event: Event) {
             detail::row_at(&runtime, scroll_top),
         )
     };
+    // The rows in sight beside the scroll bar, while a fling runs (#525).
+    orientation::on_scroll(&host, &viewport, moved as f64, first_row);
     let wanted = (total_count > 0 && pool > 0)
         .then(|| grid::window_offset(first_row, total_count, pool))
         .filter(|wanted| *wanted != offset);
@@ -4331,13 +4350,16 @@ fn on_focus_in(event: Event) {
         matches!(from, ActiveCell::Band { .. }) && target.matches(&selector(from)).unwrap_or(false);
     if from == active || same_band {
         show_edit_hint(&host);
+        orientation::show(&host);
         return;
     }
     range::on_focus(&host, &runtime, active);
     runtime.borrow_mut().set_active(active);
     focus_from(&root, viewport.as_ref(), from, active);
-    // The focus moves without a frame; the footer's hint follows it (#523).
+    // The focus moves without a frame; the footer's hint follows it (#523),
+    // and the position with the crosshair (#525).
     show_edit_hint(&host);
+    orientation::show(&host);
 }
 
 /// The shadow root a delegated listener was installed on.

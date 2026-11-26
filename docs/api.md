@@ -999,7 +999,8 @@ fires nothing and says so in the status line. The edits are **one step** of the 
 cells“ — and each cell in it carries `data-range` (a tint with an outline, which holds in forced
 colours). **The row selection is another thing**: `Shift`+`Space` and the checkboxes select rows, and
 no cell says `aria-selected` for a range. Any key that moves or edits, a click elsewhere, and another
-result for the whole query end the range. Off while grouped and in a tree.
+result for the whole query end the range. Off while grouped and in a tree. The footer says its
+size, how many of its cells hold a value, and their sum and average ([Where am I](#where-am-i)).
 
 `Ctrl`/`Cmd`+`C` puts the block on the clipboard as a spreadsheet reads it: tab-separated, a line
 break after each row, a cell holding a tab, a line break or a double quote in double quotes. A cell is
@@ -1219,6 +1220,21 @@ grid.addEventListener("opengrid-cell-action", ({ detail }) => run(detail.id, det
 `column` is the field name, `key` the record's `row-key` value (only with a `row-key`), `row` a
 position. Group headers and the total offer no page items. `connect` takes them as `cellActions`
 and `onCellAction`.
+
+### Where am I
+
+What the grid shows about the focus's place (issue #525). All of it is **drawn only**: the cells
+say their place (`aria-rowindex`, `aria-colindex`) and the live region says every move and every
+range, so none of this is said a second time.
+
+| What | How it looks |
+|---|---|
+| Crosshair | While the focus is in the table, the focused cell's **row** and its column's **header** take a light tint of the accent over their own background — a reader scrolled sideways still sees which row and which column. The focus ring stays as it is. Under a forced palette the tint is gone; the ring keeps it. |
+| Position | The footer says where the focus is: `Row 1,234 of 5,000 · customer` (`part="position"`, `positionCell`), the numbers grouped as the page's `lang` writes them, the column by its title. Grouped, in a tree and on the new row, where a row has no number of its own, it names the column only. Not live. |
+| A range | The footer says the [range's](#copying-a-range-of-cells) size and sums instead: `3 by 12 cells · Count: 36 · Sum: 1,234.50 · Average: 34.29` (`rangeSize`, `aggregateCell`). *Count* is the cells that hold a value — NULL is none; *Sum* and *Average* are over the numbers among them, in the column's format where every number is of one column, plainly otherwise. A whole-number sum stays whole and a decimal one exact; the average has two places. |
+| A range past the loaded rows | Is summed by the **source**: one query for the range's columns over its rows, with the grid's filter and order, asked once the range has held still for a quarter of a second. Until it answers, the footer says the size alone; a range of more than 100,000 rows says only its size. |
+| While scrolling | A fling or a drag of the scroll bar's thumb — a scroll that goes on for more than two viewports — shows the rows in sight beside the scroll bar: `1,200–1,215` (`part="scroll-position"`, `aria-hidden`). It goes when the scroll ends (`scrollend`; where a browser sends none, when the scroll events stop). It fades, except under `prefers-reduced-motion`. |
+| Edges | While columns lie past an edge of the viewport, that edge shows a shadow (`part="edge-start"`, `part="edge-end"`, `aria-hidden`) — on a phone, the sign that more columns follow. Beside [pinned columns](#pinned-columns) the shadow stands where they end. Right to left the start is the right edge. |
 
 ### Tree
 
@@ -2105,11 +2121,11 @@ theme that animates a part.
 
 **Parts:** `action`, `action-cell`, `action-header`, `add-field`, `add-filter`, `add-grouping`, `band`, `body`, `bulk`, `bulk-apply`, `bulk-cancel`, `caption`, `cell`, `cell-error`, `cell-menu`, `cell-saved`, `cell-saving`, `chip`, `chip-calc`, `chip-edit`, `chip-move`, `chip-remove`, `chips`,
 `chips-clear`, `column-menu`, `column-menu-button`, `column-toggle`, `columns`, `columns-toggle`, `density`, `detail`, `detail-toggle`, `drill-down`,
-`edit-hint`, `edit-mark`, `editor`, `empty`, `empty-reset`, `empty-text`, `facet`, `facet-bounds`, `facet-cost`, `facet-count`,
+`edge-end`, `edge-start`, `edit-hint`, `edit-mark`, `editor`, `empty`, `empty-reset`, `empty-text`, `facet`, `facet-bounds`, `facet-cost`, `facet-count`,
 `facet-pill`, `facet-pills`, `facet-value`, `facets`, `facets-head`, `facets-toggle`, `filter`,
 `filter-builder`, `filter-builder-dialog`, `filter-clear`, `filter-dialog`, `filter-operator`, `filter-row-toggle`, `filter-value`, `footer`,
 `field-group`, `field-menu`, `group-mark`, `group-toggle`, `grouping-menu`, `header`, `layout`, `list`, `list-item`, `list-item-remove`, `listbox`, `menu-label`, `operator-menu`, `page-first`, `page-label`, `page-last`, `page-next`,
-`page-previous`, `pager`, `paste-apply`, `paste-discard`, `paste-preview`, `paste-summary`, `record-dialog`, `refresh`, `row`, `row-header`, `search`, `search-hint`, `search-input`, `search-list`,
+`page-previous`, `pager`, `paste-apply`, `paste-discard`, `paste-preview`, `paste-summary`, `position`, `record-dialog`, `refresh`, `row`, `row-header`, `scroll-position`, `search`, `search-hint`, `search-input`, `search-list`,
 `select`, `select-all`, `select-mark`, `sort-button`, `sort-direction`, `sort-index`, `source`, `status`,
 `table`, `toolbar`, `total-row`, `validation`, `viewport`.
 
@@ -2324,6 +2340,7 @@ boolean reads — that is `set_formats`.
 | `undoRecord` / `redoRecord` | `Undone: record {row}, {count} fields` / `Redone: …` | `{row}`, `{count}` |
 | `recordTitle` / `recordSave` / `recordDone` / `recordNothing` | `Edit record {row}` / `Save` / `Record {row} saved, {count} fields changed` / `Record {row}: no field changed` | `{row}`, `{count}` |
 | `rangeSize` / `rangeCopied` / `rangeUnloaded` | `{rows} by {cols} cells` / `Copied {rows} by {cols} cells` / `Not copied: the range reaches rows that are not loaded` | `{rows}`, `{cols}` |
+| `positionCell` | `Row {row} of {rows} · {column}` | `{row}`, `{rows}`, `{column}` |
 | `detailShow` / `detailHide` / `detailPanel` | `Show details` / `Hide details` / `Details` (before the row's first cell) | |
 | `detailShown` / `detailHidden` | `Details shown` / `Details hidden` | |
 | `sourceChanged` / `sourceRefresh` | `The data changed. Refresh to see it.` / `Refresh` | |

@@ -672,6 +672,9 @@ pub(super) fn observe_columns(root: &ShadowRoot) {
             align_filter(&host);
             say_release(&host);
             follow_row_height(&host);
+            if let Some(root) = host.shadow_root() {
+                orientation::edges(&root);
+            }
         }
     })
     .into_js_value();

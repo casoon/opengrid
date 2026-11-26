@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>opengrid orientation fixture</title>
+    <style>
+      body {
+        margin: 0;
+      }
+      /* Narrower than its columns (6 × 180 px), so it scrolls sideways. */
+      opengrid-grid {
+        display: block;
+        height: 420px;
+        width: min(640px, 100%);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid orientation fixture</h1>
+      <div id="frame">
+        <opengrid-grid
+          label="Bookings"
+          datasource="bookings"
+          columns="id,customer,city,seats,price,note"
+          window-size="30"
+          row-key="id"
+        ></opengrid-grid>
+      </div>
+    </main>
+    <script type="module">
+      // Issue #525: where am I — the crosshair, the position and a range's sums
+      // in the footer, the bubble while scrolling, the shadows at the edges.
+      // `?rtl` lays the grid out right to left; `?pin` pins `id` at the start.
+      // `window.__delay` holds every answer back that many milliseconds.
+      import { loadOpengrid, createLocalProvider } from "/packages/opengrid/loader.js";
+      import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+
+      const search = new URLSearchParams(location.search);
+      if (search.has("rtl")) document.getElementById("frame").dir = "rtl";
+      window.__queries = [];
+      window.__delay = 0;
+
+      await init();
+      const schema = JSON.stringify({
+        fields: [
+          { name: "id", type: "int64", nullable: false },
+          { name: "customer", type: "utf8", nullable: false },
+          { name: "city", type: "utf8", nullable: false },
+          { name: "seats", type: "int64", nullable: false },
+          { name: "price", type: { decimal: { precision: 10, scale: 2 } }, nullable: false },
+          { name: "note", type: "utf8", nullable: true },
+        ],
+      });
+      const rows = Array.from({ length: 5000 }, (_, index) => {
+        const id = index + 1;
+        return {
+          id,
+          customer: `Customer ${id}`,
+          city: ["Berlin", "Hamburg", "Munich"][id % 3],
+          seats: (id % 6) + 2,
+          price: (((id % 10) + 1) * 1.25).toFixed(2),
+          note: id % 4 === 0 ? null : `Note ${id}`,
+        };
+      });
+      const engine = createLocalProvider(new Engine());
+      await engine.loadRows("bookings", rows, schema);
+      const provider = {
+        kind: "local",
+        async execute(queryJson, mode) {
+          window.__queries.push(JSON.parse(queryJson));
+          if (window.__delay) await new Promise((resolve) => setTimeout(resolve, window.__delay));
+          return engine.execute(queryJson, mode);
+        },
+      };
+      const host = document.querySelector("opengrid-grid");
+      const loader = await loadOpengrid();
+      const width = { width: 180 };
+      loader.module.set_columns(host, {
+        id: search.has("pin") ? { ...width, pin: "start" } : width,
+        customer: width,
+        city: width,
+        seats: width,
+        price: width,
+        note: width,
+      });
+      loader.module.set_formats(host, {
+        price: { kind: "number", locale: "en-US", style: "currency", currency: "USD" },
+      });
+      loader.module.set_provider(host, provider);
+      window.__rows = rows;
+      window.__ready = true;
+    </script>
+  </body>
+</html>
