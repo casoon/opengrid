@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>opengrid derived fixture</title>
+    <style>
+      opengrid-grid {
+        display: block;
+        height: 320px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid derived fixture</h1>
+      <opengrid-grid
+        label="Rooms"
+        datasource="rooms"
+        columns="id,name,opened,opened_year"
+        window-size="12"
+        row-key="id"
+        add-row
+      ></opengrid-grid>
+    </main>
+    <script type="module">
+      // Issue #528: a derived field — the year of a date — is read-only. The grid learns it
+      // from `describe(source)` of the provider, which a result's schema cannot say.
+      //   ?provider=local (default) | worker | plain (a provider without `describe`) | slow (`describe` answers late)
+      //   ?editable  marks the derived column `editable`   ?open  gives it `readonly: false`
+      import { loadOpengrid, createLocalProvider, createWorkerProvider } from "/packages/opengrid/loader.js";
+      import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+
+      const query = new URLSearchParams(location.search);
+      await init();
+      const schemaOf = (derived) =>
+        JSON.stringify({
+          fields: [
+            { name: "id", type: "int64", nullable: false },
+            { name: "name", type: "utf8", nullable: false },
+            { name: "opened", type: "date", nullable: true },
+            derived
+              ? { name: "opened_year", type: "int64", nullable: true, from: { part: "year", field: "opened" } }
+              : { name: "opened_year", type: "int64", nullable: true },
+          ],
+        });
+      const rowsOf = (derived) =>
+        Array.from({ length: 4 }, (_, index) => ({
+          id: index + 1,
+          name: `R${index + 1}`,
+          opened: `202${index}-03-01`,
+          ...(derived ? {} : { opened_year: 2020 + index }),
+        }));
+      const kind = query.get("provider") ?? "local";
+      const engine = kind === "worker" ? createWorkerProvider() : createLocalProvider(new Engine());
+      await engine.loadRows("rooms", rowsOf(true), schemaOf(true));
+      // A provider of the page's own: it answers queries and says nothing of the schema.
+      const own = { execute: (json, mode) => engine.execute(json, mode), watch: (host) => engine.watch(host) };
+      const provider =
+        kind === "plain"
+          ? own
+          : kind === "slow"
+            ? { ...own, describe: (name) => new Promise((resolve) => setTimeout(() => resolve(engine.describe(name)), 600)) }
+            : engine;
+      const loader = await loadOpengrid();
+      const grid = document.querySelector("opengrid-grid");
+      const columns = { id: { pinNarrow: "none" } };
+      if (query.has("editable")) {
+        columns.opened_year = { editable: true };
+      }
+      if (query.has("open")) {
+        columns.opened_year = { readonly: false };
+      }
+      loader.module.set_columns(grid, columns);
+      loader.module.set_provider(grid, provider);
+      Object.assign(window, {
+        __module: loader.module,
+        __engine: engine,
+        __replace: (derived) => engine.loadRows("rooms", rowsOf(derived), schemaOf(derived)),
+        __ready: true,
+      });
+    </script>
+  </body>
+</html>

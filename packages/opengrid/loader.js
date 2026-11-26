@@ -296,6 +296,16 @@ export function createWorkerProvider({
     },
 
     /**
+     * What the source `name` is (issue #528): `{ name, schema }`, the schema as the
+     * source has it, with the `from` of a derived field — a result never says. A
+     * grid asks it once per `datasource`. Rejects for a source that is not loaded.
+     */
+    async describe(name) {
+      await start();
+      return { name, schema: JSON.parse(await request({ type: "describe", name })) };
+    },
+
+    /**
      * What the engine in the worker holds (issue #70): its WASM memory and,
      * per source, rows, columns and bytes.
      */
@@ -817,6 +827,10 @@ export function createLocalProvider(engine) {
     async unload(name) {
       return engine.unload(name);
     },
+    /** What the source `name` is (issue #528), as the worker provider says it. */
+    async describe(name) {
+      return { name, schema: JSON.parse(engine.describe(name)) };
+    },
     /** What the engine holds (issue #70), as the worker provider says it. */
     async stats() {
       return { kind: "local", ...JSON.parse(engine.stats()) };
@@ -884,7 +898,9 @@ export function createRestProvider({ url, source, token, watch = false } = {}) {
     /** Where the queries run; the grid names it in its footer (issue #33). */
     kind: "remote",
     /**
-     * What the server says this source is: `{ name, schema, capabilities }`.
+     * What the server says this source is: `{ name, schema, capabilities }`. A
+     * grid asks it for the derived fields of its source (issue #528); the
+     * provider is for one source, so an argument is ignored.
      *
      * A planner needs both halves before it can split anything — the
      * schema to validate against, the capabilities to know what may be pushed.
@@ -1244,6 +1260,8 @@ export function createHybridProvider({ remote, planner, mode = "auto", onPlan } 
   return {
     /** Where the queries run; the grid names it in its footer (issue #33). */
     kind: "hybrid",
+    // What the source is, where the remote half can say (issue #528).
+    ...(typeof remote?.describe === "function" ? { describe: (source) => remote.describe(source) } : {}),
     async execute(queryJson, elementMode, { signal } = {}) {
       // The element's attribute wins when it has one: the page sets the default,
       // the markup can override it per grid.

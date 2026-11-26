@@ -370,6 +370,15 @@ export interface Provider {
    */
   kind?: ProviderKind;
   /**
+   * Optional: what the source `source` is (issue #528) — `{ name, schema }`, the
+   * schema being the source's own, with the `from` of a derived field. The grid
+   * asks it once per `datasource` (again when the source is replaced) to learn
+   * which fields are derived; they are read-only. Every built-in provider has
+   * it — the REST one for its one source — and a provider without it keeps every
+   * field as the result's schema says.
+   */
+  describe?(source: string): Promise<SourceDescription>;
+  /**
    * Optional: the whole export of `query` in one go. `exportRows` uses it when
    * it is there instead of fetching pieces over `execute` —
    * `createRestProvider` has it, as `POST /export/{source}`.
@@ -423,6 +432,12 @@ export interface EngineProvider extends Provider {
    * A grid on the name answers its next query with an unknown source.
    */
   unload(name: string): Promise<boolean>;
+  /**
+   * What the source `name` is (issue #528): `{ name, schema }`, the schema as the
+   * source was loaded with it, with the `from` of a derived field. Rejects for a
+   * source that is not loaded.
+   */
+  describe(name: string): Promise<SourceDescription>;
   /** What the engine holds: its memory and each source's size (issue #70). */
   stats(): Promise<EngineStats>;
   /** Stops a worker; a no-op in the tab. */
@@ -462,6 +477,8 @@ export interface Engine {
   set_collator(sortKeys: (locale: string, texts: Uint8Array, ends: Uint32Array) => Uint8Array): void;
   /** Frees the source `name`; whether there was one (issue #459). */
   unload(name: string): boolean;
+  /** The schema of the source `name`, as JSON, with the `from` of a derived field (issue #528). */
+  describe(name: string): string;
   /** What it holds, as JSON (see `EngineStats`). */
   stats(): string;
   /** A pivot over the engine's sources, as JSON (issue #28). */
@@ -479,9 +496,12 @@ export interface Engine {
 /** What a server says a source is. */
 export interface SourceDescription {
   name: string;
+  /** The source's schema, `{ fields: [{ name, type, nullable, from? }] }`. */
   schema: unknown;
-  capabilities: unknown;
-  pivot_limits: unknown;
+  /** Only a server says it. */
+  capabilities?: unknown;
+  /** Only a server says it. */
+  pivot_limits?: unknown;
 }
 
 export interface RestProvider extends Provider {

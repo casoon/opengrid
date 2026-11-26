@@ -44,7 +44,16 @@ fn recolumn_from(host: &HtmlElement, mut before: Option<Arrangement>) {
         &raw,
         &schema,
         &grid::parse_columns(host.get_attribute(COLUMNS_ATTRIBUTE).as_deref()),
-    );
+    )
+    .and_then(|columns| {
+        // What only the source's schema knows (issue #528): a derived column.
+        let problems = presentation::derived_problems(&columns, &runtime.borrow().derived);
+        if problems.is_empty() {
+            Ok(columns)
+        } else {
+            Err(problems)
+        }
+    });
     // A configuration refused against the real schema is applied not at all,
     // its pins included. Before a result has typed a column the refusal may be
     // the display schema's (see above), and the pins stay as asked for.
