@@ -17,6 +17,7 @@
  *   load_begin / load_chunk / load_end / load_abort are for CSV
  *   query { type:"query", id, query }          -> { id, result }
  *   stats { type:"stats", id }                 -> { id, result }   (issue #70)
+ *   describe { type:"describe", id, name }     -> { id, result }   (issue #528): the source's schema as JSON
  *   unload { type:"unload", id, name }         -> { id, result }   (issue #459): whether there was one
  *   pivot { type:"pivot", id, pivot }          -> { id, result }   (issue #28)
  *
@@ -130,6 +131,10 @@ self.onmessage = async ({ data }) => {
       }
       case "unload": {
         self.postMessage({ id: data.id, result: engine.unload(data.name) });
+        break;
+      }
+      case "describe": {
+        self.postMessage({ id: data.id, result: engine.describe(data.name) });
         break;
       }
       case "stats": {

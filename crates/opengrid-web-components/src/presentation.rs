@@ -240,6 +240,21 @@ impl PresentationProblem {
     }
 }
 
+/// What a derived column cannot be (issue #528): a year or a month of a date has
+/// nothing to write back to, so a column the page marks `editable` and that
+/// turns out derived — the source's schema says so, after the call — is
+/// reported like any other contradiction of the call.
+pub fn derived_problems(
+    columns: &[(String, ColumnPresentation)],
+    derived: &std::collections::BTreeSet<String>,
+) -> Vec<PresentationProblem> {
+    columns
+        .iter()
+        .filter(|(name, column)| column.editable && derived.contains(name))
+        .map(|(name, _)| PresentationProblem::new(name, "is derived and editable at once"))
+        .collect()
+}
+
 /// One entry of a `set_columns` call, before it has met the schema.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RawColumn {
@@ -1079,6 +1094,25 @@ mod tests {
             .unwrap(),
         );
         assert!(!opened.readonly("id", Some("id")));
+    }
+
+    /// Issue #528: what the source's schema says is derived cannot be `editable`; the
+    /// page's other columns are not touched.
+    #[test]
+    fn a_derived_editable_column_is_reported() {
+        let marked = RawColumn {
+            editable: Some(true),
+            ..RawColumn::default()
+        };
+        let columns = validate(&raw(marked), &schema(), &[]).expect("is accepted");
+        let derived = std::collections::BTreeSet::from(["amount".to_owned()]);
+        let problems = derived_problems(&columns, &derived);
+        assert_eq!(problems.len(), 1);
+        assert_eq!(problems[0].column, "amount");
+        assert_eq!(problems[0].reason, "is derived and editable at once");
+        assert!(derived_problems(&columns, &std::collections::BTreeSet::new()).is_empty());
+        let plain = validate(&raw(RawColumn::default()), &schema(), &[]).expect("is accepted");
+        assert!(derived_problems(&plain, &derived).is_empty());
     }
 
     /// `editable` draws a column as the one to edit, and contradicting it is

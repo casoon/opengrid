@@ -188,8 +188,11 @@ pub(crate) fn define_grid() -> Result<(), JsValue> {
 pub(crate) fn start(host: &HtmlElement) {
     // Another provider may answer the same source name with other types.
     if let Some(runtime) = runtime(host) {
-        runtime.borrow_mut().known.clear();
+        let mut runtime = runtime.borrow_mut();
+        runtime.known.clear();
+        runtime.derived.clear();
     }
+    editing::describe_source(host);
     ensure_skeleton(host);
     render(host, false);
     run_query(host, QueryKind::Data, false);
@@ -286,6 +289,12 @@ struct GridRuntime {
     /// rebuilds — a view, a shown column — so a filter meets its real type;
     /// forgotten when the `datasource` changes.
     known: std::collections::BTreeMap<String, opengrid_types::Field>,
+    /// The fields the source's own schema says are derived (issue #528) — what
+    /// a result's schema never says. Asked of the provider once per
+    /// `datasource`; forgotten with it.
+    derived: std::collections::BTreeSet<String>,
+    /// Which ask for the source's schema is the latest: an older answer is dropped.
+    describing: u64,
     /// A view's filter was typed before its columns' types were known; the
     /// next data query asks for the schema first (plan point 88).
     retype_filter: bool,
@@ -441,6 +450,8 @@ fn fresh_runtime(
         release_unsaid: false,
         scroll_left: 0,
         known: known.clone(),
+        derived: std::collections::BTreeSet::new(),
+        describing: 0,
         retype_filter: false,
         scroll_top: 0,
         shift: 0,
@@ -733,6 +744,8 @@ fn start_following(host: &HtmlElement, focus: bool) {
     if let Some(runtime) = runtime(host) {
         runtime.borrow_mut().known.clear();
     }
+    // The same source under new rows may have a new schema.
+    editing::describe_source(host);
     ensure_skeleton(host);
     render(host, false);
     run_query(host, QueryKind::Data, focus);
@@ -1174,12 +1187,16 @@ fn on_attribute_changed(
             {
                 let mut runtime = runtime.borrow_mut();
                 runtime.known.clear();
+                runtime.derived.clear();
                 runtime.state.take_saves();
                 // The rows the reader added and what they did belong to it too,
                 // and so do the values the facets list.
                 let _ = runtime.state.take_edits();
                 runtime.facet_domain.clear();
                 runtime.facet_counts.clear();
+            }
+            if name == DATASOURCE_ATTRIBUTE {
+                editing::describe_source(&host);
             }
             clear_root(&root);
             reset_runtime(&host);

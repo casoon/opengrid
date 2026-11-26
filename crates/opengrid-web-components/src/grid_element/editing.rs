@@ -17,7 +17,85 @@ pub(super) fn page_readonly_column(host: &HtmlElement, field: &opengrid_types::F
     let key = row_key_of(host);
     let styles = presentation::styles(host);
     let name = field.name.as_str();
-    styles.readonly(name, key.as_ref().map(|key| key.as_str())) || styles.unmarked(name)
+    derived_column(host, name)
+        || styles.readonly(name, key.as_ref().map(|key| key.as_str()))
+        || styles.unmarked(name)
+}
+
+/// Whether the source's schema says `name` is derived (issue #528): a year or a
+/// month of a date, with nothing to write back to. Read-only with no opt-in —
+/// not even `readonly: false` opens it.
+pub(super) fn derived_column(host: &HtmlElement, name: &str) -> bool {
+    runtime(host).is_some_and(|runtime| runtime.borrow().derived.contains(name))
+}
+
+/// Asks the provider once what the source's schema is, to learn which fields are
+/// derived (issue #528): a result's schema never says. A provider that cannot say
+/// leaves every field as it is — no derived field is known. The answer lands
+/// later; one that is out of date by then, or was refused, is dropped.
+pub(super) fn describe_source(host: &HtmlElement) {
+    let Some(runtime) = runtime(host) else {
+        return;
+    };
+    let (Some(provider), Some(source)) = (provider(host), host.get_attribute(DATASOURCE_ATTRIBUTE))
+    else {
+        return;
+    };
+    let Some(promise) = provider.describe(&source) else {
+        set_derived(host, std::collections::BTreeSet::new());
+        return;
+    };
+    let ask = {
+        let mut runtime = runtime.borrow_mut();
+        runtime.describing += 1;
+        runtime.describing
+    };
+    let host = host.clone();
+    wasm_bindgen_futures::spawn_local(async move {
+        let derived = match JsFuture::from(promise).await {
+            Ok(answer) => derived_fields(&answer),
+            Err(_) => std::collections::BTreeSet::new(),
+        };
+        let current =
+            super::runtime(&host).is_some_and(|runtime| runtime.borrow().describing == ask);
+        if current {
+            set_derived(&host, derived);
+        }
+    });
+}
+
+/// The names of the fields with a `from` in a provider's `{ schema: { fields } }`.
+fn derived_fields(answer: &JsValue) -> std::collections::BTreeSet<String> {
+    let get =
+        |object: &JsValue, key: &str| js_sys::Reflect::get(object, &JsValue::from_str(key)).ok();
+    let fields = get(answer, "schema")
+        .and_then(|schema| get(&schema, "fields"))
+        .map(|fields| js_sys::Array::from(&fields))
+        .unwrap_or_default();
+    fields
+        .iter()
+        .filter(|field| {
+            get(field, "from").is_some_and(|from| !from.is_null() && !from.is_undefined())
+        })
+        .filter_map(|field| get(&field, "name")?.as_string())
+        .collect()
+}
+
+/// Takes what the source says is derived. A change closes what the reader had
+/// open on a column that is read-only now and draws again; a derived field the
+/// page marked `editable` is reported.
+fn set_derived(host: &HtmlElement, derived: std::collections::BTreeSet<String>) {
+    let Some(runtime) = runtime(host) else {
+        return;
+    };
+    if runtime.borrow().derived == derived {
+        return;
+    }
+    runtime.borrow_mut().derived = derived;
+    edit_state_changed(host, true);
+    // Checks the page's columns against what is known now, and says what
+    // contradicts it.
+    recolumn(host);
 }
 
 /// Whether column `field` never opens an editor, whatever the lock (issues #153,

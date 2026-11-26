@@ -88,6 +88,14 @@ pub trait DataProvider {
     fn kind(&self) -> Option<String> {
         None
     }
+
+    /// What the provider says the source `source` is (issue #528): a promise
+    /// of `{ name, schema }` where the `schema` is the source's own, with the
+    /// `from` of a derived field — which a result's schema never has. `None`
+    /// when the provider cannot say; the grid then knows no derived field.
+    fn describe(&self, _source: &str) -> Option<js_sys::Promise> {
+        None
+    }
 }
 
 /// A [`DataProvider`] over a [`QueryExecutor`] that is ready on the spot.
@@ -164,6 +172,11 @@ impl DataProvider for JsProvider {
                 "provider has no execute(queryJson) method",
             ))
         })
+    }
+
+    /// The object's own `describe(source)`, when it has one.
+    fn describe(&self, source: &str) -> Option<js_sys::Promise> {
+        self.call("describe", source, "")
     }
 
     /// The object's own `pivot`, when it has one; `execute` otherwise.

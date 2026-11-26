@@ -53,6 +53,9 @@ export async function page(): Promise<void> {
   // Providers: every one fits `set_provider`.
   const local = createLocalProvider(engine);
   await local.load("orders", new Uint8Array(), "{}");
+  const orders = await local.describe("orders");
+  const fields: unknown = orders.schema;
+  void fields;
   const worker = createWorkerProvider({ moduleUrl: new URL("./pkg/opengrid_wasm.js", location.href).href });
   worker.terminate();
   // @ts-expect-error — a URL object cannot cross postMessage; the href can

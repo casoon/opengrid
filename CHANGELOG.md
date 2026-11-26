@@ -71,6 +71,15 @@ Two things belong in every release entry and are easy to leave out:
   and the reader's *Lock column* / *Unlock column* in the column menu, kept in the view as `locked`
   ([#527](https://github.com/casoon/opengrid/issues/527)). Details:
   [Locking edits](https://casoon.github.io/opengrid/docs/api/#locking-edits).
+- **Grid:** a derived field — the year or month of a date — is read-only, with no opt-in: no editor,
+  no paste, no bulk value, no record-form input, and `editable: true` on it is reported. The grid
+  learns which fields are derived from its provider's `describe(source)`, once per `datasource`
+  ([#528](https://github.com/casoon/opengrid/issues/528)). Details:
+  [What can be edited](https://casoon.github.io/opengrid/docs/api/#what-can-be-edited).
+- **Loader:** the local and the worker provider have `describe(name)`, answering `{ name, schema }`
+  with the schema a source was loaded with, derivations included; the hybrid provider passes its
+  remote half's through. A provider of your own without `describe` keeps every field as the result
+  says ([#528](https://github.com/casoon/opengrid/issues/528)).
 - **Loader:** `suggestColumns(schema, { rowKey, distinct })` turns a schema into `{ columns, formats }`,
   the two objects `set_columns` and `set_formats` take: the key read-only, mono, muted and narrow;
   numbers aligned at the end and summed; dates formatted; a list facet where the caller says a field

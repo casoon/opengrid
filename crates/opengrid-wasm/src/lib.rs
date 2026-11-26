@@ -126,11 +126,15 @@ fn install_collator(sort_keys: CollatorFunction) {
 #[wasm_bindgen]
 pub struct Engine {
     sources: HashMap<String, LocalDataSource>,
-    /// The CSV file being read in pieces (`begin_csv`), with the name it will be registered under.
-    pending: Option<(String, CsvLoader)>,
+    /// The schema each source was loaded with, derivations and all (issue #528): the table
+    /// holds the derived columns' values and no longer says they are derived.
+    declared: HashMap<String, Schema>,
+    /// The CSV file being read in pieces (`begin_csv`), with the name it will be registered under
+    /// and the schema it is read with.
+    pending: Option<(String, Schema, CsvLoader)>,
     /// The rows being read as packs of columns (`begin_columns`), with the name they will be
-    /// registered under.
-    pending_columns: Option<(String, ColumnsLoader)>,
+    /// registered under and their schema.
+    pending_columns: Option<(String, Schema, ColumnsLoader)>,
 }
 
 #[wasm_bindgen]
@@ -140,6 +144,7 @@ impl Engine {
     pub fn new() -> Engine {
         Engine {
             sources: HashMap::new(),
+            declared: HashMap::new(),
             pending: None,
             pending_columns: None,
         }
@@ -330,6 +335,15 @@ impl Engine {
         Ok(opengrid_pivot::pivot_to_bytes(&result, &rows))
     }
 
+    /// The schema of the source `name`, as JSON — `{ "fields": [{ "name", "type",
+    /// "nullable", "from"? }] }`, with the derivation of a derived field (issue
+    /// #528). What a query's result never says: a result column is never derived.
+    #[wasm_bindgen(js_name = describe)]
+    pub fn describe_js(&self, name: &str) -> Result<String, JsError> {
+        self.describe(name)
+            .map_err(|message| JsError::new(&message))
+    }
+
     /// The names of the registered sources, in unspecified order.
     #[wasm_bindgen(js_name = source_names)]
     pub fn source_names(&self) -> Vec<String> {
@@ -342,6 +356,7 @@ impl Engine {
     /// before it loads again needs one table's room, not two.
     #[wasm_bindgen(js_name = unload)]
     pub fn unload(&mut self, name: &str) -> bool {
+        self.declared.remove(name);
         self.sources.remove(name).is_some()
     }
 }
@@ -366,8 +381,7 @@ impl Engine {
             schema_json::from_json(schema_json).map_err(|error| format!("schema: {error}"))?;
         let table =
             read_csv(bytes, &schema, CsvOptions::default()).map_err(|error| error.to_string())?;
-        let source = LocalDataSource::new(table);
-        self.sources.insert(id.as_str().to_owned(), source);
+        self.register(id.as_str().to_owned(), schema, table);
         Ok(())
     }
 
@@ -385,13 +399,13 @@ impl Engine {
         let loader = CsvLoader::new(&schema, CsvOptions::default())
             .map_err(|error| error.to_string())?
             .with_size_hint(size_hint as usize);
-        self.pending = Some((id.as_str().to_owned(), loader));
+        self.pending = Some((id.as_str().to_owned(), schema, loader));
         Ok(())
     }
 
     /// [`Engine::push_csv_js`] without the `JsError`.
     pub fn push_csv(&mut self, bytes: &[u8]) -> Result<(), String> {
-        let Some((_, loader)) = &mut self.pending else {
+        let Some((_, _, loader)) = &mut self.pending else {
             return Err("push_csv without begin_csv".to_owned());
         };
         loader.feed(bytes).map_err(|error| {
@@ -402,11 +416,11 @@ impl Engine {
 
     /// [`Engine::end_csv_js`] without the `JsError`.
     pub fn end_csv(&mut self) -> Result<(), String> {
-        let Some((name, loader)) = self.pending.take() else {
+        let Some((name, schema, loader)) = self.pending.take() else {
             return Err("end_csv without begin_csv".to_owned());
         };
         let table = loader.finish().map_err(|error| error.to_string())?;
-        self.sources.insert(name, LocalDataSource::new(table));
+        self.register(name, schema, table);
         Ok(())
     }
 
@@ -426,13 +440,13 @@ impl Engine {
         }
         let loader =
             ColumnsLoader::new(&schema, rows as usize).map_err(|error| error.to_string())?;
-        self.pending_columns = Some((id.as_str().to_owned(), loader));
+        self.pending_columns = Some((id.as_str().to_owned(), schema, loader));
         Ok(())
     }
 
     /// [`Engine::push_columns_js`] without the `JsError`.
     pub fn push_columns(&mut self, pack: &[u8]) -> Result<(), String> {
-        let Some((_, loader)) = &mut self.pending_columns else {
+        let Some((_, _, loader)) = &mut self.pending_columns else {
             return Err("push_columns without begin_columns".to_owned());
         };
         loader.feed(pack).map_err(|error| {
@@ -443,11 +457,11 @@ impl Engine {
 
     /// [`Engine::end_columns_js`] without the `JsError`.
     pub fn end_columns(&mut self) -> Result<(), String> {
-        let Some((name, loader)) = self.pending_columns.take() else {
+        let Some((name, schema, loader)) = self.pending_columns.take() else {
             return Err("end_columns without begin_columns".to_owned());
         };
         let table = loader.finish().map_err(|error| error.to_string())?;
-        self.sources.insert(name, LocalDataSource::new(table));
+        self.register(name, schema, table);
         Ok(())
     }
 
@@ -463,8 +477,7 @@ impl Engine {
         let schema =
             schema_json::from_json(schema_json).map_err(|error| format!("schema: {error}"))?;
         let table = read_json(rows_json.as_bytes(), &schema).map_err(|error| error.to_string())?;
-        self.sources
-            .insert(id.as_str().to_owned(), LocalDataSource::new(table));
+        self.register(id.as_str().to_owned(), schema, table);
         Ok(())
     }
 
@@ -501,6 +514,21 @@ impl Engine {
         )?;
         opengrid_grid::view_query::view_query(source, &declared, &view, table.schema())
             .map_err(|problems| problems.join("; "))
+    }
+
+    /// Registers a loaded table under `name`, with the schema it was loaded with.
+    fn register(&mut self, name: String, declared: Schema, table: opengrid_columns::Table) {
+        self.declared.insert(name.clone(), declared);
+        self.sources.insert(name, LocalDataSource::new(table));
+    }
+
+    /// [`describe`](Engine::describe_js) without the `JsError` wrapping.
+    pub fn describe(&self, name: &str) -> Result<String, String> {
+        use opengrid_json::ToJson;
+        self.declared
+            .get(name)
+            .map(|schema| schema.to_json().to_string())
+            .ok_or_else(|| format!("unknown source {name:?}"))
     }
 
     /// [`stats`](Engine::stats_js) as a JSON value.
@@ -869,6 +897,37 @@ mod stats_tests {
         assert!(engine.execute_result(query).is_err());
         engine.load_csv("a", b"n\n3\n", schema).unwrap();
         assert_eq!(engine.execute_result(query).unwrap().row_count(), 1);
+    }
+
+    /// Issue #528: the table holds the values of a derived column and no longer says
+    /// it is derived, so the engine keeps the schema a source was loaded with — through
+    /// every way of loading — and `describe` answers it, derivations included.
+    #[test]
+    fn describe_answers_the_schema_a_source_was_loaded_with() {
+        let schema = r#"{"fields":[{"name":"day","type":"date","nullable":false},{"name":"year","type":"int64","nullable":true,"from":{"part":"year","field":"day"}}]}"#;
+        let mut engine = Engine::new();
+        engine
+            .load_csv("whole", b"day\n2026-03-01\n", schema)
+            .unwrap();
+        engine.begin_csv("pieces", schema, 0.0).unwrap();
+        engine.push_csv(b"day\n2026-03-01\n").unwrap();
+        engine.end_csv().unwrap();
+        engine
+            .load_rows("rows", r#"[{"day":"2026-03-01"}]"#, schema)
+            .unwrap();
+        for name in ["whole", "pieces", "rows"] {
+            let described = engine.describe(name).unwrap();
+            assert!(
+                described.contains(r#""from":{"part":"year","field":"day"}"#),
+                "{name}: {described}"
+            );
+        }
+        assert!(engine.unload("whole"));
+        assert_eq!(
+            engine.describe("whole").unwrap_err(),
+            "unknown source \"whole\""
+        );
+        assert!(engine.describe("rows").is_ok());
     }
 }
 
