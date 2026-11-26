@@ -35,7 +35,7 @@
       // `?rtl` lays the grid out right to left; `?pin` pins `id` at the start.
       // Narrow pins: `?width=N` sets the grid's width, `?keynone` gives `id`
       // `pinNarrow: "none"`, `?customerend` gives `customer` `pinNarrow: "end"`, and
-      // `?menu` adds the column menu. `window.__delay` holds every answer back
+      // `?menu` adds the column menu, `?page` makes the page taller than the window. `window.__delay` holds every answer back
       // that many milliseconds; `window.__views` collects the view changes.
       import { loadOpengrid, createLocalProvider } from "/packages/opengrid/loader.js";
       import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
@@ -45,6 +45,11 @@
       const grid = document.querySelector("opengrid-grid");
       if (search.has("width")) grid.style.width = `${search.get("width")}px`;
       if (search.has("menu")) grid.setAttribute("column-menu", "");
+      if (search.has("page")) {
+        const spacer = document.createElement("div");
+        spacer.style.height = "1500px";
+        document.querySelector("main").append(spacer);
+      }
       window.__views = [];
       document.addEventListener("opengrid-view-change", (event) => window.__views.push(event.detail.view));
       window.__queries = [];

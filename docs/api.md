@@ -1238,6 +1238,18 @@ range, so none of this is said a second time.
 | While scrolling | A fling or a drag of the scroll bar's thumb — a scroll that goes on for more than two viewports — shows the rows in sight beside the scroll bar: `1,200–1,215` (`part="scroll-position"`, `aria-hidden`). It goes when the scroll ends (`scrollend`; where a browser sends none, when the scroll events stop). It fades, except under `prefers-reduced-motion`. |
 | Edges | While columns lie past an edge of the viewport, that edge shows a shadow (`part="edge-start"`, `part="edge-end"`, `aria-hidden`) — on a phone, the sign that more columns follow. Beside [pinned columns](#pinned-columns) the shadow stands where they end. Right to left the start is the right edge. |
 
+### On a phone
+
+What the grid does on a touch screen, and what a page does around it (issue #526):
+
+| | |
+|---|---|
+| The back gesture | A swipe sideways past the grid's left edge scrolls no further: the viewport has `overscroll-behavior-x: contain`, so the browser's back gesture (iOS Safari, Android Chrome) is not triggered by it. Vertically the viewport keeps `auto`: at the end of the grid the **page** scrolls on, and nobody is trapped in a grid that fills the screen. |
+| Not snapped | Rows do not `scroll-snap`: snapping fights momentum and the thumb in a list this long. |
+| Height | Two vertical scroll areas — the page and the grid — need a way out of the grid. Give it a height with `dvh`, which follows the phone's address bar, and **leave a margin** below it for the page to scroll by: `opengrid-grid { height: calc(100dvh - 8rem); }`. A grid at `100dvh` takes the whole screen, and a finger that starts on it never reaches the page. |
+| Density | A finger needs [44 px rows](#pointer-and-touch): under a coarse pointer `normal` and `compact` rise to it and `comfortable` is taller already, so on a phone `density` changes the cell padding and the font size, not the row's height. |
+| The key column | Under 560 px of the grid's own width the [key column is pinned](#pinned-columns) at the start, so a row keeps its name while the others scroll; the [shadow at the edge](#where-am-i) says more columns follow. |
+
 ### Tree
 
 ```html

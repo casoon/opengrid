@@ -377,3 +377,34 @@ test.describe("pinning on narrow grids", () => {
     await expect.poll(() => status(page)).toMatch(/Too narrow for the pinned columns/);
   });
 });
+
+test.describe("scrolling on a phone", () => {
+  test("a swipe past the left edge is not the back gesture, and the page scrolls on past the grid's end", async ({ page }) => {
+    await page.setViewportSize({ width: 1000, height: 700 });
+    await open(page, "?page");
+    const overscroll = await shadow(page, (root) => {
+      const style = getComputedStyle(root.querySelector('[part="viewport"]'));
+      return [style.overscrollBehaviorX, style.overscrollBehaviorY];
+    });
+    expect(overscroll).toEqual(["contain", "auto"]);
+
+    // At the end of the grid a wheel turn leaves it: the page scrolls, the grid does not hold it.
+    await shadow(page, (root) => {
+      const viewport = root.querySelector('[part="viewport"]');
+      viewport.scrollTop = viewport.scrollHeight;
+    });
+    const box = await page.locator("opengrid-grid").boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await expect.poll(() => shadow(page, (root) => {
+      const viewport = root.querySelector('[part="viewport"]');
+      return viewport.scrollTop + viewport.clientHeight >= viewport.scrollHeight - 1;
+    })).toBe(true);
+    // The first turn may still be the grid's own (a browser latches a gesture to the scroller it began in).
+    await expect
+      .poll(async () => {
+        await page.mouse.wheel(0, 300);
+        return page.evaluate(() => window.scrollY);
+      })
+      .toBeGreaterThan(0);
+  });
+});

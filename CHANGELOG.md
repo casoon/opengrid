@@ -61,6 +61,10 @@ Two things belong in every release entry and are easy to leave out:
   screens*, and the view holds the reader's choice as `columns.pinnedNarrow`
   ([#525](https://github.com/casoon/opengrid/issues/525)). Details:
   [Pinned columns](https://casoon.github.io/opengrid/docs/api/#pinned-columns).
+- **Grid:** a swipe sideways past the grid's left edge no longer triggers the browser's back gesture
+  (`overscroll-behavior-x: contain`); the page still scrolls on at the grid's end. New docs section
+  for pages on a phone ([#526](https://github.com/casoon/opengrid/issues/526)). Details:
+  [On a phone](https://casoon.github.io/opengrid/docs/api/#on-a-phone).
 
 ### Changed
 
