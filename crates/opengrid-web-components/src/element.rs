@@ -142,6 +142,17 @@ pub fn set_actions(host: &HtmlElement, actions: JsValue) {
     crate::grid_element::set_actions(host, &actions);
 }
 
+/// Gives the cell menu the page's own items (issue #524): `[{ id, label, column? }]`,
+/// listed after the grid's entries — `column` names the one column an item is
+/// offered on. Choosing one fires `opengrid-cell-action` with `{ id, row,
+/// column, key }`; `key` is the `row-key` value. Group headers and the total
+/// offer none.
+#[cfg(feature = "grid")]
+#[wasm_bindgen(js_name = set_cell_actions)]
+pub fn set_cell_actions(host: &HtmlElement, actions: JsValue) {
+    crate::grid_element::set_cell_actions(host, &actions);
+}
+
 /// Gives columns a template (issue #317): `{ column: ({ value, text, row, key }) => Node }`,
 /// the DOM node a cell shows instead of its text. Never an HTML string; the
 /// source's value stays what search, export and the events read.

@@ -140,7 +140,7 @@ fn show_menu(
 }
 
 /// Writes the entries into the menu element.
-fn append_entries(
+pub(super) fn append_entries(
     document: &web_sys::Document,
     parent: &Element,
     entries: &[crate::column_menu::Entry],

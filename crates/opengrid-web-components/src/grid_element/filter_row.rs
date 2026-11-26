@@ -694,6 +694,10 @@ pub(super) fn on_filter_clear(event: Event) {
             activate_menu_item(&host, &item);
             return;
         }
+        if let Ok(Some(item)) = target.closest("[part=\"cell-menu\"] [data-action]") {
+            super::cell_menu::activate(&host, &item);
+            return;
+        }
         if let Ok(Some(trigger)) = target.closest("[part=\"column-menu-button\"]")
             && let Some(col) = trigger
                 .closest("th")

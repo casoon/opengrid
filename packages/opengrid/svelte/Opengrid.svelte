@@ -42,6 +42,7 @@
     presentation,
     choices,
     actions,
+    cellActions,
     validators,
     cellTemplates,
     detailRenderer,
@@ -52,6 +53,7 @@
     onpaste,
     onbulkchange,
     onrowaction,
+    oncellaction,
     ondrilldown,
     onsourcereplaced,
     ...rest
@@ -68,6 +70,7 @@
       presentation: $state.snapshot(presentation),
       choices: $state.snapshot(choices),
       actions: $state.snapshot(actions),
+      cellActions: $state.snapshot(cellActions),
       validators: validators && snapshotKeepingFunctions(validators),
       cellTemplates: cellTemplates && snapshotKeepingFunctions(cellTemplates),
       detailRenderer,
@@ -89,6 +92,7 @@
         onPaste: (detail) => onpaste?.(detail),
         onBulkChange: (detail) => onbulkchange?.(detail),
         onRowAction: (detail) => onrowaction?.(detail),
+        onCellAction: (detail) => oncellaction?.(detail),
         onDrillDown: (detail) => ondrilldown?.(detail),
         onSourceReplaced: (detail) => onsourcereplaced?.(detail),
       };

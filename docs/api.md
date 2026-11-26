@@ -51,6 +51,7 @@ instead.
 | `set_detail_renderer(host, renderer)` | A function that returns the DOM node of the panel under an open row — see [Detail panels](#detail-panels). |
 | `set_row_state(host, provisionalKey, state, detail?)` | What became of a row the reader added: `saving`, `saved` (with the record's key) or `error` (with a message) — see [Adding rows](#adding-rows). |
 | `set_actions(host, [{ id, label }])` | A trailing column per action, a button per row; fires `opengrid-row-action` — see [Row actions](#row-actions). |
+| `set_cell_actions(host, [{ id, label, column? }])` | The page's items in the cell menu, after the grid's; fires `opengrid-cell-action` — see [The cell menu](#the-cell-menu). |
 | `register()` | Defines the three elements. `loadOpengrid()` calls it; a page that loads the module itself calls it once. |
 
 **Types.** The package ships `loader.d.ts`: every name on this page is typed —
@@ -193,8 +194,8 @@ connection.disconnect();              // the listeners go; the element keeps its
 | `defaultView` | `set_view`, once — the uncontrolled form: after that the grid leads |
 | `presentation` | `set_columns` — named apart from the `columns` attribute, which is the projection |
 | `onViewChange`, `onSelectionChange`, `onCellChange` | the [events](#events) of the same names; each callback receives the `detail` (for the view: the view itself) |
-| `actions`, `validators`, `cellTemplates`, `detailRenderer` | `set_actions`, `set_validators`, `set_cell_templates`, `set_detail_renderer` — the grid only |
-| `onPaste`, `onBulkChange`, `onRowAction`, `onSourceReplaced` | `opengrid-paste`, `opengrid-bulk-change`, `opengrid-row-action`, `opengrid-source-replaced`; each callback receives the `detail` |
+| `actions`, `cellActions`, `validators`, `cellTemplates`, `detailRenderer` | `set_actions`, `set_cell_actions`, `set_validators`, `set_cell_templates`, `set_detail_renderer` — the grid only |
+| `onPaste`, `onBulkChange`, `onRowAction`, `onCellAction`, `onSourceReplaced` | `opengrid-paste`, `opengrid-bulk-change`, `opengrid-row-action`, `opengrid-cell-action`, `opengrid-source-replaced`; each callback receives the `detail` |
 | `onDrillDown` | `opengrid-drill-down` — the pivot only, with its `drill-down` attribute; the callback receives the `detail` |
 | `onRowAdd` | `opengrid-row-add`, and its answer is `set_row_state`: return `{ state: "saved", key }` or `{ state: "error", message }`, or a promise of one — the row shows `saving` until it settles; resolved with nothing, it is saved, and a rejection is an `error` with its message. No answer at all leaves the row unsaved for the page; an undone add is not answered |
 
@@ -279,6 +280,7 @@ An interactive `<table role="grid">`: virtualized, keyboard-driven, filterable.
 | `Delete` | band cell | hide the whole band ([Column bands](#column-bands)) |
 | `↑` / `↓` | header cell of a column in a band / band cell | go to the band / back to the column ([Column bands](#column-bands)) |
 | `Alt`+`↓`, `Shift`+`F10`, context-menu key | header cell, or band cell | open the column menu (with `column-menu`); a band's offers *Hide band* |
+| `Shift`+`F10`, context-menu key | data cell | open the [cell menu](#the-cell-menu) |
 
 On a right-to-left page `←` and `→` change places, and nothing else does:
 [Right to left](#right-to-left).
@@ -992,7 +994,8 @@ fires nothing and says so in the status line. The edits are **one step** of the 
 ### Copying a range of cells
 
 `Shift`+arrow keys on a data cell mark the block between where it began and where the focus is;
-`Shift`+click and dragging with the pointer do the same. The live region says its size — „3 by 4
+`Shift`+click and dragging with the mouse do the same, and on a touch screen a long-press and a drag
+([Pointer and touch](#pointer-and-touch)). The live region says its size — „3 by 4
 cells“ — and each cell in it carries `data-range` (a tint with an outline, which holds in forced
 colours). **The row selection is another thing**: `Shift`+`Space` and the checkboxes select rows, and
 no cell says `aria-selected` for a range. Any key that moves or edits, a click elsewhere, and another
@@ -1159,6 +1162,63 @@ arrow keys reach like any other. `Enter` or `Space` on the cell (or a click on t
 fires `opengrid-row-action` with `{ id, row, key }`; `key` is the record's `row-key` value
 (`row` is a position, and in a grouped grid a display position). The label is the accessible
 name. Group headers and the total have no button. Icons are the page's: the label is text.
+
+### Pointer and touch
+
+A mouse, a finger and a pen reach what the keys reach (issue #524):
+
+| Gesture | On a data cell |
+|---|---|
+| Click, tap | gives the cell the focus |
+| Double-click, double-tap, a **tap on the focused cell** | opens the editor, as `Enter` does. On a phone the editor gets the focus inside the tap, so the keyboard comes up |
+| Long-press (touch), right click | opens the [cell menu](#the-cell-menu) when the finger or the button lifts |
+| Long-press, then drag (touch) | marks a [range](#copying-a-range-of-cells) instead of scrolling |
+| Drag (mouse), `Shift`+click | marks a range |
+| Swipe | scrolls; it selects and opens nothing |
+
+Every way into an edit asks what `Enter` asks: [`edit-locked`](#locking-edits), a read-only column
+and a grouped row that is not editable keep the editor closed ([What can be edited](#what-can-be-edited)).
+A cell without the focus does not select its text, so a double-click or a double-tap edits instead
+of marking a word; the focused cell's text can still be selected and copied. The viewport does not
+zoom on a double-tap (`touch-action: manipulation`), and a long-press shows no callout of the phone's.
+
+**Under a coarse pointer** (`@media (pointer: coarse)`: a finger) rows are at least **44 px** tall —
+`normal` and `compact` rise to it, `comfortable` is taller already — and so are the toolbar's and the
+pager's buttons, the column menu's button and the entries of both menus. A page's own
+`--og-row-height` still wins.
+
+### The cell menu
+
+A long-press, a right click, `Shift`+`F10` or the context-menu key on a data cell opens a menu of what
+applies to that cell, built when it opens:
+
+| Entry | Offered when |
+|---|---|
+| Edit | the editor would open: not [locked](#locking-edits), not a read-only column |
+| Copy | always: the cell's value, or the marked [range](#copying-a-range-of-cells) the cell is in, as `Ctrl`/`Cmd`+`C` copies it |
+| Select row / Deselect row | the row is a record the grid can select — grouped, only with a `row-key` |
+| Open record | the [record form](#editing-a-whole-record) applies, and editing is not locked |
+| Column menu | with `column-menu`: the column's menu, under its header |
+
+The keys inside are the column menu's: `↑`/`↓`, `Home`/`End`, `Enter`/`Space` to choose, `Escape`
+back to the cell, `Tab` on. The menu stands under its cell, never over it, or above it where there is
+no room below (`part="cell-menu"`, `role="menu"`, named `cellMenu`).
+
+**The page's own items** come after the grid's, below a separator:
+
+```js
+loader.module.set_cell_actions(grid, [
+  { id: "book", label: "Book this room" },
+  { id: "rename", label: "Suggest a name", column: "name" },
+]);
+grid.addEventListener("opengrid-cell-action", ({ detail }) => run(detail.id, detail.key, detail.column));
+```
+
+`column` offers an item on that one column; without it, on every column. An item without `id` or
+`label` is left out. Choosing one fires `opengrid-cell-action` with `{ id, row, column, key }`:
+`column` is the field name, `key` the record's `row-key` value (only with a `row-key`), `row` a
+position. Group headers and the total offer no page items. `connect` takes them as `cellActions`
+and `onCellAction`.
 
 ### Tree
 
@@ -1830,6 +1890,7 @@ exception to the first part: `loader.js` dispatches it on the element, without `
 | `opengrid-paste` | `{ changes: [{ key?, row, column, value, previous }], added: [{ values, provisionalKey }] }` — a pasted block was applied; see [Pasting](#pasting). |
 | `opengrid-row-add` | `{ values, provisionalKey, undo?, redo? }` — a record was entered in the new row; see [Adding rows](#adding-rows). |
 | `opengrid-row-action` | `{ id, row, key? }` — an action was activated; `key` is the `row-key` value. |
+| `opengrid-cell-action` | `{ id, row, column, key? }` — one of the page's items in the [cell menu](#the-cell-menu) was chosen; `column` is the field name, `key` the `row-key` value. |
 | `opengrid-cell-change` | `{ row, column, value, previous }` — everything needed to persist it. With `row-key` also `key`: the record's value of that field, `null` when the result does not carry it. |
 | `opengrid-drill-down` | `{ query: { source, filter? }, row, column, measure, value }` — a value of an `<opengrid-pivot>` with `drill-down` was pressed; `query` is the rows behind the cell, as the wire writes a query. See [Drilling down](#drilling-down). |
 | `opengrid-view-change` | `{ view }` — the whole [view](#the-view) after the change. Scrolling and selecting are not view changes. On `<opengrid-pivot>` the view is its `rows`, `columns`, `values`, `sort`, `collapsed` and `filter`. |
@@ -2042,7 +2103,7 @@ would make it invisible), a **selected row** carries an inset accent bar as well
 as the tint (colour alone would be 1.4.1), and `prefers-reduced-motion` beats a
 theme that animates a part.
 
-**Parts:** `action`, `action-cell`, `action-header`, `add-field`, `add-filter`, `add-grouping`, `band`, `body`, `bulk`, `bulk-apply`, `bulk-cancel`, `caption`, `cell`, `cell-error`, `cell-saved`, `cell-saving`, `chip`, `chip-calc`, `chip-edit`, `chip-move`, `chip-remove`, `chips`,
+**Parts:** `action`, `action-cell`, `action-header`, `add-field`, `add-filter`, `add-grouping`, `band`, `body`, `bulk`, `bulk-apply`, `bulk-cancel`, `caption`, `cell`, `cell-error`, `cell-menu`, `cell-saved`, `cell-saving`, `chip`, `chip-calc`, `chip-edit`, `chip-move`, `chip-remove`, `chips`,
 `chips-clear`, `column-menu`, `column-menu-button`, `column-toggle`, `columns`, `columns-toggle`, `density`, `detail`, `detail-toggle`, `drill-down`,
 `edit-hint`, `edit-mark`, `editor`, `empty`, `empty-reset`, `empty-text`, `facet`, `facet-bounds`, `facet-cost`, `facet-count`,
 `facet-pill`, `facet-pills`, `facet-value`, `facets`, `facets-head`, `facets-toggle`, `filter`,
@@ -2187,6 +2248,10 @@ boolean reads — that is `set_formats`.
 | `aggregateCell` | `{aggregate}: {value}` | `{aggregate}`, `{value}` |
 | `aggregateSum` / `aggregateAvg` / `aggregateCount` / `aggregateMin` / `aggregateMax` / `aggregateRange` | `Sum` / `Average` / `Count` / `Minimum` / `Maximum` / `Range` | |
 | `columnMenu` | `{column} column menu` | `{column}` |
+| `cellMenu` | `{column} cell menu` | `{column}` |
+| `cellEdit` / `cellCopy` / `cellCopied` | `Edit` / `Copy` / `Copied` | |
+| `cellSelectRow` / `cellDeselectRow` | `Select row` / `Deselect row` | |
+| `cellOpenRecord` / `cellColumnMenu` | `Open record` / `Column menu` | |
 | `sortAscending` / `sortDescending` | `Sort ascending` / `Sort descending` | |
 | `sortKey` | `Sort key {position}` — a further sort key's place (1-based), said by its column header through `aria-describedby`; the primary key carries `aria-sort` | `{position}` |
 | `filterColumn` | `Filter …` | |

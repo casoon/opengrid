@@ -85,7 +85,7 @@ const EXPORT_ERROR_CODES: [&str; 4] = [
 
 /// The module functions a page calls through `loader.module`, in the order the
 /// freeze lists them.
-const FUNCTIONS: [&str; 20] = [
+const FUNCTIONS: [&str; 21] = [
     "register",
     "set_provider",
     "set_texts",
@@ -101,6 +101,7 @@ const FUNCTIONS: [&str; 20] = [
     "set_cell_state",
     "set_values",
     "set_actions",
+    "set_cell_actions",
     "set_row_state",
     "set_validators",
     "set_cell_templates",
@@ -141,6 +142,7 @@ fn surface() -> String {
         crate::grid_element_events::VIEW_EVENT,
         crate::grid_element_events::QUERY_EVENT,
         crate::grid_element_events::ROW_ACTION_EVENT,
+        crate::grid_element_events::CELL_ACTION_EVENT,
         crate::grid_element_events::ROW_ADD_EVENT,
         crate::grid_element_events::PASTE_EVENT,
         crate::grid_element_events::BULK_EVENT,
@@ -324,6 +326,8 @@ fn parts() -> Vec<String> {
     // The column menu of point 64 is built when it opens, not in the skeleton.
     parts.push("column-menu".to_owned());
     parts.push("menu-label".to_owned());
+    // So is the cell menu of issue #524.
+    parts.push("cell-menu".to_owned());
     // The chips of point 65 are drawn from the view by the element.
     parts.push("chip".to_owned());
     parts.push("chip-remove".to_owned());
@@ -391,6 +395,7 @@ events
   opengrid-view-change
   opengrid-query
   opengrid-row-action
+  opengrid-cell-action
   opengrid-row-add
   opengrid-paste
   opengrid-bulk-change
@@ -416,6 +421,7 @@ functions
   set_cell_state
   set_values
   set_actions
+  set_cell_actions
   set_row_state
   set_validators
   set_cell_templates
@@ -458,7 +464,7 @@ custom properties (computed)
   --og-accent-soft --og-accent-ink --og-selected --og-hover --og-editable
 
 parts
-  action action-cell action-header add-field add-filter add-grouping band body bulk bulk-apply bulk-cancel caption cell cell-error cell-saved cell-saving chip chip-calc chip-edit chip-move chip-remove chips chips-clear column-menu \
+  action action-cell action-header add-field add-filter add-grouping band body bulk bulk-apply bulk-cancel caption cell cell-error cell-menu cell-saved cell-saving chip chip-calc chip-edit chip-move chip-remove chips chips-clear column-menu \
 column-menu-button column-toggle columns columns-toggle density detail detail-toggle drill-down edit-hint edit-mark editor empty empty-reset \
 empty-text facet facet-bounds facet-cost facet-count facet-pill facet-pills facet-value \
 facets facets-head facets-toggle field-group field-menu filter filter-builder filter-builder-dialog filter-clear filter-dialog filter-operator \
@@ -469,7 +475,7 @@ sort-index source status table toolbar total-row validation viewport
 
 text keys
   addColumn addFilter addFilterTitle addGrouping addMeasure addRow aggregateAvg aggregateCell aggregateCount aggregateGroup aggregateMax aggregateMin \
-aggregateNone aggregateRange aggregateSum apply bandKeep booleanFalse booleanTrue bulkApply bulkCaption bulkDone bulkMenu bulkReadonly calcValue cancel cellRequired chipRemove chipsClear chipsGroup choiceRefused choicesOne choicesOther clear columnAtEdge \
+aggregateNone aggregateRange aggregateSum apply bandKeep booleanFalse booleanTrue bulkApply bulkCaption bulkDone bulkMenu bulkReadonly calcValue cancel cellColumnMenu cellCopied cellCopy cellDeselectRow cellEdit cellMenu cellOpenRecord cellRequired cellSelectRow chipRemove chipsClear chipsGroup choiceRefused choicesOne choicesOther clear columnAtEdge \
 columnFull columnHidden columnMenu columnMoved columnPinnedEnd columnPinnedStart columnShown columnUnpinned columnWidth columnsGroup densityComfortable \
 densityCompact densityGroup densityNormal detailHidden detailHide detailPanel detailShow detailShown editHint editLocked editLockedHint empty emptyFiltered emptyReset emptySource emptyValue \
 error errorUnknown facetChipValues facetFrom facetQueries facetTo facetsGroup facetsReset \
