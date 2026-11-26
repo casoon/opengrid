@@ -4,7 +4,7 @@
  * The props are the element's attributes in camelCase plus the options of
  * `connect` from `@casoon/opengrid`; the callbacks are Vue events instead:
  * `update:view` (so `v-model:view` works), `selectionChange`, `cellChange`,
- * `paste`, `bulkChange`, `rowAction` and `sourceReplaced` — `@selection-change`
+ * `paste`, `bulkChange`, `rowAction`, `cellAction` and `sourceReplaced` — `@selection-change`
  * and so on in a template. `onRowAdd` stays a prop, because its answer is the
  * new row's state; a template writes it as `@row-add` all the same.
  */
@@ -24,6 +24,7 @@ import type {
   PivotView,
   DrillDownDetail,
   RowActionDetail,
+  CellActionDetail,
   SelectionChangeDetail,
   SourceReplacedDetail,
   View,
@@ -37,6 +38,7 @@ type Callbacks =
   | "onPaste"
   | "onBulkChange"
   | "onRowAction"
+  | "onCellAction"
   | "onDrillDown"
   | "onSourceReplaced";
 
@@ -52,6 +54,7 @@ export type OpengridEmits = {
   paste: (detail: PasteDetail) => void;
   bulkChange: (detail: BulkChangeDetail) => void;
   rowAction: (detail: RowActionDetail) => void;
+  cellAction: (detail: CellActionDetail) => void;
   /** The pivot only: a value was pressed, with `drill-down`. */
   drillDown: (detail: DrillDownDetail) => void;
   sourceReplaced: (detail: SourceReplacedDetail) => void;

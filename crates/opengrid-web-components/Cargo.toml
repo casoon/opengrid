@@ -82,6 +82,8 @@ web-sys = { version = "0.3", features = [
     "MouseEvent",
     "Node",
     "NodeList",
+    # Taps, double-taps, long-presses and the range on any pointer (issue #524).
+    "PointerEvent",
     # The filter row follows the columns' widths (issue #62).
     "ResizeObserver",
     "ScrollIntoViewOptions",

@@ -77,7 +77,7 @@ pub(super) fn paint(host: &HtmlElement) {
     }
 }
 
-fn cell_of(td: &Element) -> Option<CellRef> {
+pub(super) fn cell_of(td: &Element) -> Option<CellRef> {
     Some(CellRef::new(
         td.get_attribute("data-row")?.parse().ok()?,
         td.get_attribute("data-col")?.parse().ok()?,
@@ -172,10 +172,17 @@ pub(super) fn on_key(
 
 /// The cell under a pointer event, if it is a data cell of the grid and not a
 /// field in it.
-fn data_cell(event: &Event) -> Option<(HtmlElement, CellRef, Element)> {
+pub(super) fn data_cell(event: &Event) -> Option<(HtmlElement, CellRef, Element)> {
     let root = current_shadow_root(event)?;
     let host = root.host().dyn_into::<HtmlElement>().ok()?;
     let target = event.target()?.dyn_into::<Element>().ok()?;
+    let td = cell_element(&target)?;
+    let cell = cell_of(&td)?;
+    Some((host, cell, td))
+}
+
+/// The data cell `target` is in, unless it is in a field or a button there.
+pub(super) fn cell_element(target: &Element) -> Option<Element> {
     if target
         .closest("input, select, textarea, button, [part=\"editor\"]")
         .ok()
@@ -184,22 +191,18 @@ fn data_cell(event: &Event) -> Option<(HtmlElement, CellRef, Element)> {
     {
         return None;
     }
-    let td = target.closest("td[data-row][data-col]").ok().flatten()?;
-    let cell = cell_of(&td)?;
-    Some((host, cell, td))
+    target.closest("td[data-row][data-col]").ok().flatten()
 }
 
-pub(super) fn on_mouse_down(event: Event) {
-    let Some((host, cell, _)) = data_cell(&event) else {
-        return;
-    };
-    let Some(runtime) = runtime(&host) else {
-        return;
-    };
-    let Some(mouse) = event.dyn_ref::<web_sys::MouseEvent>() else {
-        return;
-    };
-    if mouse.button() != 0 || !allowed(&host) {
+/// The main button went down on `cell`: `Shift` marks from where the focus
+/// stands, anything else may begin a drag.
+pub(super) fn press(
+    host: &HtmlElement,
+    runtime: &Rc<RefCell<GridRuntime>>,
+    cell: CellRef,
+    mouse: &web_sys::MouseEvent,
+) {
+    if mouse.button() != 0 || !allowed(host) {
         return;
     }
     if mouse.shift_key() {
@@ -215,31 +218,37 @@ pub(super) fn on_mouse_down(event: Event) {
             let next = CellRange::new(anchor, cell);
             runtime.borrow_mut().range = Some(next);
             runtime.borrow_mut().drag_from = None;
-            paint(&host);
-            announce_size(&host, &next);
+            paint(host);
+            announce_size(host, &next);
         }
         return;
     }
-    runtime.borrow_mut().drag_from = Some(cell);
-    clear(&host, &runtime);
+    begin_drag(host, runtime, cell);
 }
 
-pub(super) fn on_mouse_over(event: Event) {
-    let Some((host, cell, _)) = data_cell(&event) else {
+/// A drag may begin at `cell`: the old block ends.
+pub(super) fn begin_drag(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>, cell: CellRef) {
+    if !allowed(host) {
         return;
-    };
-    let Some(runtime) = runtime(&host) else {
-        return;
-    };
-    let Some(mouse) = event.dyn_ref::<web_sys::MouseEvent>() else {
-        return;
-    };
+    }
+    runtime.borrow_mut().drag_from = Some(cell);
+    clear(host, runtime);
+}
+
+/// The pointer is over `cell` while a drag is on; `held` is whether the
+/// button (or the finger) is still down.
+pub(super) fn drag_over(
+    host: &HtmlElement,
+    runtime: &Rc<RefCell<GridRuntime>>,
+    cell: CellRef,
+    held: bool,
+) {
     let from = runtime.borrow().drag_from;
     let Some(from) = from else {
         return;
     };
-    // A button let go outside the grid never reached `mouseup`.
-    if mouse.buttons() & 1 == 0 {
+    // A button let go outside the grid never reached `pointerup`.
+    if !held {
         runtime.borrow_mut().drag_from = None;
         return;
     }
@@ -255,23 +264,15 @@ pub(super) fn on_mouse_over(event: Event) {
     {
         let _ = selection.remove_all_ranges();
     }
-    paint(&host);
+    paint(host);
 }
 
-pub(super) fn on_mouse_up(event: Event) {
-    let Some(root) = current_shadow_root(&event) else {
-        return;
-    };
-    let Ok(host) = root.host().dyn_into::<HtmlElement>() else {
-        return;
-    };
-    let Some(runtime) = runtime(&host) else {
-        return;
-    };
+/// The drag ends: its block is said once.
+pub(super) fn end_drag(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>) {
     let dragged = runtime.borrow_mut().drag_from.take().is_some();
     let range = runtime.borrow().range;
     if dragged && let Some(range) = range {
-        announce_size(&host, &range);
+        announce_size(host, &range);
     }
 }
 
@@ -282,7 +283,7 @@ thread_local! {
 
 /// The text of a block as values, or `None` — with the sentence said — when it
 /// reaches rows that are not loaded.
-fn copy_text(
+pub(super) fn copy_text(
     host: &HtmlElement,
     runtime: &Rc<RefCell<GridRuntime>>,
     block: opengrid_grid::CellRange,
@@ -323,12 +324,30 @@ fn copy_text(
         range::block_text(&lines)
     };
     let (rows, cols) = block.size();
-    runtime
-        .borrow_mut()
-        .state
-        .set_notice(texts.range_copied(rows, cols));
+    let said = if block.is_single() {
+        texts.cell_copied.clone()
+    } else {
+        texts.range_copied(rows, cols)
+    };
+    runtime.borrow_mut().state.set_notice(said);
     render(host, false);
     Some(text)
+}
+
+/// Puts `text` on the clipboard, where the browser offers `writeText`.
+pub(super) fn write_clipboard(text: &str) {
+    let Some(clipboard) = web_sys::window()
+        .and_then(|window| js_sys::Reflect::get(&window, &"navigator".into()).ok())
+        .and_then(|navigator| js_sys::Reflect::get(&navigator, &"clipboard".into()).ok())
+        .filter(|clipboard| clipboard.is_object())
+    else {
+        return;
+    };
+    if let Ok(write) = js_sys::Reflect::get(&clipboard, &"writeText".into())
+        .and_then(|write| write.dyn_into::<js_sys::Function>())
+    {
+        let _ = write.call1(&clipboard, &JsValue::from_str(text));
+    }
 }
 
 /// Firefox sends no `copy` event for a key when nothing is selected: if none
@@ -344,20 +363,8 @@ pub(super) fn copy_fallback(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime
         let Some(block) = runtime.borrow().range.filter(|range| !range.is_single()) else {
             return;
         };
-        let Some(text) = copy_text(&host, &runtime, block) else {
-            return;
-        };
-        let Some(clipboard) = web_sys::window()
-            .and_then(|window| js_sys::Reflect::get(&window, &"navigator".into()).ok())
-            .and_then(|navigator| js_sys::Reflect::get(&navigator, &"clipboard".into()).ok())
-            .filter(|clipboard| clipboard.is_object())
-        else {
-            return;
-        };
-        if let Ok(write) = js_sys::Reflect::get(&clipboard, &"writeText".into())
-            .and_then(|write| write.dyn_into::<js_sys::Function>())
-        {
-            let _ = write.call1(&clipboard, &JsValue::from_str(&text));
+        if let Some(text) = copy_text(&host, &runtime, block) {
+            write_clipboard(&text);
         }
     });
     if let Some(window) = web_sys::window() {

@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>opengrid touch and pointer fixture</title>
+    <style>
+      body {
+        margin: 0;
+      }
+      opengrid-grid {
+        display: block;
+        height: 420px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid touch and pointer fixture</h1>
+      <opengrid-grid
+        label="Rooms"
+        datasource="rooms"
+        columns="id,name,seats"
+        window-size="30"
+        row-key="id"
+        column-menu
+      ></opengrid-grid>
+    </main>
+    <script type="module">
+      // Issue #524: the pointer on cells — a double-click, a tap on the focused
+      // cell, a long-press and the cell menu with the page's own items. `id` is
+      // the read-only key; `?locked` sets `edit-locked`.
+      import { loadOpengrid, createLocalProvider } from "/packages/opengrid/loader.js";
+      import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+
+      window.__changes = [];
+      window.__actions = [];
+      window.__selections = [];
+      document.addEventListener("opengrid-cell-change", (event) => window.__changes.push(event.detail));
+      document.addEventListener("opengrid-cell-action", (event) => window.__actions.push(event.detail));
+      document.addEventListener("opengrid-selection-change", (event) =>
+        window.__selections.push(event.detail),
+      );
+
+      await init();
+      const schema = JSON.stringify({
+        fields: [
+          { name: "id", type: "int64", nullable: false },
+          { name: "name", type: "utf8", nullable: false },
+          { name: "seats", type: "int64", nullable: false },
+        ],
+      });
+      const rows = Array.from({ length: 200 }, (_, index) => ({
+        id: index + 1,
+        name: `Room ${index + 1}`,
+        seats: (index % 6) + 2,
+      }));
+      const provider = createLocalProvider(new Engine());
+      await provider.loadRows("rooms", rows, schema);
+      const host = document.querySelector("opengrid-grid");
+      if (location.search.includes("locked")) host.setAttribute("edit-locked", "");
+      const loader = await loadOpengrid();
+      loader.module.set_cell_actions(host, [
+        { id: "book", label: "Book this room" },
+        { id: "rename", label: "Suggest a name", column: "name" },
+        { id: "", label: "No id, no item" },
+      ]);
+      loader.module.set_provider(host, provider);
+      window.__module = loader.module;
+      window.__ready = true;
+    </script>
+  </body>
+</html>

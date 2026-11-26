@@ -39,6 +39,16 @@ Two things belong in every release entry and are easy to leave out:
   saving, the selection, undo and the detail panel name records by it as before
   ([#529](https://github.com/casoon/opengrid/issues/529)). Details:
   [Saving edits](https://casoon.github.io/opengrid/docs/api/#saving-edits).
+- **Grid:** the pointer reaches what the keys reach: a double-click, a double-tap or a tap on the
+  focused cell opens the editor, with the phone's keyboard; a long-press, a right click,
+  `Shift`+`F10` or the context-menu key opens a cell menu (edit, copy, select the row, open the
+  record, the column menu); a long-press and a drag mark a range, a swipe scrolls. Under a finger
+  rows and buttons are 44 px tall ([#524](https://github.com/casoon/opengrid/issues/524)). Details:
+  [Pointer and touch](https://casoon.github.io/opengrid/docs/api/#pointer-and-touch).
+- **Grid:** the page's own items in the cell menu, `set_cell_actions` (`cellActions` in `connect`),
+  fire `opengrid-cell-action` (`onCellAction`) with the cell's column and record key
+  ([#524](https://github.com/casoon/opengrid/issues/524)). Details:
+  [The cell menu](https://casoon.github.io/opengrid/docs/api/#the-cell-menu).
 
 ### Changed
 

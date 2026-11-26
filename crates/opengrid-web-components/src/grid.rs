@@ -444,6 +444,11 @@ pub const SELECTION_ATTRIBUTE: &str = "selection";
 /// and it should be, or a reader who raised their browser's font size would be
 /// overruled by ours (1.4.4). The consequence a page has to know: raising the
 /// font size means raising [`ROW_HEIGHT_PROPERTY`] with it.
+/// The least row height under a coarse pointer — a finger (issue #524): the
+/// 44 px target of WCAG 2.5.5 and both platforms' guidelines. `normal` and
+/// `compact` rise to it; `comfortable` is taller already.
+pub const COARSE_ROW_HEIGHT: u64 = 44;
+
 pub const DENSITIES: &[(&str, u64, u64, &str)] = &[
     ("compact", 34, 10, "0.8125rem"),
     ("normal", DEFAULT_ROW_HEIGHT, 12, "0.875rem"),
@@ -2065,6 +2070,23 @@ pub fn grid_css() -> String {
                    outline: 1px solid color-mix(in oklab, var({ACCENT_PROPERTY}) 55%, transparent);
                    outline-offset: -1px; }}
          table[data-ranging] td {{ user-select: none; }}
+         /* The pointer on cells (issue #524): a double-click or a double-tap
+            edits instead of selecting the cell's text, and a long-press opens
+            the cell menu instead of the phone's callout. The focused cell keeps
+            its text selectable, for copying. */
+         tbody td[data-col]:not(:focus) {{ user-select: none; -webkit-user-select: none; }}
+         tbody td[data-col] {{ -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }}
+         [part=\"viewport\"] {{ touch-action: manipulation; }}
+         /* A finger needs 44 px (issue #524): rows, the header with them, and
+            the buttons and menu entries. A page's own row height still wins. */
+         @media (pointer: coarse) {{
+           :host, :host([{DENSITY_ATTRIBUTE}=\"{compact_name}\"]) {{ {ROW_HEIGHT_PROPERTY}: {COARSE_ROW_HEIGHT}px; }}
+           /* `:host` first: these come before the rules they raise. */
+           :host [part=\"column-menu-button\"] {{ height: {COARSE_ROW_HEIGHT}px; }}
+           :host :is([part=\"toolbar\"], [part=\"pager\"]) button,
+           :host :is([part=\"column-menu\"], [part=\"cell-menu\"]) [role^=\"menuitem\"] {{
+                   min-height: {COARSE_ROW_HEIGHT}px; }}
+         }}
          tbody tr[data-selected=\"true\"] {{ background: var({SELECTED_PROPERTY});
                      box-shadow: inset 3px 0 0 var({ACCENT_PROPERTY}); }}
          /* The bar stands where the row starts (issue #320). */
@@ -2206,27 +2228,27 @@ pub fn grid_css() -> String {
            th[data-edit=\"editable\"] [part=\"edit-mark\"] {{ display: inline-block; }}
            th[data-edit=\"editable\"] [part=\"edit-mark\"]::before {{ content: \"\\270E\" / \"\"; }}
          }}
-         [part=\"column-menu\"] {{ position: fixed; inset: auto; margin: 0; padding: 6px;
+         :is([part=\"column-menu\"], [part=\"cell-menu\"]) {{ position: fixed; inset: auto; margin: 0; padding: 6px;
                    min-width: 14rem; box-sizing: border-box;
                    background: var({SURFACE_PROPERTY}); color: var({INK_PROPERTY});
                    border: 1px solid var({LINE_STRONG_PROPERTY});
                    border-radius: min(var({RADIUS_PROPERTY}), 10px);
                    box-shadow: 0 12px 32px rgb(0 0 0 / 0.18);
                    font-family: var({FONT_PROPERTY}); font-size: var({FONT_SIZE_PROPERTY}); }}
-         [part=\"column-menu\"] [role^=\"menuitem\"] {{ display: flex; align-items: center;
+         :is([part=\"column-menu\"], [part=\"cell-menu\"]) [role^=\"menuitem\"] {{ display: flex; align-items: center;
                    gap: 0.5rem; min-height: 32px; padding: 0 8px; cursor: pointer;
                    border-radius: min(var({RADIUS_PROPERTY}), 6px); }}
-         [part=\"column-menu\"] [role^=\"menuitem\"]:hover {{ background: var({HOVER_PROPERTY}); }}
-         [part=\"column-menu\"] [role^=\"menuitem\"]:focus {{
+         :is([part=\"column-menu\"], [part=\"cell-menu\"]) [role^=\"menuitem\"]:hover {{ background: var({HOVER_PROPERTY}); }}
+         :is([part=\"column-menu\"], [part=\"cell-menu\"]) [role^=\"menuitem\"]:focus {{
                    outline: var({FOCUS_WIDTH_PROPERTY}) solid Highlight;
                    outline-offset: calc(-1 * var({FOCUS_WIDTH_PROPERTY})); }}
-         [part=\"column-menu\"] [role=\"menuitemradio\"]::before {{ content: \"\" / \"\";
+         :is([part=\"column-menu\"], [part=\"cell-menu\"]) [role=\"menuitemradio\"]::before {{ content: \"\" / \"\";
                    display: inline-block; width: 1em; }}
-         [part=\"column-menu\"] [role=\"menuitemradio\"][aria-checked=\"true\"]::before {{
+         :is([part=\"column-menu\"], [part=\"cell-menu\"]) [role=\"menuitemradio\"][aria-checked=\"true\"]::before {{
                    content: \"\\2713\" / \"\"; color: var({ACCENT_INK_PROPERTY}); }}
-         [part=\"column-menu\"] [role=\"separator\"] {{ height: 1px; margin: 5px 0;
+         :is([part=\"column-menu\"], [part=\"cell-menu\"]) [role=\"separator\"] {{ height: 1px; margin: 5px 0;
                    background: var({LINE_PROPERTY}); }}
-         [part=\"column-menu\"] [role=\"group\"] > [part=\"menu-label\"] {{
+         :is([part=\"column-menu\"], [part=\"cell-menu\"]) [role=\"group\"] > [part=\"menu-label\"] {{
                    padding: 4px 8px; font-size: 0.75em; color: var({INK_MUTED_PROPERTY});
                    text-transform: uppercase; letter-spacing: 0.05em; }}
          /* The toolbar and the chips (point 65). Each hidden group says

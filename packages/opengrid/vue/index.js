@@ -42,7 +42,17 @@ import { connect } from "../loader.js";
 
 /** The options of `connect` that are props; deep ones compare by value. */
 const SHALLOW = ["provider", "detailRenderer"];
-const DEEP = ["texts", "formats", "presentation", "choices", "actions", "validators", "cellTemplates", "view"];
+const DEEP = [
+  "texts",
+  "formats",
+  "presentation",
+  "choices",
+  "actions",
+  "cellActions",
+  "validators",
+  "cellTemplates",
+  "view",
+];
 
 /** The events, by `connect`'s callback. */
 const EVENTS = {
@@ -51,6 +61,7 @@ const EVENTS = {
   onPaste: "paste",
   onBulkChange: "bulkChange",
   onRowAction: "rowAction",
+  onCellAction: "cellAction",
   onDrillDown: "drillDown",
   onSourceReplaced: "sourceReplaced",
 };

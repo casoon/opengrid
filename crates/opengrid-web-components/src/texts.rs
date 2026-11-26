@@ -103,6 +103,17 @@ pub struct GridTexts {
     pub aggregate_range: String,
     /// The column menu (point 64). May use `{column}`.
     pub column_menu: String,
+    /// The cell menu (issue #524): its accessible name, which may use
+    /// `{column}`, and the grid's own entries.
+    pub cell_menu: String,
+    pub cell_edit: String,
+    pub cell_copy: String,
+    /// Said after the cell menu copied one cell.
+    pub cell_copied: String,
+    pub cell_select_row: String,
+    pub cell_deselect_row: String,
+    pub cell_open_record: String,
+    pub cell_column_menu: String,
     pub sort_ascending: String,
     pub sort_descending: String,
     /// A further sort key's place, said by its column header (issue #229). May
@@ -492,6 +503,14 @@ pub(crate) const KEYS: &[&str] = &[
     "aggregateMax",
     "aggregateRange",
     "columnMenu",
+    "cellMenu",
+    "cellEdit",
+    "cellCopy",
+    "cellCopied",
+    "cellSelectRow",
+    "cellDeselectRow",
+    "cellOpenRecord",
+    "cellColumnMenu",
     "sortAscending",
     "sortDescending",
     "sortKey",
@@ -749,6 +768,14 @@ impl Default for GridTexts {
             aggregate_max: "Maximum".to_owned(),
             aggregate_range: "Range".to_owned(),
             column_menu: "{column} column menu".to_owned(),
+            cell_menu: "{column} cell menu".to_owned(),
+            cell_edit: "Edit".to_owned(),
+            cell_copy: "Copy".to_owned(),
+            cell_copied: "Copied".to_owned(),
+            cell_select_row: "Select row".to_owned(),
+            cell_deselect_row: "Deselect row".to_owned(),
+            cell_open_record: "Open record".to_owned(),
+            cell_column_menu: "Column menu".to_owned(),
             sort_ascending: "Sort ascending".to_owned(),
             sort_descending: "Sort descending".to_owned(),
             sort_key: "Sort key {position}".to_owned(),
@@ -1376,6 +1403,11 @@ impl GridTexts {
         fill(&self.column_menu, "column", self.column(column))
     }
 
+    /// The cell menu's accessible name (issue #524).
+    pub fn cell_menu(&self, column: &str) -> String {
+        fill(&self.cell_menu, "column", self.column(column))
+    }
+
     /// The name of one aggregate, as a menu entry and a cell say it.
     #[cfg(feature = "grid")]
     pub fn aggregate_name(&self, summary: crate::presentation::Summary) -> &str {
@@ -1736,6 +1768,14 @@ mod host {
         overwrite(&mut texts.aggregate_max, string("aggregateMax"));
         overwrite(&mut texts.aggregate_range, string("aggregateRange"));
         overwrite(&mut texts.column_menu, string("columnMenu"));
+        overwrite(&mut texts.cell_menu, string("cellMenu"));
+        overwrite(&mut texts.cell_edit, string("cellEdit"));
+        overwrite(&mut texts.cell_copy, string("cellCopy"));
+        overwrite(&mut texts.cell_copied, string("cellCopied"));
+        overwrite(&mut texts.cell_select_row, string("cellSelectRow"));
+        overwrite(&mut texts.cell_deselect_row, string("cellDeselectRow"));
+        overwrite(&mut texts.cell_open_record, string("cellOpenRecord"));
+        overwrite(&mut texts.cell_column_menu, string("cellColumnMenu"));
         overwrite(&mut texts.sort_ascending, string("sortAscending"));
         overwrite(&mut texts.sort_descending, string("sortDescending"));
         overwrite(&mut texts.sort_key, string("sortKey"));

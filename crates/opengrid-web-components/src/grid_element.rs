@@ -82,12 +82,13 @@ use opengrid_web_core::provider::provider;
 use crate::columns::{self, Pin, WIDTH_STEP};
 use crate::formats::{CellFormat, Formatter, formats};
 use crate::grid_element_events::{
-    BULK_EVENT, CELL_EVENT, PASTE_EVENT, RECORD_OPEN_EVENT, ROW_ACTION_EVENT, ROW_ADD_EVENT,
-    SELECTION_EVENT, VIEW_EVENT,
+    BULK_EVENT, CELL_ACTION_EVENT, CELL_EVENT, PASTE_EVENT, RECORD_OPEN_EVENT, ROW_ACTION_EVENT,
+    ROW_ADD_EVENT, SELECTION_EVENT, VIEW_EVENT,
 };
 
 mod builder;
 mod bulk;
+mod cell_menu;
 mod chips;
 mod column_menu;
 mod column_ops;
@@ -100,6 +101,7 @@ mod group_path;
 mod history;
 mod live;
 mod paste;
+mod pointer;
 mod presentation_columns;
 mod print;
 mod quick_doors;
@@ -321,6 +323,10 @@ struct GridRuntime {
     range: Option<opengrid_grid::CellRange>,
     /// Where a drag with the pointer started, while the button is down.
     drag_from: Option<CellRef>,
+    /// A finger or pen on a cell, until it lifts (issue #524).
+    press: Option<pointer::Press>,
+    /// A tap that ended where it began, for the `click` that follows.
+    tap: Option<pointer::Tap>,
     /// Bumped by every `set_cell_templates`: a cell drawn under another round
     /// is drawn again (issue #317).
     templates_round: u64,
@@ -437,6 +443,8 @@ fn fresh_runtime(
         validation_said: None,
         range: None,
         drag_from: None,
+        press: None,
+        tap: None,
         templates_round: 0,
         details: Vec::new(),
         panels_shown: false,
@@ -2296,14 +2304,8 @@ fn add_listeners(root: &ShadowRoot) {
     let _ = root
         .host()
         .add_event_listener_with_callback("copy", copied.unchecked_ref());
-    for (kind, handler) in [
-        ("mousedown", range::on_mouse_down as fn(Event)),
-        ("mouseover", range::on_mouse_over as fn(Event)),
-        ("mouseup", range::on_mouse_up as fn(Event)),
-    ] {
-        let listener = Closure::<dyn FnMut(Event)>::new(handler).into_js_value();
-        let _ = root.add_event_listener_with_callback(kind, listener.unchecked_ref());
-    }
+    // Taps, double-clicks, long-presses and the range (issues #327, #524).
+    pointer::add_listeners(root);
     let focusout = Closure::<dyn FnMut(Event)>::new(template::on_focus_out).into_js_value();
     let _ = root.add_event_listener_with_callback("focusout", focusout.unchecked_ref());
     let pasted = Closure::<dyn FnMut(Event)>::new(paste::on_paste).into_js_value();
@@ -2433,6 +2435,15 @@ fn on_key_down(event: KeyboardEvent) {
         return;
     }
 
+    // Inside an open cell menu the keys are the menu's (issue #524).
+    if let Some(target) = event
+        .target()
+        .and_then(|node| node.dyn_into::<Element>().ok())
+        && cell_menu::contains(&target)
+    {
+        cell_menu::on_menu_key(&host, &event, &target);
+        return;
+    }
     // Inside an open column menu the keys are the menu's (point 64).
     if let Some(target) = event
         .target()
@@ -2586,6 +2597,15 @@ fn on_key_down(event: KeyboardEvent) {
     {
         event.prevent_default();
         open_column_menu(&host, col);
+        return;
+    }
+    // A data cell opens its own menu with the two context-menu keys (issue
+    // #524) — not with `Alt`+`↓`, which opens the panel under the row.
+    let context_key = (event.shift_key() && event.key() == "F10") || event.key() == "ContextMenu";
+    let data_cell = runtime.borrow().active.data();
+    if context_key && let Some(cell) = data_cell {
+        event.prevent_default();
+        cell_menu::open(&host, cell);
         return;
     }
     // A band's cell offers hiding the band (issue #352): in its menu and with
@@ -3208,6 +3228,11 @@ fn settle_selection(
     render(host, false);
     dispatch_selection(host, &rows);
     let _ = runtime;
+}
+
+/// Stores the page's items of the cell menu (issue #524).
+pub(crate) fn set_cell_actions(host: &HtmlElement, actions: &JsValue) {
+    cell_menu::set_cell_actions(host, actions);
 }
 
 /// Where `set_actions` stores what the page supplied.

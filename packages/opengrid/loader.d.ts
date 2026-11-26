@@ -119,6 +119,13 @@ export interface OpengridModule {
    */
   set_actions(host: HTMLElement, actions: RowAction[]): void;
   /**
+   * The page's own items in the cell menu (issue #524), after the grid's:
+   * a long-press, a right click, `Shift`+`F10` or the context-menu key opens
+   * it. `column` offers an item on that one column only. Choosing one fires
+   * `opengrid-cell-action`. The grid only.
+   */
+  set_cell_actions(host: HTMLElement, actions: CellAction[]): void;
+  /**
    * What became of a row the reader added (issue #183), by the `provisionalKey`
    * `opengrid-row-add` gave. `saved` takes the record's `row-key` as `detail`
    * when it has one now; `error` takes the message, said in the live region.
@@ -185,6 +192,8 @@ export interface ConnectOptions {
   onCellChange?: (detail: CellChangeDetail) => void;
   /** `set_actions`: compared by value. The grid only. */
   actions?: RowAction[];
+  /** `set_cell_actions`: compared by value. The grid only. */
+  cellActions?: CellAction[];
   /** `set_cell_templates`: functions compare by identity, as in `formats`. The grid only. */
   cellTemplates?: Record<string, CellTemplate>;
   /** `set_detail_renderer`: compared by identity. The grid only. */
@@ -202,6 +211,7 @@ export interface ConnectOptions {
   onPaste?: (detail: PasteDetail) => void;
   onBulkChange?: (detail: BulkChangeDetail) => void;
   onRowAction?: (detail: RowActionDetail) => void;
+  onCellAction?: (detail: CellActionDetail) => void;
   /** A value of a pivot with `drill-down` was pressed. The pivot only. */
   onDrillDown?: (detail: DrillDownDetail) => void;
   /** The provider loaded the grid's source again (`loadRows`); the grid asks anew. */
@@ -1072,6 +1082,14 @@ export type TextKey =
   | "aggregateMax"
   | "aggregateRange"
   | "columnMenu"
+  | "cellMenu"
+  | "cellEdit"
+  | "cellCopy"
+  | "cellCopied"
+  | "cellSelectRow"
+  | "cellDeselectRow"
+  | "cellOpenRecord"
+  | "cellColumnMenu"
   | "sortAscending"
   | "sortDescending"
   | "sortKey"
@@ -1377,6 +1395,25 @@ export interface RowActionDetail {
   key?: WireValue;
 }
 
+/** One of the page's items in the cell menu (`set_cell_actions`). */
+export interface CellAction {
+  id: string;
+  label: string;
+  /** Offered on this column only; on every column without. */
+  column?: string;
+}
+
+/** `opengrid-cell-action`: one of the page's items in the cell menu was chosen (issue #524). */
+export interface CellActionDetail {
+  id: string;
+  /** The row's position — in a grouped grid a display position; use `key`. */
+  row: number;
+  /** The cell's column, by field name. */
+  column: string;
+  /** With `row-key` only: the record's value of that field. */
+  key?: WireValue;
+}
+
 /**
  * `opengrid-drill-down`: a value of an `<opengrid-pivot>` with `drill-down`
  * was pressed (issue #330). The page shows the rows.
@@ -1505,6 +1542,7 @@ export interface OpengridEventMap {
   "opengrid-view-change": CustomEvent<ViewChangeDetail>;
   "opengrid-query": CustomEvent<QueryDetail>;
   "opengrid-row-action": CustomEvent<RowActionDetail>;
+  "opengrid-cell-action": CustomEvent<CellActionDetail>;
   "opengrid-row-add": CustomEvent<RowAddDetail>;
   "opengrid-paste": CustomEvent<PasteDetail>;
   "opengrid-bulk-change": CustomEvent<BulkChangeDetail>;
