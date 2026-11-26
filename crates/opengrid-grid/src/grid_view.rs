@@ -216,6 +216,14 @@ impl GridView {
             pinned.insert(name.clone(), Value::String(pin.to_owned()));
         }
         columns.insert("pinned".to_owned(), Value::Object(pinned));
+        // The reader's pins for narrow grids (issue #525); `none` keeps a
+        // column from being pinned there.
+        let mut narrow = Map::new();
+        for (name, pin) in self.columns.narrow_pins() {
+            let pin = pin.map_or("none", Pin::as_str);
+            narrow.insert(name.clone(), Value::String(pin.to_owned()));
+        }
+        columns.insert("pinnedNarrow".to_owned(), Value::Object(narrow));
         out.insert("columns".to_owned(), Value::Object(columns));
 
         out.insert("density".to_owned(), Value::String(self.density.clone()));
@@ -378,12 +386,20 @@ impl GridView {
                     }
                 }
             }
-            if let Some(pinned) = layout.get("pinned").and_then(Value::as_object) {
+            for (key, narrow) in [("pinned", false), ("pinnedNarrow", true)] {
+                let Some(pinned) = layout.get(key).and_then(Value::as_object) else {
+                    continue;
+                };
                 for (name, pin) in pinned {
                     let pin = pin.as_str().unwrap_or("");
-                    match (known(name), Pin::parse(pin)) {
-                        (true, Some(pin)) => columns.restore_pin(name, Some(pin)),
-                        (true, None) if pin == "none" => columns.restore_pin(name, None),
+                    let parsed = match (Pin::parse(pin), pin) {
+                        (Some(pin), _) => Some(Some(pin)),
+                        (None, "none") => Some(None),
+                        _ => None,
+                    };
+                    match (known(name), parsed) {
+                        (true, Some(pin)) if narrow => columns.restore_narrow_pin(name, pin),
+                        (true, Some(pin)) => columns.restore_pin(name, pin),
                         (false, _) => problems.push(ViewProblem::new(
                             "columns",
                             format!("{name} is not a column of this grid"),
@@ -711,6 +727,28 @@ mod tests {
                 "{problem:?} does not say which column"
             );
         }
+    }
+
+    /// The narrow pins are in the view under `columns.pinnedNarrow` (issue
+    /// #525), read back as they were, and a token that is no pin is named.
+    #[test]
+    fn a_view_holds_the_narrow_pins() {
+        let json = opengrid_json::json!({ "columns": { "pinnedNarrow": { "id": "start", "amount": "none" } } });
+        let view = GridView::from_json(&json, &declared()).expect("reads");
+        assert_eq!(
+            view.columns.narrow_pins(),
+            [
+                ("amount".to_owned(), None),
+                ("id".to_owned(), Some(Pin::Start))
+            ]
+        );
+        assert_eq!(
+            view.to_json()["columns"]["pinnedNarrow"],
+            opengrid_json::json!({ "amount": "none", "id": "start" })
+        );
+        let json = opengrid_json::json!({ "columns": { "pinnedNarrow": { "id": "middle" } } });
+        let problems = GridView::from_json(&json, &declared()).expect_err("is refused");
+        assert_eq!(problems[0].reason, "id: middle is not a pin");
     }
 
     /// The pins are in the view under `columns.pinned` (issue #316), and one

@@ -33,12 +33,20 @@
       // Issue #525: where am I — the crosshair, the position and a range's sums
       // in the footer, the bubble while scrolling, the shadows at the edges.
       // `?rtl` lays the grid out right to left; `?pin` pins `id` at the start.
-      // `window.__delay` holds every answer back that many milliseconds.
+      // Narrow pins: `?width=N` sets the grid's width, `?keynone` gives `id`
+      // `pinNarrow: "none"`, `?customerend` gives `customer` `pinNarrow: "end"`, and
+      // `?menu` adds the column menu. `window.__delay` holds every answer back
+      // that many milliseconds; `window.__views` collects the view changes.
       import { loadOpengrid, createLocalProvider } from "/packages/opengrid/loader.js";
       import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
 
       const search = new URLSearchParams(location.search);
       if (search.has("rtl")) document.getElementById("frame").dir = "rtl";
+      const grid = document.querySelector("opengrid-grid");
+      if (search.has("width")) grid.style.width = `${search.get("width")}px`;
+      if (search.has("menu")) grid.setAttribute("column-menu", "");
+      window.__views = [];
+      document.addEventListener("opengrid-view-change", (event) => window.__views.push(event.detail.view));
       window.__queries = [];
       window.__delay = 0;
 
@@ -78,8 +86,12 @@
       const loader = await loadOpengrid();
       const width = { width: 180 };
       loader.module.set_columns(host, {
-        id: search.has("pin") ? { ...width, pin: "start" } : width,
-        customer: width,
+        id: {
+          ...width,
+          ...(search.has("pin") ? { pin: "start" } : {}),
+          ...(search.has("keynone") ? { pinNarrow: "none" } : {}),
+        },
+        customer: search.has("customerend") ? { ...width, pinNarrow: "end" } : width,
         city: width,
         seats: width,
         price: width,
@@ -90,6 +102,7 @@
       });
       loader.module.set_provider(host, provider);
       window.__rows = rows;
+      window.__module = loader.module;
       window.__ready = true;
     </script>
   </body>

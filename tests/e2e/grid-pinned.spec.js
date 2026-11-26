@@ -128,7 +128,10 @@ test("the page pins: at the start first, at the end last, in one table", async (
     await page.evaluate(() => window.__opengridModule.get_view(document.getElementById("pinned")).columns.pinned),
   ).toEqual({});
   // And a grid without a pin has nothing in its sheet: it draws as it did.
-  await page.evaluate(() => window.__opengridModule.set_columns(document.getElementById("actions"), { id: {} }));
+  // (`#actions` is narrow: `pinNarrow: "none"` keeps the key column loose.)
+  await page.evaluate(() =>
+    window.__opengridModule.set_columns(document.getElementById("actions"), { id: { pinNarrow: "none" } }),
+  );
   await expect
     .poll(() => inside(page, "#actions", (root) => root.adoptedStyleSheets[2].cssRules.length))
     .toBe(0);
@@ -343,6 +346,7 @@ test("the column menu pins too, and shows where the column is", async ({ page })
       ["pin:none", "Not pinned", "true"],
       ["pin:start", "At the start", "false"],
       ["pin:end", "At the end", "false"],
+      ["pin:narrow", "Only on narrow screens", "false"],
     ],
   });
   // With the menu's own keys: to the entry, and Enter.
@@ -358,7 +362,7 @@ test("the column menu pins too, and shows where the column is", async ({ page })
   await expect.poll(() => focusedHeader(page, "#pinned")).toBe("customer");
 
   await page.keyboard.press("Alt+ArrowDown");
-  expect((await group()).items.map(([, , checked]) => checked)).toEqual(["false", "false", "true"]);
+  expect((await group()).items.map(([, , checked]) => checked)).toEqual(["false", "false", "true", "false"]);
 });
 
 test("pinning keeps the view: sort, filter and search stay", async ({ page }) => {

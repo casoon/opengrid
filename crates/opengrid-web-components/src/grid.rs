@@ -372,8 +372,9 @@ pub const ROW_KEY_ATTRIBUTE: &str = "row-key";
 pub const TOOLBAR_ATTRIBUTE: &str = "toolbar";
 
 /// Below this width (CSS px) of the grid, the toolbar's buttons stop wrapping
-/// and scroll sideways in one row (issue #77).
-const NARROW_TOOLBAR: u32 = 560;
+/// and scroll sideways in one row (issue #77) — and the narrow pins hold
+/// (issue #525): one breakpoint for what a narrow grid is.
+pub const NARROW_TOOLBAR: u32 = 560;
 
 /// The boolean attribute that puts a search field above the grid (point 67):
 /// free text, or a filter written out (`country = DE and amount ≥ 10`).

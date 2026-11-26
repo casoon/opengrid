@@ -138,6 +138,8 @@ pub struct GridTexts {
     pub pin_none: String,
     pub pin_start: String,
     pub pin_end: String,
+    /// The menu's fourth pin choice: pinned while the grid is narrow (#525).
+    pub pin_narrow: String,
     /// The toolbar above the grid (point 65).
     pub toolbar_group: String,
     pub filter_row_toggle: String,
@@ -427,6 +429,9 @@ pub struct GridTexts {
     pub column_pinned_start: String,
     pub column_pinned_end: String,
     pub column_unpinned: String,
+    /// Said when the reader pins a column for narrow grids only (issue #525).
+    /// May use `{column}`.
+    pub column_pinned_narrow: String,
     /// The pinned columns take too much of the grid's width and scroll with
     /// the others.
     pub pins_released: String,
@@ -530,6 +535,7 @@ pub(crate) const KEYS: &[&str] = &[
     "pinNone",
     "pinStart",
     "pinEnd",
+    "pinNarrow",
     "toolbarGroup",
     "filterRowToggle",
     "densityGroup",
@@ -691,6 +697,7 @@ pub(crate) const KEYS: &[&str] = &[
     "columnPinnedStart",
     "columnPinnedEnd",
     "columnUnpinned",
+    "columnPinnedNarrow",
     "pinsReleased",
     "columnHidden",
     "columnShown",
@@ -796,6 +803,7 @@ impl Default for GridTexts {
             pin_none: "Not pinned".to_owned(),
             pin_start: "At the start".to_owned(),
             pin_end: "At the end".to_owned(),
+            pin_narrow: "Only on narrow screens".to_owned(),
             toolbar_group: "Grid tools".to_owned(),
             filter_row_toggle: "Filter row".to_owned(),
             density_group: "Density".to_owned(),
@@ -959,6 +967,7 @@ impl Default for GridTexts {
             column_pinned_start: "{column} pinned at the start".to_owned(),
             column_pinned_end: "{column} pinned at the end".to_owned(),
             column_unpinned: "{column} no longer pinned".to_owned(),
+            column_pinned_narrow: "{column} pinned at the start on narrow screens".to_owned(),
             pins_released: "Too narrow for the pinned columns: they scroll with the others"
                 .to_owned(),
             column_hidden: "{column} hidden, {visible} of {count} columns shown".to_owned(),
@@ -1564,6 +1573,11 @@ impl GridTexts {
         self.band_pinned(self.column(column), pin)
     }
 
+    /// A column or band pinned for narrow grids only (issue #525).
+    pub fn column_pinned_narrow(&self, column: &str) -> String {
+        fill(&self.column_pinned_narrow, "column", self.column(column))
+    }
+
     /// Where a band is pinned now (issue #319): the sentence of a column, with
     /// the band's own name.
     pub fn band_pinned(&self, band: &str, pin: Option<opengrid_grid::layout::Pin>) -> String {
@@ -1807,6 +1821,7 @@ mod host {
         overwrite(&mut texts.pin_none, string("pinNone"));
         overwrite(&mut texts.pin_start, string("pinStart"));
         overwrite(&mut texts.pin_end, string("pinEnd"));
+        overwrite(&mut texts.pin_narrow, string("pinNarrow"));
         overwrite(&mut texts.toolbar_group, string("toolbarGroup"));
         overwrite(&mut texts.filter_row_toggle, string("filterRowToggle"));
         overwrite(&mut texts.density_group, string("densityGroup"));
@@ -1992,6 +2007,10 @@ mod host {
         overwrite(&mut texts.column_pinned_start, string("columnPinnedStart"));
         overwrite(&mut texts.column_pinned_end, string("columnPinnedEnd"));
         overwrite(&mut texts.column_unpinned, string("columnUnpinned"));
+        overwrite(
+            &mut texts.column_pinned_narrow,
+            string("columnPinnedNarrow"),
+        );
         overwrite(&mut texts.pins_released, string("pinsReleased"));
         overwrite(&mut texts.column_hidden, string("columnHidden"));
         overwrite(&mut texts.column_shown, string("columnShown"));

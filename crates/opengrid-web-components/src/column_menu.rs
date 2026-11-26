@@ -81,8 +81,10 @@ pub struct Column<'a> {
     pub visible: usize,
     /// Whether "set for selected rows" does something now (issue #187).
     pub bulk: bool,
-    /// Where the column is pinned (issue #316).
+    /// Where the column is pinned at every width (issue #316).
     pub pin: Option<Pin>,
+    /// Whether it is pinned only while the grid is narrow (issue #525).
+    pub pin_narrow: bool,
     /// Whether the column stores keys with labels (issue #326): it is counted
     /// and nothing else.
     pub lookup: bool,
@@ -130,12 +132,27 @@ pub fn entries(column: &Column<'_>, texts: &GridTexts) -> Vec<Entry> {
     out.push(Entry::Group {
         label: texts.pin_group.clone(),
         entries: [
-            ("pin:none", &texts.pin_none, None),
-            ("pin:start", &texts.pin_start, Some(Pin::Start)),
-            ("pin:end", &texts.pin_end, Some(Pin::End)),
+            (
+                "pin:none",
+                &texts.pin_none,
+                column.pin.is_none() && !column.pin_narrow,
+            ),
+            (
+                "pin:start",
+                &texts.pin_start,
+                column.pin == Some(Pin::Start),
+            ),
+            ("pin:end", &texts.pin_end, column.pin == Some(Pin::End)),
+            // Pinned while the grid is narrow, scrolling with the others
+            // when there is room (issue #525).
+            (
+                "pin:narrow",
+                &texts.pin_narrow,
+                column.pin.is_none() && column.pin_narrow,
+            ),
         ]
         .into_iter()
-        .map(|(action, label, pin)| Entry::radio(action, label, column.pin == pin))
+        .map(|(action, label, checked)| Entry::radio(action, label, checked))
         .collect(),
     });
 
@@ -220,6 +237,7 @@ mod tests {
             visible: 5,
             bulk: false,
             pin: None,
+            pin_narrow: false,
             lookup: false,
         }
     }
@@ -244,6 +262,7 @@ mod tests {
                 "pin:none",
                 "pin:start",
                 "pin:end",
+                "pin:narrow",
                 "hide",
             ]
         );
@@ -264,6 +283,7 @@ mod tests {
                 "pin:none",
                 "pin:start",
                 "pin:end",
+                "pin:narrow",
                 "group:first",
                 "hide"
             ]
@@ -299,7 +319,8 @@ mod tests {
                 "filter",
                 "pin:none",
                 "pin:start",
-                "pin:end"
+                "pin:end",
+                "pin:narrow"
             ]
         );
     }
@@ -346,7 +367,26 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(state, [Some(false), Some(false), Some(true)]);
+        assert_eq!(state, [Some(false), Some(false), Some(true), Some(false)]);
+
+        // Pinned on narrow grids only (issue #525): its own radio.
+        amount.pin = None;
+        amount.pin_narrow = true;
+        let pinned = entries(&amount, &texts)
+            .into_iter()
+            .find_map(|entry| match entry {
+                Entry::Group { label, entries } if label == texts.pin_group => Some(entries),
+                _ => None,
+            })
+            .expect("the pin group");
+        let state: Vec<Option<bool>> = pinned
+            .iter()
+            .map(|entry| match entry {
+                Entry::Item { checked, .. } => *checked,
+                _ => None,
+            })
+            .collect();
+        assert_eq!(state, [Some(false), Some(false), Some(false), Some(true)]);
     }
 
     #[test]

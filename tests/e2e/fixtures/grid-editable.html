@@ -54,7 +54,12 @@
       const loader = await loadOpengrid();
       const grid = document.querySelector("opengrid-grid");
       window.__module = loader.module;
-      loader.module.set_columns(grid, { name: { editable: true }, seats: { editable: true } });
+      // `pinNarrow: "none"`: a pinned key column (#525) takes its row's background.
+      loader.module.set_columns(grid, {
+        id: { pinNarrow: "none" },
+        name: { editable: true },
+        seats: { editable: true },
+      });
       loader.module.set_provider(grid, provider);
       window.__ready = true;
     </script>

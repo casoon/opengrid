@@ -384,6 +384,7 @@ loader.module.set_columns(host, {
 | `title` | What the column is **called** where a reader reads it: the header, the column list, the filter row's labels, the column menu, the "+ Filter" dialog and "+ Group" menu, group rows, chips, facet headings, search suggestions and every announcement. The page's words, in the page's language. The field name stays the identifier — the query, the view, the search expressions (`country = DE`), exports and events. An empty title is reported. |
 | `width` | The column's **starting** width in pixels. A reader's resize leads after that. |
 | `pin` | `start` or `end`: where the column **starts** pinned while the others scroll sideways. A reader's own pin leads after that. See [Pinned columns](#pinned-columns). The grid only; a table refuses it. |
+| `pinNarrow` | `start`, `end` or `none`: the column's pin while the grid is **narrow**, under 560 px of its own width; `none` keeps it from being pinned there. `pin` leads where both are set. See [Narrow grids](#pinned-columns). The grid only; a table refuses it. |
 | `band` | The **band** the column stands under: a header above it that it shares with the other columns naming the same band, `band: "Address"`. The page's words, like `title`. See [Column bands](#column-bands). The grid only; a table refuses it. |
 | `align` | `start`, `end` or `center`. Numbers default to `end`, everything else to `start`. |
 | `mono` | Draw the values monospaced, so they line up character by character. |
@@ -620,8 +621,8 @@ The menu is `role="menu"` and holds **no form**: "Filter …" moves the focus to
 the column's field in the filter row, because a field inside a menu breaks the
 role. Entries appear only where they do something — aggregates for numbers and
 dates, grouping for columns that can be grouped by, "hide" unless it is the last
-column. The *Pin* group — *Not pinned*, *At the start*, *At the end* — is in
-every menu ([Pinned columns](#pinned-columns)). The menu opens below its header
+column. The *Pin* group — *Not pinned*, *At the start*, *At the end*, *Only on
+narrow screens* — is in every menu ([Pinned columns](#pinned-columns)). The menu opens below its header
 and never covers it.
 
 ### Pinned columns
@@ -641,11 +642,12 @@ loader.module.set_columns(grid, {
 |---|---|
 | The page | `pin` in `set_columns` is where a column **starts**, like `width`. It asks nothing of the column's type; a value that is neither `start` nor `end` is reported like every other mistake in the call. |
 | The reader | On the header cell, `Alt`+`Shift`+`←`/`→` takes the column one step towards that side: from a pin at the other end to not pinned, from not pinned to a pin at this one. With `column-menu`, the menu's *Pin* group does the same in one go. The reader's choice leads over the page's. Every change is said in the status line (`customer pinned at the start`); a key that changes nothing says where the column is. |
-| The view | `columns.pinned` holds what the reader changed, `{ customer: "start", id: "none" }` — `none` is a pin of the page's the reader took away. A change fires `opengrid-view-change`, like a width or a move; `set_columns` does not, it is the page's. |
+| The view | `columns.pinned` holds what the reader changed (`columns.pinnedNarrow` the narrow pins), `{ customer: "start", id: "none" }` — `none` is a pin of the page's the reader took away. A change fires `opengrid-view-change`, like a width or a move; `set_columns` does not, it is the page's. |
 | The order | The columns pinned at the start are the **first** of the row and the ones pinned at the end the **last**, each run in the order its columns had. It is one `<table>`, and the DOM, the arrow keys and a screen reader go by the same order as the screen. Pinning a column therefore moves it: one query, around the view the reader has — sort, filters, grouping and the search stay; a selection by position is dropped and said, as for every new order. `Ctrl`/`Cmd`+`←`/`→` moves a column among the columns pinned like it and stops at the edge of that run. |
 | Selection column | Pinned at the start whenever a column is. |
 | [Row actions](#row-actions) | Pinned at the end whenever a column is. |
 | The focus | A cell that takes the focus is scrolled clear of the pinned columns, never under them (WCAG 2.4.11): they are the viewport's `scroll-padding`. A pinned cell, or a pinned column's filter field, is in sight already: the focus on it scrolls nothing sideways. |
+| Narrow grids | Under **560 px** of the grid's own width — not the window's, a grid in a sidebar is narrow too — the [`row-key`](#selecting-by-key) column is pinned at the start, so a row keeps its name while the others scroll. Only while it is shown, and only where no pin of the page's holds on a narrow grid — neither a `pin`, which holds at every width, nor a `pinNarrow`: `pinNarrow` in `set_columns` (`start`, `end`, or `none` to keep the key column loose) is the page's say. The column menu's *Only on narrow screens* is the reader's: it pins the column at the start while the grid is narrow; *Not pinned* lets it go at every width. A pin at every width leads over a narrow one. Growing past 560 px or shrinking under it moves the columns as pinning does — one query when the order changes. |
 | Too narrow | When the pinned columns — the selection column and the action columns that are pinned along counted — would take more than **half** of the grid's width, the pins let go and every column scrolls; the status line says so once, when they let go — not again while the grid stays that narrow: `Too narrow for the pinned columns: they scroll with the others`. The setting stays, in the view too, and holds again as soon as there is room. Half, so that the columns that scroll keep the other half: at 320 px (WCAG 1.4.10) pinned columns alone would be the whole grid. |
 | The filter row | A pinned column's field stays above it, and a field that takes the focus is scrolled clear of the pinned ones, like a cell. |
 | Groups and totals | Their cells are pinned with their columns. The label of a group or a total runs across the empty cells beside it, as without a pin; while the grid is scrolled sideways and the first column is pinned, the label keeps to that column — it is whole again when its cell has the focus. |
@@ -1566,7 +1568,7 @@ Sort, filters, column layout and density are one value:
 ```js
 const view = loader.module.get_view(grid);
 // { sort: [{field, direction}], filters: [{column, op, value}],
-//   columns: { order, hidden, widths, pinned }, density,
+//   columns: { order, hidden, widths, pinned, pinnedNarrow }, density,
 //   group: [], expanded: [], facets: {}, selected: [4, 9],
 //   where: { or: [{ field: "country", op: "eq", value: "DE" },
 //                 { field: "amount", op: "gte", value: 1000 }] } }
@@ -1587,6 +1589,7 @@ whenever the reader changes any of it.
 | Setting what it has | Costs nothing and says nothing — a page that writes the view back on every event must not make the grid talk to itself. |
 | Why it changed | `set_view(host, view, { notice })`: the page's sentence — "Saved view Q3 applied", "Filtered by the assistant" — is said **once, with the result**, in the one live region: `17 matches · Filtered by the assistant`. A second live region of the page would be a second utterance. A view the element already has says nothing, notice or not. The same on `<opengrid-pivot>`. |
 | `columns.pinned` | The reader's pins, `{ customer: "start", id: "none" }`: `start`, `end`, or `none` for a pin of `set_columns` taken away ([Pinned columns](#pinned-columns)). Leads over `set_columns`. A view saved without it leaves the pins to the page. |
+| `columns.pinnedNarrow` | The reader's pins for narrow grids, `{ customer: "start", id: "none" }`: `none` keeps a column loose there, a pin of the page's or the key column's taken away ([Pinned columns](#pinned-columns)). |
 | `group`, `expanded` | The grouping and its open groups. A path of keys that matches no group opens nothing. |
 | `aggregates` | The reader's aggregate per column, `{ amount: "sum" }`. Leads over `set_columns`. |
 | `filterRow` | Whether the filter row shows. `true` unless turned off. |
@@ -2275,7 +2278,7 @@ boolean reads — that is `set_formats`.
 | `groupByColumn` / `groupSecondLevel` / `ungroupColumn` | `Group by this column` / `Group as second level` / `Remove this grouping` | |
 | `hideColumn` / `hideBand` | `Hide column` / `Hide band` | |
 | `bandKeep` | `{band} is all that is shown and stays` | `{band}` |
-| `pinGroup` / `pinNone` / `pinStart` / `pinEnd` | `Pin` / `Not pinned` / `At the start` / `At the end` — the column menu's group and its three choices | |
+| `pinGroup` / `pinNone` / `pinStart` / `pinEnd` / `pinNarrow` | `Pin` / `Not pinned` / `At the start` / `At the end` / `Only on narrow screens` — the column menu's group and its four choices | |
 | `toolbarGroup` / `filterRowToggle` | `Grid tools` / `Filter row` | |
 | `densityGroup` / `densityCompact` / `densityNormal` / `densityComfortable` | `Density` / `Compact` / `Normal` / `Comfortable` | |
 | `chipsGroup` / `chipsClear` | `Active filters` / `Remove all` | |
@@ -2360,7 +2363,7 @@ boolean reads — that is `set_formats`.
 | `columnWidth` | `{column} is {width} pixels wide` | `{column}`, `{width}` |
 | `columnMoved` | `{column} moved to position {position} of {count}` | `{column}`, `{position}`, `{count}` |
 | `columnAtEdge` | `{column} is already at the end` | `{column}` |
-| `columnPinnedStart` / `columnPinnedEnd` / `columnUnpinned` | `{column} pinned at the start` / `{column} pinned at the end` / `{column} no longer pinned` | `{column}` |
+| `columnPinnedStart` / `columnPinnedEnd` / `columnUnpinned` / `columnPinnedNarrow` | `{column} pinned at the start` / `{column} pinned at the end` / `{column} no longer pinned` / `{column} pinned at the start on narrow screens` | `{column}` |
 | `pinsReleased` | `Too narrow for the pinned columns: they scroll with the others` — said once when the pins let go | |
 | `columnHidden` / `columnShown` | `{column} hidden, {visible} of {count} columns shown` | `{column}`, `{visible}`, `{count}` |
 | `columnsGroup` | `Columns` | |

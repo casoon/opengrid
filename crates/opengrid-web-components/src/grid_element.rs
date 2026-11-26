@@ -135,8 +135,8 @@ use column_menu::{activate_menu_item, on_menu_key, open_column_menu};
 use column_ops::{
     Arrangement, adopt_sheets, announce, announce_refusals, apply_widths, arrangement, bands_of,
     close_columns, columns_of, hide_band, move_band, move_column, observe_columns, open_columns,
-    pin_column, pin_of, pool_of, rearrange, resize_column, retree, select_of, set_column_hidden,
-    step_pin,
+    pin_column, pin_narrow, pool_of, rearrange, resize_column, retree, select_of,
+    set_column_hidden, step_pin,
 };
 pub(crate) use editing::{CHOICES_KEY, write_row_state};
 use editing::{
@@ -391,6 +391,11 @@ fn fresh_runtime(
     host: &HtmlElement,
     known: &std::collections::BTreeMap<String, opengrid_types::Field>,
 ) -> GridRuntime {
+    // Narrow or not decides where the narrow pins stand (issue #525), and so
+    // the order the first query asks for.
+    if let Some(narrow) = column_ops::narrow_now(host) {
+        presentation::set_narrow(host, narrow);
+    }
     let columns = columns_of(host);
     let pool = pool_of(host);
     let row_height = resolve_row_height(host);

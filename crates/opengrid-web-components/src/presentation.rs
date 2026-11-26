@@ -214,6 +214,9 @@ pub struct ColumnPresentation {
     /// Where the column starts pinned (issue #316). The reader's choice leads
     /// after that, like a resize over `width`.
     pub pin: Option<Pin>,
+    /// Where the column is pinned while the grid is narrow (issue #525):
+    /// `Some(None)` keeps it from being pinned there (`pinNarrow: "none"`).
+    pub pin_narrow: Option<Option<Pin>>,
     /// The labels of the keys this column stores (issue #326).
     pub lookup: Option<Rc<Lookup>>,
     /// The band the column stands under (issue #319): the header it shares
@@ -251,6 +254,7 @@ pub struct RawColumn {
     pub readonly: Option<bool>,
     pub editable: Option<bool>,
     pub pin: Option<String>,
+    pub pin_narrow: Option<String>,
     /// The `lookup` as `(key, label)` pairs; a label that is no string is
     /// empty here. `Some(None)`: something was given that is no plain object.
     pub lookup: Option<Option<Vec<(String, String)>>>,
@@ -275,6 +279,15 @@ pub fn page_columns_of(raw: &[(String, RawColumn)]) -> PageColumns {
                 Some((name.clone(), pin))
             })
             .collect(),
+        narrow_pins: raw
+            .iter()
+            .filter_map(|(name, column)| {
+                let token = column.pin_narrow.as_deref()?;
+                let pin = narrow_pin(token)?;
+                Some((name.clone(), pin))
+            })
+            .collect(),
+        narrow: false,
         bands: raw
             .iter()
             .filter_map(|(name, column)| {
@@ -282,6 +295,14 @@ pub fn page_columns_of(raw: &[(String, RawColumn)]) -> PageColumns {
                 (!band.is_empty()).then(|| (name.clone(), band.to_owned()))
             })
             .collect(),
+    }
+}
+
+/// A `pinNarrow` token (issue #525): an end, or `none`.
+fn narrow_pin(token: &str) -> Option<Option<Pin>> {
+    match token {
+        "none" => Some(None),
+        token => Pin::parse(token).map(Some),
     }
 }
 
@@ -359,6 +380,15 @@ pub fn validate(
                 None => problems.push(PresentationProblem::new(
                     name,
                     format!("{token} is not a pin"),
+                )),
+            }
+        }
+        if let Some(token) = &entry.pin_narrow {
+            match narrow_pin(token) {
+                Some(pin) => column.pin_narrow = Some(pin),
+                None => problems.push(PresentationProblem::new(
+                    name,
+                    format!("pinNarrow: {token} is not a pin"),
                 )),
             }
         }
@@ -516,6 +546,7 @@ pub fn validate_for_table(
             (entry.readonly.is_some(), "readonly"),
             (entry.editable.is_some(), "editable"),
             (entry.pin.is_some(), "pin"),
+            (entry.pin_narrow.is_some(), "pinNarrow"),
             (entry.lookup.is_some(), "lookup"),
             (entry.band.is_some(), "band"),
         ] {
@@ -637,6 +668,12 @@ impl ColumnStyles {
                 .iter()
                 .filter_map(|(name, column)| column.pin.map(|pin| (name.clone(), pin)))
                 .collect(),
+            narrow_pins: self
+                .by_name
+                .iter()
+                .filter_map(|(name, column)| column.pin_narrow.map(|pin| (name.clone(), pin)))
+                .collect(),
+            narrow: false,
             bands: self
                 .by_name
                 .iter()
@@ -662,6 +699,28 @@ mod tests {
 
     fn raw(entry: RawColumn) -> Vec<(String, RawColumn)> {
         vec![("amount".to_owned(), entry)]
+    }
+
+    /// `pinNarrow` (issue #525) is an end or `none`, kept for the page's
+    /// narrow pins; anything else is named.
+    #[test]
+    fn a_narrow_pin_is_an_end_or_none() {
+        let narrow = |token: &str| RawColumn {
+            pin_narrow: Some(token.to_owned()),
+            ..Default::default()
+        };
+        let checked = validate(&raw(narrow("end")), &schema(), &[]).expect("an end");
+        assert_eq!(checked[0].1.pin_narrow, Some(Some(Pin::End)));
+        assert_eq!(
+            ColumnStyles::new(checked).page_columns().narrow_pins,
+            [("amount".to_owned(), Some(Pin::End))]
+        );
+        assert_eq!(
+            page_columns_of(&raw(narrow("none"))).narrow_pins,
+            [("amount".to_owned(), None)]
+        );
+        let problems = validate(&raw(narrow("left")), &schema(), &[]).expect_err("is refused");
+        assert_eq!(problems[0].reason, "pinNarrow: left is not a pin");
     }
 
     /// A table takes the look (title, alignment, faces) and refuses the grid's
@@ -1246,7 +1305,9 @@ mod tests {
 }
 
 #[cfg(target_arch = "wasm32")]
-pub use host::{is_refused, page_columns, raw, refuse, set_columns_for, store, styles};
+pub use host::{
+    is_narrow, is_refused, page_columns, raw, refuse, set_columns_for, set_narrow, store, styles,
+};
 
 /// Per-host storage of the column presentation, mirroring the formats seam.
 #[cfg(target_arch = "wasm32")]
@@ -1275,23 +1336,66 @@ mod host {
         /// The hosts whose last configuration was refused against the real
         /// schema: none of it is applied, its pins included.
         static REFUSED: RefCell<Vec<u32>> = const { RefCell::new(Vec::new()) };
+        /// The hosts that are narrow now (issue #525).
+        static NARROW: RefCell<Vec<u32>> = const { RefCell::new(Vec::new()) };
     }
 
     fn release(id: u32) {
         STYLES.with(|map| map.borrow_mut().remove(&id));
         RAW.with(|map| map.borrow_mut().remove(&id));
         REFUSED.with(|hosts| hosts.borrow_mut().retain(|host| *host != id));
+        NARROW.with(|hosts| hosts.borrow_mut().retain(|host| *host != id));
     }
 
     /// Where the page pins (issue #316) and its bands (issue #319): what it
     /// asked for ([`super::page_columns_of`]), or — once that was refused —
     /// what the last accepted configuration says.
+    ///
+    /// On a narrow grid (issue #525) the narrow pins hold, and the `row-key`
+    /// column is pinned at the start when it is shown and the page pins
+    /// nothing that holds on narrow grids itself — no `pinNarrow`, and no
+    /// `pin`, which holds at every width. `pinNarrow: "none"` on it says no.
     pub fn page_columns(host: &HtmlElement) -> PageColumns {
-        if is_refused(host) {
+        let mut page = if is_refused(host) {
             styles(host).page_columns()
         } else {
             super::page_columns_of(&raw(host))
+        };
+        page.narrow = is_narrow(host);
+        if let Some(key) = host
+            .get_attribute("row-key")
+            .map(|key| key.trim().to_owned())
+            && !key.is_empty()
+            && host
+                .get_attribute("columns")
+                .is_some_and(|columns| columns.split(',').any(|name| name.trim() == key))
+            && page.pins.is_empty()
+            && page.narrow_pins.iter().all(|(_, pin)| pin.is_none())
+            && !page.narrow_pins.iter().any(|(name, _)| *name == key)
+        {
+            page.narrow_pins.push((key, Some(super::Pin::Start)));
         }
+        page
+    }
+
+    /// Whether the grid is narrow now (issue #525), as it last measured.
+    pub fn is_narrow(host: &HtmlElement) -> bool {
+        let id = id_of(host);
+        NARROW.with(|hosts| hosts.borrow().contains(&id))
+    }
+
+    /// Remembers whether the grid is narrow; answers whether that changed.
+    pub fn set_narrow(host: &HtmlElement, narrow: bool) -> bool {
+        let id = id_of(host);
+        NARROW.with(|hosts| {
+            let mut hosts = hosts.borrow_mut();
+            let was = hosts.contains(&id);
+            hosts.retain(|host| *host != id);
+            if narrow {
+                hosts.push(id);
+            }
+            was != narrow
+        })
     }
 
     /// Whether the configuration the page asked for was refused.
@@ -1416,6 +1520,7 @@ mod host {
                         readonly: flag("readonly"),
                         editable: flag("editable"),
                         pin: text("pin"),
+                        pin_narrow: text("pinNarrow"),
                         lookup,
                         band: text("band"),
                     },

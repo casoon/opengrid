@@ -55,6 +55,12 @@ Two things belong in every release entry and are easy to leave out:
   shows the rows in sight beside the scroll bar, and an edge with columns past it shows a shadow
   ([#525](https://github.com/casoon/opengrid/issues/525)). Details:
   [Where am I](https://casoon.github.io/opengrid/docs/api/#where-am-i).
+- **Grid:** under 560 px of its own width the grid pins the `row-key` column at the start, so a row
+  keeps its name while the others scroll. `pinNarrow` in `set_columns` sets a column's pin for
+  narrow grids (`none` keeps the key column loose), the column menu offers *Only on narrow
+  screens*, and the view holds the reader's choice as `columns.pinnedNarrow`
+  ([#525](https://github.com/casoon/opengrid/issues/525)). Details:
+  [Pinned columns](https://casoon.github.io/opengrid/docs/api/#pinned-columns).
 
 ### Changed
 

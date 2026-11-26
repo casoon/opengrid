@@ -69,7 +69,10 @@
       };
       const loader = await loadOpengrid();
       const host = document.querySelector("opengrid-grid");
+      // On the narrow project the key column would be pinned (#525) and, too
+      // wide for it, let go with a notice: `pinNarrow: "none"` keeps it loose.
       window.__columns = {
+        id: { pinNarrow: "none" },
         customer_id: {
           title: "Customer",
           lookup: { 1: "Zeta GmbH", 2: "Alpha AG", 3: "Mid Ltd" },

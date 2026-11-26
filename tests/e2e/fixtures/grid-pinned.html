@@ -102,7 +102,12 @@
         }
         // No widths: every column, the action column too, takes its share of
         // the table's least width, which is wider than the grid.
-        loader.module.set_columns(document.getElementById("actions"), { ordered_on: { pin: "end" } });
+        // `#actions` is narrower than 560 px: `pinNarrow: "none"` keeps its key
+        // column from the default pin for narrow grids (#525).
+        loader.module.set_columns(document.getElementById("actions"), {
+          id: { pinNarrow: "none" },
+          ordered_on: { pin: "end" },
+        });
         loader.module.set_actions(document.getElementById("actions"), [{ id: "open", label: "Open" }]);
         loader.module.set_columns(document.getElementById("grouped"), {
           ...wide,
