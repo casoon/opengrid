@@ -53,6 +53,9 @@ Two things belong in every release entry and are easy to leave out:
   bar over a million rows) placed the old window's rows under the new shift before the new
   window's, two passes over the window in one frame; it now places them once
   ([#518](https://github.com/casoon/opengrid/issues/518)).
+- **Grid:** a `page-size` set or changed after the grid was built kept the old number of row
+  slots: the page showed empty rows a screen reader counted, or was cut short; the grid now
+  draws exactly the page ([#539](https://github.com/casoon/opengrid/issues/539)).
 
 
 ## [0.20.2] - 2026-11-23

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>opengrid late paging fixture</title>
+    <style>
+      opengrid-grid {
+        --og-row-height: 32px;
+        display: block;
+        height: 260px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid late paging fixture</h1>
+      <!-- A pool of 12, and `page-size` comes only after the element is
+           defined: the skeleton is built by then, with 12 rows. -->
+      <opengrid-grid
+        label="Orders"
+        datasource="orders"
+        columns="id,customer,amount"
+        window-size="12"
+      ></opengrid-grid>
+    </main>
+    <script type="module">
+      import { loadOpengrid, createLocalProvider } from "/packages/opengrid/loader.js";
+      import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+
+      await init();
+      const engine = new Engine();
+      const schema = await (await fetch("/tests/e2e/fixtures/grid-long.schema.json")).text();
+      const csv = await (await fetch("/tests/e2e/fixtures/grid-long.csv")).arrayBuffer();
+      engine.load_csv("orders", new Uint8Array(csv), schema);
+
+      const loader = await loadOpengrid();
+      const grid = document.querySelector("opengrid-grid");
+      grid.setAttribute("page-size", "5");
+      loader.module.set_provider(grid, createLocalProvider(engine));
+      window.__ready = true;
+    </script>
+  </body>
+</html>
