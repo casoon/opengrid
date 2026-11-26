@@ -190,3 +190,15 @@ test.describe("the columns the reader locked", () => {
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   });
 });
+
+test("a menu with no room below or above its header scrolls inside the window", async ({ page }) => {
+  await page.setViewportSize({ width: 1000, height: 400 });
+  await open(page, "?marked");
+  await menuActions(page, NAME);
+  const box = await shadow(page, (root) => {
+    const rect = root.querySelector('[part="column-menu"]').getBoundingClientRect();
+    return { bottom: rect.bottom, scrolls: root.querySelector('[part="column-menu"]').scrollHeight > rect.height };
+  });
+  expect(box.bottom).toBeLessThanOrEqual(400);
+  expect(box.scrolls).toBe(true);
+});

@@ -232,6 +232,15 @@ fn place_menu(root: &ShadowRoot, menu: &HtmlElement, col: usize) {
     if top + own.height() > height - GAP && cell.top() - own.height() - GAP >= GAP {
         top = cell.top() - own.height() - GAP;
     }
+    // Neither below nor above the header is there room for all of it: it takes
+    // what is left below and scrolls (issue #527 added an entry to a menu that
+    // already ran to the window's edge). It never covers its header.
+    let room = height - top - GAP;
+    if own.height() > room && room > 0.0 {
+        let style = menu.style();
+        let _ = style.set_property("max-height", &format!("{room}px"));
+        let _ = style.set_property("overflow-y", "auto");
+    }
     let _ = menu.style().set_property("left", &format!("{left}px"));
     let _ = menu.style().set_property("top", &format!("{top}px"));
 }

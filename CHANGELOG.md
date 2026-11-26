@@ -81,6 +81,7 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Fixed
 
+- **Grid:** a column menu with room neither below nor above its header scrolls inside the window instead of running past its edge.
 - **Grid:** a jump over a result taller than the browser lets an element be (dragging the scroll
   bar over a million rows) placed the old window's rows under the new shift before the new
   window's, two passes over the window in one frame; it now places them once

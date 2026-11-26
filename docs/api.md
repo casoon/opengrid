@@ -628,7 +628,7 @@ role. Entries appear only where they do something — aggregates for numbers and
 dates, grouping for columns that can be grouped by, "hide" unless it is the last
 column. The *Pin* group — *Not pinned*, *At the start*, *At the end*, *Only on
 narrow screens* — is in every menu ([Pinned columns](#pinned-columns)). The menu opens below its header
-and never covers it.
+and never covers it; where there is room neither below nor above, it scrolls inside the window.
 
 ### Pinned columns
 
