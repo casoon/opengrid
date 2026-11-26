@@ -2050,7 +2050,12 @@ pub fn grid_css() -> String {
                    opacity: 1; visibility: visible; transition: opacity 150ms; }}
          [part=\"edit-hint\"]:empty {{ display: none; }}
          [part=\"status\"][data-state=\"error\"] {{ font-weight: bold; color: var({INK_PROPERTY}); }}
-         [part=\"viewport\"] {{ flex: 1 1 0; min-height: 0; overflow-y: auto; position: relative; display: block; }}
+         /* Sideways the grid keeps a swipe past its left edge from being the
+            browser's back gesture (issue #526); vertically the page scrolls on
+            at the grid's end, so nobody is trapped in a grid that fills the
+            screen. */
+         [part=\"viewport\"] {{ flex: 1 1 0; min-height: 0; overflow-y: auto; position: relative; display: block;
+                               overscroll-behavior-x: contain; }}
          [part=\"sort-direction\"], [part=\"sort-index\"] {{ margin-inline-start: 0.25rem; font-size: 0.75em;
                              color: var({ACCENT_INK_PROPERTY}); }}
          /* An empty mark must not reserve space: an unsorted header would
