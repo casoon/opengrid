@@ -455,11 +455,11 @@ custom properties (set)
 --og-row-height --og-header-height --og-filter-height --og-status-height
 
 custom properties (computed)
-  --og-accent-soft --og-accent-ink --og-selected --og-hover
+  --og-accent-soft --og-accent-ink --og-selected --og-hover --og-editable
 
 parts
   action action-cell action-header add-field add-filter add-grouping band body bulk bulk-apply bulk-cancel caption cell cell-error cell-saved cell-saving chip chip-calc chip-edit chip-move chip-remove chips chips-clear column-menu \
-column-menu-button column-toggle columns columns-toggle density detail detail-toggle drill-down editor empty empty-reset \
+column-menu-button column-toggle columns columns-toggle density detail detail-toggle drill-down edit-hint edit-mark editor empty empty-reset \
 empty-text facet facet-bounds facet-cost facet-count facet-pill facet-pills facet-value \
 facets facets-head facets-toggle field-group field-menu filter filter-builder filter-builder-dialog filter-clear filter-dialog filter-operator \
 filter-row-toggle filter-value footer group-mark group-toggle grouping-menu header layout list list-item list-item-remove listbox menu-label operator-menu \
@@ -471,7 +471,7 @@ text keys
   addColumn addFilter addFilterTitle addGrouping addMeasure addRow aggregateAvg aggregateCell aggregateCount aggregateGroup aggregateMax aggregateMin \
 aggregateNone aggregateRange aggregateSum apply bandKeep booleanFalse booleanTrue bulkApply bulkCaption bulkDone bulkMenu bulkReadonly calcValue cancel cellRequired chipRemove chipsClear chipsGroup choiceRefused choicesOne choicesOther clear columnAtEdge \
 columnFull columnHidden columnMenu columnMoved columnPinnedEnd columnPinnedStart columnShown columnUnpinned columnWidth columnsGroup densityComfortable \
-densityCompact densityGroup densityNormal detailHidden detailHide detailPanel detailShow detailShown editLocked empty emptyFiltered emptyReset emptySource emptyValue \
+densityCompact densityGroup densityNormal detailHidden detailHide detailPanel detailShow detailShown editHint editLocked editLockedHint empty emptyFiltered emptyReset emptySource emptyValue \
 error errorUnknown facetChipValues facetFrom facetQueries facetTo facetsGroup facetsReset \
 facetsToggle fieldEarlier fieldLater fieldRemove filterAny filterApplied filterBuilder filterBuilderAddCondition filterBuilderAddGroup filterBuilderAll filterBuilderAny filterBuilderCondition filterBuilderEdit filterBuilderGroup filterBuilderJoin filterColumn filterColumnLabel filterConditionLabel filterGroup filterInvalid \
 filterRemoved filterRowToggle filterValueLabel filtersCleared groupByColumn groupChip \

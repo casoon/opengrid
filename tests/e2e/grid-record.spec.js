@@ -26,8 +26,9 @@ test("Shift+F2 opens the record as a labelled form, and a change is saved from t
   await expect.poll(() => dialog(page)).toBe(true);
   expect(await page.evaluate(() => window.__opens)).toEqual([{ key: 2, row: 1 }]);
 
-  // One field per column, each named by its label; the page's own column is
-  // shown and not editable. The focus is on the field of the cell it came from.
+  // One field per column, each named by its label; the page's own column and
+  // the key (issue #523) are shown and not editable. The focus is on the field
+  // of the cell it came from.
   const names = await shadow(page, (root) =>
     [...root.querySelectorAll('[part="record-dialog"] [data-record-field]')].map((wrap) => ({
       label: wrap.querySelector("label").textContent,
@@ -35,7 +36,7 @@ test("Shift+F2 opens the record as a labelled form, and a change is saved from t
     })),
   );
   expect(names).toEqual([
-    { label: "id", disabled: false },
+    { label: "id", disabled: true },
     { label: "name", disabled: true },
     { label: "room", disabled: false },
     { label: "seats", disabled: false },

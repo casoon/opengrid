@@ -248,9 +248,9 @@ async fn prepare(host: &HtmlElement, anchor: CellRef, rows: Vec<Vec<String>>) {
                 cut += 1;
                 continue;
             };
-            // The page fills this column; a pasted value would be overwritten by
-            // the next one it sets, as an edit would (issue #153).
-            if presentation::styles(host).readonly(field.name.as_str()) {
+            // The page fills this column, it is derived, or it names the record:
+            // nothing is pasted into it, as nothing is typed (issues #153, #523).
+            if readonly_column(host, field) {
                 pending.read_only.insert(field.name.as_str().to_owned());
                 line.push((
                     text.clone(),

@@ -329,6 +329,11 @@ pub struct GridTexts {
     pub bulk_readonly: String,
     /// Said when an edit is refused because the grid has `edit-locked`.
     pub edit_locked: String,
+    /// The footer's hint on a focused cell of an `editable` column (issue #523):
+    /// how its editor opens. Not live.
+    pub edit_hint: String,
+    /// The footer's hint while the grid has `edit-locked` (issue #523). Not live.
+    pub edit_locked_hint: String,
     /// Said when the value was set. May use `{column}` and `{rows}`.
     pub bulk_done: String,
     /// What the live region says when a validator warns (issue #188). May use `{message}`.
@@ -643,6 +648,8 @@ pub(crate) const KEYS: &[&str] = &[
     "bulkMenu",
     "bulkReadonly",
     "editLocked",
+    "editHint",
+    "editLockedHint",
     "bulkDone",
     "pastePreview",
     "pasteApply",
@@ -900,6 +907,8 @@ impl Default for GridTexts {
             bulk_menu: "Set for selected rows".to_owned(),
             bulk_readonly: "{column} is read-only".to_owned(),
             edit_locked: "Editing is locked".to_owned(),
+            edit_hint: "Enter to edit".to_owned(),
+            edit_locked_hint: "Editing locked".to_owned(),
             bulk_done: "{column} set for {rows}".to_owned(),
             paste_preview: "Paste preview".to_owned(),
             paste_apply: "Paste".to_owned(),
@@ -1907,6 +1916,8 @@ mod host {
         overwrite(&mut texts.bulk_menu, string("bulkMenu"));
         overwrite(&mut texts.bulk_readonly, string("bulkReadonly"));
         overwrite(&mut texts.edit_locked, string("editLocked"));
+        overwrite(&mut texts.edit_hint, string("editHint"));
+        overwrite(&mut texts.edit_locked_hint, string("editLockedHint"));
         overwrite(&mut texts.bulk_done, string("bulkDone"));
         overwrite(&mut texts.paste_preview, string("pastePreview"));
         overwrite(&mut texts.paste_apply, string("pasteApply"));

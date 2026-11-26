@@ -92,7 +92,8 @@
         );
         const loader = await loadOpengrid();
         window.__module = loader.module;
-        loader.module.set_columns(document.getElementById("plain"), { zone: { facet: "list" } });
+        // The page gives a new record its key: the key column is opened (issue #523).
+        loader.module.set_columns(document.getElementById("plain"), { id: { readonly: false }, zone: { facet: "list" } });
         window.__replace = (name, rows) => provider.loadRows(name, rows, schemas[name]);
         for (const id of ["plain", "tree", "table", "pivot"]) {
           loader.module.set_provider(document.getElementById(id), provider);

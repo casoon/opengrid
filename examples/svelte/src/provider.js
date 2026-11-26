@@ -53,8 +53,11 @@ const ROOMS_SCHEMA = JSON.stringify({
 
 /** The rooms grid's options, stable across renders (rule 1 in docs/guides/frameworks.md). */
 export const ROOM_ACTIONS = [{ id: "remove", label: "Remove" }];
-/** `id` says which room a row is: it stays in place when the grid scrolls sideways (issue #316). */
-export const ROOM_COLUMNS = { id: { pin: "start" } };
+/**
+ * `id` says which room a row is: it stays in place when the grid scrolls sideways (issue #316).
+ * The page gives a new room its number, so the key column is opened for it (issue #523).
+ */
+export const ROOM_COLUMNS = { id: { pin: "start", readonly: false } };
 export const ROOM_VALIDATORS = {
   seats: (value) => (Number(value) < 0 ? { level: "error", message: "Seats cannot be negative." } : null),
 };
