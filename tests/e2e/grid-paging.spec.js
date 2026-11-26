@@ -154,3 +154,26 @@ test("the pager sits in the footer, below the rows it pages, and its buttons say
   ]);
   expect(pager.size).toBeGreaterThanOrEqual(24);
 });
+
+// Issue #539: the row pool is part of the skeleton, and a `page-size` that
+// comes after it was built changes how many rows the pool holds. Without a new
+// skeleton the page drew in the old pool: empty rows that still carried an
+// `aria-rowindex`, or a page cut to the old size.
+test("a page-size set after the element is defined draws exactly the page", async ({ page }) => {
+  await open(page, "/tests/e2e/fixtures/grid-paged-late.html");
+  await expect.poll(async () => (await facts(page)).label).toBe("Page 1 of 12");
+  const seen = await facts(page);
+  expect(seen.rows).toBe(5);
+  expect(seen.rowcount).toBe("6");
+  expect(seen.rowindexes).toEqual(["2", "3", "4", "5", "6"]);
+});
+
+test("a page-size changed after the rows came draws the new page whole", async ({ page }) => {
+  await open(page);
+  await page.evaluate(() => document.querySelector("opengrid-grid").setAttribute("page-size", "8"));
+  await expect.poll(async () => (await facts(page)).label).toBe("Page 1 of 8");
+  const seen = await facts(page);
+  expect(seen.rows).toBe(8);
+  expect(seen.ids.length).toBe(8);
+  expect(seen.rowindexes).toEqual(["2", "3", "4", "5", "6", "7", "8", "9"]);
+});
