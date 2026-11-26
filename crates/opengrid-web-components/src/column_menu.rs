@@ -88,6 +88,10 @@ pub struct Column<'a> {
     /// Whether the column stores keys with labels (issue #326): it is counted
     /// and nothing else.
     pub lookup: bool,
+    /// Whether the reader may lock this column against editing, and whether it
+    /// is locked now (issue #527): `None` where the page keeps the column from
+    /// being edited or the grid does not edit, `Some(locked)` otherwise.
+    pub lock: Option<bool>,
 }
 
 /// The entries of one column's menu, in order.
@@ -159,6 +163,11 @@ pub fn entries(column: &Column<'_>, texts: &GridTexts) -> Vec<Entry> {
     let mut rest = Vec::new();
     if column.bulk {
         rest.push(Entry::item("bulk", &texts.bulk_menu));
+    }
+    match column.lock {
+        Some(true) => rest.push(Entry::item("unlock", &texts.unlock_column)),
+        Some(false) => rest.push(Entry::item("lock", &texts.lock_column)),
+        None => {}
     }
     if column.can_group && crate::grouping::groupable(column.data_type) {
         if column.group_by.iter().any(|name| name == column.name) {
@@ -239,6 +248,7 @@ mod tests {
             pin: None,
             pin_narrow: false,
             lookup: false,
+            lock: None,
         }
     }
 

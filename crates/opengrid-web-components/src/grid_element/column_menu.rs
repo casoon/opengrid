@@ -72,6 +72,10 @@ pub(super) fn open_column_menu(host: &HtmlElement, col: usize) {
                 .narrow_pin(&name, &presentation::page_columns(host))
                 .is_some(),
             lookup: presentation::styles(host).lookup(&name).is_some(),
+            // Only where the page lets the column be edited: the reader's lock
+            // narrows what the page allows, it never widens it (issue #527).
+            lock: (!edit_locked(host) && !is_tree(host) && !page_readonly_column(host, &field))
+                .then(|| columns::layout(host).borrow().is_locked(&name)),
         };
         (crate::column_menu::entries(&column, &texts), name)
     };
@@ -228,6 +232,15 @@ fn place_menu(root: &ShadowRoot, menu: &HtmlElement, col: usize) {
     if top + own.height() > height - GAP && cell.top() - own.height() - GAP >= GAP {
         top = cell.top() - own.height() - GAP;
     }
+    // Neither below nor above the header is there room for all of it: it takes
+    // what is left below and scrolls (issue #527 added an entry to a menu that
+    // already ran to the window's edge). It never covers its header.
+    let room = height - top - GAP;
+    if own.height() > room && room > 0.0 {
+        let style = menu.style();
+        let _ = style.set_property("max-height", &format!("{room}px"));
+        let _ = style.set_property("overflow-y", "auto");
+    }
     let _ = menu.style().set_property("left", &format!("{left}px"));
     let _ = menu.style().set_property("top", &format!("{top}px"));
 }
@@ -356,6 +369,8 @@ pub(super) fn activate_menu_item(host: &HtmlElement, item: &Element) {
             }
         }
         "hide" => set_column_hidden(host, &name, true),
+        "lock" => set_column_locked(host, &name, true),
+        "unlock" => set_column_locked(host, &name, false),
         "hide-band" => hide_band(host, col),
         "pin:none" => pin_column(host, &name, None),
         "pin:start" => pin_column(host, &name, Some(Pin::Start)),

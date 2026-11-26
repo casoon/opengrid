@@ -65,6 +65,12 @@ Two things belong in every release entry and are easy to leave out:
   (`overscroll-behavior-x: contain`); the page still scrolls on at the grid's end. New docs section
   for pages on a phone ([#526](https://github.com/casoon/opengrid/issues/526)). Details:
   [On a phone](https://casoon.github.io/opengrid/docs/api/#on-a-phone).
+- **Grid:** who may edit is decided in three layers, each narrowing the one before: `edit-locked`
+  for the whole grid, with the new `edit-toggle` (an *Edit* switch in the toolbar, adapters:
+  `editToggle`); the columns the page marked `editable: true` — once one is marked, only those edit —
+  and the reader's *Lock column* / *Unlock column* in the column menu, kept in the view as `locked`
+  ([#527](https://github.com/casoon/opengrid/issues/527)). Details:
+  [Locking edits](https://casoon.github.io/opengrid/docs/api/#locking-edits).
 
 ### Changed
 
@@ -75,6 +81,7 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Fixed
 
+- **Grid:** a column menu with room neither below nor above its header scrolls inside the window instead of running past its edge.
 - **Grid:** a jump over a result taller than the browser lets an element be (dragging the scroll
   bar over a million rows) placed the old window's rows under the new shift before the new
   window's, two passes over the window in one frame; it now places them once

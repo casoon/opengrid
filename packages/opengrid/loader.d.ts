@@ -821,9 +821,11 @@ export interface ColumnConfig {
   readonly?: boolean;
   /**
    * The page means this column to be edited: its cells are tinted
-   * (`--og-editable`) and, on a touch screen, its header shows a pencil.
-   * Drawing only — every column not read-only can be edited. Contradicts
-   * `readonly: true` and a derived field. The grid only.
+   * (`--og-editable`) and, on a touch screen, its header shows a pencil. As
+   * soon as one column is marked, **only the marked columns edit** — a column
+   * opened with `readonly: false` counts as marked; where none is marked,
+   * every column not read-only can be edited. Contradicts `readonly: true`
+   * and a derived field. The grid only.
    */
   editable?: boolean;
   /**
@@ -946,6 +948,8 @@ export interface View {
   aggregates: Record<string, Aggregate>;
   /** Whether the filter row shows. */
   filterRow: boolean;
+  /** The columns the reader locked against editing; never beyond what the page allows. */
+  locked: string[];
   facets: Record<string, FacetSelection>;
   /**
    * The keys of the selected records, where the grid selects by key (`row-key`,
@@ -1258,6 +1262,12 @@ export type TextKey =
   | "bulkMenu"
   | "bulkReadonly"
   | "editLocked"
+  | "editUnlocked"
+  | "editToggle"
+  | "lockColumn"
+  | "unlockColumn"
+  | "columnLocked"
+  | "columnUnlocked"
   | "editHint"
   | "editLockedHint"
   | "bulkDone"
@@ -1615,6 +1625,8 @@ export interface OpengridGridAttributes {
   "add-row"?: string;
   /** Locks editing for the whole grid: no editor, paste, bulk set, record form, new row or undo. Remove it to unlock. */
   "edit-locked"?: string;
+  /** An *Edit* switch in the toolbar that sets and removes `edit-locked`. Needs `toolbar`. */
+  "edit-toggle"?: string;
   selection?: string;
   density?: Density;
   /** One of the built-in looks; Base when absent. */

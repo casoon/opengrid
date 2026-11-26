@@ -564,6 +564,16 @@ pub(super) fn on_filter_clear(event: Event) {
 
     // The facet sidebar (point 66): its switch, its pills, its reset.
     if let Ok(host) = root.host().dyn_into::<HtmlElement>() {
+        // The switch for editing (issue #527) sets and removes `edit-locked`.
+        if target
+            .closest("[data-toolbar=\"edit\"]")
+            .ok()
+            .flatten()
+            .is_some()
+        {
+            toggle_editing(&host);
+            return;
+        }
         if target
             .closest("[data-toolbar=\"facets\"]")
             .ok()

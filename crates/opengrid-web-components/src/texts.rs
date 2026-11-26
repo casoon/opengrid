@@ -340,8 +340,20 @@ pub struct GridTexts {
     pub bulk_menu: String,
     /// Said when a read-only column is asked to be set. May use `{column}`.
     pub bulk_readonly: String,
-    /// Said when an edit is refused because the grid has `edit-locked`.
+    /// Said when an edit is refused because the grid has `edit-locked`, and when
+    /// the toolbar's switch locks editing (issue #527).
     pub edit_locked: String,
+    /// Said when the toolbar's switch unlocks editing (issue #527).
+    pub edit_unlocked: String,
+    /// The toolbar's switch for editing (issue #527).
+    pub edit_toggle: String,
+    /// The column menu's entries to lock and unlock a column (issue #527).
+    pub lock_column: String,
+    pub unlock_column: String,
+    /// Said when the reader locks or unlocks a column (issue #527). May use
+    /// `{column}`.
+    pub column_locked: String,
+    pub column_unlocked: String,
     /// The footer's hint on a focused cell of an `editable` column (issue #523):
     /// how its editor opens. Not live.
     pub edit_hint: String,
@@ -677,6 +689,12 @@ pub(crate) const KEYS: &[&str] = &[
     "bulkMenu",
     "bulkReadonly",
     "editLocked",
+    "editUnlocked",
+    "editToggle",
+    "lockColumn",
+    "unlockColumn",
+    "columnLocked",
+    "columnUnlocked",
     "editHint",
     "editLockedHint",
     "bulkDone",
@@ -947,6 +965,12 @@ impl Default for GridTexts {
             bulk_menu: "Set for selected rows".to_owned(),
             bulk_readonly: "{column} is read-only".to_owned(),
             edit_locked: "Editing is locked".to_owned(),
+            edit_unlocked: "Editing is unlocked".to_owned(),
+            edit_toggle: "Edit".to_owned(),
+            lock_column: "Lock column".to_owned(),
+            unlock_column: "Unlock column".to_owned(),
+            column_locked: "{column} locked against editing".to_owned(),
+            column_unlocked: "{column} unlocked for editing".to_owned(),
             edit_hint: "Enter to edit".to_owned(),
             edit_locked_hint: "Editing locked".to_owned(),
             bulk_done: "{column} set for {rows}".to_owned(),
@@ -1573,6 +1597,15 @@ impl GridTexts {
         self.band_pinned(self.column(column), pin)
     }
 
+    /// A column the reader locked or unlocked (issue #527).
+    pub fn column_locked(&self, column: &str) -> String {
+        fill(&self.column_locked, "column", self.column(column))
+    }
+
+    pub fn column_unlocked(&self, column: &str) -> String {
+        fill(&self.column_unlocked, "column", self.column(column))
+    }
+
     /// A column or band pinned for narrow grids only (issue #525).
     pub fn column_pinned_narrow(&self, column: &str) -> String {
         fill(&self.column_pinned_narrow, "column", self.column(column))
@@ -1987,6 +2020,12 @@ mod host {
         overwrite(&mut texts.bulk_menu, string("bulkMenu"));
         overwrite(&mut texts.bulk_readonly, string("bulkReadonly"));
         overwrite(&mut texts.edit_locked, string("editLocked"));
+        overwrite(&mut texts.edit_unlocked, string("editUnlocked"));
+        overwrite(&mut texts.edit_toggle, string("editToggle"));
+        overwrite(&mut texts.lock_column, string("lockColumn"));
+        overwrite(&mut texts.unlock_column, string("unlockColumn"));
+        overwrite(&mut texts.column_locked, string("columnLocked"));
+        overwrite(&mut texts.column_unlocked, string("columnUnlocked"));
         overwrite(&mut texts.edit_hint, string("editHint"));
         overwrite(&mut texts.edit_locked_hint, string("editLockedHint"));
         overwrite(&mut texts.bulk_done, string("bulkDone"));

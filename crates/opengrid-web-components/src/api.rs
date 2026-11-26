@@ -239,6 +239,7 @@ fn parts() -> Vec<String> {
             column_menu: true,
             toolbar: true,
             filter_builder: true,
+            edit_toggle: Some(true),
             facets: true,
             search: true,
             actions: &[grid::Action {
@@ -385,7 +386,7 @@ elements
 
 attributes
   opengrid-table: columns datasource label theme
-  opengrid-grid: add-row collation column-menu columns datasource density edit-locked facets filter filter-builder group-by label mode page-size \
+  opengrid-grid: add-row collation column-menu columns datasource density edit-locked edit-toggle facets filter filter-builder group-by label mode page-size \
 row-key search selection theme toolbar tree tree-key window-size
   opengrid-pivot: collapsed columns datasource drill-down fields filter label measures rows sort theme toolbar values
 
@@ -464,30 +465,32 @@ custom properties (computed)
   --og-accent-soft --og-accent-ink --og-selected --og-hover --og-editable
 
 parts
-  action action-cell action-header add-field add-filter add-grouping band body bulk bulk-apply bulk-cancel caption cell cell-error cell-menu cell-saved cell-saving chip chip-calc chip-edit chip-move chip-remove chips chips-clear column-menu \
-column-menu-button column-toggle columns columns-toggle density detail detail-toggle drill-down edge-end edge-start edit-hint edit-mark editor empty empty-reset \
-empty-text facet facet-bounds facet-cost facet-count facet-pill facet-pills facet-value \
-facets facets-head facets-toggle field-group field-menu filter filter-builder filter-builder-dialog filter-clear filter-dialog filter-operator \
-filter-row-toggle filter-value footer group-mark group-toggle grouping-menu header layout list list-item list-item-remove listbox menu-label operator-menu \
-page-first page-label page-last page-next page-previous pager paste-apply paste-discard paste-preview paste-summary position record-dialog refresh row row-header scroll-position search search-hint \
-search-input search-list select select-all select-mark sort-button sort-direction \
-sort-index source status table toolbar total-row validation viewport
+  action action-cell action-header add-field add-filter add-grouping band body bulk bulk-apply bulk-cancel caption cell cell-error cell-menu cell-saved cell-saving chip chip-calc \
+chip-edit chip-move chip-remove chips chips-clear column-menu column-menu-button column-toggle columns columns-toggle density detail detail-toggle drill-down edge-end edge-start \
+edit-hint edit-mark edit-toggle editor empty empty-reset empty-text facet facet-bounds facet-cost facet-count facet-pill facet-pills facet-value facets facets-head facets-toggle \
+field-group field-menu filter filter-builder filter-builder-dialog filter-clear filter-dialog filter-operator filter-row-toggle filter-value footer group-mark group-toggle \
+grouping-menu header layout list list-item list-item-remove listbox menu-label operator-menu page-first page-label page-last page-next page-previous pager paste-apply paste-discard \
+paste-preview paste-summary position record-dialog refresh row row-header scroll-position search search-hint search-input search-list select select-all select-mark sort-button \
+sort-direction sort-index source status table toolbar total-row validation viewport
 
 text keys
-  addColumn addFilter addFilterTitle addGrouping addMeasure addRow aggregateAvg aggregateCell aggregateCount aggregateGroup aggregateMax aggregateMin \
-aggregateNone aggregateRange aggregateSum apply bandKeep booleanFalse booleanTrue bulkApply bulkCaption bulkDone bulkMenu bulkReadonly calcValue cancel cellColumnMenu cellCopied cellCopy cellDeselectRow cellEdit cellMenu cellOpenRecord cellRequired cellSelectRow chipRemove chipsClear chipsGroup choiceRefused choicesOne choicesOther clear columnAtEdge \
-columnFull columnHidden columnMenu columnMoved columnPinnedEnd columnPinnedNarrow columnPinnedStart columnShown columnUnpinned columnWidth columnsGroup densityComfortable \
-densityCompact densityGroup densityNormal detailHidden detailHide detailPanel detailShow detailShown editHint editLocked editLockedHint empty emptyFiltered emptyReset emptySource emptyValue \
-error errorUnknown facetChipValues facetFrom facetQueries facetTo facetsGroup facetsReset \
-facetsToggle fieldEarlier fieldLater fieldRemove filterAny filterApplied filterBuilder filterBuilderAddCondition filterBuilderAddGroup filterBuilderAll filterBuilderAny filterBuilderCondition filterBuilderEdit filterBuilderGroup filterBuilderJoin filterColumn filterColumnLabel filterConditionLabel filterGroup filterInvalid \
-filterRemoved filterRowToggle filterValueLabel filtersCleared groupByColumn groupChip \
-groupCollapsed groupExpanded groupInvalid groupRow groupSecondLevel \
-groupingFull hideBand hideColumn lang listItemAdded listItemRemove listItemRemoved loading matchesOne matchesOther newRow noValue nothingToAdd operatorLabel \
-operators pageFirst pageLast pageNext pageOf pagePrevious pasteApplied pasteApply pasteBadOne pasteBadOther pasteBlocked pasteCutOff pasteDiscard pasteDiscarded pastePreview pasteUnreadable pinEnd pinGroup pinNarrow pinNone pinStart pinsReleased pivotColumns pivotDrillDown pivotFilterHint pivotFilterLabel pivotFilters pivotMeasures pivotRows pivotShowAs pivotToolbar positionCell queriesOne queriesOther queryAnd \
-queryMissingCondition queryMissingJoin queryMissingValue queryOr queryUnclosed queryUnknownColumn queryUnopened queryWrongOperator rangeCopied rangeSize rangeUnloaded recordDone recordNothing recordSave recordTitle redoAdded redoCell redoNothing redoPaste redoRecord rowAdded rowsOne rowsOther runningTotal searchChip searchHint \
-searchLabel searchPlaceholder searchSuggestions selectAll selectedAll selectionCleared selectionMissing shareOfColumn shareOfRow shareOfTotal sortAscending \
-sortDescending sortKey sourceChanged sourceHybrid sourceLocal sourceRefresh sourceRemote sourceWorker subtotal subtreeCell subtreeOnly toolbarGroup total \
-totalRow treeContext treeGroupIgnored treeLevelTooLarge treeOrphans treeRefused typeBool typeDate typeInteger typeList typeNumber typeText typeTime undoAdded undoCell undoNothing undoPaste undoRecord ungroupColumn validationError validationWarning valueLabel
+  addColumn addFilter addFilterTitle addGrouping addMeasure addRow aggregateAvg aggregateCell aggregateCount aggregateGroup aggregateMax aggregateMin aggregateNone aggregateRange \
+aggregateSum apply bandKeep booleanFalse booleanTrue bulkApply bulkCaption bulkDone bulkMenu bulkReadonly calcValue cancel cellColumnMenu cellCopied cellCopy cellDeselectRow \
+cellEdit cellMenu cellOpenRecord cellRequired cellSelectRow chipRemove chipsClear chipsGroup choiceRefused choicesOne choicesOther clear columnAtEdge columnFull columnHidden \
+columnLocked columnMenu columnMoved columnPinnedEnd columnPinnedNarrow columnPinnedStart columnShown columnUnlocked columnUnpinned columnWidth columnsGroup densityComfortable \
+densityCompact densityGroup densityNormal detailHidden detailHide detailPanel detailShow detailShown editHint editLocked editLockedHint editToggle editUnlocked empty emptyFiltered \
+emptyReset emptySource emptyValue error errorUnknown facetChipValues facetFrom facetQueries facetTo facetsGroup facetsReset facetsToggle fieldEarlier fieldLater fieldRemove \
+filterAny filterApplied filterBuilder filterBuilderAddCondition filterBuilderAddGroup filterBuilderAll filterBuilderAny filterBuilderCondition filterBuilderEdit filterBuilderGroup \
+filterBuilderJoin filterColumn filterColumnLabel filterConditionLabel filterGroup filterInvalid filterRemoved filterRowToggle filterValueLabel filtersCleared groupByColumn \
+groupChip groupCollapsed groupExpanded groupInvalid groupRow groupSecondLevel groupingFull hideBand hideColumn lang listItemAdded listItemRemove listItemRemoved loading lockColumn \
+matchesOne matchesOther newRow noValue nothingToAdd operatorLabel operators pageFirst pageLast pageNext pageOf pagePrevious pasteApplied pasteApply pasteBadOne pasteBadOther \
+pasteBlocked pasteCutOff pasteDiscard pasteDiscarded pastePreview pasteUnreadable pinEnd pinGroup pinNarrow pinNone pinStart pinsReleased pivotColumns pivotDrillDown \
+pivotFilterHint pivotFilterLabel pivotFilters pivotMeasures pivotRows pivotShowAs pivotToolbar positionCell queriesOne queriesOther queryAnd queryMissingCondition queryMissingJoin \
+queryMissingValue queryOr queryUnclosed queryUnknownColumn queryUnopened queryWrongOperator rangeCopied rangeSize rangeUnloaded recordDone recordNothing recordSave recordTitle \
+redoAdded redoCell redoNothing redoPaste redoRecord rowAdded rowsOne rowsOther runningTotal searchChip searchHint searchLabel searchPlaceholder searchSuggestions selectAll \
+selectedAll selectionCleared selectionMissing shareOfColumn shareOfRow shareOfTotal sortAscending sortDescending sortKey sourceChanged sourceHybrid sourceLocal sourceRefresh \
+sourceRemote sourceWorker subtotal subtreeCell subtreeOnly toolbarGroup total totalRow treeContext treeGroupIgnored treeLevelTooLarge treeOrphans treeRefused typeBool typeDate \
+typeInteger typeList typeNumber typeText typeTime undoAdded undoCell undoNothing undoPaste undoRecord ungroupColumn unlockColumn validationError validationWarning valueLabel
 ";
         assert_eq!(surface(), expected);
     }

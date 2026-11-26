@@ -141,7 +141,8 @@ use column_ops::{
 pub(crate) use editing::{CHOICES_KEY, write_row_state};
 use editing::{
     add_record, after_new_row_enter, begin_edit, build_editor, dispatch_row_add, edit_locked,
-    editor_text, end_edit, focus_editor, formatter, readonly_column, refuse_locked, show_edit_hint,
+    edit_state_changed, editor_text, end_edit, focus_editor, formatter, page_readonly_column,
+    readonly_column, refuse_locked, set_column_locked, show_edit_hint, toggle_editing,
 };
 use facets::{
     apply_facets, clear_selection, collated, draw_facets, effective_filter, facet_chip_text,
@@ -1025,20 +1026,7 @@ fn on_attribute_changed(
         // The attribute is the state: no event, no query. What the reader had
         // open is dropped unconfirmed, and the new row goes or comes back
         // (issue #494).
-        grid::EDIT_LOCKED_ATTRIBUTE => {
-            if let Some(runtime) = runtime(&host) {
-                if edit_locked(&host) {
-                    end_edit(&host, false);
-                    paste::discard(&host);
-                    if let Some(root) = host.shadow_root() {
-                        bulk::close(&root);
-                        record::close_dialog(&root);
-                    }
-                }
-                sync_add_row(&host, &runtime);
-            }
-            render(&host, false);
-        }
+        grid::EDIT_LOCKED_ATTRIBUTE => edit_state_changed(&host, edit_locked(&host)),
         grid::ROW_KEY_ATTRIBUTE => {
             if let Some(runtime) = runtime(&host) {
                 // Keys of another field name nothing, and positions do not
@@ -1168,6 +1156,7 @@ fn on_attribute_changed(
         grid::SELECTION_ATTRIBUTE
         | grid::COLUMN_MENU_ATTRIBUTE
         | grid::FILTER_BUILDER_ATTRIBUTE
+        | grid::EDIT_TOGGLE_ATTRIBUTE
         | grid::TOOLBAR_ATTRIBUTE
         | grid::FACETS_ATTRIBUTE
         | grid::SEARCH_ATTRIBUTE
@@ -1259,6 +1248,9 @@ fn ensure_skeleton(host: &HtmlElement) {
             column_menu: host.has_attribute(grid::COLUMN_MENU_ATTRIBUTE),
             toolbar: host.has_attribute(grid::TOOLBAR_ATTRIBUTE),
             filter_builder: host.has_attribute(grid::FILTER_BUILDER_ATTRIBUTE),
+            edit_toggle: host
+                .has_attribute(grid::EDIT_TOGGLE_ATTRIBUTE)
+                .then(|| !edit_locked(host)),
             facets: host.has_attribute(grid::FACETS_ATTRIBUTE),
             search: host.has_attribute(grid::SEARCH_ATTRIBUTE),
             actions: &actions_of(host),

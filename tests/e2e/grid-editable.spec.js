@@ -119,8 +119,8 @@ test("an editable column is tinted, the tint is a token, and the others are not"
   expect(await background(page, NAME)).not.toBe(TRANSPARENT);
   expect(await background(page, SEATS)).not.toBe(TRANSPARENT);
   expect(await background(page, ID)).toBe(TRANSPARENT);
-  // `opened` is neither read-only nor declared: drawn as before.
-  expect(await cellAttr(page, OPENED, "data-edit")).toBeNull();
+  // `opened` is not marked, and the page marked others (issue #527): it is read-only, not tinted.
+  expect(await cellAttr(page, OPENED, "data-edit")).toBe("readonly");
   expect(await background(page, OPENED)).toBe(TRANSPARENT);
   await page.evaluate(() => document.querySelector("opengrid-grid").style.setProperty("--og-editable", "transparent"));
   expect(await background(page, NAME)).toBe(TRANSPARENT);
@@ -180,7 +180,7 @@ test.describe("on a touch screen", () => {
     expect(await markShown(page, NAME)).toBe(true);
     expect(await markShown(page, SEATS)).toBe(true);
     expect(await markShown(page, ID)).toBe(true);
-    expect(await markShown(page, OPENED)).toBe(false);
+    expect(await markShown(page, OPENED)).toBe(true);
     // Turning the tint off keeps the pencil.
     await page.evaluate(() => document.querySelector("opengrid-grid").style.setProperty("--og-editable", "transparent"));
     expect(await markShown(page, NAME)).toBe(true);
