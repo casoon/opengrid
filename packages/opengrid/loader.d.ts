@@ -284,6 +284,33 @@ export function connect(
  */
 export function inferSchema(rows: readonly Record<string, unknown>[]): string;
 
+export interface SuggestColumnsOptions {
+  /** The field that names a row. It is read-only, monospaced, muted and narrow. */
+  rowKey?: string;
+  /**
+   * How many distinct values each field has, where the caller knows. The function never counts: a
+   * field with at most 12 values and a count here gets a `list` facet.
+   */
+  distinct?: Record<string, number>;
+}
+
+/** What {@link suggestColumns} suggests: what `set_columns` and `set_formats` take. */
+export interface ColumnSuggestions {
+  columns: Columns;
+  formats: Formats;
+}
+
+/**
+ * What the schema suggests for how the columns look, in the two objects a page hands to
+ * `set_columns` and `set_formats` — to log, change and pass on. The key field: read-only, mono,
+ * muted, narrow. An integer or a decimal: `align: "end"` and `aggregate: "sum"`; a float: `align:
+ * "end"`. A date: a `date` format. A text or an integer with at most 12 distinct values (`distinct`
+ * says how many, it is never counted): `facet: "list"`. A field no rule fits is left out. Throws
+ * an `Error` for a schema that is not the JSON text of `{ fields }`, a `rowKey` or `distinct` name
+ * the schema does not have, and a count that is not a whole number.
+ */
+export function suggestColumns(schema: string, options?: SuggestColumnsOptions): ColumnSuggestions;
+
 export interface FromRowsOptions {
   /** The schema JSON; wins over inference. */
   schema?: string;

@@ -15,10 +15,11 @@
 use crate::{grid, pivot, table};
 
 /// What `packages/opengrid/loader.js` exports.
-const LOADER_EXPORTS: [&str; 11] = [
+const LOADER_EXPORTS: [&str; 12] = [
     "loadOpengrid",
     "connect",
     "inferSchema",
+    "suggestColumns",
     "fromRows",
     "createLocalProvider",
     "createWorkerProvider",
@@ -433,6 +434,7 @@ loader exports
   loadOpengrid
   connect
   inferSchema
+  suggestColumns
   fromRows
   createLocalProvider
   createWorkerProvider

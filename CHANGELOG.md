@@ -71,6 +71,11 @@ Two things belong in every release entry and are easy to leave out:
   and the reader's *Lock column* / *Unlock column* in the column menu, kept in the view as `locked`
   ([#527](https://github.com/casoon/opengrid/issues/527)). Details:
   [Locking edits](https://casoon.github.io/opengrid/docs/api/#locking-edits).
+- **Loader:** `suggestColumns(schema, { rowKey, distinct })` turns a schema into `{ columns, formats }`,
+  the two objects `set_columns` and `set_formats` take: the key read-only, mono, muted and narrow;
+  numbers aligned at the end and summed; dates formatted; a list facet where the caller says a field
+  has few values ([#527](https://github.com/casoon/opengrid/issues/527)). Details:
+  [Presentation from the schema](https://casoon.github.io/opengrid/docs/guides/data-you-have/#presentation-from-the-schema).
 
 ### Changed
 
