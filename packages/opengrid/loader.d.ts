@@ -795,6 +795,12 @@ export interface ColumnConfig {
    */
   pin?: Pin;
   /**
+   * Pins the column only while the grid is narrower than 560 px; `none` keeps
+   * the `row-key` column from being pinned there by default. `pin` leads: it
+   * pins at every width. The grid only.
+   */
+  pinNarrow?: Pin | "none";
+  /**
    * The band the column stands under: a header it shares with the other
    * columns that name the same one. A band is always in one piece — its
    * columns stand together, move inside it, and are pinned with it. The grid
@@ -926,6 +932,11 @@ export interface View {
      * away. Leads over `set_columns`.
      */
     pinned: Record<string, Pin | "none">;
+    /**
+     * The reader's pins for narrow grids (the column menu's *Only on narrow
+     * screens*): `none` keeps a column from being pinned there.
+     */
+    pinnedNarrow: Record<string, Pin | "none">;
   };
   density: Density;
   group: string[];
@@ -1106,6 +1117,7 @@ export type TextKey =
   | "pinNone"
   | "pinStart"
   | "pinEnd"
+  | "pinNarrow"
   | "toolbarGroup"
   | "filterRowToggle"
   | "densityGroup"
@@ -1215,6 +1227,7 @@ export type TextKey =
   | "columnPinnedStart"
   | "columnPinnedEnd"
   | "columnUnpinned"
+  | "columnPinnedNarrow"
   | "pinsReleased"
   | "columnHidden"
   | "columnShown"

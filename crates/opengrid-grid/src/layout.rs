@@ -72,6 +72,11 @@ pub fn pins_hold(pinned: f64, width: f64) -> bool {
 pub struct PageColumns {
     /// The columns the page pins, each with its end of the row.
     pub pins: Vec<(String, Pin)>,
+    /// The columns the page pins only while the grid is narrow (issue #525,
+    /// `pinNarrow`); `None` is a column the page keeps from being pinned there.
+    pub narrow_pins: Vec<(String, Option<Pin>)>,
+    /// Whether the grid is narrow now: the narrow pins hold.
+    pub narrow: bool,
     /// The columns the page puts under a band, each with the band's name.
     pub bands: Vec<(String, String)>,
 }
@@ -122,6 +127,9 @@ pub struct ColumnLayout {
     /// sorted by column, so the same pins are the same layout and a view
     /// always writes them the same way.
     pins: Vec<(String, Option<Pin>)>,
+    /// Where the reader pinned a column for narrow grids only (issue #525), or
+    /// kept it from being pinned there (`None`); sorted like `pins`.
+    narrow_pins: Vec<(String, Option<Pin>)>,
 }
 
 impl ColumnLayout {
@@ -176,13 +184,15 @@ impl ColumnLayout {
         arranged
     }
 
-    /// Where a column is pinned: the reader's choice, or else the page's.
+    /// Where a column is pinned: the reader's choice, or else the page's —
+    /// and on a narrow grid, where neither pins it at every width, the narrow
+    /// pin (issue #525): the reader's again, or else the page's.
     ///
     /// A band is pinned as a whole (issue #319), so a column of one is pinned
     /// where any column of its band is: the reader's choice for one of them,
     /// or else the first pin `set_columns` gives one of them.
     pub fn pin(&self, name: &str, page: &PageColumns) -> Option<Pin> {
-        match self
+        let at_every_width = match self
             .pins
             .iter()
             .find(|(column, _)| page.together(name, column))
@@ -193,7 +203,66 @@ impl ColumnLayout {
                 .iter()
                 .find(|(column, _)| page.together(name, column))
                 .map(|(_, pin)| *pin),
+        };
+        if at_every_width.is_some() || !page.narrow {
+            return at_every_width;
         }
+        self.narrow_pin(name, page)
+    }
+
+    /// Where a column is pinned while the grid is narrow, beside what pins it
+    /// at every width: the reader's choice, or else the page's.
+    pub fn narrow_pin(&self, name: &str, page: &PageColumns) -> Option<Pin> {
+        match self
+            .narrow_pins
+            .iter()
+            .find(|(column, _)| page.together(name, column))
+        {
+            Some((_, choice)) => *choice,
+            None => page
+                .narrow_pins
+                .iter()
+                .find(|(column, _)| page.together(name, column))
+                .and_then(|(_, pin)| *pin),
+        }
+    }
+
+    /// Pins a column for narrow grids only, as the reader asked in the column
+    /// menu (issue #525): it lets go of a pin at every width, and holds while
+    /// the grid is narrow. Answers whether anything changed.
+    pub fn set_narrow_pin(&mut self, name: &str, pin: Pin, page: &PageColumns) -> bool {
+        let before = (self.pins.clone(), self.narrow_pins.clone());
+        let wide = PageColumns {
+            narrow: false,
+            ..page.clone()
+        };
+        if self.pin(name, &wide).is_some() {
+            self.set_pin(name, None, &wide);
+        }
+        self.restore_narrow_pin(name, Some(pin));
+        for (column, _) in &page.bands {
+            if column != name && page.together(name, column) {
+                self.restore_narrow_pin(column, Some(pin));
+            }
+        }
+        (self.pins.clone(), self.narrow_pins.clone()) != before
+    }
+
+    /// The reader's narrow pins, sorted by column; `None` keeps a column from
+    /// being pinned on a narrow grid.
+    pub fn narrow_pins(&self) -> &[(String, Option<Pin>)] {
+        &self.narrow_pins
+    }
+
+    /// Sets a narrow pin as a view holds it (restoring a view).
+    pub fn restore_narrow_pin(&mut self, name: &str, pin: Option<Pin>) {
+        self.narrow_pins.retain(|(column, _)| column != name);
+        let at = self
+            .narrow_pins
+            .iter()
+            .position(|(column, _)| column.as_str() > name)
+            .unwrap_or(self.narrow_pins.len());
+        self.narrow_pins.insert(at, (name.to_owned(), pin));
     }
 
     /// Pins a column, or lets it go, as the reader asked. A choice that is the
@@ -202,7 +271,21 @@ impl ColumnLayout {
     ///
     /// A column of a band takes its band along (issue #319): the choice is
     /// kept for every column of the band, so a view says it of each.
+    ///
+    /// Letting a column go lets it go on a narrow grid too (issue #525): the
+    /// reader said not pinned, at any width.
     pub fn set_pin(&mut self, name: &str, pin: Option<Pin>, page: &PageColumns) -> bool {
+        if pin.is_none() && self.narrow_pin(name, page).is_some() {
+            self.restore_narrow_pin(name, None);
+            for (column, _) in &page.bands {
+                if column != name && page.together(name, column) {
+                    self.restore_narrow_pin(column, None);
+                }
+            }
+            if self.pin(name, page).is_none() {
+                return true;
+            }
+        }
         if self.pin(name, page) == pin {
             return false;
         }
@@ -520,7 +603,7 @@ mod tests {
                 .iter()
                 .map(|(name, pin)| ((*name).to_owned(), *pin))
                 .collect(),
-            bands: Vec::new(),
+            ..Default::default()
         }
     }
 
@@ -532,6 +615,7 @@ mod tests {
                 ("street".to_owned(), "Address".to_owned()),
                 ("city".to_owned(), "Address".to_owned()),
             ],
+            ..Default::default()
         };
         (names(&["id", "street", "city", "amount"]), page)
     }
@@ -757,5 +841,58 @@ mod tests {
     fn the_pins_hold_up_to_their_share() {
         assert!(pins_hold(160.0, 320.0));
         assert!(!pins_hold(161.0, 320.0));
+    }
+    /// Narrow pins (issue #525) hold only while the grid is narrow, and only
+    /// where nothing pins the column at every width.
+    #[test]
+    fn a_narrow_pin_holds_only_on_a_narrow_grid() {
+        let mut layout = ColumnLayout::default();
+        let mut page = pins(&[("qty", Pin::Start)]);
+        page.narrow_pins = vec![
+            ("amount".to_owned(), Some(Pin::End)),
+            ("qty".to_owned(), Some(Pin::End)),
+        ];
+        assert_eq!(layout.pin("amount", &page), None, "wide: no narrow pin");
+        page.narrow = true;
+        assert_eq!(layout.pin("amount", &page), Some(Pin::End));
+        assert_eq!(
+            layout.pin("qty", &page),
+            Some(Pin::Start),
+            "a pin at every width leads"
+        );
+        assert_eq!(
+            layout.effective(&declared(), &page),
+            names(&["qty", "id", "customer", "amount"])
+        );
+
+        // The reader pins a column for narrow grids only, over the page's pin.
+        assert!(layout.set_narrow_pin("qty", Pin::Start, &page));
+        assert_eq!(layout.pins(), [("qty".to_owned(), None)]);
+        assert_eq!(layout.narrow_pins(), [("qty".to_owned(), Some(Pin::Start))]);
+        assert_eq!(layout.pin("qty", &page), Some(Pin::Start));
+        page.narrow = false;
+        assert_eq!(layout.pin("qty", &page), None);
+
+        // Not pinned is not pinned at any width.
+        page.narrow = true;
+        assert!(layout.set_pin("amount", None, &page));
+        assert_eq!(layout.pin("amount", &page), None);
+        assert!(
+            !layout.set_pin("amount", None, &page),
+            "nothing left to let go"
+        );
+    }
+
+    /// A page that keeps a column from being pinned narrow (`pinNarrow: none`)
+    /// leaves it where it is.
+    #[test]
+    fn a_page_keeps_a_column_from_a_narrow_pin() {
+        let layout = ColumnLayout::default();
+        let page = PageColumns {
+            narrow_pins: vec![("id".to_owned(), None)],
+            narrow: true,
+            ..Default::default()
+        };
+        assert_eq!(layout.pin("id", &page), None);
     }
 }

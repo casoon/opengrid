@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-import { shadow } from "./helpers.js";
+import { shadow, status } from "./helpers.js";
 
 // Issue #525: where am I. The focused cell's row and column header take a
 // light tint; the footer says "Row 3 of 5,000 · customer", or a range's size
@@ -215,8 +215,9 @@ test.describe("the bubble while scrolling", () => {
 });
 
 test.describe("the edges", () => {
+  // `?keynone`: on the narrow project the key column would otherwise be pinned.
   test("a shadow marks each edge with columns past it", async ({ page }) => {
-    await open(page);
+    await open(page, "?keynone");
     const start = await overlays(page);
     expect(start.start.shown).toBe(false);
     expect(start.end).toMatchObject({ shown: true, hidden: "true", right: start.width, top: 0, height: start.height });
@@ -232,7 +233,7 @@ test.describe("the edges", () => {
   });
 
   test("right to left the start is the right edge", async ({ page }) => {
-    await open(page, "?rtl");
+    await open(page, "?rtl&keynone");
     const start = await overlays(page);
     expect(start.start.shown).toBe(false);
     expect(start.end).toMatchObject({ shown: true, left: 0 });
@@ -255,5 +256,124 @@ test.describe("the edges", () => {
     const pinned = await shadow(page, (root) => Math.round(root.querySelector('thead th[data-col="0"]').getBoundingClientRect().width));
     const { start } = await overlays(page);
     expect(Math.abs(start.left - pinned)).toBeLessThanOrEqual(1);
+  });
+});
+
+test.describe("pinning on narrow grids", () => {
+  /** Which header cells stay in place, by column name, in the order they stand. */
+  const pinned = (page) =>
+    shadow(page, (root) =>
+      [...root.querySelectorAll("thead th[data-col]")]
+        .filter((th) => getComputedStyle(th).position === "sticky")
+        .map((th) => th.textContent.replace(/[^a-z]/g, "")),
+    );
+  const order = (page) =>
+    shadow(page, (root) => [...root.querySelectorAll("thead th[data-col]")].map((th) => th.textContent.replace(/[^a-z]/g, "")));
+  const setWidth = (page, width) =>
+    page.evaluate((width) => {
+      document.querySelector("opengrid-grid").style.width = `${width}px`;
+    }, width);
+
+  test("under 560 px the row-key column is pinned at the start, and lets go when wider", async ({ page }) => {
+    await page.setViewportSize({ width: 1000, height: 700 });
+    await open(page, "?width=480");
+    await expect.poll(() => pinned(page)).toEqual(["id"]);
+    await setWidth(page, 640);
+    await expect.poll(() => pinned(page)).toEqual([]);
+    await setWidth(page, 500);
+    await expect.poll(() => pinned(page)).toEqual(["id"]);
+    // Nothing changed the order, so nothing was asked again.
+    expect(await page.evaluate(() => window.__queries.length)).toBe(1);
+  });
+
+  test("pinNarrow: none keeps the key column from it", async ({ page }) => {
+    await page.setViewportSize({ width: 1000, height: 700 });
+    await open(page, "?width=480&keynone");
+    await page.waitForTimeout(300);
+    expect(await pinned(page)).toEqual([]);
+  });
+
+  test("a page's pin at every width holds on narrow grids too, and the default steps back", async ({ page }) => {
+    await page.setViewportSize({ width: 1000, height: 700 });
+    await open(page, "?width=480");
+    await expect.poll(() => pinned(page)).toEqual(["id"]);
+    const width = { width: 180 };
+    await page.evaluate(
+      (width) =>
+        window.__module.set_columns(document.querySelector("opengrid-grid"), {
+          id: width,
+          customer: width,
+          city: { ...width, pin: "end" },
+          seats: width,
+          price: width,
+          note: width,
+        }),
+      width,
+    );
+    await expect.poll(() => pinned(page)).toEqual(["city"]);
+  });
+
+  test("a page's pinNarrow moves the column to its end while narrow, and the default steps back", async ({ page }) => {
+    await page.setViewportSize({ width: 1000, height: 700 });
+    await open(page, "?width=480&customerend");
+    await expect.poll(() => pinned(page)).toEqual(["customer"]);
+    expect(await order(page)).toEqual(["id", "city", "seats", "price", "note", "customer"]);
+    await setWidth(page, 640);
+    await expect.poll(() => pinned(page)).toEqual([]);
+    await expect.poll(() => order(page)).toEqual(["id", "customer", "city", "seats", "price", "note"]);
+  });
+
+  test("the reader pins a column for narrow screens only, and the view says so", async ({ page }) => {
+    await page.setViewportSize({ width: 1000, height: 700 });
+    // The key column keeps out of it: two 180 px pins would be too much for 480 px.
+    await open(page, "?width=480&menu&keynone");
+    await shadow(page, (root) => root.querySelector('thead th[data-col="3"]').focus());
+    await page.keyboard.press("Alt+ArrowDown");
+    const item = (label) =>
+      shadow(
+        page,
+        (root, label) => {
+          const node = [...root.querySelectorAll('[part="column-menu"] [role="menuitemradio"]')].find(
+            (entry) => entry.textContent === label,
+          );
+          return node && { checked: node.getAttribute("aria-checked") };
+        },
+        label,
+      );
+    await expect.poll(() => item("Only on narrow screens")).toEqual({ checked: "false" });
+    await shadow(page, (root) =>
+      [...root.querySelectorAll('[part="column-menu"] [role="menuitemradio"]')]
+        .find((entry) => entry.textContent === "Only on narrow screens")
+        .click(),
+    );
+    await expect.poll(() => pinned(page)).toEqual(["seats"]);
+    await expect.poll(() => page.evaluate(() => window.__views.at(-1)?.columns.pinnedNarrow)).toEqual({ seats: "start" });
+    await setWidth(page, 640);
+    await expect.poll(() => pinned(page)).toEqual([]);
+
+    // The view brings it back, and "Not pinned" lets go at every width.
+    const view = await page.evaluate(() => window.__module.get_view(document.querySelector("opengrid-grid")));
+    expect(view.columns.pinnedNarrow).toEqual({ seats: "start" });
+    await setWidth(page, 480);
+    await expect.poll(() => pinned(page)).toEqual(["seats"]);
+  });
+
+  test("has no axe violations with a narrow pin and the column menu open", async ({ page }) => {
+    await page.setViewportSize({ width: 1000, height: 700 });
+    await open(page, "?width=480&menu");
+    await expect.poll(() => pinned(page)).toEqual(["id"]);
+    await shadow(page, (root) => root.querySelector('thead th[data-col="3"]').focus());
+    await page.keyboard.press("Alt+ArrowDown");
+    await expect.poll(() => shadow(page, (root) => !!root.querySelector('[part="column-menu"] [role="menuitemradio"]'))).toBe(true);
+    const results = await new AxeBuilder({ page }).analyze();
+    expect(results.violations).toEqual([]);
+  });
+
+  test("too narrow for the pins, they let go as any pin does", async ({ page }) => {
+    await page.setViewportSize({ width: 1000, height: 700 });
+    await open(page, "?width=320&customerend");
+    // id is not pinned by default beside the page's narrow pin; customer is 180 of 320.
+    await expect.poll(() => pinned(page)).toEqual([]);
+    await expect.poll(() => status(page)).toMatch(/Too narrow for the pinned columns/);
   });
 });

@@ -60,7 +60,17 @@ pub(super) fn open_column_menu(host: &HtmlElement, col: usize) {
             can_group: !is_paging(host),
             visible: borrowed.state.schema().fields().len(),
             bulk: bulk::available(host, &borrowed, col),
-            pin: pin_of(host, &name),
+            pin: {
+                let wide = opengrid_grid::layout::PageColumns {
+                    narrow: false,
+                    ..presentation::page_columns(host)
+                };
+                columns::layout(host).borrow().pin(&name, &wide)
+            },
+            pin_narrow: columns::layout(host)
+                .borrow()
+                .narrow_pin(&name, &presentation::page_columns(host))
+                .is_some(),
             lookup: presentation::styles(host).lookup(&name).is_some(),
         };
         (crate::column_menu::entries(&column, &texts), name)
@@ -350,6 +360,7 @@ pub(super) fn activate_menu_item(host: &HtmlElement, item: &Element) {
         "pin:none" => pin_column(host, &name, None),
         "pin:start" => pin_column(host, &name, Some(Pin::Start)),
         "pin:end" => pin_column(host, &name, Some(Pin::End)),
+        "pin:narrow" => pin_narrow(host, &name),
         "bulk" => bulk::open(host, col),
         grouping if grouping.starts_with("group:") => {
             let current = runtime

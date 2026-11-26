@@ -87,6 +87,34 @@ pub(super) fn pin_column(host: &HtmlElement, name: &str, pin: Option<Pin>) {
     dispatch_view(host);
 }
 
+/// Pins a column for narrow grids only, from the column menu (issue #525):
+/// at the start while the grid is narrow, with the others when there is room.
+pub(super) fn pin_narrow(host: &HtmlElement, name: &str) {
+    let Some(runtime) = runtime(host) else {
+        return;
+    };
+    let page = presentation::page_columns(host);
+    let said = texts(host).column_pinned_narrow(page.band(name).unwrap_or(name));
+    let before = arrangement(host);
+    if !columns::update(host, |layout| {
+        layout.set_narrow_pin(name, Pin::Start, &page)
+    }) {
+        announce(host, &said);
+        return;
+    }
+    if before.is_some_and(|before| rearrange(host, &runtime, before, Some(said.clone()))) {
+        if let Some(col) = columns_of(host).iter().position(|column| column == name) {
+            runtime.borrow_mut().set_active(ActiveCell::Header { col });
+        }
+        dispatch_view(host);
+        return;
+    }
+    apply_widths(host);
+    announce(host, &said);
+    say_release(host);
+    dispatch_view(host);
+}
+
 /// The shown columns, the bands above them and the view, read together
 /// **before** something changes the order of the columns: the filter row is
 /// read by position, so the view has to be gathered while the columns still
@@ -117,6 +145,31 @@ pub(super) fn rearrange(
     view.columns = columns::layout(host).borrow().clone();
     apply_view(host, runtime, &view, notice, true);
     true
+}
+
+/// Whether a grid this wide is narrow (issue #525): under the toolbar's
+/// breakpoint. `None` for a grid with no width, which is not laid out.
+pub(super) fn narrow_now(host: &HtmlElement) -> Option<bool> {
+    let width = host.client_width();
+    (width > 0).then_some((width as u32) < grid::NARROW_TOOLBAR)
+}
+
+/// Takes up a grid that became narrow or wide again (issue #525): the narrow
+/// pins hold or let go. A pin that moves a column to the other end rebuilds
+/// the grid around its view, as the reader's pin does; one that only keeps a
+/// column in place is drawn by [`align_filter`], which follows.
+fn follow_narrow(host: &HtmlElement) {
+    let (Some(narrow), Some(runtime)) = (narrow_now(host), runtime(host)) else {
+        return;
+    };
+    if presentation::is_narrow(host) == narrow {
+        return;
+    }
+    let before = arrangement(host);
+    presentation::set_narrow(host, narrow);
+    if let Some(before) = before {
+        rearrange(host, &runtime, before, None);
+    }
 }
 
 /// Says once that the pinned columns scroll with the others (issue #316) —
@@ -669,6 +722,7 @@ pub(super) fn observe_columns(root: &ShadowRoot) {
             .and_then(|table| table.get_root_node().dyn_into::<ShadowRoot>().ok())
             .and_then(|root| root.host().dyn_into::<HtmlElement>().ok());
         if let Some(host) = host {
+            follow_narrow(&host);
             align_filter(&host);
             say_release(&host);
             follow_row_height(&host);
