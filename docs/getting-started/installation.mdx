@@ -1,6 +1,6 @@
 ---
 title: Installation
-description: Install the elements and the engine from npm, and add an adapter for React, Vue or Svelte.
+description: Install the elements and the engine from npm, and add an adapter for React, Vue, Svelte or Solid.
 order: 1
 ---
 
@@ -23,14 +23,15 @@ A page that only talks to an `opengrid-server` never loads the engine. One that 
 tab imports it, and `createWorkerProvider()` finds it on its own ([The public API →
 Providers](../../api/#providers)).
 
-In React, Vue or Svelte, the components are in the same package, as subpaths —
-`@casoon/opengrid/react`, `/vue` and `/svelte`. The framework is an optional peer, so it is
+In React, Vue, Svelte or Solid, the components are in the same package, as subpaths —
+`@casoon/opengrid/react`, `/vue`, `/svelte` and `/solid`. The framework is an optional peer, so it is
 the page's own dependency:
 
 ```sh
 npm install @casoon/opengrid react    # React 18 or 19 — import from @casoon/opengrid/react
 npm install @casoon/opengrid vue      # Vue 3.4.20 and later — @casoon/opengrid/vue
 npm install @casoon/opengrid svelte   # Svelte 5 — @casoon/opengrid/svelte
+npm install @casoon/opengrid solid-js @solidjs/web   # Solid 2 — @casoon/opengrid/solid
 ```
 
 What the adapters take and how they bind the view is in [Frameworks](../../guides/frameworks/).
@@ -129,8 +130,8 @@ just wasm-build              # the engine   -> examples/engine-demo/pkg/
 The examples and the demo on this site load the engine from `examples/engine-demo/pkg/`.
 `just package` builds both modules again into the element package — the engine into
 `packages/opengrid/engine/` — and packs the package the way a release does, into
-`target/npm-package/`. The React, Vue and Svelte adapters are in `packages/opengrid/react/`,
-`vue/` and `svelte/`, published as the package's subpaths.
+`target/npm-package/`. The React, Vue, Svelte and Solid adapters are in `packages/opengrid/react/`,
+`vue/`, `svelte/` and `solid/`, published as the package's subpaths.
 
 ### Check the build
 

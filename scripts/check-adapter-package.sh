@@ -2,7 +2,7 @@
 # Runs a **packed** framework adapter the way an installing project would
 # (plan points 77–79, #27): a scratch project whose node_modules holds a copy
 # of the unpacked tarball from `just package` — the adapters are its subpaths
-# `@casoon/opengrid/react|vue|svelte` — and the framework from the example,
+# `@casoon/opengrid/react|vue|svelte|solid` — and the framework from the example,
 # nothing from the workspace.
 # There the adapter renders on the server exactly as it does in the
 # workspace, and its types compile against the example's type test.
@@ -10,12 +10,12 @@
 # That catches what the workspace hides: a file missing from `files`, a
 # subpath missing from `exports`, an import the tarball cannot resolve.
 #
-# Usage: bash scripts/check-adapter-package.sh react|vue|svelte   (after `just package`)
+# Usage: bash scripts/check-adapter-package.sh react|vue|svelte|solid   (after `just package`)
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 root="$PWD"
-adapter="${1:?usage: check-adapter-package.sh <react|vue|svelte>}"
+adapter="${1:?usage: check-adapter-package.sh <react|vue|svelte|solid>}"
 packed="$root/target/npm-package/package"
 example="$root/examples/$adapter"
 work="$root/target/$adapter-packed"
@@ -40,6 +40,7 @@ case "$adapter" in
     react) framework=(react react-dom @types/react @types/react-dom) ;;
     vue) framework=(vue) ;;
     svelte) framework=(svelte vite @sveltejs/vite-plugin-svelte) ;;
+    solid) framework=(solid-js @solidjs/web) ;;
     *) echo "unknown adapter: $adapter" >&2; exit 1 ;;
 esac
 for name in "${framework[@]}"; do
@@ -66,7 +67,9 @@ if [[ "$html" != "$expected" ]]; then
     exit 1
 fi
 
-# The types.
+# The types. Solid's JSX is typed by the renderer package, not by `jsx-runtime`.
+jsx='"jsx": "react-jsx",'
+[[ "$adapter" == solid ]] && jsx='"jsx": "preserve", "jsxImportSource": "@solidjs/web",'
 types="$(ls "$example"/src/types.ts* | head -1)"
 cp "$types" "$work/$(basename "$types")"
 cat > "$work/tsconfig.json" <<JSON
@@ -77,7 +80,7 @@ cat > "$work/tsconfig.json" <<JSON
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "jsx": "react-jsx",
+    $jsx
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "types": []
   },

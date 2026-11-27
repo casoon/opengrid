@@ -29,6 +29,7 @@ const CASES = [
   { name: "React 18", example: "react", page: "/examples/react/dist-18/hydrate.html" },
   { name: "Vue", example: "vue", page: "/examples/vue/dist/hydrate.html", beforeDefine: true },
   { name: "Svelte", example: "svelte", page: "/examples/svelte/dist/hydrate.html", beforeDefine: true },
+  { name: "Solid", example: "solid", page: "/examples/solid/dist/hydrate.html", beforeDefine: true },
 ];
 
 for (const { name, example, page: path, beforeDefine } of CASES) {

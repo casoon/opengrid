@@ -118,7 +118,7 @@ package:
 
 # Typen der öffentlichen API (Punkt 75): tests/types/api.ts gegen das Repository
 # und gegen das gepackte Paket — dort über dessen `exports`, wie bei einem Nutzer.
-# Dazu die Framework-Adapter (Punkte 77–79, #27): ihre Typen im Beispiel, und die
+# Dazu die Framework-Adapter (Punkte 77–79, #27, #510): ihre Typen im Beispiel, und die
 # Unterpfade des gepackten Pakets in einem Wegwerf-Projekt, serverseitig gerendert
 # und typgeprüft — und eine Installation ohne jedes Framework (optionale Peers).
 # Braucht `just package` vorher; `just e2e` ruft es auf.
@@ -128,12 +128,15 @@ types:
     pnpm exec tsc -p examples/react
     pnpm exec tsc -p examples/vue
     pnpm exec tsc -p examples/svelte
+    pnpm exec tsc -p examples/solid
     bash scripts/check-adapter-package.sh react
     bash scripts/check-adapter-package.sh vue
     bash scripts/check-adapter-package.sh svelte
+    bash scripts/check-adapter-package.sh solid
     bash scripts/check-lowest-peers.sh react
     bash scripts/check-lowest-peers.sh vue
     bash scripts/check-lowest-peers.sh svelte
+    bash scripts/check-lowest-peers.sh solid
     bash scripts/check-core-install.sh
 
 # Größen der Elementmodule (beide Elemente, nur Grid, nur Pivot) und des Engine-Moduls — roh, gzip,

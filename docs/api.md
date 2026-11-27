@@ -505,7 +505,7 @@ that is none of `id`, `label`, `items`, `disabled`, `reason` (an entry has `id` 
 empty or missing `id` or `label`, an `id` used twice anywhere in the call (items and entries share one
 set, because the event names the `id` alone), `disabled: true` without a `reason` or a `reason`
 without `disabled`, and a menu without entries. An empty list takes the items away. `connect` takes the
-items as `toolbarItems` and the event as `onToolbarAction`; the React, Vue and Svelte components pass
+items as `toolbarItems` and the event as `onToolbarAction`; the React, Vue, Svelte and Solid components pass
 the same two props.
 
 Page items follow the toolbar's narrow rules: one row that scrolls sideways under 560 px of the grid's

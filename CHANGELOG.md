@@ -125,6 +125,11 @@ Two things belong in every release entry and are easy to leave out:
 - **Grid:** `<opengrid-table>` takes `scale` too and shows the scaled number in its cells, in the
   page's notation and through the column's format; its query and an export keep the stored integer
   ([#537](https://github.com/casoon/opengrid/issues/537)).
+- **Solid:** `@casoon/opengrid/solid` — `OpengridGrid`, `OpengridTable` and `OpengridPivot` for
+  Solid 2, built on `connect` like the other adapters: the view is `view` with `onViewChange`, or
+  `defaultView`, and the components render on the server and hydrate. `solid-js` and `@solidjs/web`,
+  from 2.0.0, are optional peers ([#510](https://github.com/casoon/opengrid/issues/510)). Details:
+  [Solid](https://casoon.github.io/opengrid/docs/guides/frameworks/#solid).
 
 ### Changed
 

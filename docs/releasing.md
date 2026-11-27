@@ -1,7 +1,7 @@
 # Releasing opengrid
 
 What a release of `@casoon/opengrid` — one npm package, with the framework adapters as its
-subpaths `/react`, `/vue` and `/svelte` — and of the `opengrid-*` crates on crates.io
+subpaths `/react`, `/vue`, `/svelte` and `/solid` — and of the `opengrid-*` crates on crates.io
 consists of, in the order it happens.
 
 Most of this is one command. The steps that are **not** a command are marked 👤 — they
@@ -36,7 +36,7 @@ scheduled, and nothing below it should be read as a promise that it will be.
 - [ ] `cargo publish --workspace --dry-run --locked` — the crates pack and build from their
       packages ([Rust crates](#rust-crates)); a published crate version cannot be replaced
 - [ ] `just e2e` — Playwright and axe-core, including `packaged.spec.js`, which loads the
-      **packed** package rather than the repository; it also builds the React, Vue and Svelte
+      **packed** package rather than the repository; it also builds the React, Vue, Svelte and Solid
       examples, runs their specs, and runs `just types`, which checks the declarations, puts
       each packed adapter subpath into a scratch project to render and type-check it there,
       and installs the tarball into a project without any framework
@@ -137,7 +137,7 @@ inventory.
 - [ ] `just package` — builds the modules, stages the licences and the readme, packs and
       unpacks the tarball into `target/npm-package/`
 - [ ] Read the `package/` directory there and check that it holds what it should, and
-      nothing more — the adapters under `react/`, `vue/` and `svelte/` included. CI does
+      nothing more — the adapters under `react/`, `vue/`, `svelte/` and `solid/` included. CI does
       this on every push (`publish-dry-run`), but read it anyway before the one push that is
       real. This local pack is for **reading**, not for publishing: it was built with this
       machine's `wasm-opt`, and `just package` warns when that is not the binaryen CI pins.

@@ -1,12 +1,12 @@
 ---
 title: Frameworks
-description: React, Vue and Svelte components, and the same elements in Angular, Astro and server-rendered pages without one.
+description: React, Vue, Svelte and Solid components, and the same elements in Angular, Astro and server-rendered pages without one.
 order: 4
 ---
 
 The elements are Web Components, so they work in any page. What a framework adds is a way to
 hand them their provider, texts and view the way the framework hands anything to anything —
-props, `v-model`, `bind:`. Three adapters do that; for everything else there is `connect`, the
+props, `v-model`, `bind:`. Four adapters do that; for everything else there is `connect`, the
 function they are all built on ([The public API → Connecting](../../api/#connecting)).
 
 | | Import | View |
@@ -14,12 +14,13 @@ function they are all built on ([The public API → Connecting](../../api/#conne
 | React 18 and 19 | `@casoon/opengrid/react` | `view` + `onViewChange`, or `defaultView` |
 | Vue 3.3 and later | `@casoon/opengrid/vue` | `v-model:view`, or `defaultView` |
 | Svelte 5 | `@casoon/opengrid/svelte` | `bind:view`, or `defaultView` |
+| Solid 2 | `@casoon/opengrid/solid` | `view` + `onViewChange`, or `defaultView` |
 | Angular 22 | a directive over `connect` (below) | `[(view)]` |
 | Lit, Astro, plain pages | `@casoon/opengrid` | `connect(host, { view, onViewChange })` |
 
 The adapters are subpaths of the one package, and their frameworks are optional peers:
-`npm install @casoon/opengrid react` (or `vue`, `svelte`) and import from
-`@casoon/opengrid/react`. A page that uses none of them installs no framework. See
+`npm install @casoon/opengrid react` (or `vue`, `svelte`; for Solid `solid-js @solidjs/web`) and
+import from `@casoon/opengrid/react`. A page that uses none of them installs no framework. See
 [Installation](../../getting-started/installation/).
 
 ## What every adapter does the same way
@@ -41,10 +42,11 @@ Four rules to know, because they come from the grid and not from the framework:
 1. **`provider`, format and validator functions compare by identity.** A provider created inline —
    `provider={createRestProvider(…)}` in a React render — is a new provider on every render,
    and each one asks the source again. Create it once: outside the component, or in `useMemo`,
-   a module-level `const`, a Svelte `<script module>`.
+   a module-level `const`, a Svelte `<script module>`. In Solid, `provider={createRestProvider(…)}`
+   in JSX is created again on every read: create it in the component body, or outside.
 2. **`view` is controlled.** A view the page does not take back from the change event is written
-   back — after the next render in React, after the tick in Vue and Svelte. With `defaultView`
-   the reader leads after the first application.
+   back — after the next render in React, after the tick in Vue and Svelte, once the page's
+   updates have flushed in Solid. With `defaultView` the reader leads after the first application.
 3. **`density` and `groupBy` belong to the view as well.** The reader changes them from the
    toolbar and the column menu, so as props they set the start. With a controlled `view`, leave
    them out and let the view carry them.
@@ -78,12 +80,13 @@ not events:
 | React | `onRowAdd` | `onCellChange`, `onPaste`, `onBulkChange`, `onRowAction`, `onSourceReplaced` | the `ref` — the element, carrying both (`useRef<OpengridGridRef>`) |
 | Vue | `@row-add` — a prop, since it answers | `@cell-change`, `@paste`, `@bulk-change`, `@row-action`, `@source-replaced` | the template ref (`OpengridGridExposed`) |
 | Svelte | `onrowadd` | `oncellchange`, `onpaste`, `onbulkchange`, `onrowaction`, `onsourcereplaced` | `bind:this` |
+| Solid | `onRowAdd` | `onCellChange`, `onPaste`, `onBulkChange`, `onRowAction`, `onSourceReplaced` | the `ref` — the element, carrying both (`let grid!: OpengridGridRef`) |
 | Angular | `[rowAdd]` | the element's own: `(opengrid-paste)` and so on | `#grid="opengrid"` |
 
 A pivot's [drill-down](../../api/#drilling-down) is the same two things — the attribute and
 the event: `drillDown` with `onDrillDown` in React, `drill-down` with `@drill-down` in Vue,
-`drillDown` with `ondrilldown` in Svelte, and in Angular the element's own `drill-down` and
-`(opengrid-drill-down)`. The grid that shows the rows takes the event's filter as its
+`drillDown` with `ondrilldown` in Svelte, `drillDown` with `onDrillDown` in Solid, and in
+Angular the element's own `drill-down` and `(opengrid-drill-down)`. The grid that shows the rows takes the event's filter as its
 `filter` — a string of JSON, as the attribute is: `filter={JSON.stringify(detail.query.filter)}`.
 
 ```jsx
@@ -225,6 +228,59 @@ const view = ref(null);
 - A change **inside** a `$state` object — `texts.loading = "…"` — reaches the grid as much as a
   new object does.
 - **Exporting:** `bind:element={grid}` is the element, so a handler exports the view as
+  `exportRows(provider, loader.module.get_query(grid))` — see
+  [Exporting](../export/#in-the-browser).
+
+## Solid
+
+Solid 2 only — `solid-js` and `@solidjs/web` from 2.0.0, both optional peers. In Solid 2 the DOM
+runtime is a package of its own, which is why there are two.
+
+```jsx
+import { createSignal } from "solid-js";
+import { createRestProvider } from "@casoon/opengrid";
+import { OpengridGrid } from "@casoon/opengrid/solid";
+
+const provider = createRestProvider({ url: "https://example.org", source: "orders", token: "…" });
+
+export function Orders() {
+  const [view, setView] = createSignal(null);
+  let grid;
+  return (
+    <OpengridGrid
+      ref={grid}
+      label="Orders"
+      datasource="orders"
+      columns="id,customer,amount"
+      selection
+      toolbar
+      provider={provider}
+      view={view()}
+      onViewChange={setView}
+      onSelectionChange={(detail) => console.log(detail.count)}
+    />
+  );
+}
+```
+
+- The adapter is plain JavaScript, and renders the element with `Dynamic` from `@solidjs/web`: no
+  Solid compiler runs over the package, and the page's own JSX is compiled as usual
+  (`@solidjs/vite-plugin`, with `"jsxImportSource": "@solidjs/web"` for TypeScript).
+- `ref` is the element, carrying the connection's `setCellState` and `setValues`: `let grid`
+  with `ref={grid}`, or a function. `id`, `class`, `style`, `aria-*` go to it; `class` takes
+  Solid's string, object and array forms. `hidden`, `inert` and `autofocus` are Solid's boolean
+  attributes: `true` writes them, `false` leaves them out.
+- The options are read in one effect, so a change to one of them reaches the grid and nothing
+  else is passed again. An option that was set and is `undefined` now is reset. Objects compare
+  by identity, as in React: a new `texts` is a change, a key set inside the same object is not —
+  pass a new object.
+- Controlled is `view` with `onViewChange`. The page takes the reader's view into its signal;
+  one it does not take is written again once the page's updates have flushed.
+- **Server rendering and hydration:** `renderToString` writes the element with its attributes and
+  Solid's hydration key; `hydrate` keeps the server's element and connects it. The page needs
+  Solid's hydration script (`generateHydrationScript()` from `@solidjs/web`) in its `<head>`, as
+  for any Solid app. Nothing is connected on the server.
+- **Exporting:** with `ref`, a handler exports the view as
   `exportRows(provider, loader.module.get_query(grid))` — see
   [Exporting](../export/#in-the-browser).
 
@@ -378,7 +434,7 @@ An element in the markup and `connect` in a `<script>` — no island, no framewo
 </script>
 ```
 
-Using a React, Vue or Svelte adapter inside an Astro island works as it does in that framework,
+Using a React, Vue, Svelte or Solid adapter inside an Astro island works as it does in that framework,
 with one catch: an island receives its props **serialized**, and a provider or a format function
 does not survive that. Create them inside the island's own component instead.
 
@@ -411,8 +467,8 @@ than created inline.
 ## What is tested, and what is not
 
 Each adapter has an example in `examples/` that the end-to-end suite runs in Chromium — React
-in both 18 and 19 — with StrictMode or a development build, axe-core, and a check that the grid
-is collected once the framework takes it out. Each adapter also renders on the server, and the
+in both 18 and 19 — with StrictMode or a development build (Solid's warnings are in it too),
+axe-core, and a check that the grid is collected once the framework takes it out. Each adapter also renders on the server, and the
 packed tarball is put into a scratch project's `node_modules` — beside the framework and
 nothing else from the repository — and each subpath rendered and type-checked there. The same
 tarball installs into a project without any framework, which must pull none of them in. Each
@@ -422,14 +478,15 @@ props and callbacks alone, and marks a saved edit through the ref
 runs the same browser checks in an Angular 22 app built by the Angular CLI, plus a one-way
 `[view]` that keeps the reader's change.
 
-**Hydration** is tested in all three (`tests/e2e/hydration.spec.js`): the HTML the example's
-`ssr.mjs` renders is put into a page before the element module has loaded, and the framework
+**Hydration** is tested in every adapter but Angular (`tests/e2e/hydration.spec.js`): the HTML
+the example's `ssr.mjs` renders is put into a page before the element module has loaded, and the framework
 hydrates it with the same props. React 18 and 19 and Vue say nothing, keep the server's element,
 and the grid fills with one query and answers the reader; a changed attribute makes React and
 Vue warn, and the test fail. Svelte 5 does not compare attributes when it hydrates — by design —
-so there the test holds only that the element is kept and connected.
+so there the test holds only that the element is kept and connected. Solid does not either: it
+keeps what the server wrote, and the test holds the same.
 
 Not tested: React 18 rendering on the server (in the repository's Node, `react-dom@18` resolves
 React 19; the React 18 test hydrates React 19's HTML, which is the same markup), React 19.2's
-`<Activity>`, the types against `@types/react` 18, SvelteKit, Nuxt, Next.js and Astro as real
-applications.
+`<Activity>`, the types against `@types/react` 18, SvelteKit, Nuxt, Next.js, SolidStart and Astro
+as real applications, and Solid's streaming (`renderToStream`).

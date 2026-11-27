@@ -131,16 +131,16 @@ connect(document.querySelector("opengrid-grid"), {
 
 See [Where queries run](https://github.com/casoon/opengrid/blob/main/docs/guides/where-queries-run.mdx).
 
-## React, Vue, Svelte
+## React, Vue, Svelte, Solid
 
 One package: the components are its subpaths, and the framework is an optional peer.
 
 ```sh
-npm install @casoon/opengrid react   # or vue, svelte
+npm install @casoon/opengrid react   # or vue, svelte, or solid-js @solidjs/web
 ```
 
 ```jsx
-import { OpengridGrid } from "@casoon/opengrid/react";   // or /vue, /svelte
+import { OpengridGrid } from "@casoon/opengrid/react";   // or /vue, /svelte, /solid
 
 <OpengridGrid label="Orders" datasource="orders" columns="id,customer,amount"
               provider={provider} view={view} onViewChange={setView} />
