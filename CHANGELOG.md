@@ -85,6 +85,13 @@ Two things belong in every release entry and are easy to leave out:
   numbers aligned at the end and summed; dates formatted; a list facet where the caller says a field
   has few values ([#527](https://github.com/casoon/opengrid/issues/527)). Details:
   [Presentation from the schema](https://casoon.github.io/opengrid/docs/guides/data-you-have/#presentation-from-the-schema).
+- **Grid:** `enter-moves="down"` types a column of values without the arrow key: an `Enter` that
+  commits an editor moves the focus to the same column of the next data row — past group headers and
+  the total — and opens nothing; a second `Enter` opens it. `Shift`+`Enter` moves up. At the last row
+  the focus stays, and a validator that blocks the commit means no move. A page setting, not part of
+  the view; adapters: `enterMoves`
+  ([#536](https://github.com/casoon/opengrid/issues/536)). Details:
+  [Typing a column of values](https://casoon.github.io/opengrid/docs/api/#typing-a-column-of-values).
 
 ### Changed
 

@@ -63,7 +63,7 @@ Four rules to know, because they come from the grid and not from the framework:
 
 ## Editing
 
-The grid's editing reaches a component the same way everything else does: `rowKey`, `addRow`, `editLocked` and `editToggle`
+The grid's editing reaches a component the same way everything else does: `rowKey`, `addRow`, `editLocked`, `editToggle` and `enterMoves`
 are attributes, `actions` and `validators` options, and each event a callback. Two things are
 not events:
 

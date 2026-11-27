@@ -47,6 +47,7 @@ export const pivotRefused: ComponentProps<typeof OpengridPivot> = { view: { dens
 export const rooms: GridProps = {
   rowKey: "id",
   addRow: true,
+  enterMoves: "down",
   actions: [{ id: "remove", label: "Remove" }],
   validators: { seats: () => null },
   onrowadd: async (detail) => ({ state: "saved", key: detail.values["id"] ?? null }),
@@ -59,6 +60,8 @@ instance.setCellState(1, "seats", "saved");
 export const refused: GridProps[] = [
   // @ts-expect-error — `addRow` is a boolean
   { addRow: "yes" },
+  // @ts-expect-error — `Enter` moves down or not at all
+  { enterMoves: "up" },
   // @ts-expect-error — a density is one of three
   { density: "tight" },
   // @ts-expect-error — the size is a number
