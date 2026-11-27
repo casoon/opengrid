@@ -307,6 +307,13 @@ pub struct GridTexts {
     pub filter_invalid: String,
     /// A required cell was cleared (plan point 37). May use `{column}`.
     pub cell_required: String,
+    /// What a number editor refuses, with the reason (issue #535): text that is
+    /// not a number, not a whole number, with more decimal places than the column
+    /// holds, or too large for it. Each may use `{value}`; the third `{scale}`.
+    pub number_invalid: String,
+    pub integer_invalid: String,
+    pub number_decimals: String,
+    pub number_too_large: String,
     /// The label of the empty row the reader types a new record into (issue #183).
     pub new_row: String,
     /// A row was added; the page has not saved it yet. May use `{count}`, the
@@ -649,6 +656,10 @@ pub(crate) const KEYS: &[&str] = &[
     "emptyReset",
     "filterInvalid",
     "cellRequired",
+    "numberInvalid",
+    "integerInvalid",
+    "numberDecimals",
+    "numberTooLarge",
     "newRow",
     "choicesOne",
     "choicesOther",
@@ -925,6 +936,10 @@ impl Default for GridTexts {
             empty_reset: "Reset filters".to_owned(),
             filter_invalid: "{column}: {value} is not a value for this column".to_owned(),
             cell_required: "{column} needs a value".to_owned(),
+            number_invalid: "“{value}” is not a number".to_owned(),
+            integer_invalid: "“{value}” is not a whole number".to_owned(),
+            number_decimals: "“{value}” has more than {scale} decimal places".to_owned(),
+            number_too_large: "“{value}” is too large for this column".to_owned(),
             new_row: "New row".to_owned(),
             choices_one: "1 choice".to_owned(),
             choices_other: "{count} choices".to_owned(),
@@ -1070,6 +1085,27 @@ impl GridTexts {
     /// A cell that may not be empty.
     pub fn cell_required(&self, column: &str) -> String {
         fill(&self.cell_required, "column", self.column(column))
+    }
+
+    /// The sentences of a number the editor refuses (issue #535).
+    pub fn number_invalid(&self, value: &str) -> String {
+        fill(&self.number_invalid, "value", value)
+    }
+
+    pub fn integer_invalid(&self, value: &str) -> String {
+        fill(&self.integer_invalid, "value", value)
+    }
+
+    pub fn number_decimals(&self, value: &str, scale: u8) -> String {
+        fill(
+            &fill(&self.number_decimals, "value", value),
+            "scale",
+            &scale.to_string(),
+        )
+    }
+
+    pub fn number_too_large(&self, value: &str) -> String {
+        fill(&self.number_too_large, "value", value)
     }
 
     /// A pasted value its column cannot hold (issue #184).
@@ -1980,6 +2016,10 @@ mod host {
         overwrite(&mut texts.empty_reset, string("emptyReset"));
         overwrite(&mut texts.filter_invalid, string("filterInvalid"));
         overwrite(&mut texts.cell_required, string("cellRequired"));
+        overwrite(&mut texts.number_invalid, string("numberInvalid"));
+        overwrite(&mut texts.integer_invalid, string("integerInvalid"));
+        overwrite(&mut texts.number_decimals, string("numberDecimals"));
+        overwrite(&mut texts.number_too_large, string("numberTooLarge"));
         overwrite(&mut texts.new_row, string("newRow"));
         overwrite(&mut texts.choices_one, string("choicesOne"));
         overwrite(&mut texts.choices_other, string("choicesOther"));

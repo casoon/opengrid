@@ -1922,6 +1922,8 @@ pub fn grid_css() -> String {
                              color: var({INK_PROPERTY}); background: var({SURFACE_2_PROPERTY});
                              border: 1px solid var({LINE_STRONG_PROPERTY}); }}
          [part=\"validation\"][data-level=\"error\"] {{ border-color: var({ACCENT_PROPERTY}); }}
+         /* In the bulk panel (issue #535) it is a line of the panel, not a tooltip. */
+         [part=\"bulk\"] [part=\"validation\"] {{ position: static; display: block; }}
          tr[data-added=\"error\"] td {{ text-decoration: underline wavy; text-underline-offset: 3px; }}
          /* The preview of a paste (issue #184). */
          [part=\"paste-preview\"] {{ padding: 8px 12px; background: var({SURFACE_2_PROPERTY});

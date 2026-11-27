@@ -104,7 +104,7 @@ pub(super) fn on_paste(event: Event) {
 /// page — the data is the page's, in the page's language, whatever the
 /// component's own sentences are written in — and the browser's where the page
 /// names none.
-fn notation_of(host: &HtmlElement) -> Notation {
+pub(super) fn notation_of(host: &HtmlElement) -> Notation {
     let lang = host
         .closest("[lang]")
         .ok()

@@ -99,6 +99,14 @@ Two things belong in every release entry and are easy to leave out:
 - **Contributors:** the bench tool reports the jumps over 33 ms apart from the wheel steps, and the
   long animation frames of both: time in forced style and layout and in rendering
   ([#518](https://github.com/casoon/opengrid/issues/518)).
+- **Grid:** the editor of a number column is a text field with `inputmode="decimal"` (`"numeric"`
+  for integers) instead of `type="number"`. It reads the page's notation — `1,10` and `1.234,50`
+  on a German page, the wire notation too — with the reader paste uses, and opens with the value
+  written that way. What cannot be read is refused under the editor with the reason, in the cell,
+  the record form and the bulk panel, and is no longer committed as NULL; more decimals than the
+  scale are refused, never rounded. New texts: `numberInvalid`, `integerInvalid`,
+  `numberDecimals`, `numberTooLarge` ([#535](https://github.com/casoon/opengrid/issues/535);
+  [Numbers](https://casoon.github.io/opengrid/docs/api/#numbers)).
 
 ### Fixed
 

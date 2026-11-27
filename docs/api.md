@@ -955,7 +955,7 @@ loader.module.set_validators(grid, {
 ```
 
 The function runs on every keystroke in the editor and once more on commit; `value` is the text as it
-stands (as `opengrid-cell-change` gives it) and `row` the record as loaded, by field name. It
+stands (as `opengrid-cell-change` gives it; a number in the [wire notation](#numbers), once it can be read) and `row` the record as loaded, by field name. It
 answers `null`, or `{ level: "warning" | "error", message }`. The message shows under the editor,
 stays on the cell (`data-validation`, described by a hidden node through `aria-describedby`; an `error` is also `aria-invalid`) until
 the next result, and is said once, politely, in the status line.
@@ -1031,7 +1031,7 @@ browser copies as it always did.
 copies, or CSV — and anchors it at the focused cell. **Nothing changes yet:** a preview
 (`part="paste-preview"`) shows each incoming value read against its column's type, in the number
 notation of the grid's language (`1.234,5` in German; the wire notation `1234.5` is understood
-too). A value that cannot be read is marked with the reason, and the live region says it:
+too) — the one reader the [number editor](#numbers) uses, so a value means the same typed and pasted. A value that cannot be read is marked with the reason, and the live region says it:
 „12 rows, 2 values not readable“. `Enter` applies, `Escape` discards. A block with unreadable
 values is not applied. A column the page fills (`readonly` in `set_columns`) is not pasted into:
 its cells stay in the preview marked `aria-readonly` with the reason („price is read-only“), the
@@ -1981,6 +1981,27 @@ The tint is a token, so a page that wants the pencil and the lock but no tint se
 `--og-editable: transparent` on the grid. Under a forced palette the tint is gone and the marks keep
 their meaning.
 
+### Numbers
+
+The editor of an `int64`, `float64` or `decimal` column — in the cell, in the [record form](#editing-a-whole-record)
+and in the [bulk panel](#setting-a-value-for-the-selected-rows) — is a **text field with
+`inputmode="decimal"`** (`"numeric"` for integers), not `type="number"` (issue #535). What a number
+field accepts with a comma depends on the browser and its locale, not on the page, and Safari reports
+an empty value for what it cannot read; a text field reads what the **page** writes, and a touch
+screen shows a keypad with a decimal mark. There is no opt-in for `type="number"`.
+
+| | |
+|---|---|
+| Notation | The language of the page (`lang`, as for [paste](#pasting)) says how numbers are written: `1.234,50` on a German page, `1,234.50` on an English one. A decimal mark, group marks, a leading sign. The wire notation (`1234.5`) is understood too, so `1.10` is read on a German page too, as one and a tenth. |
+| Group marks | Accepted **only where they stand right**: threes from the right, `1.234,50`. `12.34,5` is not read. |
+| Opens with | The value in the page's notation, without group marks: `1,10` on a German page, not `1.1`. A character that opens the editor replaces it, as before. |
+| Refused | What cannot be read stays under the editor with the reason — `“1,1,0” is not a number` (`numberInvalid`), `is not a whole number` in an integer column (`integerInvalid`) — and the editor stays open with what was typed; it is said once in the live region and `aria-invalid`. It is **never committed as NULL**: only an empty field is NULL, on a column that allows it. In the record form the reason stands under the field and nothing is saved until every field is read; in the bulk panel it stands under the editor. |
+| Scale and precision | The schema applies. A decimal with more places than its scale is **refused**, never rounded (`“1,234” has more than 2 decimal places`, `numberDecimals`); zeros past the scale lose nothing (`1,230` is `1,23`). A value past the precision is refused as too large (`numberTooLarge`). |
+
+`opengrid-cell-change`, `opengrid-bulk-change` and the `value` a [validator](#validation) gets carry a
+number in the **wire notation** whatever it was typed in (`1.10` for `1,10`), so a page that parses
+them needs no notation of its own.
+
 ### Locking edits
 
 A price list that reads by default and is unlocked by a button (issue #494) sets `edit-locked` on the
@@ -2406,6 +2427,8 @@ boolean reads — that is `set_formats`.
 | `typeList` | `list` — the type beside a suggested column | |
 | `filterInvalid` | `{column}: {value} is not a value for this column` | `{column}`, `{value}` |
 | `cellRequired` | `{column} needs a value` | `{column}` |
+| `numberInvalid` / `integerInvalid` | `“{value}” is not a number` / `“{value}” is not a whole number` — what a number editor refuses ([Numbers](#numbers)) | `{value}` |
+| `numberDecimals` / `numberTooLarge` | `“{value}” has more than {scale} decimal places` / `“{value}” is too large for this column` | `{value}`, `{scale}` |
 | `validationWarning` / `validationError` | `Warning: {message}` / `Error: {message}` | `{message}` |
 | `undoCell` / `redoCell` | `Undone: {column} in row {row}` / `Redone: …` | `{column}`, `{row}` |
 | `undoAdded` / `redoAdded` | `Undone: row added` / `Redone: row added` | |

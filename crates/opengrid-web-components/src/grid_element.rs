@@ -100,6 +100,7 @@ mod filter_row;
 mod group_path;
 mod history;
 mod live;
+mod number;
 mod orientation;
 mod paste;
 mod pointer;
@@ -2582,7 +2583,10 @@ fn on_key_down(event: KeyboardEvent) {
                 event.prevent_default();
                 let cell = runtime.borrow().state.editing();
                 let committed = end_edit(&host, true);
-                if let Some(cell) = cell {
+                // A refused value keeps the editor open: the new row waits.
+                if let Some(cell) = cell
+                    && runtime.borrow().state.editing().is_none()
+                {
                     after_new_row_enter(&host, cell, event.ctrl_key() || event.meta_key());
                     after_enter_commit(&host, cell, committed, event.shift_key());
                 }

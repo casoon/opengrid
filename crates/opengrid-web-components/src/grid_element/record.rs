@@ -287,9 +287,29 @@ fn apply(host: &HtmlElement, dialog: &HtmlDialogElement) {
         let text = editor_text(&editor);
         let mut problem: Option<String> = None;
         let mut read = None;
-        match read_value(field.data_type, field.nullable, &text) {
+        // A number is read in the page's notation, as a cell's editor reads it
+        // (issue #535); its reason is the sentence under the field.
+        let numeric = number::applies(field.data_type, Some(&editor)) && !text.is_empty();
+        let outcome = if numeric {
+            number::read(host, field.data_type, &text)
+        } else {
+            read_value(field.data_type, field.nullable, &text).map_err(|bad| {
+                if bad.is_empty() {
+                    texts.cell_required(name)
+                } else {
+                    texts.filter_invalid(name, &bad)
+                }
+            })
+        };
+        match outcome {
             Ok(value) => {
                 let cell = CellRef::new(row, col);
+                // The page is told a number in the wire notation, as before.
+                let text = if numeric {
+                    crate::formats::event_text(&value)
+                } else {
+                    text
+                };
                 let finding = validate::run(host, &runtime, cell, &text);
                 match &finding {
                     Some((found, true)) if found.level == Level::Error => {
@@ -304,8 +324,7 @@ fn apply(host: &HtmlElement, dialog: &HtmlDialogElement) {
                     finding: finding.map(|(found, _)| found),
                 });
             }
-            Err(bad) if bad.is_empty() => problem = Some(texts.cell_required(name)),
-            Err(bad) => problem = Some(texts.filter_invalid(name, &bad)),
+            Err(sentence) => problem = Some(sentence),
         }
         let parent = editor.parent_element();
         if let Some(problem) = &problem {
