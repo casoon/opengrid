@@ -327,6 +327,7 @@ async function checkpoint(name) {
 }
 
 export async function start(adapter) {
+  if (params.has("reuse")) globalThis.__ogReuseText = true;
   const result = { grid: adapter.name, rows: ROWS };
   window.__bench = { done: false, waiting: null, result };
   try {
@@ -391,7 +392,9 @@ export async function start(adapter) {
       );
     }
 
+    await window.__metrics?.("before-windows");
     if (adapter.painted) result.windows = await windows(adapter, ROWS);
+    await window.__metrics?.("after-windows");
     await mark("scroll:start");
     result.scroll = await scroll(adapter);
     await mark("scroll:end");

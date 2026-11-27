@@ -67,6 +67,10 @@ function setText(node, text) {
     if (first === null ? text === \"\" : first.nodeType === 3 && first.nextSibling === null && first.data === text) {
         return;
     }
+    if (globalThis.__ogReuseText && first !== null && first.nodeType === 3 && first.nextSibling === null && text !== \"\" && node.localName === \"td\") {
+        first.data = text;
+        return;
+    }
     node.textContent = text;
 }
 
