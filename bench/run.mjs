@@ -50,6 +50,48 @@ const RUNS = Number(option("runs", 5));
 const THROTTLE = Number(option("throttle", 1));
 const PROBE = args.includes("--probe");
 const RELEASE = args.includes("--release");
+const GCTRACE = args.includes("--gctrace");
+
+/** EXPERIMENT (#518): the garbage collector's trace events of the steps, by thread and name. */
+async function gcSummary(bcdp, stream) {
+  let text = "";
+  for (;;) {
+    const part = await bcdp.send("IO.read", { handle: stream, size: 1 << 20 });
+    text += part.data;
+    if (part.eof) break;
+  }
+  await bcdp.send("IO.close", { handle: stream });
+  const events = JSON.parse(text).traceEvents ?? [];
+  const threads = new Map();
+  for (const e of events) if (e.ph === "M" && e.name === "thread_name") threads.set(`${e.pid}:${e.tid}`, e.args.name);
+  const open = new Map();
+  const sums = {};
+  const big = [];
+  const add = (e, dur) => {
+    if (!/gc|scaven|compact|mark|sweep|MinorGC|MajorGC/i.test(e.name)) return;
+    const key = `${threads.get(`${e.pid}:${e.tid}`) ?? e.tid} ${e.name}`;
+    const t = (sums[key] ??= { n: 0, ms: 0, max: 0 });
+    t.n++;
+    t.ms += dur / 1000;
+    t.max = Math.max(t.max, dur / 1000);
+    if (dur > 8000 && /Main/.test(threads.get(`${e.pid}:${e.tid}`) ?? "")) big.push(`${e.name}@${Math.round((e.ts - first) / 1000)}:${(dur / 1000).toFixed(0)}`);
+  };
+  const first = Math.min(...events.filter((e) => e.ph !== "M").map((e) => e.ts));
+  for (const e of events) {
+    if (e.ph === "X" && e.dur != null) add(e, e.dur);
+    else if (e.ph === "B") open.set(`${e.pid}:${e.tid}:${e.name}`, e);
+    else if (e.ph === "E") {
+      const b = open.get(`${e.pid}:${e.tid}:${e.name}`);
+      if (b) add(b, e.ts - b.ts);
+    }
+  }
+  const top = Object.entries(sums)
+    .filter(([, v]) => v.ms >= 3)
+    .sort((a, b) => b[1].ms - a[1].ms)
+    .slice(0, 14)
+    .map(([k, v]) => `${k} n=${v.n} ${v.ms.toFixed(0)}ms max=${v.max.toFixed(0)}`);
+  return { top, big: big.slice(0, 30) };
+}
 
 /** EXPERIMENT (#518): CPU ticks of every thread of the browser's process tree, by thread name. */
 function threadTicks(rootPid) {
@@ -201,9 +243,24 @@ for (const grid of GRIDS) {
     }
     // EXPERIMENT (#518): the page's own counters (layouts, style recalcs, script time) around the steps.
     const metrics = {};
+    let bcdp = null;
+    if (PROBE && GCTRACE) bcdp = await browser.newBrowserCDPSession();
     if (PROBE) {
       await cdp.send("Performance.enable");
       await page.exposeFunction("__metrics", async (name) => {
+        if (bcdp && name === "steps:start") {
+          await bcdp.send("Tracing.start", { traceConfig: { includedCategories: ["v8", "v8.gc", "blink_gc", "disabled-by-default-v8.gc"], recordMode: "recordAsMuchAsPossible" }, transferMode: "ReturnAsStream" });
+        }
+        if (bcdp && name === "steps:end") {
+          const done = new Promise((resolve) => bcdp.once("Tracing.tracingComplete", resolve));
+          await bcdp.send("Tracing.end");
+          const { stream } = await done;
+          try {
+            metrics.gc = await gcSummary(bcdp, stream);
+          } catch (error) {
+            metrics.gc = { error: String(error) };
+          }
+        }
         const { metrics: list } = await cdp.send("Performance.getMetrics");
         metrics[name] = Object.fromEntries(list.map((m) => [m.name, m.value]));
         metrics[`${name}:threads`] = threadTicks(rootPid);
@@ -322,6 +379,7 @@ if (PROBE) {
         .sort((x, y) => y[1] - x[1])
         .slice(0, 12);
       console.log(`PROBE ${grid} run ${i} threads (cpu ms in the steps; cgroup: periods, throttled periods, throttled us): ${JSON.stringify(cpu)}`);
+      if (r.metrics?.gc) console.log(`PROBE ${grid} run ${i} gc: ${JSON.stringify(r.metrics.gc)}`);
       console.log(`PROBE ${grid} run ${i} ${JSON.stringify(r.scroll?.probe)}`);
     });
   }
