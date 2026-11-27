@@ -314,6 +314,10 @@ export async function page(): Promise<void> {
   // … which is what the grid's `filter` attribute takes.
   const behind: OpengridGridAttributes = { filter: JSON.stringify({ field: "country", op: "is_null" }) };
   void behind;
+  // A row the page mutes by a boolean field, and the word it is described with.
+  const muted: OpengridGridAttributes = { "row-muted": "inactive" };
+  void muted;
+  module.set_texts(grid, { rowMuted: "archived" });
 
   // Events: the detail is typed on the element and on the document.
   grid.addEventListener("opengrid-selection-change", (event) => {

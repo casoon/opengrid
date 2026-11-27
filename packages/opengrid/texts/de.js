@@ -114,6 +114,7 @@ export default {
   "shareOfTotal": "Anteil am Gesamtergebnis",
   "runningTotal": "laufende Summe",
   "treeContext": "Kontext",
+  "rowMuted": "inaktiv",
   "subtreeCell": "{shown}, {aggregate} im Teilbaum",
   "subtreeOnly": "{shown}, {aggregate} im Teilbaum",
   "treeOrphans": "Ohne Elternzeile, oben angezeigt: {count}",

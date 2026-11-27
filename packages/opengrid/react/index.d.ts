@@ -57,6 +57,8 @@ export interface OpengridGridProps extends ConnectOptions, ElementProps {
   treeKey?: string;
   /** The field that names a record: `key` in the editing events. */
   rowKey?: string;
+  /** The boolean field that mutes a row: drawn in the muted ink, described with the text `rowMuted`. */
+  rowMuted?: string;
   /** The page's filter, as the wire's JSON; and-ed onto every query, not in the view. */
   filter?: string;
   /** The locale text columns sort by (`de`, `sr-Latn`); by code point without it. */

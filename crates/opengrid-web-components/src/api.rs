@@ -332,6 +332,8 @@ fn parts() -> Vec<String> {
     for state in ["cell-saving", "cell-saved", "cell-error"] {
         parts.push(state.to_owned());
     }
+    // A row the frame mutes (issue #534).
+    parts.push("row-muted".to_owned());
     // The column menu of point 64 is built when it opens, not in the skeleton.
     parts.push("column-menu".to_owned());
     parts.push("menu-label".to_owned());
@@ -398,7 +400,7 @@ elements
 attributes
   opengrid-table: columns datasource label theme
   opengrid-grid: add-row collation column-menu columns datasource density edit-locked edit-toggle enter-moves facets filter filter-builder group-by label mode page-size \
-row-key search selection theme toolbar tree tree-key window-size
+row-key row-muted search selection theme toolbar tree tree-key window-size
   opengrid-pivot: collapsed columns datasource drill-down fields filter label measures rows sort theme toolbar values
 
 events
@@ -487,7 +489,7 @@ chip-edit chip-move chip-remove chips chips-clear column-menu column-menu-button
 edit-hint edit-mark edit-toggle editor empty empty-reset empty-text facet facet-bounds facet-cost facet-count facet-pill facet-pills facet-value facets facets-head facets-toggle \
 field-group field-menu filter filter-builder filter-builder-dialog filter-clear filter-dialog filter-operator filter-row-toggle filter-value footer group-mark group-toggle \
 grouping-menu header layout list list-item list-item-remove listbox menu-label operator-menu page-first page-label page-last page-next page-previous pager paste-apply paste-discard \
-paste-preview paste-summary position record-dialog refresh row row-header scroll-position search search-hint search-input search-list select select-all select-mark sort-button \
+paste-preview paste-summary position record-dialog refresh row row-header row-muted scroll-position search search-hint search-input search-list select select-all select-mark sort-button \
 sort-direction sort-index source status table toolbar toolbar-item toolbar-menu total-row validation viewport
 
 text keys
@@ -504,7 +506,7 @@ matchesOne matchesOther newRow noValue nothingToAdd numberDecimals numberInvalid
 pasteBlocked pasteCutOff pasteDiscard pasteDiscarded pastePreview pasteUnreadable pinEnd pinGroup pinNarrow pinNone pinStart pinsReleased pivotColumns pivotDrillDown \
 pivotFilterHint pivotFilterLabel pivotFilters pivotMeasures pivotRows pivotShowAs pivotToolbar positionCell queriesOne queriesOther queryAnd queryMissingCondition queryMissingJoin \
 queryMissingValue queryOr queryUnclosed queryUnknownColumn queryUnopened queryWrongOperator rangeCopied rangeSize rangeUnloaded recordDone recordNothing recordSave recordTitle \
-redoAdded redoCell redoNothing redoPaste redoRecord rowAdded rowsOne rowsOther runningTotal searchChip searchHint searchLabel searchPlaceholder searchSuggestions selectAll \
+redoAdded redoCell redoNothing redoPaste redoRecord rowAdded rowMuted rowsOne rowsOther runningTotal searchChip searchHint searchLabel searchPlaceholder searchSuggestions selectAll \
 selectedAll selectionCleared selectionMissing shareOfColumn shareOfRow shareOfTotal sortAscending sortDescending sortKey sourceChanged sourceHybrid sourceLocal sourceRefresh \
 sourceRemote sourceWorker subtotal subtreeCell subtreeOnly toolbarGroup toolbarRefused total totalRow treeContext treeGroupIgnored treeLevelTooLarge treeOrphans treeRefused typeBool typeDate \
 typeInteger typeList typeNumber typeText typeTime undoAdded undoCell undoNothing undoPaste undoRecord ungroupColumn unlockColumn validationError validationWarning valueLabel

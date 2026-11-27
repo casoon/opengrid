@@ -87,10 +87,17 @@ pub(super) fn run_tree(
     };
     announce_loading(host, grid_runtime, kind);
 
+    // The `row-muted` field rides along when no column is it, and is kept in
+    // the levels beside the shown columns (issue #534): the state takes it off
+    // the window like a hidden key.
+    let mut select = columns.clone();
+    let muted = row_muted_of(host).filter(|_| row_muted_hidden(host));
+    if let Some(field) = &muted {
+        select.push(field.as_str().to_owned());
+    }
     // The key rides along when the grid does not show it: a node is named by
     // it, and its children are asked with it.
-    let width = columns.len();
-    let mut select = columns.clone();
+    let width = select.len();
     let key_column = match select.iter().position(|column| *column == key) {
         Some(at) => at,
         None => {
@@ -214,7 +221,18 @@ pub(super) fn run_tree(
         // The window, cut from the loaded levels.
         let (result, settled_as) = {
             let mut runtime = grid_runtime.borrow_mut();
-            let schema = schema.unwrap_or_else(|| runtime.state.schema().clone());
+            // Without a level asked, the window has the schema the state
+            // holds — and the muted field's, which an earlier answer told.
+            let schema = schema.unwrap_or_else(|| {
+                let mut fields = runtime.state.schema().fields().to_vec();
+                fields.extend(
+                    muted
+                        .as_ref()
+                        .and_then(|field| runtime.known.get(field.as_str()))
+                        .cloned(),
+                );
+                opengrid_types::Schema::new(fields)
+            });
             let Some(tree) = runtime.tree.as_ref() else {
                 return;
             };
