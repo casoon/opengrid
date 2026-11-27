@@ -265,6 +265,10 @@ export async function page(): Promise<void> {
   module.set_columns(grid, { customer_id: { lookup: { 1: 10 } } });
   // @ts-expect-error — a map of keys to labels, not a list of pairs
   module.set_columns(grid, { customer_id: { lookup: [{ value: 1, label: "Alpha" }] } });
+  // Scaled integer columns (issue #537): the places of the stored integer.
+  module.set_columns(grid, { price_cent: { title: "Price", scale: 2, aggregate: "sum" } });
+  // @ts-expect-error — a number of places, not text
+  module.set_columns(grid, { price_cent: { scale: "2" } });
   module.set_view(grid, { columns: { pinned: { id: "none", customer: "start" } } });
   // @ts-expect-error — `none`, `start` or `end`
   module.set_view(grid, { columns: { pinned: { id: true } } });

@@ -449,9 +449,13 @@ pub(crate) fn write_row_state(
 pub(crate) const CHOICES_KEY: &str = "__opengridChoices";
 
 /// How this grid's cells become text: the page's formats, and the label of a
-/// key where the column has a lookup (issue #326).
+/// key where the column has a lookup (issue #326), and the scaled number where
+/// it has a scale (issue #537).
 pub(super) fn formatter(host: &HtmlElement, schema: &opengrid_types::Schema) -> Formatter {
-    Formatter::new(&formats(host), schema).with_lookups(&presentation::styles(host), schema)
+    let styles = presentation::styles(host);
+    Formatter::new(&formats(host), schema)
+        .with_lookups(&styles, schema)
+        .with_scales(&styles, schema)
 }
 
 /// Opens the editor on the focused data cell (plan point 37).
@@ -577,8 +581,9 @@ pub(super) fn build_editor(
         // A number is a text field that reads the page's notation (issue #535),
         // not a `type="number"` the browser reads in its own.
         let numeric = number::is_number(data_type);
+        let scale = number::scale_of(host, name);
         let kind = if numeric {
-            number::set_up(&input, data_type);
+            number::set_up(&input, data_type, scale);
             "text"
         } else {
             let kind = grid::input_type(data_type);
@@ -592,7 +597,7 @@ pub(super) fn build_editor(
         } else if let Ok(field) = input.clone().dyn_into::<HtmlInputElement>() {
             match typed {
                 Some(typed) if kind != "date" => field.set_value(typed),
-                _ if numeric => field.set_value(&number::opening_text(host, current)),
+                _ if numeric => field.set_value(&number::opening_text(host, current, scale)),
                 _ => field.set_value(current),
             }
         }
@@ -659,11 +664,14 @@ pub(super) fn end_edit(host: &HtmlElement, commit: bool) -> bool {
     // the editor, which stays open with what was typed — never committed as NULL
     // (issue #535). An empty field is the one way to clear a value, below.
     let numeric = number::applies(data_type, editor.as_ref());
+    // A scaled column's editor holds the scaled number (`6,12`); it is read as,
+    // and the page is told, the stored integer (`612`) (issue #537).
+    let scale = number::scale_of(host, &field_name);
     if commit
         && numeric
         && let (Some(editor), Some(text)) = (&editor, typed.as_deref())
         && !text.is_empty()
-        && let Err(message) = number::read(host, data_type, text)
+        && let Err(message) = number::read(host, data_type, scale, text)
     {
         number::refuse(host, &runtime, editor, &message);
         return false;
@@ -677,7 +685,7 @@ pub(super) fn end_edit(host: &HtmlElement, commit: bool) -> bool {
             host,
             &runtime,
             cell,
-            &number::wire_text(host, data_type, editor.as_ref(), text),
+            &number::wire_text(host, data_type, scale, editor.as_ref(), text),
         )
     } else {
         None
@@ -733,7 +741,7 @@ pub(super) fn end_edit(host: &HtmlElement, commit: bool) -> bool {
             Value::from_wire_str(text, &data_type).ok()
         } else if numeric {
             // Read above already: in the page's notation (issue #535).
-            number::read(host, data_type, text).ok()
+            number::read(host, data_type, scale, text).ok()
         } else {
             grid::literal(text, data_type)
                 .and_then(|json| Value::from_json_typed(&json, &data_type).ok())

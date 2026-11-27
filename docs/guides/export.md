@@ -67,6 +67,7 @@ in:
 | date | `2026-02-03` |
 | timestamp | ISO 8601 in UTC, microseconds when there are any: `2026-02-03T08:15:00Z`, `2026-02-03T08:15:00.000001Z` |
 | float | The shortest text that reads back to the same number; `NaN`, `Infinity` and `-Infinity` spelled out. |
+| scaled integer | The **stored integer**: `612` for what a grid with `scale: 2` shows as `6,12 €`. A [scaled integer column](../../api/#scaled-integer-columns) is an `int64`, and a file is read back as one; there is no option for the scaled value. |
 | boolean | `true`, `false` |
 | NULL | In a CSV an empty, unquoted field, or the spelling the `null` option gives; in JSON `null`. |
 | the empty string | In a CSV `""` — so that it stays apart from NULL; in JSON `""`. |

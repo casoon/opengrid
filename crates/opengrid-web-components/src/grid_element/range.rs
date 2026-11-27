@@ -309,17 +309,18 @@ pub(super) fn copy_text(
                     render(host, false);
                     return None;
                 };
-                let text_column = borrowed
-                    .state
-                    .schema()
-                    .fields()
-                    .get(col)
-                    .is_some_and(|field| field.data_type == DataType::Utf8);
-                line.push(range::cell_text(
-                    &crate::formats::plain_text(value),
-                    text_column,
-                    lone,
-                ));
+                let field = borrowed.state.schema().fields().get(col);
+                let text_column = field.is_some_and(|field| field.data_type == DataType::Utf8);
+                // What is copied is what a paste reads back: a scaled column's
+                // scaled number, not the stored integer (issue #537).
+                let plain =
+                    match field.and_then(|field| number::scale_of(host, field.name.as_str())) {
+                        Some(scale) => {
+                            crate::formats::plain_text(&opengrid_grid::scaled::shown(value, scale))
+                        }
+                        None => crate::formats::plain_text(value),
+                    };
+                line.push(range::cell_text(&plain, text_column, lone));
             }
             lines.push(line);
         }

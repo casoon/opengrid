@@ -249,12 +249,22 @@ fn apply_search(host: &HtmlElement) {
             .filter(|name| styles.lookup(name).is_some())
             .cloned()
             .collect();
-        match crate::search::parse_for(
+        // A scaled column's value is written as the scaled number (issue #537).
+        let scales: Vec<(String, u8)> = columns
+            .iter()
+            .filter_map(|name| Some((name.clone(), styles.scale(name)?)))
+            .collect();
+        let typing = crate::search::Typing {
+            scales: &scales,
+            notation: paste::notation_of(host),
+        };
+        match crate::search::parse_typed(
             &value,
             &texts.query_and,
             Some(&texts.query_or),
             &schema,
             &lookups,
+            &typing,
         ) {
             // With an `or` it is the nested filter (issue #324): the one
             // place such a filter lives, and it replaces the one there was.

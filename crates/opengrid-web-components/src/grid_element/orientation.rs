@@ -8,6 +8,8 @@
 
 use super::*;
 
+use std::borrow::Cow;
+
 use opengrid_grid::CellRange;
 use opengrid_grid::range::{RangeSummary, summarize};
 
@@ -154,7 +156,10 @@ fn range_text(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>, range: Cel
             .get(*col)
             .is_some_and(|field| styles.lookup(field.name.as_str()).is_none())
     });
-    let format = formatter(host, schema);
+    // The sums are of what the reader reads (issue #537): a scaled column's
+    // cells are summed in their scale already ([`summarize_shown`]), so the
+    // format is the column's own, without the scale again.
+    let format = Formatter::new(&formats(host), schema);
     let text = |value: &Value| match column {
         Some(col) => format.text(col, value),
         None => crate::formats::plain_text(value),
@@ -187,7 +192,7 @@ fn summary_of(
                     state.cell(CellRef::new(row, col)).map(|value| (col, value))
                 })
             });
-            return Some(summarize(cells));
+            return Some(summarize_shown(&scales_of(host, state.schema()), cells));
         }
         if let Some((asked, at, summary)) = &borrowed.orientation.answered
             && *asked == range
@@ -203,6 +208,33 @@ fn summary_of(
         ask_later(host, range, epoch);
     }
     None
+}
+
+/// The places of each column that stores its value × 10^scale (issue #537).
+fn scales_of(host: &HtmlElement, schema: &opengrid_types::Schema) -> Vec<Option<u8>> {
+    let styles = presentation::styles(host);
+    schema
+        .fields()
+        .iter()
+        .map(|field| styles.scale(field.name.as_str()))
+        .collect()
+}
+
+/// [`summarize`] of what the reader reads: a scaled column's cells in their
+/// scale, so that the sum of a range is the sum of its numbers — exact, whole
+/// cents added as integers — whichever columns it spans.
+fn summarize_shown<'a>(
+    scales: &[Option<u8>],
+    cells: impl IntoIterator<Item = (usize, &'a Value)>,
+) -> RangeSummary {
+    let shown: Vec<(usize, Cow<Value>)> = cells
+        .into_iter()
+        .map(|(col, value)| match scales.get(col).copied().flatten() {
+            Some(scale) => (col, Cow::Owned(opengrid_grid::scaled::shown(value, scale))),
+            None => (col, Cow::Borrowed(value)),
+        })
+        .collect();
+    summarize(shown.iter().map(|(col, value)| (*col, value.as_ref())))
 }
 
 /// Asks the source for the range's values once the range has held still.
@@ -278,7 +310,9 @@ fn ask_range(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime>>, range: Cell
                     .map(|index| first_col + index)
             })
             .collect();
-        let summary = summarize(
+        let scales = scales_of(&host, runtime.borrow().state.schema());
+        let summary = summarize_shown(
+            &scales,
             result
                 .columns
                 .iter()

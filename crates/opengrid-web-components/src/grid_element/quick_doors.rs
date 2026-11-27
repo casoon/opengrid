@@ -240,13 +240,20 @@ pub(super) fn fill_conditions(host: &HtmlElement, dialog: &HtmlElement, column: 
     if let Ok(Some(input)) = dialog.query_selector("[data-dialog=\"value\"]")
         && let Ok(input) = input.dyn_into::<HtmlInputElement>()
     {
-        input.set_type(grid::input_type(field.data_type));
-        match grid::input_step(field.data_type) {
-            Some(step) => {
-                let _ = input.set_attribute("step", &step);
-            }
-            None => {
-                let _ = input.remove_attribute("step");
+        // A scaled column's value is typed in the page's notation, which no
+        // `type="number"` reads (issue #537).
+        if let Some(scale) = number::scale_of(host, column) {
+            number::set_up(&input, field.data_type, Some(scale));
+            let _ = input.remove_attribute("step");
+        } else {
+            input.set_type(grid::input_type(field.data_type));
+            match grid::input_step(field.data_type) {
+                Some(step) => {
+                    let _ = input.set_attribute("step", &step);
+                }
+                None => {
+                    let _ = input.remove_attribute("step");
+                }
             }
         }
         input.set_value("");
@@ -307,6 +314,9 @@ pub(super) fn apply_filter_dialog(host: &HtmlElement) {
         read("[data-dialog=\"op\"]"),
         read("[data-dialog=\"value\"]"),
     );
+    // What the filter holds is the stored value; a scaled column's is typed as
+    // the scaled number (issue #537).
+    let value = number::filter_stored(host, &column, &value);
     let Some(filter_op) = grid::FilterOp::parse(&op) else {
         return;
     };

@@ -399,6 +399,7 @@ loader.module.set_columns(host, {
 | `aggregate` | `sum`, `avg`, `count`, `min`, `max` or `range` — the column's aggregate in groups. |
 | `facet` | `list`, `pills`, `range` or `period` — how the column is offered as a facet. |
 | `lookup` | A map from the stored key to the label a reader reads, `{ 1: "Alpha GmbH", 2: "Beta AG" }`: the cell, the editor, the filter row and the facets show and choose by label; the query, the sort, the groups and every export keep the key. See [Lookup columns](#lookup-columns). The grid only; a table refuses it. |
+| `scale` | The places of an `int64` column that stores its value × 10^scale — money as cents, `{ scale: 2 }`: a reader reads and types `6,12`, the column stores `612`. See [Scaled integer columns](#scaled-integer-columns). The grid only; a table refuses it. |
 | `readonly` | `true`: the page fills this column with `set_values`: it never opens an editor, and its cells say `aria-readonly`. `false`: opens the `row-key` column, which is read-only otherwise. See [What can be edited](#what-can-be-edited). The grid only; a table refuses it. |
 | `editable` | `true`: the page means this column to be edited — its cells are tinted and, on a touch screen, its header shows a pencil. Drawing only: what can be edited is every column that is not read-only. With `readonly: true` it is reported. See [What can be edited](#what-can-be-edited). The grid only; a table refuses it. |
 
@@ -582,6 +583,10 @@ how they start:
 | `country = DE and amount ≥ 10` | Writes **the filter row's own entries** — the same fields, the same view, the same chips — and empties the field. One place a filter lives. |
 | `country = DE or amount ≥ 1000`, `amount > 1 and amount < 5` | Sets the grid's [nested filter](#nested-filter) — the one place a filter lives that the row cannot hold — and empties the field. |
 | `Alpha` | A free-text search: `contains` on every shown text column, or-ed. |
+
+On a [scaled integer column](#scaled-integer-columns) the value is the scaled number, in the page's
+notation: `amount >= 5` on a column of cents filters 500 of the stored integer. The filter row, the
+chips, the view's `filters` and the query hold the stored integer.
 
 Input that starts with a word and an operator is read as a filter even when the
 word is not a column: `colour = red` says "colour is not a column of this grid"
@@ -1002,6 +1007,42 @@ that is not a non-empty string, and a `lookup` that is not a plain object — as
 the filter row stand in the order JavaScript lists the object's keys: whole numbers ascending, then
 the others as written. The labels are the page's words, in the page's language. To change them,
 call `set_columns` again with the whole configuration.
+
+### Scaled integer columns
+
+Money is best stored as an integer number of cents: no float rests, exact sums, the same rounding
+everywhere. A column like that is an `int64` that shows `612` instead of `6,12 €`. With a `scale` in
+`set_columns` the page says how many places the stored integer is shifted, and the reader reads and
+types the number itself:
+
+```js
+loader.module.set_columns(grid, { price_cent: { title: "Price", scale: 2, aggregate: "sum" } });
+loader.module.set_formats(grid, { price_cent: { kind: "number", style: "currency", currency: "EUR" } });
+```
+
+**What a reader reads and types is the scaled value; what the page and the wire see is the stored
+integer.** `612` is shown, edited and filtered as `6,12`; the query, the events, the view and the
+exports keep `612`.
+
+| | The reader's | |
+|---|---|---|
+| Cell | scaled | `set_formats` is applied to the **scaled** number, as to a decimal column's: an `Intl` entry formats `6.12`, a function gets the text `"6.12"` and the number as a decimal's JSON — a string. Without a format the cell shows the scaled number in the wire notation, `6.12`. |
+| Editor, record form, bulk panel | scaled | The [number field](#numbers) opens with `6,12` in the page's notation and reads `6,12` as `612`. More decimals than the scale are **refused with the reason**, never rounded (`“6,123” has more than 2 decimal places`); so is a value that does not fit an integer once it is shifted. |
+| Paste, copy | scaled | A paste reads the scaled number like the editor, and a copy writes it (`6.12`), so what is copied pastes back as it was. |
+| Filter row, "+ Filter" dialog, builder, search | scaled | `≥ 5` filters `amount >= 500` of the stored integer. The field is a text field for decimals in the page's notation; `amount >= 5` in the [search](#search) reads the same, in a nested expression too. A chip says the scaled number. |
+| Facets | scaled | A `range` facet's From and To are typed and shown scaled; its selection in the view is the stored integer. |
+| Aggregates | scaled | A sum, average, minimum, maximum and range in groups, the total and a tree's subtrees — and the sum of a [range of cells](#where-am-i) — are shown scaled (`Σ 1.234,50`). **Sums stay exact:** whole cents are added as integers, the point is set at the end. `count` counts rows, as everywhere. A group by the column names its values scaled. |
+| Sort | stored | Unaffected: the order of the integers is the order of the numbers. |
+| Query, `get_query`, the view's `filters`, facet selections | stored | `{ "field": "price_cent", "op": "gte", "value": 500 }`. |
+| `opengrid-cell-change`, `opengrid-bulk-change`, `opengrid-paste` | stored | `value` is `612`, `previous` the stored integer too. |
+| Validators | stored | A [validator](#validation) gets the text of the value the page will be told: `"612"` for `6,12`, as `opengrid-cell-change` carries it. |
+| Export, print's values | stored / scaled | [`exportRows`](#exporting-the-view) writes the **stored integer** — what a file is read back from; there is no option for the scaled value. [`prepare_print`](#printing-the-view) writes what the grid shows. |
+
+`scale` fits a column of type `int64` and is a whole number from 0 to 18 (`0` is no scale, as a
+currency without minor units needs it). On any other type, on a [lookup](#lookup-columns) column, with
+a value that is no whole number of places — each is reported like every mistake in `set_columns`, in
+the status line, with none of the call applied. Currency per row (a currency column beside the
+amount) is not part of it: the format is the column's.
 
 ### Undo and redo
 
@@ -1805,7 +1846,7 @@ Any other key is an error, and so is a CSV option on a JSON export.
 
 | | |
 |---|---|
-| Values | Raw, in the wire notation — not the display formats: a decimal exact, a date `YYYY-MM-DD`, a timestamp ISO in UTC with microseconds, `NaN`/`Infinity`/`-Infinity` spelled out. The CSV header and the JSON keys are the field names, in column order. |
+| Values | Raw, in the wire notation — not the display formats: a decimal exact, a date `YYYY-MM-DD`, a timestamp ISO in UTC with microseconds, `NaN`/`Infinity`/`-Infinity` spelled out. A [scaled integer column](#scaled-integer-columns) is its **stored integer** — `612` for `6,12 €`. The CSV header and the JSON keys are the field names, in column order. |
 | CSV | RFC 4180, UTF-8 with a byte order mark, CRLF, `,` or `;`. NULL is an empty unquoted field, the empty string `""`. The formula guard applies to text columns only. `text/csv;charset=utf-8`. |
 | JSON | One array of row objects. `application/json`. |
 | Pieces | `offset`/`limit` windows of `chunkSize` under the query's sort. The total is the first piece's `total_count`; the pieces stop at it. |
@@ -2083,6 +2124,11 @@ screen shows a keypad with a decimal mark. There is no opt-in for `type="number"
 `opengrid-cell-change`, `opengrid-bulk-change` and the `value` a [validator](#validation) gets carry a
 number in the **wire notation** whatever it was typed in (`1.10` for `1,10`), so a page that parses
 them needs no notation of its own.
+
+**A [scaled integer column](#scaled-integer-columns)** (`scale` in `set_columns`) is edited as the
+scaled number: its field opens with `6,12` for the stored `612`, reads `6,12`, `6.12` or `6` as `612`
+and `600`, and refuses more decimals than the scale, with the reason. `opengrid-cell-change` carries
+the stored integer, `612`, and so does the validator.
 
 ### Locking edits
 

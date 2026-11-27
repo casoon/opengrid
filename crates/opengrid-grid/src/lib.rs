@@ -55,6 +55,7 @@ pub mod paste;
 mod patch;
 pub mod range;
 mod saving;
+pub mod scaled;
 mod state;
 pub mod summary;
 mod view;

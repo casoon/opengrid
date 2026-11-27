@@ -1026,6 +1026,10 @@ pub struct FilterColumnNodes {
     /// Whether the choice lists a lookup's labels. Known when the skeleton is
     /// built: a new presentation is a new skeleton.
     pub lookup: bool,
+    /// The places of a column that stores its value × 10^scale (issue #537):
+    /// its input is typed and read as the scaled number. Known when the
+    /// skeleton is built, like `lookup`.
+    pub scale: Option<u8>,
 }
 
 /// The nodes of one recycled pool row.
@@ -3903,6 +3907,16 @@ fn build_filter(
             name: "aria-label".to_owned(),
             value: texts.value_label(field.name.as_str()),
         });
+        // A scaled integer column is typed as the scaled number (issue #537):
+        // the element reads the field, and writes it, by this attribute.
+        let scale = presentation.scale(field.name.as_str());
+        if let Some(scale) = scale {
+            buffer.push(Patch::SetAttribute {
+                node: input,
+                name: "data-scale".to_owned(),
+                value: scale.to_string(),
+            });
+        }
 
         // A boolean column's value is a choice of three (issue #60): no
         // filter, yes, no. A checkbox cannot say "no filter", and its `value`
@@ -3970,6 +3984,7 @@ fn build_filter(
             input,
             choice,
             lookup: lookup.is_some(),
+            scale,
         });
     }
 
@@ -4183,11 +4198,24 @@ pub fn patch_grid(
                 name: "hidden".to_owned(),
             });
         }
+        // A scaled column's value is typed in the page's notation, which no
+        // `type="number"` reads (issue #537): a text field for decimals.
         buffer.push(Patch::SetAttribute {
             node: column.input,
             name: "type".to_owned(),
-            value: input_type(field.data_type).to_owned(),
+            value: if column.scale.is_some() {
+                "text".to_owned()
+            } else {
+                input_type(field.data_type).to_owned()
+            },
         });
+        if column.scale.is_some() {
+            buffer.push(Patch::SetAttribute {
+                node: column.input,
+                name: "inputmode".to_owned(),
+                value: "decimal".to_owned(),
+            });
+        }
         // One value control per column is shown: the choice for a boolean,
         // the input for everything else.
         let (shown, hidden) = if field.data_type == DataType::Bool || column.lookup {
@@ -4204,7 +4232,7 @@ pub fn patch_grid(
             name: "hidden".to_owned(),
             value: String::new(),
         });
-        match input_step(field.data_type) {
+        match input_step(field.data_type).filter(|_| column.scale.is_none()) {
             Some(step) => buffer.push(Patch::SetAttribute {
                 node: column.input,
                 name: "step".to_owned(),
@@ -6162,6 +6190,110 @@ mod tests {
         assert_eq!(ops.len(), 1);
         assert!(ops[0].starts_with("eq ne"), "{ops:?}");
         assert!(!ops[0].contains("contains") && !ops[0].contains("gt"));
+    }
+
+    /// The filter field of a scaled integer column is typed as the scaled
+    /// number (issue #537): a decimal text field that says its places, from the
+    /// skeleton on and in every frame — where an integer column's is a number
+    /// spinner with a whole-number step.
+    #[test]
+    fn a_scaled_column_has_a_decimal_filter_field() {
+        use crate::presentation::{ColumnStyles, RawColumn, validate};
+        let schema = typed_schema();
+        let styles = ColumnStyles::new(
+            validate(
+                &[(
+                    "qty".to_owned(),
+                    RawColumn {
+                        scale: Some(Some(2)),
+                        ..RawColumn::default()
+                    },
+                )],
+                &schema,
+                &[],
+            )
+            .expect("is accepted"),
+        );
+        let mut nodes = NodeAllocator::new();
+        let mut buffer = PatchBuffer::new();
+        let view = build_grid(
+            &mut buffer,
+            &mut nodes,
+            &GridSkeleton {
+                label: None,
+                schema: &schema,
+                pool: 2,
+                texts: &GridTexts::default(),
+                declared: &[],
+                presentation: &styles,
+                selection: false,
+                column_menu: false,
+                toolbar: false,
+                facets: false,
+                search: false,
+                actions: &[],
+                bands: &[],
+                filter_builder: false,
+                edit_toggle: None,
+            },
+        );
+        let (customer, qty, id) = (
+            &view.filter.columns[0],
+            &view.filter.columns[1],
+            &view.filter.columns[5],
+        );
+        assert_eq!((customer.scale, qty.scale, id.scale), (None, Some(2), None));
+        let attribute = |buffer: &PatchBuffer, node: NodeId, name: &str| -> Vec<String> {
+            buffer
+                .patches()
+                .iter()
+                .filter_map(|patch| match patch {
+                    Patch::SetAttribute {
+                        node: at,
+                        name: attribute,
+                        value,
+                    } if *at == node && attribute == name => Some(value.clone()),
+                    _ => None,
+                })
+                .collect()
+        };
+        assert_eq!(attribute(&buffer, qty.input, "data-scale"), ["2"]);
+        assert!(attribute(&buffer, id.input, "data-scale").is_empty());
+
+        // A frame types the columns; the scaled one is still a decimal text,
+        // and the other integer column keeps its spinner and its whole step.
+        let mut state = GridState::new(schema.clone());
+        state.set_window(Window::new(0, 2));
+        state.apply_result(QueryResult::new(
+            schema.clone(),
+            vec![vec![Value::Null; 2]; schema.len()],
+            2,
+        ));
+        let slots = assign_pool(&[None; 2], None, &window_rows(0, 2, 2), 2, 2);
+        let mut frame = PatchBuffer::new();
+        patch_grid(
+            &mut frame,
+            &view,
+            &state,
+            &slots,
+            ActiveCell::Header { col: 0 },
+            &[],
+            None,
+            DEFAULT_ROW_HEIGHT,
+            &GridTexts::default(),
+            &crate::formats::Plain,
+            Paging::whole(state.total_count()),
+            None,
+            None,
+            None,
+            &[],
+        );
+        assert_eq!(attribute(&frame, qty.input, "type"), ["text"]);
+        assert_eq!(attribute(&frame, qty.input, "inputmode"), ["decimal"]);
+        assert!(attribute(&frame, qty.input, "step").is_empty());
+        assert_eq!(attribute(&frame, id.input, "type"), ["number"]);
+        assert_eq!(attribute(&frame, id.input, "step"), ["1"]);
+        assert!(attribute(&frame, id.input, "inputmode").is_empty());
     }
 
     /// Every status has its own sentence; only `Ready` shows the count. The

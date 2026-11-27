@@ -25,8 +25,10 @@ const DIALOG: &str = "[part=\"filter-builder-dialog\"]";
 /// One condition in words: "country is DE" — what a filter's chip says.
 ///
 /// A lookup column's condition holds the key and is said by its label
-/// (issue #326), like the cell that shows it.
+/// (issue #326), like the cell that shows it; a scaled column's holds the stored
+/// integer and is said as the scaled number (issue #537).
 pub(super) fn condition_words(
+    host: &HtmlElement,
     texts: &crate::texts::GridTexts,
     styles: &presentation::ColumnStyles,
     entry: &FilterEntry,
@@ -39,13 +41,14 @@ pub(super) fn condition_words(
     let operator = texts.operator(index, token);
     if grid::takes_value(token) {
         let value = entry.value.trim();
+        let shown = number::filter_typed(host, &entry.column, value);
         format!(
             "{} {operator} {}",
             texts.column(&entry.column),
             styles
                 .lookup(&entry.column)
                 .and_then(|lookup| lookup.label(value))
-                .unwrap_or(value)
+                .unwrap_or(&shown)
         )
     } else {
         format!("{} {operator}", texts.column(&entry.column))
@@ -58,7 +61,7 @@ pub(super) fn words(host: &HtmlElement, filter: &FilterExpr) -> String {
     let styles = presentation::styles(host);
     filter_tree::words(
         filter,
-        &|entry| condition_words(&texts, &styles, entry),
+        &|entry| condition_words(host, &texts, &styles, entry),
         &texts.query_and,
         &texts.query_or,
     )
@@ -202,7 +205,7 @@ fn condition_node(host: &HtmlElement, filter: Option<&FilterExpr>) -> Option<Ele
                 if input.type_() == "checkbox" {
                     input.set_checked(entry.value == "true");
                 } else {
-                    input.set_value(&entry.value);
+                    input.set_value(&number::filter_typed(host, &entry.column, &entry.value));
                 }
             }
         }
@@ -545,6 +548,9 @@ fn read_condition(host: &HtmlElement, row: &Element) -> Result<Option<FilterExpr
     let Some(op) = grid::FilterOp::parse(&token) else {
         return Ok(None);
     };
+    // A scaled column's value is typed as the scaled number; the tree holds the
+    // stored integer (issue #537).
+    let value = number::filter_stored(host, &column, &value);
     let texts = texts(host);
     if grid::takes_value(&token) && value.trim().is_empty() {
         return Err((
