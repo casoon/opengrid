@@ -33,16 +33,46 @@ impl ValueControl {
             .map(Self::Input)
     }
 
+    /// The places and the notation of an input that is typed as the scaled
+    /// number of a scaled integer column (issue #537): the input says so with
+    /// `data-scale`, the notation is the page's.
+    fn scaled(input: &HtmlInputElement) -> Option<(u8, opengrid_grid::paste::Notation)> {
+        let scale = input.get_attribute("data-scale")?.parse().ok()?;
+        let host = input
+            .get_root_node()
+            .dyn_into::<ShadowRoot>()
+            .ok()?
+            .host()
+            .dyn_into::<HtmlElement>()
+            .ok()?;
+        Some((scale, paste::notation_of(&host)))
+    }
+
+    /// The value the control holds, as the page and the query see it: for a
+    /// scaled column the stored integer's text, whatever was typed — text that
+    /// cannot be read stays as typed, and the filter refuses it by that.
     pub(super) fn value(&self) -> String {
         match self {
-            Self::Input(input) => input.value(),
+            Self::Input(input) => match Self::scaled(input) {
+                Some((scale, notation)) => {
+                    opengrid_grid::scaled::stored_text(&input.value(), scale, &notation)
+                }
+                None => input.value(),
+            },
             Self::Choice(choice) => choice.value(),
         }
     }
 
+    /// Shows `value`, which is the stored one: a scaled column's input holds it
+    /// as the scaled number, in the page's notation.
     pub(super) fn set_value(&self, value: &str) {
         match self {
-            Self::Input(input) => input.set_value(value),
+            Self::Input(input) => match Self::scaled(input) {
+                Some((scale, notation)) => {
+                    input.set_value(&opengrid_grid::scaled::typed_text(value, scale, &notation))
+                }
+                None => input.set_value(value),
+            },
             Self::Choice(choice) => {
                 choice.set_value(value);
                 // A key the lookup does not name — a view saved before the

@@ -291,7 +291,7 @@ fn apply(host: &HtmlElement, dialog: &HtmlDialogElement) {
         // (issue #535); its reason is the sentence under the field.
         let numeric = number::applies(field.data_type, Some(&editor)) && !text.is_empty();
         let outcome = if numeric {
-            number::read(host, field.data_type, &text)
+            number::read(host, field.data_type, number::scale_of(host, name), &text)
         } else {
             read_value(field.data_type, field.nullable, &text).map_err(|bad| {
                 if bad.is_empty() {

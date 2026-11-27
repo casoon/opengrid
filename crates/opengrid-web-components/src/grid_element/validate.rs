@@ -115,16 +115,22 @@ pub(super) fn on_editor_event(event: Event) {
         }
         return;
     };
-    let data_type = runtime
+    let field = runtime
         .borrow()
         .state
         .schema()
         .fields()
         .get(cell.col)
-        .map(|field| field.data_type);
+        .cloned();
     let text = editor_text(&editor);
-    let text = match data_type {
-        Some(data_type) => number::wire_text(&host, data_type, Some(&editor), &text),
+    let text = match field {
+        Some(field) => number::wire_text(
+            &host,
+            field.data_type,
+            number::scale_of(&host, field.name.as_str()),
+            Some(&editor),
+            &text,
+        ),
         None => text,
     };
     let finding = run(&host, &runtime, cell, &text).map(|(finding, _)| finding);

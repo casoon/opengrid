@@ -56,6 +56,7 @@ mod patch;
 pub mod presets;
 pub mod range;
 mod saving;
+pub mod scaled;
 mod state;
 pub mod summary;
 mod view;

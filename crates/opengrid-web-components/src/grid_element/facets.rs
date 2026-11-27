@@ -318,19 +318,17 @@ pub(super) fn facet_chip_text(
             from: low,
             to: high,
         } => {
+            // A scaled column's bounds are read as the scaled number
+            // (issue #537).
+            let bound = |text: &str| match text.trim() {
+                "" => "\u{2026}".to_owned(),
+                text => number::filter_typed(host, column, text),
+            };
             format!(
                 "{} {} \u{2013} {}",
                 texts.column(column),
-                if low.trim().is_empty() {
-                    "\u{2026}"
-                } else {
-                    low.trim()
-                },
-                if high.trim().is_empty() {
-                    "\u{2026}"
-                } else {
-                    high.trim()
-                }
+                bound(low),
+                bound(high)
             )
         }
     }
@@ -593,7 +591,7 @@ pub(super) fn draw_facets(host: &HtmlElement, root: &ShadowRoot) {
                 // Never overwrite the field someone is typing in.
                 && focused.as_ref().is_none_or(|focused| !focused.is_same_node(Some(input.as_ref())))
             {
-                input.set_value(&value);
+                input.set_value(&number::filter_typed(host, column, &value));
             }
         }
     }
@@ -629,7 +627,9 @@ pub(super) fn on_facet_change(host: &HtmlElement, target: &Element) {
     } else if let Some(bound) = target.get_attribute("data-bound")
         && let Ok(input) = target.clone().dyn_into::<HtmlInputElement>()
     {
-        let value = input.value();
+        // A scaled column's bound is typed as the scaled number; the selection,
+        // like the view, holds the stored integer (issue #537).
+        let value = number::filter_stored(host, &column, &input.value());
         for (name, selection) in runtime.borrow_mut().facets.iter_mut() {
             if name != &column {
                 continue;

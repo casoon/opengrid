@@ -219,6 +219,9 @@ pub struct ColumnPresentation {
     pub pin_narrow: Option<Option<Pin>>,
     /// The labels of the keys this column stores (issue #326).
     pub lookup: Option<Rc<Lookup>>,
+    /// The places of an `int64` column that stores its value × 10^scale
+    /// (issue #537); never `Some(0)`, which is no scale.
+    pub scale: Option<u8>,
     /// The band the column stands under (issue #319): the header it shares
     /// with the other columns that name the same one.
     pub band: Option<String>,
@@ -273,6 +276,8 @@ pub struct RawColumn {
     /// The `lookup` as `(key, label)` pairs; a label that is no string is
     /// empty here. `Some(None)`: something was given that is no plain object.
     pub lookup: Option<Option<Vec<(String, String)>>>,
+    /// `Some(None)`: something was given that is no whole number of places.
+    pub scale: Option<Option<u8>>,
     pub band: Option<String>,
 }
 
@@ -458,6 +463,31 @@ pub fn validate(
             }
         }
 
+        // A scale makes the stored integer a number with places (issue #537):
+        // it needs an integer to store it in, and a lookup's keys are not
+        // amounts.
+        match entry.scale {
+            None => {}
+            Some(None) => problems.push(PresentationProblem::new(
+                name,
+                format!(
+                    "scale is not a whole number from 0 to {}",
+                    opengrid_grid::scaled::MAX_SCALE
+                ),
+            )),
+            Some(Some(_)) if data_type.is_some_and(|data_type| data_type != DataType::Int64) => {
+                problems.push(PresentationProblem::new(
+                    name,
+                    "a scale needs an int64 column",
+                ));
+            }
+            Some(Some(_)) if lookup => problems.push(PresentationProblem::new(
+                name,
+                "a lookup column takes no scale",
+            )),
+            Some(Some(places)) => column.scale = Some(places).filter(|places| *places > 0),
+        }
+
         if let Some(band) = &entry.band {
             if band.trim().is_empty() {
                 problems.push(PresentationProblem::new(name, "has an empty band"));
@@ -563,6 +593,7 @@ pub fn validate_for_table(
             (entry.pin.is_some(), "pin"),
             (entry.pin_narrow.is_some(), "pinNarrow"),
             (entry.lookup.is_some(), "lookup"),
+            (entry.scale.is_some(), "scale"),
             (entry.band.is_some(), "band"),
         ] {
             if given {
@@ -681,6 +712,11 @@ impl ColumnStyles {
         self.get(name).and_then(|column| column.lookup.as_ref())
     }
 
+    /// The places of a column that stores its value × 10^scale (issue #537).
+    pub fn scale(&self, name: &str) -> Option<u8> {
+        self.get(name).and_then(|column| column.scale)
+    }
+
     pub fn width(&self, name: &str) -> Option<u32> {
         self.get(name).and_then(|column| column.width)
     }
@@ -747,6 +783,75 @@ mod tests {
         );
         let problems = validate(&raw(narrow("left")), &schema(), &[]).expect_err("is refused");
         assert_eq!(problems[0].reason, "pinNarrow: left is not a pin");
+    }
+
+    /// `scale` (issue #537) is a whole number of places of an `int64` column;
+    /// 0 is no scale, and every other mistake is named, none of the call applied.
+    #[test]
+    fn a_scale_is_a_whole_number_of_places_of_an_integer_column() {
+        let scaled = |name: &str, places: Option<u8>| {
+            vec![(
+                name.to_owned(),
+                RawColumn {
+                    scale: Some(places),
+                    ..RawColumn::default()
+                },
+            )]
+        };
+        let refused = |raw: Vec<(String, RawColumn)>| {
+            let problems = validate(&raw, &schema(), &[]).expect_err("is refused");
+            assert_eq!(problems.len(), 1);
+            problems[0].reason.clone()
+        };
+
+        let checked = validate(&scaled("id", Some(2)), &schema(), &[]).expect("an integer");
+        assert_eq!(checked[0].1.scale, Some(2));
+        let styles = ColumnStyles::new(checked);
+        assert_eq!(styles.scale("id"), Some(2));
+        assert_eq!(styles.scale("customer"), None);
+        // No places is no scale, as a page may compute it (a currency without
+        // minor units).
+        let checked = validate(&scaled("id", Some(0)), &schema(), &[]).expect("no scale");
+        assert_eq!(checked[0].1.scale, None);
+
+        for column in ["amount", "customer", "ordered_on"] {
+            assert_eq!(
+                refused(scaled(column, Some(2))),
+                "a scale needs an int64 column",
+                "{column}"
+            );
+        }
+        assert_eq!(
+            refused(scaled("id", None)),
+            "scale is not a whole number from 0 to 18"
+        );
+        let lookup = RawColumn {
+            scale: Some(Some(2)),
+            lookup: Some(Some(vec![("1".to_owned(), "One".to_owned())])),
+            ..RawColumn::default()
+        };
+        assert_eq!(
+            refused(vec![("id".to_owned(), lookup)]),
+            "a lookup column takes no scale"
+        );
+
+        // A hidden column is not in the schema: its type is checked when it is
+        // shown again.
+        let hidden = validate(
+            &scaled("hidden", Some(2)),
+            &schema(),
+            &["hidden".to_owned()],
+        )
+        .expect("a declared column");
+        assert_eq!(hidden[0].1.scale, Some(2));
+
+        // A table has no scale: refused by name, not ignored.
+        let problems = validate_for_table(&scaled("id", Some(2)), &schema(), &[])
+            .expect_err("a table refuses it");
+        assert_eq!(
+            problems[0].reason,
+            "scale belongs to the grid, not to a table"
+        );
     }
 
     /// A table takes the look (title, alignment, faces) and refuses the grid's
@@ -1551,6 +1656,22 @@ mod host {
                                 .collect(),
                         )
                     });
+                // A whole number of places; anything else that was given — a
+                // string, `2.5`, `-1` — is kept as "not a scale", so the check
+                // can say so.
+                let scale = js_sys::Reflect::get(&entry, &JsValue::from_str("scale"))
+                    .ok()
+                    .filter(|value| !value.is_undefined())
+                    .map(|value| {
+                        value
+                            .as_f64()
+                            .filter(|places| {
+                                places.fract() == 0.0
+                                    && (0.0..=f64::from(opengrid_grid::scaled::MAX_SCALE))
+                                        .contains(places)
+                            })
+                            .map(|places| places as u8)
+                    });
                 out.push((
                     name,
                     RawColumn {
@@ -1567,6 +1688,7 @@ mod host {
                         pin: text("pin"),
                         pin_narrow: text("pinNarrow"),
                         lookup,
+                        scale,
                         band: text("band"),
                     },
                 ));

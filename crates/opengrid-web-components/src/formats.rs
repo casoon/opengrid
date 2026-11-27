@@ -341,6 +341,10 @@ export function __opengrid_intl_formatter(kind, locale, options) {
         /// where no column has any.
         #[cfg(feature = "grid")]
         lookups: Vec<Option<Rc<crate::presentation::Lookup>>>,
+        /// The places of the columns that store their value × 10^scale
+        /// (issue #537); empty where no column has any.
+        #[cfg(feature = "grid")]
+        scales: Vec<Option<u8>>,
     }
 
     impl Formatter {
@@ -354,7 +358,26 @@ export function __opengrid_intl_formatter(kind, locale, options) {
                     .collect(),
                 #[cfg(feature = "grid")]
                 lookups: Vec::new(),
+                #[cfg(feature = "grid")]
+                scales: Vec::new(),
             }
+        }
+
+        /// With the scale `styles` gives the columns that store their value ×
+        /// 10^scale (issue #537): such a cell, and the sum or average of its
+        /// column, shows the scaled number — through the column's format.
+        #[cfg(feature = "grid")]
+        pub fn with_scales(
+            mut self,
+            styles: &crate::presentation::ColumnStyles,
+            schema: &Schema,
+        ) -> Self {
+            self.scales = schema
+                .fields()
+                .iter()
+                .map(|field| styles.scale(field.name.as_str()))
+                .collect();
+            self
         }
 
         /// With the labels `styles` gives the columns that store keys: such a
@@ -380,6 +403,16 @@ export function __opengrid_intl_formatter(kind, locale, options) {
             if let Some(Some(lookup)) = self.lookups.get(column) {
                 return lookup.text(value);
             }
+            #[cfg(feature = "grid")]
+            let scaled;
+            #[cfg(feature = "grid")]
+            let value = match self.scales.get(column) {
+                Some(Some(scale)) => {
+                    scaled = opengrid_grid::scaled::shown(value, *scale);
+                    &scaled
+                }
+                _ => value,
+            };
             let plain = plain_text(value);
             let Some(Some(function)) = self.columns.get(column) else {
                 // No format for this column: no boundary crossing (R1).

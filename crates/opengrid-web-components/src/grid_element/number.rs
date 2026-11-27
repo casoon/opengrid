@@ -12,6 +12,7 @@
 use super::*;
 
 use opengrid_grid::paste::{NumberProblem, number_text, parse_number};
+use opengrid_grid::scaled;
 use opengrid_grid::{Finding, Level};
 
 /// Whether a column of `data_type` is edited as a number.
@@ -28,10 +29,17 @@ pub(super) fn applies(data_type: DataType, editor: Option<&Element>) -> bool {
     is_number(data_type) && !editor.is_some_and(combo::is_combo)
 }
 
-/// Types an `<input>` as the number field.
-pub(super) fn set_up(input: &Element, data_type: DataType) {
+/// The places of the column `name` when it stores its value × 10^scale
+/// (issue #537): what is read and typed in its fields is the scaled number, and
+/// what is stored — and what the page is told — the integer.
+pub(super) fn scale_of(host: &HtmlElement, name: &str) -> Option<u8> {
+    presentation::styles(host).scale(name)
+}
+
+/// Types an `<input>` as the number field. A scaled column takes decimals.
+pub(super) fn set_up(input: &Element, data_type: DataType, scale: Option<u8>) {
     let _ = input.set_attribute("type", "text");
-    let mode = if data_type == DataType::Int64 {
+    let mode = if data_type == DataType::Int64 && scale.is_none() {
         "numeric"
     } else {
         "decimal"
@@ -39,15 +47,31 @@ pub(super) fn set_up(input: &Element, data_type: DataType) {
     let _ = input.set_attribute("inputmode", mode);
 }
 
-/// A value's text (`1.1`) as the field opens with it: in the page's notation.
-pub(super) fn opening_text(host: &HtmlElement, current: &str) -> String {
-    number_text(current, &paste::notation_of(host))
+/// A value's text (`1.1`, or the stored `110` of a scaled column) as the field
+/// opens with it: in the page's notation.
+pub(super) fn opening_text(host: &HtmlElement, current: &str, scale: Option<u8>) -> String {
+    let current = match scale {
+        Some(scale) => scaled::shown_text(current, scale),
+        None => current.to_owned(),
+    };
+    number_text(&current, &paste::notation_of(host))
 }
 
 /// What the field holds, read in the page's notation — or the reason it cannot
-/// be, as a sentence in the page's language.
-pub(super) fn read(host: &HtmlElement, data_type: DataType, text: &str) -> Result<Value, String> {
-    parse_number(text, data_type, &paste::notation_of(host)).map_err(|problem| {
+/// be, as a sentence in the page's language. A scaled column's field holds the
+/// scaled number and reads as the stored integer.
+pub(super) fn read(
+    host: &HtmlElement,
+    data_type: DataType,
+    scale: Option<u8>,
+    text: &str,
+) -> Result<Value, String> {
+    let notation = paste::notation_of(host);
+    let parsed = match scale {
+        Some(scale) => scaled::parse(text, scale, &notation),
+        None => parse_number(text, data_type, &notation),
+    };
+    parsed.map_err(|problem| {
         let texts = texts(host);
         match problem {
             NumberProblem::NotANumber => texts.number_invalid(text),
@@ -60,15 +84,18 @@ pub(super) fn read(host: &HtmlElement, data_type: DataType, text: &str) -> Resul
 
 /// The text a page is told for a field: a number in the wire notation
 /// (`1234.5`), whatever notation it was typed in, so a page parses it as it
-/// always did. Text that is not one — or a combobox's — is as it stands.
+/// always did — for a scaled column the stored integer (`6,12` is `612`), which
+/// is also what its validator is given. Text that is not a number — or a
+/// combobox's — is as it stands.
 pub(super) fn wire_text(
     host: &HtmlElement,
     data_type: DataType,
+    scale: Option<u8>,
     editor: Option<&Element>,
     text: &str,
 ) -> String {
     if applies(data_type, editor)
-        && let Ok(value) = read(host, data_type, text)
+        && let Ok(value) = read(host, data_type, scale, text)
     {
         return crate::formats::event_text(&value);
     }
@@ -91,5 +118,25 @@ pub(super) fn refuse(
     validate::announce(host, runtime, Some(&finding));
     if let Ok(editor) = editor.clone().dyn_into::<HtmlElement>() {
         let _ = editor.focus();
+    }
+}
+
+/// A filter value of column `column` as the reader typed it, as the stored text
+/// the view and the query hold: a scaled column's `5,5` is `550` (issue #537).
+/// Any other column's value is as it was, and so is text that cannot be read.
+pub(super) fn filter_stored(host: &HtmlElement, column: &str, typed: &str) -> String {
+    match scale_of(host, column) {
+        Some(scale) => scaled::stored_text(typed, scale, &paste::notation_of(host)),
+        None => typed.to_owned(),
+    }
+}
+
+/// A filter value of column `column` as the stored text is read — in a field,
+/// a chip, a sentence: a scaled column's `550` is `5,50` in the page's
+/// notation. The inverse of [`filter_stored`].
+pub(super) fn filter_typed(host: &HtmlElement, column: &str, stored: &str) -> String {
+    match scale_of(host, column) {
+        Some(scale) => scaled::typed_text(stored, scale, &paste::notation_of(host)),
+        None => stored.to_owned(),
     }
 }

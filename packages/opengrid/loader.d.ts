@@ -910,6 +910,14 @@ export interface ColumnConfig {
    * `int64` column. The grid only.
    */
   lookup?: Record<string | number, string>;
+  /**
+   * The places of an `int64` column that stores its value × 10^scale — money as
+   * cents, `2`: a reader reads and types `6,12` where the column stores `612`.
+   * What the page and the wire see — the query, events, the view, exports — is
+   * the stored integer. A whole number from 0 to 18; for an `int64` column. The
+   * grid only.
+   */
+  scale?: number;
 }
 
 /** What `set_cell_state` says became of an edit. */

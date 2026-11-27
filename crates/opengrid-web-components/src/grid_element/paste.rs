@@ -9,7 +9,8 @@
 use super::*;
 
 use crate::texts::GridTexts;
-use opengrid_grid::paste::{Notation, parse_cell, split_block};
+use opengrid_grid::paste::{Notation, split_block};
+use opengrid_grid::scaled::parse_cell_scaled;
 
 /// One row of the preview: whether it is a new record, and per cell its text and
 /// what is wrong with it, if anything.
@@ -265,7 +266,9 @@ async fn prepare(host: &HtmlElement, anchor: CellRef, rows: Vec<Vec<String>>) {
             } else {
                 text.as_str()
             };
-            match parse_cell(read, field.data_type, field.nullable, &notation) {
+            // A scaled integer column reads the scaled number (issue #537).
+            let scale = number::scale_of(host, field.name.as_str());
+            match parse_cell_scaled(read, field.data_type, field.nullable, scale, &notation) {
                 Some(value) => {
                     if is_new {
                         values[col] = value;
@@ -297,7 +300,11 @@ async fn prepare(host: &HtmlElement, anchor: CellRef, rows: Vec<Vec<String>>) {
                     let reason = if text.trim().is_empty() {
                         texts.cell_required(field.name.as_str())
                     } else {
-                        texts.paste_unreadable(text, &type_name(&texts, field.data_type))
+                        let kind = match scale {
+                            Some(_) => texts.type_number.clone(),
+                            None => type_name(&texts, field.data_type),
+                        };
+                        texts.paste_unreadable(text, &kind)
                     };
                     line.push((text.clone(), Some((reason, true))));
                 }

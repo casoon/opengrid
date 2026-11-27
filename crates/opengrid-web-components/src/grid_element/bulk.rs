@@ -186,7 +186,7 @@ pub(super) fn apply(host: &HtmlElement) {
         // anything else is in the wire notation already, so none is asked.
         let numeric = number::applies(field.data_type, editor.as_ref());
         let read = if numeric && !typed.is_empty() {
-            match number::read(host, field.data_type, &typed) {
+            match number::read(host, field.data_type, number::scale_of(host, &name), &typed) {
                 Ok(value) => Some(value),
                 Err(message) => {
                     // Under the editor, which stays with what was typed.

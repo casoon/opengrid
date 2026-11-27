@@ -45,6 +45,7 @@
 //! string operators are (S5).
 
 use opengrid_grid::filter_tree;
+use opengrid_grid::paste::Notation;
 use opengrid_query::{CmpOp, FilterExpr};
 use opengrid_types::{DataType, FieldName, Schema};
 
@@ -89,6 +90,15 @@ pub enum Problem {
     MissingCondition,
     /// Text where only a joining word can stand: `(a = 1) b = 2`. The text.
     MissingJoin(String),
+}
+
+/// How numbers are typed where an expression is written (issue #537): the
+/// scaled integer columns by name with their places — `amount >= 5` on a column
+/// of cents means 500 — and the notation of the page.
+#[derive(Default)]
+pub struct Typing<'a> {
+    pub scales: &'a [(String, u8)],
+    pub notation: Notation,
 }
 
 /// What an expression became.
@@ -196,6 +206,7 @@ struct Parser<'a> {
     joins: Vec<(String, bool)>,
     schema: &'a Schema,
     lookups: &'a [String],
+    typing: &'a Typing<'a>,
 }
 
 impl<'a> Parser<'a> {
@@ -288,16 +299,26 @@ impl<'a> Parser<'a> {
                 operator: symbol.to_owned(),
             });
         };
+        // The entry holds the stored value, as the filter row's does; what the
+        // reader wrote is what a refusal names.
+        let stored = self
+            .typing
+            .scales
+            .iter()
+            .find(|(name, _)| name == column)
+            .map(|(_, scale)| {
+                opengrid_grid::scaled::stored_text(value, *scale, &self.typing.notation)
+            });
         let entry = FilterEntry {
             column: column.to_owned(),
             op,
-            value: value.to_owned(),
+            value: stored.unwrap_or_else(|| value.to_owned()),
         };
         match filter_tree::condition(&entry, self.schema) {
             Ok(Some(filter)) => Ok(Node::Leaf(entry, filter)),
             _ => Err(Problem::WrongValue {
                 column: entry.column,
-                value: entry.value,
+                value: value.to_owned(),
             }),
         }
     }
@@ -382,6 +403,26 @@ pub fn parse_for(
     schema: &Schema,
     lookups: &[String],
 ) -> Result<Parsed, Problem> {
+    parse_typed(
+        input,
+        and_word,
+        or_word,
+        schema,
+        lookups,
+        &Typing::default(),
+    )
+}
+
+/// [`parse_for`] for a grid with scaled integer columns (issue #537): their
+/// values are written as the scaled number and kept as the stored integer.
+pub fn parse_typed(
+    input: &str,
+    and_word: &str,
+    or_word: Option<&str>,
+    schema: &Schema,
+    lookups: &[String],
+    typing: &Typing,
+) -> Result<Parsed, Problem> {
     let mut parser = Parser {
         input,
         at: 0,
@@ -389,6 +430,7 @@ pub fn parse_for(
         joins: joins(and_word, or_word),
         schema,
         lookups,
+        typing,
     };
     let node = parser.joined(true)?;
     match parser.peek() {
@@ -554,6 +596,61 @@ mod tests {
         ));
         // The other columns are what they were.
         assert!(parse("country ~ D").is_ok());
+    }
+
+    /// A scaled integer column is written as the scaled number and kept as the
+    /// stored integer (issue #537): `amount >= 5` on cents is 500, in the page's
+    /// notation, in a nested expression too; what is refused is named as typed.
+    #[test]
+    fn a_scaled_column_is_written_in_its_scale_and_kept_as_the_stored_integer() {
+        let scales = [("amount".to_owned(), 2)];
+        let typing = Typing {
+            scales: &scales,
+            notation: Notation {
+                decimal: ',',
+                group: Some('.'),
+            },
+        };
+        let parse = |input: &str| parse_typed(input, "and", Some("or"), &schema(), &[], &typing);
+        assert_eq!(
+            parse("amount >= 5"),
+            Ok(Parsed::Row(vec![entry("amount", "gte", "500")]))
+        );
+        assert_eq!(
+            parse("amount = 1.234,5 and country = DE"),
+            Ok(Parsed::Row(vec![
+                entry("amount", "eq", "123450"),
+                entry("country", "eq", "DE")
+            ]))
+        );
+        let Ok(Parsed::Tree(tree)) = parse("amount < 1,5 or amount > 10") else {
+            panic!("an or is a tree");
+        };
+        assert_eq!(
+            tree.to_json(),
+            json!({ "or": [
+                { "field": "amount", "op": "lt", "value": 150 },
+                { "field": "amount", "op": "gt", "value": 1000 },
+            ] })
+        );
+        // More decimals than the scale are refused, by what was typed.
+        assert_eq!(
+            parse("amount > 1,234"),
+            Err(Problem::WrongValue {
+                column: "amount".to_owned(),
+                value: "1,234".to_owned()
+            })
+        );
+        // The other integer columns are what they were: whole numbers.
+        let other = parse_typed(
+            "amount >= 5",
+            "and",
+            Some("or"),
+            &schema(),
+            &[],
+            &Typing::default(),
+        );
+        assert_eq!(other, Ok(Parsed::Row(vec![entry("amount", "gte", "5")])));
     }
 
     #[test]
