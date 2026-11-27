@@ -401,7 +401,7 @@ loader.module.set_columns(host, {
 | `aggregate` | `sum`, `avg`, `count`, `min`, `max` or `range` — the column's aggregate in groups. |
 | `facet` | `list`, `pills`, `range` or `period` — how the column is offered as a facet. |
 | `lookup` | A map from the stored key to the label a reader reads, `{ 1: "Alpha GmbH", 2: "Beta AG" }`: the cell, the editor, the filter row and the facets show and choose by label; the query, the sort, the groups and every export keep the key. See [Lookup columns](#lookup-columns). The grid only; a table refuses it. |
-| `scale` | The places of an `int64` column that stores its value × 10^scale — money as cents, `{ scale: 2 }`: a reader reads and types `6,12`, the column stores `612`. See [Scaled integer columns](#scaled-integer-columns). The grid only; a table refuses it. |
+| `scale` | The places of an `int64` column that stores its value × 10^scale — money as cents, `{ scale: 2 }`: a reader reads and types `6,12`, the column stores `612`. See [Scaled integer columns](#scaled-integer-columns). A table shows it too; the pivot ignores it. |
 | `readonly` | `true`: the page fills this column with `set_values`: it never opens an editor, and its cells say `aria-readonly`. `false`: opens the `row-key` column, which is read-only otherwise. See [What can be edited](#what-can-be-edited). The grid only; a table refuses it. |
 | `editable` | `true`: the page means this column to be edited — its cells are tinted and, on a touch screen, its header shows a pencil. Drawing only: what can be edited is every column that is not read-only. With `readonly: true` it is reported. See [What can be edited](#what-can-be-edited). The grid only; a table refuses it. |
 
@@ -1077,7 +1077,10 @@ exports keep `612`.
 `scale` fits a column of type `int64` and is a whole number from 0 to 18 (`0` is no scale, as a
 currency without minor units needs it). On any other type, on a [lookup](#lookup-columns) column, with
 a value that is no whole number of places — each is reported like every mistake in `set_columns`, in
-the status line, with none of the call applied. Currency per row (a currency column beside the
+the status line, with none of the call applied. `<opengrid-table>` takes `scale` too and shows the
+scaled number in its cells, through the column's format, as above; the stored integer is what its
+query and an export see. It has no editor, filter fields or aggregates to scale. The pivot ignores
+the option. Currency per row (a currency column beside the
 amount) is not part of it: the format is the column's.
 
 ### Undo and redo
@@ -2413,9 +2416,10 @@ opengrid-pivot::part(total-row) { font-weight: 600; }
 ```
 
 `<opengrid-table>` shows its values **as the grid does**: `set_formats` applies to its
-cells, and `set_columns` gives a column its `title` and its `align`, `mono`, `emphasis`
-and `muted`. The grid's own options — `width`, `aggregate`, `facet` — are refused for a
-table, in the same alert as any other mistake, not ignored.
+cells, and `set_columns` gives a column its `title` and its `align`, `mono`, `emphasis`,
+`muted` and `scale` (a [scaled integer column](#scaled-integer-columns) shows `6,12` for the
+stored `612`, through the same format). The grid's own options — `width`, `aggregate`,
+`facet` — are refused for a table, in the same alert as any other mistake, not ignored.
 
 ## Right to left
 

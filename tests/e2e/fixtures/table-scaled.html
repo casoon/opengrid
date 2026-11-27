@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>opengrid scaled integer table fixture</title>
+    <script>
+      // Issue #537: `?lang=de` writes numbers `1.234,50`, the default is English
+      // (`1,234.50`). `?format=none` sets no format, `?format=function` a function
+      // format that wraps the text it is given in brackets.
+      const lang = new URLSearchParams(location.search).get("lang");
+      if (lang) document.documentElement.lang = lang;
+    </script>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid scaled integer table fixture</h1>
+      <opengrid-table
+        label="Prices"
+        datasource="prices"
+        columns="id,price_cent,qty,rating"
+      ></opengrid-table>
+    </main>
+    <script type="module">
+      // `price_cent` is money as cents (int64, `scale: 2`): 612 is read as 6,12.
+      // `qty` is a plain integer beside it and `rating` a float, which a scale
+      // must be refused on.
+      import { loadOpengrid, createLocalProvider } from "/packages/opengrid/loader.js";
+      import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+
+      window.__queries = [];
+      window.__seen = [];
+
+      await init();
+      const schema = JSON.stringify({
+        fields: [
+          { name: "id", type: "int64", nullable: false },
+          { name: "price_cent", type: "int64", nullable: true },
+          { name: "qty", type: "int64", nullable: true },
+          { name: "rating", type: "float64", nullable: true },
+        ],
+      });
+      const cents = [612, 500, 499, 123450, 5, 250, null, 1000];
+      const rows = cents.map((price_cent, index) => ({
+        id: index + 1,
+        price_cent,
+        qty: index + 1,
+        rating: 0.5,
+      }));
+      const engine = createLocalProvider(new Engine());
+      await engine.loadRows("prices", rows, schema);
+      const provider = {
+        kind: "local",
+        execute: (queryJson) => {
+          window.__queries.push(JSON.parse(queryJson));
+          return engine.execute(queryJson);
+        },
+      };
+      const loader = await loadOpengrid();
+      const host = document.querySelector("opengrid-table");
+      const format = new URLSearchParams(location.search).get("format");
+      loader.module.set_columns(host, { price_cent: { title: "Price", scale: 2 } });
+      if (format === "function") {
+        // A function is given the scaled number's text, as at the grid.
+        loader.module.set_formats(host, {
+          price_cent: (text, value) => {
+            window.__seen.push([text, value]);
+            return `[${text}]`;
+          },
+        });
+      } else if (format !== "none") {
+        // The format is applied to the scaled number: 6,12 on a German page.
+        loader.module.set_formats(host, {
+          price_cent: { kind: "number", minimumFractionDigits: 2, maximumFractionDigits: 2 },
+        });
+      }
+      window.__module = loader.module;
+      window.__host = host;
+      window.__provider = provider;
+      loader.module.set_provider(host, provider);
+      window.__ready = true;
+    </script>
+  </body>
+</html>

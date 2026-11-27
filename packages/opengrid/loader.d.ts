@@ -914,8 +914,8 @@ export interface ColumnConfig {
    * The places of an `int64` column that stores its value × 10^scale — money as
    * cents, `2`: a reader reads and types `6,12` where the column stores `612`.
    * What the page and the wire see — the query, events, the view, exports — is
-   * the stored integer. A whole number from 0 to 18; for an `int64` column. The
-   * grid only.
+   * the stored integer. A whole number from 0 to 18; for an `int64` column. A
+   * table shows it scaled too; the pivot ignores it.
    */
   scale?: number;
 }
