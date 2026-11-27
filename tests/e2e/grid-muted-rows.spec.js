@@ -259,7 +259,9 @@ test("a tree mutes its nodes, the field being no column", async ({ page }) => {
   // A scroll cuts another window out of the loaded levels, and it follows too.
   await scrollTo(page, 10000);
   // (The row the focus stands on keeps its slot, so the first row stays Item 01.)
-  await expect.poll(async () => (await drawn(page)).some((row) => row.item === 4)).toBe(true);
+  // How many of the last rows come in depends on the viewport: the last row's
+  // slot is Item 04, 05 or 06 — roots that were beyond the first window.
+  await expect.poll(async () => (await drawn(page)).some((row) => row.item >= 4 && row.item <= 6)).toBe(true);
   await expectFollowsRecord(page);
 });
 

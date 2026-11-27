@@ -17,6 +17,12 @@ const checks = [
     "cachedUint8ArrayMemory0 === null || cachedUint8ArrayMemory0.byteLength === 0",
     "cachedUint8ArrayMemory0 === null || cachedUint8ArrayMemory0.buffer !== wasm.memory.buffer",
   ],
+  // The frame's `ops` (`&[u32]`) is read through this one: a frame that grows
+  // the memory while it is built was read from the old buffer, all zeros.
+  [
+    "cachedUint32ArrayMemory0 === null || cachedUint32ArrayMemory0.byteLength === 0",
+    "cachedUint32ArrayMemory0 === null || cachedUint32ArrayMemory0.buffer !== wasm.memory.buffer",
+  ],
   [
     "cachedDataViewMemory0 === null || cachedDataViewMemory0.buffer.detached === true || (cachedDataViewMemory0.buffer.detached === undefined && cachedDataViewMemory0.buffer !== wasm.memory.buffer)",
     "cachedDataViewMemory0 === null || cachedDataViewMemory0.buffer !== wasm.memory.buffer",
