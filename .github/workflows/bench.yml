@@ -28,6 +28,9 @@ on:
       extra:
         description: "Extra bench options"
         default: ""
+      extra2:
+        description: "Extra bench options, second run"
+        default: ""
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -37,7 +40,7 @@ jobs:
   bench:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-build
@@ -57,7 +60,22 @@ jobs:
           CPU: ${{ inputs.cpu }}
           EXTRA: ${{ inputs.extra }}
         run: |
-          bench=(env "PATH=$PATH" "HOME=$HOME" BENCH_LOCAL=1 pnpm --dir bench bench --grids "$GRIDS" --rows "$ROWS" --runs 5 --throttle "$THROTTLE" $EXTRA)
+          bench=(env "PATH=$PATH" "HOME=$HOME" BENCH_LOCAL=1 pnpm --dir bench bench --grids "$GRIDS" --rows "$ROWS" --runs 3 --throttle "$THROTTLE" $EXTRA)
+          if [ -n "$CPU" ]; then
+            sudo systemd-run --scope --quiet --uid="$(id -u)" --gid="$(id -g)" \
+              -p CPUQuota="${CPU}%" -p CPUQuotaPeriodSec=10ms -- "${bench[@]}"
+          else
+            "${bench[@]}"
+          fi
+      - name: Bench 2
+        env:
+          ROWS: ${{ inputs.rows }}
+          GRIDS: ${{ inputs.grids }}
+          THROTTLE: ${{ inputs.throttle }}
+          CPU: ${{ inputs.cpu }}
+          EXTRA: ${{ inputs.extra2 }}
+        run: |
+          bench=(env "PATH=$PATH" "HOME=$HOME" BENCH_LOCAL=1 pnpm --dir bench bench --grids "$GRIDS" --rows "$ROWS" --runs 3 --throttle "$THROTTLE" $EXTRA)
           if [ -n "$CPU" ]; then
             sudo systemd-run --scope --quiet --uid="$(id -u)" --gid="$(id -g)" \
               -p CPUQuota="${CPU}%" -p CPUQuotaPeriodSec=10ms -- "${bench[@]}"

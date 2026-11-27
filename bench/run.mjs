@@ -49,6 +49,52 @@ const ROWS = Number(option("rows", 100_000));
 const RUNS = Number(option("runs", 5));
 const THROTTLE = Number(option("throttle", 1));
 const PROBE = args.includes("--probe");
+const RELEASE = args.includes("--release");
+
+/** EXPERIMENT (#518): CPU ticks of every thread of the browser's process tree, by thread name. */
+function threadTicks(rootPid) {
+  const out = {};
+  try {
+    const rows = execSync("ps -axo pid=,ppid=", { encoding: "utf8" }).trim().split("\n").map((l) => l.trim().split(/\s+/).map(Number));
+    const kids = new Map();
+    for (const [pid, ppid] of rows) kids.set(ppid, [...(kids.get(ppid) ?? []), pid]);
+    const stack = [rootPid];
+    while (stack.length) {
+      const pid = stack.pop();
+      stack.push(...(kids.get(pid) ?? []));
+      let role = "";
+      try {
+        role = readFileSync(`/proc/${pid}/cmdline`, "utf8").match(/--type=([a-z-]+)/)?.[1] ?? "browser";
+      } catch {
+        continue;
+      }
+      for (const tid of readdirSync(`/proc/${pid}/task`)) {
+        try {
+          const stat = readFileSync(`/proc/${pid}/task/${tid}/stat`, "utf8");
+          const comm = stat.slice(stat.indexOf("(") + 1, stat.lastIndexOf(")"));
+          const f = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
+          const key = `${role}/${pid}/${comm}${role === "renderer" && comm.startsWith("Dedicated") ? `#${tid}` : ""}`;
+          out[`${key}`] = (out[key] ?? 0) + Number(f[11]) + Number(f[12]);
+        } catch {
+          // a thread that ended
+        }
+      }
+    }
+  } catch {
+    // not Linux
+  }
+  try {
+    const path = readFileSync("/proc/self/cgroup", "utf8").match(/^0::(.*)$/m)?.[1];
+    const stat = readFileSync(`/sys/fs/cgroup${path}/cpu.stat`, "utf8");
+    for (const line of stat.trim().split("\n")) {
+      const [k, v] = line.split(" ");
+      if (["nr_periods", "nr_throttled", "throttled_usec"].includes(k)) out[`cgroup ${k}`] = Number(v);
+    }
+  } catch {
+    // no cgroup v2
+  }
+  return out;
+}
 
 /** The CPU time this process tree may use, in cores (0.25 is a quarter of one), from the cgroup
  * it runs in; null when there is no quota or no cgroup v2 (macOS). Read, not taken from an option,
@@ -160,6 +206,11 @@ for (const grid of GRIDS) {
       await page.exposeFunction("__metrics", async (name) => {
         const { metrics: list } = await cdp.send("Performance.getMetrics");
         metrics[name] = Object.fromEntries(list.map((m) => [m.name, m.value]));
+        metrics[`${name}:threads`] = threadTicks(rootPid);
+      });
+      await page.exposeFunction("__gc", async () => {
+        await cdp.send("HeapProfiler.enable");
+        await cdp.send("HeapProfiler.collectGarbage");
       });
     }
     // What the page asked for, to size afterwards from the built files (see `sizeOf`).
@@ -185,7 +236,7 @@ for (const grid of GRIDS) {
     await page.goto("about:blank");
     await settle(300);
     const baseline = treeMiB();
-    await page.goto(`${base}/pages/${grid}.html?rows=${ROWS}&sync=1&server=${SERVER_PORT}${PROBE ? "&probe=1" : ""}`);
+    await page.goto(`${base}/pages/${grid}.html?rows=${ROWS}&sync=1&server=${SERVER_PORT}${PROBE ? "&probe=1" : ""}${RELEASE ? "&release=1" : ""}`);
     const memory = {};
     try {
       for (;;) {
@@ -263,6 +314,14 @@ if (PROBE) {
       const b = r.metrics?.["steps:end"];
       const d = a && b ? Object.fromEntries(pick.map((k) => [k, +(k.endsWith("Size") ? (b[k] - a[k]) / 1048576 : k.endsWith("Duration") ? (b[k] - a[k]) * 1000 : b[k] - a[k]).toFixed(1)])) : null;
       console.log(`PROBE ${grid} run ${i} steps(120): metrics ${JSON.stringify(d)} (durations ms, heap MiB)`);
+      const ta = r.metrics?.["steps:start:threads"] ?? {};
+      const tb = r.metrics?.["steps:end:threads"] ?? {};
+      const cpu = Object.entries(tb)
+        .map(([k, v]) => [k, k.startsWith("cgroup") ? v - (ta[k] ?? 0) : (v - (ta[k] ?? 0)) * 10])
+        .filter(([, v]) => v > 0)
+        .sort((x, y) => y[1] - x[1])
+        .slice(0, 12);
+      console.log(`PROBE ${grid} run ${i} threads (cpu ms in the steps; cgroup: periods, throttled periods, throttled us): ${JSON.stringify(cpu)}`);
       console.log(`PROBE ${grid} run ${i} ${JSON.stringify(r.scroll?.probe)}`);
     });
   }

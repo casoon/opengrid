@@ -289,7 +289,7 @@ export async function start(adapter) {
     const wantGroups = expectedGroups(ROWS);
     // A grid whose rows are in a database does not get them: the page holds none, as a page
     // that uses a server would not.
-    const rows = adapter.remote ? null : makeRows(ROWS);
+    let rows = adapter.remote ? null : makeRows(ROWS);
     const container = document.getElementById("grid");
     container.style.height = `${HEIGHT}px`;
 
@@ -307,6 +307,11 @@ export async function start(adapter) {
     await mounted;
 
     await checkpoint("load");
+    // EXPERIMENT (#518): the page lets go of its rows, and the browser collects, before anything is measured.
+    if (params.has("release")) {
+      rows = null;
+      await window.__gc?.();
+    }
 
     result.sort = await timed(
       () => adapter.sort("amount", "desc"),
