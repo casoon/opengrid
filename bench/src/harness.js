@@ -113,6 +113,90 @@ function summarise(frames, longTasks) {
   };
 }
 
+
+/**
+ * EXPERIMENT (#518), `?probe=1`: the calls that make the browser lay out or recalculate style
+ * from script, each with its time and when it ran, to put next to the Long Animation Frames.
+ */
+function installProbe() {
+  const calls = [];
+  const wrapGetter = (proto, name) => {
+    const d = Object.getOwnPropertyDescriptor(proto, name);
+    if (!d?.get) return;
+    Object.defineProperty(proto, name, {
+      ...d,
+      get() {
+        const t = performance.now();
+        const v = d.get.call(this);
+        calls.push([`get ${name}`, t, performance.now() - t]);
+        return v;
+      },
+    });
+  };
+  const wrapSetter = (proto, name) => {
+    const d = Object.getOwnPropertyDescriptor(proto, name);
+    if (!d?.set) return;
+    Object.defineProperty(proto, name, {
+      ...d,
+      set(value) {
+        const t = performance.now();
+        d.set.call(this, value);
+        calls.push([`set ${name}`, t, performance.now() - t]);
+      },
+    });
+  };
+  const wrapMethod = (proto, name) => {
+    const original = proto[name];
+    proto[name] = function (...args) {
+      const t = performance.now();
+      const v = original.apply(this, args);
+      calls.push([name, t, performance.now() - t]);
+      return v;
+    };
+  };
+  for (const name of ["scrollLeft", "scrollTop", "scrollWidth", "scrollHeight", "clientWidth", "clientHeight", "clientLeft", "clientTop"]) wrapGetter(Element.prototype, name);
+  for (const name of ["offsetLeft", "offsetTop", "offsetWidth", "offsetHeight", "innerText"]) wrapGetter(HTMLElement.prototype, name);
+  for (const name of ["scrollLeft", "scrollTop"]) wrapSetter(Element.prototype, name);
+  for (const name of ["getBoundingClientRect", "getClientRects", "scrollIntoView"]) wrapMethod(Element.prototype, name);
+  wrapMethod(HTMLElement.prototype, "focus");
+  wrapMethod(CSSStyleDeclaration.prototype, "getPropertyValue");
+  return calls;
+}
+
+function probeReport(entries, calls, frames) {
+  const totals = {};
+  for (const [name, , ms] of calls) {
+    const t = (totals[name] ??= { n: 0, ms: 0, max: 0 });
+    t.n++;
+    t.ms += ms;
+    t.max = Math.max(t.max, ms);
+  }
+  const invokers = {};
+  for (const e of entries) {
+    for (const s of e.scripts) {
+      const t = (invokers[`${s.invokerType} ${s.invoker}`] ??= { n: 0, ms: 0, forced: 0, pause: 0 });
+      t.n++;
+      t.ms += s.duration;
+      t.forced += s.forcedStyleAndLayoutDuration;
+      t.pause += s.pauseDuration;
+    }
+  }
+  const worst = [...entries]
+    .sort((a, b) => b.duration - a.duration)
+    .slice(0, 6)
+    .map((e) => ({
+      at: Math.round(e.startTime),
+      ms: Math.round(e.duration),
+      renderStart: Math.round(e.renderStart - e.startTime),
+      styleLayoutStart: Math.round(e.styleAndLayoutStart - e.startTime),
+      blocking: Math.round(e.blockingDuration),
+      scripts: e.scripts.map((s) => ({ type: s.invokerType, invoker: s.invoker, from: Math.round(s.startTime - e.startTime), ms: Math.round(s.duration), forced: Math.round(s.forcedStyleAndLayoutDuration), fn: s.sourceFunctionName })),
+      calls: calls.filter(([, t, ms]) => ms > 1 && t >= e.startTime && t <= e.startTime + e.duration).map(([name, t, ms]) => `${name}@${Math.round(t - e.startTime)}:${ms.toFixed(1)}`),
+    }));
+  const sorted = [...frames].sort((a, b) => a - b);
+  return { totals, invokers, worst, over33: frames.filter((f) => f > 33.4).length, p50: sorted[60], p95: sorted[114] };
+}
+
 async function scroll(adapter) {
   const scroller = adapter.scroller();
   const rowHeight = adapter.rowHeight();
@@ -131,11 +215,14 @@ async function scroll(adapter) {
   } catch {
     // Not every browser reports them.
   }
+  const probeCalls = params.has("probe") ? installProbe() : null;
   scroller.scrollTop = 0;
   await frame();
   const frames = [];
+  await window.__metrics?.("steps:start");
   let last = await frame();
   const fineStart = last;
+  if (probeCalls) probeCalls.length = 0;
   for (let i = 0; i < 120; i++) {
     scroller.scrollTop += 3 * rowHeight;
     const now = await frame();
@@ -143,6 +230,8 @@ async function scroll(adapter) {
     last = now;
   }
   const jumpStart = last;
+  const probeSteps = probeCalls ? probeCalls.slice() : null;
+  await window.__metrics?.("steps:end");
   const max = scroller.scrollHeight - scroller.clientHeight;
   for (let i = 0; i < 20; i++) {
     scroller.scrollTop = Math.min(max, (i + 1) * 2000 * rowHeight);
@@ -161,6 +250,7 @@ async function scroll(adapter) {
     // The 20 jumps (a drag of the thumb) apart from the 120 wheel steps.
     jumpsOver33: frames.slice(120).filter((f) => f > 33.4).length,
     loaf: { steps: longFrames(loafs, fineStart, jumpStart), jumps: longFrames(loafs, jumpStart, last) },
+    probe: probeSteps ? probeReport(loafs.filter((e) => e.startTime >= fineStart && e.startTime < jumpStart), probeSteps, frames.slice(0, 120)) : null,
     moved,
   };
 }

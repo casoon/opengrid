@@ -25,6 +25,9 @@ on:
       cpu:
         description: "CPU quota for the whole tool, Worker included, in percent of one core (empty = none)"
         default: ""
+      extra:
+        description: "Extra bench options"
+        default: ""
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -52,8 +55,9 @@ jobs:
           GRIDS: ${{ inputs.grids }}
           THROTTLE: ${{ inputs.throttle }}
           CPU: ${{ inputs.cpu }}
+          EXTRA: ${{ inputs.extra }}
         run: |
-          bench=(env "PATH=$PATH" "HOME=$HOME" BENCH_LOCAL=1 pnpm --dir bench bench --grids "$GRIDS" --rows "$ROWS" --runs 5 --throttle "$THROTTLE")
+          bench=(env "PATH=$PATH" "HOME=$HOME" BENCH_LOCAL=1 pnpm --dir bench bench --grids "$GRIDS" --rows "$ROWS" --runs 5 --throttle "$THROTTLE" $EXTRA)
           if [ -n "$CPU" ]; then
             sudo systemd-run --scope --quiet --uid="$(id -u)" --gid="$(id -g)" \
               -p CPUQuota="${CPU}%" -p CPUQuotaPeriodSec=10ms -- "${bench[@]}"

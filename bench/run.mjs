@@ -48,6 +48,7 @@ const GRIDS = option("grids", ALL.join(",")).split(",");
 const ROWS = Number(option("rows", 100_000));
 const RUNS = Number(option("runs", 5));
 const THROTTLE = Number(option("throttle", 1));
+const PROBE = args.includes("--probe");
 
 /** The CPU time this process tree may use, in cores (0.25 is a quarter of one), from the cgroup
  * it runs in; null when there is no quota or no cgroup v2 (macOS). Read, not taken from an option,
@@ -148,9 +149,18 @@ for (const grid of GRIDS) {
   for (let run = 0; run < RUNS; run++) {
     const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
     const page = await context.newPage();
+    const cdp = THROTTLE > 1 || PROBE ? await context.newCDPSession(page) : null;
     if (THROTTLE > 1) {
-      const cdp = await context.newCDPSession(page);
       await cdp.send("Emulation.setCPUThrottlingRate", { rate: THROTTLE });
+    }
+    // EXPERIMENT (#518): the page's own counters (layouts, style recalcs, script time) around the steps.
+    const metrics = {};
+    if (PROBE) {
+      await cdp.send("Performance.enable");
+      await page.exposeFunction("__metrics", async (name) => {
+        const { metrics: list } = await cdp.send("Performance.getMetrics");
+        metrics[name] = Object.fromEntries(list.map((m) => [m.name, m.value]));
+      });
     }
     // What the page asked for, to size afterwards from the built files (see `sizeOf`).
     const requested = new Set();
@@ -175,7 +185,7 @@ for (const grid of GRIDS) {
     await page.goto("about:blank");
     await settle(300);
     const baseline = treeMiB();
-    await page.goto(`${base}/pages/${grid}.html?rows=${ROWS}&sync=1&server=${SERVER_PORT}`);
+    await page.goto(`${base}/pages/${grid}.html?rows=${ROWS}&sync=1&server=${SERVER_PORT}${PROBE ? "&probe=1" : ""}`);
     const memory = {};
     try {
       for (;;) {
@@ -188,7 +198,7 @@ for (const grid of GRIDS) {
       }
       const result = await page.evaluate(() => window.__bench.result);
       const between = (from, to) => (marks[from] && marks[to] ? { requests: marks[to].requests - marks[from].requests, bytes: marks[to].bytes - marks[from].bytes } : null);
-      results[grid].push({ ...result, memory, bytes: sizeOf(requested), server: backend && grid.includes("server") ? { windows: between("windows:start", "windows:end"), scroll: between("scroll:start", "scroll:end"), asked, backendMiB: backendMiB() } : null });
+      results[grid].push({ ...result, metrics, memory, bytes: sizeOf(requested), server: backend && grid.includes("server") ? { windows: between("windows:start", "windows:end"), scroll: between("scroll:start", "scroll:end"), asked, backendMiB: backendMiB() } : null });
     } catch (error) {
       results[grid].push({ grid, error: `no result: ${error.message.split("\n")[0]}`, memory });
     }
@@ -244,6 +254,18 @@ for (const line of lines) console.log(line.map((c, i) => c.padEnd(widths[i])).jo
 for (const [grid, runs] of Object.entries(results)) {
   const errors = runs.filter((r) => r.error).map((r) => r.error.split("\n")[0]);
   if (errors.length) console.log(`! ${grid}: ${errors.length} run(s) failed: ${errors[0]}`);
+}
+if (PROBE) {
+  const pick = ["LayoutCount", "RecalcStyleCount", "LayoutDuration", "RecalcStyleDuration", "ScriptDuration", "TaskDuration", "JSHeapUsedSize"];
+  for (const [grid, runs] of Object.entries(results)) {
+    runs.forEach((r, i) => {
+      const a = r.metrics?.["steps:start"];
+      const b = r.metrics?.["steps:end"];
+      const d = a && b ? Object.fromEntries(pick.map((k) => [k, +(k.endsWith("Size") ? (b[k] - a[k]) / 1048576 : k.endsWith("Duration") ? (b[k] - a[k]) * 1000 : b[k] - a[k]).toFixed(1)])) : null;
+      console.log(`PROBE ${grid} run ${i} steps(120): metrics ${JSON.stringify(d)} (durations ms, heap MiB)`);
+      console.log(`PROBE ${grid} run ${i} ${JSON.stringify(r.scroll?.probe)}`);
+    });
+  }
 }
 mkdirSync(resolve(here, "results"), { recursive: true });
 const file = resolve(here, "results", `${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
