@@ -57,9 +57,9 @@ as the npm package, so give every `opengrid-*` crate the same one:
 
 ```toml
 [dependencies]
-opengrid-server = "0.20"           # the gateway, as a library
-opengrid-connector-sqlite = "0.20" # or opengrid-datasource-postgres
-opengrid-engine = "0.20"           # the engine alone, native
+opengrid-server = "0.21"           # the gateway, as a library
+opengrid-connector-sqlite = "0.21" # or opengrid-datasource-postgres
+opengrid-engine = "0.21"           # the engine alone, native
 ```
 
 While the version is 0.x, a minor bump may break the Rust API
