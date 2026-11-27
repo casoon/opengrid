@@ -49,6 +49,15 @@ Two things belong in every release entry and are easy to leave out:
   fire `opengrid-cell-action` (`onCellAction`) with the cell's column and record key
   ([#524](https://github.com/casoon/opengrid/issues/524)). Details:
   [The cell menu](https://casoon.github.io/opengrid/docs/api/#the-cell-menu).
+- **Grid:** the page's own items in the toolbar: `set_toolbar` (`toolbarItems` in `connect`) draws
+  buttons, menu buttons with the column menu's keys, and disabled items that say why, after the
+  grid's own controls, and `opengrid-toolbar-action` (`onToolbarAction`) fires with the item's
+  `id` and the selection — by key where the grid selects by key. A call is checked like
+  `set_columns` and applies none of it on a problem. The `toolbar-end` slot takes the page's own
+  controls, outside `role="grid"`, so a date field keeps its keys. Both show with `toolbar`; new
+  parts `toolbar-item` and `toolbar-menu` and the text `toolbarRefused`
+  ([#531](https://github.com/casoon/opengrid/issues/531)). Details:
+  [The page's own items](https://casoon.github.io/opengrid/docs/api/#the-pages-own-items).
 - **Grid:** where the focus is shows: its row and its column's header take a light tint, the
   footer says `Row 1,234 of 5,000 · customer` (`positionCell`) or a range's size with its count,
   sum and average — summed by the source when the range reaches past the loaded rows — a fling

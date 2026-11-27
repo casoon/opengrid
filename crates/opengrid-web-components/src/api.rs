@@ -87,7 +87,7 @@ const EXPORT_ERROR_CODES: [&str; 4] = [
 
 /// The module functions a page calls through `loader.module`, in the order the
 /// freeze lists them.
-const FUNCTIONS: [&str; 21] = [
+const FUNCTIONS: [&str; 22] = [
     "register",
     "set_provider",
     "set_texts",
@@ -104,6 +104,7 @@ const FUNCTIONS: [&str; 21] = [
     "set_values",
     "set_actions",
     "set_cell_actions",
+    "set_toolbar",
     "set_row_state",
     "set_validators",
     "set_cell_templates",
@@ -145,6 +146,7 @@ fn surface() -> String {
         crate::grid_element_events::QUERY_EVENT,
         crate::grid_element_events::ROW_ACTION_EVENT,
         crate::grid_element_events::CELL_ACTION_EVENT,
+        crate::grid_element_events::TOOLBAR_ACTION_EVENT,
         crate::grid_element_events::ROW_ADD_EVENT,
         crate::grid_element_events::PASTE_EVENT,
         crate::grid_element_events::BULK_EVENT,
@@ -156,6 +158,10 @@ fn surface() -> String {
     ] {
         out.push_str(&format!("  {event}\n"));
     }
+
+    // The slots a page fills (issue #531): named, so a page can rely on them.
+    out.push_str("\nslots\n");
+    out.push_str(&format!("  {}\n", grid::TOOLBAR_SLOT));
 
     out.push_str("\nfunctions\n");
     for name in FUNCTIONS {
@@ -331,6 +337,9 @@ fn parts() -> Vec<String> {
     parts.push("menu-label".to_owned());
     // So is the cell menu of issue #524.
     parts.push("cell-menu".to_owned());
+    // The page's own items in the toolbar and their menus (issue #531).
+    parts.push("toolbar-item".to_owned());
+    parts.push("toolbar-menu".to_owned());
     // The chips of point 65 are drawn from the view by the element.
     parts.push("chip".to_owned());
     parts.push("chip-remove".to_owned());
@@ -399,6 +408,7 @@ events
   opengrid-query
   opengrid-row-action
   opengrid-cell-action
+  opengrid-toolbar-action
   opengrid-row-add
   opengrid-paste
   opengrid-bulk-change
@@ -407,6 +417,9 @@ events
   opengrid-source-replaced
   opengrid-source-changed
   opengrid-detail-toggle
+
+slots
+  toolbar-end
 
 functions
   register
@@ -425,6 +438,7 @@ functions
   set_values
   set_actions
   set_cell_actions
+  set_toolbar
   set_row_state
   set_validators
   set_cell_templates
@@ -474,7 +488,7 @@ edit-hint edit-mark edit-toggle editor empty empty-reset empty-text facet facet-
 field-group field-menu filter filter-builder filter-builder-dialog filter-clear filter-dialog filter-operator filter-row-toggle filter-value footer group-mark group-toggle \
 grouping-menu header layout list list-item list-item-remove listbox menu-label operator-menu page-first page-label page-last page-next page-previous pager paste-apply paste-discard \
 paste-preview paste-summary position record-dialog refresh row row-header scroll-position search search-hint search-input search-list select select-all select-mark sort-button \
-sort-direction sort-index source status table toolbar total-row validation viewport
+sort-direction sort-index source status table toolbar toolbar-item toolbar-menu total-row validation viewport
 
 text keys
   addColumn addFilter addFilterTitle addGrouping addMeasure addRow aggregateAvg aggregateCell aggregateCount aggregateGroup aggregateMax aggregateMin aggregateNone aggregateRange \
@@ -492,7 +506,7 @@ pivotFilterHint pivotFilterLabel pivotFilters pivotMeasures pivotRows pivotShowA
 queryMissingValue queryOr queryUnclosed queryUnknownColumn queryUnopened queryWrongOperator rangeCopied rangeSize rangeUnloaded recordDone recordNothing recordSave recordTitle \
 redoAdded redoCell redoNothing redoPaste redoRecord rowAdded rowsOne rowsOther runningTotal searchChip searchHint searchLabel searchPlaceholder searchSuggestions selectAll \
 selectedAll selectionCleared selectionMissing shareOfColumn shareOfRow shareOfTotal sortAscending sortDescending sortKey sourceChanged sourceHybrid sourceLocal sourceRefresh \
-sourceRemote sourceWorker subtotal subtreeCell subtreeOnly toolbarGroup total totalRow treeContext treeGroupIgnored treeLevelTooLarge treeOrphans treeRefused typeBool typeDate \
+sourceRemote sourceWorker subtotal subtreeCell subtreeOnly toolbarGroup toolbarRefused total totalRow treeContext treeGroupIgnored treeLevelTooLarge treeOrphans treeRefused typeBool typeDate \
 typeInteger typeList typeNumber typeText typeTime undoAdded undoCell undoNothing undoPaste undoRecord ungroupColumn unlockColumn validationError validationWarning valueLabel
 ";
         assert_eq!(surface(), expected);

@@ -126,6 +126,15 @@ export interface OpengridModule {
    */
   set_cell_actions(host: HTMLElement, actions: CellAction[]): void;
   /**
+   * The page's own items in the toolbar (issue #531), after the grid's own
+   * controls and before the `toolbar-end` slot: a button, a menu button (with
+   * `items`) or an item that cannot act (`disabled` with its `reason`). Choosing
+   * one fires `opengrid-toolbar-action`. Checked like `set_columns`: a problem
+   * is said in the status line and none of the call is applied. Shown with the
+   * `toolbar` attribute. The grid only.
+   */
+  set_toolbar(host: HTMLElement, items: ToolbarItem[]): void;
+  /**
    * What became of a row the reader added (issue #183), by the `provisionalKey`
    * `opengrid-row-add` gave. `saved` takes the record's `row-key` as `detail`
    * when it has one now; `error` takes the message, said in the live region.
@@ -194,6 +203,8 @@ export interface ConnectOptions {
   actions?: RowAction[];
   /** `set_cell_actions`: compared by value. The grid only. */
   cellActions?: CellAction[];
+  /** `set_toolbar`: compared by value. The grid only. */
+  toolbarItems?: ToolbarItem[];
   /** `set_cell_templates`: functions compare by identity, as in `formats`. The grid only. */
   cellTemplates?: Record<string, CellTemplate>;
   /** `set_detail_renderer`: compared by identity. The grid only. */
@@ -212,6 +223,7 @@ export interface ConnectOptions {
   onBulkChange?: (detail: BulkChangeDetail) => void;
   onRowAction?: (detail: RowActionDetail) => void;
   onCellAction?: (detail: CellActionDetail) => void;
+  onToolbarAction?: (detail: ToolbarActionDetail) => void;
   /** A value of a pivot with `drill-down` was pressed. The pivot only. */
   onDrillDown?: (detail: DrillDownDetail) => void;
   /** The provider loaded the grid's source again (`loadRows`); the grid asks anew. */
@@ -1170,6 +1182,7 @@ export type TextKey =
   | "pinEnd"
   | "pinNarrow"
   | "toolbarGroup"
+  | "toolbarRefused"
   | "filterRowToggle"
   | "densityGroup"
   | "densityCompact"
@@ -1485,6 +1498,37 @@ export interface CellActionDetail {
   key?: WireValue;
 }
 
+/** One entry of a toolbar menu (`set_toolbar`). */
+export interface ToolbarEntry {
+  id: string;
+  label: string;
+}
+
+/** One of the page's items in the toolbar (`set_toolbar`). */
+export interface ToolbarItem {
+  /** Unique within the call, entries included: it is what `opengrid-toolbar-action` names. */
+  id: string;
+  /** The visible text and the accessible name. */
+  label: string;
+  /** With entries it is a menu button; choosing an entry fires the event with the entry's `id`. */
+  items?: ToolbarEntry[];
+  /** The item cannot act; `reason` says why, on focus and on activation. */
+  disabled?: boolean;
+  /** Needed with `disabled: true`, and only then. */
+  reason?: string;
+}
+
+/** `opengrid-toolbar-action`: one of the page's items in the toolbar was chosen (issue #531). */
+export interface ToolbarActionDetail {
+  id: string;
+  /**
+   * The selection as `opengrid-selection-change` carries it now — by key
+   * (`{ count, keys }`) in a grid with a `row-key` and in a tree, else by
+   * position — so *Bulk change for the selected rows* needs no second call.
+   */
+  selection: SelectionChangeDetail;
+}
+
 /**
  * `opengrid-drill-down`: a value of an `<opengrid-pivot>` with `drill-down`
  * was pressed (issue #330). The page shows the rows.
@@ -1614,6 +1658,7 @@ export interface OpengridEventMap {
   "opengrid-query": CustomEvent<QueryDetail>;
   "opengrid-row-action": CustomEvent<RowActionDetail>;
   "opengrid-cell-action": CustomEvent<CellActionDetail>;
+  "opengrid-toolbar-action": CustomEvent<ToolbarActionDetail>;
   "opengrid-row-add": CustomEvent<RowAddDetail>;
   "opengrid-paste": CustomEvent<PasteDetail>;
   "opengrid-bulk-change": CustomEvent<BulkChangeDetail>;

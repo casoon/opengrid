@@ -63,6 +63,7 @@ export default {
   "pinEnd": "Am Ende",
   "pinNarrow": "Nur auf schmalen Bildschirmen",
   "toolbarGroup": "Werkzeuge",
+  "toolbarRefused": "Werkzeugleisten-Einträge nicht übernommen. {problems}",
   "filterRowToggle": "Filterzeile",
   "densityGroup": "Dichte",
   "densityCompact": "Kompakt",

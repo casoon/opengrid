@@ -371,6 +371,10 @@ pub const ROW_KEY_ATTRIBUTE: &str = "row-key";
 /// the row shows is part of the view instead (`filterRow`), on by default.
 pub const TOOLBAR_ATTRIBUTE: &str = "toolbar";
 
+/// The slot at the end of the toolbar's row (issue #531): the page's own
+/// controls, outside `role="grid"`. Shown with `toolbar`, like the toolbar.
+pub const TOOLBAR_SLOT: &str = "toolbar-end";
+
 /// Below this width (CSS px) of the grid, the toolbar's buttons stop wrapping
 /// and scroll sideways in one row (issue #77) — and the narrow pins hold
 /// (issue #525): one breakpoint for what a narrow grid is.
@@ -2125,7 +2129,7 @@ pub fn grid_css() -> String {
            /* `:host` first: these come before the rules they raise. */
            :host [part=\"column-menu-button\"] {{ height: {COARSE_ROW_HEIGHT}px; }}
            :host :is([part=\"toolbar\"], [part=\"pager\"]) button,
-           :host :is([part=\"column-menu\"], [part=\"cell-menu\"]) [role^=\"menuitem\"] {{
+           :host :is([part=\"column-menu\"], [part=\"cell-menu\"], [part=\"toolbar-menu\"]) [role^=\"menuitem\"] {{
                    min-height: {COARSE_ROW_HEIGHT}px; }}
          }}
          tbody tr[data-selected=\"true\"] {{ background: var({SELECTED_PROPERTY});
@@ -2276,27 +2280,27 @@ pub fn grid_css() -> String {
            th[data-edit=\"editable\"] [part=\"edit-mark\"] {{ display: inline-block; }}
            th[data-edit=\"editable\"] [part=\"edit-mark\"]::before {{ content: \"\\270E\" / \"\"; }}
          }}
-         :is([part=\"column-menu\"], [part=\"cell-menu\"]) {{ position: fixed; inset: auto; margin: 0; padding: 6px;
+         :is([part=\"column-menu\"], [part=\"cell-menu\"], [part=\"toolbar-menu\"]) {{ position: fixed; inset: auto; margin: 0; padding: 6px;
                    min-width: 14rem; box-sizing: border-box;
                    background: var({SURFACE_PROPERTY}); color: var({INK_PROPERTY});
                    border: 1px solid var({LINE_STRONG_PROPERTY});
                    border-radius: min(var({RADIUS_PROPERTY}), 10px);
                    box-shadow: 0 12px 32px rgb(0 0 0 / 0.18);
                    font-family: var({FONT_PROPERTY}); font-size: var({FONT_SIZE_PROPERTY}); }}
-         :is([part=\"column-menu\"], [part=\"cell-menu\"]) [role^=\"menuitem\"] {{ display: flex; align-items: center;
+         :is([part=\"column-menu\"], [part=\"cell-menu\"], [part=\"toolbar-menu\"]) [role^=\"menuitem\"] {{ display: flex; align-items: center;
                    gap: 0.5rem; min-height: 32px; padding: 0 8px; cursor: pointer;
                    border-radius: min(var({RADIUS_PROPERTY}), 6px); }}
-         :is([part=\"column-menu\"], [part=\"cell-menu\"]) [role^=\"menuitem\"]:hover {{ background: var({HOVER_PROPERTY}); }}
-         :is([part=\"column-menu\"], [part=\"cell-menu\"]) [role^=\"menuitem\"]:focus {{
+         :is([part=\"column-menu\"], [part=\"cell-menu\"], [part=\"toolbar-menu\"]) [role^=\"menuitem\"]:hover {{ background: var({HOVER_PROPERTY}); }}
+         :is([part=\"column-menu\"], [part=\"cell-menu\"], [part=\"toolbar-menu\"]) [role^=\"menuitem\"]:focus {{
                    outline: var({FOCUS_WIDTH_PROPERTY}) solid Highlight;
                    outline-offset: calc(-1 * var({FOCUS_WIDTH_PROPERTY})); }}
-         :is([part=\"column-menu\"], [part=\"cell-menu\"]) [role=\"menuitemradio\"]::before {{ content: \"\" / \"\";
+         :is([part=\"column-menu\"], [part=\"cell-menu\"], [part=\"toolbar-menu\"]) [role=\"menuitemradio\"]::before {{ content: \"\" / \"\";
                    display: inline-block; width: 1em; }}
-         :is([part=\"column-menu\"], [part=\"cell-menu\"]) [role=\"menuitemradio\"][aria-checked=\"true\"]::before {{
+         :is([part=\"column-menu\"], [part=\"cell-menu\"], [part=\"toolbar-menu\"]) [role=\"menuitemradio\"][aria-checked=\"true\"]::before {{
                    content: \"\\2713\" / \"\"; color: var({ACCENT_INK_PROPERTY}); }}
-         :is([part=\"column-menu\"], [part=\"cell-menu\"]) [role=\"separator\"] {{ height: 1px; margin: 5px 0;
+         :is([part=\"column-menu\"], [part=\"cell-menu\"], [part=\"toolbar-menu\"]) [role=\"separator\"] {{ height: 1px; margin: 5px 0;
                    background: var({LINE_PROPERTY}); }}
-         :is([part=\"column-menu\"], [part=\"cell-menu\"]) [role=\"group\"] > [part=\"menu-label\"] {{
+         :is([part=\"column-menu\"], [part=\"cell-menu\"], [part=\"toolbar-menu\"]) [role=\"group\"] > [part=\"menu-label\"] {{
                    padding: 4px 8px; font-size: 0.75em; color: var({INK_MUTED_PROPERTY});
                    text-transform: uppercase; letter-spacing: 0.05em; }}
          /* The toolbar and the chips (point 65). Each hidden group says
@@ -2322,7 +2326,7 @@ pub fn grid_css() -> String {
            [data-toolbar-row] {{ display: flex; flex: 1 1 100%; align-items: center; gap: 8px;
                    min-width: 0; overflow-x: auto; scrollbar-width: thin;
                    padding: 4px; margin: -4px; }}
-           [data-toolbar-row] > * {{ flex: 0 0 auto; }}
+           [data-toolbar-row] > *, [data-toolbar-row] > slot::slotted(*) {{ flex: 0 0 auto; }}
          }} }}
          [part=\"toolbar\"] button, [part=\"chips\"] button {{ font: inherit; font-size: 0.8125rem;
                    font-weight: 500; min-height: 32px; min-width: {MIN_TARGET_SIZE}px;
@@ -2370,6 +2374,11 @@ pub fn grid_css() -> String {
                    border: 1px dashed var({LINE_STRONG_PROPERTY}); border-radius: 999px;
                    padding: 0 12px; }}
          [part=\"toolbar\"] button[aria-disabled=\"true\"] {{ opacity: 0.55; cursor: not-allowed; }}
+         /* The page's own buttons and menu buttons (issue #531): an outline, so
+            they read as actions and not as the switches around them. */
+         [part=\"toolbar\"] [part=\"toolbar-item\"] {{ border: 1px solid var({LINE_STRONG_PROPERTY}); }}
+         [part=\"toolbar-item\"][aria-haspopup=\"menu\"]::after {{ content: \"\\25BE\" / \"\";
+                   margin-inline-start: 0.4em; }}
          [part=\"filter-builder-dialog\"] {{ width: min(44rem, 100vw - 2rem); max-height: calc(100vh - 2rem);
                    overflow: auto; padding: 16px; }}
          [part=\"filter-builder-dialog\"]::backdrop {{ background: rgb(0 0 0 / 0.32); }}
@@ -2667,8 +2676,16 @@ pub fn build_grid(
         texts,
     );
     // The density closes the toolbar's row, after the column list's toggle.
+    // The page's own items (issue #531) stand after the grid's controls: its
+    // buttons, which the element draws in front of the slot, and the slot.
     if let Some((_, row)) = tools {
         build_density(buffer, nodes, row, texts);
+        let slot = element(buffer, nodes, Some(row), "slot");
+        buffer.push(Patch::SetAttribute {
+            node: slot,
+            name: "name".to_owned(),
+            value: TOOLBAR_SLOT.to_owned(),
+        });
     }
     // With facets, the viewport shares a row with the sidebar (point 66).
     // Without, the skeleton is exactly what it was: the wrapper would be one

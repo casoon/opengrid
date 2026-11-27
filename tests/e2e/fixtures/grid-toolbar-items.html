@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>opengrid toolbar items fixture</title>
+    <style>
+      opengrid-grid {
+        display: block;
+        height: 300px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid toolbar items fixture</h1>
+      <opengrid-grid
+        label="Orders"
+        datasource="orders"
+        columns="id,customer,amount,qty"
+        window-size="10"
+        row-key="id"
+        selection
+        toolbar
+      >
+        <!-- Issue #531: a control the grid cannot know, in the slot. -->
+        <label slot="toolbar-end"
+          >Reference date <input type="date" id="reference" value="2026-11-27"
+        /></label>
+      </opengrid-grid>
+    </main>
+    <script type="module">
+      import { loadOpengrid, createLocalProvider } from "/packages/opengrid/loader.js";
+      import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+
+      // Every choice of one of the page's items, as it arrived.
+      window.__toolbar = [];
+      document.addEventListener("opengrid-toolbar-action", (event) =>
+        window.__toolbar.push(event.detail),
+      );
+      // The page's own keys in the slotted field, and what reached the grid.
+      window.__refKeys = [];
+      document.addEventListener("keydown", (event) => {
+        if (event.target.id === "reference") window.__refKeys.push(event.key);
+      });
+
+      await init();
+      const engine = new Engine();
+      const schema = await (await fetch("/tests/e2e/fixtures/grid-orders.schema.json")).text();
+      const csv = await (await fetch("/tests/e2e/fixtures/grid-orders.csv")).arrayBuffer();
+      engine.load_csv("orders", new Uint8Array(csv), schema);
+
+      const loader = await loadOpengrid();
+      const host = document.querySelector("opengrid-grid");
+      window.__items = [
+        { id: "prepare", label: "Prepare price change" },
+        {
+          id: "export",
+          label: "Export",
+          items: [
+            { id: "export-pdf", label: "PDF" },
+            { id: "export-xlsx", label: "Excel" },
+            { id: "export-csv", label: "CSV" },
+          ],
+        },
+        { id: "bulk", label: "Bulk change", disabled: true, reason: "Select rows first" },
+      ];
+      loader.module.set_toolbar(host, window.__items);
+      window.__module = loader.module;
+      loader.module.set_provider(host, createLocalProvider(engine));
+      window.__ready = true;
+    </script>
+  </body>
+</html>

@@ -55,6 +55,7 @@ const OPTIONS = [
   "onCellChange",
   "actions",
   "cellActions",
+  "toolbarItems",
   "validators",
   "cellTemplates",
   "detailRenderer",
@@ -63,6 +64,7 @@ const OPTIONS = [
   "onBulkChange",
   "onRowAction",
   "onCellAction",
+  "onToolbarAction",
   "onDrillDown",
   "onSourceReplaced",
 ];

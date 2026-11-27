@@ -52,6 +52,7 @@ instead.
 | `set_row_state(host, provisionalKey, state, detail?)` | What became of a row the reader added: `saving`, `saved` (with the record's key) or `error` (with a message) — see [Adding rows](#adding-rows). |
 | `set_actions(host, [{ id, label }])` | A trailing column per action, a button per row; fires `opengrid-row-action` — see [Row actions](#row-actions). |
 | `set_cell_actions(host, [{ id, label, column? }])` | The page's items in the cell menu, after the grid's; fires `opengrid-cell-action` — see [The cell menu](#the-cell-menu). |
+| `set_toolbar(host, [{ id, label, items?, disabled?, reason? }])` | The page's own buttons, menu buttons and disabled items in the toolbar, after the grid's own controls; fires `opengrid-toolbar-action` — see [The page's own items](#the-pages-own-items). |
 | `register()` | Defines the three elements. `loadOpengrid()` calls it; a page that loads the module itself calls it once. |
 
 **Types.** The package ships `loader.d.ts`: every name on this page is typed —
@@ -197,6 +198,7 @@ connection.disconnect();              // the listeners go; the element keeps its
 | `onViewChange`, `onSelectionChange`, `onCellChange` | the [events](#events) of the same names; each callback receives the `detail` (for the view: the view itself) |
 | `actions`, `cellActions`, `validators`, `cellTemplates`, `detailRenderer` | `set_actions`, `set_cell_actions`, `set_validators`, `set_cell_templates`, `set_detail_renderer` — the grid only |
 | `onPaste`, `onBulkChange`, `onRowAction`, `onCellAction`, `onSourceReplaced` | `opengrid-paste`, `opengrid-bulk-change`, `opengrid-row-action`, `opengrid-cell-action`, `opengrid-source-replaced`; each callback receives the `detail` |
+| `toolbarItems`, `onToolbarAction` | `set_toolbar` (compared by value), `opengrid-toolbar-action` — the grid only; the callback receives the `detail` |
 | `onDrillDown` | `opengrid-drill-down` — the pivot only, with its `drill-down` attribute; the callback receives the `detail` |
 | `onRowAdd` | `opengrid-row-add`, and its answer is `set_row_state`: return `{ state: "saved", key }` or `{ state: "error", message }`, or a promise of one — the row shows `saving` until it settles; resolved with nothing, it is saved, and a rejection is an `error` with its message. No answer at all leaves the row unsaved for the page; an undone add is not answered |
 
@@ -433,6 +435,55 @@ reflow case of WCAG 1.4.10, the toolbar wraps instead.
 
 The chips are a display of the view, not a second truth about the filters: they
 are drawn from it, and redrawn only when what they say changed.
+
+#### The page's own items
+
+The page's own actions belong in the grid's toolbar, not in a bar of its own above it with a second
+focus order and a second look (issue #531). They stand **after the grid's own controls** — after the
+density — in the order the page gave them, and the [slot](#the-toolbar-slot) after those. There is no
+position per item. They show only with `toolbar`: without the attribute there is no toolbar to hold
+them, and nothing is drawn.
+
+```js
+loader.module.set_toolbar(grid, [
+  { id: "prepare", label: "Prepare price change" },
+  { id: "export", label: "Export", items: [{ id: "pdf", label: "PDF" }, { id: "xlsx", label: "Excel" }] },
+  { id: "bulk", label: "Bulk change", disabled: true, reason: "Select rows first" },
+]);
+grid.addEventListener("opengrid-toolbar-action", ({ detail }) => run(detail.id, detail.selection.keys));
+```
+
+| Item | Draws |
+|---|---|
+| `{ id, label }` | A button (`part="toolbar-item"`). Choosing it fires `opengrid-toolbar-action`. |
+| `{ id, label, items: [{ id, label }] }` | A menu button: `aria-haspopup="menu"`, `aria-expanded`, and a `role="menu"` (`part="toolbar-menu"`) built when it opens, named by the button's label. `↓` or `↑` on the button opens it, `Enter`, `Space` or a click too; the keys inside are the column menu's — `↑`/`↓`, `Home`/`End`, `Enter`/`Space` to choose, `Escape` back to the button, `Tab` on. Choosing an entry fires the event with **the entry's** `id`. The menu itself fires nothing. |
+| `{ id, label, disabled: true, reason }` | `aria-disabled="true"`, named `label. reason` — the visible text first (WCAG 2.5.3), then why, as + Group says it. Activating it does nothing but say the reason in the status line. A menu button may be disabled too. |
+
+`opengrid-toolbar-action` is `{ id, selection }`. `selection` is what [`opengrid-selection-change`](#events)
+carries at that moment — `{ count, keys }` in a grid with a `row-key` and in a [tree](#tree), `{ rows,
+ranges, count }` in one without — so *Bulk change for the selected rows* needs no second call.
+
+**Checked like `set_columns`.** Every problem of a call is reported at once, in the status line (said
+with `toolbarRefused`), and **none of the call is applied** — the items of the call before stay: a key
+that is none of `id`, `label`, `items`, `disabled`, `reason` (an entry has `id` and `label` only), an
+empty or missing `id` or `label`, an `id` used twice anywhere in the call (items and entries share one
+set, because the event names the `id` alone), `disabled: true` without a `reason` or a `reason`
+without `disabled`, and a menu without entries. An empty list takes the items away. `connect` takes the
+items as `toolbarItems` and the event as `onToolbarAction`; the React, Vue and Svelte components pass
+the same two props.
+
+Page items follow the toolbar's narrow rules: one row that scrolls sideways under 560 px of the grid's
+width, wrapping at a 320 px viewport, a focused item brought into view. Under a coarse pointer they are
+44 px tall, as the other buttons are.
+
+#### The toolbar slot
+
+The slot `toolbar-end` — `<div slot="toolbar-end">…</div>` inside the element — stands at the end of the toolbar's row, after the
+declared items — **outside `role="grid"`**, like the rest of the toolbar, so the grid's keys never reach
+it: a date field keeps its arrows, `Home` and `End`. It is for controls the grid cannot know — a date,
+a customer picker — and not for buttons, which go through `set_toolbar` so that they look and key
+like the grid's. It is the page's own element, so the page styles it; under 560 px it does not shrink
+in the scrolling row. Like the declared items it shows only with `toolbar`.
 
 ### The page's filter
 
@@ -1929,6 +1980,7 @@ exception to the first part: `loader.js` dispatches it on the element, without `
 | `opengrid-row-add` | `{ values, provisionalKey, undo?, redo? }` — a record was entered in the new row; see [Adding rows](#adding-rows). |
 | `opengrid-row-action` | `{ id, row, key? }` — an action was activated; `key` is the `row-key` value. |
 | `opengrid-cell-action` | `{ id, row, column, key? }` — one of the page's items in the [cell menu](#the-cell-menu) was chosen; `column` is the field name, `key` the `row-key` value. |
+| `opengrid-toolbar-action` | `{ id, selection }` — one of the page's [items in the toolbar](#the-pages-own-items) was chosen (a menu's entry by its own `id`); `selection` is the detail of `opengrid-selection-change` as it stands. |
 | `opengrid-cell-change` | `{ row, column, value, previous }` — everything needed to persist it. With `row-key` also `key`: the record's value of that field, `null` when the result does not carry it. |
 | `opengrid-drill-down` | `{ query: { source, filter? }, row, column, measure, value }` — a value of an `<opengrid-pivot>` with `drill-down` was pressed; `query` is the rows behind the cell, as the wire writes a query. See [Drilling down](#drilling-down). |
 | `opengrid-view-change` | `{ view }` — the whole [view](#the-view) after the change. Scrolling and selecting are not view changes. On `<opengrid-pivot>` the view is its `rows`, `columns`, `values`, `sort`, `collapsed` and `filter`. |
@@ -2175,7 +2227,7 @@ theme that animates a part.
 `field-group`, `field-menu`, `group-mark`, `group-toggle`, `grouping-menu`, `header`, `layout`, `list`, `list-item`, `list-item-remove`, `listbox`, `menu-label`, `operator-menu`, `page-first`, `page-label`, `page-last`, `page-next`,
 `page-previous`, `pager`, `paste-apply`, `paste-discard`, `paste-preview`, `paste-summary`, `position`, `record-dialog`, `refresh`, `row`, `row-header`, `scroll-position`, `search`, `search-hint`, `search-input`, `search-list`,
 `select`, `select-all`, `select-mark`, `sort-button`, `sort-direction`, `sort-index`, `source`, `status`,
-`table`, `toolbar`, `total-row`, `validation`, `viewport`.
+`table`, `toolbar`, `toolbar-item`, `toolbar-menu`, `total-row`, `validation`, `viewport`.
 
 `<opengrid-table>` and `<opengrid-pivot>` ship no stylesheet beyond the look's
 ink and font and the alignment of a column (above) — they are plain tables, and the
@@ -2325,6 +2377,7 @@ boolean reads — that is `set_formats`.
 | `bandKeep` | `{band} is all that is shown and stays` | `{band}` |
 | `pinGroup` / `pinNone` / `pinStart` / `pinEnd` / `pinNarrow` | `Pin` / `Not pinned` / `At the start` / `At the end` / `Only on narrow screens` — the column menu's group and its four choices | |
 | `toolbarGroup` / `filterRowToggle` | `Grid tools` / `Filter row` | |
+| `toolbarRefused` | `Toolbar items not applied. {problems}` — said when `set_toolbar` was refused | `{problems}` |
 | `densityGroup` / `densityCompact` / `densityNormal` / `densityComfortable` | `Density` / `Compact` / `Normal` / `Comfortable` | |
 | `chipsGroup` / `chipsClear` | `Active filters` / `Remove all` | |
 | `chipRemove` / `filterRemoved` | `Remove {filter}` / `{filter} removed` | `{filter}` |
