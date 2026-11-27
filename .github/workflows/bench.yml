@@ -68,6 +68,7 @@ jobs:
             "${bench[@]}"
           fi
       - name: Bench 2
+        if: inputs.extra2 != ''
         env:
           ROWS: ${{ inputs.rows }}
           GRIDS: ${{ inputs.grids }}

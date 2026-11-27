@@ -203,7 +203,7 @@ function probeReport(entries, calls, frames) {
  * a new `transform` each, a tree of the same size that has nothing to do with the grid, and
  * nothing at all. Median of 40, ms.
  */
-function microbench(scroller) {
+export function microbench(scroller) {
   const time = (setup, force) => {
     const t = [];
     for (let i = 0; i < 40; i++) {
@@ -217,7 +217,10 @@ function microbench(scroller) {
   };
   const rows = [...scroller.querySelectorAll("tbody tr")];
   const saved = rows.map((r) => r.style.cssText);
-  const grid = time((i) => rows.forEach((r, k) => (r.style.transform = `translateY(${k * 42 + (i % 2) * 0.5}px)`)), () => scroller.clientHeight);
+  const move = (i) => rows.forEach((r, k) => (r.style.transform = `translateY(${k * 42 + (i % 2) * 0.5}px)`));
+  const style = time(move, () => getComputedStyle(rows[0]).color);
+  scroller.clientHeight;
+  const grid = time(move, () => scroller.clientHeight);
   rows.forEach((r, k) => (r.style.cssText = saved[k]));
   scroller.clientHeight;
   const box = document.createElement("div");
@@ -237,7 +240,7 @@ function microbench(scroller) {
   const plain = time((i) => kids.forEach((r, k) => (r.style.transform = `translateY(${k * 42 + (i % 2) * 0.5}px)`)), () => box.clientHeight);
   box.remove();
   const idle = time(() => {}, () => scroller.clientHeight);
-  return { grid, plain, idle, rows: rows.length };
+  return { grid, style, plain, idle, rows: rows.length };
 }
 
 async function scroll(adapter) {
@@ -395,6 +398,17 @@ export async function start(adapter) {
     await window.__metrics?.("before-windows");
     if (adapter.painted) result.windows = await windows(adapter, ROWS);
     await window.__metrics?.("after-windows");
+    if (params.has("micro3")) {
+      const m = {};
+      const scroller = adapter.scroller();
+      m.asis = microbench(scroller);
+      await window.__gc?.();
+      m.gc = microbench(scroller);
+      rows = null;
+      await window.__gc?.();
+      m.release = microbench(scroller);
+      result.micro3 = m;
+    }
     await mark("scroll:start");
     result.scroll = await scroll(adapter);
     await mark("scroll:end");

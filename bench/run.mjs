@@ -293,7 +293,7 @@ for (const grid of GRIDS) {
     await page.goto("about:blank");
     await settle(300);
     const baseline = treeMiB();
-    await page.goto(`${base}/pages/${grid}.html?rows=${ROWS}&sync=1&server=${SERVER_PORT}${PROBE ? "&probe=1" : ""}${args.includes("--reuse") ? "&reuse=1" : ""}${args.includes("--micro") ? "&micro=1" : ""}${RELEASE ? "&release=1" : ""}`);
+    await page.goto(`${base}/pages/${grid}.html?rows=${ROWS}&sync=1&server=${SERVER_PORT}${PROBE ? "&probe=1" : ""}${args.includes("--micro3") ? "&micro3=1" : ""}${args.includes("--reuse") ? "&reuse=1" : ""}${args.includes("--micro") ? "&micro=1" : ""}${RELEASE ? "&release=1" : ""}`);
     const memory = {};
     try {
       for (;;) {
@@ -372,6 +372,7 @@ if (PROBE) {
       const d = a && b ? Object.fromEntries(pick.map((k) => [k, +(k.endsWith("Size") ? (b[k] - a[k]) / 1048576 : k.endsWith("Duration") ? (b[k] - a[k]) * 1000 : b[k] - a[k]).toFixed(1)])) : null;
       const grown = ["before-windows", "after-windows", "steps:start", "steps:end"].map((k) => `${k} ${r.metrics?.[k]?.Nodes}/${r.metrics?.[k]?.LayoutObjects}`).join(" · ");
       console.log(`PROBE ${grid} run ${i} nodes/layoutObjects: ${grown}`);
+      if (r.micro3) console.log(`PROBE ${grid} run ${i} micro3 ${JSON.stringify(r.micro3)}`);
       const e = r.metrics?.["steps:end"];
       console.log(`PROBE ${grid} run ${i} micro ${JSON.stringify(r.scroll?.micro)} end: ${JSON.stringify(e && Object.fromEntries(["Nodes", "LayoutObjects", "JSEventListeners", "JSHeapTotalSize", "JSHeapUsedSize", "Documents", "Frames"].map((k) => [k, k.startsWith("JSHeap") ? +(e[k] / 1048576).toFixed(0) : e[k]])))}`);
       console.log(`PROBE ${grid} run ${i} steps(120): metrics ${JSON.stringify(d)} (durations ms, heap MiB)`);
