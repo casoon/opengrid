@@ -197,6 +197,49 @@ function probeReport(entries, calls, frames) {
   return { totals, invokers, worst, over33: frames.filter((f) => f > 33.4).length, p50: sorted[60], p95: sorted[114] };
 }
 
+
+/**
+ * EXPERIMENT (#518): what a forced style recalc costs in this page's state: the grid's rows given
+ * a new `transform` each, a tree of the same size that has nothing to do with the grid, and
+ * nothing at all. Median of 40, ms.
+ */
+function microbench(scroller) {
+  const time = (setup, force) => {
+    const t = [];
+    for (let i = 0; i < 40; i++) {
+      setup(i);
+      const s = performance.now();
+      force();
+      t.push(performance.now() - s);
+    }
+    t.sort((a, b) => a - b);
+    return +t[20].toFixed(2);
+  };
+  const rows = [...scroller.querySelectorAll("tbody tr")];
+  const saved = rows.map((r) => r.style.cssText);
+  const grid = time((i) => rows.forEach((r, k) => (r.style.transform = `translateY(${k * 42 + (i % 2) * 0.5}px)`)), () => scroller.clientHeight);
+  rows.forEach((r, k) => (r.style.cssText = saved[k]));
+  scroller.clientHeight;
+  const box = document.createElement("div");
+  box.style.cssText = "position:fixed;left:0;top:0;width:300px;height:200px;overflow:hidden";
+  for (let k = 0; k < 40; k++) {
+    const r = document.createElement("div");
+    r.style.cssText = "position:absolute";
+    for (let c = 0; c < 6; c++) {
+      const d = document.createElement("span");
+      d.textContent = "x";
+      r.append(d);
+    }
+    box.append(r);
+  }
+  document.body.append(box);
+  const kids = [...box.children];
+  const plain = time((i) => kids.forEach((r, k) => (r.style.transform = `translateY(${k * 42 + (i % 2) * 0.5}px)`)), () => box.clientHeight);
+  box.remove();
+  const idle = time(() => {}, () => scroller.clientHeight);
+  return { grid, plain, idle, rows: rows.length };
+}
+
 async function scroll(adapter) {
   const scroller = adapter.scroller();
   const rowHeight = adapter.rowHeight();
@@ -216,6 +259,7 @@ async function scroll(adapter) {
     // Not every browser reports them.
   }
   const probeCalls = params.has("probe") ? installProbe() : null;
+  const micro = params.has("micro") ? microbench(scroller) : null;
   scroller.scrollTop = 0;
   await frame();
   const frames = [];
@@ -250,6 +294,7 @@ async function scroll(adapter) {
     // The 20 jumps (a drag of the thumb) apart from the 120 wheel steps.
     jumpsOver33: frames.slice(120).filter((f) => f > 33.4).length,
     loaf: { steps: longFrames(loafs, fineStart, jumpStart), jumps: longFrames(loafs, jumpStart, last) },
+    micro,
     probe: probeSteps ? probeReport(loafs.filter((e) => e.startTime >= fineStart && e.startTime < jumpStart), probeSteps, frames.slice(0, 120)) : null,
     moved,
   };
