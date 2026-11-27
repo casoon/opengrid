@@ -2823,6 +2823,11 @@ fn on_key_down(event: KeyboardEvent) {
         drop(borrowed);
         let refused = match event.key().as_str() {
             " " => !picks,
+            // A templated data row's control takes `Enter` first (issue #533).
+            "Enter" if matches!(active, ActiveCell::Data(cell) if template::enter(&host, cell)) => {
+                event.prevent_default();
+                return;
+            }
             "Enter" if matches!(active, ActiveCell::Data(_)) => !editable_group_row(&host, active),
             "Enter" => !picks,
             key => {

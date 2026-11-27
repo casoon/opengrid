@@ -66,7 +66,7 @@ pub(super) fn draw_cells(host: &HtmlElement, root: &ShadowRoot) {
     }
     let columns: Vec<(usize, String, bool)> = {
         let borrowed = runtime.borrow();
-        if borrowed.grouping.is_some() || borrowed.tree.is_some() {
+        if borrowed.tree.is_some() {
             return;
         }
         borrowed
@@ -84,10 +84,21 @@ pub(super) fn draw_cells(host: &HtmlElement, root: &ShadowRoot) {
             })
             .collect()
     };
+    // Under grouping the pooled `<tr>` also draws a group header or the total
+    // (`data-kind`): an aggregate is not a record, so its cells stay untemplated
+    // and a template a recycled cell still carries is let go of.
+    if let Ok(stale) = root.query_selector_all("tbody tr[data-kind] td[data-template]") {
+        for index in 0..stale.length() {
+            if let Some(td) = stale.item(index).and_then(|n| n.dyn_into::<Element>().ok()) {
+                let _ = td.remove_attribute("data-template");
+            }
+        }
+    }
     for (col, name, is_list) in columns {
         let function = (!is_list).then(|| function_for(host, &name)).flatten();
-        let Ok(cells) = root.query_selector_all(&format!("tbody td[data-col=\"{col}\"][data-row]"))
-        else {
+        let Ok(cells) = root.query_selector_all(&format!(
+            "tbody tr:not([data-kind]) td[data-col=\"{col}\"][data-row]"
+        )) else {
             continue;
         };
         for index in 0..cells.length() {
