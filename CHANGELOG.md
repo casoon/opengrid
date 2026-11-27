@@ -119,10 +119,12 @@ Two things belong in every release entry and are easy to leave out:
   `{ scale: 2 }` stores `612` and shows, edits, filters, pastes and sums `6,12`, in the page's
   notation, with `set_formats` applied to the scaled number. More decimals than the scale are
   refused with the reason, never rounded. The query, the events, the view's filters and the exports
-  keep the stored integer; a validator gets it too. Any other type, a lookup column, and a table
-  report it like every mistake in the call
-  ([#537](https://github.com/casoon/opengrid/issues/537)). Details:
+  keep the stored integer; a validator gets it too. Any other type and a lookup column report it
+  like every mistake in the call ([#537](https://github.com/casoon/opengrid/issues/537)). Details:
   [Scaled integer columns](https://casoon.github.io/opengrid/docs/api/#scaled-integer-columns).
+- **Grid:** `<opengrid-table>` takes `scale` too and shows the scaled number in its cells, in the
+  page's notation and through the column's format; its query and an export keep the stored integer
+  ([#537](https://github.com/casoon/opengrid/issues/537)).
 
 ### Changed
 

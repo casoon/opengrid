@@ -593,7 +593,6 @@ pub fn validate_for_table(
             (entry.pin.is_some(), "pin"),
             (entry.pin_narrow.is_some(), "pinNarrow"),
             (entry.lookup.is_some(), "lookup"),
-            (entry.scale.is_some(), "scale"),
             (entry.band.is_some(), "band"),
         ] {
             if given {
@@ -844,13 +843,50 @@ mod tests {
         )
         .expect("a declared column");
         assert_eq!(hidden[0].1.scale, Some(2));
+    }
 
-        // A table has no scale: refused by name, not ignored.
-        let problems = validate_for_table(&scaled("id", Some(2)), &schema(), &[])
-            .expect_err("a table refuses it");
+    /// A table applies `scale` (issue #537) and checks it as the grid does: an
+    /// `int64` column, a whole number of places, 0 is none. The grid's own
+    /// options stay refused beside it.
+    #[test]
+    fn a_table_takes_a_scale_and_checks_it_like_the_grid() {
+        let scaled = |name: &str, places: Option<u8>| {
+            vec![(
+                name.to_owned(),
+                RawColumn {
+                    scale: Some(places),
+                    ..RawColumn::default()
+                },
+            )]
+        };
+        let checked = validate_for_table(&scaled("id", Some(2)), &schema(), &[]).expect("a scale");
+        assert_eq!(checked[0].1.scale, Some(2));
+        assert_eq!(ColumnStyles::new(checked).scale("id"), Some(2));
+        let checked = validate_for_table(&scaled("id", Some(0)), &schema(), &[]).expect("none");
+        assert_eq!(checked[0].1.scale, None);
+
+        let problems = validate_for_table(&scaled("amount", Some(2)), &schema(), &[])
+            .expect_err("a decimal has its own scale");
+        assert_eq!(problems.len(), 1);
+        assert_eq!(problems[0].reason, "a scale needs an int64 column");
+        let problems = validate_for_table(&scaled("id", None), &schema(), &[])
+            .expect_err("not a whole number of places");
         assert_eq!(
             problems[0].reason,
-            "scale belongs to the grid, not to a table"
+            "scale is not a whole number from 0 to 18"
+        );
+
+        let beside = RawColumn {
+            scale: Some(Some(2)),
+            aggregate: Some("sum".to_owned()),
+            ..RawColumn::default()
+        };
+        let problems = validate_for_table(&[("id".to_owned(), beside)], &schema(), &[])
+            .expect_err("the aggregate is still the grid's");
+        assert_eq!(problems.len(), 1);
+        assert_eq!(
+            problems[0].reason,
+            "aggregate belongs to the grid, not to a table"
         );
     }
 

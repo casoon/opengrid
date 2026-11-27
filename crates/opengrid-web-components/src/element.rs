@@ -835,23 +835,30 @@ impl HostLook {
         schema: &opengrid_types::Schema,
         columns: &[String],
     ) -> Result<Self, String> {
+        #[cfg(feature = "grid")]
+        let styles = crate::presentation::ColumnStyles::new(
+            crate::presentation::validate_for_table(
+                &crate::presentation::raw(host),
+                schema,
+                columns,
+            )
+            .map_err(|problems| {
+                problems
+                    .iter()
+                    .map(|problem| format!("{}: {}", problem.column, problem.reason))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            })?,
+        );
+        let formatter = crate::formats::Formatter::new(&crate::formats::formats(host), schema);
+        // A scaled integer column shows the scaled number (issue #537), through
+        // the same formatter path as the grid's.
+        #[cfg(feature = "grid")]
+        let formatter = formatter.with_scales(&styles, schema);
         Ok(Self {
-            formatter: crate::formats::Formatter::new(&crate::formats::formats(host), schema),
+            formatter,
             #[cfg(feature = "grid")]
-            styles: crate::presentation::ColumnStyles::new(
-                crate::presentation::validate_for_table(
-                    &crate::presentation::raw(host),
-                    schema,
-                    columns,
-                )
-                .map_err(|problems| {
-                    problems
-                        .iter()
-                        .map(|problem| format!("{}: {}", problem.column, problem.reason))
-                        .collect::<Vec<_>>()
-                        .join(" ")
-                })?,
-            ),
+            styles,
         })
     }
 }
