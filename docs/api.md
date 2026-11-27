@@ -250,6 +250,7 @@ An interactive `<table role="grid">`: virtualized, keyboard-driven, filterable.
 | `tree` | Shows the rows as a **tree**: the field that holds a row's parent key, `tree="parent_id"`. See [Tree](#tree). |
 | `tree-key` | The field the parent key refers to. `id` when absent. |
 | `row-key` | The field that names a record: `opengrid-cell-change` carries its value as `key`, and `set_cell_state` and `set_values` name rows by it. Any field of the source — one left out of `columns` is fetched but never shown. See [Saving edits](#saving-edits). |
+| `row-muted` | The boolean field that **mutes a row**: a row whose value is `true` is drawn in the muted ink, has the part `row-muted` and is described with `rowMuted`. Any field of the source — one left out of `columns` is fetched but never shown. See [Muted rows](#muted-rows). |
 | `filter` | The **page's filter**, as the wire's JSON: `{"field":"country","op":"eq","value":"DE"}`, `{"and":[…]}`. And-ed onto every query the grid sends; not the reader's and not in the view. See [The page's filter](#the-pages-filter). |
 | `collation` | The **locale text sorts by**: `de`, `sv`, `sr-Latn`, `und` for the root collation. Without it text sorts by code point. See [Sorting text by a locale](#sorting-text-by-a-locale). |
 | `search` | Puts a **search field** above the grid: free text, or a filter written out. See [Search](#search). |
@@ -411,6 +412,35 @@ What the type already answers is not configurable: which filter operators a
 column offers is meaning, not taste. The alignment is taste, so it may be
 overridden. A column that is declared in `columns` but currently hidden keeps
 its configuration — its type-dependent checks run again when it is shown.
+
+### Muted rows
+
+`muted` is a column's. A **row** that is inactive, archived or only there for context says so with
+`row-muted` (issue #534), the name of a boolean field of the source:
+
+```html
+<opengrid-grid datasource="prices" columns="article,price" row-key="id" row-muted="inactive"></opengrid-grid>
+```
+
+A row whose value in that field is `true` is drawn in the muted ink (`--og-ink-muted`) and carries
+`data-muted` and the part **`row-muted`** beside `row`: `opengrid-grid::part(row-muted)` is the page's
+hook, never a class string. Any other value — `false`, `NULL`, a field that is not a boolean — is an
+ordinary row. Colour alone would be 1.4.1, so a muted row is also **described**: its `aria-describedby`
+names the page's word for it, `rowMuted` in `set_texts` (`inactive` by default — set the word that is
+true for the data: "archived", "hidden from the customer"). Under `forced-colors`, where the muted ink is
+the ink, the letters are slanted instead.
+
+- **A field, not a column.** The field may be left out of `columns` — it is fetched with every query
+  and never drawn, like a [`row-key`](#saving-edits) that is not shown. One of the shown columns works
+  as well, and then an edit of it mutes or un-mutes the row at once.
+- **The record decides.** The state follows the record, not the slot: scrolling, paging, a sort and a
+  filter move it with the row. It holds in a [grouped](#grouping) grid and in a [tree](#tree) as well;
+  a group header and a total are never muted.
+- **Presentation only.** The row stays selectable and editable; the selection's tint and bar, the hover
+  and the focus ring show on a muted row as on any other. Exports and print are unchanged — a page that
+  wants the state in an export names the field as a column.
+- Setting or changing the attribute asks the source again and keeps the data, the sort, the filter and
+  the focus. Adapters take it as `rowMuted`.
 
 ### Toolbar
 
@@ -2271,7 +2301,7 @@ theme that animates a part.
 `facet-pill`, `facet-pills`, `facet-value`, `facets`, `facets-head`, `facets-toggle`, `filter`,
 `filter-builder`, `filter-builder-dialog`, `filter-clear`, `filter-dialog`, `filter-operator`, `filter-row-toggle`, `filter-value`, `footer`,
 `field-group`, `field-menu`, `group-mark`, `group-toggle`, `grouping-menu`, `header`, `layout`, `list`, `list-item`, `list-item-remove`, `listbox`, `menu-label`, `operator-menu`, `page-first`, `page-label`, `page-last`, `page-next`,
-`page-previous`, `pager`, `paste-apply`, `paste-discard`, `paste-preview`, `paste-summary`, `position`, `record-dialog`, `refresh`, `row`, `row-header`, `scroll-position`, `search`, `search-hint`, `search-input`, `search-list`,
+`page-previous`, `pager`, `paste-apply`, `paste-discard`, `paste-preview`, `paste-summary`, `position`, `record-dialog`, `refresh`, `row`, `row-header`, `row-muted`, `scroll-position`, `search`, `search-hint`, `search-input`, `search-list`,
 `select`, `select-all`, `select-mark`, `sort-button`, `sort-direction`, `sort-index`, `source`, `status`,
 `table`, `toolbar`, `toolbar-item`, `toolbar-menu`, `total-row`, `validation`, `viewport`.
 
@@ -2447,6 +2477,7 @@ boolean reads — that is `set_formats`.
 | `calcValue` | `value` — a measure shown as it is, in that button and its menu | |
 | `shareOfRow` / `shareOfColumn` / `shareOfTotal` / `runningTotal` | `share of row` / `share of column` / `share of total` / `running total` — what a [calculated measure](#calculated-measures) is shown as: in the button and its menu, after the measure's title in its column header, and in the headers of the CSV and the XLSX | |
 | `treeContext` | `context` — a tree's row shown only because a match is below it | |
+| `rowMuted` | `inactive` — what a [muted row](#muted-rows) (`row-muted`) is described by; the page's word for it | |
 | `subtreeCell` | `{shown}, {aggregate} of the subtree` — what a node's cell says when it also shows its subtree's summary: "120 · Σ 1,450, Sum of the subtree". `{shown}` is the cell's visible text, so the name contains it (WCAG 2.5.3); German: `{shown}, {aggregate} im Teilbaum`. A text you set **without** `{shown}` is used exactly as written, and its name then does not contain the visible text — your decision. | `{shown}`, `{value}`, `{aggregate}`, `{total}` |
 | `subtreeOnly` | `{shown}, {aggregate} of the subtree` — the same for a node without a value of its own: "Σ 1,450, Sum of the subtree" | `{shown}`, `{aggregate}`, `{total}` |
 | `treeOrphans` | `Without a parent, shown at the top: {count}` | `{count}` |

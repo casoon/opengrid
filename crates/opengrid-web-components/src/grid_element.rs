@@ -510,6 +510,12 @@ fn row_key_of(host: &HtmlElement) -> Option<opengrid_types::FieldName> {
         .and_then(|name| opengrid_types::FieldName::new(name.trim()).ok())
 }
 
+/// The `row-muted` field, if the attribute names a valid one (issue #534).
+fn row_muted_of(host: &HtmlElement) -> Option<opengrid_types::FieldName> {
+    host.get_attribute(grid::ROW_MUTED_ATTRIBUTE)
+        .and_then(|name| opengrid_types::FieldName::new(name.trim()).ok())
+}
+
 /// Whether the host pages: a `page-size` that reads as a size. `page-size="0"`
 /// or a word is no paging, so it refuses nothing (issue #233).
 fn is_paging(host: &HtmlElement) -> bool {
@@ -1036,6 +1042,10 @@ fn on_attribute_changed(
         // A tree refuses `page-size`: either way round, it is asked again.
         PAGE_SIZE_ATTRIBUTE if host.has_attribute(grid::TREE_ATTRIBUTE) => retree(&host),
         grid::TREE_ATTRIBUTE | grid::TREE_KEY_ATTRIBUTE => retree(&host),
+        // The field rides with the query when it is not a column: asked again,
+        // and the same result moved, so what the reader has open stays (#534).
+        grid::ROW_MUTED_ATTRIBUTE if host.has_attribute(grid::TREE_ATTRIBUTE) => retree(&host),
+        grid::ROW_MUTED_ATTRIBUTE => run_query(&host, QueryKind::Window, false),
         grid::ADD_ROW_ATTRIBUTE => {
             render(&host, false);
             run_query(&host, QueryKind::Window, false);
@@ -1808,6 +1818,9 @@ fn settle(
                 // the middle of — an editor, unsaved marks — stays (issue #224).
                 let hidden = runtime.tree.is_none() && row_key_hidden(host);
                 runtime.state.set_row_key_hidden(hidden);
+                runtime
+                    .state
+                    .set_row_muted(row_muted_of(host), row_muted_hidden(host));
                 let patches = if kind == QueryKind::Window {
                     runtime.state.apply_window_result(result)
                 } else {
@@ -1878,6 +1891,13 @@ fn settle(
 /// every window, never drawn (issues #495, #529).
 fn row_key_hidden(host: &HtmlElement) -> bool {
     row_key_of(host).is_some_and(|key| !columns_of(host).iter().any(|name| name == key.as_str()))
+}
+
+/// Whether the `row-muted` field is outside the shown columns: fetched with
+/// every window, never drawn (issue #534).
+fn row_muted_hidden(host: &HtmlElement) -> bool {
+    row_muted_of(host)
+        .is_some_and(|field| !columns_of(host).iter().any(|name| name == field.as_str()))
 }
 
 /// Whether the grid selects by key right now (issue #322): its records have a
@@ -3536,6 +3556,22 @@ fn sync_descriptions(host: &HtmlElement) {
             );
             wanted.push(id);
         }
+    }
+    // A muted row is described by the page's word for it (issue #534).
+    if root
+        .query_selector(&format!(r#"[aria-describedby~="{}"]"#, grid::ROW_MUTED_ID))
+        .ok()
+        .flatten()
+        .is_some()
+    {
+        description_node(
+            &document,
+            &store,
+            grid::ROW_MUTED_ID,
+            &tree_context.row_muted,
+            Some(&tree_context.lang),
+        );
+        wanted.push(grid::ROW_MUTED_ID.to_owned());
     }
     let context = root
         .query_selector(&format!(

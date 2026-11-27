@@ -361,6 +361,11 @@ pub const TREE_KEY_ATTRIBUTE: &str = "tree-key";
 /// its value as `key`, and `set_cell_state` and `set_values` name rows by it.
 pub const ROW_KEY_ATTRIBUTE: &str = "row-key";
 
+/// The boolean field that mutes a row (issue #534): a row whose value is `true`
+/// is drawn in the muted ink, says so with the text `rowMuted`, and carries the
+/// part `row-muted`. Presentation only: the row stays selectable and editable.
+pub const ROW_MUTED_ATTRIBUTE: &str = "row-muted";
+
 /// The boolean attribute that puts a toolbar above the grid (point 65): the
 /// active filters as chips, a switch for the filter row, the column list and
 /// the density.
@@ -720,6 +725,7 @@ pub const OBSERVED: &[&str] = &[
     TREE_ATTRIBUTE,
     TREE_KEY_ATTRIBUTE,
     ROW_KEY_ATTRIBUTE,
+    ROW_MUTED_ATTRIBUTE,
     COLUMN_MENU_ATTRIBUTE,
     FILTER_BUILDER_ATTRIBUTE,
     TOOLBAR_ATTRIBUTE,
@@ -2577,6 +2583,10 @@ pub fn grid_css() -> String {
          tr:not([data-kind]) td[data-mono] {{ font-family: var({FONT_MONO_PROPERTY}); }}
          tr:not([data-kind]) td[data-emphasis] {{ font-weight: 600; }}
          tr:not([data-kind]) td[data-muted] {{ color: var({INK_MUTED_PROPERTY}); }}
+         /* A muted row (issue #534) is the muted ink on every cell that sets no
+            colour of its own; the background is the row's, so the selection's
+            tint and bar, the hover and the focus ring still show. */
+         tbody tr[data-muted] {{ color: var({INK_MUTED_PROPERTY}); }}
          th {{ height: var({HEADER_HEIGHT_PROPERTY}); background: var({SURFACE_2_PROPERTY});
                color: var({INK_MUTED_PROPERTY}); text-align: start;
                font-size: 0.75rem; font-weight: 500; text-transform: uppercase;
@@ -2610,6 +2620,9 @@ pub fn grid_css() -> String {
               looks like any other (WCAG 1.4.1, 1.4.11). A border is kept. */
            tbody tr[data-selected=\"true\"] > :first-child {{
                     border-inline-start: 4px solid Highlight; }}
+           /* The muted ink is the ink here, so a muted row says it in the
+              letters: slanted, which no palette takes away (1.4.1). */
+           tbody tr[data-muted] {{ font-style: italic; }}
          }}
          @media (prefers-reduced-motion: reduce) {{
            * {{ animation-duration: 0.01ms !important; animation-iteration-count: 1 !important;
@@ -4353,6 +4366,7 @@ pub fn patch_grid(
                 }
                 let selected = state.is_selected(row);
                 selection_attributes(buffer, row_nodes.row, selected, offered);
+                patch_row_muted(buffer, row_nodes.row, state.row_muted(row));
                 if let (Some(cell), Some(mark)) = (row_nodes.select, row_nodes.select_mark) {
                     buffer.push(Patch::SetAttribute {
                         node: cell,
@@ -4498,6 +4512,7 @@ pub fn patch_grid(
                 // styling hook; `aria-selected` is the announcement.
                 let selected = state.is_selected(row);
                 selection_attributes(buffer, row_nodes.row, selected, offered);
+                patch_row_muted(buffer, row_nodes.row, state.row_muted(row));
                 if let (Some(cell), Some(mark)) = (row_nodes.select, row_nodes.select_mark) {
                     buffer.push(Patch::SetAttribute {
                         node: cell,
@@ -4898,13 +4913,14 @@ fn patch_group_row(
         }),
     }
     // A group is not a record: it cannot be selected, and saying
-    // `aria-selected="false"` about it would invite trying.
+    // `aria-selected="false"` about it would invite trying. Nor is it muted.
     for name in ["aria-selected", "data-selected"] {
         buffer.push(Patch::RemoveAttribute {
             node: row_nodes.row,
             name: name.to_owned(),
         });
     }
+    patch_row_muted(buffer, row_nodes.row, false);
 
     // One slice of values per chosen summary: a range answers two.
     let values = crate::grouping::split(grouping.aggregates(), aggregates);
@@ -5209,6 +5225,34 @@ fn selection_attributes(buffer: &mut PatchBuffer, row: NodeId, selected: bool, o
     }
 }
 
+/// A muted row (issue #534): the marker the sheet draws by, the part a page
+/// reaches it through, and the hidden text it is described by. A pooled `<tr>`
+/// is recycled, so a row that is not muted takes all three off again.
+fn patch_row_muted(buffer: &mut PatchBuffer, row: NodeId, muted: bool) {
+    let part = if muted { "row row-muted" } else { "row" };
+    buffer.push(Patch::SetAttribute {
+        node: row,
+        name: "part".to_owned(),
+        value: part.to_owned(),
+    });
+    if muted {
+        for (name, value) in [("data-muted", "true"), ("aria-describedby", ROW_MUTED_ID)] {
+            buffer.push(Patch::SetAttribute {
+                node: row,
+                name: name.to_owned(),
+                value: value.to_owned(),
+            });
+        }
+    } else {
+        for name in ["data-muted", "aria-describedby"] {
+            buffer.push(Patch::RemoveAttribute {
+                node: row,
+                name: name.to_owned(),
+            });
+        }
+    }
+}
+
 /// Updates the paging controls, or hides them while the grid virtualizes.
 ///
 /// A button that cannot do anything is **disabled**, not missing: the row of
@@ -5361,6 +5405,10 @@ fn patch_tree_row(
 /// The id of the hidden node that says "context", which the first cell of a
 /// tree row shown only for the match below it is described by.
 pub const TREE_CONTEXT_ID: &str = "og-tree-context";
+
+/// The id of the hidden node that says a row is muted (issue #534): the text
+/// `rowMuted`, which a muted row is described by.
+pub const ROW_MUTED_ID: &str = "og-row-muted";
 
 /// The id prefix of the hidden nodes that say a header's place among several
 /// sort keys; the 1-based position follows.
@@ -7453,7 +7501,8 @@ mod tests {
         // Its identity and position must not move — that is what keeps the
         // browser's focus where it is. Since point 35 its **selection** does
         // follow: `aria-selected` touches neither, and without it, selecting
-        // the row you are standing on would show nothing.
+        // the row you are standing on would show nothing. So does whether it is
+        // muted (issue #534): a marker, a part and a description, no identity.
         let touched: Vec<&str> = buffer
             .patches()
             .iter()
@@ -7467,8 +7516,14 @@ mod tests {
             .collect();
         assert_eq!(
             touched,
-            ["aria-selected", "data-selected"],
-            "only the selection may be written to the pinned row"
+            [
+                "aria-selected",
+                "data-selected",
+                "part",
+                "data-muted",
+                "aria-describedby"
+            ],
+            "only the selection and the muted state may be written to the pinned row"
         );
         assert!(
             !buffer.patches().iter().any(|patch| matches!(

@@ -916,14 +916,20 @@ pub(super) fn columns_of(host: &HtmlElement) -> Vec<String> {
 }
 
 /// What a query selects: the shown columns, and the `row-key` field after them
-/// when the layout leaves it out — hiding is display only (issue #495). The
-/// state takes that last column off the result again.
+/// when the layout leaves it out — hiding is display only (issue #495) — and
+/// then the `row-muted` field, when that is no column either (issue #534). The
+/// state takes those last columns off the result again.
 pub(super) fn select_of(host: &HtmlElement) -> Vec<String> {
     let mut select = columns_of(host);
     if let Some(key) = row_key_of(host)
         && !select.iter().any(|name| name == key.as_str())
     {
         select.push(key.as_str().to_owned());
+    }
+    if let Some(muted) = row_muted_of(host)
+        && !select.iter().any(|name| name == muted.as_str())
+    {
+        select.push(muted.as_str().to_owned());
     }
     select
 }

@@ -1233,6 +1233,7 @@ export type TextKey =
   | "shareOfTotal"
   | "runningTotal"
   | "treeContext"
+  | "rowMuted"
   | "subtreeCell"
   | "subtreeOnly"
   | "treeOrphans"
@@ -1711,6 +1712,8 @@ export interface OpengridGridAttributes {
   "tree-key"?: string;
   /** The field that names a record: `key` in `opengrid-cell-change`. */
   "row-key"?: string;
+  /** The boolean field that mutes a row: a row whose value is `true` is drawn in the muted ink, has the part `row-muted` and is described with the text `rowMuted`. */
+  "row-muted"?: string;
   search?: string;
   facets?: string;
   toolbar?: string;

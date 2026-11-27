@@ -225,6 +225,9 @@ pub struct GridTexts {
     /// described, the orphans (T2), a level too large to load, and why a
     /// tree is not shown beside `page-size` or grouped.
     pub tree_context: String,
+    /// What a muted row (`row-muted`, issue #534) is described by, in the
+    /// words of the page: "inactive", "archived". Not live.
+    pub row_muted: String,
     /// A node's cell that also shows its subtree's summary (T7, issue #165):
     /// `{shown}` is the cell's visible text — "120 · Σ 1,450" — so that the
     /// name contains it (WCAG 2.5.3); `{value}` is the node's own,
@@ -610,6 +613,7 @@ pub(crate) const KEYS: &[&str] = &[
     "shareOfTotal",
     "runningTotal",
     "treeContext",
+    "rowMuted",
     "subtreeCell",
     "subtreeOnly",
     "treeOrphans",
@@ -889,6 +893,7 @@ impl Default for GridTexts {
             share_of_total: "share of total".to_owned(),
             running_total: "running total".to_owned(),
             tree_context: "context".to_owned(),
+            row_muted: "inactive".to_owned(),
             subtree_cell: "{shown}, {aggregate} of the subtree".to_owned(),
             subtree_only: "{shown}, {aggregate} of the subtree".to_owned(),
             tree_orphans: "Without a parent, shown at the top: {count}".to_owned(),
@@ -1957,6 +1962,7 @@ mod host {
         overwrite(&mut texts.share_of_total, string("shareOfTotal"));
         overwrite(&mut texts.running_total, string("runningTotal"));
         overwrite(&mut texts.tree_context, string("treeContext"));
+        overwrite(&mut texts.row_muted, string("rowMuted"));
         overwrite(&mut texts.subtree_cell, string("subtreeCell"));
         overwrite(&mut texts.subtree_only, string("subtreeOnly"));
         overwrite(&mut texts.tree_orphans, string("treeOrphans"));

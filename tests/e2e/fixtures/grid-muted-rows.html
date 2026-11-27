@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>opengrid muted rows fixture</title>
+    <style>
+      opengrid-grid {
+        display: block;
+        height: 360px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid muted rows fixture</h1>
+      <opengrid-grid
+        label="Prices"
+        datasource="prices"
+        columns="name,qty"
+        window-size="12"
+        row-key="id"
+        row-muted="inactive"
+        selection
+      ></opengrid-grid>
+    </main>
+    <script type="module">
+      // Issue #534: `row-muted` names a boolean field; a row whose value is `true`
+      // is muted. Sixty records, and every third one (3, 6, 9, …) is inactive.
+      // The query string sets attributes on the grid: `?columns=name,qty,inactive`
+      // shows the field, `?group-by=region`, `?tree=parent_id`, `?page-size=10`,
+      // `?theme=dark`. `?words` sets the page's word for a muted row.
+      import { loadOpengrid, createLocalProvider } from "/packages/opengrid/loader.js";
+      import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+
+      window.__changes = [];
+      document.addEventListener("opengrid-cell-change", (event) => window.__changes.push(event.detail));
+
+      await init();
+      const schema = JSON.stringify({
+        fields: [
+          { name: "id", type: "int64", nullable: false },
+          { name: "name", type: "utf8", nullable: false },
+          { name: "qty", type: "int64", nullable: false },
+          { name: "region", type: "utf8", nullable: false },
+          { name: "parent_id", type: "int64", nullable: true },
+          { name: "inactive", type: "bool", nullable: false },
+        ],
+      });
+      // Six roots; every other record hangs under one of them.
+      const rows = Array.from({ length: 60 }, (_, index) => {
+        const id = index + 1;
+        return {
+          id,
+          name: `Item ${String(id).padStart(2, "0")}`,
+          qty: id * 10,
+          region: id % 2 === 0 ? "North" : "South",
+          parent_id: id <= 6 ? null : ((id - 7) % 6) + 1,
+          inactive: id % 3 === 0,
+        };
+      });
+      const provider = createLocalProvider(new Engine());
+      await provider.loadRows("prices", rows, schema);
+      // Set before the element is defined, as markup would.
+      const host = document.querySelector("opengrid-grid");
+      for (const [name, value] of new URLSearchParams(location.search)) {
+        if (name !== "words") host.setAttribute(name, value);
+      }
+      const loader = await loadOpengrid();
+      if (new URLSearchParams(location.search).has("words")) {
+        loader.module.set_texts(host, { rowMuted: "archived" });
+      }
+      loader.module.set_provider(host, provider);
+      window.__module = loader.module;
+      window.__ready = true;
+    </script>
+  </body>
+</html>

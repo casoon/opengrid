@@ -118,6 +118,14 @@ pub struct GridState {
     key_hidden: bool,
     /// The values and the type of that hidden key column, for the loaded page.
     key_held: Option<(Vec<Value>, opengrid_types::DataType)>,
+    /// The field of `row-muted` (issue #534): a row whose value is `true` is
+    /// drawn muted. Shown or not, like the key.
+    muted: Option<FieldName>,
+    /// The `row-muted` field is not a shown column: the query asks for it last
+    /// and [`apply`](Self::apply) takes it off the result, as it does the key.
+    muted_hidden: bool,
+    /// The values of that hidden column, for the loaded page.
+    muted_held: Option<Vec<Value>>,
     /// Rows the reader added, after the result (issue #183).
     added: AddedRows,
     /// What the page's validators said about cells the reader committed
@@ -154,6 +162,9 @@ impl GridState {
             saves: Saves::default(),
             key_hidden: false,
             key_held: None,
+            muted: None,
+            muted_hidden: false,
+            muted_held: None,
             added: AddedRows::default(),
             validations: Vec::new(),
             history: History::default(),
@@ -387,6 +398,46 @@ impl GridState {
         if !hidden {
             self.key_held = None;
         }
+    }
+
+    /// Names the field whose `true` mutes a row (`row-muted`, issue #534), and
+    /// says whether it is left out of the shown columns. Its column then comes
+    /// last in a result, after a hidden key, and is kept apart.
+    pub fn set_row_muted(&mut self, field: Option<FieldName>, hidden: bool) {
+        self.muted_hidden = field.is_some() && hidden;
+        if !self.muted_hidden {
+            self.muted_held = None;
+        }
+        self.muted = field;
+    }
+
+    /// Whether a loaded row is muted: the `row-muted` field is `true` in the
+    /// record that stands at `row` now. A row the reader has not added yet has
+    /// no hidden value and is not muted.
+    pub fn row_muted(&self, row: u64) -> bool {
+        let Some(name) = &self.muted else {
+            return false;
+        };
+        let value = match self.column_of(name) {
+            Some(col) => self.value_at(col, row),
+            None => {
+                if !matches!(self.added.kind(row, self.total_count), RowKind::Source) {
+                    return false;
+                }
+                let held = match &self.muted_held {
+                    Some(values) => Some(values),
+                    // The hidden key is that field, and already held.
+                    None if self.saves.key.as_ref() == Some(name) => {
+                        self.key_held.as_ref().map(|(values, _)| values)
+                    }
+                    None => None,
+                };
+                row.checked_sub(self.page_offset)
+                    .and_then(|slot| usize::try_from(slot).ok())
+                    .and_then(|slot| held?.get(slot))
+            }
+        };
+        matches!(value, Some(Value::Bool(true)))
     }
 
     /// Keeps the type of a hidden `row-key` field that an earlier result told,
@@ -788,6 +839,24 @@ impl GridState {
         // arrive in (issue #153).
         let mut result = result;
         self.overlay(&result.schema, &mut result.columns);
+        // The hidden `row-muted` field rides after it, and is taken off first
+        // (issue #534). A hidden key that is the same field stays the key's.
+        let mut muted_held = None;
+        if self.muted_hidden
+            && let Some(name) = &self.muted
+            && self.saves.key.as_ref() != Some(name)
+            && result
+                .schema
+                .fields()
+                .last()
+                .is_some_and(|f| f.name == *name)
+            && result.columns.len() == result.schema.len()
+        {
+            let mut fields = result.schema.fields().to_vec();
+            fields.pop();
+            muted_held = result.columns.pop();
+            result.schema = Schema::new(fields);
+        }
         // The hidden key rides last and is not drawn (issue #495).
         let mut held = None;
         if self.key_hidden
@@ -840,6 +909,7 @@ impl GridState {
         self.page_offset = first;
         self.page = result.columns;
         self.key_held = held;
+        self.muted_held = muted_held;
         self.status = status;
         // A result with fewer rows leaves no selection behind on rows that are
         // not there (issue #226).
@@ -1790,6 +1860,108 @@ mod edit_tests {
         state.hold_row_key_type(opengrid_types::DataType::Int64);
         assert_eq!(state.row_key_type(), Some(opengrid_types::DataType::Int64));
         assert_eq!(state.row_key(0), None);
+    }
+
+    /// A result of `id`, `country` and a boolean `off`, in that order, with
+    /// `off` last — the way the query asks for a field the grid does not show.
+    fn with_off(rows: &[(i64, &str, bool)]) -> QueryResult {
+        let fields = vec![
+            schema().fields()[0].clone(),
+            schema().fields()[1].clone(),
+            Field::new(FieldName::new("off").unwrap(), DataType::Bool),
+        ];
+        QueryResult::new(
+            Schema::new(fields),
+            vec![
+                rows.iter().map(|(id, _, _)| Value::Int64(*id)).collect(),
+                rows.iter()
+                    .map(|(_, country, _)| Value::Utf8((*country).to_owned()))
+                    .collect(),
+                rows.iter().map(|(_, _, off)| Value::Bool(*off)).collect(),
+            ],
+            rows.len() as u64,
+        )
+    }
+
+    /// A row is muted when the `row-muted` field is `true` in its record: the
+    /// field's own column, or — left out of the columns — the one the query
+    /// asked for last and the state took off the result (issue #534).
+    #[test]
+    fn a_row_is_muted_by_its_field_shown_or_hidden() {
+        let rows = [(1, "DE", false), (2, "FR", true), (3, "NL", false)];
+        // Shown: the column is in the schema.
+        let mut shown = GridState::new(with_off(&rows).schema);
+        shown.set_row_muted(Some(name("off")), false);
+        shown.set_window(Window::new(0, 10));
+        shown.apply_result(with_off(&rows));
+        assert_eq!(shown.schema().len(), 3);
+        assert_eq!(
+            [0, 1, 2].map(|row| shown.row_muted(row)),
+            [false, true, false]
+        );
+        // Hidden: apart from the schema, and still read by row.
+        let mut hidden = GridState::new(Schema::new(schema().fields()[..2].to_vec()));
+        hidden.set_row_muted(Some(name("off")), true);
+        hidden.set_window(Window::new(0, 10));
+        hidden.apply_result(with_off(&rows));
+        assert_eq!(hidden.schema().len(), 2, "the field is not a shown column");
+        assert_eq!(
+            [0, 1, 2].map(|row| hidden.row_muted(row)),
+            [false, true, false]
+        );
+        assert!(!hidden.row_muted(3), "no row there");
+        // No field named: nothing is muted.
+        hidden.set_row_muted(None, false);
+        assert!(!hidden.row_muted(1));
+    }
+
+    /// The muted value follows the record: a window further down answers for
+    /// its own rows, and an edit of a shown field takes effect at once.
+    #[test]
+    fn a_muted_row_follows_its_record() {
+        let mut state = GridState::new(Schema::new(schema().fields()[..2].to_vec()));
+        state.set_row_muted(Some(name("off")), true);
+        state.set_window(Window::new(0, 2));
+        state.apply_result(with_off(&[(1, "DE", true), (2, "FR", false)]));
+        assert!(state.row_muted(0));
+        state.set_window(Window::new(2, 2));
+        state.apply_window_result(with_off(&[(3, "NL", false), (4, "IT", true)]));
+        assert_eq!(
+            [2, 3].map(|row| state.row_muted(row)),
+            [false, true],
+            "the rows of the new window, not the old ones"
+        );
+        assert!(!state.row_muted(0), "rows of the old window are not held");
+
+        let mut shown = GridState::new(with_off(&[]).schema);
+        shown.set_row_muted(Some(name("off")), false);
+        shown.set_window(Window::new(0, 2));
+        shown.apply_result(with_off(&[(1, "DE", false), (2, "FR", false)]));
+        shown.set_cell(CellRef::new(1, 2), Value::Bool(true));
+        assert!(shown.row_muted(1) && !shown.row_muted(0));
+    }
+
+    /// A field that is `row-key` too is held once, by the key, and mutes by it.
+    #[test]
+    fn a_muted_field_that_is_the_hidden_key_still_mutes() {
+        let mut state = GridState::new(Schema::new(schema().fields()[1..2].to_vec()));
+        state.set_row_key(Some(name("off")));
+        state.set_row_key_hidden(true);
+        state.set_row_muted(Some(name("off")), true);
+        state.set_window(Window::new(0, 2));
+        let full = with_off(&[(1, "DE", true), (2, "FR", false)]);
+        let result = QueryResult::new(
+            Schema::new(vec![
+                full.schema.fields()[1].clone(),
+                full.schema.fields()[2].clone(),
+            ]),
+            vec![full.columns[1].clone(), full.columns[2].clone()],
+            2,
+        );
+        state.apply_result(result);
+        assert_eq!(state.schema().len(), 1);
+        assert_eq!([0, 1].map(|row| state.row_muted(row)), [true, false]);
+        assert_eq!(state.row_key(1), Some(&Value::Bool(false)), "still the key");
     }
 
     /// A validator's word stays on the cell until the next result; the page's

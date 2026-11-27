@@ -29,6 +29,12 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Added
 
+- **Grid:** `row-muted="<field>"` draws the rows whose boolean field is `true` in the muted ink — for
+  inactive, archived or context rows. The row also carries the part `row-muted` and `data-muted`, is
+  described with the page's word (`rowMuted` in `set_texts`), and stays selectable and editable; its
+  selection, hover and focus still show. The field may be left out of `columns`. Exports and print are
+  unchanged ([#534](https://github.com/casoon/opengrid/issues/534);
+  [Muted rows](https://casoon.github.io/opengrid/docs/api/#muted-rows)).
 - **Grid:** a column that cannot be edited shows a lock in its header and its values in the muted
   ink; a column the page gives `editable: true` is tinted (`--og-editable`), with a pencil in its
   header on a touch screen. The footer says how the focused cell opens (`editHint`) and that
