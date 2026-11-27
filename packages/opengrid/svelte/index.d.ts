@@ -106,6 +106,8 @@ export interface OpengridGridProps extends Options, ElementProps {
   editLocked?: boolean;
   /** An *Edit* switch in the toolbar that locks and unlocks editing (needs `toolbar`). */
   editToggle?: boolean;
+  /** `"down"`: `Enter` that commits an editor moves the focus to the next data row (`Shift`+`Enter`: the previous one). */
+  enterMoves?: "down";
   search?: boolean;
   facets?: boolean;
   toolbar?: boolean;

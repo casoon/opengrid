@@ -46,6 +46,7 @@ export const nodes = [
   h(OpengridGrid, {
     rowKey: "id",
     addRow: true,
+    enterMoves: "down",
     actions: [{ id: "remove", label: "Remove" }],
     validators: { seats: () => null },
     onRowAdd: async (detail) => ({ state: "saved", key: detail.values["id"] ?? null }),
@@ -55,6 +56,8 @@ export const nodes = [
   }),
   // @ts-expect-error — `addRow` is a boolean
   h(OpengridGrid, { addRow: "yes" }),
+  // @ts-expect-error — `Enter` moves down or not at all
+  h(OpengridGrid, { enterMoves: "up" }),
 ];
 
 /** The template ref: the cell writes, and the element as `$el`. */

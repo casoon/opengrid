@@ -402,6 +402,10 @@ pub const EDIT_LOCKED_ATTRIBUTE: &str = "edit-locked";
 /// `edit-toggle`: the toolbar offers a switch that sets and removes
 /// `edit-locked` (issue #527). It needs `toolbar`.
 pub const EDIT_TOGGLE_ATTRIBUTE: &str = "edit-toggle";
+/// `enter-moves="down"`: an `Enter` that commits an editor moves the focus to
+/// the same column of the next data row, `Shift`+`Enter` of the previous one
+/// (issue #536). A page setting, read when the key is pressed — not the view's.
+pub const ENTER_MOVES_ATTRIBUTE: &str = "enter-moves";
 
 /// The boolean attribute that shows the facet sidebar (point 66).
 ///
@@ -720,6 +724,8 @@ pub const OBSERVED: &[&str] = &[
     ADD_ROW_ATTRIBUTE,
     EDIT_LOCKED_ATTRIBUTE,
     EDIT_TOGGLE_ATTRIBUTE,
+    // Read when `Enter` commits; no arm of `on_attribute_changed` needs it.
+    ENTER_MOVES_ATTRIBUTE,
     // CSS alone: the look is `:host([theme=…])` rules (issue #32).
     crate::theme::THEME_ATTRIBUTE,
 ];

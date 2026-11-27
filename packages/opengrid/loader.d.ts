@@ -1674,6 +1674,8 @@ export interface OpengridGridAttributes {
   "edit-locked"?: string;
   /** An *Edit* switch in the toolbar that sets and removes `edit-locked`. Needs `toolbar`. */
   "edit-toggle"?: string;
+  /** `down`: `Enter` that commits an editor moves the focus to the next data row (`Shift`+`Enter`: the previous one). A page setting, not part of the view. */
+  "enter-moves"?: string;
   selection?: string;
   density?: Density;
   /** One of the built-in looks; Base when absent. */

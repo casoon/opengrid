@@ -256,6 +256,7 @@ An interactive `<table role="grid">`: virtualized, keyboard-driven, filterable.
 | `add-row` | An empty **new row** after the last one: type a record into it. See [Adding rows](#adding-rows). Off while grouped, in a tree and with `page-size`. |
 | `edit-locked` | **Locks editing** for the whole grid; remove it to unlock. See [Locking edits](#locking-edits). |
 | `edit-toggle` | Puts an **Edit** switch into the toolbar that sets and removes `edit-locked`. Needs `toolbar`. See [Locking edits](#locking-edits). |
+| `enter-moves` | `down`: an `Enter` that commits an editor moves the focus to the same column of the **next data row** (`Shift`+`Enter`: the previous one) and opens nothing. A page setting, not part of the view. See [Typing a column of values](#typing-a-column-of-values). |
 | `filter-builder` | Puts **Advanced filter** into the toolbar: the button that opens the builder of the [nested filter](#nested-filter). Opt-in, and only with `toolbar`. Without it a nested filter still works — the search expression writes it, the view carries it — and its chip still opens the builder. |
 | `column-menu` | Gives every header a **column menu**: sort, filter, aggregate, group, hide. Opt-in. See [Column menu](#column-menu). |
 | `selection` | Shows the **selection column**: a checkbox per row and one in the header. Opt-in — selecting rows works from the keyboard either way; what this adds is the column that shows it and the pointer path to it. |
@@ -269,6 +270,7 @@ An interactive `<table role="grid">`: virtualized, keyboard-driven, filterable.
 |---|---|---|
 | `Enter` / `Space` | header cell | sort (`Shift` adds a second key) |
 | `Enter` / `F2` | data cell | open the editor (`Enter` commits, `Escape` discards) |
+| `Enter` / `Shift`+`Enter` | open editor, with `enter-moves="down"` | commit and move to the same column of the next / previous data row, opening nothing ([Typing a column of values](#typing-a-column-of-values)) |
 | a character | data cell | open the editor with it: it replaces the value in a text or number field, and in a select picks the one choice that is it or starts with it (the cell's value when none or several do). `Enter` still commits. A date or a checkbox opens on the cell's value |
 | `Space` | data cell | select the row (`Shift` extends from the last one) |
 | `Space` | selection cell | select the row (`Shift` extends) |
@@ -2020,6 +2022,27 @@ shows the lock and its cells say `aria-readonly`. The change is said in the stat
 (`columnLocked`, `columnUnlocked`) and runs no query. The view holds the locks as **`locked`**, a list of
 field names ([The view](#the-view)); `set_view` restores them and refuses a name the grid does not have.
 A name of a column the page keeps from being edited stays in the view and opens nothing.
+
+### Typing a column of values
+
+A price list, a stock count or a set of grades is typed down one column. By default `Enter` commits and
+the focus stays on the cell, so each row costs `Enter`, `↓`, `Enter` (issue #536). `enter-moves="down"`
+makes the commit go on:
+
+```html
+<opengrid-grid datasource="prices" columns="sku,name,price" row-key="sku" enter-moves="down"></opengrid-grid>
+```
+
+An `Enter` that commits an editor then moves the focus to the **same column of the next data row** —
+`Shift`+`Enter` of the previous one. It moves **only**: no editor opens in the next cell, and a second
+`Enter` opens it, so every `Enter` still means one thing and a screen reader hears an editor only when
+the reader asks for one. In a grouped grid the move passes group headers and the total. At the last
+row (the first, with `Shift`) the focus stays. If the commit does not happen — a validator that blocks,
+or a value the column cannot hold — there is no move either, and under [`edit-locked`](#locking-edits)
+nothing opens. `Tab` in an open editor is unchanged. The new row of [`add-row`](#adding-rows) keeps its
+own `Enter`, on to the next column. The attribute is a **page setting**, not part of the
+[view](#the-view): without it, or with any other value, `Enter` commits and the focus stays. Adapters
+take it as `enterMoves`.
 
 ### Saving edits
 

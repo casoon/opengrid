@@ -15,6 +15,7 @@ function Rooms() {
         ref={rooms}
         rowKey="id"
         addRow
+        enterMoves="down"
         actions={[{ id: "remove", label: "Remove" }]}
         validators={{ seats: () => null }}
         onRowAdd={async (detail) => ({ state: "saved", key: detail.values.id ?? null })}
@@ -24,6 +25,8 @@ function Rooms() {
       />
       {/* @ts-expect-error — `addRow` is a boolean */}
       <OpengridGrid addRow="yes" />
+      {/* @ts-expect-error — `Enter` moves down or not at all */}
+      <OpengridGrid enterMoves="up" />
       {/* @ts-expect-error — a row's answer is a state */}
       <OpengridGrid onRowAdd={() => ({ state: "done" })} />
     </>

@@ -140,9 +140,10 @@ use column_ops::{
 };
 pub(crate) use editing::{CHOICES_KEY, write_row_state};
 use editing::{
-    add_record, after_new_row_enter, begin_edit, build_editor, dispatch_row_add, edit_locked,
-    edit_state_changed, editor_text, end_edit, focus_editor, formatter, page_readonly_column,
-    readonly_column, refuse_locked, set_column_locked, show_edit_hint, toggle_editing,
+    add_record, after_enter_commit, after_new_row_enter, begin_edit, build_editor,
+    dispatch_row_add, edit_locked, edit_state_changed, editor_text, end_edit, focus_editor,
+    formatter, page_readonly_column, readonly_column, refuse_locked, set_column_locked,
+    show_edit_hint, toggle_editing,
 };
 use facets::{
     apply_facets, clear_selection, collated, draw_facets, effective_filter, facet_chip_text,
@@ -2580,9 +2581,10 @@ fn on_key_down(event: KeyboardEvent) {
             "Enter" => {
                 event.prevent_default();
                 let cell = runtime.borrow().state.editing();
-                end_edit(&host, true);
+                let committed = end_edit(&host, true);
                 if let Some(cell) = cell {
                     after_new_row_enter(&host, cell, event.ctrl_key() || event.meta_key());
+                    after_enter_commit(&host, cell, committed, event.shift_key());
                 }
             }
             "Escape" => {
@@ -3070,13 +3072,8 @@ fn move_with_key(
     key: GridKey,
 ) {
     event.prevent_default();
-    let (active, ncols, total_count, window, pool, bands) = {
+    let (active, ncols, total_count, bands) = {
         let runtime = runtime.borrow();
-        let pool = runtime
-            .view
-            .as_ref()
-            .map(|view| view.pool() as u64)
-            .unwrap_or_else(|| pool_of(host));
         // The bands the header shows (issue #319); none is the one-row header.
         let bands: Vec<(usize, usize)> = runtime.view.as_ref().map_or_else(Vec::new, |view| {
             view.bands
@@ -3089,8 +3086,6 @@ fn move_with_key(
             // The action columns are places on the row like any other.
             runtime.state.schema().len() + actions_of(host).len(),
             runtime.state.row_count(),
-            runtime.state.window(),
-            pool,
             bands,
         )
     };
@@ -3103,6 +3098,28 @@ fn move_with_key(
         shows_selection(host),
         &bands,
     );
+    go_to(host, runtime, key, active, next);
+}
+
+/// Makes `next` the active cell and puts the focus on it; a row outside the
+/// window moves the window — and the scroll — to it first. `key` says which way
+/// the move went, `active` is where it came from.
+fn go_to(
+    host: &HtmlElement,
+    runtime: &Rc<RefCell<GridRuntime>>,
+    key: GridKey,
+    active: ActiveCell,
+    next: ActiveCell,
+) {
+    let (total_count, window, pool) = {
+        let runtime = runtime.borrow();
+        let pool = runtime
+            .view
+            .as_ref()
+            .map(|view| view.pool() as u64)
+            .unwrap_or_else(|| pool_of(host));
+        (runtime.state.row_count(), runtime.state.window(), pool)
+    };
     let reload = grid::requested_window(key, next, window, total_count, pool);
 
     runtime.borrow_mut().set_active(next);

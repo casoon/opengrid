@@ -248,6 +248,48 @@ pub(super) fn after_new_row_enter(host: &HtmlElement, cell: CellRef, add: bool) 
     render(host, true);
 }
 
+/// After `Enter` committed a cell of a record, with `enter-moves="down"`: the
+/// focus goes to the same column of the next **data** row — `Shift`+`Enter` of
+/// the one before — passing group headers and the total, and opens nothing; the
+/// next `Enter` does. At the last row the focus stays, and so it does when the
+/// commit did not happen: a validator held it back, the input was refused
+/// (issue #536). The new row has its own way on, [`after_new_row_enter`].
+pub(super) fn after_enter_commit(host: &HtmlElement, cell: CellRef, committed: bool, up: bool) {
+    if !committed || host.get_attribute(grid::ENTER_MOVES_ATTRIBUTE).as_deref() != Some("down") {
+        return;
+    }
+    let Some(runtime) = runtime(host) else {
+        return;
+    };
+    let target = {
+        let borrowed = runtime.borrow();
+        if borrowed.state.row_kind(cell.row) == RowKind::Draft {
+            return;
+        }
+        let total = borrowed.state.row_count();
+        if up {
+            (0..cell.row).rev().find(|row| is_record(&borrowed, *row))
+        } else {
+            (cell.row + 1..total).find(|row| is_record(&borrowed, *row))
+        }
+    };
+    let Some(row) = target else {
+        return;
+    };
+    let key = if up {
+        GridKey::ArrowUp
+    } else {
+        GridKey::ArrowDown
+    };
+    go_to(
+        host,
+        &runtime,
+        key,
+        ActiveCell::Data(cell),
+        ActiveCell::Data(CellRef::new(row, cell.col)),
+    );
+}
+
 /// Adds the record typed into the new row (issue #183): refused, with the cell
 /// that lacks a value named, while a required one is empty; otherwise fired as
 /// `opengrid-row-add`, shown at once as an unsaved row, with a fresh new row
@@ -577,16 +619,17 @@ pub(super) fn editor_text(editor: &Element) -> String {
 /// An input the column cannot hold is **refused and announced** — never
 /// silently rounded, never silently dropped. Whatever happens, the focus goes
 /// back to the cell: an editor that vanishes and leaves the focus on the
-/// document is a dead end for a keyboard.
-pub(super) fn end_edit(host: &HtmlElement, commit: bool) {
+/// document is a dead end for a keyboard. Answers `true` when the value was
+/// taken — not discarded, not refused, not held back by a validator.
+pub(super) fn end_edit(host: &HtmlElement, commit: bool) -> bool {
     let Some(runtime) = runtime(host) else {
-        return;
+        return false;
     };
     let Some(cell) = runtime.borrow().state.editing() else {
-        return;
+        return false;
     };
     let Some(root) = host.shadow_root() else {
-        return;
+        return false;
     };
 
     let editor = root.query_selector("[part=\"editor\"]").ok().flatten();
@@ -601,7 +644,7 @@ pub(super) fn end_edit(host: &HtmlElement, commit: bool) {
                 field.name.as_str().to_owned(),
                 field.nullable,
             ),
-            None => return,
+            None => return false,
         }
     };
 
@@ -622,7 +665,7 @@ pub(super) fn end_edit(host: &HtmlElement, commit: bool) {
             }
         }
         validate::announce(host, &runtime, Some(found));
-        return;
+        return false;
     }
 
     // Read before the commit: an edit of the key field itself still names the
@@ -724,4 +767,5 @@ pub(super) fn end_edit(host: &HtmlElement, commit: bool) {
     // the new row's, a validator's — are written here.
     redraw_cell(host, cell);
     focus_active(host);
+    commit && rejected.is_none()
 }

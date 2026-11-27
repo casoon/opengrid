@@ -549,7 +549,7 @@ pub(super) fn on_key(host: &HtmlElement, event: &KeyboardEvent, target: &Element
                 pick(host, &editor, &option);
                 // One pick is the whole edit: it is committed with the pick.
                 if !is_list(&editor) {
-                    commit(host, &editor);
+                    commit_by_enter(host, event, &editor);
                 }
                 return true;
             }
@@ -567,7 +567,7 @@ pub(super) fn on_key(host: &HtmlElement, event: &KeyboardEvent, target: &Element
                 Some(option) => {
                     pick(host, &editor, &option);
                     if !is_list(&editor) {
-                        commit(host, &editor);
+                        commit_by_enter(host, event, &editor);
                     }
                     true
                 }
@@ -588,6 +588,21 @@ fn commit(host: &HtmlElement, editor: &Element) {
         bulk::apply(host);
     } else {
         end_edit(host, true);
+    }
+}
+
+/// Commits with `Enter` and, with `enter-moves="down"`, goes on to the next
+/// row as the plain editor's `Enter` does (issue #536).
+fn commit_by_enter(host: &HtmlElement, event: &KeyboardEvent, editor: &Element) {
+    let cell = runtime(host).and_then(|runtime| runtime.borrow().state.editing());
+    commit(host, editor);
+    let in_bulk = editor.closest("[part=\"bulk\"]").ok().flatten().is_some();
+    let closed = runtime(host).is_some_and(|runtime| runtime.borrow().state.editing().is_none());
+    if let Some(cell) = cell
+        && !in_bulk
+        && closed
+    {
+        after_enter_commit(host, cell, true, event.shift_key());
     }
 }
 

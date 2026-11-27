@@ -174,6 +174,7 @@ export const OpengridGrid = component(
     addRow: "add-row",
     editLocked: "edit-locked",
     editToggle: "edit-toggle",
+    enterMoves: "enter-moves",
     search: "search",
     facets: "facets",
     toolbar: "toolbar",
