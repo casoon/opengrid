@@ -19,6 +19,17 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-11-27
+
+Not yet verified by a screen reader: no pass with assistive technology has been recorded for this
+release ([#5](https://github.com/casoon/opengrid/issues/5)). The keyboard and `axe-core` checks run on
+every change. The new toolbar items, presets and the number editor's decimal keypad were not tried by
+hand on a touch device, and no MCP host was tried against this version's view.
+
+**What breaks:** the `row-key` column is read-only now, so a page that maintains its keys in the grid
+sets `readonly: false` on that column in `set_columns`; see the first entry below. Nothing else in
+the npm package changes an existing call. The Rust crates change no public API.
+
 ### Breaking
 
 - **Grid:** the `row-key` column is read-only — no editor, no paste, no bulk value, no input in the
