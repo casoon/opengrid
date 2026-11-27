@@ -175,25 +175,36 @@ pub(super) fn apply(host: &HtmlElement) {
         else {
             return;
         };
-        let typed = panel
-            .query_selector("[part=\"editor\"]")
-            .ok()
-            .flatten()
-            .map(|editor| editor_text(&editor))
-            .unwrap_or_default();
+        let editor = panel.query_selector("[part=\"editor\"]").ok().flatten();
+        let typed = editor.as_ref().map(editor_text).unwrap_or_default();
         let texts = texts(host);
         let Some(field) = runtime.borrow().state.schema().fields().get(col).cloned() else {
             return;
         };
         let name = field.name.as_str().to_owned();
-        // What the editor holds is in the wire notation already (a typed input
-        // gives `1234.5`), so the page's number notation is not asked.
-        let Some(value) = parse_cell(
-            &typed,
-            field.data_type,
-            field.nullable,
-            &Notation::default(),
-        ) else {
+        // A number is read in the page's notation, like a cell's (issue #535);
+        // anything else is in the wire notation already, so none is asked.
+        let numeric = number::applies(field.data_type, editor.as_ref());
+        let read = if numeric && !typed.is_empty() {
+            match number::read(host, field.data_type, &typed) {
+                Ok(value) => Some(value),
+                Err(message) => {
+                    // Under the editor, which stays with what was typed.
+                    if let Some(editor) = &editor {
+                        number::refuse(host, &runtime, editor, &message);
+                    }
+                    return;
+                }
+            }
+        } else {
+            parse_cell(
+                &typed,
+                field.data_type,
+                field.nullable,
+                &Notation::default(),
+            )
+        };
+        let Some(value) = read else {
             let message = if typed.trim().is_empty() {
                 texts.cell_required(&name)
             } else {

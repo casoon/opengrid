@@ -39,6 +39,7 @@ async function editor(page) {
     return {
       tag: node.tagName.toLowerCase(),
       type: node.getAttribute("type"),
+      inputmode: node.getAttribute("inputmode"),
       step: node.getAttribute("step"),
       label: node.getAttribute("aria-label"),
       value: node.value,
@@ -69,15 +70,16 @@ test("Enter opens a typed editor and Escape leaves the value alone", async ({ pa
   await open(page);
   const before = await cellText(page, 0, 2);
 
-  // `amount` is a decimal: a number field with the column's own step, or the
-  // browser would round away what the reader typed.
+  // `amount` is a decimal: a text field with a decimal keypad that the grid
+  // reads in the page's notation (issue #535), not a browser's number field.
   await focusCell(page, 0, 2);
   await page.keyboard.press("Enter");
 
   await expect.poll(() => editor(page)).toMatchObject({
     tag: "input",
-    type: "number",
-    step: "0.01",
+    type: "text",
+    inputmode: "decimal",
+    step: null,
     label: "amount",
     focused: true,
   });
@@ -175,10 +177,10 @@ test("a boolean edits as a checkbox and a listed column as a combobox", async ({
   expect(combo.choices).toEqual(["Alpha", "Beta", "Gamma"]);
   await page.keyboard.press("Escape");
 
-  // `id` is an integer: a number field with a step of one.
+  // `id` is an integer: a text field with a numeric keypad.
   await focusCell(page, 1, 0);
   await page.keyboard.press("Enter");
-  expect(await editor(page)).toMatchObject({ tag: "input", type: "number", step: "1" });
+  expect(await editor(page)).toMatchObject({ tag: "input", type: "text", inputmode: "numeric", step: null });
   await page.keyboard.press("Escape");
 });
 
@@ -264,7 +266,8 @@ test("a typed character opens the editor and replaces the value", async ({ page 
 
   await expect.poll(() => editor(page)).toMatchObject({
     tag: "input",
-    type: "number",
+    type: "text",
+    inputmode: "decimal",
     value: "7",
     focused: true,
   });
@@ -324,7 +327,8 @@ test("F2 opens the editor on the cell's value, as Enter does", async ({ page }) 
   await page.keyboard.press("F2");
   await expect.poll(() => editor(page)).toMatchObject({
     tag: "input",
-    type: "number",
+    type: "text",
+    inputmode: "numeric",
     value: before,
     focused: true,
   });

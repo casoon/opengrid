@@ -109,14 +109,31 @@ pub(super) fn on_editor_event(event: Event) {
         return;
     };
     let Some(cell) = runtime.borrow().state.editing() else {
+        // The bulk panel's field (issue #535): typing takes the refusal away.
+        if bulk::in_panel(&editor) {
+            show(&editor, None);
+        }
         return;
     };
-    let finding = run(&host, &runtime, cell, &editor_text(&editor)).map(|(finding, _)| finding);
+    let data_type = runtime
+        .borrow()
+        .state
+        .schema()
+        .fields()
+        .get(cell.col)
+        .map(|field| field.data_type);
+    let text = editor_text(&editor);
+    let text = match data_type {
+        Some(data_type) => number::wire_text(&host, data_type, Some(&editor), &text),
+        None => text,
+    };
+    let finding = run(&host, &runtime, cell, &text).map(|(finding, _)| finding);
     show(&editor, finding.as_ref());
     announce(&host, &runtime, finding.as_ref());
 }
 
-/// Writes the sentence under the editor, or takes it away.
+/// Writes the sentence under the editor, or takes it away. It sits right after
+/// the editor: in a cell that is the end of it, in the bulk panel it is not.
 pub(super) fn show(editor: &Element, finding: Option<&Finding>) {
     let Some(td) = editor.parent_element() else {
         return;
@@ -140,7 +157,7 @@ pub(super) fn show(editor: &Element, finding: Option<&Finding>) {
     let _ = note.set_attribute("id", "og-validation");
     let _ = note.set_attribute("data-level", finding.level.as_str());
     note.set_text_content(Some(&finding.message));
-    let _ = td.append_child(&note);
+    let _ = editor.insert_adjacent_element("afterend", &note);
     let _ = td.set_attribute("data-validating", "");
     let _ = editor.set_attribute("aria-describedby", "og-validation");
     if finding.level == Level::Error {

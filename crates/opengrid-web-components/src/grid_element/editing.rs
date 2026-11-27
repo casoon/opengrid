@@ -457,10 +457,10 @@ pub(super) fn formatter(host: &HtmlElement, schema: &opengrid_types::Schema) -> 
 /// Opens the editor on the focused data cell (plan point 37).
 ///
 /// The editor is an ordinary form control inside the cell, typed after the
-/// column: `text`, `number` with the column's step, `date`, `checkbox`, or the
-/// type-ahead combobox when the page supplied choices ([`combo`]). The same
-/// derivation as the filter row (point 51) — one place decides what a column
-/// can hold.
+/// column: `text`, a text field for a number that reads the page's notation
+/// ([`number`]), `date`, `checkbox`, or the type-ahead combobox when the page
+/// supplied choices ([`combo`]). The same derivation as the filter row (point
+/// 51) — one place decides what a column can hold.
 ///
 /// `typed` is the character that opened it, if a character did: it **replaces**
 /// the value in a text or number field, as in a spreadsheet, and in a combobox
@@ -574,11 +574,17 @@ pub(super) fn build_editor(
         let Ok(input) = document.create_element("input") else {
             return None;
         };
-        let kind = grid::input_type(data_type);
-        let _ = input.set_attribute("type", kind);
-        if let Some(step) = grid::input_step(data_type) {
-            let _ = input.set_attribute("step", &step);
-        }
+        // A number is a text field that reads the page's notation (issue #535),
+        // not a `type="number"` the browser reads in its own.
+        let numeric = number::is_number(data_type);
+        let kind = if numeric {
+            number::set_up(&input, data_type);
+            "text"
+        } else {
+            let kind = grid::input_type(data_type);
+            let _ = input.set_attribute("type", kind);
+            kind
+        };
         if kind == "checkbox" {
             if current == "true" {
                 let _ = input.set_attribute("checked", "");
@@ -586,6 +592,7 @@ pub(super) fn build_editor(
         } else if let Ok(field) = input.clone().dyn_into::<HtmlInputElement>() {
             match typed {
                 Some(typed) if kind != "date" => field.set_value(typed),
+                _ if numeric => field.set_value(&number::opening_text(host, current)),
                 _ => field.set_value(current),
             }
         }
@@ -648,10 +655,30 @@ pub(super) fn end_edit(host: &HtmlElement, commit: bool) -> bool {
         }
     };
 
+    // A number the page's notation cannot read is refused with the reason, under
+    // the editor, which stays open with what was typed — never committed as NULL
+    // (issue #535). An empty field is the one way to clear a value, below.
+    let numeric = number::applies(data_type, editor.as_ref());
+    if commit
+        && numeric
+        && let (Some(editor), Some(text)) = (&editor, typed.as_deref())
+        && !text.is_empty()
+        && let Err(message) = number::read(host, data_type, text)
+    {
+        number::refuse(host, &runtime, editor, &message);
+        return false;
+    }
+
     // The page's validator speaks on commit too (issue #188). A column that asks
     // for it blocks on an error: the editor stays, with the sentence under it.
     let finding = if commit {
-        validate::run(host, &runtime, cell, typed.as_deref().unwrap_or(""))
+        let text = typed.as_deref().unwrap_or("");
+        validate::run(
+            host,
+            &runtime,
+            cell,
+            &number::wire_text(host, data_type, editor.as_ref(), text),
+        )
     } else {
         None
     };
@@ -676,9 +703,9 @@ pub(super) fn end_edit(host: &HtmlElement, commit: bool) -> bool {
     let in_draft = runtime.borrow().state.row_kind(cell.row) == RowKind::Draft;
     let mut rejected = None;
     // **An empty editor means NULL** — on a column that may hold one. It is the
-    // only way to clear a value, and a typed input sanitizes most other
-    // nonsense away before it ever gets here. On a required column it is a
-    // refusal, not an empty string.
+    // only way to clear a value — a number that cannot be read is refused above,
+    // not taken for it. On a required column it is a refusal, not an empty
+    // string.
     if commit
         && typed.as_deref().is_some_and(str::is_empty)
         && !matches!(data_type, DataType::Utf8 | DataType::Bool)
@@ -704,21 +731,32 @@ pub(super) fn end_edit(host: &HtmlElement, commit: bool) -> bool {
         let parsed = if data_type.is_list() {
             // The JSON array the combobox wrote (issue #185).
             Value::from_wire_str(text, &data_type).ok()
+        } else if numeric {
+            // Read above already: in the page's notation (issue #535).
+            number::read(host, data_type, text).ok()
         } else {
             grid::literal(text, data_type)
                 .and_then(|json| Value::from_json_typed(&json, &data_type).ok())
         };
         match parsed {
-            Some(value) => commit_cell(
-                host,
-                &runtime,
-                cell,
-                value,
-                key.as_ref(),
-                &field_name,
-                text,
-                in_draft,
-            ),
+            Some(value) => {
+                // The page is told a number in the wire notation, as before.
+                let told = if numeric {
+                    crate::formats::event_text(&value)
+                } else {
+                    text.to_owned()
+                };
+                commit_cell(
+                    host,
+                    &runtime,
+                    cell,
+                    value,
+                    key.as_ref(),
+                    &field_name,
+                    &told,
+                    in_draft,
+                );
+            }
             None => rejected = Some(text.to_owned()),
         }
     }

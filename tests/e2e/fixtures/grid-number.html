@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>opengrid number editor fixture</title>
+    <script>
+      // Issue #535: the page's language says how a number is written. `?lang=de`
+      // makes the decimal `1.234,50`, the default is English (`1,234.50`).
+      const lang = new URLSearchParams(location.search).get("lang");
+      if (lang) document.documentElement.lang = lang;
+    </script>
+    <style>
+      opengrid-grid {
+        display: block;
+        height: 320px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid number editor fixture</h1>
+      <opengrid-grid
+        label="Prices"
+        datasource="prices"
+        columns="id,price,qty,ratio"
+        window-size="12"
+        row-key="id"
+        selection
+        column-menu
+      ></opengrid-grid>
+    </main>
+    <script type="module">
+      import { loadOpengrid, createLocalProvider } from "/packages/opengrid/loader.js";
+      import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+
+      window.__changes = [];
+      window.__bulk = [];
+      document.addEventListener("opengrid-cell-change", (event) => window.__changes.push(event.detail));
+      document.addEventListener("opengrid-bulk-change", (event) => window.__bulk.push(event.detail));
+
+      await init();
+      const schema = JSON.stringify({
+        fields: [
+          { name: "id", type: "int64", nullable: false },
+          { name: "price", type: { decimal: { precision: 12, scale: 2 } }, nullable: true },
+          { name: "qty", type: "int64", nullable: true },
+          { name: "ratio", type: "float64", nullable: true },
+        ],
+      });
+      // With `?add` the new row stands after the last one: few rows, so it is in view.
+      const count = location.search.includes("add") ? 3 : 20;
+      const rows = Array.from({ length: count }, (_, index) => ({
+        id: index + 1,
+        price: index === 0 ? "1.10" : "1234.50",
+        qty: 3,
+        ratio: 0.5,
+      }));
+      const provider = createLocalProvider(new Engine());
+      await provider.loadRows("prices", rows, schema);
+      const loader = await loadOpengrid();
+      const host = document.querySelector("opengrid-grid");
+      if (location.search.includes("add")) host.setAttribute("add-row", "");
+      // What a page's validator is given for a number: the wire notation.
+      window.__seen = [];
+      loader.module.set_validators(host, {
+        price: (value) => {
+          window.__seen.push(value);
+          return null;
+        },
+      });
+      window.__module = loader.module;
+      loader.module.set_provider(host, provider);
+      window.__ready = true;
+    </script>
+  </body>
+</html>
