@@ -15,7 +15,7 @@ A conformance suite of JSON cases pins what "the same" means.
 ## Status
 
 Pre-1.0. On npm are `@casoon/opengrid`, with the elements and the engine, and the adapters for
-React, Vue and Svelte — see [Installation](getting-started/installation/). The portable Rust
+React, Vue, Svelte and Solid — see [Installation](getting-started/installation/). The portable Rust
 crates and `opengrid-server` are on crates.io. What each release changed is in
 [`CHANGELOG.md`](https://github.com/casoon/opengrid/blob/main/CHANGELOG.md).
 
@@ -32,7 +32,7 @@ That freezes the list, not the design: it may still change before 1.0.
 
 All three ship in one module. The Cargo features `grid` and `pivot` exist for anyone who wants
 only one; `set_columns` and `set_formats` are in both, so a pivot-only build pulls the grid and
-query crates too (132.3 KiB brotli; the grid alone is 309.3 KiB, both elements 340.0 KiB). In React, Vue and Svelte they come as components — see
+query crates too (132.3 KiB brotli; the grid alone is 309.3 KiB, both elements 340.0 KiB). In React, Vue, Svelte and Solid they come as components — see
 [Frameworks](guides/frameworks/).
 
 ## What V1 deliberately does not do
@@ -43,5 +43,5 @@ query crates too (132.3 KiB brotli; the grid alone is 309.3 KiB, both elements 3
   131 072 cells (rows × columns — what a browser draws as a table in about a second). Over a
   limit you get an error with a sentence, never a silently truncated result.
 - **Paging and virtualization are exclusive**, not combined.
-- **No CDN build.** Adapters exist for React, Vue and Svelte; Angular, Lit and the rest use
+- **No CDN build.** Adapters exist for React, Vue, Svelte and Solid; Angular, Lit and the rest use
   `connect` directly.

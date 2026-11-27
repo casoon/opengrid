@@ -10,6 +10,7 @@ const EXAMPLES = [
   { name: "React 18", page: "/examples/react/dist-18/index.html" },
   { name: "Vue", page: "/examples/vue/dist/index.html" },
   { name: "Svelte", page: "/examples/svelte/dist/index.html" },
+  { name: "Solid", page: "/examples/solid/dist/index.html" },
   { name: "Angular", page: "/examples/angular/dist/browser/index.html" },
 ];
 

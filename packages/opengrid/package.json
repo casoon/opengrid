@@ -2,7 +2,7 @@
   "name": "@casoon/opengrid",
   "version": "0.20.2",
   "type": "module",
-  "description": "Accessible data grid, table and pivot as web components, driven by a portable Rust/WASM query engine — with React, Vue and Svelte components.",
+  "description": "Accessible data grid, table and pivot as web components, driven by a portable Rust/WASM query engine — with React, Vue, Svelte and Solid components.",
   "keywords": [
     "datagrid",
     "pivot",
@@ -11,7 +11,8 @@
     "wasm",
     "react",
     "vue",
-    "svelte"
+    "svelte",
+    "solid"
   ],
   "license": "MIT OR Apache-2.0",
   "repository": {
@@ -44,6 +45,10 @@
       "svelte": "./svelte/index.js",
       "default": "./svelte/index.js"
     },
+    "./solid": {
+      "types": "./solid/index.d.ts",
+      "default": "./solid/index.js"
+    },
     "./texts/de": {
       "types": "./texts/de.d.ts",
       "default": "./texts/de.js"
@@ -68,6 +73,7 @@
     "react/",
     "vue/",
     "svelte/",
+    "solid/",
     "texts/",
     "pkg/",
     "engine/",
@@ -79,16 +85,24 @@
     "CHANGELOG.md"
   ],
   "peerDependencies": {
+    "@solidjs/web": "^2.0.0",
     "@types/react": ">=18.3.0",
     "react": ">=18",
+    "solid-js": "^2.0.0",
     "svelte": "^5.0.0",
     "vue": ">=3.4.20"
   },
   "peerDependenciesMeta": {
+    "@solidjs/web": {
+      "optional": true
+    },
     "@types/react": {
       "optional": true
     },
     "react": {
+      "optional": true
+    },
+    "solid-js": {
       "optional": true
     },
     "svelte": {
@@ -99,7 +113,9 @@
     }
   },
   "devDependencies": {
+    "@solidjs/web": "2.0.4",
     "@types/react": "19.3.0",
+    "solid-js": "2.0.4",
     "svelte": "5.57.3",
     "vue": "3.5.45"
   },

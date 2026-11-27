@@ -9,12 +9,12 @@
 # (one small download per framework), so this runs from `just types` but needs
 # the network. Keep the versions in step with `peerDependencies`.
 #
-# Usage: bash scripts/check-lowest-peers.sh react|vue|svelte   (after `just package`)
+# Usage: bash scripts/check-lowest-peers.sh react|vue|svelte|solid   (after `just package`)
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 root="$PWD"
-adapter="${1:?usage: check-lowest-peers.sh <react|vue|svelte>}"
+adapter="${1:?usage: check-lowest-peers.sh <react|vue|svelte|solid>}"
 packed="$root/target/npm-package/package"
 example="$root/examples/$adapter"
 work="$root/target/$adapter-lowest"
@@ -30,6 +30,8 @@ case "$adapter" in
     react) lowest=(react@18.2.0 @types/react@18.3.0) ;;
     vue) lowest=(vue@3.4.20) ;;
     svelte) lowest=(svelte@5.0.0) ;;
+    # The first stable Solid 2; the DOM runtime is its own package since 2.0.
+    solid) lowest=(solid-js@2.0.0 @solidjs/web@2.0.0) ;;
     *) echo "unknown adapter: $adapter" >&2; exit 1 ;;
 esac
 
@@ -41,6 +43,8 @@ echo '{ "private": true, "type": "module" }' > "$work/package.json"
 mkdir -p "$work/node_modules/@casoon"
 cp -R "$packed" "$work/node_modules/@casoon/opengrid"
 
+jsx='"jsx": "react-jsx",'
+[[ "$adapter" == solid ]] && jsx='"jsx": "preserve", "jsxImportSource": "@solidjs/web",'
 types="$(ls "$example"/src/types.ts* | head -1)"
 cp "$types" "$work/$(basename "$types")"
 cat > "$work/tsconfig.json" <<JSON
@@ -51,7 +55,7 @@ cat > "$work/tsconfig.json" <<JSON
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "jsx": "react-jsx",
+    $jsx
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "types": [],
     "skipLibCheck": false

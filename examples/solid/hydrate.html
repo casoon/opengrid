@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>opengrid — hydration</title>
+    <!-- What a Solid server writes into its <head> (`generateHydrationScript()` in
+         @solidjs/web): the bootstrap that `hydrate` needs before it runs. -->
+    <script>window._$HY||(e=>{let t=e=>e&&e.hasAttribute&&(e.hasAttribute("_hk")?e:t(e.host&&e.host.nodeType?e.host:e.parentNode));["click","input"].forEach((o=>document.addEventListener(o,(o=>{if(!e.events)return;let n=o.composedPath&&o.composedPath()[0]||o.target,s=t(n);s&&!e.completed.has(s)&&e.events.push([s,o,n])}))))})(_$HY={events:[],completed:new WeakSet,r:new Proxy({},{set:(r,k,v)=>(v instanceof Promise&&v.catch(()=>{}),r[k]=v,!0)}),fe(){}});</script>
+    <style>
+      opengrid-grid {
+        display: block;
+        height: 60vh;
+      }
+    </style>
+  </head>
+  <body>
+    <main id="root"></main>
+    <script type="module" src="./src/hydrate.jsx"></script>
+  </body>
+</html>

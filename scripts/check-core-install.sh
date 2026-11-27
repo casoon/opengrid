@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Installs the **packed** package the way a page without a framework would
 # (#27): `npm install` of the tarball from `just package` into a scratch
-# project that has no React, Vue or Svelte. The adapters' frameworks are
+# project that has no React, Vue, Svelte or Solid. The adapters' frameworks are
 # optional peers, so the install must succeed and must not pull any of them
 # in — and the core must import without them.
 #
@@ -25,7 +25,7 @@ echo '{ "name": "core-install-check", "private": true, "type": "module" }' > "$w
 # install that wanted a framework would fail here instead of fetching it.
 (cd "$work" && npm install "$tarball" --offline --no-audit --no-fund --ignore-scripts >/dev/null)
 
-for framework in react vue svelte @types/react; do
+for framework in react vue svelte solid-js @solidjs/web @types/react; do
     if [[ -e "$work/node_modules/$framework" ]]; then
         echo "a core-only install pulled in $framework — its peer is not optional" >&2
         exit 1
