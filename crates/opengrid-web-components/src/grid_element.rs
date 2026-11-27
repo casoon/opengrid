@@ -110,6 +110,7 @@ mod range;
 mod record;
 mod search;
 mod template;
+mod toolbar_items;
 mod tree_path;
 mod validate;
 mod view;
@@ -165,6 +166,7 @@ use quick_doors::{
     sync_quick_buttons,
 };
 use search::{on_search_input, on_search_key, take_suggestion};
+pub(crate) use toolbar_items::set_toolbar;
 use tree_path::{active_tree, run_tree, toggle_tree};
 use view::{Restore, apply_view, applying_view, current_query, restore_then_query, to_js};
 pub(crate) use view::{
@@ -1291,6 +1293,9 @@ fn ensure_skeleton(host: &HtmlElement) {
     // The reader's widths live on the header cells and survive the frames that
     // follow; a fresh skeleton has to get them back (point 36).
     apply_widths(host);
+    // The page's own buttons in the toolbar (issue #531) belong to the
+    // skeleton the way the reader's widths do.
+    toolbar_items::fill(host);
     // The filter row follows the columns' widths as the table changes size
     // (issue #62); the observer fires once at once, which lines it up.
     observe_columns(&root);
@@ -2417,6 +2422,15 @@ fn on_key_down(event: KeyboardEvent) {
         }
         return;
     }
+    // A menu button of the page's own items opens with the arrows (issue #531).
+    if let Some(target) = event
+        .target()
+        .and_then(|node| node.dyn_into::<Element>().ok())
+        && let Ok(host) = root.host().dyn_into::<HtmlElement>()
+        && toolbar_items::on_button_key(&host, &event, &target)
+    {
+        return;
+    }
     // The paging buttons sit outside the grid table and keep their **native**
     // keyboard activation: the grid's matrix below would call
     // `prevent_default()` on `Enter` and swallow the click (point 38). The
@@ -2458,6 +2472,15 @@ fn on_key_down(event: KeyboardEvent) {
         return;
     }
 
+    // Inside an open menu of the page's toolbar items, the same (issue #531).
+    if let Some(target) = event
+        .target()
+        .and_then(|node| node.dyn_into::<Element>().ok())
+        && toolbar_items::contains(&target)
+    {
+        toolbar_items::on_menu_key(&host, &event, &target);
+        return;
+    }
     // Inside an open cell menu the keys are the menu's (issue #524).
     if let Some(target) = event
         .target()
@@ -3873,6 +3896,11 @@ extern "C" {
 ///   by position, in a grid without a `row-key`. One by key is
 ///   [`dispatch_keys`]'s `{ count, keys }`.
 fn dispatch_selection(host: &HtmlElement, rows: &[u64]) {
+    crate::element::dispatch(host, SELECTION_EVENT, &rows_detail(rows));
+}
+
+/// What `opengrid-selection-change` carries for a selection by position.
+fn rows_detail(rows: &[u64]) -> js_sys::Object {
     // One call and a loop in JavaScript, not one call per row: "select all"
     // over 100 000 rows names them all. The event still carries a plain array
     // of numbers (`Array.from` over a typed array was slower than the calls).
@@ -3903,13 +3931,18 @@ fn dispatch_selection(host: &HtmlElement, rows: &[u64]) {
         &JsValue::from_str("count"),
         &JsValue::from_f64(rows.len() as f64),
     );
-    crate::element::dispatch(host, SELECTION_EVENT, &detail);
+    detail
 }
 
 /// Fires `opengrid-selection-change` for a selection by key (issue #322) —
 /// a tree's nodes, or the records of a grid with a `row-key`: `{ count, keys }`,
 /// and neither `rows` nor `ranges`, because a position names no record.
 fn dispatch_keys(host: &HtmlElement, keys: &[opengrid_json::Json]) {
+    crate::element::dispatch(host, SELECTION_EVENT, &keys_detail(keys));
+}
+
+/// What `opengrid-selection-change` carries for a selection by key.
+fn keys_detail(keys: &[opengrid_json::Json]) -> js_sys::Object {
     let detail = js_sys::Object::new();
     let list = js_sys::Array::new();
     for key in keys {
@@ -3921,7 +3954,23 @@ fn dispatch_keys(host: &HtmlElement, keys: &[opengrid_json::Json]) {
         &JsValue::from_f64(keys.len() as f64),
     );
     let _ = js_sys::Reflect::set(&detail, &JsValue::from_str("keys"), &list);
-    crate::element::dispatch(host, SELECTION_EVENT, &detail);
+    detail
+}
+
+/// The selection as `opengrid-selection-change` says it now: by key where the
+/// grid selects by key — a tree's nodes, the records of a `row-key` grid —
+/// else by position (issue #531).
+fn selection_detail(host: &HtmlElement) -> JsValue {
+    let Some(runtime) = runtime(host) else {
+        return rows_detail(&[]).into();
+    };
+    let borrowed = runtime.borrow();
+    match &borrowed.tree {
+        Some(tree) => keys_detail(&tree.selected_keys()),
+        None if keyed(&borrowed) => keys_detail(&borrowed.picked.keys()),
+        None => rows_detail(borrowed.state.selection()),
+    }
+    .into()
 }
 
 /// `Enter`/`Space` on a header cell sorts by its column and re-runs the query;

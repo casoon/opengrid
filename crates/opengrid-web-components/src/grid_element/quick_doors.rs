@@ -18,7 +18,7 @@ pub(super) fn quick_button(root: &ShadowRoot, key: &str) -> Option<HtmlElement> 
 
 /// Shows a popup built for `key`'s button, and keeps `aria-expanded` true to
 /// what is open — also when the browser closes it (a click outside).
-fn show_quick(root: &ShadowRoot, popup: &HtmlElement, key: &str) {
+pub(super) fn show_quick(root: &ShadowRoot, popup: &HtmlElement, key: &str) {
     let _ = root.append_child(popup);
     let _ = popup.show_popover();
     let Some(button) = quick_button(root, key) else {

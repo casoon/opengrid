@@ -1807,6 +1807,7 @@ export function connect(host, options = {}) {
     ["opengrid-bulk-change", (event) => current.onBulkChange?.(event.detail)],
     ["opengrid-row-action", (event) => current.onRowAction?.(event.detail)],
     ["opengrid-cell-action", (event) => current.onCellAction?.(event.detail)],
+    ["opengrid-toolbar-action", (event) => current.onToolbarAction?.(event.detail)],
     ["opengrid-drill-down", (event) => current.onDrillDown?.(event.detail)],
     ["opengrid-source-replaced", (event) => current.onSourceReplaced?.(event.detail)],
   ];
@@ -1930,6 +1931,12 @@ export function connect(host, options = {}) {
       const cellActions = changed.cellActions ?? [];
       write("cellActions", cellActions, stableKey(cellActions), (value) =>
         module.set_cell_actions(host, value),
+      );
+    }
+    if ("toolbarItems" in changed) {
+      const toolbarItems = changed.toolbarItems ?? [];
+      write("toolbarItems", toolbarItems, stableKey(toolbarItems), (value) =>
+        module.set_toolbar(host, value),
       );
     }
     if ("cellTemplates" in changed) {

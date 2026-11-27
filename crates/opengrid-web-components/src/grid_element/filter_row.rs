@@ -708,6 +708,15 @@ pub(super) fn on_filter_clear(event: Event) {
             super::cell_menu::activate(&host, &item);
             return;
         }
+        // The page's own items in the toolbar and their menus (issue #531).
+        if let Ok(Some(item)) = target.closest("[part=\"toolbar-menu\"] [data-action]") {
+            super::toolbar_items::activate(&host, &item);
+            return;
+        }
+        if let Ok(Some(button)) = target.closest("[data-toolbar-item]") {
+            super::toolbar_items::on_click(&host, &button);
+            return;
+        }
         if let Ok(Some(trigger)) = target.closest("[part=\"column-menu-button\"]")
             && let Some(col) = trigger
                 .closest("th")

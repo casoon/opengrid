@@ -142,6 +142,9 @@ pub struct GridTexts {
     pub pin_narrow: String,
     /// The toolbar above the grid (point 65).
     pub toolbar_group: String,
+    /// Said when `set_toolbar` was refused (issue #531): none of its items is
+    /// drawn. May use `{problems}`.
+    pub toolbar_refused: String,
     pub filter_row_toggle: String,
     pub density_group: String,
     pub density_compact: String,
@@ -549,6 +552,7 @@ pub(crate) const KEYS: &[&str] = &[
     "pinEnd",
     "pinNarrow",
     "toolbarGroup",
+    "toolbarRefused",
     "filterRowToggle",
     "densityGroup",
     "densityCompact",
@@ -823,6 +827,7 @@ impl Default for GridTexts {
             pin_end: "At the end".to_owned(),
             pin_narrow: "Only on narrow screens".to_owned(),
             toolbar_group: "Grid tools".to_owned(),
+            toolbar_refused: "Toolbar items not applied. {problems}".to_owned(),
             filter_row_toggle: "Filter row".to_owned(),
             density_group: "Density".to_owned(),
             density_compact: "Compact".to_owned(),
@@ -1451,6 +1456,12 @@ impl GridTexts {
         fill(&self.column_menu, "column", self.column(column))
     }
 
+    /// The sentence for a refused `set_toolbar` (issue #531).
+    #[cfg(feature = "grid")]
+    pub fn toolbar_refused(&self, problems: &str) -> String {
+        fill(&self.toolbar_refused, "problems", problems)
+    }
+
     /// The cell menu's accessible name (issue #524).
     pub fn cell_menu(&self, column: &str) -> String {
         fill(&self.cell_menu, "column", self.column(column))
@@ -1856,6 +1867,7 @@ mod host {
         overwrite(&mut texts.pin_end, string("pinEnd"));
         overwrite(&mut texts.pin_narrow, string("pinNarrow"));
         overwrite(&mut texts.toolbar_group, string("toolbarGroup"));
+        overwrite(&mut texts.toolbar_refused, string("toolbarRefused"));
         overwrite(&mut texts.filter_row_toggle, string("filterRowToggle"));
         overwrite(&mut texts.density_group, string("densityGroup"));
         overwrite(&mut texts.density_compact, string("densityCompact"));

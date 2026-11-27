@@ -171,6 +171,20 @@ export async function page(): Promise<void> {
     event.detail.key satisfies string | number | boolean | null | undefined;
   });
 
+  // The page's own items in the toolbar (issue #531).
+  module.set_toolbar(grid, [
+    { id: "prepare", label: "Prepare price change" },
+    { id: "export", label: "Export", items: [{ id: "pdf", label: "PDF" }] },
+    { id: "bulk", label: "Bulk change", disabled: true, reason: "Nothing selected" },
+  ]);
+  grid.addEventListener("opengrid-toolbar-action", (event) => {
+    event.detail.id satisfies string;
+    event.detail.selection.count satisfies number;
+    if (event.detail.selection.keys) event.detail.selection.keys satisfies unknown[];
+  });
+  // @ts-expect-error — the items stand after the grid's own: there is no position
+  module.set_toolbar(grid, [{ id: "a", label: "A", position: "end" }]);
+
   // Adding rows (issue #183).
   module.set_row_state(grid, "new-1", "saved", 7);
   module.set_row_state(grid, "new-2", "error", "Not saved.");
@@ -468,6 +482,8 @@ export async function page(): Promise<void> {
     onPaste: (detail) => detail.changes.length satisfies number,
     onBulkChange: (detail) => detail.keys,
     onRowAction: (detail) => detail.id satisfies string,
+    toolbarItems: [{ id: "export", label: "Export", items: [{ id: "pdf", label: "PDF" }] }],
+    onToolbarAction: (detail) => detail.id satisfies string,
     onSourceReplaced: (detail) => detail.name satisfies string,
   });
   connect(grid, { onRowAdd: () => ({ state: "error", message: "Exists already." }) });

@@ -49,6 +49,7 @@ const DEEP = [
   "choices",
   "actions",
   "cellActions",
+  "toolbarItems",
   "validators",
   "cellTemplates",
   "view",
@@ -62,6 +63,7 @@ const EVENTS = {
   onBulkChange: "bulkChange",
   onRowAction: "rowAction",
   onCellAction: "cellAction",
+  onToolbarAction: "toolbarAction",
   onDrillDown: "drillDown",
   onSourceReplaced: "sourceReplaced",
 };

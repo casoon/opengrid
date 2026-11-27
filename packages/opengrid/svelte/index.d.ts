@@ -4,7 +4,7 @@
  * The props are the element's attributes in camelCase plus the options of
  * `connect` from `@casoon/opengrid`, with the callbacks in Svelte's own
  * spelling — `onviewchange`, `onselectionchange`, `oncellchange`, `onrowadd`,
- * `onpaste`, `onbulkchange`, `onrowaction`, `oncellaction`, `onsourcereplaced` — `view`
+ * `onpaste`, `onbulkchange`, `onrowaction`, `oncellaction`, `ontoolbaraction`, `onsourcereplaced` — `view`
  * bindable (`bind:view`), the element itself through `bind:element`, and the
  * grid's `setCellState` and `setValues` through `bind:this`.
  * Everything else (`id`, `class`, `style`, `aria-*`) goes to the element.
@@ -31,6 +31,7 @@ import type {
   DrillDownDetail,
   RowActionDetail,
   CellActionDetail,
+  ToolbarActionDetail,
   SelectionChangeDetail,
   SourceReplacedDetail,
   View,
@@ -46,6 +47,7 @@ type Callbacks =
   | "onBulkChange"
   | "onRowAction"
   | "onCellAction"
+  | "onToolbarAction"
   | "onDrillDown"
   | "onSourceReplaced";
 
@@ -61,6 +63,7 @@ type SvelteCallbacks = {
   onbulkchange?: (detail: BulkChangeDetail) => void;
   onrowaction?: (detail: RowActionDetail) => void;
   oncellaction?: (detail: CellActionDetail) => void;
+  ontoolbaraction?: (detail: ToolbarActionDetail) => void;
   /** The pivot only: a value was pressed, with `drillDown`. */
   ondrilldown?: (detail: DrillDownDetail) => void;
   onsourcereplaced?: (detail: SourceReplacedDetail) => void;

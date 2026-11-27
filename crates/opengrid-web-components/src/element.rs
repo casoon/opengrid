@@ -153,6 +153,18 @@ pub fn set_cell_actions(host: &HtmlElement, actions: JsValue) {
     crate::grid_element::set_cell_actions(host, &actions);
 }
 
+/// Gives the toolbar the page's own items (issue #531), after the grid's own
+/// controls: `[{ id, label }]` a button, `[{ id, label, items: [{ id, label }] }]`
+/// a menu button, `{ id, label, disabled: true, reason }` an item that cannot act
+/// and says why. Choosing one fires `opengrid-toolbar-action` with `{ id,
+/// selection }`. Checked like `set_columns`: a problem is said in the status
+/// line, and none of the call is applied. Shown with the `toolbar` attribute.
+#[cfg(feature = "grid")]
+#[wasm_bindgen(js_name = set_toolbar)]
+pub fn set_toolbar(host: &HtmlElement, items: JsValue) {
+    crate::grid_element::set_toolbar(host, &items);
+}
+
 /// Gives columns a template (issue #317): `{ column: ({ value, text, row, key }) => Node }`,
 /// the DOM node a cell shows instead of its text. Never an HTML string; the
 /// source's value stays what search, export and the events read.

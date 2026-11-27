@@ -65,6 +65,8 @@ pub(crate) mod table;
 pub(crate) mod texts;
 pub(crate) mod theme;
 #[cfg(feature = "grid")]
+pub(crate) mod toolbar;
+#[cfg(feature = "grid")]
 pub(crate) mod tree;
 #[cfg(feature = "grid")]
 pub(crate) mod view;
@@ -98,6 +100,9 @@ pub(crate) mod grid_element_events {
     /// Fired when one of the page's items in the cell menu was chosen
     /// (issue #524).
     pub const CELL_ACTION_EVENT: &str = "opengrid-cell-action";
+    /// Fired when one of the page's items in the toolbar was chosen
+    /// (issue #531).
+    pub const TOOLBAR_ACTION_EVENT: &str = "opengrid-toolbar-action";
     /// Fired when a new row was entered (issue #183).
     pub const ROW_ADD_EVENT: &str = "opengrid-row-add";
     /// Fired when a block of cells was pasted (issue #184).

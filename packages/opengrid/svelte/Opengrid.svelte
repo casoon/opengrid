@@ -43,6 +43,7 @@
     choices,
     actions,
     cellActions,
+    toolbarItems,
     validators,
     cellTemplates,
     detailRenderer,
@@ -54,6 +55,7 @@
     onbulkchange,
     onrowaction,
     oncellaction,
+    ontoolbaraction,
     ondrilldown,
     onsourcereplaced,
     ...rest
@@ -71,6 +73,7 @@
       choices: $state.snapshot(choices),
       actions: $state.snapshot(actions),
       cellActions: $state.snapshot(cellActions),
+      toolbarItems: $state.snapshot(toolbarItems),
       validators: validators && snapshotKeepingFunctions(validators),
       cellTemplates: cellTemplates && snapshotKeepingFunctions(cellTemplates),
       detailRenderer,
@@ -93,6 +96,7 @@
         onBulkChange: (detail) => onbulkchange?.(detail),
         onRowAction: (detail) => onrowaction?.(detail),
         onCellAction: (detail) => oncellaction?.(detail),
+        onToolbarAction: (detail) => ontoolbaraction?.(detail),
         onDrillDown: (detail) => ondrilldown?.(detail),
         onSourceReplaced: (detail) => onsourcereplaced?.(detail),
       };
