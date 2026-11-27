@@ -163,7 +163,7 @@ function installProbe() {
   return calls;
 }
 
-function probeReport(entries, calls, frames) {
+function probeReport(entries, calls, frames, stepEnds, fineStart) {
   const totals = {};
   for (const [name, , ms] of calls) {
     const t = (totals[name] ??= { n: 0, ms: 0, max: 0 });
@@ -194,7 +194,11 @@ function probeReport(entries, calls, frames) {
       calls: calls.filter(([, t, ms]) => ms > 1 && t >= e.startTime && t <= e.startTime + e.duration).map(([name, t, ms]) => `${name}@${Math.round(t - e.startTime)}:${ms.toFixed(1)}`),
     }));
   const sorted = [...frames].sort((a, b) => a - b);
-  return { totals, invokers, worst, over33: frames.filter((f) => f > 33.4).length, p50: sorted[60], p95: sorted[114] };
+  // The step each long frame belongs to (the first whose end is after its start), and the steps over 33 ms.
+  const stepOf = (t) => stepEnds.findIndex((end) => end >= t);
+  const longAt = entries.map((e) => stepOf(e.startTime)).sort((a, b) => a - b);
+  const over33At = frames.map((f, i) => (f > 33.4 ? i : -1)).filter((i) => i >= 0);
+  return { longAt, over33At, totals, invokers, worst, over33: frames.filter((f) => f > 33.4).length, p50: sorted[60], p95: sorted[114] };
 }
 
 
@@ -263,9 +267,11 @@ async function scroll(adapter) {
   }
   const probeCalls = params.has("probe") ? installProbe() : null;
   const micro = params.has("micro") ? microbench(scroller) : null;
-  scroller.scrollTop = 0;
+  scroller.scrollTop = params.has("mid") ? Math.floor((scroller.scrollHeight - scroller.clientHeight) / 2) : 0;
   await frame();
+  if (params.has("mid")) for (let i = 0; i < 20; i++) await frame();
   const frames = [];
+  const stepEnds = [];
   await window.__metrics?.("steps:start");
   let last = await frame();
   const fineStart = last;
@@ -274,6 +280,7 @@ async function scroll(adapter) {
     scroller.scrollTop += 3 * rowHeight;
     const now = await frame();
     frames.push(now - last);
+    stepEnds.push(now);
     last = now;
   }
   const jumpStart = last;
@@ -298,7 +305,7 @@ async function scroll(adapter) {
     jumpsOver33: frames.slice(120).filter((f) => f > 33.4).length,
     loaf: { steps: longFrames(loafs, fineStart, jumpStart), jumps: longFrames(loafs, jumpStart, last) },
     micro,
-    probe: probeSteps ? probeReport(loafs.filter((e) => e.startTime >= fineStart && e.startTime < jumpStart), probeSteps, frames.slice(0, 120)) : null,
+    probe: probeSteps ? probeReport(loafs.filter((e) => e.startTime >= fineStart && e.startTime < jumpStart), probeSteps, frames.slice(0, 120), stepEnds, fineStart) : null,
     moved,
   };
 }

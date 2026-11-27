@@ -293,7 +293,7 @@ for (const grid of GRIDS) {
     await page.goto("about:blank");
     await settle(300);
     const baseline = treeMiB();
-    await page.goto(`${base}/pages/${grid}.html?rows=${ROWS}&sync=1&server=${SERVER_PORT}${PROBE ? "&probe=1" : ""}${args.includes("--micro3") ? "&micro3=1" : ""}${args.includes("--reuse") ? "&reuse=1" : ""}${args.includes("--micro") ? "&micro=1" : ""}${RELEASE ? "&release=1" : ""}`);
+    await page.goto(`${base}/pages/${grid}.html?rows=${ROWS}&sync=1&server=${SERVER_PORT}${PROBE ? "&probe=1" : ""}${args.includes("--mid") ? "&mid=1" : ""}${args.includes("--micro3") ? "&micro3=1" : ""}${args.includes("--reuse") ? "&reuse=1" : ""}${args.includes("--micro") ? "&micro=1" : ""}${RELEASE ? "&release=1" : ""}`);
     const memory = {};
     try {
       for (;;) {
@@ -385,6 +385,7 @@ if (PROBE) {
         .slice(0, 12);
       console.log(`PROBE ${grid} run ${i} threads (cpu ms in the steps; cgroup: periods, throttled periods, throttled us): ${JSON.stringify(cpu)}`);
       if (r.metrics?.gc) console.log(`PROBE ${grid} run ${i} gc: ${JSON.stringify(r.metrics.gc)}`);
+      console.log(`PROBE ${grid} run ${i} longAt ${JSON.stringify(r.scroll?.probe?.longAt)} over33At ${JSON.stringify(r.scroll?.probe?.over33At)}`);
       console.log(`PROBE ${grid} run ${i} ${JSON.stringify(r.scroll?.probe)}`);
     });
   }
