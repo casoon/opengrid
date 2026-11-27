@@ -1745,7 +1745,7 @@ function aborted() {
  *
  * `update` applies only what changed. A key left out of an update keeps its
  * value; a key given as `undefined` resets it (texts to English, no formats, no
- * presentation, no choices, no actions, no validators) — except `provider`,
+ * presentation, no choices, no actions, no presets, no validators) — except `provider`,
  * which has no "none", and `view`, where `undefined` (or `null`) means the grid leads. Attributes
  * (`label`, `columns`, `group-by`, …) are not options: the page or the
  * framework sets them on the element as usual.
@@ -1937,6 +1937,13 @@ export function connect(host, options = {}) {
       const toolbarItems = changed.toolbarItems ?? [];
       write("toolbarItems", toolbarItems, stableKey(toolbarItems), (value) =>
         module.set_toolbar(host, value),
+      );
+    }
+    if ("presets" in changed || "presetOptions" in changed) {
+      const presets = current.presets ?? [];
+      const presetOptions = current.presetOptions ?? {};
+      write("presets", presets, stableKey({ presets, presetOptions }), (value) =>
+        module.set_presets(host, value, presetOptions),
       );
     }
     if ("cellTemplates" in changed) {

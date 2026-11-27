@@ -53,6 +53,7 @@ mod history;
 pub mod layout;
 pub mod paste;
 mod patch;
+pub mod presets;
 pub mod range;
 mod saving;
 mod state;

@@ -677,6 +677,11 @@ pub(super) fn on_filter_clear(event: Event) {
             toggle_filter_row(&host);
             return;
         }
+        // A segment of the page's presets (issue #532).
+        if let Ok(Some(button)) = target.closest("[part=\"preset\"]") {
+            super::presets::on_click(&host, &button);
+            return;
+        }
         if let Ok(Some(button)) = target.closest("[data-density]")
             && let Some(density) = button.get_attribute("data-density")
         {

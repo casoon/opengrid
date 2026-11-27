@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>opengrid presets fixture</title>
+    <style>
+      /* Issue #532: the page's presets over the 200 orders of grid-virtual.csv,
+         with every way a query reaches the source at hand — the filter row, the
+         search, a list facet (customer), a selection column with a `row-key`.
+         Every query the grid asks is recorded. `?counts` asks for the counts,
+         `?rtl` turns the page around. */
+      opengrid-grid {
+        display: block;
+        height: 520px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid presets fixture</h1>
+      <opengrid-grid
+        label="Orders"
+        datasource="orders"
+        columns="id,customer,country,amount,qty,ordered_on"
+        toolbar
+        facets
+        search
+        selection
+        row-key="id"
+        window-size="20"
+      ></opengrid-grid>
+    </main>
+    <script type="module">
+      import { loadOpengrid } from "/packages/opengrid/loader.js";
+      import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+
+      async function start() {
+        const loader = await loadOpengrid();
+        await init();
+        const engine = new Engine();
+        const schema = await (await fetch("/crates/opengrid-conformance/data/orders.schema.json")).text();
+        const csv = await (await fetch("/tests/e2e/fixtures/grid-virtual.csv")).arrayBuffer();
+        engine.load_csv("orders", new Uint8Array(csv), schema);
+
+        window.__queries = [];
+        window.__engine = engine;
+        window.__provider = {
+          execute: (queryJson) => {
+            window.__queries.push(queryJson);
+            return engine.execute(queryJson);
+          },
+        };
+        // Every event the page hears of.
+        window.__views = [];
+        window.__selections = [];
+        document.addEventListener("opengrid-view-change", (event) => window.__views.push(event.detail.view));
+        document.addEventListener("opengrid-selection-change", (event) =>
+          window.__selections.push(event.detail),
+        );
+
+        const params = new URLSearchParams(location.search);
+        if (params.has("rtl")) {
+          document.documentElement.dir = "rtl";
+        }
+        const host = document.querySelector("opengrid-grid");
+        loader.module.set_columns(host, { customer: { facet: "list" } });
+        window.__presets = [
+          { id: "all", label: "All orders" },
+          { id: "de", label: "Germany", filter: { field: "country", op: "eq", value: "DE" } },
+          { id: "big", label: "Big", filter: { field: "qty", op: "gte", value: 500 } },
+          // Nothing is empty: no order has an empty customer.
+          { id: "none", label: "Nothing", filter: { field: "customer", op: "eq", value: "" } },
+        ];
+        if (!params.has("nopresets")) {
+          loader.module.set_presets(host, window.__presets, params.has("counts") ? { counts: true } : undefined);
+        }
+        loader.module.set_provider(host, window.__provider);
+        window.__opengridModule = loader.module;
+        return { fallback: loader.fallback };
+      }
+
+      window.__opengridReady = start();
+    </script>
+  </body>
+</html>

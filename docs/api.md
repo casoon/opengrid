@@ -53,6 +53,7 @@ instead.
 | `set_actions(host, [{ id, label }])` | A trailing column per action, a button per row; fires `opengrid-row-action` — see [Row actions](#row-actions). |
 | `set_cell_actions(host, [{ id, label, column? }])` | The page's items in the cell menu, after the grid's; fires `opengrid-cell-action` — see [The cell menu](#the-cell-menu). |
 | `set_toolbar(host, [{ id, label, items?, disabled?, reason? }])` | The page's own buttons, menu buttons and disabled items in the toolbar, after the grid's own controls; fires `opengrid-toolbar-action` — see [The page's own items](#the-pages-own-items). |
+| `set_presets(host, [{ id, label, filter? }], options?)` | The page's named views, a segmented control in the toolbar; the chosen one is and-ed into every query and is in the [view](#the-view) as `preset` — see [Presets](#presets). |
 | `register()` | Defines the three elements. `loadOpengrid()` calls it; a page that loads the module itself calls it once. |
 
 **Types.** The package ships `loader.d.ts`: every name on this page is typed —
@@ -197,6 +198,7 @@ connection.disconnect();              // the listeners go; the element keeps its
 | `presentation` | `set_columns` — named apart from the `columns` attribute, which is the projection |
 | `onViewChange`, `onSelectionChange`, `onCellChange` | the [events](#events) of the same names; each callback receives the `detail` (for the view: the view itself) |
 | `actions`, `cellActions`, `validators`, `cellTemplates`, `detailRenderer` | `set_actions`, `set_cell_actions`, `set_validators`, `set_cell_templates`, `set_detail_renderer` — the grid only |
+| `presets`, `presetOptions` | `set_presets`, with its list and its second argument (`{ counts: true }`) — the grid only |
 | `onPaste`, `onBulkChange`, `onRowAction`, `onCellAction`, `onSourceReplaced` | `opengrid-paste`, `opengrid-bulk-change`, `opengrid-row-action`, `opengrid-cell-action`, `opengrid-source-replaced`; each callback receives the `detail` |
 | `toolbarItems`, `onToolbarAction` | `set_toolbar` (compared by value), `opengrid-toolbar-action` — the grid only; the callback receives the `detail` |
 | `onDrillDown` | `opengrid-drill-down` — the pivot only, with its `drill-down` attribute; the callback receives the `detail` |
@@ -218,8 +220,8 @@ const connection = connect(grid, {
 
 | | |
 |---|---|
-| Order | Texts, formats, presentation, choices, actions, validators, view, provider — so the first query is the only one, and the first paint is in the right words. An `update` that changes the texts or the presentation rebuilds the grid, and one that changes the view as well rebuilds it twice: the source is asked twice, and only the second answer is shown. |
-| Changes | `update` writes an option only when it differs from what the element has. A key left out keeps its value; a key given as `undefined` resets it — texts to English, no formats, no presentation, no choices, no actions, no validators. `provider` has no "none"; for `view`, `undefined` means the grid leads. |
+| Order | Texts, formats, presentation, choices, actions, presets, validators, view, provider — so the first query is the only one, and the first paint is in the right words. An `update` that changes the texts or the presentation rebuilds the grid, and one that changes the view as well rebuilds it twice: the source is asked twice, and only the second answer is shown. |
+| Changes | `update` writes an option only when it differs from what the element has. A key left out keeps its value; a key given as `undefined` resets it — texts to English, no formats, no presentation, no choices, no actions, no presets, no validators. `provider` has no "none"; for `view`, `undefined` means the grid leads. |
 | Controlled | `view` is written whenever it differs from what the grid shows: after the reader sorted, passing the same saved view again restores it — and a page that keeps passing a view without taking the reader's changes back holds the grid there, as a controlled input does. Writing back what the grid just reported costs nothing: `onViewChange: (view) => connection.update({ view })`. `onViewChange` hears the reader, not the views `connect` wrote. A view the grid refuses — a column it does not have yet — is tried again on the next `update`. Formats and validators compare functions by identity — keep them stable, or each update redraws. |
 | Timing | `connect` returns at once; `connection.ready` settles once the module is loaded and the options are applied. Updates before that are folded in. On the [fallback](#loading), nothing is applied and `ready` says so. |
 | The view | needs the element in the document. On one that is not, the view **and the provider** wait for the next `update`, together, so the first query still asks for the view; the console says so. Everything else may come first. |
@@ -463,7 +465,8 @@ reflow case of WCAG 1.4.10, the toolbar wraps instead.
 | + Filter | Opens *Add filter*, a `role="dialog"` with `aria-modal="true"` (`Tab` does not leave it): *Column*, *Condition* (the operators the column's type allows), *Value*, *Cancel*, *Apply*. The focus moves to *Column*; `Tab` cycles inside; *Apply* or `Enter` in *Value* writes the column's entry in the filter row — the one place a filter lives — and closes; `Escape`, *Cancel* or a click outside close without a change. A value the column cannot take is named in the dialog, which stays open, and said in the status line — the one live region. The focus returns to the button. |
 | Advanced filter | With `filter-builder`. Opens the builder of the [nested filter](#nested-filter): conditions joined by *all* or *any*, in groups. A native modal `<dialog>`. |
 | + Group | Opens a `role="menu"` of the groupable columns not grouped yet, with the column menu's keys (`↓`/`↑`, `Home`/`End`, `Enter`/`Space`, `Escape`, `Tab`). A pick adds the next grouping level, as `group-by` does. With three levels the button is `aria-disabled` and says why. |
-| Chips | One per active filter, in words (`country is DE`), one for the [nested filter](#nested-filter) as a whole, and one for the grouping. Each has a remove button **named for its filter** — `Remove country is DE` — and "Remove all" clears filters and grouping. A removal is said once, with the result that follows; the focus moves to the next chip, never to the document. |
+| Presets | With [`set_presets`](#presets): the page's named views as a segmented control, first in the toolbar — a `radiogroup`, one tab stop, the arrows choose. |
+| Chips | One per active filter, in words (`country is DE`), one for the [nested filter](#nested-filter) as a whole, and one for the grouping. Each has a remove button **named for its filter** — `Remove country is DE` — and "Remove all" clears filters and grouping, not the chosen [preset](#presets). A removal is said once, with the result that follows; the focus moves to the next chip, never to the document. |
 
 The chips are a display of the view, not a second truth about the filters: they
 are drawn from it, and redrawn only when what they say changed.
@@ -533,12 +536,45 @@ value (`"op":"eq","value":""`) and not NULL.
 | | |
 |---|---|
 | Where it holds | In **every** query the grid sends: the rows, the counts, group rows and their aggregates, a tree's levels, the facets' values and counts, the keys behind "select all", and `get_query` — so an export is the same rows. It is and-ed with what the reader filters; the reader works inside it. |
-| Whose it is | The page's. It is not shown in the filter row or as a chip, "clear filters" leaves it, the empty state offers no reset for it, it is not in `get_view`/`set_view`, and changing it fires no `opengrid-view-change`. |
+| Whose it is | The page's. It is not shown in the filter row or as a chip, "clear filters" leaves it, the empty state offers no reset for it, it is not in `get_view`/`set_view`, and changing it fires no `opengrid-view-change`. The reader's choice among the page's [presets](#presets) is another thing: it is and-ed with this filter and is in the view. |
 | Changing it | Asks again, as a filter of the reader's does: the first rows, the selection dropped (and said), the facets' values listed anew. Removing the attribute removes the filter. |
 | What does not hold | Text that is not a filter object is said in the status line and nothing is asked — never a grid that silently shows every row. A filter the source refuses (an unknown field, a value of the wrong type) is the provider's error, in the status line like any refused query. |
 | Not access control | The filter is written by the page and readable and changeable in the browser. What a reader **may** see is decided by the server's row filter; this only chooses what the page shows. |
 
 A framework component takes it as the `filter` prop, a string, as the pivot's.
+
+### Presets
+
+```js
+loader.module.set_presets(grid, [
+  { id: "active", label: "All active" },
+  { id: "deviating", label: "Deviating from the base price",
+    filter: { field: "deviation", op: "ne", value: 0 } },
+  { id: "hidden", label: "Hidden", filter: { field: "hidden", op: "eq", value: true } },
+], { counts: true });
+```
+
+A list a team works through has a few fixed **views** a reader switches between all
+day. A preset is one of them: a name and a filter the page knows — over fields the
+page computes into the rows as well — shown as a segmented control first in the
+[toolbar](#toolbar), with `toolbar`. Exactly one is chosen, and the first is the
+default. A preset without a `filter` (an *All*) shows every row.
+
+| | |
+|---|---|
+| The control | A labelled `role="radiogroup"` of buttons with `role="radio"` (`part="presets"`, `part="preset"`): one tab stop, on the chosen one. `→`/`↓` choose the next, `←`/`↑` the previous (wrapping; `←` and `→` swap in a right-to-left grid), `Home`/`End` the first and the last; a click chooses too. Choosing is the whole action — no confirmation. |
+| Where it holds | The chosen preset's filter is and-ed with the page's [`filter`](#the-pages-filter) and the reader's filters in **every** query the grid sends: the rows, group rows and their aggregates, a tree's levels, the facets' values and counts, the keys behind "select all", `get_query` — so an [export](#exporting-the-view) is the rows of the preset — and the print table, whose caption names the preset. The keys a restored selection is checked against are not under it: a selected record may well be out of sight, as under a filter of the reader's. |
+| In the view | `preset: "<id>"` in `get_view`/`set_view` and the `detail` of `opengrid-view-change`, which fires when the reader chooses. A view without `preset` has the first (the default); one naming an id the page has no preset of is said in the status line and applied **not at all**. Where the page has no presets, the field is left out. |
+| Choosing | Asks again, as a filter of the reader's does: the first rows, a selection by position dropped (and said), a selection [by key](#selecting-by-key) kept, the facets' values listed anew. The result is said **once**, with the preset's name: `12 matches · Deviating`. |
+| Not a chip | A preset is the view the reader is looking at, not a filter they added: it is not a chip, and "Remove all" and the empty state's reset leave it. The empty state names it: `No row matches these filters in “Deviating”.` |
+| Counts | With `{ counts: true }`, each label carries its rows — `Deviating (12)` — one count query per preset, asked with every query for the rows and under the page's filter and the reader's, so the number is what the preset shows when chosen. The cost is said as the facets say theirs (`Counted with 3 queries`), and the footer's count includes it. Without `counts` nothing is counted. |
+| Checked | Like `set_columns`: a list that is not a list, an entry without `id` or `label`, an id twice, a field that is not `id`, `label` or `filter`, a `filter` that is not a filter — each is said in the status line, and **none of the call is applied**. Whether a field exists is the source's word, as with the page's filter. |
+| Changing the list | The choice stays where the new list still has its id, and is the first preset otherwise; the rows change if the chosen filter did. `set_presets(host, [])` takes them all away. |
+
+`connect` takes the list as `presets` and the second argument as `presetOptions`,
+and the framework components as the same props, compared by value. Presets need
+`toolbar` for their control; without it the chosen preset still holds, and the
+page can drive it with `set_view`.
 
 ### Sorting text by a locale
 
@@ -1701,6 +1737,7 @@ whenever the reader changes any of it.
 | `selected` | The keys of the selected records, where the grid [selects by key](#selecting-by-key); left out while there are none. `set_view` restores them after asking the source which of them exist. |
 | `detail` | The keys of the records whose [detail panel](#detail-panels) is open; left out while there are none. `set_view` opens them as their rows load. |
 | `where` | The [nested filter](#nested-filter); left out while there is none, and a view without it has none. |
+| `preset` | The id of the chosen [preset](#presets); left out where the page has none. A view without it has the first. |
 
 **`where` is a query's `filter`, as [the wire](../protocol/) writes it** — the form
 of the page's [`filter`](#the-pages-filter), so values are typed: a number is a
@@ -2301,7 +2338,7 @@ theme that animates a part.
 `facet-pill`, `facet-pills`, `facet-value`, `facets`, `facets-head`, `facets-toggle`, `filter`,
 `filter-builder`, `filter-builder-dialog`, `filter-clear`, `filter-dialog`, `filter-operator`, `filter-row-toggle`, `filter-value`, `footer`,
 `field-group`, `field-menu`, `group-mark`, `group-toggle`, `grouping-menu`, `header`, `layout`, `list`, `list-item`, `list-item-remove`, `listbox`, `menu-label`, `operator-menu`, `page-first`, `page-label`, `page-last`, `page-next`,
-`page-previous`, `pager`, `paste-apply`, `paste-discard`, `paste-preview`, `paste-summary`, `position`, `record-dialog`, `refresh`, `row`, `row-header`, `row-muted`, `scroll-position`, `search`, `search-hint`, `search-input`, `search-list`,
+`page-previous`, `pager`, `paste-apply`, `paste-discard`, `paste-preview`, `paste-summary`, `position`, `preset`, `presets`, `presets-cost`, `record-dialog`, `refresh`, `row`, `row-header`, `row-muted`, `scroll-position`, `search`, `search-hint`, `search-input`, `search-list`,
 `select`, `select-all`, `select-mark`, `sort-button`, `sort-direction`, `sort-index`, `source`, `status`,
 `table`, `toolbar`, `toolbar-item`, `toolbar-menu`, `total-row`, `validation`, `viewport`.
 
@@ -2503,6 +2540,10 @@ boolean reads — that is `set_formats`.
 | `filterBuilderEdit` | `Edit {filter}` — the name of the nested filter's chip button | `{filter}` |
 | `filterApplied` | `Filter set: {filter}` — said with the result when the nested filter was set | `{filter}` |
 | `emptyFiltered` / `emptySource` | `No row matches these filters.` / `There are no rows.` | |
+| `emptyPreset` | `No row matches these filters in “{preset}”.` — the empty state under a [preset](#presets) with a filter | `{preset}` |
+| `presetsGroup` | `Views` — the name of the presets' radiogroup | |
+| `presetChosen` | `{preset}` — said with the result when the reader chose a preset | `{preset}` |
+| `presetCount` | `{label} ({count})` — a preset's label with its rows, under `counts: true` | `{label}`, `{count}` |
 | `emptyReset` | `Reset filters` | |
 | `operators` | the thirteen filter operators, keyed by wire token (`has`, `has_all` and `is_empty` are the list's) | |
 | `choicesOne` / `choicesOther` | `1 choice` / `{count} choices` — said while typing in a combobox | `{count}` |

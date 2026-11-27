@@ -87,7 +87,7 @@ const EXPORT_ERROR_CODES: [&str; 4] = [
 
 /// The module functions a page calls through `loader.module`, in the order the
 /// freeze lists them.
-const FUNCTIONS: [&str; 22] = [
+const FUNCTIONS: [&str; 23] = [
     "register",
     "set_provider",
     "set_texts",
@@ -110,6 +110,7 @@ const FUNCTIONS: [&str; 22] = [
     "set_cell_templates",
     "refresh",
     "set_detail_renderer",
+    "set_presets",
 ];
 
 /// `#[wasm_bindgen]` exports that are **not** in the freeze, on purpose: the
@@ -361,6 +362,10 @@ fn parts() -> Vec<String> {
     parts.push("field-menu".to_owned());
     // The filter row's operator menu is built when it opens (issue #96).
     parts.push("operator-menu".to_owned());
+    // The page's presets are drawn into the toolbar by the element (issue #532).
+    for part in ["presets", "preset", "presets-cost"] {
+        parts.push(part.to_owned());
+    }
     // The facet sidebar's contents are drawn from the configuration (point 66),
     // and the toolbar's facet switch exists only once facets are configured.
     for part in [
@@ -446,6 +451,7 @@ functions
   set_cell_templates
   refresh
   set_detail_renderer
+  set_presets
 
 loader exports
   loadOpengrid
@@ -489,7 +495,7 @@ chip-edit chip-move chip-remove chips chips-clear column-menu column-menu-button
 edit-hint edit-mark edit-toggle editor empty empty-reset empty-text facet facet-bounds facet-cost facet-count facet-pill facet-pills facet-value facets facets-head facets-toggle \
 field-group field-menu filter filter-builder filter-builder-dialog filter-clear filter-dialog filter-operator filter-row-toggle filter-value footer group-mark group-toggle \
 grouping-menu header layout list list-item list-item-remove listbox menu-label operator-menu page-first page-label page-last page-next page-previous pager paste-apply paste-discard \
-paste-preview paste-summary position record-dialog refresh row row-header row-muted scroll-position search search-hint search-input search-list select select-all select-mark sort-button \
+paste-preview paste-summary position preset presets presets-cost record-dialog refresh row row-header row-muted scroll-position search search-hint search-input search-list select select-all select-mark sort-button \
 sort-direction sort-index source status table toolbar toolbar-item toolbar-menu total-row validation viewport
 
 text keys
@@ -498,13 +504,13 @@ aggregateSum apply bandKeep booleanFalse booleanTrue bulkApply bulkCaption bulkD
 cellEdit cellMenu cellOpenRecord cellRequired cellSelectRow chipRemove chipsClear chipsGroup choiceRefused choicesOne choicesOther clear columnAtEdge columnFull columnHidden \
 columnLocked columnMenu columnMoved columnPinnedEnd columnPinnedNarrow columnPinnedStart columnShown columnUnlocked columnUnpinned columnWidth columnsGroup densityComfortable \
 densityCompact densityGroup densityNormal detailHidden detailHide detailPanel detailShow detailShown editHint editLocked editLockedHint editToggle editUnlocked empty emptyFiltered \
-emptyReset emptySource emptyValue error errorUnknown facetChipValues facetFrom facetQueries facetTo facetsGroup facetsReset facetsToggle fieldEarlier fieldLater fieldRemove \
+emptyPreset emptyReset emptySource emptyValue error errorUnknown facetChipValues facetFrom facetQueries facetTo facetsGroup facetsReset facetsToggle fieldEarlier fieldLater fieldRemove \
 filterAny filterApplied filterBuilder filterBuilderAddCondition filterBuilderAddGroup filterBuilderAll filterBuilderAny filterBuilderCondition filterBuilderEdit filterBuilderGroup \
 filterBuilderJoin filterColumn filterColumnLabel filterConditionLabel filterGroup filterInvalid filterRemoved filterRowToggle filterValueLabel filtersCleared groupByColumn \
 groupChip groupCollapsed groupExpanded groupInvalid groupRow groupSecondLevel groupingFull hideBand hideColumn integerInvalid lang listItemAdded listItemRemove listItemRemoved loading lockColumn \
 matchesOne matchesOther newRow noValue nothingToAdd numberDecimals numberInvalid numberTooLarge operatorLabel operators pageFirst pageLast pageNext pageOf pagePrevious pasteApplied pasteApply pasteBadOne pasteBadOther \
 pasteBlocked pasteCutOff pasteDiscard pasteDiscarded pastePreview pasteUnreadable pinEnd pinGroup pinNarrow pinNone pinStart pinsReleased pivotColumns pivotDrillDown \
-pivotFilterHint pivotFilterLabel pivotFilters pivotMeasures pivotRows pivotShowAs pivotToolbar positionCell queriesOne queriesOther queryAnd queryMissingCondition queryMissingJoin \
+pivotFilterHint pivotFilterLabel pivotFilters pivotMeasures pivotRows pivotShowAs pivotToolbar positionCell presetChosen presetCount presetsGroup queriesOne queriesOther queryAnd queryMissingCondition queryMissingJoin \
 queryMissingValue queryOr queryUnclosed queryUnknownColumn queryUnopened queryWrongOperator rangeCopied rangeSize rangeUnloaded recordDone recordNothing recordSave recordTitle \
 redoAdded redoCell redoNothing redoPaste redoRecord rowAdded rowMuted rowsOne rowsOther runningTotal searchChip searchHint searchLabel searchPlaceholder searchSuggestions selectAll \
 selectedAll selectionCleared selectionMissing shareOfColumn shareOfRow shareOfTotal sortAscending sortDescending sortKey sourceChanged sourceHybrid sourceLocal sourceRefresh \

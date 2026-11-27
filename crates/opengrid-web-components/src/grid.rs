@@ -2341,6 +2341,7 @@ pub fn grid_css() -> String {
                    min-width: 0; overflow-x: auto; scrollbar-width: thin;
                    padding: 4px; margin: -4px; }}
            [data-toolbar-row] > *, [data-toolbar-row] > slot::slotted(*) {{ flex: 0 0 auto; }}
+           [part=\"toolbar\"] > [part=\"presets\"] {{ flex: 1 1 100%; }}
          }} }}
          [part=\"toolbar\"] button, [part=\"chips\"] button {{ font: inherit; font-size: 0.8125rem;
                    font-weight: 500; min-height: 32px; min-width: {MIN_TARGET_SIZE}px;
@@ -2361,6 +2362,19 @@ pub fn grid_css() -> String {
          [part=\"toolbar\"] [part=\"density\"] button[aria-pressed=\"true\"] {{
                    background: var({SURFACE_PROPERTY}); color: var({INK_PROPERTY});
                    box-shadow: 0 1px 2px rgb(0 0 0 / 0.1); }}
+         /* The page's presets (issue #532): a segmented control like the
+            density, first in the toolbar. The chosen segment is lifted *and*
+            bold — more than a colour (WCAG 1.4.1). */
+         [part=\"presets\"] {{ display: inline-flex; flex-wrap: wrap; padding: 2px;
+                   background: var({SURFACE_2_PROPERTY}); border: 1px solid var({LINE_PROPERTY});
+                   border-radius: min(var({RADIUS_PROPERTY}), 8px); }}
+         [part=\"toolbar\"] [part=\"presets\"] button {{ min-height: {MIN_TARGET_SIZE}px;
+                   padding: 0 12px; color: var({INK_MUTED_PROPERTY}); background: transparent;
+                   border-radius: min(var({RADIUS_PROPERTY}), 6px); }}
+         [part=\"toolbar\"] [part=\"presets\"] button[aria-checked=\"true\"] {{
+                   background: var({SURFACE_PROPERTY}); color: var({INK_PROPERTY});
+                   font-weight: 600; box-shadow: 0 1px 2px rgb(0 0 0 / 0.1); }}
+         [part=\"presets-cost\"] {{ font-size: 0.75rem; color: var({INK_MUTED_PROPERTY}); }}
          [part=\"chips\"] {{ display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
                    padding: 0 14px 12px; }}
          [part=\"chips\"][hidden], [part=\"filter\"][hidden] {{ display: none; }}
@@ -2610,6 +2624,9 @@ pub fn grid_css() -> String {
                     {EDITABLE_PROPERTY}: transparent; }}
            /* The tint is gone here; the header's mark keeps the meaning. */
            [part=\"edit-mark\"] {{ forced-color-adjust: none; color: CanvasText; }}
+           /* The chosen preset is the one segment with a ground. */
+           [part=\"preset\"][aria-checked=\"true\"] {{ forced-color-adjust: none;
+                    background: Highlight; color: HighlightText; }}
            /* A forced palette drops background images, and with them WebKit's
               drawn select arrow (above): the native select comes back, so it
               keeps its sign. Elsewhere the select is native already. */

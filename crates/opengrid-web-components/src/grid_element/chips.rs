@@ -26,6 +26,7 @@ pub(super) fn sync_chrome(host: &HtmlElement) {
         };
     }
     sync_quick_buttons(host, &root);
+    draw_presets(host, &root);
     let Ok(Some(toolbar)) = root.query_selector("[part=\"toolbar\"]") else {
         return;
     };

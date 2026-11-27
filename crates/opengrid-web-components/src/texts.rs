@@ -302,8 +302,16 @@ pub struct GridTexts {
     pub filter_builder_add_group: String,
     pub filter_builder_edit: String,
     pub filter_applied: String,
+    /// The page's presets, a segmented control in the toolbar (issue #532).
+    pub presets_group: String,
+    /// Said once with the result when the reader chose a preset. May use `{preset}`.
+    pub preset_chosen: String,
+    /// A preset's name with its count. May use `{label}` and `{count}`.
+    pub preset_count: String,
     /// The empty state (point 68): no rows because of the filters …
     pub empty_filtered: String,
+    /// … or because of the preset the page's filter is in. May use `{preset}`.
+    pub empty_preset: String,
     /// … and no rows at all.
     pub empty_source: String,
     /// The button that clears every filter, facet and search.
@@ -659,7 +667,11 @@ pub(crate) const KEYS: &[&str] = &[
     "filterBuilderAddGroup",
     "filterBuilderEdit",
     "filterApplied",
+    "presetsGroup",
+    "presetChosen",
+    "presetCount",
     "emptyFiltered",
+    "emptyPreset",
     "emptySource",
     "emptyReset",
     "filterInvalid",
@@ -941,7 +953,11 @@ impl Default for GridTexts {
             filter_builder_add_group: "+ Group".to_owned(),
             filter_builder_edit: "Edit {filter}".to_owned(),
             filter_applied: "Filter set: {filter}".to_owned(),
+            presets_group: "Views".to_owned(),
+            preset_chosen: "{preset}".to_owned(),
+            preset_count: "{label} ({count})".to_owned(),
             empty_filtered: "No row matches these filters.".to_owned(),
+            empty_preset: "No row matches these filters in \u{201c}{preset}\u{201d}.".to_owned(),
             empty_source: "There are no rows.".to_owned(),
             empty_reset: "Reset filters".to_owned(),
             filter_invalid: "{column}: {value} is not a value for this column".to_owned(),
@@ -1443,6 +1459,26 @@ impl GridTexts {
     /// The free-text chip (point 67).
     pub fn search_chip(&self, text: &str) -> String {
         fill(&self.search_chip, "text", text)
+    }
+
+    /// What is said when the reader chose a preset (issue #532).
+    pub fn preset_chosen(&self, preset: &str) -> String {
+        fill(&self.preset_chosen, "preset", preset)
+    }
+
+    /// A preset's name with the rows it holds (issue #532).
+    pub fn preset_count(&self, label: &str, count: u64) -> String {
+        // The page's label last: what it contains is not a placeholder.
+        fill(
+            &fill(&self.preset_count, "count", &count.to_string()),
+            "label",
+            label,
+        )
+    }
+
+    /// The empty state under a preset (issue #532).
+    pub fn empty_preset(&self, preset: &str) -> String {
+        fill(&self.empty_preset, "preset", preset)
     }
 
     /// What the facet counts cost (point 66).
@@ -2029,7 +2065,11 @@ mod host {
         );
         overwrite(&mut texts.filter_builder_edit, string("filterBuilderEdit"));
         overwrite(&mut texts.filter_applied, string("filterApplied"));
+        overwrite(&mut texts.presets_group, string("presetsGroup"));
+        overwrite(&mut texts.preset_chosen, string("presetChosen"));
+        overwrite(&mut texts.preset_count, string("presetCount"));
         overwrite(&mut texts.empty_filtered, string("emptyFiltered"));
+        overwrite(&mut texts.empty_preset, string("emptyPreset"));
         overwrite(&mut texts.empty_source, string("emptySource"));
         overwrite(&mut texts.empty_reset, string("emptyReset"));
         overwrite(&mut texts.filter_invalid, string("filterInvalid"));
