@@ -56,6 +56,8 @@ const OPTIONS = [
   "actions",
   "cellActions",
   "toolbarItems",
+  "presets",
+  "presetOptions",
   "validators",
   "cellTemplates",
   "detailRenderer",

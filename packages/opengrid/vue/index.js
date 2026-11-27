@@ -50,6 +50,8 @@ const DEEP = [
   "actions",
   "cellActions",
   "toolbarItems",
+  "presets",
+  "presetOptions",
   "validators",
   "cellTemplates",
   "view",

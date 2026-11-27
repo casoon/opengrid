@@ -91,6 +91,14 @@ Two things belong in every release entry and are easy to leave out:
   learns which fields are derived from its provider's `describe(source)`, once per `datasource`
   ([#528](https://github.com/casoon/opengrid/issues/528)). Details:
   [What can be edited](https://casoon.github.io/opengrid/docs/api/#what-can-be-edited).
+- **Grid:** presets, `set_presets(host, [{ id, label, filter? }], { counts? })` (`presets` and
+  `presetOptions` in `connect` and the components): the page's named views as a segmented control
+  in the toolbar — a `radiogroup`, one tab stop, the arrows choose — the first the default, one
+  without a filter an *All*. The chosen preset is and-ed into every query the grid sends, is the
+  view's `preset`, is not a chip ("Remove all" leaves it), and is named by the empty state and the
+  print caption. `counts: true` puts each preset's rows in its label, one query per preset
+  ([#532](https://github.com/casoon/opengrid/issues/532)). Details:
+  [Presets](https://casoon.github.io/opengrid/docs/api/#presets).
 - **Loader:** the local and the worker provider have `describe(name)`, answering `{ name, schema }`
   with the schema a source was loaded with, derivations included; the hybrid provider passes its
   remote half's through. A provider of your own without `describe` keeps every field as the result

@@ -182,6 +182,23 @@ pub fn set_detail_renderer(host: &HtmlElement, renderer: JsValue) {
     crate::grid_element::set_detail_renderer(host, &renderer);
 }
 
+/// Gives the grid presets (issue #532): `[{ id, label, filter? }]`, named
+/// views the reader switches between in a segmented control in the toolbar. The
+/// `filter` is in the wire's notation, as the `filter` attribute's; a preset
+/// without one shows every row, and the first preset is the default.
+///
+/// The chosen preset is and-ed onto the page's filter and the reader's in every
+/// query, it is the view's `preset`, and it is not a chip. A list that is
+/// refused — an entry without `id` or `label`, an id twice, a filter that is
+/// not one, a key that is not a preset's — is applied not at all, and said in
+/// the status line. `{ counts: true }` as `options` puts each preset's row
+/// count in its label, one query per preset. The grid only.
+#[cfg(feature = "grid")]
+#[wasm_bindgen(js_name = set_presets)]
+pub fn set_presets(host: &HtmlElement, presets: JsValue, options: JsValue) {
+    crate::grid_element::set_presets(host, &presets, &options);
+}
+
 /// Runs the grid's query again over a source that changed (issue #328), keeping
 /// the view, the focus by record, the selection by key and the history. What the
 /// "Refresh" button does; a page that took `opengrid-source-changed` over calls it.

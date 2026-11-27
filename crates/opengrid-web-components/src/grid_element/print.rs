@@ -167,6 +167,8 @@ fn build(host: &HtmlElement, result: &opengrid_datasource::QueryResult, groups: 
     let tree = result.tree.as_ref();
     let count = tree.map_or(result.total_count, |tree| tree.matches);
     let mut caption: Vec<String> = host.get_attribute(LABEL_ATTRIBUTE).into_iter().collect();
+    // The page's preset the rows are of (issue #532).
+    caption.extend(runtime(host).and_then(|runtime| presets::chosen_label(&runtime.borrow())));
     caption.push(if count == 0 {
         texts.empty.clone()
     } else {

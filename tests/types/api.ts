@@ -184,6 +184,19 @@ export async function page(): Promise<void> {
   });
   // @ts-expect-error — the items stand after the grid's own: there is no position
   module.set_toolbar(grid, [{ id: "a", label: "A", position: "end" }]);
+  // Presets (issue #532): named views, the chosen one is the view's `preset`.
+  module.set_presets(grid, [
+    { id: "all", label: "All active" },
+    { id: "deviating", label: "Deviating", filter: { field: "price", op: "ne", value: 0 } },
+  ]);
+  module.set_presets(grid, [], { counts: true });
+  module.set_view(grid, { preset: "deviating" });
+  module.get_view(grid)?.preset satisfies string | undefined;
+  connect(grid, { presets: [{ id: "all", label: "All" }], presetOptions: { counts: true } });
+  // @ts-expect-error — a preset has a label
+  module.set_presets(grid, [{ id: "all" }]);
+  // @ts-expect-error — counts is a switch
+  module.set_presets(grid, [], { counts: "yes" });
 
   // Adding rows (issue #183).
   module.set_row_state(grid, "new-1", "saved", 7);

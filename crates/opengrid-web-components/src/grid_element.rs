@@ -105,6 +105,7 @@ mod orientation;
 mod paste;
 mod pointer;
 mod presentation_columns;
+mod presets;
 mod print;
 mod quick_doors;
 mod range;
@@ -160,6 +161,8 @@ use filter_row::{
 use group_path::{active_group, run_grouped, toggle_group};
 use presentation_columns::recolumn;
 pub(crate) use presentation_columns::set_columns;
+pub(crate) use presets::set_presets;
+use presets::{draw_presets, refresh_presets};
 use quick_doors::{
     apply_filter_dialog, close_operator_menu, close_quick, fill_conditions, on_dialog_key,
     on_group_menu_key, on_operator_menu_key, open_filter_dialog, open_group_menu,
@@ -356,6 +359,10 @@ struct GridRuntime {
     detail_nodes: Vec<(String, JsValue)>,
     /// A range's sums from the source and the scroll gesture (issue #525).
     orientation: orientation::Orientation,
+    /// The page's presets and the one chosen (issue #532): part of the view.
+    presets: opengrid_grid::presets::Presets,
+    /// What the presets' counts are, where the page asked for them.
+    preset_counts: presets::Counts,
 }
 
 impl GridRuntime {
@@ -475,6 +482,8 @@ fn fresh_runtime(
         detail_wanted: Vec::new(),
         detail_nodes: Vec::new(),
         orientation: Default::default(),
+        presets: Default::default(),
+        preset_counts: Default::default(),
     }
 }
 
@@ -660,6 +669,8 @@ fn on_connected(host: HtmlElement) {
         // A `group-by` in the markup is read before anything else happens; one
         // the grid refuses is said with the first result, and it runs ungrouped.
         announce_refusals(&host, &runtime);
+        // What `set_presets` was given before the grid existed (issue #532).
+        presets::adopt(&host, &runtime);
         ensure_skeleton(&host);
         render(&host, false);
         run_query(&host, QueryKind::Data, false);
@@ -1663,6 +1674,7 @@ pub(crate) fn run_query(host: &HtmlElement, kind: QueryKind, focus: bool) {
     grid_runtime.borrow_mut().queries = 1;
     if kind == QueryKind::Data {
         refresh_facets(host);
+        refresh_presets(host);
     }
 
     let host = host.clone();
@@ -2450,6 +2462,22 @@ fn on_key_down(event: KeyboardEvent) {
         && let Ok(host) = root.host().dyn_into::<HtmlElement>()
         && toolbar_items::on_button_key(&host, &event, &target)
     {
+        return;
+    }
+    // The segments of the page's presets (issue #532) are a radiogroup: the
+    // arrows move and choose, and the rest is the browser's.
+    if let Some(target) = event
+        .target()
+        .and_then(|node| node.dyn_into::<Element>().ok())
+        && target
+            .closest("[part=\"presets\"]")
+            .ok()
+            .flatten()
+            .is_some()
+    {
+        if let Ok(host) = root.host().dyn_into::<HtmlElement>() {
+            presets::on_key(&host, &event, &target);
+        }
         return;
     }
     // The paging buttons sit outside the grid table and keep their **native**
@@ -4847,6 +4875,7 @@ fn announce_loading(host: &HtmlElement, grid_runtime: &Rc<RefCell<GridRuntime>>,
             .set_status(GridStatus::Loading);
         render(host, false);
         refresh_facets(host);
+        refresh_presets(host);
     }
     grid_runtime.borrow_mut().queries = 0;
 }
@@ -4922,14 +4951,15 @@ fn draw_empty(host: &HtmlElement, root: &ShadowRoot, runtime: &Rc<RefCell<GridRu
     let Ok(Some(panel)) = root.query_selector("[part=\"empty\"]") else {
         return;
     };
-    let (empty, filtered) = {
+    let (empty, filtered, preset) = {
         let borrowed = runtime.borrow();
         // Rows the reader added are rows: the empty state would cover them.
         let empty = matches!(borrowed.state.status(), GridStatus::Empty)
             && borrowed.state.added().is_empty();
         // The reader's filters alone: the reset takes back nothing of the page's.
         let filtered = reader_filter(host, &borrowed, None).is_ok_and(|filter| filter.is_some());
-        (empty, filtered)
+        // The page's preset, where its filter is among the reasons (issue #532).
+        (empty, filtered, presets::empty_text(host, &borrowed))
     };
     if !empty {
         let _ = panel.set_attribute("hidden", "");
@@ -4937,13 +4967,13 @@ fn draw_empty(host: &HtmlElement, root: &ShadowRoot, runtime: &Rc<RefCell<GridRu
     }
     let texts = texts(host);
     if let Ok(Some(sentence)) = panel.query_selector("[part=\"empty-text\"]") {
-        let text = if filtered {
-            &texts.empty_filtered
-        } else {
-            &texts.empty_source
+        let text = match preset {
+            Some(preset) => preset,
+            None if filtered => texts.empty_filtered.clone(),
+            None => texts.empty_source.clone(),
         };
         if sentence.text_content().as_deref() != Some(text.as_str()) {
-            sentence.set_text_content(Some(text));
+            sentence.set_text_content(Some(&text));
         }
     }
     if let Ok(Some(reset)) = panel.query_selector("[part=\"empty-reset\"]") {

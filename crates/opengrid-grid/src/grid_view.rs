@@ -90,6 +90,10 @@ pub struct GridView {
     /// filter row cannot hold an `or` across columns; this can. `None` is no
     /// such filter, and then not written.
     pub nested: Option<Value>,
+    /// The id of the page's preset the reader chose (issue #532) — the first
+    /// one by default. `None` where the page has no presets, and then not
+    /// written. Whether the grid has a preset of that id only the element knows.
+    pub preset: Option<String>,
 }
 
 /// A selection's keys as a view and an event hold them: each once, in the
@@ -124,6 +128,7 @@ impl Default for GridView {
             selected: Vec::new(),
             detail: Vec::new(),
             nested: None,
+            preset: None,
         }
     }
 }
@@ -265,6 +270,9 @@ impl GridView {
         }
         if let Some(nested) = &self.nested {
             out.insert("where".to_owned(), nested.clone());
+        }
+        if let Some(preset) = &self.preset {
+            out.insert("preset".to_owned(), Value::String(preset.clone()));
         }
 
         Value::Object(out)
@@ -607,6 +615,21 @@ impl GridView {
             }
         }
 
+        // The preset names one of the page's, which only the element knows: here
+        // only the shape is checked — a non-empty text.
+        let preset = match object.get("preset") {
+            None => None,
+            Some(id) if id.is_null() => None,
+            Some(Value::String(id)) if !id.is_empty() => Some(id.clone()),
+            Some(_) => {
+                problems.push(ViewProblem::new(
+                    "preset",
+                    "preset is not the id of a preset",
+                ));
+                None
+            }
+        };
+
         if problems.is_empty() {
             Ok(Self {
                 sort,
@@ -621,6 +644,7 @@ impl GridView {
                 selected,
                 detail,
                 nested,
+                preset,
             })
         } else {
             Err(problems)
@@ -669,6 +693,7 @@ mod tests {
                     { "field": "id", "op": "is_null" },
                 ] },
             ] })),
+            preset: Some("deviating".to_owned()),
         }
     }
 
@@ -952,6 +977,25 @@ mod tests {
         ] {
             let problems = GridView::from_json(&bad, &declared()).expect_err("refused");
             assert_eq!(problems[0].field, "selected", "{bad}");
+        }
+    }
+
+    /// The preset is in the view as its id (issue #532), written only where the
+    /// grid has one, and what is not an id is named.
+    #[test]
+    fn a_view_holds_the_preset_by_its_id() {
+        let json = filled().to_json();
+        assert_eq!(json["preset"], opengrid_json::json!("deviating"));
+        let back = GridView::from_json(&json, &declared()).expect("reads back");
+        assert_eq!(back.preset.as_deref(), Some("deviating"));
+        assert!(GridView::default().to_json().get("preset").is_none());
+        // `null` is none, as an absent field is.
+        let none = GridView::from_json(&opengrid_json::json!({ "preset": null }), &declared());
+        assert_eq!(none.expect("reads").preset, None);
+        for bad in [opengrid_json::json!(7), opengrid_json::json!("")] {
+            let view = opengrid_json::json!({ "preset": bad });
+            let problems = GridView::from_json(&view, &declared()).expect_err("refused");
+            assert_eq!(problems[0].field, "preset", "{view}");
         }
     }
 }

@@ -95,6 +95,7 @@ pub(crate) fn current_view(host: &HtmlElement) -> Option<GridView> {
         .nested
         .as_ref()
         .map(opengrid_json::ToJson::to_json);
+    let preset = runtime.borrow().presets.chosen().map(str::to_owned);
 
     Some(GridView {
         sort,
@@ -109,6 +110,7 @@ pub(crate) fn current_view(host: &HtmlElement) -> Option<GridView> {
         selected,
         detail,
         nested,
+        preset,
     })
 }
 
@@ -233,6 +235,26 @@ pub(crate) fn write_view(host: &HtmlElement, value: &JsValue, notice: Option<Str
             render(host, false);
             return;
         }
+    };
+
+    // The preset (issue #532): none is the page's first, the default; one the
+    // page has no preset of is said and the view is not applied, as an unknown
+    // column is.
+    let view = {
+        let mut view = view;
+        let resolved = runtime.borrow().presets.resolve(view.preset.as_deref());
+        match resolved {
+            Ok(preset) => view.preset = preset,
+            Err(message) => {
+                runtime
+                    .borrow_mut()
+                    .state
+                    .set_status(GridStatus::Error(message));
+                render(host, false);
+                return;
+            }
+        }
+        view
     };
 
     // A literal a typed column cannot hold is said, and the view is not
@@ -387,6 +409,11 @@ pub(super) fn apply_view(
                     .collect()
             })
             .unwrap_or_default();
+        // The page's preset: other rows, said with the result unless the page
+        // said why it set the view — or no result has come yet, and the view
+        // is the page's start, not a change (issue #532).
+        let said = notice.is_some() || borrowed.known.is_empty();
+        presets::restore(host, &mut borrowed, view.preset.clone(), said);
         borrowed.aggregate_choice = view
             .aggregates
             .iter()

@@ -162,6 +162,17 @@ export interface OpengridModule {
    */
   set_detail_renderer(host: HTMLElement, renderer: DetailRenderer | null): void;
   /**
+   * The page's presets (issue #532): named views the reader switches between in
+   * a segmented control in the toolbar — a `radiogroup`, one tab stop, the
+   * arrows choose. The first is the default; a preset without a `filter` shows
+   * every row. The chosen one is and-ed onto the page's `filter` and the
+   * reader's in every query, is the view's `preset`, and is not a chip. A list
+   * that is refused is applied not at all, and said in the status line.
+   * `{ counts: true }` puts each preset's rows in its label, one query per
+   * preset. The grid only.
+   */
+  set_presets(host: HTMLElement, presets: Preset[], options?: PresetOptions): void;
+  /**
    * Runs the grid's query again over a source that changed, keeping the view,
    * the focus by record, the selection by key and the history (issue #328).
    */
@@ -205,6 +216,10 @@ export interface ConnectOptions {
   cellActions?: CellAction[];
   /** `set_toolbar`: compared by value. The grid only. */
   toolbarItems?: ToolbarItem[];
+  /** `set_presets`: compared by value. The grid only. */
+  presets?: Preset[];
+  /** The second argument of `set_presets`, with `presets`. The grid only. */
+  presetOptions?: PresetOptions;
   /** `set_cell_templates`: functions compare by identity, as in `formats`. The grid only. */
   cellTemplates?: Record<string, CellTemplate>;
   /** `set_detail_renderer`: compared by identity. The grid only. */
@@ -1028,6 +1043,12 @@ export interface View {
    * there is none; a view without the field has none.
    */
   where?: ViewFilter;
+  /**
+   * The id of the page's preset (`set_presets`) the reader chose. Left out
+   * where the page has none; a view without the field has the first, the
+   * default. `set_view` refuses an id the page has no preset of.
+   */
+  preset?: string;
 }
 
 /**
@@ -1279,7 +1300,11 @@ export type TextKey =
   | "filterBuilderAddGroup"
   | "filterBuilderEdit"
   | "filterApplied"
+  | "presetsGroup"
+  | "presetChosen"
+  | "presetCount"
   | "emptyFiltered"
+  | "emptyPreset"
   | "emptySource"
   | "emptyReset"
   | "filterInvalid"
@@ -1482,6 +1507,22 @@ export interface RowActionDetail {
   row: number;
   /** With `row-key` only: the record's value of that field. */
   key?: WireValue;
+}
+
+/** One preset of `set_presets`: a named view the page defines. */
+export interface Preset {
+  /** What the view's `preset` names it by; unique in the list. */
+  id: string;
+  /** What the reader sees, and a screen reader says. */
+  label: string;
+  /** In the wire's notation, as the `filter` attribute; none shows every row. */
+  filter?: Record<string, unknown> | null;
+}
+
+/** The second argument of `set_presets`. */
+export interface PresetOptions {
+  /** Count the rows of every preset into its label: one query per preset. */
+  counts?: boolean;
 }
 
 /** One of the page's items in the cell menu (`set_cell_actions`). */

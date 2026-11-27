@@ -3,9 +3,10 @@
 
 use super::*;
 
-/// The filter a query runs under: the page's `filter` attribute **and** what
-/// the reader chose ([`reader_filter`]). Every query of the grid takes its
-/// filter from here, so the page's filter holds for all of them (issue #330).
+/// The filter a query runs under: the page's `filter` attribute, the preset the
+/// reader chose (issue #532) **and** what the reader filtered by
+/// ([`reader_filter`]). Every query of the grid takes its filter from here, so
+/// the page's filter and the preset hold for all of them (issue #330).
 pub(super) fn effective_filter(
     host: &HtmlElement,
     runtime: &GridRuntime,
@@ -15,10 +16,11 @@ pub(super) fn effective_filter(
     // A `collation` that is not a locale stops the queries as a filter that
     // is not one does: sorting by code point instead would be a silent guess.
     page_collation(host)?;
-    Ok(match (page_filter(host)?, reader) {
-        (Some(page), Some(reader)) => Some(FilterExpr::And(vec![page, reader])),
-        (page, reader) => page.or(reader),
-    })
+    Ok(opengrid_grid::presets::all_of([
+        page_filter(host)?,
+        runtime.presets.filter(),
+        reader,
+    ]))
 }
 
 /// The page's `filter` attribute as an expression: absent or empty is none,
@@ -201,8 +203,12 @@ pub(super) fn refresh_facets(host: &HtmlElement) {
         (runtime.facet_generation, plan)
     };
 
-    // A facet lists the values of the rows the page shows, not of the source.
-    let domain = page_filter(host).ok().flatten();
+    // A facet lists the values of the rows the page shows — its filter and the
+    // preset the reader chose — not of the source.
+    let domain = {
+        let runtime = grid_runtime.borrow();
+        opengrid_grid::presets::all_of([page_filter(host).ok().flatten(), runtime.presets.filter()])
+    };
     let host = host.clone();
     spawn_local(async move {
         let mut queries = 0usize;
@@ -351,7 +357,13 @@ pub(super) fn show_source(host: &HtmlElement) {
         } else {
             0
         };
-        borrowed.queries + facets
+        // And the presets', where the page asked for their counts (issue #532).
+        let presets = if borrowed.preset_counts.asked {
+            borrowed.preset_counts.queries
+        } else {
+            0
+        };
+        borrowed.queries + facets + presets
     };
     let text = if queries == 0 {
         String::new()
