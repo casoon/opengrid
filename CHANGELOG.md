@@ -95,6 +95,11 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Fixed
 
+- **Grid:** cell templates draw in a grouped grid: the data rows get their node as in a flat grid,
+  the group headers and the total stay untemplated, and `Enter` goes into a control there too. The code dropped every column's template while
+  grouped, though the docs said only a grouped column is not templated
+  ([#533](https://github.com/casoon/opengrid/issues/533),
+  [Cell templates](https://casoon.github.io/opengrid/docs/api/#cell-templates)).
 - **Grid:** a column menu with room neither below nor above its header scrolls inside the window instead of running past its edge.
 - **Grid:** a jump over a result taller than the browser lets an element be (dragging the scroll
   bar over a million rows) placed the old window's rows under the new shift before the new

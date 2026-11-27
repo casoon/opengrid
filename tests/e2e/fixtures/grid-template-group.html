@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>opengrid grouped cell template fixture</title>
+    <style>
+      opengrid-grid {
+        display: block;
+        height: 320px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>opengrid grouped cell template fixture</h1>
+      <opengrid-grid
+        label="Price list"
+        datasource="prices"
+        columns="id,section,name,price,change,status"
+        group-by="section"
+        window-size="12"
+      ></opengrid-grid>
+    </main>
+    <script type="module">
+      // Issue #533: the customer price list — rows grouped by section, three
+      // columns templated: the deviation from the base price (sign and symbol,
+      // not only colour), the price change and a status badge; `name` is a link
+      // for `Enter` into a control. `__built` counts the nodes made.
+      import { loadOpengrid, createLocalProvider } from "/packages/opengrid/loader.js";
+      import init, { Engine } from "/examples/engine-demo/pkg/opengrid_wasm.js";
+
+      window.__built = 0;
+      await init();
+      const schema = JSON.stringify({
+        fields: [
+          { name: "id", type: "int64", nullable: false },
+          { name: "section", type: "utf8", nullable: false },
+          { name: "name", type: "utf8", nullable: false },
+          { name: "price", type: "float64", nullable: false },
+          { name: "base", type: "float64", nullable: false },
+          { name: "change", type: "float64", nullable: false },
+          { name: "status", type: "utf8", nullable: false },
+        ],
+      });
+      const sections = ["juices", "wines", "oils"];
+      const rows = Array.from({ length: 36 }, (_, index) => ({
+        id: index + 1,
+        section: sections[index % 3],
+        name: `Item ${index + 1}`,
+        price: 10 + index,
+        base: 10 + index + (index % 2 === 0 ? 1 : -1),
+        change: index % 2 === 0 ? 0.3 : -0.3,
+        status: index % 4 === 0 ? "planned" : "current",
+      }));
+      // The base price is not a column of the grid: the deviation is made from the record's price.
+      const bases = new Map(rows.map((row) => [row.id, row.base]));
+      const provider = createLocalProvider(new Engine());
+      await provider.loadRows("prices", rows, schema);
+      const loader = await loadOpengrid();
+      const host = document.querySelector("opengrid-grid");
+      const sign = (n) => (n > 0 ? "▲ +" : n < 0 ? "▼ −" : "= ") + Math.abs(n).toFixed(2);
+      window.__templates = {
+        name: ({ text, row }) => {
+          window.__built += 1;
+          const link = document.createElement("a");
+          link.href = `#item-${row.id}`;
+          link.textContent = text;
+          link.dataset.id = String(row.id);
+          return link;
+        },
+        price: ({ row }) => {
+          window.__built += 1;
+          const span = document.createElement("span");
+          span.className = "deviation";
+          span.dataset.id = String(row.id);
+          span.textContent = sign(row.price - bases.get(row.id));
+          return span;
+        },
+        change: ({ value, row }) => {
+          window.__built += 1;
+          const span = document.createElement("span");
+          span.className = "change";
+          span.dataset.id = String(row.id);
+          span.textContent = sign(value);
+          return span;
+        },
+        status: ({ value, text }) => {
+          window.__built += 1;
+          const badge = document.createElement("span");
+          badge.className = `badge badge-${value}`;
+          badge.textContent = text;
+          return badge;
+        },
+      };
+      loader.module.set_cell_templates(host, window.__templates);
+      window.__module = loader.module;
+      loader.module.set_provider(host, provider);
+      window.__ready = true;
+    </script>
+  </body>
+</html>

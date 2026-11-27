@@ -1071,8 +1071,10 @@ build is parsed. It gets `{ value, text, row, key }`: the cell's value as it is 
 text the column's format makes of it, the record as loaded (by field name) and its `row-key` value
 (without `row-key`, `undefined`). A string it returns is shown as text; `null`, `undefined` or a
 throw leaves the cell's own text. Replace the functions with another call; an empty object takes
-them all away. A column that is a list, an [action](#row-actions) or in a [tree](#tree) or a
-[grouping](#grouping) is not templated.
+them all away. A column that is a list, an [action](#row-actions) or in a [tree](#tree) is not
+templated. In a [grouping](#grouping) the data rows are templated as in a flat grid (`key` is
+`undefined` without `row-key`, as there); the group headers and the total are not — an aggregate is
+not a record.
 
 **The node is rebuilt, not kept.** The grid pools its rows: a cell is drawn again when its row
 changes under it (scrolling, sorting, a result) and when anything in its record changed, so the
