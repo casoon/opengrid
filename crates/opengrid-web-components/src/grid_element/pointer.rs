@@ -50,6 +50,8 @@ struct WidthDrag {
     name: String,
     x: f64,
     width: u32,
+    /// The pointer went anywhere: a press that did not is not a resize.
+    moved: bool,
 }
 
 thread_local! {
@@ -316,6 +318,7 @@ fn begin_width_drag_on(event: &Event, pointer: &PointerEvent) -> bool {
             name,
             x: f64::from(pointer.client_x()),
             width,
+            moved: false,
         });
     });
     true
@@ -325,10 +328,13 @@ fn begin_width_drag_on(event: &Event, pointer: &PointerEvent) -> bool {
 /// direction of the text decides which way is wider.
 fn move_width_drag(host: &HtmlElement, pointer: &PointerEvent) -> bool {
     let target = WIDTH_DRAG.with(|drag| {
-        drag.borrow()
-            .as_ref()
+        drag.borrow_mut()
+            .as_mut()
             .filter(|drag| drag.pointer == pointer.pointer_id())
-            .map(|drag| (drag.name.clone(), drag.x, drag.width))
+            .map(|drag| {
+                drag.moved |= f64::from(pointer.client_x()) != drag.x;
+                (drag.name.clone(), drag.x, drag.width)
+            })
     });
     let Some((name, x, width)) = target else {
         return false;
@@ -360,7 +366,10 @@ fn end_width_drag_on(host: &HtmlElement, root: &ShadowRoot, pointer: &PointerEve
     if let Ok(Some(edge)) = root.query_selector("[part=\"header\"][data-edge]") {
         let _ = edge.remove_attribute("data-edge");
     }
-    end_width_drag(host, &done.name);
+    // A press that went nowhere said nothing: the width is as it was.
+    if done.moved {
+        end_width_drag(host, &done.name);
+    }
     // The `click` that follows on the header is the drag's, not a sort.
     DRAG_ENDED.with(|ended| ended.set(true));
     let clear = Closure::once_into_js(|| DRAG_ENDED.with(|ended| ended.set(false)));
@@ -375,6 +384,30 @@ fn end_width_drag_on(host: &HtmlElement, root: &ShadowRoot, pointer: &PointerEve
 /// does not sort.
 pub(super) fn click_is_on_edge(host: &HtmlElement, target: &Element, x: f64) -> bool {
     DRAG_ENDED.with(std::cell::Cell::get) || header_edge(host, target, x, false).is_some()
+}
+
+/// A double-click on a header's edge fits the column to what it shows (issue
+/// #564), the way a spreadsheet does. `true` when it was one.
+fn autosize_on_edge(event: &Event) -> bool {
+    let Some(click) = event.dyn_ref::<web_sys::MouseEvent>() else {
+        return false;
+    };
+    let Some(root) = current_shadow_root(event) else {
+        return false;
+    };
+    let Ok(host) = root.host().dyn_into::<HtmlElement>() else {
+        return false;
+    };
+    let Some((_, col)) = event
+        .target()
+        .and_then(|target| target.dyn_into::<Element>().ok())
+        .and_then(|target| header_edge(&host, &target, f64::from(click.client_x()), false))
+    else {
+        return false;
+    };
+    event.prevent_default();
+    autosize_column(&host, col);
+    true
 }
 
 fn open_menu_after(host: &HtmlElement, cell: CellRef) {
@@ -605,6 +638,9 @@ fn on_click(event: Event) {
 /// opens the editor. The second tap of a double-tap already did, on the
 /// focused cell; the editor is then the target and this does nothing.
 fn on_double_click(event: Event) {
+    if autosize_on_edge(&event) {
+        return;
+    }
     let Some((host, cell, _)) = range::data_cell(&event) else {
         return;
     };

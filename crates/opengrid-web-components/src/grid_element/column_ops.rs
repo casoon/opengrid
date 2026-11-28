@@ -50,6 +50,82 @@ pub(super) fn end_width_drag(host: &HtmlElement, name: &str) {
     dispatch_view(host);
 }
 
+/// The width a text takes however it is clipped: the range over its contents
+/// is not cut by the cell's `overflow`.
+fn natural_width(element: &Element) -> f64 {
+    let Some(document) = element.owner_document() else {
+        return 0.0;
+    };
+    let Ok(range) = document.create_range() else {
+        return 0.0;
+    };
+    let _ = range.select_node_contents(element);
+    range.get_bounding_client_rect().width()
+}
+
+/// The horizontal padding of `element`, in pixels.
+fn padding_of(element: &Element) -> f64 {
+    let Some(style) =
+        web_sys::window().and_then(|window| window.get_computed_style(element).ok().flatten())
+    else {
+        return 0.0;
+    };
+    ["padding-left", "padding-right"]
+        .iter()
+        .filter_map(|side| style.get_property_value(side).ok())
+        .filter_map(|value| value.trim_end_matches("px").parse::<f64>().ok())
+        .sum()
+}
+
+/// Fits a column to what it shows (issue #564): the widest of its header — the
+/// name and the marks beside it — and the values of the rows that are loaded.
+/// The same width a drag would set: it leads after that, as for the keys.
+pub(super) fn autosize_column(host: &HtmlElement, col: usize) {
+    let Some(root) = host.shadow_root() else {
+        return;
+    };
+    let Some(name) = columns_of(host).get(col).cloned() else {
+        return;
+    };
+    let mut widest = 0.0f64;
+    if let Ok(Some(th)) = root.query_selector(&format!("th[part=\"header\"][data-col=\"{col}\"]")) {
+        // The name as long as it is, and what stands beside it as wide as it is.
+        let mut width = padding_of(&th);
+        let children = th.child_nodes();
+        let mut first = true;
+        for index in 0..children.length() {
+            if let Some(child) = children
+                .item(index)
+                .and_then(|node| node.dyn_into::<Element>().ok())
+            {
+                width += if first {
+                    natural_width(&child)
+                } else {
+                    child.get_bounding_client_rect().width()
+                };
+                first = false;
+            }
+        }
+        widest = widest.max(width);
+    }
+    if let Ok(cells) = root.query_selector_all(&format!("td[data-col=\"{col}\"]")) {
+        for index in 0..cells.length() {
+            if let Some(cell) = cells
+                .item(index)
+                .and_then(|node| node.dyn_into::<Element>().ok())
+            {
+                widest = widest.max(natural_width(&cell) + padding_of(&cell));
+            }
+        }
+    }
+    if widest <= 0.0 {
+        return;
+    }
+    // A little over: a width to the pixel clips a glyph's last curve.
+    drag_width(host, &name, widest.ceil() as i32 + 2);
+    end_width_drag(host, &name);
+}
+
 /// Where a shown column is pinned: the reader's choice, or else the page's.
 pub(super) fn pin_of(host: &HtmlElement, name: &str) -> Option<Pin> {
     columns::layout(host)

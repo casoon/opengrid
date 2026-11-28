@@ -500,7 +500,7 @@ sort-direction sort-index source status table toolbar toolbar-item toolbar-menu 
 
 text keys
   addColumn addFilter addFilterTitle addGrouping addMeasure addRow aggregateAvg aggregateCell aggregateCount aggregateGroup aggregateMax aggregateMin aggregateNone aggregateRange \
-aggregateSum apply bandKeep booleanFalse booleanTrue bulkApply bulkCaption bulkDone bulkMenu bulkReadonly calcValue cancel cellColumnMenu cellCopied cellCopy cellDeselectRow \
+aggregateSum apply autosizeColumn bandKeep booleanFalse booleanTrue bulkApply bulkCaption bulkDone bulkMenu bulkReadonly calcValue cancel cellColumnMenu cellCopied cellCopy cellDeselectRow \
 cellEdit cellMenu cellOpenRecord cellRequired cellSelectRow chipRemove chipsClear chipsGroup choiceRefused choicesOne choicesOther clear columnAtEdge columnFull columnHidden \
 columnLocked columnMenu columnMoved columnPinnedEnd columnPinnedNarrow columnPinnedStart columnShown columnUnlocked columnUnpinned columnWidth columnsGroup densityComfortable \
 densityCompact densityGroup densityNormal detailHidden detailHide detailPanel detailShow detailShown editHint editLocked editLockedHint editToggle editUnlocked empty emptyFiltered \

@@ -369,6 +369,7 @@ pub(super) fn activate_menu_item(host: &HtmlElement, item: &Element) {
             }
         }
         "hide" => set_column_hidden(host, &name, true),
+        "autosize" => autosize_column(host, col),
         "lock" => set_column_locked(host, &name, true),
         "unlock" => set_column_locked(host, &name, false),
         "hide-band" => hide_band(host, col),
