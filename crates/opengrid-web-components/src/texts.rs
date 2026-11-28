@@ -129,6 +129,7 @@ pub struct GridTexts {
     pub group_second_level: String,
     pub ungroup_column: String,
     pub hide_column: String,
+    pub autosize_column: String,
     /// The band cell's menu entry that hides the whole band (issue #352).
     pub hide_band: String,
     /// Said when hiding a band would leave no column. May use `{band}`.
@@ -562,6 +563,7 @@ pub(crate) const KEYS: &[&str] = &[
     "groupSecondLevel",
     "ungroupColumn",
     "hideColumn",
+    "autosizeColumn",
     "hideBand",
     "bandKeep",
     "pinGroup",
@@ -846,6 +848,7 @@ impl Default for GridTexts {
             group_second_level: "Group as second level".to_owned(),
             ungroup_column: "Remove this grouping".to_owned(),
             hide_column: "Hide column".to_owned(),
+            autosize_column: "Autosize column".to_owned(),
             hide_band: "Hide band".to_owned(),
             band_keep: "{band} is all that is shown and stays".to_owned(),
             pin_group: "Pin".to_owned(),
@@ -1936,6 +1939,7 @@ mod host {
         overwrite(&mut texts.group_second_level, string("groupSecondLevel"));
         overwrite(&mut texts.ungroup_column, string("ungroupColumn"));
         overwrite(&mut texts.hide_column, string("hideColumn"));
+        overwrite(&mut texts.autosize_column, string("autosizeColumn"));
         overwrite(&mut texts.hide_band, string("hideBand"));
         overwrite(&mut texts.band_keep, string("bandKeep"));
         overwrite(&mut texts.pin_group, string("pinGroup"));

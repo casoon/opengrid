@@ -235,6 +235,7 @@ test("every entry has a way in without the menu", async ({ page }) => {
     "sort:desc": "Enter on the header",
     filter: "the filter row",
     hide: "the column list",
+    autosize: "a double-click on the header's edge",
     "pin:none": "Alt+Shift+arrow on the header",
     "pin:start": "Alt+Shift+arrow on the header",
     "pin:end": "Alt+Shift+arrow on the header",
@@ -355,4 +356,15 @@ test("the menu button has a name on hover (issue #570)", async ({ page }) => {
   const title = await page.evaluate(() =>
     document.querySelector("opengrid-grid").shadowRoot.querySelector('th[data-col="3"] [part="column-menu-button"]').title);
   expect(title).toBe("Column menu");
+});
+
+test("Autosize column in the menu fits the column (issue #564)", async ({ page }) => {
+  await focusHeader(page, CUSTOMER);
+  const width = () =>
+    page.evaluate((col) => Math.round(document.querySelector("opengrid-grid").shadowRoot.querySelector(`th[data-col="${col}"]`).getBoundingClientRect().width), CUSTOMER);
+  for (let i = 0; i < 8; i++) await page.keyboard.press("Control+Shift+ArrowRight");
+  const wide = await width();
+  await page.keyboard.press("Alt+ArrowDown");
+  await page.locator('opengrid-grid [part="column-menu"] [data-action="autosize"]').click();
+  expect(await width()).toBeLessThan(wide);
 });

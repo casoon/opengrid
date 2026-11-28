@@ -1203,6 +1203,7 @@ export type TextKey =
   | "groupSecondLevel"
   | "ungroupColumn"
   | "hideColumn"
+  | "autosizeColumn"
   | "hideBand"
   | "bandKeep"
   | "pinGroup"

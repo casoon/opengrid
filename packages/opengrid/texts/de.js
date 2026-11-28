@@ -55,6 +55,7 @@ export default {
   "groupSecondLevel": "Als 2. Ebene gruppieren",
   "ungroupColumn": "Gruppierung aufheben",
   "hideColumn": "Spalte ausblenden",
+  "autosizeColumn": "Spaltenbreite anpassen",
   "hideBand": "Band ausblenden",
   "bandKeep": "{band} ist alles, was angezeigt wird, und bleibt",
   "pinGroup": "Fixieren",

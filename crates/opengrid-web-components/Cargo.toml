@@ -85,6 +85,8 @@ web-sys = { version = "0.3", features = [
     # Taps, double-taps, long-presses and the range on any pointer (issue #524).
     "PointerEvent",
     # The filter row follows the columns' widths (issue #62).
+    # The width a clipped text would take, to fit a column to it (issue #564).
+    "Range",
     "ResizeObserver",
     "ScrollIntoViewOptions",
     "ScrollLogicalPosition",

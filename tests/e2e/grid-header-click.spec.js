@@ -122,3 +122,28 @@ test("the cursor says the edge drags, and a click on the edge does not sort", as
   await page.mouse.move(x - 40, y);
   expect(await shadow(page, (root) => getComputedStyle(root.querySelector('thead th[data-col="1"]')).cursor)).not.toBe("col-resize");
 });
+
+// Autosize by a double-click on the edge (issue #564).
+
+test("a double-click on the edge fits the column to what it shows", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name === "narrow", "the columns share the width there");
+  await open(page);
+  await dragEdge(page, 1, 200);
+  const wide = await widthOf(page, 1);
+  const { x, y } = await edgePoint(page, 1);
+  await page.mouse.dblclick(x, y);
+  const fitted = await widthOf(page, 1);
+  // Back from the wide to what the values need — never under the least a
+  // header keeps (its name, its marks and its menu button).
+  expect(fitted).toBeLessThan(wide - 60);
+  const need = await shadow(page, (root) => {
+    const range = document.createRange();
+    return Math.max(...[...root.querySelectorAll('td[data-col="1"]')].map((td) => {
+      range.selectNodeContents(td);
+      return range.getBoundingClientRect().width;
+    }));
+  });
+  expect(fitted).toBeGreaterThanOrEqual(Math.floor(need));
+  // Neither of the two clicks sorted.
+  expect(await sorts(page)).toMatchObject({ id: "ascending", customer: "none" });
+});

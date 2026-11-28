@@ -283,7 +283,7 @@ An interactive `<table role="grid">`: virtualized, keyboard-driven, filterable.
 | `Ctrl`/`Cmd`+`A` | anywhere | select every matching row, not only the loaded page |
 | `Ctrl`/`Cmd`+`←`/`→` | header cell | move the column |
 | `Ctrl`/`Cmd`+`←`/`→` | band cell | move the band with all its columns ([Column bands](#column-bands)) |
-| `Ctrl`/`Cmd`+`Shift`+`←`/`→`, dragging the header's edge | header cell | resize the column |
+| `Ctrl`/`Cmd`+`Shift`+`←`/`→`, dragging the header's edge | header cell | resize the column (a double-click on the edge, or *Autosize column* in the menu, fits it to what it shows) |
 | `Alt`+`Shift`+`←`/`→` | header cell | pin the column one step towards that side: let go of a pin at the other end, or pin it at this one ([Pinned columns](#pinned-columns)) |
 | `Alt`+`Shift`+`←`/`→` | band cell, or the header cell of a column in a band | pin the **band** one step towards that side |
 | `Delete` | band cell | hide the whole band ([Column bands](#column-bands)) |
@@ -2537,6 +2537,7 @@ boolean reads — that is `set_formats`.
 | `aggregateGroup` / `aggregateNone` | `Aggregate in groups` / `No aggregate` | |
 | `groupByColumn` / `groupSecondLevel` / `ungroupColumn` | `Group by this column` / `Group as second level` / `Remove this grouping` | |
 | `hideColumn` / `hideBand` | `Hide column` / `Hide band` | |
+| `autosizeColumn` | `Autosize column` | |
 | `bandKeep` | `{band} is all that is shown and stays` | `{band}` |
 | `pinGroup` / `pinNone` / `pinStart` / `pinEnd` / `pinNarrow` | `Pin` / `Not pinned` / `At the start` / `At the end` / `Only on narrow screens` — the column menu's group and its four choices | |
 | `toolbarGroup` / `filterRowToggle` | `Grid tools` / `Filter row` | |

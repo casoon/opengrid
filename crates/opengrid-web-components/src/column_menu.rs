@@ -160,7 +160,9 @@ pub fn entries(column: &Column<'_>, texts: &GridTexts) -> Vec<Entry> {
         .collect(),
     });
 
-    let mut rest = Vec::new();
+    // Before the entries that change what is shown, so `End` still lands on
+    // `Hide column`, the last of them.
+    let mut rest = vec![Entry::item("autosize", &texts.autosize_column)];
     if column.bulk {
         rest.push(Entry::item("bulk", &texts.bulk_menu));
     }
@@ -273,6 +275,7 @@ mod tests {
                 "pin:start",
                 "pin:end",
                 "pin:narrow",
+                "autosize",
                 "hide",
             ]
         );
@@ -294,6 +297,7 @@ mod tests {
                 "pin:start",
                 "pin:end",
                 "pin:narrow",
+                "autosize",
                 "group:first",
                 "hide"
             ]
@@ -330,7 +334,8 @@ mod tests {
                 "pin:none",
                 "pin:start",
                 "pin:end",
-                "pin:narrow"
+                "pin:narrow",
+                "autosize"
             ]
         );
     }
