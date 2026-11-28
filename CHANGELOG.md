@@ -21,6 +21,7 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Fixed
 
+- **Grid:** with `column-menu`, a right click on a header opens the column menu; until now only `Alt`+`↓` and the `⋯` button did ([#569](https://github.com/casoon/opengrid/issues/569)).
 - **Grid:** a click, a tap or a pen on a column header sorts by it, as `Enter` does; `Shift`+click adds a key. Until now only the keys, the column menu and the page could sort ([#561](https://github.com/casoon/opengrid/issues/561)).
 
 ## [0.21.1] - 2026-11-28
