@@ -324,3 +324,29 @@ test("has no axe violations with the menu open", async ({ page }) => {
   await page.keyboard.press("Alt+ArrowDown");
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 });
+
+test("a right click on a header opens its column menu (issue #569)", async ({ page }) => {
+  await page.locator('opengrid-grid th[data-col="3"] > span').first().click({ button: "right" });
+  await page.waitForFunction(() =>
+    document.querySelector("opengrid-grid").shadowRoot.querySelector('[part="column-menu"]')?.matches(":popover-open"));
+  const opened = await menu(page);
+  expect(opened?.open).toBe(true);
+  expect(opened?.actions).toContain("sort:asc");
+});
+
+test("without the attribute a right click on a header is left to the browser", async ({ page }) => {
+  await page.evaluate(() => document.querySelector("opengrid-grid").removeAttribute("column-menu"));
+  await page.waitForFunction(
+    () => !document.querySelector("opengrid-grid").shadowRoot.querySelector('[part="column-menu-button"]'),
+  );
+  const prevented = await page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        const th = document.querySelector("opengrid-grid").shadowRoot.querySelector('th[data-col="3"]');
+        th.addEventListener("contextmenu", (event) => queueMicrotask(() => resolve(event.defaultPrevented)), { once: true });
+        th.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, composed: true, cancelable: true }));
+      }),
+  );
+  expect(prevented).toBe(false);
+  expect(await menu(page)).toBeNull();
+});

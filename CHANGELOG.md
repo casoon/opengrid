@@ -21,6 +21,7 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Fixed
 
+- **Grid:** with `column-menu`, a right click on a header opens the column menu; until now only `Alt`+`↓` and the `⋯` button did ([#569](https://github.com/casoon/opengrid/issues/569)).
 - **Grid:** `Ctrl`/`Cmd`+`C` on a single focused cell copies it, with the same text the cell menu's `Copy` puts on the clipboard; until now only a marked block was copied by the key ([#568](https://github.com/casoon/opengrid/issues/568)).
 - **Grid:** `Shift`+click on a row's checkbox selects the rows from the last one toggled, as `Shift`+`Space` does ([#567](https://github.com/casoon/opengrid/issues/567)).
 - **Grid:** a click, a tap or a pen on a column header sorts by it, as `Enter` does; `Shift`+click adds a key. Until now only the keys, the column menu and the page could sort ([#561](https://github.com/casoon/opengrid/issues/561)).
