@@ -283,7 +283,7 @@ An interactive `<table role="grid">`: virtualized, keyboard-driven, filterable.
 | `Ctrl`/`Cmd`+`A` | anywhere | select every matching row, not only the loaded page |
 | `Ctrl`/`Cmd`+`←`/`→` | header cell | move the column |
 | `Ctrl`/`Cmd`+`←`/`→` | band cell | move the band with all its columns ([Column bands](#column-bands)) |
-| `Ctrl`/`Cmd`+`Shift`+`←`/`→` | header cell | resize the column |
+| `Ctrl`/`Cmd`+`Shift`+`←`/`→`, dragging the header's edge | header cell | resize the column |
 | `Alt`+`Shift`+`←`/`→` | header cell | pin the column one step towards that side: let go of a pin at the other end, or pin it at this one ([Pinned columns](#pinned-columns)) |
 | `Alt`+`Shift`+`←`/`→` | band cell, or the header cell of a column in a band | pin the **band** one step towards that side |
 | `Delete` | band cell | hide the whole band ([Column bands](#column-bands)) |

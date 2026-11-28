@@ -23,6 +23,33 @@ pub(super) fn resize_column(host: &HtmlElement, col: usize, step: i32) {
     dispatch_view(host);
 }
 
+/// A drag on a header's edge begins (issue #563): the column's name and the
+/// width it has now.
+pub(super) fn begin_width_drag(host: &HtmlElement, col: usize) -> Option<(String, u32)> {
+    let name = columns_of(host).get(col).cloned()?;
+    let width = measured_width(host, col)?;
+    Some((name, width))
+}
+
+/// The drag has the column `width` wide: written at once, said and reported
+/// only when the drag ends ([`end_width_drag`]) — not for every pixel of it.
+pub(super) fn drag_width(host: &HtmlElement, name: &str, width: i32) {
+    let width = width.max(0) as u32;
+    columns::layout(host).borrow_mut().set_width(name, width);
+    apply_widths(host);
+}
+
+/// The drag ended: the width is said, the pinned columns that no longer fit
+/// are let go of, and the page hears the new view.
+pub(super) fn end_width_drag(host: &HtmlElement, name: &str) {
+    let width = columns::layout(host).borrow().width(name);
+    if let Some(width) = width {
+        announce(host, &texts(host).column_width(name, width));
+    }
+    say_release(host);
+    dispatch_view(host);
+}
+
 /// Where a shown column is pinned: the reader's choice, or else the page's.
 pub(super) fn pin_of(host: &HtmlElement, name: &str) -> Option<Pin> {
     columns::layout(host)

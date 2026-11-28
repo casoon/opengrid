@@ -19,6 +19,10 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+### Added
+
+- **Grid:** a column's width changes by dragging the edge of its header (mouse, pen or finger), with the same limits as the keys; the keys stay ([#563](https://github.com/casoon/opengrid/issues/563)).
+
 ### Fixed
 
 - **Grid:** a click, a tap or a pen on a column header sorts by it, as `Enter` does; `Shift`+click adds a key. Until now only the keys, the column menu and the page could sort ([#561](https://github.com/casoon/opengrid/issues/561)).
