@@ -19,6 +19,16 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+## [0.21.1] - 2026-11-28
+
+Not yet verified by a screen reader: no pass with assistive technology has been recorded for this
+release ([#5](https://github.com/casoon/opengrid/issues/5)). The keyboard and `axe-core` checks run on
+every change.
+
+**What breaks:** nothing. The modules, the adapters and the Rust crates are unchanged since 0.21.0;
+this release carries the shorter start page and documentation introduction, and the `README` that
+npm and crates.io show.
+
 ### Changed
 
 - **Pages:** the start page is short again: what opengrid is for, three promises (simple to use, work taken off you, free), the six live demo sites including Solid, a quick start and the price. The technical sections stay in the documentation, and the guides are ordered easiest first ([#558](https://github.com/casoon/opengrid/issues/558)).
