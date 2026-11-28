@@ -1,7 +1,7 @@
 ---
 title: Exporting
 description: What an export holds and why it holds raw values, from the browser or from a server, a pivot as it is shown, printing and PDF, the formula guard, and reading an export back.
-order: 5
+order: 4
 ---
 
 The grid has no export button. What to export, in which format, under which name, and what to

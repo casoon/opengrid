@@ -1,7 +1,7 @@
 ---
 title: Accessibility
 description: What the tests verify on every commit, and what has not been verified yet.
-order: 3
+order: 6
 ---
 
 Calling something accessible is easy and usually wrong, so here is the split.

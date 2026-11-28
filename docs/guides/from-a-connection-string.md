@@ -1,7 +1,7 @@
 ---
 title: From a connection string to a grid
 description: Read the schema of your PostgreSQL, MySQL or SQLite database, edit the proposal, start the server from the file.
-order: 6.5
+order: 11
 ---
 
 You have a database and an application with its own forms. opengrid stays a grid: it reads,

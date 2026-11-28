@@ -29,11 +29,11 @@ or split between the two, with the same results everywhere.
 
 ## Live demos
 
-The same 17 demos in every framework, each with its source, its data and options to change
+The same 22 demos in every framework, each with its source, its data and options to change
 live:
 
-| [JavaScript](https://og-vanilla.casoon.dev) | [React](https://og-react.casoon.dev) | [Vue](https://og-vue.casoon.dev) | [Svelte](https://og-svelte.casoon.dev) | [Angular](https://og-angular.casoon.dev) |
-| :-: | :-: | :-: | :-: | :-: |
+| [JavaScript](https://og-vanilla.casoon.dev) | [React](https://og-react.casoon.dev) | [Vue](https://og-vue.casoon.dev) | [Svelte](https://og-svelte.casoon.dev) | [Angular](https://og-angular.casoon.dev) | [Solid](https://og-solid.casoon.dev) |
+| :-: | :-: | :-: | :-: | :-: | :-: |
 
 Start with the [overview](https://og-vanilla.casoon.dev/overview), the
 [grouping](https://og-vanilla.casoon.dev/grouping), the

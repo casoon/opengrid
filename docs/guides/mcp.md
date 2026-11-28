@@ -1,7 +1,7 @@
 ---
 title: In a chat client (MCP)
 description: The grid as an MCP App — the reader's keyboard and the model on one view.
-order: 7
+order: 12
 ---
 
 `@casoon/opengrid-mcp` brings `<opengrid-grid>` into chat clients that support
