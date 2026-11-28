@@ -21,6 +21,7 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Fixed
 
+- **Grid:** `Shift`+click on a row's checkbox selects the rows from the last one toggled, as `Shift`+`Space` does ([#567](https://github.com/casoon/opengrid/issues/567)).
 - **Grid:** a click, a tap or a pen on a column header sorts by it, as `Enter` does; `Shift`+click adds a key. Until now only the keys, the column menu and the page could sort ([#561](https://github.com/casoon/opengrid/issues/561)).
 
 ## [0.21.1] - 2026-11-28
