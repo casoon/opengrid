@@ -19,6 +19,10 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+### Fixed
+
+- **Grid:** a click, a tap or a pen on a column header sorts by it, as `Enter` does; `Shift`+click adds a key. Until now only the keys, the column menu and the page could sort ([#561](https://github.com/casoon/opengrid/issues/561)).
+
 ## [0.21.1] - 2026-11-28
 
 Not yet verified by a screen reader: no pass with assistive technology has been recorded for this
