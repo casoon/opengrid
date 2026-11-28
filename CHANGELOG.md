@@ -21,6 +21,7 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Added
 
+- **Grid:** a column moves by dragging its header onto another (mouse or pen), with a mark where it lands; it stops at the end of its pinned or unpinned run, as the keys do, which stay ([#565](https://github.com/casoon/opengrid/issues/565)).
 - **Grid:** a double-click on a header's edge, or *Autosize column* in the column menu, fits the column to its header and the values loaded ([#564](https://github.com/casoon/opengrid/issues/564)). Text key `autosizeColumn`.
 - **Grid:** a column's width changes by dragging the edge of its header (mouse, pen or finger), with the same limits as the keys; the keys stay ([#563](https://github.com/casoon/opengrid/issues/563)).
 

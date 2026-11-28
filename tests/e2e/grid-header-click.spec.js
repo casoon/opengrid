@@ -147,3 +147,40 @@ test("a double-click on the edge fits the column to what it shows", async ({ pag
   // Neither of the two clicks sorted.
   expect(await sorts(page)).toMatchObject({ id: "ascending", customer: "none" });
 });
+
+// Reorder by dragging a header (issue #565).
+
+const order = (page) =>
+  shadow(page, (root) => [...root.querySelectorAll('thead th[part="header"]')].map((th) => th.querySelector("span").textContent.trim()));
+
+async function dragHeader(page, from, to) {
+  const a = await page.locator(`opengrid-grid thead th[data-col="${from}"]`).boundingBox();
+  const b = await page.locator(`opengrid-grid thead th[data-col="${to}"]`).boundingBox();
+  const y = a.y + a.height / 2;
+  await page.mouse.move(a.x + a.width / 2 - 10, y);
+  await page.mouse.down();
+  await page.mouse.move(b.x + b.width / 2, y, { steps: 6 });
+  await page.mouse.up();
+}
+
+test("dragging a header onto another moves the column and does not sort", async ({ page }, testInfo) => {
+  await open(page);
+  expect(await order(page)).toEqual(["id", "customer", "amount", "qty"]);
+  await dragHeader(page, 1, 3);
+  await expect.poll(() => order(page)).toEqual(["id", "amount", "qty", "customer"]);
+  expect(await status(page)).toContain("customer");
+  expect(await sorts(page)).toMatchObject({ id: "ascending", customer: "none" });
+  // Back past the others to the first place — on the 480 px page the first
+  // column is pinned, and a column stops at the end of its run, as for the keys.
+  await dragHeader(page, 3, 0);
+  await expect
+    .poll(() => order(page))
+    .toEqual(testInfo.project.name === "narrow" ? ["id", "customer", "amount", "qty"] : ["customer", "id", "amount", "qty"]);
+});
+
+test("a press on a header that goes nowhere still sorts", async ({ page }) => {
+  await open(page);
+  await header(page, "amount").click();
+  expect(await order(page)).toEqual(["id", "customer", "amount", "qty"]);
+  expect(await sorts(page)).toMatchObject({ amount: "ascending" });
+});
