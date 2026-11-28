@@ -19,6 +19,10 @@ Two things belong in every release entry and are easy to leave out:
 
 ## [Unreleased]
 
+### Added
+
+- **Grid:** a column's width changes by dragging the edge of its header (mouse, pen or finger), with the same limits as the keys; the keys stay ([#563](https://github.com/casoon/opengrid/issues/563)).
+
 ### Fixed
 
 - **Grid:** a header that sorts shows the pointer cursor, the `⋯` menu button has a title ("Column menu"), and a header label that is cut off gets its full text as a title on hover ([#570](https://github.com/casoon/opengrid/issues/570)).

@@ -821,7 +821,15 @@ pub(super) fn on_filter_clear(event: Event) {
     // sorts by the column, `Shift` adds a key. Its menu button was handled
     // above; an action's header, a band and the selection column are not
     // `part="header"` cells with a column of their own, so they sort nothing.
-    if let Ok(Some(th)) = target.closest("th[part=\"header\"][data-col]")
+    // The edge that resizes a column is not the header's sort (issue #563).
+    let on_edge = event
+        .dyn_ref::<web_sys::MouseEvent>()
+        .zip(root.host().dyn_into::<HtmlElement>().ok())
+        .is_some_and(|(click, host)| {
+            super::pointer::click_is_on_edge(&host, &target, f64::from(click.client_x()))
+        });
+    if !on_edge
+        && let Ok(Some(th)) = target.closest("th[part=\"header\"][data-col]")
         && let Some(col) = th
             .get_attribute("data-col")
             .and_then(|col| col.parse::<usize>().ok())

@@ -137,9 +137,9 @@ use chips::{chips_of, clear_chips, draw_chips, remove_chip, sync_chrome, toggle_
 use column_menu::{activate_menu_item, on_menu_key, open_column_menu};
 use column_ops::{
     Arrangement, adopt_sheets, announce, announce_refusals, apply_widths, arrangement, bands_of,
-    close_columns, columns_of, hide_band, move_band, move_column, observe_columns, open_columns,
-    pin_column, pin_narrow, pool_of, rearrange, resize_column, retree, select_of,
-    set_column_hidden, step_pin,
+    begin_width_drag, close_columns, columns_of, drag_width, end_width_drag, hide_band, move_band,
+    move_column, observe_columns, open_columns, pin_column, pin_narrow, pool_of, rearrange,
+    resize_column, retree, select_of, set_column_hidden, step_pin,
 };
 pub(crate) use editing::{CHOICES_KEY, write_row_state};
 use editing::{

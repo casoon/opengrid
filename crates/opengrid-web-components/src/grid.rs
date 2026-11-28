@@ -2109,6 +2109,9 @@ pub fn grid_css() -> String {
          [part=\"header\"]:has([part=\"sort-index\"]:not(:empty)) {{ --og-reserve-index: 1.1em; }}
          [part=\"header\"]:has([part=\"column-menu-button\"]) {{
                    --og-reserve-menu: calc({MIN_TARGET_SIZE}px + 0.25rem); }}
+         /* Where a pointer over a header's edge drags its width (issue #563): the
+            element notes it as `data-edge`; nothing is added to the header. */
+         [part=\"header\"][data-edge] {{ cursor: col-resize; }}
          table {{ width: 100%; table-layout: fixed; border-collapse: collapse; }}
          thead {{ position: sticky; top: 0; z-index: 2;
                   background: var({SURFACE_2_PROPERTY}); color: var({INK_PROPERTY}); }}

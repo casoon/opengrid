@@ -44,6 +44,20 @@ pub(super) struct Tap {
     focused: bool,
 }
 
+/// A drag on a header's edge, until the pointer lifts (issue #563).
+struct WidthDrag {
+    pointer: i32,
+    name: String,
+    x: f64,
+    width: u32,
+}
+
+thread_local! {
+    static WIDTH_DRAG: RefCell<Option<WidthDrag>> = const { RefCell::new(None) };
+    /// A width drag has just ended: the `click` after it is not a sort.
+    static DRAG_ENDED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
 /// Listens on the shadow root, once.
 pub(super) fn add_listeners(root: &ShadowRoot) {
     for (kind, handler) in [
@@ -79,6 +93,9 @@ fn on_pointer_down(event: Event) {
     let Some(pointer) = event.dyn_ref::<PointerEvent>() else {
         return;
     };
+    if begin_width_drag_on(&event, pointer) {
+        return;
+    }
     let Some((host, cell, td)) = range::data_cell(&event) else {
         return;
     };
@@ -210,6 +227,156 @@ fn open_column_menu_after(host: &HtmlElement, col: usize) {
     }
 }
 
+/// How near a header's end a pointer is on its edge, in CSS pixels: a mouse
+/// needs a thin one, a finger the 24 px of WCAG 2.5.8.
+const EDGE: f64 = 8.0;
+const EDGE_TOUCH: f64 = 24.0;
+
+/// The header cell a pointer is on the edge of, with its column. Not from its
+/// menu button, which stands near the same end.
+fn header_edge(
+    host: &HtmlElement,
+    target: &Element,
+    x: f64,
+    touch: bool,
+) -> Option<(Element, usize)> {
+    if target
+        .closest("[part=\"column-menu-button\"]")
+        .ok()
+        .flatten()
+        .is_some()
+    {
+        return None;
+    }
+    let th = target
+        .closest("th[part=\"header\"][data-col]")
+        .ok()
+        .flatten()?;
+    let col = th.get_attribute("data-col")?.parse().ok()?;
+    let rect = th.get_bounding_client_rect();
+    let near = if crate::element::is_rtl(host) {
+        x - rect.left()
+    } else {
+        rect.right() - x
+    };
+    (near >= 0.0 && near <= if touch { EDGE_TOUCH } else { EDGE }).then_some((th, col))
+}
+
+/// Notes on the header the mouse is on the edge of, and takes the note from
+/// the one it left, so the stylesheet shows the cursor (issue #563).
+fn mark_edge(host: &HtmlElement, root: &ShadowRoot, pointer: &PointerEvent, target: &Element) {
+    let now = header_edge(host, target, f64::from(pointer.client_x()), false).map(|(th, _)| th);
+    if let Ok(Some(old)) = root.query_selector("[part=\"header\"][data-edge]")
+        && !now.as_ref().is_some_and(|th| th.is_same_node(Some(&old)))
+        && !WIDTH_DRAG.with(|drag| drag.borrow().is_some())
+    {
+        let _ = old.remove_attribute("data-edge");
+    }
+    if let Some(th) = now {
+        let _ = th.set_attribute("data-edge", "");
+    }
+}
+
+/// The primary button, a finger or a pen went down on a header's edge: a drag
+/// that changes the column's width begins. `true` when it did.
+fn begin_width_drag_on(event: &Event, pointer: &PointerEvent) -> bool {
+    let Some(target) = event
+        .target()
+        .and_then(|target| target.dyn_into::<Element>().ok())
+    else {
+        return false;
+    };
+    if !pointer.is_primary() || (is_mouse(pointer) && pointer.button() != 0) {
+        return false;
+    }
+    let Some(root) = current_shadow_root(event) else {
+        return false;
+    };
+    let Ok(host) = root.host().dyn_into::<HtmlElement>() else {
+        return false;
+    };
+    let Some((th, col)) = header_edge(
+        &host,
+        &target,
+        f64::from(pointer.client_x()),
+        !is_mouse(pointer),
+    ) else {
+        return false;
+    };
+    let Some((name, width)) = begin_width_drag(&host, col) else {
+        return false;
+    };
+    // The header keeps the pointer wherever it goes, and the page keeps still.
+    let _ = th.set_pointer_capture(pointer.pointer_id());
+    let _ = th.set_attribute("data-edge", "");
+    event.prevent_default();
+    WIDTH_DRAG.with(|drag| {
+        *drag.borrow_mut() = Some(WidthDrag {
+            pointer: pointer.pointer_id(),
+            name,
+            x: f64::from(pointer.client_x()),
+            width,
+        });
+    });
+    true
+}
+
+/// The pointer moved while a width drag is on: the column follows it. The
+/// direction of the text decides which way is wider.
+fn move_width_drag(host: &HtmlElement, pointer: &PointerEvent) -> bool {
+    let target = WIDTH_DRAG.with(|drag| {
+        drag.borrow()
+            .as_ref()
+            .filter(|drag| drag.pointer == pointer.pointer_id())
+            .map(|drag| (drag.name.clone(), drag.x, drag.width))
+    });
+    let Some((name, x, width)) = target else {
+        return false;
+    };
+    let mut by = f64::from(pointer.client_x()) - x;
+    if crate::element::is_rtl(host) {
+        by = -by;
+    }
+    drag_width(host, &name, width as i32 + by.round() as i32);
+    true
+}
+
+/// The pointer lifted, or was taken away: the drag ends and the width is said.
+fn end_width_drag_on(host: &HtmlElement, root: &ShadowRoot, pointer: &PointerEvent) -> bool {
+    let done = WIDTH_DRAG.with(|drag| {
+        let mut drag = drag.borrow_mut();
+        if drag
+            .as_ref()
+            .is_some_and(|drag| drag.pointer == pointer.pointer_id())
+        {
+            drag.take()
+        } else {
+            None
+        }
+    });
+    let Some(done) = done else {
+        return false;
+    };
+    if let Ok(Some(edge)) = root.query_selector("[part=\"header\"][data-edge]") {
+        let _ = edge.remove_attribute("data-edge");
+    }
+    end_width_drag(host, &done.name);
+    // The `click` that follows on the header is the drag's, not a sort.
+    DRAG_ENDED.with(|ended| ended.set(true));
+    let clear = Closure::once_into_js(|| DRAG_ENDED.with(|ended| ended.set(false)));
+    if let Some(window) = web_sys::window() {
+        let _ =
+            window.set_timeout_with_callback_and_timeout_and_arguments_0(clear.unchecked_ref(), 0);
+    }
+    true
+}
+
+/// Whether a `click` is the end of a width drag, or on a header's edge: it
+/// does not sort.
+pub(super) fn click_is_on_edge(host: &HtmlElement, target: &Element, x: f64) -> bool {
+    DRAG_ENDED.with(std::cell::Cell::get) || header_edge(host, target, x, false).is_some()
+}
+
 fn open_menu_after(host: &HtmlElement, cell: CellRef) {
     let host = host.clone();
     let callback = Closure::once_into_js(move || cell_menu::open(&host, cell));
@@ -266,6 +433,16 @@ fn on_pointer_move(event: Event) {
     let Ok(host) = root.host().dyn_into::<HtmlElement>() else {
         return;
     };
+    if move_width_drag(&host, pointer) {
+        return;
+    }
+    if is_mouse(pointer)
+        && let Some(target) = event
+            .target()
+            .and_then(|target| target.dyn_into::<Element>().ok())
+    {
+        mark_edge(&host, &root, pointer, &target);
+    }
     let Some(runtime) = runtime(&host) else {
         return;
     };
@@ -322,6 +499,9 @@ fn on_pointer_up(event: Event) {
     let Ok(host) = root.host().dyn_into::<HtmlElement>() else {
         return;
     };
+    if end_width_drag_on(&host, &root, pointer) {
+        return;
+    }
     let Some(runtime) = runtime(&host) else {
         return;
     };
@@ -360,6 +540,12 @@ fn on_pointer_cancel(event: Event) {
     let Some(root) = current_shadow_root(&event) else {
         return;
     };
+    if let Some(pointer) = event.dyn_ref::<PointerEvent>()
+        && let Ok(host) = root.host().dyn_into::<HtmlElement>()
+        && end_width_drag_on(&host, &root, pointer)
+    {
+        return;
+    }
     let Some(runtime) = root
         .host()
         .dyn_into::<HtmlElement>()
