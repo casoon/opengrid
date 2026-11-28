@@ -273,7 +273,7 @@ An interactive `<table role="grid">`: virtualized, keyboard-driven, filterable.
 
 | Keys | On | Does |
 |---|---|---|
-| `Enter` / `Space` | header cell | sort (`Shift` adds a second key) |
+| `Enter` / `Space`, a click | header cell | sort (`Shift` adds a second key) |
 | `Enter` / `F2` | data cell | open the editor (`Enter` commits, `Escape` discards) |
 | `Enter` / `Shift`+`Enter` | open editor, with `enter-moves="down"` | commit and move to the same column of the next / previous data row, opening nothing ([Typing a column of values](#typing-a-column-of-values)) |
 | a character | data cell | open the editor with it: it replaces the value in a text or number field, and in a select picks the one choice that is it or starts with it (the cell's value when none or several do). `Enter` still commits. A date or a checkbox opens on the cell's value |

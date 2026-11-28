@@ -812,6 +812,24 @@ pub(super) fn on_filter_clear(event: Event) {
             _ => {}
         }
     }
+    // A column's header (issue #561): the pointer path to what `Enter` does —
+    // sorts by the column, `Shift` adds a key. Its menu button was handled
+    // above; an action's header, a band and the selection column are not
+    // `part="header"` cells with a column of their own, so they sort nothing.
+    if let Ok(Some(th)) = target.closest("th[part=\"header\"][data-col]")
+        && let Some(col) = th
+            .get_attribute("data-col")
+            .and_then(|col| col.parse::<usize>().ok())
+        && let Ok(host) = root.host().dyn_into::<HtmlElement>()
+        && let Some(runtime) = runtime(&host)
+    {
+        let multi = event
+            .dyn_ref::<web_sys::MouseEvent>()
+            .is_some_and(|click| click.shift_key());
+        runtime.borrow_mut().set_active(ActiveCell::Header { col });
+        activate_header(&host, &runtime, multi);
+        return;
+    }
     if target
         .closest("[data-filter-clear]")
         .ok()
