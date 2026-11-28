@@ -21,6 +21,7 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Fixed
 
+- **Grid:** a header that sorts shows the pointer cursor, the `⋯` menu button has a title ("Column menu"), and a header label that is cut off gets its full text as a title on hover ([#570](https://github.com/casoon/opengrid/issues/570)).
 - **Grid:** with `column-menu`, a right click on a header opens the column menu; until now only `Alt`+`↓` and the `⋯` button did ([#569](https://github.com/casoon/opengrid/issues/569)).
 - **Grid:** `Ctrl`/`Cmd`+`C` on a single focused cell copies it, with the same text the cell menu's `Copy` puts on the clipboard; until now only a marked block was copied by the key ([#568](https://github.com/casoon/opengrid/issues/568)).
 - **Grid:** `Shift`+click on a row's checkbox selects the rows from the last one toggled, as `Shift`+`Space` does ([#567](https://github.com/casoon/opengrid/issues/567)).
