@@ -21,6 +21,7 @@ Two things belong in every release entry and are easy to leave out:
 
 ### Fixed
 
+- **Grid:** a header that sorts shows the pointer cursor, the `⋯` menu button has a title ("Column menu"), and a header label that is cut off gets its full text as a title on hover ([#570](https://github.com/casoon/opengrid/issues/570)).
 - **Grid:** with `column-menu`, a right click on a header opens the column menu; until now only `Alt`+`↓` and the `⋯` button did ([#569](https://github.com/casoon/opengrid/issues/569)).
 - **Grid:** a click, a tap or a pen on a column header sorts by it, as `Enter` does; `Shift`+click adds a key. Until now only the keys, the column menu and the page could sort ([#561](https://github.com/casoon/opengrid/issues/561)).
 

@@ -54,6 +54,7 @@ pub(super) fn add_listeners(root: &ShadowRoot) {
         ("click", on_click as fn(Event)),
         ("dblclick", on_double_click as fn(Event)),
         ("contextmenu", on_context_menu as fn(Event)),
+        ("pointerover", on_header_over as fn(Event)),
     ] {
         let listener = Closure::<dyn FnMut(Event)>::new(handler).into_js_value();
         let _ = root.add_event_listener_with_callback(kind, listener.unchecked_ref());
@@ -130,6 +131,28 @@ thread_local! {
 }
 
 /// Opens the menu of `cell` once the event that lifted the pointer is done.
+/// Gives a header's label a `title` while it is cut off, and takes it away when
+/// it fits again (issue #570): measured on hover, as the width changes with the
+/// column, the marks beside it and the window.
+fn on_header_over(event: Event) {
+    let Some(label) = event
+        .target()
+        .and_then(|target| target.dyn_into::<Element>().ok())
+        .and_then(|target| target.closest("th[part=\"header\"]").ok().flatten())
+        .and_then(|th| th.first_element_child())
+    else {
+        return;
+    };
+    if label.scroll_width() > label.client_width() {
+        if label.get_attribute("title").is_none() {
+            let text = label.text_content().unwrap_or_default();
+            let _ = label.set_attribute("title", &text);
+        }
+    } else {
+        let _ = label.remove_attribute("title");
+    }
+}
+
 /// A right click on a header, with `column-menu`: the column's menu, the
 /// pointer path to what `Alt`+`↓` opens (issue #569). `true` when it was one.
 fn on_header_context_menu(event: &Event) -> bool {

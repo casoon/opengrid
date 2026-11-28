@@ -350,3 +350,9 @@ test("without the attribute a right click on a header is left to the browser", a
   expect(prevented).toBe(false);
   expect(await menu(page)).toBeNull();
 });
+
+test("the menu button has a name on hover (issue #570)", async ({ page }) => {
+  const title = await page.evaluate(() =>
+    document.querySelector("opengrid-grid").shadowRoot.querySelector('th[data-col="3"] [part="column-menu-button"]').title);
+  expect(title).toBe("Column menu");
+});
