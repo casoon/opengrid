@@ -110,3 +110,11 @@ test("a range that reaches rows that are not loaded copies nothing and says so",
   // The browser's own copy was kept from putting anything on the clipboard.
   expect(await page.evaluate(() => window.__copied.filter(Boolean))).toEqual([]);
 });
+
+test("Ctrl/Cmd+C copies the one focused cell, as the cell menu does (issue #568)", async ({ page }) => {
+  await open(page);
+  await focusCell(page, 1, 2);
+  await page.keyboard.press("ControlOrMeta+c");
+  await expect.poll(() => page.evaluate(() => window.__copied)).toEqual(["10\n"]);
+  expect(await status(page)).toContain("Copied");
+});

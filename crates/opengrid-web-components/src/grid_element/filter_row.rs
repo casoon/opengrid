@@ -806,7 +806,12 @@ pub(super) fn on_filter_clear(event: Event) {
                 return;
             }
             Some(ActiveCell::Select { row }) => {
-                toggle_row(&host, &runtime, row, false);
+                // `Shift`+click extends from the last toggled row, as
+                // `Shift`+`Space` does (issue #567).
+                let extend = event
+                    .dyn_ref::<web_sys::MouseEvent>()
+                    .is_some_and(|click| click.shift_key());
+                toggle_row(&host, &runtime, row, extend);
                 return;
             }
             _ => {}
