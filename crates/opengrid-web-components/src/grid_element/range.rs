@@ -95,6 +95,22 @@ fn announce_size(host: &HtmlElement, range: &CellRange) {
     announce(host, &texts(host).range_size(rows, cols));
 }
 
+/// What `Ctrl`/`Cmd`+`C` copies: the marked block, else the one focused data
+/// cell (issue #568) — the same text the cell menu's `Copy` puts on the
+/// clipboard. Nothing while an editor is open: its field copies as a field.
+fn copy_block(runtime: &Rc<RefCell<GridRuntime>>) -> Option<opengrid_grid::CellRange> {
+    let borrowed = runtime.borrow();
+    if let Some(range) = borrowed.range.filter(|range| !range.is_single()) {
+        return Some(range);
+    }
+    match borrowed.active {
+        ActiveCell::Data(cell) if borrowed.state.editing().is_none() => {
+            Some(opengrid_grid::CellRange::new(cell, cell))
+        }
+        _ => None,
+    }
+}
+
 /// Takes the range keys: `Shift`+arrow extends, anything else that moves or
 /// edits ends it. `true` when the key is spent.
 pub(super) fn on_key(
@@ -112,11 +128,7 @@ pub(super) fn on_key(
         return false;
     }
     if (event.ctrl_key() || event.meta_key()) && key.eq_ignore_ascii_case("c") {
-        if runtime
-            .borrow()
-            .range
-            .is_some_and(|range| !range.is_single())
-        {
+        if copy_block(runtime).is_some() {
             copy_fallback(host, runtime);
         }
         return false;
@@ -363,7 +375,7 @@ pub(super) fn copy_fallback(host: &HtmlElement, runtime: &Rc<RefCell<GridRuntime
         if COPY_SEEN.with(std::cell::Cell::get) {
             return;
         }
-        let Some(block) = runtime.borrow().range.filter(|range| !range.is_single()) else {
+        let Some(block) = copy_block(&runtime) else {
             return;
         };
         if let Some(text) = copy_text(&host, &runtime, block) {
@@ -419,7 +431,7 @@ pub(super) fn on_copy(event: Event) {
     let Some(runtime) = runtime(&host) else {
         return;
     };
-    let Some(block) = runtime.borrow().range.filter(|range| !range.is_single()) else {
+    let Some(block) = copy_block(&runtime) else {
         return;
     };
     COPY_SEEN.with(|seen| seen.set(true));

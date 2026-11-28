@@ -68,6 +68,7 @@ pub(super) fn add_listeners(root: &ShadowRoot) {
         ("click", on_click as fn(Event)),
         ("dblclick", on_double_click as fn(Event)),
         ("contextmenu", on_context_menu as fn(Event)),
+        ("pointerover", on_header_over as fn(Event)),
     ] {
         let listener = Closure::<dyn FnMut(Event)>::new(handler).into_js_value();
         let _ = root.add_event_listener_with_callback(kind, listener.unchecked_ref());
@@ -142,9 +143,90 @@ fn on_pointer_down(event: Event) {
 thread_local! {
     /// A menu asked for while a mouse button was down, opened when it lifts.
     static PENDING: std::cell::Cell<Option<CellRef>> = const { std::cell::Cell::new(None) };
+    /// The column whose menu a right click on its header waits to open.
+    static PENDING_COLUMN: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
 }
 
 /// Opens the menu of `cell` once the event that lifted the pointer is done.
+/// Gives a header's label a `title` while it is cut off, and takes it away when
+/// it fits again (issue #570): measured on hover, as the width changes with the
+/// column, the marks beside it and the window.
+fn on_header_over(event: Event) {
+    let Some(label) = event
+        .target()
+        .and_then(|target| target.dyn_into::<Element>().ok())
+        .and_then(|target| target.closest("th[part=\"header\"]").ok().flatten())
+        .and_then(|th| th.first_element_child())
+    else {
+        return;
+    };
+    if label.scroll_width() > label.client_width() {
+        if label.get_attribute("title").is_none() {
+            let text = label.text_content().unwrap_or_default();
+            let _ = label.set_attribute("title", &text);
+        }
+    } else {
+        let _ = label.remove_attribute("title");
+    }
+}
+
+/// A right click on a header, with `column-menu`: the column's menu, the
+/// pointer path to what `Alt`+`↓` opens (issue #569). `true` when it was one.
+fn on_header_context_menu(event: &Event) -> bool {
+    let Some(root) = current_shadow_root(event) else {
+        return false;
+    };
+    let Ok(host) = root.host().dyn_into::<HtmlElement>() else {
+        return false;
+    };
+    if !host.has_attribute(grid::COLUMN_MENU_ATTRIBUTE) {
+        return false;
+    }
+    let Some(th) = event
+        .target()
+        .and_then(|target| target.dyn_into::<Element>().ok())
+        .and_then(|target| {
+            target
+                .closest("th[part=\"header\"][data-col]")
+                .ok()
+                .flatten()
+        })
+    else {
+        return false;
+    };
+    let Some(col) = th
+        .get_attribute("data-col")
+        .and_then(|col| col.parse::<usize>().ok())
+    else {
+        return false;
+    };
+    let Some(runtime) = runtime(&host) else {
+        return false;
+    };
+    event.prevent_default();
+    runtime.borrow_mut().set_active(ActiveCell::Header { col });
+    // As for a cell: a button still down waits for it to lift, or the menu
+    // would be light-dismissed by that `pointerup`.
+    let held = event
+        .dyn_ref::<web_sys::MouseEvent>()
+        .is_some_and(|mouse| mouse.buttons() != 0);
+    if held {
+        PENDING_COLUMN.with(|pending| pending.set(Some(col)));
+    } else {
+        open_column_menu(&host, col);
+    }
+    true
+}
+
+fn open_column_menu_after(host: &HtmlElement, col: usize) {
+    let host = host.clone();
+    let callback = Closure::once_into_js(move || open_column_menu(&host, col));
+    if let Some(window) = web_sys::window() {
+        let _ = window
+            .set_timeout_with_callback_and_timeout_and_arguments_0(callback.unchecked_ref(), 0);
+    }
+}
+
 /// How near a header's end a pointer is on its edge, in CSS pixels: a mouse
 /// needs a thin one, a finger the 24 px of WCAG 2.5.8.
 const EDGE: f64 = 8.0;
@@ -428,6 +510,9 @@ fn on_pointer_up(event: Event) {
         if let Some(cell) = PENDING.with(std::cell::Cell::take) {
             open_menu_after(&host, cell);
         }
+        if let Some(col) = PENDING_COLUMN.with(std::cell::Cell::take) {
+            open_column_menu_after(&host, col);
+        }
         return;
     }
     let Some(press) = end_press(&runtime) else {
@@ -534,6 +619,9 @@ fn on_double_click(event: Event) {
 /// A right click, Android's long-press and the context-menu key aimed at a
 /// cell: the cell menu instead of the browser's.
 fn on_context_menu(event: Event) {
+    if on_header_context_menu(&event) {
+        return;
+    }
     let Some((host, cell, _)) = range::data_cell(&event) else {
         return;
     };

@@ -47,6 +47,24 @@ test("a click on an action's header sorts nothing", async ({ page }) => {
   expect(await sorts(page)).toMatchObject({ id: "ascending" });
 });
 
+// Header affordances (issue #570).
+
+test("a header shows the pointer cursor, and a cut-off label gets its title on hover", async ({ page }) => {
+  await open(page);
+  const cursor = await shadow(page, (root) => getComputedStyle(root.querySelector('thead th[part="header"]')).cursor);
+  expect(cursor).toBe("pointer");
+
+  const label = (page) => shadow(page, (root) => root.querySelector('thead th[data-col="1"] > span').getAttribute("title"));
+  await shadow(page, (root) => (root.querySelector('thead th[data-col="1"] > span').style.maxWidth = "14px"));
+  await header(page, "customer").hover();
+  expect(await label(page)).toBe("customer");
+
+  await shadow(page, (root) => (root.querySelector('thead th[data-col="1"] > span').style.maxWidth = "none"));
+  await header(page, "amount").hover();
+  await header(page, "customer").hover();
+  expect(await label(page)).toBeNull();
+});
+
 // Resize by dragging the edge of a header (issue #563).
 
 const widthOf = (page, col) =>

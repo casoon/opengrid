@@ -287,3 +287,13 @@ test("has no axe violations, selected and unselected", async ({ page }) => {
   const second = await new AxeBuilder({ page }).analyze();
   expect(second.violations).toEqual([]);
 });
+
+test("Shift+click on a row's checkbox selects the rows between (issue #567)", async ({ page }) => {
+  const box = (row) => page.locator(`opengrid-grid tr:has(td[data-row="${row}"]) [data-select="row"]`);
+  await box(1).click();
+  await box(4).click({ modifiers: ["Shift"] });
+  const selected = await page.evaluate(() =>
+    [...document.querySelector("opengrid-grid").shadowRoot.querySelectorAll("tbody tr[aria-selected=true] td[data-row]")]
+      .map((cell) => cell.getAttribute("data-row")));
+  expect([...new Set(selected)]).toEqual(["1", "2", "3", "4"]);
+});

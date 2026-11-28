@@ -2099,6 +2099,7 @@ pub fn grid_css() -> String {
             it could be: a fixed 2.75em for the marks cut a narrow sorted
             column's name to nothing (issue #61). The name keeps two characters
             at least; `header_min_width` keeps the column wide enough for them. */
+         [part=\"header\"] {{ cursor: pointer; }}
          [part=\"header\"] > span:first-child {{ display: inline-block; min-width: 2ch;
                    max-width: calc(100% - var(--og-reserve-sort, 0px) - var(--og-reserve-index, 0px)
                                         - var(--og-reserve-menu, 0px) - var(--og-reserve-edit, 0px));
@@ -3111,7 +3112,14 @@ pub fn build_grid(
                 value: "Alt+ArrowDown".to_owned(),
             });
             let button = element(buffer, nodes, Some(th), "span");
-            for (name, value) in [("part", "column-menu-button"), ("aria-hidden", "true")] {
+            // A name on hover for what the pointer finds (issue #570); the
+            // button stays out of the accessibility tree and the tab order —
+            // the key and the cell itself are the keyboard path.
+            for (name, value) in [
+                ("part", "column-menu-button"),
+                ("aria-hidden", "true"),
+                ("title", texts.cell_column_menu.as_str()),
+            ] {
                 buffer.push(Patch::SetAttribute {
                     node: button,
                     name: name.to_owned(),
