@@ -1,7 +1,7 @@
 ---
 title: Saving edits from the page
 description: A grid that saves every cell on its own — naming the record, saying what became of an edit, and showing values the page computes.
-order: 8
+order: 3
 ---
 
 The grid edits; the page saves. opengrid has no write path — the engine's contract is a query —

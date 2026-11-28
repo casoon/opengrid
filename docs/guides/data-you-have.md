@@ -1,7 +1,7 @@
 ---
 title: Data you already have
 description: Rows the page holds as objects go into the engine as they are — with the types read from them or a schema of your own, replaceable, with the grid keeping its view.
-order: 10
+order: 1
 ---
 
 An application often has its data as objects already — from its own backend, an IPC call, a

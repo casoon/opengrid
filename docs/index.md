@@ -1,26 +1,34 @@
 ---
 title: Introduction
-description: What opengrid is, what is in the repository today, and what V1 deliberately leaves out.
+description: What opengrid is for, how to start in a few minutes, and what it deliberately leaves out.
 order: 0
 ---
 
-opengrid is a portable Rust data and query engine with client/server execution, and on top of
-it an accessible **data grid**, **table** and **pivot** delivered as Web Components.
+opengrid is a free data grid, table and pivot for the web, as Web Components. You put an element
+on the page and hand it your rows; sorting, filtering, grouping, editing and export already work.
 
-The product is the engine, not a JavaScript grid. The same query model, the same semantics and
-the same results run in WebAssembly in a browser, natively on a server, and against PostgreSQL.
-A conformance suite of JSON cases pins what "the same" means.
+The aim is three things: **simple to use**, **work taken off you**, and **free**. A page that
+shows tables should not have to write paging, sorting or export code, or pay for a pivot.
+
+## How it takes the work off you
+
+The product is one query engine, written in Rust. It runs as WebAssembly in the browser, natively
+on a server, and against PostgreSQL, with the same query model and the same results everywhere.
+Small data stays in the tab; data that does not fit stays on your server, and the grid asks it
+for the window of rows it shows. A conformance suite of JSON cases pins what "the same" means.
 [What sets it apart](what-sets-it-apart/) compares that with a grid written in JavaScript.
 
-## Status
+## Start
 
-Pre-1.0. On npm are `@casoon/opengrid`, with the elements and the engine, and the adapters for
-React, Vue, Svelte and Solid — see [Installation](getting-started/installation/). The portable Rust
-crates and `opengrid-server` are on crates.io. What each release changed is in
-[`CHANGELOG.md`](https://github.com/casoon/opengrid/blob/main/CHANGELOG.md).
+1. [Install](getting-started/installation/) `@casoon/opengrid`.
+2. Put an element on the page and give it your rows: the [Quickstart](getting-started/quickstart/)
+   needs one HTML file, and [Data you already have](guides/data-you-have/) shows how rows become a
+   grid.
+3. Use it from your framework: [React, Vue, Svelte and Solid](guides/frameworks/) have components,
+   everything else, Angular included, uses `connect`.
 
-The public API is written down in [The public API](api/), and a test fails when it changes.
-That freezes the list, not the design: it may still change before 1.0.
+Every framework has a [live demo site](https://og-vanilla.casoon.dev/) with the same demos and
+their source.
 
 ## The three elements
 
@@ -30,18 +38,24 @@ That freezes the list, not the design: it may still change before 1.0.
 | `<opengrid-grid>` | The answer is **worked with**: selection, editing, filtering, sorting, column control, virtualization or paging. |
 | `<opengrid-pivot>` | Rows crossed with up to two column dimensions, with subtotals. |
 
-All three ship in one module. The Cargo features `grid` and `pivot` exist for anyone who wants
-only one; `set_columns` and `set_formats` are in both, so a pivot-only build pulls the grid and
-query crates too (132.3 KiB brotli; the grid alone is 309.3 KiB, both elements 340.0 KiB). In React, Vue, Svelte and Solid they come as components — see
-[Frameworks](guides/frameworks/).
+All three ship in one module (387.8 KiB brotli; the grid alone is 357.6 KiB, a pivot-only build
+135.0 KiB). The Cargo features `grid` and `pivot` exist for anyone who wants only one.
 
-## What V1 deliberately does not do
+## Status
+
+Pre-1.0. On npm are `@casoon/opengrid`, with the elements, the engine and the adapters for React,
+Vue, Svelte and Solid, and `@casoon/opengrid-mcp`. The portable Rust crates and `opengrid-server`
+are on crates.io. What each release changed is in
+[`CHANGELOG.md`](https://github.com/casoon/opengrid/blob/main/CHANGELOG.md).
+
+The public API is written down in [The public API](api/), and a test fails when it changes.
+That freezes the list, not the design: it may still change before 1.0.
+
+## What it leaves out
 
 - **No calculated fields.** A column is stored or derived from a date part (year, month); there
   is no expression language.
 - **A pivot is bounded**: two column dimensions, 256 generated columns, 10 000 rows, and
-  131 072 cells (rows × columns — what a browser draws as a table in about a second). Over a
-  limit you get an error with a sentence, never a silently truncated result.
+  131 072 cells. Over a limit you get an error with a sentence, never a silently truncated result.
 - **Paging and virtualization are exclusive**, not combined.
-- **No CDN build.** Adapters exist for React, Vue, Svelte and Solid; Angular, Lit and the rest use
-  `connect` directly.
+- **No CDN build.** Angular, Lit and the rest use `connect` directly.

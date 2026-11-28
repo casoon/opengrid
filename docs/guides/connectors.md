@@ -1,7 +1,7 @@
 ---
 title: Connectors
 description: The server knows no database — your application hands it sources through one contract.
-order: 6
+order: 10
 ---
 
 `opengrid-server` is a library. It checks tokens, narrows what each client may see, adds the

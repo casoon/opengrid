@@ -1,7 +1,7 @@
 ---
 title: A tree in the grid
 description: Rows that name their parent shown as a tree — loaded a level at a time, filtered with their context, selected by key, summed over subtrees and exported flat.
-order: 9
+order: 5
 ---
 
 A tree is a mode of `<opengrid-grid>`, not an element of its own: rows that name their parent

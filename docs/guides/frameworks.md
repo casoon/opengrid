@@ -1,7 +1,7 @@
 ---
 title: Frameworks
 description: React, Vue, Svelte and Solid components, and the same elements in Angular, Astro and server-rendered pages without one.
-order: 4
+order: 2
 ---
 
 The elements are Web Components, so they work in any page. What a framework adds is a way to
