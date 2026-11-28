@@ -2112,6 +2112,12 @@ pub fn grid_css() -> String {
          /* Where a pointer over a header's edge drags its width (issue #563): the
             element notes it as `data-edge`; nothing is added to the header. */
          [part=\"header\"][data-edge] {{ cursor: col-resize; }}
+         /* A header being dragged to another place (issue #565), and the side of
+            the one it would land beside. */
+         :where(th[part=\"header\"]) {{ user-select: none; }}
+         [part=\"header\"][data-moving] {{ opacity: 0.6; cursor: grabbing; }}
+         [part=\"header\"][data-drop=\"before\"] {{ box-shadow: inset 3px 0 0 var({ACCENT_PROPERTY}); }}
+         [part=\"header\"][data-drop=\"after\"] {{ box-shadow: inset -3px 0 0 var({ACCENT_PROPERTY}); }}
          table {{ width: 100%; table-layout: fixed; border-collapse: collapse; }}
          thead {{ position: sticky; top: 0; z-index: 2;
                   background: var({SURFACE_2_PROPERTY}); color: var({INK_PROPERTY}); }}

@@ -281,7 +281,7 @@ An interactive `<table role="grid">`: virtualized, keyboard-driven, filterable.
 | `Space` | selection cell | select the row (`Shift` extends) |
 | `Enter` / `Space` | selection header | select **every matching row**, or clear it |
 | `Ctrl`/`Cmd`+`A` | anywhere | select every matching row, not only the loaded page |
-| `Ctrl`/`Cmd`+`←`/`→` | header cell | move the column |
+| `Ctrl`/`Cmd`+`←`/`→`, dragging the header (mouse, pen) | header cell | move the column |
 | `Ctrl`/`Cmd`+`←`/`→` | band cell | move the band with all its columns ([Column bands](#column-bands)) |
 | `Ctrl`/`Cmd`+`Shift`+`←`/`→`, dragging the header's edge | header cell | resize the column (a double-click on the edge, or *Autosize column* in the menu, fits it to what it shows) |
 | `Alt`+`Shift`+`←`/`→` | header cell | pin the column one step towards that side: let go of a pin at the other end, or pin it at this one ([Pinned columns](#pinned-columns)) |

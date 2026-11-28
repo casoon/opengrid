@@ -298,17 +298,40 @@ fn say_release(host: &HtmlElement) {
 /// same path a sort takes, and for the same reason: the result has a different
 /// shape.
 pub(super) fn move_column(host: &HtmlElement, col: usize, by: i32) {
+    move_column_by(host, col, by, 1);
+}
+
+/// A drag of a header drops it on the column at `to` (issue #565): the same
+/// steps as the keys, all of them, then one rebuild and one announcement.
+pub(super) fn move_column_to(host: &HtmlElement, col: usize, to: usize) {
+    if to == col {
+        return;
+    }
+    let by = if to > col { 1 } else { -1 };
+    move_column_by(host, col, by, to.abs_diff(col));
+}
+
+fn move_column_by(host: &HtmlElement, col: usize, by: i32, steps: usize) {
     let declared = grid::parse_columns(host.get_attribute(COLUMNS_ATTRIBUTE).as_deref());
     let columns = columns_of(host);
     let Some(name) = columns.get(col).cloned() else {
         return;
     };
-    let moved = columns::layout(host).borrow_mut().move_column(
-        &declared,
-        &presentation::page_columns(host),
-        &name,
-        by,
-    );
+    // Each step is the layout's, so a column stops at the end of its run — the
+    // pinned columns' or the others' — as it does for the keys.
+    let mut moved = None;
+    for _ in 0..steps {
+        let next = columns::layout(host).borrow_mut().move_column(
+            &declared,
+            &presentation::page_columns(host),
+            &name,
+            by,
+        );
+        match next {
+            Some(order) => moved = Some(order),
+            None => break,
+        }
+    }
     let Some(order) = moved else {
         // At the end: nothing happens, and the reader is told why instead of
         // pressing the key again.

@@ -54,7 +54,20 @@ struct WidthDrag {
     moved: bool,
 }
 
+/// A press on a header with a mouse or a pen, until it lifts: past the slop it
+/// is a drag that moves the column (issue #565).
+struct HeaderDrag {
+    pointer: i32,
+    col: usize,
+    x: f64,
+    /// The pointer went past the slop: the press is a drag now.
+    started: bool,
+    /// The column the pointer is over, where the drop would put this one.
+    over: Option<usize>,
+}
+
 thread_local! {
+    static HEADER_DRAG: RefCell<Option<HeaderDrag>> = const { RefCell::new(None) };
     static WIDTH_DRAG: RefCell<Option<WidthDrag>> = const { RefCell::new(None) };
     /// A width drag has just ended: the `click` after it is not a sort.
     static DRAG_ENDED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
@@ -98,6 +111,7 @@ fn on_pointer_down(event: Event) {
     if begin_width_drag_on(&event, pointer) {
         return;
     }
+    begin_header_press(&event, pointer);
     let Some((host, cell, td)) = range::data_cell(&event) else {
         return;
     };
@@ -410,6 +424,170 @@ fn autosize_on_edge(event: &Event) -> bool {
     true
 }
 
+/// How far a mouse or a pen moves with a header held before it is a drag.
+const HEADER_SLOP: f64 = 5.0;
+
+/// A mouse button or a pen went down on a header: it may become a drag.
+/// A finger scrolls instead, and the keys move a column without a pointer.
+fn begin_header_press(event: &Event, pointer: &PointerEvent) {
+    if !pointer.is_primary()
+        || (is_mouse(pointer) && pointer.button() != 0)
+        || pointer.pointer_type() == "touch"
+    {
+        return;
+    }
+    let Some(target) = event
+        .target()
+        .and_then(|target| target.dyn_into::<Element>().ok())
+    else {
+        return;
+    };
+    if target
+        .closest("[part=\"column-menu-button\"]")
+        .ok()
+        .flatten()
+        .is_some()
+    {
+        return;
+    }
+    let Some(col) = target
+        .closest("th[part=\"header\"][data-col]")
+        .ok()
+        .flatten()
+        .and_then(|th| th.get_attribute("data-col"))
+        .and_then(|col| col.parse::<usize>().ok())
+    else {
+        return;
+    };
+    HEADER_DRAG.with(|drag| {
+        *drag.borrow_mut() = Some(HeaderDrag {
+            pointer: pointer.pointer_id(),
+            col,
+            x: f64::from(pointer.client_x()),
+            started: false,
+            over: None,
+        });
+    });
+}
+
+/// The header whose box holds `x`, and the side of it the pointer is nearer.
+fn header_at(root: &ShadowRoot, x: f64) -> Option<(usize, Element)> {
+    let headers = root
+        .query_selector_all("th[part=\"header\"][data-col]")
+        .ok()?;
+    for index in 0..headers.length() {
+        let th = headers.item(index)?.dyn_into::<Element>().ok()?;
+        let rect = th.get_bounding_client_rect();
+        if x >= rect.left() && x < rect.right() {
+            let col = th.get_attribute("data-col")?.parse().ok()?;
+            return Some((col, th));
+        }
+    }
+    None
+}
+
+/// Takes the drop mark off every header.
+fn clear_drop_marks(root: &ShadowRoot) {
+    if let Ok(marked) = root.query_selector_all("[data-drop], [data-moving]") {
+        for index in 0..marked.length() {
+            if let Some(th) = marked
+                .item(index)
+                .and_then(|node| node.dyn_into::<Element>().ok())
+            {
+                let _ = th.remove_attribute("data-drop");
+                let _ = th.remove_attribute("data-moving");
+            }
+        }
+    }
+}
+
+/// The pointer moved with a header held: past the slop the column is being
+/// dragged, and the header it is over wears the drop mark. `true` while it is.
+fn move_header_drag(root: &ShadowRoot, pointer: &PointerEvent) -> bool {
+    let x = f64::from(pointer.client_x());
+    // The button came up where this grid heard nothing of it: no drag.
+    if pointer.buttons() & 1 == 0 {
+        HEADER_DRAG.with(|drag| {
+            let mut drag = drag.borrow_mut();
+            if drag
+                .as_ref()
+                .is_some_and(|drag| drag.pointer == pointer.pointer_id())
+            {
+                *drag = None;
+            }
+        });
+        return false;
+    }
+    let started = HEADER_DRAG.with(|drag| {
+        let mut drag = drag.borrow_mut();
+        let drag = drag
+            .as_mut()
+            .filter(|drag| drag.pointer == pointer.pointer_id())?;
+        if !drag.started && (x - drag.x).abs() > HEADER_SLOP {
+            drag.started = true;
+        }
+        drag.started.then_some(drag.col)
+    });
+    let Some(col) = started else {
+        return false;
+    };
+    clear_drop_marks(root);
+    if let Ok(Some(moving)) =
+        root.query_selector(&format!("th[part=\"header\"][data-col=\"{col}\"]"))
+    {
+        let _ = moving.set_attribute("data-moving", "");
+        // Held here, the header keeps the pointer wherever it goes.
+        let _ = moving.set_pointer_capture(pointer.pointer_id());
+    }
+    let over = header_at(root, x);
+    if let Some((target, th)) = &over
+        && *target != col
+    {
+        let _ = th.set_attribute("data-drop", if *target < col { "before" } else { "after" });
+    }
+    HEADER_DRAG.with(|drag| {
+        if let Some(drag) = drag.borrow_mut().as_mut() {
+            drag.over = over.map(|(target, _)| target);
+        }
+    });
+    true
+}
+
+/// The pointer lifted: a header that was dragged is dropped where it is, and
+/// the click after it is not a sort. `true` when there was a drag.
+fn end_header_drag_on(host: &HtmlElement, root: &ShadowRoot, pointer: &PointerEvent) -> bool {
+    let done = HEADER_DRAG.with(|drag| {
+        let mut drag = drag.borrow_mut();
+        if drag
+            .as_ref()
+            .is_some_and(|drag| drag.pointer == pointer.pointer_id())
+        {
+            drag.take()
+        } else {
+            None
+        }
+    });
+    let Some(done) = done.filter(|done| done.started) else {
+        return false;
+    };
+    clear_drop_marks(root);
+    suppress_next_click();
+    if let Some(over) = done.over {
+        move_column_to(host, done.col, over);
+    }
+    true
+}
+
+/// The `click` that follows a drag is the drag's, not a press on a header.
+fn suppress_next_click() {
+    DRAG_ENDED.with(|ended| ended.set(true));
+    let clear = Closure::once_into_js(|| DRAG_ENDED.with(|ended| ended.set(false)));
+    if let Some(window) = web_sys::window() {
+        let _ =
+            window.set_timeout_with_callback_and_timeout_and_arguments_0(clear.unchecked_ref(), 0);
+    }
+}
+
 fn open_menu_after(host: &HtmlElement, cell: CellRef) {
     let host = host.clone();
     let callback = Closure::once_into_js(move || cell_menu::open(&host, cell));
@@ -467,6 +645,9 @@ fn on_pointer_move(event: Event) {
         return;
     };
     if move_width_drag(&host, pointer) {
+        return;
+    }
+    if move_header_drag(&root, pointer) {
         return;
     }
     if is_mouse(pointer)
@@ -532,7 +713,7 @@ fn on_pointer_up(event: Event) {
     let Ok(host) = root.host().dyn_into::<HtmlElement>() else {
         return;
     };
-    if end_width_drag_on(&host, &root, pointer) {
+    if end_width_drag_on(&host, &root, pointer) || end_header_drag_on(&host, &root, pointer) {
         return;
     }
     let Some(runtime) = runtime(&host) else {
@@ -575,7 +756,7 @@ fn on_pointer_cancel(event: Event) {
     };
     if let Some(pointer) = event.dyn_ref::<PointerEvent>()
         && let Ok(host) = root.host().dyn_into::<HtmlElement>()
-        && end_width_drag_on(&host, &root, pointer)
+        && (end_width_drag_on(&host, &root, pointer) || end_header_drag_on(&host, &root, pointer))
     {
         return;
     }
